@@ -157,7 +157,8 @@
   "blind_spot": {
     "line": "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree or roof overhang).",
     "range": "{left}°–{right}°",
-    "elevation": "up to {elev}° elevation"
+    "elevation": "up to {elev}° elevation",
+    "elevation_above": "above {elev}° elevation"
   },
   "default": {
     "tilt": "  ↳ Default tilt: {tilt}% (explicit; overrides solar-computed)",

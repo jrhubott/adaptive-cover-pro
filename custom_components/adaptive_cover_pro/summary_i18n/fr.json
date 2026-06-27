@@ -157,7 +157,8 @@
   "blind_spot": {
     "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur depuis la gauche FOV (par ex. arbre ou avant-toit).",
     "range": "{left}°–{right}°",
-    "elevation": "jusqu'à {elev}° élévation"
+    "elevation": "jusqu'à {elev}° élévation",
+    "elevation_above": "au-dessus de {elev}° élévation"
   },
   "default": {
     "tilt": "  ↳ Inclinaison par défaut : {tilt}% (explicite ; remplace calculé solaire)",

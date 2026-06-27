@@ -1494,6 +1494,17 @@ def _blind_spot_specs() -> list[FieldSpec]:
                 rng=const._RANGE_BLIND_SPOT_ELEVATION,
             )
         )
+        # Per-slot below/above elevation mode (issue #702). The selector is
+        # emitted by ``config_dynamic.blind_spot_schema``; this spec keeps the
+        # field in the registry with its SELECT validator vocabulary.
+        specs.append(
+            FieldSpec(
+                keys["elevation_mode"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.SELECT,
+                select_options=const.BLIND_SPOT_ELEVATION_MODES,
+            )
+        )
     return specs
 
 

@@ -499,23 +499,29 @@
           "blind_spot_left": "Blind spot left edge (from FOV left)",
           "blind_spot_right": "Blind spot right edge (from FOV left)",
           "blind_spot_elevation": "Blindspot elevation",
+          "blind_spot_elevation_mode": "Blind spot elevation mode",
           "blind_spot_left_2": "Blind spot 2 left edge (from FOV left)",
           "blind_spot_right_2": "Blind spot 2 right edge (from FOV left)",
           "blind_spot_elevation_2": "Blind spot 2 elevation",
+          "blind_spot_elevation_mode_2": "Blind spot 2 elevation mode",
           "blind_spot_left_3": "Blind spot 3 left edge (from FOV left)",
           "blind_spot_right_3": "Blind spot 3 right edge (from FOV left)",
-          "blind_spot_elevation_3": "Blind spot 3 elevation"
+          "blind_spot_elevation_3": "Blind spot 3 elevation",
+          "blind_spot_elevation_mode_3": "Blind spot 3 elevation mode"
         },
         "data_description": {
           "blind_spot_left": "Left edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary). Where 0 = at the leftmost FOV edge. Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 10. This marks where the obstruction begins horizontally. Use sun position sensor or observe when sun is blocked to find this value.",
           "blind_spot_right": "Right edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary, must be > left edge). Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 20. This marks where the obstruction ends horizontally. Creates a 'don't track sun here' zone between left and right edges.",
-          "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance.",
+          "blind_spot_elevation": "Sun elevation (degrees above horizon) threshold where the blind spot applies. Pair with the elevation mode: in 'below' mode the spot blocks sun at or below this angle (e.g. a roof overhang that only blocks low sun — set to 30); in 'above' mode it blocks sun at or above this angle (e.g. a balcony overhead — set to 50). Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead.",
+          "blind_spot_elevation_mode": "Which side of the elevation threshold the blind spot covers. 'Below' (default) blocks LOW sun (a tree or roof overhang); 'Above' blocks HIGH sun (an overhead obstacle like a balcony or deep recess). Only matters when an elevation is set.",
           "blind_spot_left_2": "Optional second blind-spot slot. Left edge in degrees from your FOV left boundary. Leave this and the right edge unset to disable slot 2.",
           "blind_spot_right_2": "Right edge of the second blind-spot slot (degrees from FOV left, must be greater than slot 2's left edge).",
-          "blind_spot_elevation_2": "Maximum sun elevation where slot 2 applies. Leave unset to apply at all elevations.",
+          "blind_spot_elevation_2": "Sun elevation threshold where slot 2 applies (paired with slot 2's elevation mode). Leave unset to apply at all elevations.",
+          "blind_spot_elevation_mode_2": "Which side of slot 2's elevation threshold it covers: 'Below' blocks low sun, 'Above' blocks high sun. Only matters when slot 2's elevation is set.",
           "blind_spot_left_3": "Optional third blind-spot slot. Left edge in degrees from your FOV left boundary. Leave this and the right edge unset to disable slot 3.",
           "blind_spot_right_3": "Right edge of the third blind-spot slot (degrees from FOV left, must be greater than slot 3's left edge).",
-          "blind_spot_elevation_3": "Maximum sun elevation where slot 3 applies. Leave unset to apply at all elevations."
+          "blind_spot_elevation_3": "Sun elevation threshold where slot 3 applies (paired with slot 3's elevation mode). Leave unset to apply at all elevations.",
+          "blind_spot_elevation_mode_3": "Which side of slot 3's elevation threshold it covers: 'Below' blocks low sun, 'Above' blocks high sun. Only matters when slot 3's elevation is set."
         },
         "title": "Blind Spot",
         "description": "Define up to 3 independent areas where obstacles block the sun (trees, buildings, roof overhangs). The sun is ignored when it falls inside any one of them. These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. Leave a slot's left and right edges unset to skip it.\n\n[Learn more]({learn_more})"
@@ -1266,23 +1272,29 @@
           "blind_spot_left": "Blind spot left edge (from FOV left)",
           "blind_spot_right": "Blind spot right edge (from FOV left)",
           "blind_spot_elevation": "Blindspot elevation",
+          "blind_spot_elevation_mode": "Blind spot elevation mode",
           "blind_spot_left_2": "Blind spot 2 left edge (from FOV left)",
           "blind_spot_right_2": "Blind spot 2 right edge (from FOV left)",
           "blind_spot_elevation_2": "Blind spot 2 elevation",
+          "blind_spot_elevation_mode_2": "Blind spot 2 elevation mode",
           "blind_spot_left_3": "Blind spot 3 left edge (from FOV left)",
           "blind_spot_right_3": "Blind spot 3 right edge (from FOV left)",
-          "blind_spot_elevation_3": "Blind spot 3 elevation"
+          "blind_spot_elevation_3": "Blind spot 3 elevation",
+          "blind_spot_elevation_mode_3": "Blind spot 3 elevation mode"
         },
         "data_description": {
           "blind_spot_left": "Left edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary). Where 0 = at the leftmost FOV edge. Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 10. This marks where the obstruction begins horizontally. Use sun position sensor or observe when sun is blocked to find this value.",
           "blind_spot_right": "Right edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary, must be > left edge). Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 20. This marks where the obstruction ends horizontally. Creates a 'don't track sun here' zone between left and right edges.",
-          "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance.",
+          "blind_spot_elevation": "Sun elevation (degrees above horizon) threshold where the blind spot applies. Pair with the elevation mode: in 'below' mode the spot blocks sun at or below this angle (e.g. a roof overhang that only blocks low sun — set to 30); in 'above' mode it blocks sun at or above this angle (e.g. a balcony overhead — set to 50). Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead.",
+          "blind_spot_elevation_mode": "Which side of the elevation threshold the blind spot covers. 'Below' (default) blocks LOW sun (a tree or roof overhang); 'Above' blocks HIGH sun (an overhead obstacle like a balcony or deep recess). Only matters when an elevation is set.",
           "blind_spot_left_2": "Optional second blind-spot slot. Left edge in degrees from your FOV left boundary. Leave this and the right edge unset to disable slot 2.",
           "blind_spot_right_2": "Right edge of the second blind-spot slot (degrees from FOV left, must be greater than slot 2's left edge).",
-          "blind_spot_elevation_2": "Maximum sun elevation where slot 2 applies. Leave unset to apply at all elevations.",
+          "blind_spot_elevation_2": "Sun elevation threshold where slot 2 applies (paired with slot 2's elevation mode). Leave unset to apply at all elevations.",
+          "blind_spot_elevation_mode_2": "Which side of slot 2's elevation threshold it covers: 'Below' blocks low sun, 'Above' blocks high sun. Only matters when slot 2's elevation is set.",
           "blind_spot_left_3": "Optional third blind-spot slot. Left edge in degrees from your FOV left boundary. Leave this and the right edge unset to disable slot 3.",
           "blind_spot_right_3": "Right edge of the third blind-spot slot (degrees from FOV left, must be greater than slot 3's left edge).",
-          "blind_spot_elevation_3": "Maximum sun elevation where slot 3 applies. Leave unset to apply at all elevations."
+          "blind_spot_elevation_3": "Sun elevation threshold where slot 3 applies (paired with slot 3's elevation mode). Leave unset to apply at all elevations.",
+          "blind_spot_elevation_mode_3": "Which side of slot 3's elevation threshold it covers: 'Below' blocks low sun, 'Above' blocks high sun. Only matters when slot 3's elevation is set."
         },
         "title": "Blind Spot",
         "description": "Define up to 3 independent areas where obstacles block the sun (trees, buildings, roof overhangs). The sun is ignored when it falls inside any one of them. These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. Leave a slot's left and right edges unset to skip it.\n\n[Learn more]({learn_more})"
@@ -1600,6 +1612,12 @@
       "options": {
         "or": "OR — occupied if the template is true or a sensor is active (default)",
         "and": "AND — require the template to be true and a sensor active"
+      }
+    },
+    "blind_spot_elevation_mode": {
+      "options": {
+        "below": "Below — blocks low sun (tree or roof overhang)",
+        "above": "Above — blocks high sun (overhead obstacle, e.g. balcony)"
       }
     },
     "debug_categories": {
@@ -2088,7 +2106,11 @@
         },
         "blind_spot_elevation": {
           "name": "Elevation limit",
-          "description": "Maximum sun elevation (°) for the blind spot to apply. Null = always apply."
+          "description": "Sun elevation (°) threshold for the blind spot. Null = always apply."
+        },
+        "blind_spot_elevation_mode": {
+          "name": "Elevation mode",
+          "description": "Which side of the elevation threshold the blind spot covers: 'below' (default) blocks low sun (a tree or roof overhang); 'above' blocks high sun (an overhead obstacle like a balcony or deep recess)."
         }
       }
     },

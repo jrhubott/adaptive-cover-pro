@@ -140,6 +140,7 @@ async def test_export_common_section_contains_all_fields():
     assert "enable_max_position" in common
     assert "enable_min_position" in common
     assert "blind_spot" in common
+    assert "blind_spot_elevation_mode" in common  # issue #702
 
 
 @pytest.mark.asyncio

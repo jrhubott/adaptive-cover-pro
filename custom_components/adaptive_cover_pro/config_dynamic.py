@@ -25,6 +25,7 @@ from .config_fields import (
     presence_like_selector,
 )
 from .const import (
+    BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
@@ -82,6 +83,7 @@ from .const import (
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WINTER_CLOSE_INSULATION,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_GLARE_ZONE_Z,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
@@ -288,6 +290,19 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
         schema[left_marker] = _slider(0, edges - 1)
         schema[right_marker] = _slider(1, edges)
         schema[vol.Optional(keys["elevation"])] = _slider(0, 90, step=1)
+        # Per-slot below/above elevation mode (issue #702). Defaults to "below"
+        # so an unconfigured slot keeps today's "blocks low sun" behavior.
+        schema[
+            vol.Optional(
+                keys["elevation_mode"], default=DEFAULT_BLIND_SPOT_ELEVATION_MODE
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=list(BLIND_SPOT_ELEVATION_MODES),
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="blind_spot_elevation_mode",
+            )
+        )
     return vol.Schema(schema)
 
 

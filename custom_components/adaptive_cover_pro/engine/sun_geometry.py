@@ -10,6 +10,7 @@ import pandas as pd
 
 from ..config_types import CoverConfig
 from ..const import (
+    BLIND_SPOT_ELEV_MODE_ABOVE,
     CONF_FOV_LEFT,
     DEFAULT_FOV_LEFT,
     DEGREES_IN_CIRCLE,
@@ -243,15 +244,19 @@ class SunGeometry:
         The ONE containment computation — a horizontal wedge (``fov_left`` minus
         the slot's left/right offsets, compared against ``gamma``) plus an
         optional elevation clause. Looped by :pyattr:`is_sun_in_blind_spot` over
-        every active slot. This is the exact seam where issue #702 adds the
-        ``elevation_mode`` branch (``"below"`` today → ``sol_elev <= elevation``;
-        ``"above"`` will flip the comparison).
+        every active slot. The elevation clause honours the slot's
+        ``elevation_mode`` (issue #702): ``"below"`` (default) blocks LOW sun
+        (``sol_elev <= elevation``); ``"above"`` blocks HIGH sun
+        (``sol_elev >= elevation``).
         """
         left_edge = self.config.fov_left - bs.left
         right_edge = self.config.fov_left - bs.right
         inside = (self.gamma <= left_edge) & (self.gamma >= right_edge)
         if bs.elevation is not None:
-            inside = inside & (self.sol_elev <= bs.elevation)
+            if bs.elevation_mode == BLIND_SPOT_ELEV_MODE_ABOVE:
+                inside = inside & (self.sol_elev >= bs.elevation)
+            else:  # BELOW (default) — unchanged legacy semantics
+                inside = inside & (self.sol_elev <= bs.elevation)
         return bool(inside)
 
     @property

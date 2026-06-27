@@ -22,8 +22,10 @@ from homeassistant.helpers import selector
 
 from .const import (
     BLANK_TIME,
+    BLIND_SPOT_ELEV_MODE_ABOVE,
     BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     LIGHT_CLOUD_SENSOR_KEYS,
     WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AWNING_ANGLE,
@@ -1378,6 +1380,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     "blind_spot.range": "{left}°–{right}°",
     "blind_spot.elevation": "up to {elev}° elevation",
+    "blind_spot.elevation_above": "above {elev}° elevation",
     # --- Default fallback (0) ---
     "rules.default": "🌙 Default (no rule matches) → {default_pos}%",
     "default.tilt": ("  ↳ Default tilt: {tilt}% (explicit; overrides solar-computed)"),
@@ -2223,7 +2226,16 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             bs_e = config.get(keys["elevation"])
             bs_parts = [L["blind_spot.range"].format(left=bs_l, right=bs_r)]
             if bs_e is not None:
-                bs_parts.append(L["blind_spot.elevation"].format(elev=bs_e))
+                # "above" blocks high sun; "below" (default) blocks low sun (#702).
+                bs_mode = config.get(
+                    keys["elevation_mode"], DEFAULT_BLIND_SPOT_ELEVATION_MODE
+                )
+                elev_key = (
+                    "blind_spot.elevation_above"
+                    if bs_mode == BLIND_SPOT_ELEV_MODE_ABOVE
+                    else "blind_spot.elevation"
+                )
+                bs_parts.append(L[elev_key].format(elev=bs_e))
             lines.append(L["blind_spot.line"].format(bs=" ".join(bs_parts)))
 
     # Default fallback (priority 0) — shown as the final row of the chain
@@ -2498,7 +2510,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "blind_spot": frozenset(
         keys[sub]
         for keys in BLIND_SPOT_SLOTS.values()
-        for sub in ("left", "right", "elevation")
+        for sub in ("left", "right", "elevation", "elevation_mode")
     ),
     "position": frozenset(
         {

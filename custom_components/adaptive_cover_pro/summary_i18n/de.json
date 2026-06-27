@@ -157,7 +157,8 @@
   "blind_spot": {
     "line": "🟥 Blinder Fleck: ignoriert Sonne bei {bs} innen von FOV links (z.B. Baum oder Dachüberhang).",
     "range": "{left}°–{right}°",
-    "elevation": "bis {elev}° Höhe"
+    "elevation": "bis {elev}° Höhe",
+    "elevation_above": "ab {elev}° Höhe"
   },
   "default": {
     "tilt": "  ↳ Standard-Neigung: {tilt}% (explizit; überschreibt sonnenberechnet)",

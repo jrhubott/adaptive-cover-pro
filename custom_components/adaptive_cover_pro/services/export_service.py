@@ -15,6 +15,7 @@ from ..const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
+    CONF_BLIND_SPOT_ELEVATION_MODE,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
     CONF_DEFAULT_HEIGHT,
@@ -40,6 +41,7 @@ from ..const import (
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DOMAIN,
 )
 
@@ -98,6 +100,9 @@ async def async_handle_export(call: ServiceCall) -> dict:
             CONF_BLIND_SPOT_LEFT: options.get(CONF_BLIND_SPOT_LEFT, 0),
             CONF_BLIND_SPOT_RIGHT: options.get(CONF_BLIND_SPOT_RIGHT, 0),
             CONF_BLIND_SPOT_ELEVATION: options.get(CONF_BLIND_SPOT_ELEVATION, 0),
+            CONF_BLIND_SPOT_ELEVATION_MODE: options.get(
+                CONF_BLIND_SPOT_ELEVATION_MODE, DEFAULT_BLIND_SPOT_ELEVATION_MODE
+            ),
             CONF_MIN_ELEVATION: options.get(CONF_MIN_ELEVATION),
             CONF_MAX_ELEVATION: options.get(CONF_MAX_ELEVATION),
         },

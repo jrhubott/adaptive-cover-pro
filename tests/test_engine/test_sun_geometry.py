@@ -430,6 +430,83 @@ class TestBlindSpot:
         sg_low = SunGeometry(180.0, 20.0, _make_sun_data(), config, _make_logger())
         assert sg_low.is_sun_in_blind_spot is True
 
+    def test_above_mode_active_when_sun_high(self):
+        """An 'above' slot blocks HIGH sun (sol_elev >= elevation) — issue #702."""
+        from custom_components.adaptive_cover_pro.const import (
+            BLIND_SPOT_ELEV_MODE_ABOVE,
+            BlindSpot,
+        )
+
+        config = _make_config(
+            blind_spot_on=True,
+            extra_blind_spots=(
+                BlindSpot(
+                    left=40,
+                    right=60,
+                    elevation=30,
+                    elevation_mode=BLIND_SPOT_ELEV_MODE_ABOVE,
+                ),
+            ),
+        )
+        # gamma=0 inside the wedge; sol_elev=50 >= 30 → blocked (overhead obstacle).
+        sg = SunGeometry(180.0, 50.0, _make_sun_data(), config, _make_logger())
+        assert sg.is_sun_in_blind_spot is True
+
+    def test_above_mode_inactive_when_sun_low(self):
+        """An 'above' slot does NOT block LOW sun (sol_elev < elevation)."""
+        from custom_components.adaptive_cover_pro.const import (
+            BLIND_SPOT_ELEV_MODE_ABOVE,
+            BlindSpot,
+        )
+
+        config = _make_config(
+            blind_spot_on=True,
+            extra_blind_spots=(
+                BlindSpot(
+                    left=40,
+                    right=60,
+                    elevation=30,
+                    elevation_mode=BLIND_SPOT_ELEV_MODE_ABOVE,
+                ),
+            ),
+        )
+        # gamma=0 inside the wedge; sol_elev=20 < 30 → not blocked.
+        sg = SunGeometry(180.0, 20.0, _make_sun_data(), config, _make_logger())
+        assert sg.is_sun_in_blind_spot is False
+
+    def test_below_mode_is_default_and_unchanged(self):
+        """A slot with no explicit mode keeps legacy 'below' geometry (#702 lock).
+
+        Builds the same scenario as ``test_slot_elevation_clause`` WITHOUT naming
+        a mode, proving the default reproduces today's ``sol_elev <= elevation``
+        behavior byte-for-byte. Also asserts an explicit ``"below"`` is identical.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            BLIND_SPOT_ELEV_MODE_BELOW,
+            BlindSpot,
+        )
+
+        default_cfg = _make_config(
+            blind_spot_on=True,
+            extra_blind_spots=(BlindSpot(left=40, right=60, elevation=30),),
+        )
+        explicit_cfg = _make_config(
+            blind_spot_on=True,
+            extra_blind_spots=(
+                BlindSpot(
+                    left=40,
+                    right=60,
+                    elevation=30,
+                    elevation_mode=BLIND_SPOT_ELEV_MODE_BELOW,
+                ),
+            ),
+        )
+        for cfg in (default_cfg, explicit_cfg):
+            high = SunGeometry(180.0, 45.0, _make_sun_data(), cfg, _make_logger())
+            low = SunGeometry(180.0, 20.0, _make_sun_data(), cfg, _make_logger())
+            assert high.is_sun_in_blind_spot is False  # 45 > 30 → not blocked
+            assert low.is_sun_in_blind_spot is True  # 20 <= 30 → blocked
+
 
 # ------------------------------------------------------------------
 # in_fov

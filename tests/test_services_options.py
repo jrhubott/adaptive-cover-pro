@@ -269,6 +269,24 @@ class TestFieldValidators:
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_mode"]("mode3")
 
+    def test_blind_spot_elevation_mode_select(self):
+        """Every slot's elevation-mode validator accepts below/above/None (#702)."""
+        from custom_components.adaptive_cover_pro.const import BLIND_SPOT_SLOTS
+
+        for keys in BLIND_SPOT_SLOTS.values():
+            key = keys["elevation_mode"]
+            FIELD_VALIDATORS[key]("below")
+            FIELD_VALIDATORS[key]("above")
+            FIELD_VALIDATORS[key](None)
+
+    def test_blind_spot_elevation_mode_rejects_invalid(self):
+        """An out-of-vocabulary elevation mode is rejected (#702)."""
+        from custom_components.adaptive_cover_pro.const import BLIND_SPOT_SLOTS
+
+        for keys in BLIND_SPOT_SLOTS.values():
+            with pytest.raises(Exception):
+                FIELD_VALIDATORS[keys["elevation_mode"]]("sideways")
+
     def test_motion_template_mode_select(self):
         FIELD_VALIDATORS[CONF_MOTION_TEMPLATE_MODE]("or")
         FIELD_VALIDATORS[CONF_MOTION_TEMPLATE_MODE]("and")

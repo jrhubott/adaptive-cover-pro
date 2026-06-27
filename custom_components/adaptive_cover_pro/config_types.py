@@ -8,6 +8,7 @@ from typing import Any
 from .const import (
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
+    DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     BlindSpot,
@@ -15,13 +16,19 @@ from .const import (
 )
 
 
-def _make_blind_spot(left: Any, right: Any, elevation: Any) -> BlindSpot | None:
+def _make_blind_spot(
+    left: Any,
+    right: Any,
+    elevation: Any,
+    elevation_mode: Any = None,
+) -> BlindSpot | None:
     """Build a :class:`BlindSpot` from a slot's values, or ``None`` if inactive.
 
     A slot is *active* only when its left AND right are both set. This is the
     single place a ``BlindSpot`` is assembled from raw slot values — both the
     live slot-1 derivation (``CoverConfig.blind_spots``) and the slot-2+ builder
-    (``_extra_blind_spots_from``) delegate here.
+    (``_extra_blind_spots_from``) delegate here. ``elevation_mode`` falls back to
+    the default ("below") when absent (issue #702).
     """
     if left is None or right is None:
         return None
@@ -29,6 +36,7 @@ def _make_blind_spot(left: Any, right: Any, elevation: Any) -> BlindSpot | None:
         left=int(left),
         right=int(right),
         elevation=None if elevation is None else int(elevation),
+        elevation_mode=elevation_mode or DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     )
 
 
@@ -48,7 +56,10 @@ def _extra_blind_spots_from(get: Any, *, enabled: bool) -> tuple[BlindSpot, ...]
             continue
         keys = BLIND_SPOT_SLOTS[n]
         bs = _make_blind_spot(
-            get(keys["left"]), get(keys["right"]), get(keys["elevation"])
+            get(keys["left"]),
+            get(keys["right"]),
+            get(keys["elevation"]),
+            get(keys["elevation_mode"]),
         )
         if bs is not None:
             spots.append(bs)
@@ -121,6 +132,10 @@ class CoverConfig:
     min_pos_sun_tracking: int | None = (
         None  # separate floor for sun-tracking only; None = use min_pos
     )
+    # Slot-1 elevation mode (issue #702): "below" (default) blocks low sun,
+    # "above" blocks high sun. Flat like the other slot-1 fields so the live
+    # ``blind_spots`` property reflects post-construction mutation.
+    blind_spot_elevation_mode: str = DEFAULT_BLIND_SPOT_ELEVATION_MODE
     # Blind-spot slots 2..N (issue #701). Slot 1 is NOT stored here — it derives
     # live from the flat ``blind_spot_*`` fields above via the ``blind_spots``
     # property, so post-construction mutation of those fields is reflected.
@@ -138,7 +153,10 @@ class CoverConfig:
             return ()
         spots: list[BlindSpot] = []
         slot1 = _make_blind_spot(
-            self.blind_spot_left, self.blind_spot_right, self.blind_spot_elevation
+            self.blind_spot_left,
+            self.blind_spot_right,
+            self.blind_spot_elevation,
+            self.blind_spot_elevation_mode,
         )
         if slot1 is not None:
             spots.append(slot1)
@@ -151,6 +169,7 @@ class CoverConfig:
         from .const import (
             CONF_AZIMUTH,
             CONF_BLIND_SPOT_ELEVATION,
+            CONF_BLIND_SPOT_ELEVATION_MODE,
             CONF_BLIND_SPOT_LEFT,
             CONF_BLIND_SPOT_RIGHT,
             CONF_DEFAULT_HEIGHT,
@@ -202,6 +221,9 @@ class CoverConfig:
             blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
             blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
             blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),
+            blind_spot_elevation_mode=options.get(
+                CONF_BLIND_SPOT_ELEVATION_MODE, DEFAULT_BLIND_SPOT_ELEVATION_MODE
+            ),
             blind_spot_on=options.get(CONF_ENABLE_BLIND_SPOT, False),
             extra_blind_spots=_extra_blind_spots_from(
                 options.get, enabled=options.get(CONF_ENABLE_BLIND_SPOT, False)

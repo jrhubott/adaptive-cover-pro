@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 from ..const import (
     BLANK_TIME,
+    BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOTS,
     CONF_ARM_LENGTH,
     CONF_AWNING_ANGLE,
@@ -341,6 +342,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
         for keys in BLIND_SPOT_SLOTS.values()
         for sub in ("left", "right", "elevation")
     },
+    # Per-slot elevation mode is a below/above select, not a numeric range.
+    **{
+        keys["elevation_mode"]: _select_v(*BLIND_SPOT_ELEVATION_MODES)
+        for keys in BLIND_SPOT_SLOTS.values()
+    },
     # Position limits & sunset/sunrise
     CONF_DEFAULT_HEIGHT: _range(CONF_DEFAULT_HEIGHT),
     CONF_MAX_POSITION: _range(CONF_MAX_POSITION),
@@ -638,7 +644,7 @@ _SECTION_BLIND_SPOT = frozenset(
     | {
         keys[sub]
         for keys in BLIND_SPOT_SLOTS.values()
-        for sub in ("left", "right", "elevation")
+        for sub in ("left", "right", "elevation", "elevation_mode")
     }
 )
 

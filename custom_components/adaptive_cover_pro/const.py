@@ -314,10 +314,20 @@ CONF_BLIND_SPOT_ELEVATION = "blind_spot_elevation"
 # gates the whole feature. Slot 1 REUSES the legacy unsuffixed keys above so
 # existing installs need no migration; slots 2/3 use ``_2``/``_3`` suffixes.
 
-# Per-slot elevation modes (issue #702 will add the "above" branch — the field
-# is carried now, defaulted to "below" = today's ``sol_elev <= elevation``).
+# Per-slot elevation modes (issue #702). "below" (default) keeps today's
+# ``sol_elev <= elevation`` — an obstacle that blocks LOW sun (tree, overhang).
+# "above" flips to ``sol_elev >= elevation`` — an overhead obstacle that blocks
+# HIGH sun (balcony, deep recess). The vocabulary is slot-independent: it lives
+# here ONCE and is never re-suffixed per slot.
 BLIND_SPOT_ELEV_MODE_BELOW = "below"  # wedge applies when sun is at/below elev
-BLIND_SPOT_ELEV_MODE_ABOVE = "above"  # reserved for #702: at/above elev
+BLIND_SPOT_ELEV_MODE_ABOVE = "above"  # wedge applies when sun is at/above elev
+DEFAULT_BLIND_SPOT_ELEVATION_MODE = BLIND_SPOT_ELEV_MODE_BELOW
+BLIND_SPOT_ELEVATION_MODES: tuple[str, ...] = (
+    BLIND_SPOT_ELEV_MODE_BELOW,
+    BLIND_SPOT_ELEV_MODE_ABOVE,
+)
+# Slot-1 flat wire key for the elevation mode (mirrors CONF_BLIND_SPOT_ELEVATION).
+CONF_BLIND_SPOT_ELEVATION_MODE = "blind_spot_elevation_mode"
 
 BLIND_SPOT_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3)  # slot 1 = legacy keys
 
@@ -326,10 +336,12 @@ BLIND_SPOT_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3)  # slot 1 = legacy keys
 class BlindSpot:
     """One blind-spot wedge.
 
-    ``elevation`` (None = applies at all elevations). ``elevation_mode`` is
-    reserved for issue #702 (``"below"``/``"above"``); it defaults to
-    ``BLIND_SPOT_ELEV_MODE_BELOW`` which is today's behavior, so #702 only has
-    to flip the single comparison in the containment helper.
+    ``elevation`` (None = applies at all elevations). ``elevation_mode``
+    (issue #702) selects which side of ``elevation`` the wedge applies to:
+    ``BLIND_SPOT_ELEV_MODE_BELOW`` (default) blocks LOW sun
+    (``sol_elev <= elevation``); ``BLIND_SPOT_ELEV_MODE_ABOVE`` blocks HIGH sun
+    (``sol_elev >= elevation``). The single comparison lives in
+    ``SunGeometry._sun_in_blind_spot``.
     """
 
     left: int
@@ -349,7 +361,7 @@ def _blind_spot_slot_keys(n: int) -> dict[str, str]:
         "left": f"blind_spot_left{s}",
         "right": f"blind_spot_right{s}",
         "elevation": f"blind_spot_elevation{s}",
-        # Reserved for #702's per-slot below/above selector.
+        # Per-slot below/above elevation selector (issue #702).
         "elevation_mode": f"blind_spot_elevation_mode{s}",
     }
 

@@ -817,7 +817,7 @@ class DiagnosticsBuilder:
                 **{
                     keys[sub]: options.get(keys[sub])
                     for keys in BLIND_SPOT_SLOTS.values()
-                    for sub in ("left", "right", "elevation")
+                    for sub in ("left", "right", "elevation", "elevation_mode")
                 },
                 "min_position": options.get(CONF_MIN_POSITION),
                 "min_position_sun_tracking": options.get(

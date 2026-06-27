@@ -474,7 +474,10 @@
           "blind_spot_elevation_2": "Blindfleck 2 Höhe",
           "blind_spot_left_3": "Blindfleck 3 linke Kante (von FOV-Links)",
           "blind_spot_right_3": "Blindfleck 3 rechte Kante (von FOV-Links)",
-          "blind_spot_elevation_3": "Blindfleck 3 Höhe"
+          "blind_spot_elevation_3": "Blindfleck 3 Höhe",
+          "blind_spot_elevation_mode": "Blindfleck-Höhenmodus",
+          "blind_spot_elevation_mode_2": "Blindfleck 2 Höhenmodus",
+          "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus"
         },
         "data_description": {
           "blind_spot_left": "Linke Kante der blinden Fleck-Zone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze). Wobei 0 = an der äußersten linken FOV-Kante liegt. Beispiel: Wenn Ihre FOV-Links 45° beträgt und ein Baum die Sonne von 10–20° relativ zu dieser Kante blockiert, auf 10 einstellen. Dies markiert, wo die Verdeckung horizontal beginnt. Nutzen Sie Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu finden.",
@@ -485,7 +488,10 @@
           "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
           "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 3 zu deaktivieren.",
           "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 3 sein).",
-          "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden."
+          "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
+          "blind_spot_elevation_mode": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt. „Unterhalb\" (Standard) blockiert TIEFE Sonne (ein Baum oder Dachüberhang); „Oberhalb\" blockiert HOHE Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische). Ist nur relevant, wenn eine Höhe gesetzt ist.",
+          "blind_spot_elevation_mode_2": "Welche Seite des Höhenschwellenwerts von Slot 2 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 2 Höhe gesetzt ist.",
+          "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist."
         },
         "title": "Blindfleck",
         "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
@@ -1219,7 +1225,10 @@
           "blind_spot_elevation_2": "Blindfleck 2 Höhe",
           "blind_spot_left_3": "Blindfleck 3 linke Kante (von FOV-Links)",
           "blind_spot_right_3": "Blindfleck 3 rechte Kante (von FOV-Links)",
-          "blind_spot_elevation_3": "Blindfleck 3 Höhe"
+          "blind_spot_elevation_3": "Blindfleck 3 Höhe",
+          "blind_spot_elevation_mode": "Blindfleck-Höhenmodus",
+          "blind_spot_elevation_mode_2": "Blindfleck 2 Höhenmodus",
+          "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus"
         },
         "data_description": {
           "blind_spot_left": "Linke Kante der Zone des blinden Flecks (horizontaler Winkel in Grad von Ihrer linken FOV-Grenze). Wobei 0 = an der am weitesten links liegenden FOV-Grenze. Beispiel: Wenn Ihre FOV links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Grenze blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wenn die Sonne blockiert ist, um diesen Wert zu finden.",
@@ -1230,7 +1239,10 @@
           "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
           "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 3 zu deaktivieren.",
           "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 3 sein).",
-          "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden."
+          "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
+          "blind_spot_elevation_mode": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt. „Unterhalb\" (Standard) blockiert TIEFE Sonne (ein Baum oder Dachüberhang); „Oberhalb\" blockiert HOHE Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische). Ist nur relevant, wenn eine Höhe gesetzt ist.",
+          "blind_spot_elevation_mode_2": "Welche Seite des Höhenschwellenwerts von Slot 2 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 2 Höhe gesetzt ist.",
+          "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist."
         },
         "title": "Blindfleck",
         "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
@@ -1645,6 +1657,12 @@
         "or": "ODER — anwesend, wenn die Vorlage wahr ist oder ein Sensor aktiv ist (Standard)",
         "and": "UND — Vorlage muss wahr sein und ein Sensor aktiv"
       }
+    },
+    "blind_spot_elevation_mode": {
+      "options": {
+        "below": "Unterhalb — blockiert tiefe Sonne (Baum oder Dachüberhang)",
+        "above": "Oberhalb — blockiert hohe Sonne (Hindernis über Kopf, z.B. Balkon)"
+      }
     }
   },
   "services": {
@@ -1722,6 +1740,10 @@
         "blind_spot_right": {
           "description": "Rechte Kante der Blendungszone in Grad nach innen von der linken FOV-Grenze. Muss größer als linke Kante sein (Bereich 1–360°).",
           "name": "Rechte Kante (von FOV-Links)"
+        },
+        "blind_spot_elevation_mode": {
+          "name": "Höhenmodus",
+          "description": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt: „unterhalb\" (Standard) blockiert tiefe Sonne (ein Baum oder Dachüberhang); „oberhalb\" blockiert hohe Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische)."
         }
       },
       "name": "Blendungszone einstellen"
