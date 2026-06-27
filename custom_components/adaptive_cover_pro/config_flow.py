@@ -3741,6 +3741,12 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
+        # Building Profile entries have no cover, geometry, or handlers to
+        # configure — route straight to the sensor-only step (mirrors the
+        # create flow's async_step_create_building_profile).
+        if not get_policy(self.sensor_type).controls_cover:
+            return await self.async_step_profile_sensors()
+
         # Ordered by the 4-layer pipeline model (#613): physical setup →
         # positions → handlers in priority order → global motion constraints.
 
@@ -4130,6 +4136,28 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="building_profile",
             data_schema=schema,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
+        )
+
+    async def async_step_profile_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit the shared building-level sensor IDs on a Building Profile entry.
+
+        This is the only options step for a profile: it exposes exactly the
+        ``BUILDING_PROFILE_SENSOR_KEYS`` pickers and saves on submit.  Mirrors
+        the create-flow's ``async_step_create_building_profile`` sensor section.
+        """
+        if user_input is not None:
+            self.options.update(user_input)
+            return self.async_create_entry(title="", data=self.options)
+
+        schema = building_profile_sensors_schema()
+        return self.async_show_form(
+            step_id="profile_sensors",
+            data_schema=self.add_suggested_values_to_schema(schema, self.options),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
             },

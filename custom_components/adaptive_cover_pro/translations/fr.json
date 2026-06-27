@@ -1473,6 +1473,52 @@
         "data_description": {
           "building_profile_id": "Liez ce volet à un profil de bâtiment pour hériter de ses capteurs partagés à l'échelle du bâtiment. Sélectionnez « Aucun (non lié) » pour gérer les capteurs de ce volet localement."
         }
+      },
+      "profile_sensors": {
+        "title": "Profil de bâtiment — Capteurs Partagés",
+        "description": "Modifiez les ID d'entités de capteurs au niveau du bâtiment partagés entre les volets liés. Les volets liés héritent de ces capteurs ; laissez un champ vide pour que chaque volet conserve sa propre valeur locale.\n\n[En savoir plus]({learn_more})",
+        "data": {
+          "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
+          "daytime_gate_sensors": "Capteurs du filtre de jour",
+          "daytime_gate_template": "Modèle du filtre de jour (optionnel)",
+          "irradiance_entity": "Capteur d'irradiance (optionnel)",
+          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)",
+          "is_sunny_template": "Modèle Is Sunny (optionnel)",
+          "lux_entity": "Capteur de lux (optionnel)",
+          "outside_temp": "Capteur de température extérieure (optionnel)",
+          "sunrise_time_entity": "Entité Heure de Lever du Soleil",
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
+          "weather_entity": "Entité météo (optionnelle)",
+          "weather_is_raining_sensor": "Capteur binaire En train de pleuvoir",
+          "weather_is_raining_template": "Modèle Is Raining (optionnel)",
+          "weather_is_windy_sensor": "Capteur binaire Venteux",
+          "weather_is_windy_template": "Modèle Is Windy (optionnel)",
+          "weather_rain_sensor": "Capteur de taux de pluie",
+          "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
+          "weather_wind_direction_sensor": "Capteur de direction du vent (optionnel)",
+          "weather_wind_speed_sensor": "Capteur de vitesse du vent"
+        },
+        "data_description": {
+          "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 % (par ex. d'une intégration météo). Quand la valeur atteint le seuil, le contrôle de l'éblouissement est supprimé et le store revient à sa position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
+          "daytime_gate_sensors": "Capteurs binaires optionnels (ou input_boolean / switch / schedule) qui décident si c'est « jour » pour le suivi du soleil. Lorsqu'ils sont activés, l'intégration assure le suivi du soleil ; lorsqu'ils sont désactivés, elle applique la Position de coucher de soleil. Utilisez un capteur binaire « assez lumineux » basé sur le lux pour que la lumière réelle — et non l'horloge — ouvre et ferme la fenêtre de suivi : les protections continuent le suivi lors de soirées lumineuses après le coucher du soleil astronomique, et restent à la position de coucher de soleil lors des matins sombres et nuageux. Lorsqu'ils sont définis, ils REMPLACENT la limite de coucher/lever astronomique du soleil (les décalages de coucher/lever de soleil sont ignorés). Un capteur indisponible ou inconnu est traité comme jour, de sorte que le suivi ne s'arrête jamais simplement parce qu'un capteur n'a pas signalé. Laissez vide pour utiliser le calcul de coucher/lever de soleil astronomique.",
+          "daytime_gate_template": "Modèle Jinja2 Home Assistant optionnel qui décide si c'est « jour » pour le suivi du soleil. Lorsqu'il s'évalue comme vrai (on/true/1), l'intégration assure le suivi du soleil ; lorsqu'il s'évalue comme faux, elle applique la Position de coucher de soleil. La manière dont il se combine avec les capteurs du filtre ci-dessus (OR ou AND) est définie par « Logique du filtre de jour » ci-dessous. Il peut fonctionner seul sans capteurs. Exemple : un modèle d'élévation Sun2, ou une comparaison lux. Un modèle qui ne peut pas être évalué est traité comme jour, de sorte qu'un modèle cassé ne force jamais un coucher de soleil prématuré. Lorsqu'il est défini (seul ou avec des capteurs), il REMPLACE la limite de coucher/lever astronomique du soleil. Laissez vide pour désactiver.",
+          "irradiance_entity": "Capteur d'irradiance solaire optionnel (extérieur) pour une détection précise du soleil. Mesure la puissance solaire en W/m². Quand le capteur lit une valeur inférieure au seuil, le soleil direct est absent et le contrôle de l'éblouissement est supprimé. Laissez vide si vous ne disposez pas de ce capteur.",
+          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré.",
+          "is_sunny_template": "Modèle Jinja2 Home Assistant optionnel qui détermine si le soleil brille sur la fenêtre. Lorsqu'il s'évalue à vrai (on/true/1), le soleil est supposé présent ; lorsqu'il est faux, il est supposé absent et la suppression nuageuse s'active. La façon dont il se combine avec le capteur binaire Is Sunny ci-dessus (OU ou ET) est définie par la « logique du modèle Is Sunny » ci-dessous ; il peut fonctionner seul sans capteur. Exemple : une comparaison azimut/élévation ou un seuil de lux. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, l'intégration revient donc au capteur, puis à la logique de l'entité météo / conditions météo. Laissez vide pour désactiver.",
+          "lux_entity": "Capteur d'éclairement optionnel (intérieur ou extérieur) pour une détection précise du soleil. Quand le capteur lit une valeur inférieure au seuil, le soleil direct est absent et le contrôle de l'éblouissement est supprimé. Valeurs typiques en plein soleil : 5 000-10 000 lux. Laissez vide si vous ne disposez pas de ce capteur.",
+          "outside_temp": "Capteur de température extérieure optionnel. Quand configuré, cette valeur (plutôt que le capteur intérieur) détermine la saison actuelle, et le seuil extérieur est appliqué pour éviter que le store se ferme comme en été lors d'une journée intérieure chaude mais extérieure froide.",
+          "sunrise_time_entity": "Entité optionnelle dont l'état est un datetime (par exemple Sun2 « lever du soleil à -4° d'élévation »). Quand défini, remplace l'heure de lever du soleil calculée par astral comme limite de fermeture de la fenêtre du matin. Accepte les entités sensor ou input_datetime. Le Décalage du lever du soleil s'applique toujours en plus. Revient à astral si l'entité n'est pas disponible.",
+          "sunset_time_entity": "Entité optionnelle dont l'état est un datetime (par exemple Sun2 « coucher du soleil à -4° d'élévation »). Quand défini, remplace l'heure de coucher du soleil calculée par astral comme limite de la fenêtre. Accepte les entités sensor ou input_datetime rapportant un datetime ISO-8601. Le Décalage du coucher du soleil s'applique toujours en plus. Revient à astral si l'entité n'est pas disponible.",
+          "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
+          "weather_is_raining_sensor": "Capteur binaire pour la détection de pluie. La dérogation s'active quand ce capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_is_raining_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il pleut. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Raining ci-dessus (OU ou ET) est définie par la « logique du modèle Is Raining » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « pluie » d'un seuil de taux de pluie numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_is_windy_sensor": "Capteur binaire pour la détection du vent. La dérogation s'active quand ce capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_is_windy_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il fait du vent. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Windy ci-dessus (OU ou ET) est définie par la « logique du modèle Is Windy » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « venteux » d'un seuil de vitesse du vent numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
+          "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
+          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent."
+        }
       }
     },
     "abort": {

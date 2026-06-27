@@ -1473,6 +1473,52 @@
         "data_description": {
           "building_profile_id": "Verknüpfe diese Abdeckung mit einem Gebäudeprofil, um dessen gemeinsame gebäudeweite Sensoren zu übernehmen. Wähle 'Keines (nicht verknüpft)', um die Sensoren dieser Abdeckung lokal zu verwalten."
         }
+      },
+      "profile_sensors": {
+        "title": "Gebäudeprofil — Gemeinsame Sensoren",
+        "description": "Bearbeite die gemeinsamen gebäudeweiten Sensor-Entitäten. Verknüpfte Abdeckungen übernehmen diese Sensoren; lasse ein Feld leer, damit jede Abdeckung ihren eigenen lokalen Wert behält.\n\n[Mehr erfahren]({learn_more})",
+        "data": {
+          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
+          "daytime_gate_sensors": "Tageslicht-Gate-Sensoren",
+          "daytime_gate_template": "Tageslicht-Gate-Vorlage (optional)",
+          "irradiance_entity": "Strahlungssensor (optional)",
+          "is_sunny_sensor": "Binärsensor \"Sonne scheint\" (optional)",
+          "is_sunny_template": "Vorlage \"Is Sunny\" (optional)",
+          "lux_entity": "Luxsensor (optional)",
+          "outside_temp": "Außentemperatursensor (optional)",
+          "sunrise_time_entity": "Sonnenaufgangs-Zeit-Entität",
+          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität",
+          "weather_entity": "Wetter-Entität (optional)",
+          "weather_is_raining_sensor": "Regnet Binärsensor",
+          "weather_is_raining_template": "Vorlage \"Is Raining\" (optional)",
+          "weather_is_windy_sensor": "Ist windig Binärsensor",
+          "weather_is_windy_template": "Vorlage \"Is Windy\" (optional)",
+          "weather_rain_sensor": "Regenrate-Sensor",
+          "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
+          "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
+          "weather_wind_speed_sensor": "Windgeschwindigkeitssensor"
+        },
+        "data_description": {
+          "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100 % meldet (z. B. von einer Wetterintegrationen). Wenn der Wert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "daytime_gate_sensors": "Optionale Binärsensoren (oder input_boolean / switch / schedule), die entscheiden, wann es für die Sonnennachführung 'Tag' ist. Bei AN lädt die Integration die Sonnennachführung; bei AUS wird die Sonnenuntergangsposition angewendet. Verwenden Sie einen 'Hell genug'-Binärsensor basierend auf Helligkeit, damit echtes Licht – nicht die Uhr – das Tracking-Fenster öffnet und schließt: Beschattungen folgen weiterhin der Sonne an hellen Abenden nach astronomischem Sonnenuntergang und bleiben an dunklen, bewölkten Morgen in der Sonnenuntergangsposition. Wenn gesetzt, ERSETZT dies die astronomische Sonnenuntergangs-/Sonnenaufgangsgrenze (Sonnenuntergangs-/Sonnenaufgangsversatz werden ignoriert). Ein nicht verfügbarer oder unbekannter Sensor wird als Tag behandelt, sodass die Nachführung nicht nur stoppt, weil ein Sensor noch nicht gemeldet hat. Lassen Sie leer, um die astronomische Sonnenuntergangs-/Sonnenaufgangsberechnung zu verwenden.",
+          "daytime_gate_template": "Optionale Home Assistant Jinja2-Vorlage, die 'Tag' für die Sonnennachführung entscheidet. Wenn sie wahr wird (on/true/1), lädt die Integration die Sonnennachführung; wenn falsch, wird die Sonnenuntergangsposition angewendet. Wie es mit den Gate-Sensoren oben kombiniert wird (ODER oder UND), wird durch 'Tageslicht-Gate-Logik' unten gesetzt. Es kann allein ohne Sensoren stehen. Beispiel: eine Sun2-Höhenvorlage oder ein Helligkeitsvergleich. Eine Vorlage, die nicht gerendert werden kann, wird als Tag behandelt, sodass eine fehlerhafte Vorlage niemals einen vorzeitigen Sonnenuntergang erzwingt. Wenn gesetzt (allein oder mit Sensoren), ERSETZT dies die astronomische Sonnenuntergangs-/Sonnenaufgangsgrenze. Lassen Sie leer, um zu deaktivieren.",
+          "irradiance_entity": "Optionaler Solarbestrahlungssensor (außen) zur genauen Sonnenerkennung. Misst Sonnenenergie in W/m². Wenn der Sensor unter dem Schwellwert liegt, ist kein direktes Sonnenlicht vorhanden und die Blendungskontrolle wird unterdrückt. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "is_sunny_sensor": "Optionaler Binärsensor, input_boolean, Schalter oder Zeitplan, der angibt, ob die Sonne auf das Fenster scheint. Bei EIN wird Sonneneinstrahlung angenommen; bei AUS wird Wolkenunterdrückung unabhängig vom Wetterzustand aktiviert. Bei Nicht verfügbar oder Unbekannt fällt die Integration auf die nachstehende Wetter-Entität/Wetterbedingungen-Logik zurück. Verwenden Sie diese Option, wenn Sie die Sonneneinstrahlung auf das Fenster upstream berechnen (z. B. Azimut-geregelte Bestrahlung) und Adaptive Cover Pro ein eindeutiges Boolesches Signal geben möchten.",
+          "is_sunny_template": "Optionale Home-Assistant-Jinja2-Vorlage, die entscheidet, ob die Sonne auf das Fenster fällt. Wenn sie als wahr (on/true/1) ausgewertet wird, wird angenommen, dass die Sonne vorhanden ist; wenn sie als falsch ausgewertet wird, wird angenommen, dass sie abwesend ist und die Wolkenunterdrückung wird ausgelöst. Wie sie sich mit dem Binärsensor \"Is Sunny\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Is Sunny'\" unten definiert; sie kann auch ohne Sensor allein verwendet werden. Beispiel: ein Azimut-/Höhenvergleich oder ein Lux-Schwellenwert. Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht, sodass die Integration auf den Sensor und dann auf die Wetterentität/Wetterbedingungen zurückgreift. Lassen Sie leer, um zu deaktivieren.",
+          "lux_entity": "Optionaler Lichtsensor (innen oder außen) zur genauen Sonnenerkennung. Wenn der Sensor unter dem Schwellwert liegt, ist kein direktes Sonnenlicht vorhanden und die Blendungskontrolle wird unterdrückt. Typische Direktsonnenwerte: 5.000–10.000 Lux. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "outside_temp": "Optionaler Außentemperatursensor. Wenn bereitgestellt, bestimmt dieser Wert (anstelle des Innensensors) die aktuelle Jahreszeit, und die Außenschwelle-Schutzmaßnahme wird angewendet, um Sommerverhalten bei kalten Außentagen zu verhindern.",
+          "sunrise_time_entity": "Optionale Entität, deren Status ein Datum/Zeit ist (z.B. Sun2 „Sonnenaufgang bei -4° Höhe\"). Falls gesetzt, ersetzt es die astral-berechnete Sonnenaufgangszeit als Morgen-Fenster-Schließgrenze. Akzeptiert sensor oder input_datetime Entitäten. Sonnenaufgang-Versatz wird immer noch oben angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
+          "sunset_time_entity": "Optionale Entität, deren Status ein Datum/Zeit ist (z.B. Sun2 „Sonnenuntergang bei -4° Höhe\"). Falls gesetzt, ersetzt es die astral-berechnete Sonnenuntergangszeit als Fenster-Grenze. Akzeptiert sensor oder input_datetime Entitäten, die ISO-8601 Datum/Zeit melden. Sonnenuntergang-Versatz wird immer noch oben angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
+          "weather_entity": "Optionale Wetterintegrationen zur Erkennung von Wolkenbedeckung. Wenn der aktuelle Wetterzustand nicht in der unten ausgewählten Liste enthalten ist, wird angenommen, dass direktes Sonnenlicht nicht vorhanden ist, und die Blendungskontrolle wird unterdrückt. Leer lassen, um den Wetterzustand zu ignorieren.",
+          "weather_is_raining_sensor": "Binärsensor zur Regenerkennung. Übersteuerung aktiviert sich, wenn dieser Sensor ‚an' ist. Leer lassen zum Ignorieren.",
+          "weather_is_raining_template": "Optionale Home-Assistant-Jinja2-Vorlage, die entscheidet, ob es regnet. Wenn sie als wahr (on/true/1) ausgewertet wird, wird die Übersteuerung aktiviert. Wie sie sich mit dem Binärsensor \"Is Raining\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Is Raining'\" unten definiert; sie kann auch ohne Sensor allein verwendet werden und reagiert sofort auf den Wechsel der Vorlage. Beispiel: Leiten Sie \"regnet\" aus einem numerischen Regenrate-Schwellenwert ab. Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht (kein Widerrufen). Lassen Sie leer, um zu deaktivieren.",
+          "weather_is_windy_sensor": "Binärsensor zur Windelkennung. Übersteuerung aktiviert sich, wenn dieser Sensor ‚an' ist. Leer lassen zum Ignorieren.",
+          "weather_is_windy_template": "Optionale Home-Assistant-Jinja2-Vorlage, die entscheidet, ob es windig ist. Wenn sie als wahr (on/true/1) ausgewertet wird, wird die Übersteuerung aktiviert. Wie sie sich mit dem Binärsensor \"Is Windy\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Is Windy'\" unten definiert; sie kann auch ohne Sensor allein verwendet werden und reagiert sofort auf den Wechsel der Vorlage. Beispiel: Leiten Sie \"windig\" aus einem numerischen Windgeschwindigkeit-Schwellenwert ab. Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht (kein Widerrufen). Lassen Sie leer, um zu deaktivieren.",
+          "weather_rain_sensor": "Numerischer Sensor, der Niederschlagsrate meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
+          "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
+          "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
+          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren."
+        }
       }
     },
     "abort": {

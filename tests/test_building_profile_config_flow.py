@@ -111,3 +111,63 @@ async def test_building_profile_link_selector_lists_profiles(
     assert "cover_2" not in values
     # A none/unlink choice is offered.
     assert "" in values or "__none__" in values
+
+
+@pytest.mark.integration
+async def test_building_profile_options_flow_shows_sensor_only_step(
+    hass: HomeAssistant,
+) -> None:
+    """Clicking Configure on a Building Profile entry shows sensor pickers only,
+    not the full cover-options menu.
+    """
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={CONF_LUX_ENTITY: "sensor.existing_lux"},
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(profile)
+    flow.hass = hass
+
+    # async_step_init must NOT return a 14-item cover menu — it must route to
+    # the sensor-only step.
+    result = await flow.async_step_init()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "profile_sensors"
+    schema_keys = _schema_keys(result["data_schema"])
+    # Only sensor picker keys — no cover/geometry/handler keys.
+    assert schema_keys <= BUILDING_PROFILE_SENSOR_KEYS
+    # Existing sensor value is pre-filled via add_suggested_values_to_schema.
+    suggested = {
+        str(m.schema): m.description.get("suggested_value")
+        for m in result["data_schema"].schema
+        if hasattr(m, "description") and isinstance(m.description, dict)
+    }
+    assert suggested.get(CONF_LUX_ENTITY) == "sensor.existing_lux"
+
+
+@pytest.mark.integration
+async def test_building_profile_options_flow_saves_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """Submitting the profile_sensors step saves options and closes the flow."""
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={},
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(profile)
+    flow.hass = hass
+
+    # Submitting sensor data must produce create_entry (save).
+    result = await flow.async_step_profile_sensors({CONF_LUX_ENTITY: "sensor.new_lux"})
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_LUX_ENTITY] == "sensor.new_lux"
