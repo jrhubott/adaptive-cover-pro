@@ -349,3 +349,21 @@ def test_daytime_gate_mode_default_is_shared_combine_default() -> None:
         if str(k) == CONF_DAYTIME_GATE_TEMPLATE_MODE
     )
     assert marker.default() == DEFAULT_TEMPLATE_COMBINE_MODE
+
+
+# ---------------------------------------------------------------------------
+# Weather override master toggle (#719): the on/off switch must be the FIRST
+# field of the weather schema and default to off for new covers.
+# ---------------------------------------------------------------------------
+
+
+def test_weather_enabled_is_first_key_with_default_false() -> None:
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_ENABLED
+
+    schema = weather_override_schema()
+    first_key = next(iter(schema.schema))
+    assert str(first_key) == CONF_WEATHER_ENABLED
+    assert first_key.default() is False

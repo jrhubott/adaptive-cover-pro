@@ -79,6 +79,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_TILT_MODE,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
+    CONF_WEATHER_ENABLED,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_RAINING_TEMPLATE,
@@ -1249,6 +1250,45 @@ def test_weather_override_binary_sensors_shown():
     assert "is-raining" in summary
     assert "is-windy" in summary
     assert "severe weather" in summary
+
+
+# --- Master toggle warning (issue #719) ---
+
+_WX_DISABLED_PHRASE = "turned OFF — weather overrides are ignored"
+
+
+def test_weather_override_disabled_with_sensors_shows_warning():
+    """Sensors configured + master toggle OFF → warning, no normal retract line."""
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: False,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert _WX_DISABLED_PHRASE in summary
+    # The normal "retract to" rule line must NOT render when disabled.
+    assert "retract to" not in summary
+
+
+def test_weather_override_enabled_with_sensors_shows_rule_not_warning():
+    """Sensors configured + master toggle ON → normal line, no warning."""
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_ENABLED: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "retract to" in summary
+    assert _WX_DISABLED_PHRASE not in summary
+
+
+def test_weather_override_no_sensors_shows_neither_warning_nor_rule():
+    """No weather sources → neither the warning nor the normal rule line."""
+    summary = _build_config_summary({CONF_WEATHER_ENABLED: False}, CoverType.BLIND)
+    assert _WX_DISABLED_PHRASE not in summary
+    assert "Weather safety" not in summary
 
 
 # ---------------------------------------------------------------------------

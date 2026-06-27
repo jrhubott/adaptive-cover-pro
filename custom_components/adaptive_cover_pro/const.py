@@ -637,6 +637,12 @@ CONF_WEATHER_OVERRIDE_MIN_MODE = "weather_override_min_mode"
 CONF_WEATHER_TIMEOUT = "weather_timeout"  # resume delay after clear, s (0-3600)
 # If True, weather override fires even when auto control is off.
 CONF_WEATHER_BYPASS_AUTO_CONTROL = "weather_bypass_auto_control"
+# Master on/off toggle for the whole weather-override feature (issue #719). When
+# False, every configured weather sensor/template is ignored — both the
+# priority-90 override handler and the min-mode floor are disabled at the single
+# WeatherManager.is_feature_configured chokepoint. New covers default OFF via the
+# config-flow schema; pre-existing covers are migrated to ON (v3.5 → v3.6).
+CONF_WEATHER_ENABLED = "weather_enabled"
 
 # Threshold unit must match the sensor (no conversion applied).
 DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = 50.0
@@ -645,6 +651,9 @@ DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE = 45
 # Threshold unit must match the sensor (no conversion applied).
 DEFAULT_WEATHER_RAIN_THRESHOLD = 1.0
 DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
+# New covers start with the weather override OFF (issue #719). Pre-existing
+# covers are migrated to True so upgrades keep firing weather safety overrides.
+DEFAULT_WEATHER_ENABLED = False
 
 
 # =============================================================================

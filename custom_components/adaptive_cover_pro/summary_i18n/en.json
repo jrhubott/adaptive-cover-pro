@@ -48,7 +48,8 @@
     "condition_default": "weather condition",
     "condition_join": " or ",
     "delay": " (waits {delay}s after clearing)",
-    "bypass": " ⚠️ halts all automation while triggered"
+    "bypass": " ⚠️ halts all automation while triggered",
+    "disabled_warning": "🌧️ Weather safety: ⚠️ sensors configured but the feature is turned OFF — weather overrides are ignored"
   },
   "manual": {
     "pauses_for": "pauses for {duration}",

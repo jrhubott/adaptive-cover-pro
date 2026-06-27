@@ -140,6 +140,79 @@ def test_not_active_when_flag_false(mock_hass, logger):
     assert m.is_weather_override_active is False
 
 
+# --- master enable toggle (issue #719) ---
+
+
+def test_master_toggle_off_gates_feature_configured(mock_hass, logger):
+    """enabled=False disables the feature even with a sensor configured."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+        enabled=False,
+    )
+    # Sensor IS configured, but the master toggle gates the whole feature off.
+    assert m.configured_sensors == ["sensor.wind"]
+    assert m.is_feature_configured is False
+    # Even after the conditions flag is recorded, the override stays inactive.
+    m.record_conditions_active()
+    assert m.is_weather_override_active is False
+
+
+def test_master_toggle_on_allows_active(mock_hass, logger):
+    """enabled=True keeps the feature live when a sensor is configured."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+        enabled=True,
+    )
+    assert m.is_feature_configured is True
+    m.record_conditions_active()
+    assert m.is_weather_override_active is True
+
+
+def test_master_toggle_off_reconcile_short_circuits(mock_hass, logger):
+    """A disabled feature short-circuits reconcile() to None."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+        enabled=False,
+    )
+    # Stuck-active flag + cleared conditions would normally signal a timeout,
+    # but the gate returns None because the feature is disabled.
+    m.record_conditions_active()
+    assert m.reconcile() is None
+
+
 # --- is_any_condition_active: wind speed ---
 
 

@@ -2084,6 +2084,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             is_windy_template_mode=rc.weather.is_windy_template_mode,
             severe_sensors=rc.weather.severe_sensors,
             timeout_seconds=rc.weather.timeout_seconds,
+            enabled=rc.weather.enabled,
         )
 
         event_buffer = getattr(self, "_event_buffer", None)

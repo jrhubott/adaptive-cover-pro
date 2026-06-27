@@ -163,6 +163,7 @@ from .const import (
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
+    CONF_WEATHER_ENABLED,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_DELTA_POSITION,
@@ -1217,6 +1218,10 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "weather.condition_join": " or ",
     "weather.delay": " (waits {delay}s after clearing)",
     "weather.bypass": " ⚠️ halts all automation while triggered",
+    "weather.disabled_warning": (
+        "🌧️ Weather safety: ⚠️ sensors configured but the feature is "
+        "turned OFF — weather overrides are ignored"
+    ),
     # --- Manual override (80) ---
     "rules.manual": (
         "✋ Manual override: pauses automatic control when you move the cover"
@@ -1710,8 +1715,15 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     lines.append("")
     lines.append(L["headers.how_it_decides"])
 
-    # Weather safety override (90)
-    if has_weather:
+    # Weather safety override (90). The master toggle (issue #719) gates the
+    # whole feature. A summary config missing the key is treated as enabled
+    # (back-compat — the warning must only fire on an explicit opt-out); a new
+    # cover that leaves the toggle off after configuring sensors gets the
+    # OFF-with-sensors footgun warning instead of the normal rule line.
+    weather_enabled = config.get(CONF_WEATHER_ENABLED, True)
+    if has_weather and not weather_enabled:
+        lines.append(L["weather.disabled_warning"])
+    elif has_weather:
         wx_parts = []
         wind_sensor = config.get(CONF_WEATHER_WIND_SPEED_SENSOR)
         wind_thresh = config.get(CONF_WEATHER_WIND_SPEED_THRESHOLD)
@@ -2667,6 +2679,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
     "weather_override_values": frozenset(
         {
+            CONF_WEATHER_ENABLED,
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -2684,6 +2697,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     # Legacy alias: full union of weather_override_values + weather_override_sensors
     "weather_override": frozenset(
         {
+            CONF_WEATHER_ENABLED,
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -3052,6 +3066,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
     VERSION = 3
+    # 3.6 (issue #719): the v3.5→v3.6 block enables the weather override for every
+    # pre-existing entry so upgrades keep firing weather safety overrides; new
+    # installs default to off via the schema.
     # 3.5 (issue #693): formerly seeded the now-removed CONF_SHOW_WEATHER_RETRACTION
     # toggle. The toggle is gone (retraction pickers are always shown), so the
     # v3.4→v3.5 block is a no-op minor bump kept to advance stale entries.
@@ -3062,7 +3079,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # 3.3 (issue #563 trailing defect): copy legacy custom_position_sensor_N
     # into the new list key.
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 5
+    MINOR_VERSION = 6
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

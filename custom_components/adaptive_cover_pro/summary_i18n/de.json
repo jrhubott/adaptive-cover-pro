@@ -48,7 +48,8 @@
     "condition_default": "Wetterbedingung",
     "condition_join": " oder ",
     "delay": " (wartet {delay}s nach Klärung)",
-    "bypass": " ⚠️ stoppt alle Automatisierung während aktiviert"
+    "bypass": " ⚠️ stoppt alle Automatisierung während aktiviert",
+    "disabled_warning": "🌧️ Wetterschutz: ⚠️ Sensoren konfiguriert, aber die Funktion ist AUSGESCHALTET — Wetter-Overrides werden ignoriert"
   },
   "manual": {
     "pauses_for": "pausiert für {duration}",

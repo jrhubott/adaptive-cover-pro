@@ -432,7 +432,8 @@
           "weather_is_raining_template": "Modèle Is Raining (optionnel)",
           "weather_is_raining_template_mode": "Logique du modèle Is Raining",
           "weather_is_windy_template": "Modèle Is Windy (optionnel)",
-          "weather_is_windy_template_mode": "Logique du modèle Is Windy"
+          "weather_is_windy_template_mode": "Logique du modèle Is Windy",
+          "weather_enabled": "Activer la dérogation météo"
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
@@ -451,7 +452,8 @@
           "weather_is_raining_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il pleut. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Raining ci-dessus (OU ou ET) est définie par la « logique du modèle Is Raining » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « pluie » d'un seuil de taux de pluie numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
           "weather_is_raining_template_mode": "Comment le modèle Is Raining se combine avec le capteur binaire Is Raining ci-dessus. « OU » (par défaut) — pluie lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — pluie uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Raining est défini ci-dessus.",
           "weather_is_windy_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il fait du vent. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Windy ci-dessus (OU ou ET) est définie par la « logique du modèle Is Windy » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « venteux » d'un seuil de vitesse du vent numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
-          "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus."
+          "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus.",
+          "weather_enabled": "Interrupteur principal pour les dérogations de sécurité météo (vent, pluie, conditions sévères). Lorsqu'il est désactivé, les capteurs météo configurés sont ignorés. Les protections existantes gardent cette option activée après la mise à jour ; les nouvelles protections commencent désactivées."
         }
       },
       "weather": {
@@ -1185,7 +1187,8 @@
           "weather_is_raining_template": "Modèle Is Raining (optionnel)",
           "weather_is_raining_template_mode": "Logique du modèle Is Raining",
           "weather_is_windy_template": "Modèle Is Windy (optionnel)",
-          "weather_is_windy_template_mode": "Logique du modèle Is Windy"
+          "weather_is_windy_template_mode": "Logique du modèle Is Windy",
+          "weather_enabled": "Activer la dérogation météo"
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
@@ -1204,7 +1207,8 @@
           "weather_is_raining_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il pleut. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Raining ci-dessus (OU ou ET) est définie par la « logique du modèle Is Raining » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « pluie » d'un seuil de taux de pluie numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
           "weather_is_raining_template_mode": "Comment le modèle Is Raining se combine avec le capteur binaire Is Raining ci-dessus. « OU » (par défaut) — pluie lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — pluie uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Raining est défini ci-dessus.",
           "weather_is_windy_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il fait du vent. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Windy ci-dessus (OU ou ET) est définie par la « logique du modèle Is Windy » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « venteux » d'un seuil de vitesse du vent numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
-          "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus."
+          "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus.",
+          "weather_enabled": "Interrupteur principal pour les dérogations de sécurité météo (vent, pluie, conditions sévères). Lorsqu'il est désactivé, les capteurs météo configurés sont ignorés. Les protections existantes gardent cette option activée après la mise à jour ; les nouvelles protections commencent désactivées."
         }
       },
       "weather": {

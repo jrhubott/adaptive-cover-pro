@@ -11,6 +11,7 @@ from .const import (
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
+    DEFAULT_WEATHER_ENABLED,
     BlindSpot,
     TiltMode,
 )
@@ -432,6 +433,10 @@ class WeatherSlice:
     is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
     is_windy_template: str | None = None
     is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    # Master on/off toggle for the whole weather override (issue #719). When
+    # False the manager ignores every configured sensor/template. Defaults OFF
+    # for new covers; pre-existing covers are migrated to True (v3.5 → v3.6).
+    enabled: bool = DEFAULT_WEATHER_ENABLED
 
 
 @dataclass(frozen=True, slots=True)
@@ -544,6 +549,7 @@ class RuntimeConfig:
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
+            CONF_WEATHER_ENABLED,
             CONF_WEATHER_IS_RAINING_SENSOR,
             CONF_WEATHER_IS_RAINING_TEMPLATE,
             CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
@@ -571,6 +577,7 @@ class RuntimeConfig:
             DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
             DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
             DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
+            DEFAULT_WEATHER_ENABLED,
             DEFAULT_WEATHER_RAIN_THRESHOLD,
             DEFAULT_WEATHER_TIMEOUT,
             DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -679,6 +686,7 @@ class RuntimeConfig:
                 timeout_seconds=options.get(
                     CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT
                 ),
+                enabled=options.get(CONF_WEATHER_ENABLED, DEFAULT_WEATHER_ENABLED),
             ),
             venetian=VenetianSlice(
                 post_settle_hold_seconds=options.get(

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
+    DEFAULT_WEATHER_ENABLED,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -85,6 +86,10 @@ class WeatherManager:
         self._is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
         self._severe_sensors: list[str] = []
         self._timeout_seconds: int = DEFAULT_WEATHER_TIMEOUT
+        # Master on/off toggle for the whole feature (issue #719). Pre-config
+        # state mirrors the new-cover default; the coordinator always supplies
+        # the resolved value via update_config.
+        self._enabled: bool = DEFAULT_WEATHER_ENABLED
 
         # Runtime state
         self._timer = TimeoutController(logger, label="weather clear-delay")
@@ -110,10 +115,17 @@ class WeatherManager:
         is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
         is_windy_template: str | None = None,
         is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
+        enabled: bool = True,
     ) -> None:
         """Update all weather override configuration.
 
         Called from coordinator._update_config_values whenever options change.
+
+        ``enabled`` is the master on/off toggle (issue #719). It defaults to True
+        for back-compat: a caller that predates the toggle gets the historical
+        always-on behaviour. The new-cover default-OFF semantics live at the
+        config layer (``DEFAULT_WEATHER_ENABLED``); the coordinator always passes
+        the resolved value here.
         """
         self._wind_speed_sensor = wind_speed_sensor
         self._wind_direction_sensor = wind_direction_sensor
@@ -130,6 +142,7 @@ class WeatherManager:
         self._is_windy_template_mode = is_windy_template_mode
         self._severe_sensors = list(severe_sensors)
         self._timeout_seconds = timeout_seconds
+        self._enabled = enabled
 
     # --- Properties ---
 
@@ -167,13 +180,17 @@ class WeatherManager:
 
     @property
     def is_feature_configured(self) -> bool:
-        """Whether the weather override has any source — a sensor OR a template.
+        """Whether the weather override is enabled AND has any source.
 
-        The feature gate for :pyattr:`is_weather_override_active`. A
-        template-only config (no companion binary sensor) must still enable the
-        override (issue #639).
+        The single chokepoint feature gate for
+        :pyattr:`is_weather_override_active`, ``reconcile``, the priority-90
+        override handler, and the min-mode floor. The master toggle
+        (``enabled``, issue #719) gates all of them at once; a template-only
+        config (no companion binary sensor) still counts as a source (#639).
         """
-        return bool(self.configured_sensors) or bool(self.condition_templates)
+        return self._enabled and (
+            bool(self.configured_sensors) or bool(self.condition_templates)
+        )
 
     @property
     def is_any_condition_active(self) -> bool:

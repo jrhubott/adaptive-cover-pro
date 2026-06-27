@@ -48,7 +48,8 @@
     "condition_default": "condition météorologique",
     "condition_join": " ou ",
     "delay": " (attend {delay}s après dégagement)",
-    "bypass": " ⚠️ arrête toute automatisation pendant l'activation"
+    "bypass": " ⚠️ arrête toute automatisation pendant l'activation",
+    "disabled_warning": "🌧️ Sécurité météo : ⚠️ capteurs configurés mais la fonction est DÉSACTIVÉE — les surcharges météo sont ignorées"
   },
   "manual": {
     "pauses_for": "pause pendant {duration}",

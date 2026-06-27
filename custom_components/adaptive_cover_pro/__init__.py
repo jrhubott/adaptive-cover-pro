@@ -38,6 +38,7 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_TEMP_ENTITY,
+    CONF_WEATHER_ENABLED,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_RAINING_TEMPLATE,
@@ -521,6 +522,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # stay below MINOR_VERSION and re-trigger migration every restart.
     if new_version == 3 and new_minor < 5:
         new_minor = 5
+
+    # v3.5 → v3.6: enable the weather override by default for every pre-existing
+    # entry so upgrading covers keep firing weather safety overrides (issue
+    # #719). New installs default OFF via the config-flow schema. Additive +
+    # rollback-safe: the key is only filled when absent.
+    if new_version == 3 and new_minor < 6:
+        new_options.setdefault(CONF_WEATHER_ENABLED, True)
+        new_minor = 6
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

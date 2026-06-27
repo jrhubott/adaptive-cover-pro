@@ -34,6 +34,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_POSITION_TOLERANCE,
     CONF_START_ENTITY,
     CONF_START_TIME,
+    CONF_WEATHER_ENABLED,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_RAIN_SENSOR,
@@ -121,6 +122,18 @@ def test_enable_position_matching_reads_provided_value() -> None:
     """The enable toggle flows through to the tracking slice (issue #591)."""
     rc = RuntimeConfig.from_options({CONF_ENABLE_POSITION_MATCHING: True})
     assert rc.tracking.enable_position_matching is True
+
+
+def test_weather_enabled_defaults_false() -> None:
+    """Empty options → the weather override master toggle is off (issue #719)."""
+    rc = RuntimeConfig.from_options({})
+    assert rc.weather.enabled is False
+
+
+def test_weather_enabled_reads_provided_value() -> None:
+    """The master toggle flows through to the weather slice (issue #719)."""
+    rc = RuntimeConfig.from_options({CONF_WEATHER_ENABLED: True})
+    assert rc.weather.enabled is True
 
 
 def test_enforce_delta_at_endpoints_defaults_false() -> None:
