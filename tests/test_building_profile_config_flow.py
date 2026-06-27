@@ -19,7 +19,6 @@ from custom_components.adaptive_cover_pro.const import (
     BUILDING_PROFILE_SENSOR_KEYS,
     CONF_BUILDING_PROFILE_ID,
     CONF_LUX_ENTITY,
-    CONF_MODE,
     CONF_SENSOR_TYPE,
     DOMAIN,
     CoverType,
@@ -40,31 +39,31 @@ def _select_options(schema, key):
 
 @pytest.mark.integration
 async def test_create_building_profile(hass: HomeAssistant) -> None:
-    """A building_profile selection routes to the sensor-only creation step."""
+    """Building-profile creation is its own top-level menu option whose combined
+    form collects the name and the building-level sensors in one step.
+    """
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
     )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
-    assert result["step_id"] == "create_new"
+    # The cover-vs-profile menu is always shown.
+    assert result["type"] == "menu"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "create_building_profile"}
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "create_building_profile"
+    # One combined form: the name field plus the building-profile sensor pickers.
+    keys = _schema_keys(result["data_schema"])
+    assert keys == {"name", *BUILDING_PROFILE_SENSOR_KEYS}
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {"name": "Main Building", CONF_MODE: CoverType.BUILDING_PROFILE},
-    )
-    # Routes to the sensor-only step, NOT the normal setup_mode path.
-    assert result["type"] == "form"
-    assert result["step_id"] == "building_profile_sensors"
-    assert _schema_keys(result["data_schema"]) == set(BUILDING_PROFILE_SENSOR_KEYS)
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_LUX_ENTITY: "sensor.shared_lux"}
+        {"name": "Main Building", CONF_LUX_ENTITY: "sensor.shared_lux"},
     )
     assert result["type"] == "create_entry"
     entry = result["result"]
     assert entry.data[CONF_SENSOR_TYPE] == CoverType.BUILDING_PROFILE
+    assert entry.data["name"] == "Main Building"
     assert entry.options[CONF_LUX_ENTITY] == "sensor.shared_lux"
 
 

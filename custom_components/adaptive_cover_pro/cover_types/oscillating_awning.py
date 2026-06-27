@@ -133,8 +133,6 @@ class OscillatingAwningPolicy(CoverTypePolicy, register=True):
     # Same "open=blocks-sun" semantic as a normal awning.
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS_OPEN_BLOCKS_SUN,)
     supports_return_to_default_switch = True
-    # Same wind/rain retraction safety semantics as a normal awning.
-    weather_retraction_default = True
 
     # The fixed-angle field is meaningless here — angle is derived from the open
     # percentage — so this cover type disables it. Demonstrates the

@@ -27,7 +27,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_SENSOR_TYPE,
-    CONF_SHOW_WEATHER_RETRACTION,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     DOMAIN,
@@ -87,16 +86,15 @@ async def test_link_copies_nonempty_subset(hass) -> None:
 
 
 def test_linked_cover_hides_profile_pickers() -> None:
-    """Linked covers hide profile-owned pickers but keep thresholds + toggle."""
-    linked = {CONF_BUILDING_PROFILE_ID: "profile_1", CONF_SHOW_WEATHER_RETRACTION: True}
-    unlinked = {CONF_SHOW_WEATHER_RETRACTION: True}
+    """Linked covers hide profile-owned pickers but keep per-cover thresholds."""
+    linked = {CONF_BUILDING_PROFILE_ID: "profile_1"}
+    unlinked = {}
 
     wo_linked = _schema_keys(weather_override_schema(None, linked))
     wo_unlinked = _schema_keys(weather_override_schema(None, unlinked))
     assert CONF_WEATHER_RAIN_SENSOR in wo_unlinked
     assert CONF_WEATHER_RAIN_SENSOR not in wo_linked
-    # Toggle + thresholds stay per-cover.
-    assert CONF_SHOW_WEATHER_RETRACTION in wo_linked
+    # Thresholds stay per-cover.
     assert CONF_WEATHER_RAIN_THRESHOLD in wo_linked
 
     lc_linked = _schema_keys(light_cloud_schema(None, {CONF_BUILDING_PROFILE_ID: "p"}))

@@ -126,7 +126,6 @@ from .const import (
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
-    CONF_SHOW_WEATHER_RETRACTION,
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
     CONF_START_TIME,
@@ -196,10 +195,14 @@ _LOGGER = logging.getLogger(__name__)
 
 # Cover-type picker options, derived from the policy registry so a new cover
 # type appears in the create flow automatically (no edit here). Order follows
-# registration order (blind, awning, tilt, venetian, …).
+# registration order (blind, awning, tilt, venetian, …). Virtual entry types
+# that drive no cover (Building Profile) are filtered out via the
+# ``controls_cover`` discriminator — they get their own top-level create option,
+# not a cover-type dropdown entry.
 from .cover_types import POLICY_REGISTRY as _POLICY_REGISTRY  # noqa: E402
+from .cover_types import get_policy as _get_policy  # noqa: E402
 
-SENSOR_TYPE_MENU = list(_POLICY_REGISTRY)
+SENSOR_TYPE_MENU = [k for k in _POLICY_REGISTRY if _get_policy(k).controls_cover]
 
 _STANDALONE_SENTINEL = "__standalone__"
 # Sentinel value for the "no profile / unlink" choice in the link selector.
@@ -245,7 +248,6 @@ from .cover_types import (  # noqa: E402
     BlindPolicy,
     TiltPolicy,
     get_policy,
-    weather_retraction_default,
 )
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
@@ -297,6 +299,16 @@ def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
 # vol.Schema(...) shape — metric labels, no hass needed. ``sun_tracking_schema``
 # is re-exported from ``config_dynamic`` above.
 SUN_TRACKING_SCHEMA = sun_tracking_schema()
+
+# Combined creation form for a Building Profile entry: the name field plus the
+# shared building-level sensor pickers, collected in one step. Reuses
+# ``building_profile_sensors_schema`` so the sensor set stays single-sourced.
+BUILDING_PROFILE_CREATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): selector.TextSelector(),
+        **building_profile_sensors_schema().schema,
+    }
+)
 
 
 # Keys in SUN_TRACKING_SCHEMA stored in canonical metres.
@@ -699,13 +711,10 @@ DEBUG_SCHEMA = vol.Schema(
 )
 
 
-# Module-level constant for tests / imports. Uses empty/fallback labels and is
-# built with the retraction pickers revealed so it represents the full schema
-# surface (the live steps gate the pickers on CONF_SHOW_WEATHER_RETRACTION).
+# Module-level constant for tests / imports. Uses empty/fallback labels; the
+# retraction pickers are always part of the schema (no per-cover gate).
 # ``weather_override_schema`` is re-exported from ``config_dynamic`` above.
-WEATHER_OVERRIDE_SCHEMA = weather_override_schema(
-    options={CONF_SHOW_WEATHER_RETRACTION: True}
-)
+WEATHER_OVERRIDE_SCHEMA = weather_override_schema()
 
 # Keys in WEATHER_OVERRIDE_SCHEMA with default=vol.UNDEFINED. Voluptuous omits
 # them from user_input when cleared, so both flow handlers must call
@@ -831,23 +840,6 @@ INTERPOLATION_OPTIONS = vol.Schema(
 def _get_azimuth_edges(data) -> int:
     """Return the total azimuth field-of-view span (fov_left + fov_right)."""
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
-
-
-def _weather_override_needs_reveal(
-    prior_options: dict, user_input: dict, policy_default: bool
-) -> bool:
-    """Whether the weather-override step must re-render to expose the pickers.
-
-    The retraction sensor pickers are rendered only when
-    ``CONF_SHOW_WEATHER_RETRACTION`` is on. When the user flips the toggle on
-    while the form they submitted against still had it off, the pickers weren't
-    on screen — so re-render (two-pass) instead of committing, exactly like the
-    ``async_step_cover_entities`` device reveal. ``policy_default`` is the
-    cover-type default used as the fallback for an absent stored value.
-    """
-    was_showing = bool(prior_options.get(CONF_SHOW_WEATHER_RETRACTION, policy_default))
-    now_on = bool(user_input.get(CONF_SHOW_WEATHER_RETRACTION, policy_default))
-    return now_on and not was_showing
 
 
 _WEATHER_SAFETY_WIKI = (
@@ -2616,7 +2608,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "weather_override_values": frozenset(
         {
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
-            CONF_SHOW_WEATHER_RETRACTION,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
             CONF_WEATHER_RAIN_THRESHOLD,
@@ -2634,7 +2625,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "weather_override": frozenset(
         {
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
-            CONF_SHOW_WEATHER_RETRACTION,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
@@ -2999,9 +2989,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
     VERSION = 3
-    # 3.5 (issue #693): seed CONF_SHOW_WEATHER_RETRACTION from the cover-type
-    # policy default so existing awnings keep showing the wind/rain/severe
-    # pickers while other cover types hide them by default.
+    # 3.5 (issue #693): formerly seeded the now-removed CONF_SHOW_WEATHER_RETRACTION
+    # toggle. The toggle is gone (retraction pickers are always shown), so the
+    # v3.4→v3.5 block is a no-op minor bump kept to advance stale entries.
     # 3.4 (issue #591/#606): MINOR_VERSION raised so HA triggers
     # async_migrate_entry for entries below 3.4.  The v3.3→v3.4 block enables
     # position matching for every pre-existing entry so upgrades keep the old
@@ -3034,42 +3024,44 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return OptionsFlowHandler(config_entry)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Handle the initial step — show menu if other covers exist, else go straight to create."""
+        """Handle the initial step — always show the create menu.
+
+        Creating a cover and creating a building profile are distinct top-level
+        choices. The duplicate option only appears when prior entries exist.
+        """
         acp_entries = self.hass.config_entries.async_entries(DOMAIN)
-        if acp_entries:
-            return self.async_show_menu(
-                step_id="user",
-                menu_options=["create_new", "duplicate_existing"],
-            )
-        return await self.async_step_create_new()
+        menu_options = ["create_new", "create_building_profile"] + (
+            ["duplicate_existing"] if acp_entries else []
+        )
+        return self.async_show_menu(step_id="user", menu_options=menu_options)
 
     async def async_step_create_new(self, user_input: dict[str, Any] | None = None):
         """Handle create new cover flow."""
         if user_input:
             self.config = user_input
             self.type_blind = self.config[CONF_MODE]
-            # A virtual entry type (Building Profile) has no physical cover, so
-            # it skips the geometry/cover-entity wizard and collects only the
-            # shared sensor IDs. Branch on the policy discriminator, never on a
-            # cover-type string.
-            if not get_policy(self.type_blind).controls_cover:
-                return await self.async_step_building_profile_sensors()
             return await self.async_step_setup_mode()
         return self.async_show_form(
             step_id="create_new",
             data_schema=CONFIG_SCHEMA,
         )
 
-    async def async_step_building_profile_sensors(
+    async def async_step_create_building_profile(
         self, user_input: dict[str, Any] | None = None
     ):
-        """Collect the shared building-level sensor IDs for a profile entry."""
+        """Create a Building Profile entry from a single combined form.
+
+        One step collects the profile name together with the shared
+        building-level sensor IDs, then delegates to the shared finalize
+        (``async_step_update``) — the same path the cover flow uses.
+        """
         if user_input is not None:
-            self.config.update(user_input)
+            self.config = dict(user_input)
+            self.type_blind = CoverType.BUILDING_PROFILE
             return await self.async_step_update()
         return self.async_show_form(
-            step_id="building_profile_sensors",
-            data_schema=building_profile_sensors_schema(),
+            step_id="create_building_profile",
+            data_schema=BUILDING_PROFILE_CREATE_SCHEMA,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
             },
@@ -3424,26 +3416,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ):
         """Configure weather-based safety overrides."""
-        policy_default = weather_retraction_default(self.type_blind)
         if user_input is not None:
-            if _weather_override_needs_reveal(self.config, user_input, policy_default):
-                # Two-pass reveal: the toggle just turned on, so re-render with
-                # the retraction pickers exposed instead of committing.
-                self.config.update(user_input)
-                return self.async_show_form(
-                    step_id="weather_override",
-                    data_schema=self.add_suggested_values_to_schema(
-                        weather_override_schema(self.hass, self.config), self.config
-                    ),
-                    description_placeholders=_weather_override_placeholders(
-                        self.hass, self.config
-                    ),
-                )
             self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             # L3 priority 90 → 80 (manual override).
             return await self.async_step_manual_override()
-        self.config.setdefault(CONF_SHOW_WEATHER_RETRACTION, policy_default)
         return self.async_show_form(
             step_id="weather_override",
             data_schema=weather_override_schema(self.hass, self.config),
@@ -4024,21 +4001,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ):
         """Manage weather-based safety overrides."""
-        policy_default = weather_retraction_default(self.sensor_type)
         if user_input is not None:
-            if _weather_override_needs_reveal(self.options, user_input, policy_default):
-                # Two-pass reveal: re-render with the retraction pickers exposed.
-                self.options.update(user_input)
-                revealed = _stringify_templatable(self.options)
-                return self.async_show_form(
-                    step_id="weather_override",
-                    data_schema=self.add_suggested_values_to_schema(
-                        weather_override_schema(self.hass, revealed), revealed
-                    ),
-                    description_placeholders=_weather_override_placeholders(
-                        self.hass, self.options
-                    ),
-                )
             # A linked cover hides the profile-owned sensor pickers, so they are
             # absent from user_input. Don't null them — that would wipe the
             # values copied from the profile.
@@ -4047,7 +4010,6 @@ class OptionsFlowHandler(OptionsFlow):
             )
             self.options.update(user_input)
             return await self.async_step_init()
-        self.options.setdefault(CONF_SHOW_WEATHER_RETRACTION, policy_default)
         suggested = _stringify_templatable(self.options)
         return self.async_show_form(
             step_id="weather_override",

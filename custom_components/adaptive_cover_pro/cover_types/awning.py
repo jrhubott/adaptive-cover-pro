@@ -80,9 +80,6 @@ class AwningPolicy(CoverTypePolicy, register=True):
     # subclass override.
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS_OPEN_BLOCKS_SUN,)
     supports_return_to_default_switch = True
-    # Wind/rain retraction is an awning's headline safety feature → show the
-    # retraction sensor pickers by default.
-    weather_retraction_default = True
 
     def wiki_anchor(self) -> str:
         """Horizontal-awning geometry page."""

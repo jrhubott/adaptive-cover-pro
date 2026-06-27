@@ -137,9 +137,9 @@ _MOTION_OVERRIDE = {
 # Threshold fields are multiline TextSelectors (#577): the frontend submits
 # them as strings (a number or a Jinja2 template), so the simulated form
 # submissions use string values too.
-# A blind defaults the retraction pickers off (CONF_SHOW_WEATHER_RETRACTION),
-# so the simulated submission carries only the always-present fields — the
-# frontend never renders (and thus never submits) the hidden picker keys.
+# The retraction sensor pickers are always rendered now, but they are optional
+# entity selectors — the simulated submission leaves them empty and carries only
+# the always-present threshold/position fields, which is a valid form submission.
 _WEATHER_OVERRIDE = {
     "weather_bypass_auto_control": False,
     "weather_wind_speed_threshold": "50",
@@ -174,7 +174,7 @@ async def test_quick_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
     )
-    # First entry: no existing entries → goes straight to create_new form
+    # The create menu is always shown (cover vs building profile); pick create_new.
     assert result["type"] in ("form", "menu")
 
     # Step: create_new

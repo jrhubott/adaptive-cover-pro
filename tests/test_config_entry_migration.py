@@ -467,54 +467,30 @@ async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> 
 
 
 # ---------------------------------------------------------------------------
-# Migration: v3.4 → v3.5 — seed CONF_SHOW_WEATHER_RETRACTION from the cover-type
-# policy default (True for awnings, False elsewhere). Additive + rollback-safe:
-# an entry that already carries the key keeps its value.
+# Migration: v3.4 → v3.5 — no-op minor bump. This block formerly seeded the
+# now-removed CONF_SHOW_WEATHER_RETRACTION toggle; the toggle is gone (the
+# retraction pickers are always shown), so the block only advances a stale
+# minor-4 entry to minor 5 without touching its options.
 # ---------------------------------------------------------------------------
 
-from custom_components.adaptive_cover_pro.const import (  # noqa: E402
-    CONF_SHOW_WEATHER_RETRACTION,
-)
 
-
-async def test_migrate_v3_4_seeds_weather_retraction(hass: HomeAssistant) -> None:
-    """An awning seeds the toggle True; a blind seeds it False."""
-    awning = _make_entry(
+async def test_migrate_v3_4_bumps_to_minor_5_without_seeding(
+    hass: HomeAssistant,
+) -> None:
+    """A minor-4 entry advances to minor 5 and gains no retraction-toggle key."""
+    entry = _make_entry(
         hass,
         {"azimuth": 180},
         version=3,
         minor_version=4,
         sensor_type=CoverType.AWNING,
     )
-    assert await async_migrate_entry(hass, awning) is True
-    assert awning.options[CONF_SHOW_WEATHER_RETRACTION] is True
-    assert awning.minor_version == 5
-
-    blind = _make_entry(
-        hass,
-        {"azimuth": 180},
-        version=3,
-        minor_version=4,
-        sensor_type=CoverType.BLIND,
-    )
-    assert await async_migrate_entry(hass, blind) is True
-    assert blind.options[CONF_SHOW_WEATHER_RETRACTION] is False
-    assert blind.minor_version == 5
-
-
-async def test_migrate_v3_5_preserves_existing_toggle(hass: HomeAssistant) -> None:
-    """An entry that already set the key keeps its value (rollback-safe)."""
-    entry = _make_entry(
-        hass,
-        {CONF_SHOW_WEATHER_RETRACTION: True},
-        version=3,
-        minor_version=4,
-        sensor_type=CoverType.BLIND,
-    )
-    await async_migrate_entry(hass, entry)
-    # Policy default for a blind is False, but the explicit True is preserved.
-    assert entry.options[CONF_SHOW_WEATHER_RETRACTION] is True
+    before = dict(entry.options)
+    assert await async_migrate_entry(hass, entry) is True
     assert entry.minor_version == 5
+    # No dead key seeded — the options are unchanged by this block.
+    assert "show_weather_retraction" not in entry.options
+    assert entry.options == before
 
 
 # ---------------------------------------------------------------------------
@@ -533,9 +509,9 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     that minor are never seen as stale and the migration is dead code in
     production.
 
-    Currently the highest target is 5 (the v3.4 → v3.5 seed-weather-retraction
-    setdefault, per issue #693).  Raise this assertion whenever a new minor
-    migration block is added.
+    Currently the highest target is 5 (the v3.4 → v3.5 no-op minor bump that
+    formerly seeded the removed weather-retraction toggle, per issue #693).
+    Raise this assertion whenever a new minor migration block is added.
     """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 

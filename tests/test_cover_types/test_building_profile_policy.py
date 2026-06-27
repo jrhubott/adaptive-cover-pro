@@ -34,7 +34,9 @@ def test_building_profile_has_no_axes() -> None:
     assert get_policy(CoverType.BUILDING_PROFILE).axes == ()
 
 
-def test_building_profile_is_last_menu_entry() -> None:
-    """It appears in the create-entry picker, sorted to the bottom."""
-    assert CoverType.BUILDING_PROFILE in SENSOR_TYPE_MENU
-    assert SENSOR_TYPE_MENU[-1] == CoverType.BUILDING_PROFILE
+def test_building_profile_not_in_cover_type_menu() -> None:
+    """The profile is its own top-level create option, not a cover-type dropdown
+    entry. The dropdown lists only cover-controlling types.
+    """
+    assert CoverType.BUILDING_PROFILE not in SENSOR_TYPE_MENU
+    assert all(get_policy(k).controls_cover for k in SENSOR_TYPE_MENU)

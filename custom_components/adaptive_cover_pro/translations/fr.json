@@ -5,6 +5,7 @@
       "user": {
         "menu_options": {
           "create_new": "Créer un nouveau store",
+          "create_building_profile": "Créer un profil de bâtiment",
           "duplicate_existing": "Dupliquer à partir d'un store existant"
         }
       },
@@ -326,7 +327,6 @@
         "description": "Configurez les dérogations de sécurité basées sur la météo. N'importe quelle condition configurée déclenche la rétraction des protections. Les entrées non configurées sont ignorées.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Actif quand le contrôle automatique est désactivé",
-          "show_weather_retraction": "Afficher les capteurs de rétraction vent/pluie/intempéries",
           "weather_wind_speed_sensor": "Capteur de vitesse du vent",
           "weather_wind_direction_sensor": "Capteur de direction du vent (optionnel)",
           "weather_wind_speed_threshold": "Seuil de vitesse du vent",
@@ -346,7 +346,6 @@
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
-          "show_weather_retraction": "Affiche les sélecteurs de capteurs de vent, de pluie et d'intempéries ci-dessous. Les stores bannes les affichent par défaut car la rétraction en cas de vent et de pluie est leur principale fonction de sécurité ; les autres types de protection les masquent. Activez ceci pour configurer la rétraction du store en fonction de la météo pour n'importe quel type de protection. Le désactiver masque et désactive ces capteurs.",
           "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent.",
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
           "weather_wind_speed_threshold": "Seuil de vitesse du vent qui active la dérogation, exprimé en **{wind_unit}** — l'unité du capteur de vitesse du vent configuré (et non l'unité d'affichage Home Assistant). Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
@@ -577,10 +576,11 @@
         "description": "Affinez le comportement du store une fois une position choisie : ajustements de synchronisation du coucher/lever du soleil, la tolérance de correspondance de position et le basculement de correspondance, et état inversé. Ce ne sont pas des positions cibles — chaque valeur en pourcentage vit sur l'étape Paramètres de Position ; cette étape ne contient que les boutons de synchronisation et seuil.\n\n[En savoir plus]({learn_more})",
         "title": "Comportement (Synchronisation & Seuils)"
       },
-      "building_profile_sensors": {
-        "title": "Capteurs du profil de bâtiment",
-        "description": "Sélectionnez les capteurs partagés à l'échelle du bâtiment fournis par ce profil. Les volets liés copient ces entités de capteur dans leur propre configuration. Laissez un champ vide pour que chaque volet conserve son propre capteur local.\n\n[En savoir plus]({learn_more})",
+      "create_building_profile": {
+        "title": "Créer un profil de bâtiment",
+        "description": "Nommez le profil et sélectionnez les capteurs partagés à l'échelle du bâtiment qu'il fournit. Les volets liés copient ces entités de capteur dans leur propre configuration. Laissez un champ vide pour que chaque volet conserve son propre capteur local.\n\n[En savoir plus]({learn_more})",
         "data": {
+          "name": "Nom",
           "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
           "daytime_gate_sensors": "Capteurs du filtre de jour",
           "daytime_gate_template": "Modèle du filtre de jour (optionnel)",
@@ -602,6 +602,7 @@
           "weather_wind_speed_sensor": "Capteur de vitesse du vent"
         },
         "data_description": {
+          "name": "Un nom convivial pour ce profil de bâtiment.",
           "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 % (par ex. d'une intégration météo). Quand la valeur atteint le seuil, le contrôle de l'éblouissement est supprimé et le store revient à sa position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
           "daytime_gate_sensors": "Capteurs binaires optionnels (ou input_boolean / switch / schedule) qui décident si c'est « jour » pour le suivi du soleil. Lorsqu'ils sont activés, l'intégration assure le suivi du soleil ; lorsqu'ils sont désactivés, elle applique la Position de coucher de soleil. Utilisez un capteur binaire « assez lumineux » basé sur le lux pour que la lumière réelle — et non l'horloge — ouvre et ferme la fenêtre de suivi : les protections continuent le suivi lors de soirées lumineuses après le coucher du soleil astronomique, et restent à la position de coucher de soleil lors des matins sombres et nuageux. Lorsqu'ils sont définis, ils REMPLACENT la limite de coucher/lever astronomique du soleil (les décalages de coucher/lever de soleil sont ignorés). Un capteur indisponible ou inconnu est traité comme jour, de sorte que le suivi ne s'arrête jamais simplement parce qu'un capteur n'a pas signalé. Laissez vide pour utiliser le calcul de coucher/lever de soleil astronomique.",
           "daytime_gate_template": "Modèle Jinja2 Home Assistant optionnel qui décide si c'est « jour » pour le suivi du soleil. Lorsqu'il s'évalue comme vrai (on/true/1), l'intégration assure le suivi du soleil ; lorsqu'il s'évalue comme faux, elle applique la Position de coucher de soleil. La manière dont il se combine avec les capteurs du filtre ci-dessus (OR ou AND) est définie par « Logique du filtre de jour » ci-dessous. Il peut fonctionner seul sans capteurs. Exemple : un modèle d'élévation Sun2, ou une comparaison lux. Un modèle qui ne peut pas être évalué est traité comme jour, de sorte qu'un modèle cassé ne force jamais un coucher de soleil prématuré. Lorsqu'il est défini (seul ou avec des capteurs), il REMPLACE la limite de coucher/lever astronomique du soleil. Laissez vide pour désactiver.",
@@ -969,7 +970,6 @@
         "description": "Configurez les dérogations de sécurité basées sur la météo. N'importe quelle condition configurée déclenche la rétraction des protections. Les entrées non configurées sont ignorées.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Actif quand le contrôle automatique est désactivé",
-          "show_weather_retraction": "Afficher les capteurs de rétraction vent/pluie/intempéries",
           "weather_wind_speed_sensor": "Capteur de vitesse du vent",
           "weather_wind_direction_sensor": "Capteur de direction du vent (optionnel)",
           "weather_wind_speed_threshold": "Seuil de vitesse du vent",
@@ -989,7 +989,6 @@
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
-          "show_weather_retraction": "Affiche les sélecteurs de capteurs de vent, de pluie et d'intempéries ci-dessous. Les stores bannes les affichent par défaut car la rétraction en cas de vent et de pluie est leur principale fonction de sécurité ; les autres types de protection les masquent. Activez ceci pour configurer la rétraction du store en fonction de la météo pour n'importe quel type de protection. Le désactiver masque et désactive ces capteurs.",
           "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent.",
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
           "weather_wind_speed_threshold": "Seuil de vitesse du vent qui active la dérogation, exprimé en **{wind_unit}** — l'unité du capteur de vitesse du vent configuré (et non l'unité d'affichage Home Assistant). Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
@@ -1384,8 +1383,7 @@
         "cover_tilt": "Store à inclinaison",
         "cover_venetian": "Store vénitien (double axe)",
         "cover_oscillating_awning": "Store banne à bras articulé",
-        "cover_roof_window": "Fenêtre de toit",
-        "cover_building_profile": "Profil de bâtiment"
+        "cover_roof_window": "Fenêtre de toit"
       }
     },
     "tilt_mode": {

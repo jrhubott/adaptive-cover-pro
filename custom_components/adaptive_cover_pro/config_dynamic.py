@@ -57,7 +57,6 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
-    CONF_SHOW_WEATHER_RETRACTION,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
@@ -86,7 +85,6 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_GLARE_ZONE_Z,
-    DEFAULT_SHOW_WEATHER_RETRACTION,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -298,55 +296,42 @@ def weather_override_schema(
 ) -> vol.Schema:
     """Weather-override schema. Wind/rain thresholds accept number or template.
 
-    The wind/rain/severe *retraction sensor pickers* are revealed only when the
-    per-cover ``CONF_SHOW_WEATHER_RETRACTION`` toggle is on (its default is
-    seeded from the cover-type policy by the config-flow step). The toggle
-    itself, plus the thresholds/position/timeout fields, are always present.
+    The wind/rain/severe retraction sensor pickers are shown unconditionally for
+    every cover type, alongside the thresholds/position/timeout fields. Linked
+    covers still drop the profile-owned sensor pickers via ``_drop_hidden`` /
+    ``_hidden_profile_keys`` below.
     """
-    show_retraction = bool(
-        (options or {}).get(
-            CONF_SHOW_WEATHER_RETRACTION, DEFAULT_SHOW_WEATHER_RETRACTION
-        )
-    )
     schema: dict = {
         vol.Optional(
             CONF_WEATHER_BYPASS_AUTO_CONTROL, default=True
         ): selector.BooleanSelector(),
         vol.Optional(
-            CONF_SHOW_WEATHER_RETRACTION, default=DEFAULT_SHOW_WEATHER_RETRACTION
-        ): selector.BooleanSelector(),
+            CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
+        ): numeric_selector(),
+        vol.Optional(
+            CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
+        ): numeric_selector(),
+        vol.Optional(
+            CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
+        ): numeric_selector(),
+        vol.Optional(
+            CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
+        ): binary_on_selector(),
+        vol.Optional(
+            CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
+        ): binary_on_selector(),
+        **_condition_template_schema(
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+        ),
+        **_condition_template_schema(
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+        ),
+        vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): binary_on_selector(
+            multiple=True
+        ),
     }
-    if show_retraction:
-        schema.update(
-            {
-                vol.Optional(
-                    CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
-                ): numeric_selector(),
-                vol.Optional(
-                    CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
-                ): numeric_selector(),
-                vol.Optional(
-                    CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
-                ): numeric_selector(),
-                vol.Optional(
-                    CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
-                ): binary_on_selector(),
-                vol.Optional(
-                    CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
-                ): binary_on_selector(),
-                **_condition_template_schema(
-                    CONF_WEATHER_IS_RAINING_TEMPLATE,
-                    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
-                ),
-                **_condition_template_schema(
-                    CONF_WEATHER_IS_WINDY_TEMPLATE,
-                    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
-                ),
-                vol.Optional(
-                    CONF_WEATHER_SEVERE_SENSORS, default=[]
-                ): binary_on_selector(multiple=True),
-            }
-        )
     schema.update(
         {
             vol.Optional(

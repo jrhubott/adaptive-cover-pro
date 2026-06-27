@@ -213,15 +213,6 @@ class CoverTypePolicy(ABC):
     # blinds + venetians); awnings/tilt keep the plain fov sliders.
     supports_fov_compute: ClassVar[bool] = False
 
-    # Per-cover default for the ``CONF_SHOW_WEATHER_RETRACTION`` UI toggle, which
-    # reveals the wind/rain/severe retraction sensor pickers in the
-    # weather-override config step. Awning-style covers (awning, oscillating
-    # awning) default this on — wind/rain retraction is their headline safety
-    # behaviour; every other cover type defaults it off. It is only a default:
-    # any user can flip the toggle on for any cover type. Read via the policy so
-    # no consumer branches on the cover-type string.
-    weather_retraction_default: ClassVar[bool] = False
-
     def fov_compute_schema(self, base: vol.Schema) -> vol.Schema:
         """Insert the "Generate FOV from measurements" toggle before the sliders.
 

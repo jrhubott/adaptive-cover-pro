@@ -5,6 +5,7 @@
       "user": {
         "menu_options": {
           "create_new": "Create new cover",
+          "create_building_profile": "Create building profile",
           "duplicate_existing": "Duplicate from existing cover"
         }
       },
@@ -356,7 +357,6 @@
         "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Active when Automatic Control is off",
-          "show_weather_retraction": "Show wind/rain/severe retraction sensors",
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
           "weather_wind_speed_threshold": "Wind speed threshold",
@@ -376,7 +376,6 @@
         },
         "data_description": {
           "weather_bypass_auto_control": "When enabled, weather override will still move covers to the configured position even when the Automatic Control switch is turned off. This ensures wind, rain, and severe weather protection is always active regardless of the automation state. Disable this only if you want weather override to follow the Automatic Control switch.",
-          "show_weather_retraction": "Reveals the wind, rain, and severe-weather retraction sensor pickers below. Awnings show these by default because wind and rain retraction is their main safety feature; other cover types hide them. Turn it on to configure weather-based cover retraction for any cover type. Turning it off hides and disables those sensors.",
           "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
           "weather_wind_speed_threshold": "Wind speed threshold that activates the override, expressed in **{wind_unit}** — the configured wind-speed sensor's unit (not Home Assistant's display unit). Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
@@ -577,10 +576,11 @@
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }
       },
-      "building_profile_sensors": {
-        "title": "Building Profile Sensors",
-        "description": "Select the shared building-level sensors this profile provides. Linked covers copy these sensor entities into their own configuration. Leave a field blank to let each cover keep its own local sensor.\n\n[Learn more]({learn_more})",
+      "create_building_profile": {
+        "title": "Create Building Profile",
+        "description": "Name the profile and select the shared building-level sensors it provides. Linked covers copy these sensor entities into their own configuration. Leave a field blank to let each cover keep its own local sensor.\n\n[Learn more]({learn_more})",
         "data": {
+          "name": "Name",
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "daytime_gate_sensors": "Daytime gate sensors",
           "daytime_gate_template": "Daytime gate template (optional)",
@@ -602,6 +602,7 @@
           "weather_wind_speed_sensor": "Wind speed sensor"
         },
         "data_description": {
+          "name": "A friendly name for this building profile.",
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "daytime_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide when it is 'daytime' for sun tracking. When ON the integration sun-tracks; when OFF it applies the Sunset Position. Use a lux 'bright enough' binary sensor so real light — not the clock — opens and closes the tracking window: covers keep tracking on bright evenings past astronomical sunset, and stay at the sunset position on dark, overcast mornings. When set, this REPLACES the astronomical sunset/sunrise boundary (Sunset/Sunrise Offset are ignored). An unavailable or unknown sensor is treated as daytime, so tracking never stops just because a sensor hasn't reported. Leave empty to use the astronomical sunset/sunrise calculation.",
           "daytime_gate_template": "Optional Home Assistant Jinja2 template that decides 'daytime' for sun tracking. When it renders truthy (on/true/1) the integration sun-tracks; when falsy it applies the Sunset Position. How it combines with the gate sensors above (OR or AND) is set by 'Daytime gate template logic' below. It can stand alone with no sensors. Example: a Sun2 elevation template, or a lux comparison. A template that fails to render is treated as daytime, so a broken template never forces a premature sunset. When set (alone or with sensors), this REPLACES the astronomical sunset/sunrise boundary. Leave empty to disable.",
@@ -1021,7 +1022,6 @@
         "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Active when Automatic Control is off",
-          "show_weather_retraction": "Show wind/rain/severe retraction sensors",
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
           "weather_wind_speed_threshold": "Wind speed threshold",
@@ -1041,7 +1041,6 @@
         },
         "data_description": {
           "weather_bypass_auto_control": "When enabled, weather override will still move covers to the configured position even when the Automatic Control switch is turned off. This ensures wind, rain, and severe weather protection is always active regardless of the automation state. Disable this only if you want weather override to follow the Automatic Control switch.",
-          "show_weather_retraction": "Reveals the wind, rain, and severe-weather retraction sensor pickers below. Awnings show these by default because wind and rain retraction is their main safety feature; other cover types hide them. Turn it on to configure weather-based cover retraction for any cover type. Turning it off hides and disables those sensors.",
           "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
           "weather_wind_speed_threshold": "Wind speed threshold that activates the override, expressed in **{wind_unit}** — the configured wind-speed sensor's unit (not Home Assistant's display unit). Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
@@ -1384,8 +1383,7 @@
         "cover_tilt": "Tilted blind",
         "cover_venetian": "Venetian blind (dual-axis)",
         "cover_oscillating_awning": "Oscillating awning (drop-arm)",
-        "cover_roof_window": "Roof window",
-        "cover_building_profile": "Building profile"
+        "cover_roof_window": "Roof window"
       }
     },
     "tilt_mode": {
