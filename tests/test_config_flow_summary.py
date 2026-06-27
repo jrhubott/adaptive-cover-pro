@@ -11,6 +11,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
 from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
+    CONF_BUILDING_PROFILE_ID,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DAYTIME_GATE_TEMPLATE_MODE,
@@ -3063,3 +3064,53 @@ def test_summary_gate_template_mode_and():
     cfg[CONF_DAYTIME_GATE_TEMPLATE_MODE] = "and"
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "daytime gate" in summary.lower()
+
+
+# ---------------------------------------------------------------------------
+# Section: Building Profile link in summary (issue #720)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_building_profile_line_when_linked() -> None:
+    """_build_config_summary shows the linked profile title when linked."""
+
+    class _FakeEntry:
+        def __init__(self, title: str) -> None:
+            self.title = title
+
+    class _FakeStates:
+        """Minimal hass.states stub so _check_cover_capabilities doesn't crash."""
+
+        def get(self, entity_id: str):  # noqa: D102
+            return None
+
+    class _FakeConfigEntries:
+        def __init__(self, entries: dict) -> None:
+            self._entries = entries
+
+        def async_get_entry(self, entry_id: str):  # noqa: D102
+            return self._entries.get(entry_id)
+
+    class _FakeHass:
+        def __init__(self, entries: dict) -> None:
+            self.config_entries = _FakeConfigEntries(entries)
+            self.states = _FakeStates()
+
+    hass = _FakeHass({"profile_1": _FakeEntry("Main House")})
+    cfg = _minimal_vertical()
+    cfg[CONF_BUILDING_PROFILE_ID] = "profile_1"
+    summary = _build_config_summary(cfg, CoverType.BLIND, hass=hass)
+
+    assert (
+        "building profile" in summary.lower()
+    ), "Summary must mention 'building profile' for a linked cover"
+    assert "Main House" in summary, "Summary must include the linked profile's title"
+
+
+def test_summary_building_profile_line_absent_when_unlinked() -> None:
+    """_build_config_summary has no profile line when CONF_BUILDING_PROFILE_ID is absent."""
+    cfg = _minimal_vertical()
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert (
+        "building profile" not in summary.lower()
+    ), "Summary must not mention 'building profile' for an unlinked cover"

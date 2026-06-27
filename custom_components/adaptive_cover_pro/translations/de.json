@@ -767,7 +767,7 @@
           "pipeline_priorities": "🔀 Handler-Prioritäten",
           "building_profile": "🏢 Gebäudeprofil"
         },
-        "description": "Konfiguration: **{instance_name}**\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
+        "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
       "automation": {
         "title": "Bewegung & Zeitplan",

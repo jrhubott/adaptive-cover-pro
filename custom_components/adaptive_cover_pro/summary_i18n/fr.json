@@ -12,7 +12,8 @@
     "decision_priority": "**Priorité de décision** (la plus élevée gagne, ✅ actif ❌ non configuré)"
   },
   "cover": {
-    "type_with_entities": "{type_label} contrôlant {entity_str}"
+    "type_with_entities": "{type_label} contrôlant {entity_str}",
+    "building_profile": "🏢 Lié au profil de bâtiment : {name}"
   },
   "words": {
     "sensor_singular": "détecteur",

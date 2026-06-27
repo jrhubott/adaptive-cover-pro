@@ -743,7 +743,7 @@
   "options": {
     "step": {
       "init": {
-        "description": "Configuring: **{instance_name}**\n\nIf Adaptive Cover Pro has been useful, you can [☕ Buy Me a Coffee]({coffee_url}).",
+        "description": "Configuring: **{instance_name}**{profile_line}\n\nIf Adaptive Cover Pro has been useful, you can [☕ Buy Me a Coffee]({coffee_url}).",
         "menu_options": {
           "cover_entities": "🪟 Covers & Device",
           "geometry": "📐 Cover Geometry",

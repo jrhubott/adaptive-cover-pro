@@ -171,3 +171,74 @@ async def test_building_profile_options_flow_saves_sensors(
     result = await flow.async_step_profile_sensors({CONF_LUX_ENTITY: "sensor.new_lux"})
     assert result["type"] == "create_entry"
     assert result["data"][CONF_LUX_ENTITY] == "sensor.new_lux"
+
+
+# ---------------------------------------------------------------------------
+# profile_line placeholder in options init step (issue #720 Part 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_init_step_profile_line_populated_for_linked_cover(
+    hass: HomeAssistant,
+) -> None:
+    """async_step_init must populate profile_line with the profile title."""
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={},
+        entry_id="profile_1",
+        title="Main House",
+    )
+    profile.add_to_hass(hass)
+    cover = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "C1", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={CONF_BUILDING_PROFILE_ID: "profile_1"},
+        entry_id="cover_1",
+        title="Cover One",
+    )
+    cover.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(cover)
+    flow.hass = hass
+    # HA's OptionsFlow.config_entry resolves via self.handler (the entry_id).
+    flow.handler = cover.entry_id
+
+    result = await flow.async_step_init()
+
+    placeholders = result.get("description_placeholders", {})
+    assert (
+        "profile_line" in placeholders
+    ), "description_placeholders must include 'profile_line'"
+    assert (
+        "Main House" in placeholders["profile_line"]
+    ), "profile_line must contain the linked profile's title"
+
+
+@pytest.mark.integration
+async def test_init_step_profile_line_empty_for_unlinked_cover(
+    hass: HomeAssistant,
+) -> None:
+    """async_step_init must have an empty profile_line when cover is not linked."""
+    cover = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "C1", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={},
+        entry_id="cover_1",
+        title="Cover One",
+    )
+    cover.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(cover)
+    flow.hass = hass
+    # HA's OptionsFlow.config_entry resolves via self.handler (the entry_id).
+    flow.handler = cover.entry_id
+
+    result = await flow.async_step_init()
+
+    placeholders = result.get("description_placeholders", {})
+    profile_line = placeholders.get("profile_line", "MISSING")
+    assert (
+        profile_line == ""
+    ), f"profile_line must be empty for unlinked cover, got: {profile_line!r}"

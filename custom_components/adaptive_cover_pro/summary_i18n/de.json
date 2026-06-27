@@ -12,7 +12,8 @@
     "decision_priority": "**Entscheidungspriorität** (höchste gewinnt, ✅ aktiv ❌ nicht konfiguriert)"
   },
   "cover": {
-    "type_with_entities": "{type_label} steuert {entity_str}"
+    "type_with_entities": "{type_label} steuert {entity_str}",
+    "building_profile": "🏢 Verknüpft mit Gebäudeprofil: {name}"
   },
   "words": {
     "sensor_singular": "Sensor",

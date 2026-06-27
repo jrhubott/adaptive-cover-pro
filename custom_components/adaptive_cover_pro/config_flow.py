@@ -265,6 +265,7 @@ from .unit_system import (  # noqa: E402
 # call sites. config_flow is a consumer of these — not their owner.
 from . import config_fields  # noqa: E402
 from .config_dynamic import (  # noqa: E402
+    behavior_schema as _behavior_schema,
     blind_spot_schema,
     building_profile_sensors_schema,
     glare_zones_schema as _glare_zones_schema,
@@ -1191,6 +1192,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     "headers.your_cover": "**Your Cover**",
     "cover.type_with_entities": "{type_label} controlling {entity_str}",
+    "cover.building_profile": "🏢 Linked to building profile: {name}",
     "headers.cover_warnings": "**Cover Warnings**",
     "headers.how_it_decides": "**How It Decides** (first matching rule wins)",
     # --- singular/plural words ---
@@ -1694,6 +1696,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # the translated ``geometry.*`` bundle (or the policy-key-less EN default,
     # which still renders English over the policy's own base layer).
     lines.extend(summary_policy.summary_geometry_lines(config, L))
+
+    # Building profile link — show the profile name when this is a linked cover.
+    _profile_id = config.get(CONF_BUILDING_PROFILE_ID)
+    if _profile_id and hass is not None:
+        _profile_entry = hass.config_entries.async_get_entry(_profile_id)
+        if _profile_entry is not None:
+            lines.append(L["cover.building_profile"].format(name=_profile_entry.title))
 
     # =========================================================================
     # Section 1c: Cover Capability Warnings
@@ -3342,7 +3351,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_weather_override()
         return self.async_show_form(
             step_id="behavior",
-            data_schema=BEHAVIOR_SCHEMA,
+            data_schema=_behavior_schema(self.config),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
                 "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
@@ -3808,12 +3817,24 @@ class OptionsFlowHandler(OptionsFlow):
         # Icons are embedded directly in each translation string (e.g. "🪟 Covers & Device").
         menu_options: list[str] = keys
 
+        # Build the profile_line placeholder: shows the linked profile's title
+        # when this cover is linked, or collapses to "" when unlinked.
+        _linked_profile_id = self.options.get(CONF_BUILDING_PROFILE_ID)
+        _profile_line = ""
+        if _linked_profile_id:
+            _profile_entry = self.hass.config_entries.async_get_entry(
+                _linked_profile_id
+            )
+            if _profile_entry is not None:
+                _profile_line = f"\n🏢 Building Profile: **{_profile_entry.title}**"
+
         return self.async_show_menu(  # type: ignore[return-value]
             step_id="init",
             menu_options=menu_options,
             description_placeholders={
                 "instance_name": self.config_entry.title,
                 "coffee_url": "https://www.buymeacoffee.com/jrhubott",
+                "profile_line": _profile_line,
             },
         )
 
@@ -3972,7 +3993,7 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="behavior",
             data_schema=self.add_suggested_values_to_schema(
-                BEHAVIOR_SCHEMA, user_input or self.options
+                _behavior_schema(self.options), user_input or self.options
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",

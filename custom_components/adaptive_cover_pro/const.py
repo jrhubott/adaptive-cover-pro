@@ -1328,8 +1328,10 @@ class CoverType(StrEnum):
 # so they live here — ``const`` cannot import from ``config_flow`` (circular).
 # ``BUILDING_PROFILE_SENSOR_KEYS`` is the set of option keys a Building Profile
 # owns and copies into each linked cover. Threshold/reaction keys, presence,
-# the sunrise/sunset OFFSETS, and all ``*_template_mode`` keys are deliberately
-# excluded — they stay per-cover.
+# and the sunrise/sunset OFFSETS are deliberately excluded — they stay per-cover.
+# The four ``*_template_mode`` keys are profile-owned (moved from per-cover in
+# issue #720): they render in the profile screen, are copied to linked covers,
+# and are hidden on the per-cover weather/light/behavior forms.
 
 LIGHT_CLOUD_SENSOR_KEYS = frozenset(
     {
@@ -1339,6 +1341,7 @@ LIGHT_CLOUD_SENSOR_KEYS = frozenset(
         CONF_CLOUD_COVERAGE_ENTITY,
         CONF_IS_SUNNY_SENSOR,
         CONF_IS_SUNNY_TEMPLATE,
+        CONF_IS_SUNNY_TEMPLATE_MODE,
     }
 )
 
@@ -1349,8 +1352,10 @@ WEATHER_OVERRIDE_SENSOR_KEYS = frozenset(
         CONF_WEATHER_RAIN_SENSOR,
         CONF_WEATHER_IS_RAINING_SENSOR,
         CONF_WEATHER_IS_RAINING_TEMPLATE,
+        CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
         CONF_WEATHER_IS_WINDY_SENSOR,
         CONF_WEATHER_IS_WINDY_TEMPLATE,
+        CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         CONF_WEATHER_SEVERE_SENSORS,
     }
 )
@@ -1363,6 +1368,7 @@ BUILDING_PROFILE_SENSOR_KEYS = (
             CONF_OUTSIDETEMP_ENTITY,
             CONF_DAYTIME_GATE_SENSORS,
             CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_DAYTIME_GATE_TEMPLATE_MODE,
             CONF_SUNSET_TIME_ENTITY,
             CONF_SUNRISE_TIME_ENTITY,
         }

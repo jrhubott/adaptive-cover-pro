@@ -12,7 +12,8 @@
     "decision_priority": "**Decision Priority** (highest wins, ✅ active ❌ not configured)"
   },
   "cover": {
-    "type_with_entities": "{type_label} controlling {entity_str}"
+    "type_with_entities": "{type_label} controlling {entity_str}",
+    "building_profile": "🏢 Linked to building profile: {name}"
   },
   "words": {
     "sensor_singular": "sensor",

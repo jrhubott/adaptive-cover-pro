@@ -767,7 +767,7 @@
           "pipeline_priorities": "🔀 Priorités des gestionnaires",
           "building_profile": "🏢 Profil de bâtiment"
         },
-        "description": "Configuration : **{instance_name}**\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
+        "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
       "automation": {
         "title": "Mouvement & Programme",

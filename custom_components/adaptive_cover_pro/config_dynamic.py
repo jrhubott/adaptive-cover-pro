@@ -38,6 +38,7 @@ from .const import (
     CONF_CLOUDY_POSITION,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DAYTIME_GATE_TEMPLATE_MODE,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_SUN_TRACKING,
@@ -57,8 +58,14 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
+    CONF_ENABLE_POSITION_MATCHING,
+    CONF_INVERSE_STATE,
+    CONF_POSITION_TOLERANCE,
+    CONF_RETURN_SUNSET,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
+    CONF_SUNSET_OFFSET,
     CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -86,6 +93,7 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
+    DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
@@ -158,6 +166,21 @@ def _drop_hidden(schema_dict: dict, hidden: frozenset[str]) -> dict:
     }
 
 
+def _template_combine_mode_selector() -> selector.SelectSelector:
+    """Return the shared OR/AND combine-mode selector (template condition fields).
+
+    Single source of truth for the ``template_combine_mode`` SelectSelector
+    used by ``_condition_template_schema`` and ``building_profile_sensors_schema``.
+    """
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[m.value for m in TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        )
+    )
+
+
 def _condition_template_schema(template_key: str, mode_key: str) -> dict:
     """Build a schema fragment for a condition template + combine mode (#639).
 
@@ -170,13 +193,7 @@ def _condition_template_schema(template_key: str, mode_key: str) -> dict:
         vol.Optional(template_key): selector.TemplateSelector(),
         vol.Optional(
             mode_key, default=DEFAULT_TEMPLATE_COMBINE_MODE
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[m.value for m in TemplateCombineMode],
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="template_combine_mode",
-            )
-        ),
+        ): _template_combine_mode_selector(),
     }
 
 
@@ -460,6 +477,7 @@ def building_profile_sensors_schema() -> vol.Schema:
         ),
         CONF_IS_SUNNY_SENSOR: binary_on_selector(),
         CONF_IS_SUNNY_TEMPLATE: selector.TemplateSelector(),
+        CONF_IS_SUNNY_TEMPLATE_MODE: _template_combine_mode_selector(),
         CONF_LUX_ENTITY: numeric_selector(device_class="illuminance"),
         CONF_IRRADIANCE_ENTITY: numeric_selector(device_class="irradiance"),
         CONF_CLOUD_COVERAGE_ENTITY: numeric_selector(),
@@ -469,14 +487,17 @@ def building_profile_sensors_schema() -> vol.Schema:
         CONF_WEATHER_RAIN_SENSOR: numeric_selector(),
         CONF_WEATHER_IS_RAINING_SENSOR: binary_on_selector(),
         CONF_WEATHER_IS_RAINING_TEMPLATE: selector.TemplateSelector(),
+        CONF_WEATHER_IS_RAINING_TEMPLATE_MODE: _template_combine_mode_selector(),
         CONF_WEATHER_IS_WINDY_SENSOR: binary_on_selector(),
         CONF_WEATHER_IS_WINDY_TEMPLATE: selector.TemplateSelector(),
+        CONF_WEATHER_IS_WINDY_TEMPLATE_MODE: _template_combine_mode_selector(),
         CONF_WEATHER_SEVERE_SENSORS: binary_on_selector(multiple=True),
         # Outside temperature
         CONF_OUTSIDETEMP_ENTITY: numeric_selector(),
         # Daytime gate
         CONF_DAYTIME_GATE_SENSORS: binary_on_selector(multiple=True),
         CONF_DAYTIME_GATE_TEMPLATE: selector.TemplateSelector(),
+        CONF_DAYTIME_GATE_TEMPLATE_MODE: _template_combine_mode_selector(),
         # Sunrise / sunset time entities (offsets stay per-cover)
         CONF_SUNSET_TIME_ENTITY: selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
@@ -498,35 +519,93 @@ def temperature_climate_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
     """Climate-temperature schema. Temp thresholds accept number or template."""
-    return vol.Schema(
-        {
-            vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
-            vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
-                selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
-            ),
-            vol.Optional(
-                CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
-            ): numeric_selector(),
-            vol.Optional(
-                CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
-            ): presence_like_selector(),
-            **_condition_template_schema(
-                CONF_PRESENCE_TEMPLATE, CONF_PRESENCE_TEMPLATE_MODE
-            ),
-            vol.Optional(CONF_TEMP_LOW, default="21"): _threshold_selector(),
-            vol.Optional(CONF_TEMP_HIGH, default="25"): _threshold_selector(),
-            vol.Optional(CONF_OUTSIDE_THRESHOLD, default="25"): _threshold_selector(),
-            vol.Optional(
-                CONF_TRANSPARENT_BLIND, default=False
-            ): selector.BooleanSelector(),
-            vol.Optional(
-                CONF_WINTER_CLOSE_INSULATION, default=False
-            ): selector.BooleanSelector(),
-            vol.Optional(
-                CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, default=False
-            ): selector.BooleanSelector(),
-        }
-    )
+    schema: dict = {
+        vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
+        ),
+        vol.Optional(
+            CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
+        ): numeric_selector(),
+        vol.Optional(
+            CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
+        ): presence_like_selector(),
+        **_condition_template_schema(
+            CONF_PRESENCE_TEMPLATE, CONF_PRESENCE_TEMPLATE_MODE
+        ),
+        vol.Optional(CONF_TEMP_LOW, default="21"): _threshold_selector(),
+        vol.Optional(CONF_TEMP_HIGH, default="25"): _threshold_selector(),
+        vol.Optional(CONF_OUTSIDE_THRESHOLD, default="25"): _threshold_selector(),
+        vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_WINTER_CLOSE_INSULATION, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, default=False
+        ): selector.BooleanSelector(),
+    }
+    return vol.Schema(_drop_hidden(schema, _hidden_profile_keys(options)))
+
+
+def behavior_schema(options: dict | None = None) -> vol.Schema:
+    """Behavior schema (L2b: timing & thresholds), with profile-owned keys hidden.
+
+    Converts the formerly static ``BEHAVIOR_SCHEMA`` in ``config_flow`` into a
+    per-call builder so linked covers don't show fields the Building Profile owns:
+    ``CONF_SUNSET_TIME_ENTITY``, ``CONF_SUNRISE_TIME_ENTITY``,
+    ``CONF_DAYTIME_GATE_SENSORS``, ``CONF_DAYTIME_GATE_TEMPLATE``, and
+    ``CONF_DAYTIME_GATE_TEMPLATE_MODE`` (issue #720). Per-cover fields
+    (``CONF_SUNSET_OFFSET``, ``CONF_SUNRISE_OFFSET``, ``CONF_INVERSE_STATE``,
+    ``CONF_POSITION_TOLERANCE``, ``CONF_ENABLE_POSITION_MATCHING``) are always
+    rendered.
+    """
+    schema: dict = {
+        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): binary_on_selector(
+            multiple=True
+        ),
+        vol.Optional(CONF_DAYTIME_GATE_TEMPLATE): selector.TemplateSelector(),
+        vol.Optional(
+            CONF_DAYTIME_GATE_TEMPLATE_MODE, default=DEFAULT_TEMPLATE_COMBINE_MODE
+        ): _template_combine_mode_selector(),
+        vol.Optional(CONF_POSITION_TOLERANCE, default=3): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=20,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_ENABLE_POSITION_MATCHING,
+            default=DEFAULT_ENABLE_POSITION_MATCHING,
+        ): selector.BooleanSelector(),
+        vol.Optional(CONF_INVERSE_STATE, default=False): selector.BooleanSelector(),
+    }
+    return vol.Schema(_drop_hidden(schema, _hidden_profile_keys(options)))
 
 
 def glare_zones_schema(
