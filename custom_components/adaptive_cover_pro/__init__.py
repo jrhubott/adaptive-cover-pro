@@ -369,9 +369,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
 
 async def async_unload_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Unload a config entry."""
+    # Virtual entry types (Building Profile, controls_cover == False) forwarded
+    # no platforms in async_setup_entry, so unloading platforms would raise
+    # "Config entry was never loaded!". Mirror the setup short-circuit.
+    if not get_policy(entry.data[CONF_SENSOR_TYPE]).controls_cover:
+        await async_unload_services(hass)
+        return True
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         await async_unload_services(hass)
-
     return unload_ok
 
 
