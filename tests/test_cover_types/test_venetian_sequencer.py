@@ -33,13 +33,13 @@ from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import 
 def _zero_post_tilt_delay(monkeypatch):
     """Skip real-motor delays in unit tests.
 
-    Zeroes the post-tilt rebase delay (1.5 s) and the verify-retry poll
-    interval (1.0 s) so the test suite doesn't spend real time waiting on
-    asyncio.sleep. The post-settle hold is a per-instance parameter
-    (``post_settle_hold_seconds``) defaulting to 0 in ``_build_sequencer``
-    — no monkeypatching needed for that delay. The retry sample COUNT
-    (``VENETIAN_TILT_VERIFY_MAX_SAMPLES``) is left at its production value
-    because it is the behaviour under test.
+    Zeroes the post-tilt rebase delay (1.5 s), the verify-retry poll
+    interval (1.0 s), and the drift-retry delay (2.0 s) so the test suite
+    doesn't spend real time waiting on asyncio.sleep. The post-settle hold
+    is a per-instance parameter (``post_settle_hold_seconds``) defaulting to
+    0 in ``_build_sequencer`` — no monkeypatching needed for that delay. The
+    retry sample COUNT (``VENETIAN_TILT_VERIFY_MAX_SAMPLES``) is left at its
+    production value because it is the behaviour under test.
     """
     monkeypatch.setattr(
         "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
@@ -49,6 +49,11 @@ def _zero_post_tilt_delay(monkeypatch):
     monkeypatch.setattr(
         "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
         "VENETIAN_TILT_VERIFY_POLL_SECONDS",
+        0,
+    )
+    monkeypatch.setattr(
+        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
+        "VENETIAN_DRIFT_RETRY_DELAY_SECONDS",
         0,
     )
 
