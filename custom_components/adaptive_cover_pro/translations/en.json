@@ -606,8 +606,8 @@
         "description": "Enter the unique settings for the new cover. All other settings will be copied from the source.",
         "data": {
           "name": "Name",
-          "entities": "Cover entities",
-          "azimuth": "Window azimuth"
+          "group": "Cover Entities",
+          "set_azimuth": "Window Azimuth"
         }
       },
       "summary": {

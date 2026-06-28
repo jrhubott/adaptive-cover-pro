@@ -576,8 +576,8 @@
         "description": "Geben Sie die eindeutigen Einstellungen für die neue Beschattung ein. Alle anderen Einstellungen werden aus der Quelle kopiert.",
         "data": {
           "name": "Name",
-          "entities": "Beschattungsentitäten",
-          "azimuth": "Fenster-Azimut"
+          "group": "Beschattungsentitäten",
+          "set_azimuth": "Fenster-Azimut"
         }
       },
       "summary": {

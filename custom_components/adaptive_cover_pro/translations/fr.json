@@ -576,8 +576,8 @@
         "description": "Entrez les paramètres uniques pour le nouveau store. Tous les autres paramètres seront copiés depuis la source.",
         "data": {
           "name": "Nom",
-          "entities": "Entités de store",
-          "azimuth": "Azimut de la fenêtre"
+          "group": "Entités de store",
+          "set_azimuth": "Azimut de la fenêtre"
         }
       },
       "summary": {
