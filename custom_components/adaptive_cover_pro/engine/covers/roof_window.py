@@ -34,7 +34,10 @@ Pitch convention (``roof_pitch`` β, FROM HORIZONTAL):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import atan, atan2, cos, degrees, radians, sin, tan
+from datetime import datetime
+from math import atan, cos, degrees, radians, sin, tan
+
+import numpy as np
 
 from ...config_types import RoofWindowConfig
 from .vertical import AdaptiveVerticalCover
@@ -55,6 +58,39 @@ TRACE_KEY_COS_AOI = "cos_aoi"
 TRACE_KEY_SLOPE_RATIO = "slope_ratio"
 TRACE_KEY_RIDGE_GATE_ENABLED = "ridge_gate_enabled"
 TRACE_KEY_RIDGE_GATE_OCCLUDED = "ridge_gate_occluded"
+
+
+# ---------------------------------------------------------------------------
+# Pure tilted-plane geometry (single source of truth for scalar + vector paths)
+# ---------------------------------------------------------------------------
+# These accept floats OR pandas/numpy arrays (numpy ufuncs broadcast either),
+# so the scalar gate methods and the vectorized per-day predicted window (#729)
+# share ONE copy of the cos(AOI) / effective-gamma trig.
+
+
+def roof_cos_aoi(gamma, elev, pitch):
+    """Cosine of the angle of incidence on the tilted glass (``s·n``).
+
+    ``cos(AOI) = sinβ·cos(elev)·cos(gamma) + cosβ·sin(elev)``. Positive → the
+    sun strikes the outer face. Scalar or array inputs.
+    """
+    beta = np.radians(pitch)
+    e = np.radians(elev)
+    g = np.radians(gamma)
+    return np.sin(beta) * np.cos(e) * np.cos(g) + np.cos(beta) * np.sin(e)
+
+
+def roof_effective_gamma(gamma, elev, pitch):
+    """In-plane (tilted-glass) FOV azimuth ``atan2(cos(elev)·sin(gamma), cos(AOI))``.
+
+    Reduces to the horizontal gamma at β=90° and widens with decreasing pitch.
+    Scalar or array inputs (the vectorized form feeds the predicted-window gate).
+    """
+    e = np.radians(elev)
+    g = np.radians(gamma)
+    return np.degrees(
+        np.arctan2(np.cos(e) * np.sin(g), roof_cos_aoi(gamma, elev, pitch))
+    )
 
 
 @dataclass
@@ -85,24 +121,20 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
         At β=90° this is ``cos(elev)·cos(gamma)`` (the vertical case); at β=0°
         it is ``sin(elev)`` (a flat skylight, azimuth-independent).
         """
-        beta = radians(self.roof_pitch)
-        elev = radians(self.sol_elev)
-        cos_dazi = cos(radians(self.gamma))
-        return sin(beta) * cos(elev) * cos_dazi + cos(beta) * sin(elev)
+        return float(roof_cos_aoi(self.gamma, self.sol_elev, self.roof_pitch))
 
     def _effective_gamma(self) -> float:
         """FOV azimuth measured in the tilted glass plane (#212).
 
-        atan2(s.x_hat, s.n) = atan2(cos(elev)*sin(gamma), cos(AOI)). Reduces to the
-        horizontal gamma at beta=90 and widens with decreasing pitch, so the user
-        FOV bounds the in-plane sideways angle, not the raw horizontal azimuth.
-        The position projection still uses the real gamma; only acceptance moves to
-        the tilted plane. effective_gamma is elevation-dependent (the FOV breathes
-        with sun height), which is correct for a tilted plane.
+        Scalar wrapper over the shared :func:`roof_effective_gamma` helper:
+        atan2(cos(elev)*sin(gamma), cos(AOI)). Reduces to the horizontal gamma at
+        beta=90 and widens with decreasing pitch, so the user FOV bounds the
+        in-plane sideways angle, not the raw horizontal azimuth. The position
+        projection still uses the real gamma; only acceptance moves to the tilted
+        plane. effective_gamma is elevation-dependent (the FOV breathes with sun
+        height), which is correct for a tilted plane.
         """
-        elev = radians(self.sol_elev)
-        s_dot_x = cos(elev) * sin(radians(self.gamma))
-        return degrees(atan2(s_dot_x, self._cos_aoi()))
+        return float(roof_effective_gamma(self.gamma, self.sol_elev, self.roof_pitch))
 
     @property
     def fov_angle(self) -> float:
@@ -115,6 +147,30 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
         if self.roof_pitch == VERTICAL_GLASS_PITCH_DEG:
             return super().fov_angle  # bit-for-bit vertical anchor
         return self._effective_gamma()
+
+    def solar_times_with_position(
+        self,
+    ) -> tuple[
+        tuple[datetime, float, float] | None,
+        tuple[datetime, float, float] | None,
+    ]:
+        """Per-day predicted sun window with the tilted-plane FOV gate (#729).
+
+        The base delegates to ``SunGeometry`` with the raw-azimuth vertical gate.
+        A pitched roof "sees" a wider azimuth swath, so the predicted window must
+        use the same in-plane effective gamma the live ``fov_angle`` gate uses —
+        otherwise the predicted sun-leave time lags the live ``direct_sun_valid``
+        by 1–2 h. At vertical glass (β=90°) there is no widening, so delegate with
+        the ``None`` (vertical) gate to preserve the bit-for-bit anchor.
+        """
+        pitch = self.roof_pitch
+        if pitch == VERTICAL_GLASS_PITCH_DEG:
+            return self.solar.solar_times_with_position()
+        return self.solar.solar_times_with_position(
+            fov_angle_series=lambda gamma, elev: roof_effective_gamma(
+                gamma, elev, pitch
+            )
+        )
 
     def _is_sun_behind_ridge(self) -> bool:
         """Whether the roof above the window occludes the sun (ridge gate, #212).

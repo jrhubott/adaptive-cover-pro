@@ -866,3 +866,19 @@ class TestSolarTimes:
         start, end = sg.solar_times_with_position()
         assert start is None
         assert end is None
+
+    def test_solar_times_with_position_default_equals_no_arg(self):
+        """fov_angle_series=None must reproduce the no-arg vertical gate exactly."""
+        sun_data = _make_full_day_sun_data(azimuth=180.0, elevation=30.0)
+        config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
+        sg = SunGeometry(
+            sol_azi=180.0,
+            sol_elev=30.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
+        )
+        assert (
+            sg.solar_times_with_position(fov_angle_series=None)
+            == sg.solar_times_with_position()
+        )

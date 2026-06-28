@@ -3,6 +3,7 @@
 Extracted from AdaptiveGeneralCover to enable standalone testing and reuse.
 """
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from math import atan, degrees
 
@@ -20,9 +21,21 @@ from ..const import (
 from ..sun import SunData
 
 
+def _in_fov_cone(angle, fov_left, fov_right):
+    """Whether *angle* is inside the asymmetric FOV cone (scalar or Series).
+
+    The ONE FOV-containment predicate: ``-fov_right < angle < fov_left``. Shared
+    by the scalar :func:`azimuth_within_fov` and the vectorized injected-transform
+    path in :meth:`SunGeometry.solar_times_with_position`, so the live gate and the
+    per-day predicted window apply identical boundary semantics (strict ``<``/``>``).
+    Works for scalar floats and pandas Series alike (bitwise ``&``).
+    """
+    return (angle < fov_left) & (angle > -fov_right)
+
+
 def azimuth_within_fov(angle: float, fov_left: float, fov_right: float) -> bool:
     """Sun azimuth (deg, relative to window normal) inside the FOV cone."""
-    return bool((angle < fov_left) & (angle > -fov_right))
+    return bool(_in_fov_cone(angle, fov_left, fov_right))
 
 
 def fov_from_reveal(width_m: float, depth_m: float) -> int:
@@ -365,11 +378,21 @@ class SunGeometry:
 
     def solar_times_with_position(
         self,
+        fov_angle_series: Callable[[pd.Series, pd.Series], pd.Series] | None = None,
     ) -> tuple[
         tuple[datetime, float, float] | None,
         tuple[datetime, float, float] | None,
     ]:
         """Like solar_times() but also returns sun azimuth/elevation at entry/exit.
+
+        ``fov_angle_series`` is the polymorphic FOV hook for cover types whose
+        acceptance cone is not the raw horizontal azimuth (e.g. a pitched roof
+        window, where the gate is measured in the tilted glass plane — #729). It
+        takes ``(gamma_series, elevation_series)`` and returns the effective-gamma
+        series that is then tested against the FOV with the SAME predicate as the
+        live scalar gate. ``None`` (the default) keeps the exact inline raw-azimuth
+        vertical gate, so the vertical / non-roof window output is unchanged
+        bit-for-bit.
 
         Returns:
             Tuple (start, end). Each element is either None (sun never enters FOV
@@ -388,9 +411,19 @@ class SunGeometry:
         elev = solpos["elevation"]
 
         # Azimuth in FOV
-        in_fov = (alpha - self.azi_min_abs) % DEGREES_IN_CIRCLE <= (
-            self.azi_max_abs - self.azi_min_abs
-        ) % DEGREES_IN_CIRCLE
+        if fov_angle_series is None:
+            # Vertical gate (bit-for-bit): raw azimuth vs the absolute FOV edges.
+            in_fov = (alpha - self.azi_min_abs) % DEGREES_IN_CIRCLE <= (
+                self.azi_max_abs - self.azi_min_abs
+            ) % DEGREES_IN_CIRCLE
+        else:
+            # Tilt-aware gate: route the in-plane effective gamma through the same
+            # FOV-cone predicate the live scalar gate uses (#729).
+            gamma_series = (self.config.win_azi - alpha + 180) % DEGREES_IN_CIRCLE - 180
+            eff_gamma = fov_angle_series(gamma_series, elev)
+            in_fov = _in_fov_cone(
+                eff_gamma, self.config.fov_left, self.config.fov_right
+            )
 
         # Elevation check — matches valid_elevation property logic, except the
         # "no bounds set" default here is `elev > 0` (strictly above horizon)

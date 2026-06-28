@@ -15,10 +15,11 @@ azimuth, so each case can drive a real engine while pinning gamma precisely.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from math import atan, atan2, cos, degrees, radians, sin, tan
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
 from custom_components.adaptive_cover_pro.config_types import RoofWindowConfig
@@ -108,6 +109,40 @@ def _vertical(
             sill_height=sill_height,
         ),
     )
+
+
+def _make_sweep_sun_data(*, gammas, elev, win_azi=_WIN_AZI):
+    """Full-day sun grid: solar_azimuth = win_azi - gamma per sample, constant elev.
+
+    Sunrise/sunset pinned to the grid edges so in_sun_window covers the whole day.
+    """
+    today = date.today()
+    times = pd.date_range(
+        start=pd.Timestamp(today), periods=len(gammas), freq="5min", tz="UTC"
+    )
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    sun_data.times = times
+    sun_data.solar_azimuth = [win_azi - g for g in gammas]
+    sun_data.solar_elevation = [elev] * len(gammas)
+    sun_data.sunrise.return_value = times[0].replace(tzinfo=None)
+    sun_data.sunset.return_value = times[-1].replace(tzinfo=None)
+    return sun_data
+
+
+def _live_window_oracle(*, roof_pitch, elev, gammas, fov, sun_data):
+    """First/last (time, azi, elev) where the LIVE scalar direct_sun_valid is True."""
+    hits = []
+    for i, g in enumerate(gammas):
+        ts = sun_data.times[i]
+        cover = _roof(
+            roof_pitch=roof_pitch, sol_elev=elev, gamma=g, fov_left=fov, fov_right=fov
+        )
+        cover.sun_data = sun_data
+        cover.eval_time = ts.to_pydatetime()
+        if cover.direct_sun_valid:
+            hits.append((ts.to_pydatetime(), _WIN_AZI - g, elev))
+    return (hits[0], hits[-1]) if hits else (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -627,3 +662,62 @@ def test_wide_gamma_does_not_force_full_coverage():
     # forced-closed 0.0 the inherited edge case used to return.
     assert 0.0 < pos <= 2.0
     assert roof._last_calc_details["edge_case_detected"] is False
+
+
+# ---------------------------------------------------------------------------
+# Step 7 — per-day predicted sun window is tilt-aware (#729)
+#
+# The live scalar direct_sun_valid became tilt-aware in #728, but the per-day
+# predicted window (solar_times_with_position) still used the inline raw-azimuth
+# vertical gate. These tests pin the predicted window to the live transitions.
+# ---------------------------------------------------------------------------
+
+_SWEEP_GAMMAS = [130 - 5 * i for i in range(53)]  # +130 .. -130
+
+
+def test_roof_predicted_window_matches_live_direct_sun_valid_pitch45():
+    sun_data = _make_sweep_sun_data(gammas=_SWEEP_GAMMAS, elev=60.0)
+    roof = _roof(roof_pitch=45, sol_elev=60.0, gamma=0.0, fov_left=85, fov_right=85)
+    roof.sun_data = sun_data
+    start, end = roof.solar_times_with_position()
+    exp_start, exp_end = _live_window_oracle(
+        roof_pitch=45, elev=60.0, gammas=_SWEEP_GAMMAS, fov=85, sun_data=sun_data
+    )
+    assert start is not None and end is not None
+    assert start[0] == exp_start[0] and end[0] == exp_end[0]
+    assert start[1] == pytest.approx(exp_start[1]) and start[2] == pytest.approx(
+        exp_start[2]
+    )
+    assert end[1] == pytest.approx(exp_end[1]) and end[2] == pytest.approx(exp_end[2])
+
+
+def test_roof_predicted_window_wider_than_vertical_gate_pitch45():
+    sun_data = _make_sweep_sun_data(gammas=_SWEEP_GAMMAS, elev=60.0)
+    roof = _roof(roof_pitch=45, sol_elev=60.0, gamma=0.0, fov_left=85, fov_right=85)
+    roof.sun_data = sun_data
+    vert = _vertical(sol_elev=60.0, gamma=0.0, fov_left=85, fov_right=85)
+    vert.sun_data = sun_data
+    r_start, r_end = roof.solar_times_with_position()
+    v_start, v_end = vert.solar_times_with_position()
+    assert r_start[0] < v_start[0]
+    assert r_end[0] > v_end[0]
+
+
+def test_roof_predicted_window_matches_live_direct_sun_valid_pitch30():
+    sun_data = _make_sweep_sun_data(gammas=_SWEEP_GAMMAS, elev=45.0)
+    roof = _roof(roof_pitch=30, sol_elev=45.0, gamma=0.0, fov_left=85, fov_right=85)
+    roof.sun_data = sun_data
+    start, end = roof.solar_times_with_position()
+    exp_start, exp_end = _live_window_oracle(
+        roof_pitch=30, elev=45.0, gammas=_SWEEP_GAMMAS, fov=85, sun_data=sun_data
+    )
+    assert start[0] == exp_start[0] and end[0] == exp_end[0]
+
+
+def test_roof_pitch90_predicted_window_bitforbit_vertical():
+    sun_data = _make_sweep_sun_data(gammas=_SWEEP_GAMMAS, elev=60.0)
+    roof = _roof(roof_pitch=90, sol_elev=60.0, gamma=0.0, fov_left=45, fov_right=45)
+    roof.sun_data = sun_data
+    vert = _vertical(sol_elev=60.0, gamma=0.0, fov_left=45, fov_right=45)
+    vert.sun_data = sun_data
+    assert roof.solar_times_with_position() == vert.solar_times_with_position()
