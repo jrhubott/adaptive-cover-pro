@@ -14,7 +14,10 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+from custom_components.adaptive_cover_pro.config_flow import (
+    ConfigFlowHandler,
+    OptionsFlowHandler,
+)
 from custom_components.adaptive_cover_pro.const import (
     BUILDING_PROFILE_SENSOR_KEYS,
     CONF_BUILDING_PROFILE_ID,
@@ -420,3 +423,35 @@ async def test_init_step_profile_line_empty_for_unlinked_cover(
     assert (
         profile_line == ""
     ), f"profile_line must be empty for unlinked cover, got: {profile_line!r}"
+
+
+# ---------------------------------------------------------------------------
+# Duplicate menu visibility — issue #732
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_user_menu_hides_duplicate_when_only_building_profile(
+    hass: HomeAssistant,
+) -> None:
+    """'duplicate_existing' must not appear when only Building Profile entries exist.
+
+    Building Profile entries (controls_cover=False) are not valid duplicate sources,
+    so the option must be hidden rather than leading to source_not_found.
+    """
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Smart Home", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={},
+        entry_id="profile_1",
+        title="Building Profile My Smart Home",
+    )
+    profile.add_to_hass(hass)
+
+    handler = ConfigFlowHandler()
+    handler.hass = hass
+
+    result = await handler.async_step_user()
+
+    assert result["type"] == "menu"
+    assert "duplicate_existing" not in result["menu_options"]

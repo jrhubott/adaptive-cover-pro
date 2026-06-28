@@ -83,6 +83,15 @@ def _building_profile_entries(hass: HomeAssistant) -> list[ConfigEntry]:
     ]
 
 
+def _cover_entries(hass: HomeAssistant) -> list[ConfigEntry]:
+    """Return all physical cover config entries (controls_cover == True)."""
+    return [
+        e
+        for e in hass.config_entries.async_entries(DOMAIN)
+        if get_policy(e.data.get(CONF_SENSOR_TYPE)).controls_cover
+    ]
+
+
 def _covers_linked_to(
     hass: HomeAssistant, profile_entry: ConfigEntry
 ) -> list[ConfigEntry]:

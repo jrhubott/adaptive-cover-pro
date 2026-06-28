@@ -38,6 +38,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_SENSOR_TYPE,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
@@ -48,6 +49,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_STATE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CoverType,
 )
 
 
@@ -477,3 +479,54 @@ class TestEnsureUniqueName:
         )
         result = await handler._ensure_unique_name("Living Room", suffix="Copy")
         assert result == "Living Room (Copy 3)"
+
+
+class TestDuplicateSelectFilter:
+    """async_step_duplicate_select must exclude Building Profile entries (issue #732)."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_select_excludes_building_profiles(self):
+        """Building Profile entries must not appear as duplicate sources."""
+        bp_entry = MagicMock()
+        bp_entry.entry_id = "profile_1"
+        bp_entry.title = "Building Profile My Smart Home"
+        bp_entry.data = {CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE}
+
+        cover_entry = MagicMock()
+        cover_entry.entry_id = "cover_1"
+        cover_entry.title = "Vertical Blind"
+        cover_entry.data = {CONF_SENSOR_TYPE: CoverType.BLIND}
+
+        handler = ConfigFlowHandler()
+        handler.hass = MagicMock()
+        handler.hass.config_entries.async_entries.return_value = [bp_entry, cover_entry]
+
+        result = await handler.async_step_duplicate_select()
+
+        assert result["type"] == "form"
+        schema = result["data_schema"]
+        option_values = None
+        for marker, sel in schema.schema.items():
+            if str(marker.schema) == "source_entry":
+                option_values = [o["value"] for o in sel.config["options"]]
+                break
+        assert option_values is not None, "source_entry selector not found in schema"
+        assert "cover_1" in option_values
+        assert "profile_1" not in option_values
+
+    @pytest.mark.asyncio
+    async def test_duplicate_select_aborts_when_only_building_profiles(self):
+        """async_step_duplicate_select must abort when no cover entries remain after filtering."""
+        bp_entry = MagicMock()
+        bp_entry.entry_id = "profile_1"
+        bp_entry.title = "Building Profile My Smart Home"
+        bp_entry.data = {CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE}
+
+        handler = ConfigFlowHandler()
+        handler.hass = MagicMock()
+        handler.hass.config_entries.async_entries.return_value = [bp_entry]
+
+        result = await handler.async_step_duplicate_select()
+
+        assert result["type"] == "abort"
+        assert result["reason"] == "source_not_found"

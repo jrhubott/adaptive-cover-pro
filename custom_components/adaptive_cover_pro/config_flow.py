@@ -283,6 +283,7 @@ from .priority_chain import build_priority_chain  # noqa: E402
 from .profile_link import (  # noqa: E402
     _building_profile_entries,
     _copy_profile_to_cover,
+    _cover_entries,
     _covers_linked_to,
     clear_cover_override,
     compute_override_keys,
@@ -3141,7 +3142,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         Creating a cover and creating a building profile are distinct top-level
         choices. The duplicate option only appears when prior entries exist.
         """
-        acp_entries = self.hass.config_entries.async_entries(DOMAIN)
+        acp_entries = _cover_entries(self.hass)
         menu_options = ["create_new", "create_building_profile"] + (
             ["duplicate_existing"] if acp_entries else []
         )
@@ -3753,7 +3754,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Select the source cover to duplicate from."""
-        acp_entries = self.hass.config_entries.async_entries(DOMAIN)
+        acp_entries = _cover_entries(self.hass)
 
         if not acp_entries:
             return self.async_abort(reason="source_not_found")  # type: ignore[return-value]
