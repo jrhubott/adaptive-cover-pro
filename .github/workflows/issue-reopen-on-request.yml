@@ -1,0 +1,64 @@
+name: "Issue Reopen on Request"
+
+# Reopen a closed `released` issue when a reporter comments that the shipped fix
+# didn't resolve it. Stable releases close `released` issues immediately
+# (see release-issue-lifecycle.yml); this is the inverse path. On reopen we drop
+# `released` (so the next release sweep won't re-close it before a new fix ships)
+# and add `reopened`.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  reopen-on-request:
+    name: "Reopen Closed Released Issue on Request"
+    runs-on: ubuntu-latest
+    # Only closed issues (not PRs) that carry `released`, and never react to bot comments.
+    if: >
+      github.event.issue.pull_request == null &&
+      github.event.issue.state == 'closed' &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(github.event.issue.labels.*.name, 'released')
+
+    steps:
+      - name: "Detect reopen intent and reopen"
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const num = context.payload.issue.number;
+            const user = context.payload.comment.user.login;
+            const body = context.payload.comment.body || '';
+
+            // Reopen-intent phrases (case-insensitive). `/reopen` is the explicit
+            // command advertised in the close comment; the rest catch natural wording.
+            const reopenIntent = /(?:^|\W)\/reopen\b|\b(?:reopen|still (?:happening|broken|occurring|occurs|present|an issue)|not (?:fixed|resolved|working|solved)|persists?|came back|back again|happening again|regress(?:ed|ion)?)\b/i;
+
+            if (!reopenIntent.test(body)) {
+              console.log(`Comment on #${num} did not match reopen intent — ignoring.`);
+              return;
+            }
+
+            await github.rest.issues.update({ owner, repo, issue_number: num, state: 'open' });
+            await github.rest.issues.removeLabel({ owner, repo, issue_number: num, name: 'released' }).catch(() => {});
+
+            // Ensure `reopened` exists, then apply it.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'reopened' });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner, repo, name: 'reopened', color: 'D93F0B',
+                description: "Reopened after the shipped fix didn't resolve it",
+              });
+            }
+            await github.rest.issues.addLabels({ owner, repo, issue_number: num, labels: ['reopened'] });
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: num,
+              body: `Reopened — thanks for the heads-up, @${user}. I'll take another look.`,
+            });
+            console.log(`Reopened #${num}: removed released, added reopened.`);

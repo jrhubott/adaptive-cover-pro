@@ -65,7 +65,7 @@ jobs:
           echo "numbers=${NUMBERS}" >> $GITHUB_OUTPUT
           echo "Referenced numbers: ${NUMBERS:-'(none)'}"
 
-      - name: "Apply waiting-for-confirmation to issues; notify PRs"
+      - name: "Tag + close released issues; notify PRs"
         uses: actions/github-script@v9
         env:
           NUMBERS: ${{ steps.refs.outputs.numbers }}
@@ -76,171 +76,120 @@ jobs:
             const numbers = process.env.NUMBERS.trim().split(/\s+/).filter(Boolean).map(Number);
             const tag = process.env.CURRENT_TAG;
             const releaseUrl = process.env.RELEASE_URL;
+            const { owner, repo } = context.repo;
 
-            if (numbers.length === 0) {
-              console.log('No issue/PR references found in this release range.');
-              return;
-            }
+            // Single close message — covers both this release's fixes and any
+            // stragglers swept up below. Stable releases close `released` issues
+            // immediately; reporters reopen on request (see issue-reopen-on-request.yml).
+            const closeComment =
+              `The fix for this shipped in a stable release — latest: [**${tag}**](${releaseUrl}). I'm closing this out.\n\n` +
+              `If you're still affected, just comment here (e.g. "still happening" or \`/reopen\`) and I'll reopen it — ` +
+              `or open a new issue with fresh details (and a diagnostics file if it's a cover-behavior problem). Thanks for the report!`;
 
-            console.log(`Processing: #${numbers.join(', #')}`);
-
-            // Ensure required labels exist
-            for (const [name, color, description] of [
-              ['waiting-for-confirmation', '0075CA', 'Shipped in a release — awaiting reporter verification'],
-              ['released', '0E8A16', 'Fix has shipped in a stable production release'],
-            ]) {
+            async function ensureLabel(name, color, description) {
               try {
-                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+                await github.rest.issues.getLabel({ owner, repo, name });
               } catch {
-                await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
                 console.log(`Created ${name} label.`);
               }
             }
+            await ensureLabel('released', '0E8A16', 'Fix has shipped in a stable production release');
+            await ensureLabel('reopened', 'D93F0B', "Reopened after the shipped fix didn't resolve it");
 
             // Cache fetched items to avoid redundant API calls
             const itemCache = new Map();
-
             async function fetchItem(num) {
               if (itemCache.has(num)) return itemCache.get(num);
               try {
-                const response = await github.rest.issues.get({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                });
-                itemCache.set(num, response.data);
-                return response.data;
+                const { data } = await github.rest.issues.get({ owner, repo, issue_number: num });
+                itemCache.set(num, data);
+                return data;
               } catch {
                 itemCache.set(num, null);
                 return null;
               }
             }
 
-            async function processIssue(num) {
-              const item = await fetchItem(num);
-              if (!item) {
-                console.log(`#${num} not found, skipping.`);
-                return;
+            const removeLabelSafe = (num, name) =>
+              github.rest.issues.removeLabel({ owner, repo, issue_number: num, name }).catch(() => {});
+
+            // Tag a referenced OPEN issue `released`; the sweep below closes it.
+            async function tagReferencedIssue(num, labels) {
+              if (labels.includes('awaiting-release')) await removeLabelSafe(num, 'awaiting-release');
+              if (labels.includes('reopened')) await removeLabelSafe(num, 'reopened');
+              if (!labels.includes('released')) {
+                await github.rest.issues.addLabels({ owner, repo, issue_number: num, labels: ['released'] });
               }
-              const currentLabels = item.labels.map(l => l.name);
-              if (currentLabels.includes('awaiting-release')) {
-                await github.rest.issues.removeLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                  name: 'awaiting-release',
-                }).catch(() => {});
-              }
-              if (item.state === 'open') {
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                  labels: ['waiting-for-confirmation', 'released'],
-                });
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                  body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf I don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
-                });
-                console.log(`Labeled issue #${num} as waiting-for-confirmation + released.`);
-              } else {
-                console.log(`Issue #${num} is already closed, skipping.`);
-              }
+              console.log(`Tagged issue #${num} as released.`);
             }
 
-            // Numbers from commit log — used for deduplication
             const seenNumbers = new Set(numbers);
-
-            // Linked issues found in PR bodies — processed after the main loop
             const linkedIssueQueue = new Set();
 
-            for (const num of numbers) {
-              const item = await fetchItem(num);
-              if (!item) {
-                console.log(`#${num} not found, skipping.`);
-                continue;
-              }
+            if (numbers.length === 0) {
+              console.log('No issue/PR references found in this release range.');
+            } else {
+              console.log(`Processing: #${numbers.join(', #')}`);
+              for (const num of numbers) {
+                const item = await fetchItem(num);
+                if (!item) { console.log(`#${num} not found, skipping.`); continue; }
+                const labels = item.labels.map(l => l.name);
 
-              const isPR = !!item.pull_request;
-              const currentLabels = item.labels.map(l => l.name);
-
-              if (isPR) {
-                // Remove awaiting-release from merged PRs and notify
-                if (currentLabels.includes('awaiting-release')) {
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    name: 'awaiting-release',
-                  }).catch(() => {});
-                }
-
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                  body: `This was included in [**${tag}**](${releaseUrl}). Thank you for the contribution! 🎉`,
-                });
-                console.log(`Notified PR #${num} of release ${tag}.`);
-
-                // Scan PR body for linked issue references (e.g. "Fixes #260")
-                try {
-                  const prData = await github.rest.pulls.get({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    pull_number: num,
-                  });
-                  const prBody = prData.data.body || '';
-                  const bodyPattern = /(?:refs?|closes?|fixes?|resolves?)\s+#(\d+)/gi;
-                  let bodyMatch;
-                  while ((bodyMatch = bodyPattern.exec(prBody)) !== null) {
-                    const linkedNum = parseInt(bodyMatch[1], 10);
-                    if (linkedNum !== num && !seenNumbers.has(linkedNum)) {
-                      linkedIssueQueue.add(linkedNum);
-                    }
-                  }
-                } catch {
-                  console.log(`Could not fetch PR body for #${num}, skipping body scan.`);
-                }
-
-              } else {
-                // Issue — swap to waiting-for-confirmation and comment
-                if (currentLabels.includes('awaiting-release')) {
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    name: 'awaiting-release',
-                  }).catch(() => {});
-                }
-
-                if (item.state === 'open') {
-                  await github.rest.issues.addLabels({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    labels: ['waiting-for-confirmation', 'released'],
-                  });
-
+                if (item.pull_request) {
+                  // Merged PR — notify (no close), drop awaiting-release, scan body for linked issues.
+                  if (labels.includes('awaiting-release')) await removeLabelSafe(num, 'awaiting-release');
                   await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf I don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
+                    owner, repo, issue_number: num,
+                    body: `This was included in [**${tag}**](${releaseUrl}). Thank you for the contribution! 🎉`,
                   });
-                  console.log(`Labeled issue #${num} as waiting-for-confirmation + released.`);
+                  console.log(`Notified PR #${num} of release ${tag}.`);
+                  try {
+                    const prData = await github.rest.pulls.get({ owner, repo, pull_number: num });
+                    const prBody = prData.data.body || '';
+                    const bodyPattern = /(?:refs?|closes?|fixes?|resolves?)\s+#(\d+)/gi;
+                    let m;
+                    while ((m = bodyPattern.exec(prBody)) !== null) {
+                      const linkedNum = parseInt(m[1], 10);
+                      if (linkedNum !== num && !seenNumbers.has(linkedNum)) linkedIssueQueue.add(linkedNum);
+                    }
+                  } catch {
+                    console.log(`Could not fetch PR body for #${num}, skipping body scan.`);
+                  }
+                } else if (item.state === 'open') {
+                  await tagReferencedIssue(num, labels);
                 } else {
-                  console.log(`Issue #${num} is already closed, skipping.`);
+                  console.log(`Issue #${num} already closed, skipping relabel.`);
+                }
+              }
+
+              // Issues discovered from PR bodies
+              if (linkedIssueQueue.size > 0) {
+                console.log(`Processing ${linkedIssueQueue.size} issue(s) linked from PR bodies: #${[...linkedIssueQueue].join(', #')}`);
+                for (const num of linkedIssueQueue) {
+                  const item = await fetchItem(num);
+                  if (!item) { console.log(`#${num} not found, skipping.`); continue; }
+                  if (item.pull_request) continue;
+                  if (item.state === 'open') {
+                    await tagReferencedIssue(num, item.labels.map(l => l.name));
+                  } else {
+                    console.log(`Issue #${num} already closed, skipping relabel.`);
+                  }
                 }
               }
             }
 
-            // Process issues discovered from PR bodies
-            if (linkedIssueQueue.size > 0) {
-              console.log(`Processing ${linkedIssueQueue.size} issue(s) linked from PR bodies: #${[...linkedIssueQueue].join(', #')}`);
-              for (const num of linkedIssueQueue) {
-                await processIssue(num);
-              }
+            // Sweep: close every OPEN issue carrying `released` (just-tagged + any
+            // stragglers). This is what "all issues tagged released are closed" means.
+            const releasedOpen = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'released', per_page: 100,
+            });
+            let closed = 0;
+            for (const item of releasedOpen) {
+              if (item.pull_request) continue; // never close PRs
+              await github.rest.issues.createComment({ owner, repo, issue_number: item.number, body: closeComment });
+              await github.rest.issues.update({ owner, repo, issue_number: item.number, state: 'closed', state_reason: 'completed' });
+              console.log(`Closed released issue #${item.number}.`);
+              closed++;
             }
+            console.log(`Sweep closed ${closed} released issue(s).`);
