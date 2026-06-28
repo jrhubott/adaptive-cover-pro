@@ -16,7 +16,7 @@ azimuth, so each case can drive a real engine while pinning gamma precisely.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from math import atan, cos, degrees, radians, sin, tan
+from math import atan, atan2, cos, degrees, radians, sin, tan
 from unittest.mock import MagicMock
 
 import pytest
@@ -522,3 +522,108 @@ def test_summary_omits_ridge_height_when_zero():
     joined = " ".join(lines)
     assert "roof pitch 35°" in joined
     assert "roof above window" not in joined
+
+
+# ---------------------------------------------------------------------------
+# Step 6 — tilt-aware azimuth FOV gate (#212)
+#
+# On a pitched roof window the glass "sees" a far wider azimuth swath than a
+# vertical wall, so the bare ``|gamma| < fov`` gate dropped the sun while the
+# glass was still fully lit. The acceptance gate now compares the in-plane
+# (tilted-glass) azimuth — ``fov_angle`` = effective gamma — against the FOV,
+# while the position projection keeps the raw horizontal gamma.
+# ---------------------------------------------------------------------------
+
+
+def _effective_gamma(pitch: float, elev: float, gamma: float) -> float:
+    """FOV azimuth in the tilted glass plane — the expectation Option B derives.
+
+    ``atan2(cos(elev)·sin(gamma), cos(AOI))`` with
+    ``cos(AOI) = sinβ·cos(elev)·cos(gamma) + cosβ·sin(elev)``.
+    """
+    beta = radians(pitch)
+    e = radians(elev)
+    cos_aoi = sin(beta) * cos(e) * cos(radians(gamma)) + cos(beta) * sin(e)
+    return degrees(atan2(cos(e) * sin(radians(gamma)), cos_aoi))
+
+
+@pytest.mark.parametrize("gamma", [-85.0, -105.0, -125.0, -165.0])
+def test_reporter_geometry_stays_valid_beyond_fov(gamma):
+    """β=45°, FOV 85°, elev 60°: lit glass stays valid even past raw |gamma|=fov."""
+    roof = _roof(roof_pitch=45, sol_elev=60.0, gamma=gamma, fov_left=85, fov_right=85)
+    assert roof._cos_aoi() > 0
+    assert roof.valid is True
+    assert roof.direct_sun_valid is True
+    assert roof.control_state_reason == "Direct Sun"
+
+
+@pytest.mark.parametrize("gamma", [-105.0, -125.0, -165.0])
+def test_in_fov_tracks_illumination_for_tilted_pitch(gamma):
+    """in_fov follows the tilted-plane gate, not the raw horizontal azimuth."""
+    roof = _roof(roof_pitch=45, sol_elev=60.0, gamma=gamma, fov_left=85, fov_right=85)
+    assert roof.in_fov is True
+
+
+@pytest.mark.parametrize("gamma", [-85.0, -110.0, -140.0])
+def test_pitch_30_stays_valid_beyond_fov(gamma):
+    """A shallower pitch (β=30°) widens acceptance even further."""
+    roof = _roof(roof_pitch=30, sol_elev=45.0, gamma=gamma, fov_left=85, fov_right=85)
+    assert roof._cos_aoi() > 0
+    assert roof.valid is True
+
+
+def test_effective_gamma_within_fov_when_lit():
+    """fov_angle is the in-plane azimuth — inside FOV and distinct from raw gamma."""
+    for gamma in (-85.0, -105.0, -125.0, -165.0):
+        roof = _roof(
+            roof_pitch=45, sol_elev=60.0, gamma=gamma, fov_left=85, fov_right=85
+        )
+        assert abs(roof.fov_angle) < 85
+        assert roof.fov_angle != pytest.approx(roof.gamma)
+    # gamma=-125 projects to ≈ -45° in the β=45/elev=60 tilted plane.
+    roof = _roof(roof_pitch=45, sol_elev=60.0, gamma=-125.0, fov_left=85, fov_right=85)
+    assert roof.fov_angle == pytest.approx(-45.0, abs=0.5)
+
+
+def test_narrow_fov_still_rejects_far_sideways_sun():
+    """A user-narrowed FOV still cuts a sun whose in-plane azimuth exceeds it."""
+    pitch, elev, gamma, fov = 45.0, 20.0, -60.0, 20
+    # Intent: the in-plane azimuth exceeds the narrow FOV while the glass is lit.
+    assert abs(_effective_gamma(pitch, elev, gamma)) > fov
+    roof = _roof(
+        roof_pitch=pitch, sol_elev=elev, gamma=gamma, fov_left=fov, fov_right=fov
+    )
+    assert roof._cos_aoi() > 0
+    assert roof.valid is False
+
+
+@pytest.mark.parametrize("fov", [70, 85, 90])
+@pytest.mark.parametrize("elev", [-5.0, 0.0, 30.0, 70.0])
+@pytest.mark.parametrize("gamma", [-89.0, -80.0, -10.0, 0.0, 10.0, 80.0, 89.0])
+def test_pitch_90_validity_unchanged_with_narrow_fov(fov, elev, gamma):
+    """β=90° vertical anchor: every gate matches the vertical engine bit-for-bit."""
+    roof = _roof(roof_pitch=90, sol_elev=elev, gamma=gamma, fov_left=fov, fov_right=fov)
+    vert = _vertical(sol_elev=elev, gamma=gamma, fov_left=fov, fov_right=fov)
+    assert roof.valid == vert.valid
+    assert roof.in_fov == vert.in_fov
+    assert roof.direct_sun_valid == vert.direct_sun_valid
+    assert roof.fov_angle == vert.gamma
+
+
+def test_wide_gamma_does_not_force_full_coverage():
+    """The removed |gamma|>85 → full-coverage edge case stays gone for roof (#212)."""
+    roof = _roof(
+        roof_pitch=45,
+        sol_elev=60.0,
+        gamma=-125.0,
+        distance=1.0,
+        h_win=2.0,
+        fov_left=85,
+        fov_right=85,
+    )
+    assert roof.valid is True
+    pos = roof.calculate_position()
+    # A real geometric projection (here it saturates at h_win), NOT the old
+    # forced-closed 0.0 the inherited edge case used to return.
+    assert 0.0 < pos <= 2.0
+    assert roof._last_calc_details["edge_case_detected"] is False

@@ -20,6 +20,11 @@ from ..const import (
 from ..sun import SunData
 
 
+def azimuth_within_fov(angle: float, fov_left: float, fov_right: float) -> bool:
+    """Sun azimuth (deg, relative to window normal) inside the FOV cone."""
+    return bool((angle < fov_left) & (angle > -fov_right))
+
+
 def fov_from_reveal(width_m: float, depth_m: float) -> int:
     """Symmetric FOV half-angle (degrees) from reveal width and depth.
 
@@ -196,10 +201,9 @@ class SunGeometry:
             False if sun behind window, outside FOV, or elevation invalid.
 
         """
-        azi_min = self.config.fov_left
-        azi_max = self.config.fov_right
         valid = bool(
-            (self.gamma < azi_min) & (self.gamma > -azi_max) & (self.valid_elevation)
+            azimuth_within_fov(self.gamma, self.config.fov_left, self.config.fov_right)
+            and self.valid_elevation
         )
         self.logger.debug("Sun in front of window (ignoring blindspot)? %s", valid)
         return valid
@@ -212,9 +216,9 @@ class SunGeometry:
         whether the elevation is valid. Used by the companion card to distinguish
         "outside FOV" from "in FOV but blocked by elevation/sunset/blind-spot".
         """
-        azi_min = self.config.fov_left
-        azi_max = self.config.fov_right
-        return bool((self.gamma < azi_min) & (self.gamma > -azi_max))
+        return azimuth_within_fov(
+            self.gamma, self.config.fov_left, self.config.fov_right
+        )
 
     @property
     def sunset_valid(self) -> bool:

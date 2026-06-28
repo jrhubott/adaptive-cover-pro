@@ -9,7 +9,7 @@ from datetime import datetime
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
 from ...sun import SunData
-from ..sun_geometry import SunGeometry
+from ..sun_geometry import SunGeometry, azimuth_within_fov
 
 _COVER_CONFIG_FIELDS = frozenset(
     {
@@ -161,9 +161,22 @@ class AdaptiveGeneralCover(ABC):
         return self.solar.is_sun_in_blind_spot
 
     @property
+    def fov_angle(self) -> float:
+        """Azimuth angle compared against the FOV (vertical = horizontal gamma).
+
+        Polymorphic hook: cover types whose acceptance cone is not the raw
+        horizontal azimuth (e.g. a pitched roof window, where the gate must be
+        measured in the tilted glass plane — #212) override this. The position
+        projection still uses the raw ``gamma``; only the FOV gate reads here.
+        """
+        return self.gamma
+
+    @property
     def in_fov(self) -> bool:
-        """Delegate to SunGeometry.in_fov."""
-        return self.solar.in_fov
+        """Whether the sun azimuth is within the FOV (elevation ignored)."""
+        return azimuth_within_fov(
+            self.fov_angle, self.config.fov_left, self.config.fov_right
+        )
 
     def solar_times(self) -> tuple[datetime | None, datetime | None]:
         """Delegate to the SunGeometry solar_times helper."""
@@ -190,10 +203,11 @@ class AdaptiveGeneralCover(ABC):
     @property
     def valid(self) -> bool:
         """Check if sun is in front of window within field of view."""
-        azi_min = self.config.fov_left
-        azi_max = self.config.fov_right
         valid = bool(
-            (self.gamma < azi_min) & (self.gamma > -azi_max) & (self.valid_elevation)
+            azimuth_within_fov(
+                self.fov_angle, self.config.fov_left, self.config.fov_right
+            )
+            and self.valid_elevation
         )
         self.logger.debug("Sun in front of window (ignoring blindspot)? %s", valid)
         return valid

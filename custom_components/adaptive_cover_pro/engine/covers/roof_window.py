@@ -34,7 +34,7 @@ Pitch convention (``roof_pitch`` β, FROM HORIZONTAL):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import atan, cos, degrees, radians, sin, tan
+from math import atan, atan2, cos, degrees, radians, sin, tan
 
 from ...config_types import RoofWindowConfig
 from .vertical import AdaptiveVerticalCover
@@ -89,6 +89,32 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
         elev = radians(self.sol_elev)
         cos_dazi = cos(radians(self.gamma))
         return sin(beta) * cos(elev) * cos_dazi + cos(beta) * sin(elev)
+
+    def _effective_gamma(self) -> float:
+        """FOV azimuth measured in the tilted glass plane (#212).
+
+        atan2(s.x_hat, s.n) = atan2(cos(elev)*sin(gamma), cos(AOI)). Reduces to the
+        horizontal gamma at beta=90 and widens with decreasing pitch, so the user
+        FOV bounds the in-plane sideways angle, not the raw horizontal azimuth.
+        The position projection still uses the real gamma; only acceptance moves to
+        the tilted plane. effective_gamma is elevation-dependent (the FOV breathes
+        with sun height), which is correct for a tilted plane.
+        """
+        elev = radians(self.sol_elev)
+        s_dot_x = cos(elev) * sin(radians(self.gamma))
+        return degrees(atan2(s_dot_x, self._cos_aoi()))
+
+    @property
+    def fov_angle(self) -> float:
+        """Roof-window FOV gate angle: the tilted-plane azimuth (#212).
+
+        At vertical glass this is bit-for-bit the horizontal gamma (the
+        regression anchor); below vertical it is the elevation-dependent
+        in-plane azimuth, so the FOV "breathes" with sun height.
+        """
+        if self.roof_pitch == VERTICAL_GLASS_PITCH_DEG:
+            return super().fov_angle  # bit-for-bit vertical anchor
+        return self._effective_gamma()
 
     def _is_sun_behind_ridge(self) -> bool:
         """Whether the roof above the window occludes the sun (ridge gate, #212).
