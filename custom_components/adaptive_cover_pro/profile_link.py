@@ -108,6 +108,28 @@ def profile_for_cover(
     return hass.config_entries.async_get_entry(profile_id)
 
 
+def merge_profile_into_config(
+    profile_entry: ConfigEntry,
+    config_dict: dict,
+    *,
+    overridden: frozenset[str] = frozenset(),
+) -> None:
+    """Merge a profile's non-empty shared-sensor keys into a plain dict.
+
+    Skips keys the cover has locally overridden. Safe to call from both the
+    create flow (no existing entry, no overrides) and ``_copy_profile_to_cover``
+    (existing entry, may have overrides). Does NOT stamp
+    ``CONF_BUILDING_PROFILE_ID`` — callers handle that so each context can
+    write it in the right place.
+    """
+    subset = {
+        k: v
+        for k, v in profile_entry.options.items()
+        if k in BUILDING_PROFILE_SENSOR_KEYS and _is_set(v) and k not in overridden
+    }
+    config_dict.update(subset)
+
+
 def _copy_profile_to_cover(
     hass: HomeAssistant, profile_entry: ConfigEntry, cover_entry: ConfigEntry
 ) -> None:
@@ -120,21 +142,18 @@ def _copy_profile_to_cover(
     the ``async_update_entry`` merge — the update fires the cover's self-reload
     listener. The single shared copier; both linking and the profile-change
     propagation listener reuse it.
+
+    Delegates the key-subset logic to ``merge_profile_into_config`` so there is
+    a single source of truth for which keys are copied and how overrides are
+    respected.
     """
     overridden = effective_profile_overrides(cover_entry.options)
-    subset = {
-        k: v
-        for k, v in profile_entry.options.items()
-        if k in BUILDING_PROFILE_SENSOR_KEYS and _is_set(v) and k not in overridden
+    new_options: dict = {
+        **cover_entry.options,
+        CONF_BUILDING_PROFILE_ID: profile_entry.entry_id,
     }
-    hass.config_entries.async_update_entry(
-        cover_entry,
-        options={
-            **cover_entry.options,
-            **subset,
-            CONF_BUILDING_PROFILE_ID: profile_entry.entry_id,
-        },
-    )
+    merge_profile_into_config(profile_entry, new_options, overridden=overridden)
+    hass.config_entries.async_update_entry(cover_entry, options=new_options)
 
 
 def clear_cover_override(

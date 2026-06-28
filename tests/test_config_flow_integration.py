@@ -24,6 +24,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
     CONF_AZIMUTH,
+    CONF_BUILDING_PROFILE_ID,
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
@@ -42,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
+    CONF_OUTSIDETEMP_ENTITY,
     CONF_VENETIAN_MODE,
     CONF_ENABLE_MAX_POSITION,
     CONF_MIN_ELEVATION,
@@ -507,6 +509,179 @@ async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     assert CONF_DELTA_POSITION in opts
     assert opts[CONF_DELTA_TIME] is not None
     assert opts[CONF_MANUAL_OVERRIDE_DURATION] is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2b: Full-setup — building profile integration (issue #693)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_full_setup_includes_building_profile_step_when_profile_exists(
+    hass: HomeAssistant,
+) -> None:
+    """Full-setup create flow surfaces building_profile step when profiles exist.
+
+    Regression test for issue #693: the step was absent from ConfigFlow and
+    only existed in OptionsFlowHandler.
+    """
+    # Register a building profile so _building_profile_entries(hass) is non-empty.
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Building", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={CONF_OUTSIDETEMP_ENTITY: "sensor.outside_temp"},
+        entry_id="test_profile_693",
+        title="My Building",
+    )
+    profile.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Profile Blind", CONF_MODE: CoverType.BLIND},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "full_setup"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _VERTICAL_GEOMETRY
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _SUN_TRACKING
+    )
+    # The building_profile step must appear when profiles exist.
+    assert result["step_id"] == "building_profile"
+
+    # Submit with a profile chosen.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_BUILDING_PROFILE_ID: "test_profile_693"}
+    )
+    # blind_spot is False in _SUN_TRACKING → position is next.
+    assert result["step_id"] == "position"
+
+    # Walk through the remaining steps to create the entry.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _POSITION
+    )
+    assert result["step_id"] == "behavior"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _BEHAVIOR
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _WEATHER_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MANUAL_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _CUSTOM_POSITION
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MOTION_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _LIGHT_CLOUD
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _TEMPERATURE_CLIMATE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _AUTOMATION
+    )
+    assert result["step_id"] == "summary"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+
+    opts = result["result"].options
+    assert opts.get(CONF_BUILDING_PROFILE_ID) == "test_profile_693"
+    assert opts.get(CONF_OUTSIDETEMP_ENTITY) == "sensor.outside_temp"
+
+
+@pytest.mark.integration
+async def test_full_setup_skips_building_profile_step_when_no_profiles(
+    hass: HomeAssistant,
+) -> None:
+    """Full-setup create flow skips building_profile step when no profiles exist.
+
+    When _building_profile_entries(hass) is empty the flow jumps directly to
+    position (or blind_spot), preserving the pre-#693 path.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "No Profile Blind", CONF_MODE: CoverType.BLIND},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "full_setup"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _VERTICAL_GEOMETRY
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _SUN_TRACKING
+    )
+    # No profiles registered → skip directly to position.
+    assert result["step_id"] == "position"
+
+
+@pytest.mark.integration
+async def test_quick_setup_skips_building_profile_step_even_when_profiles_exist(
+    hass: HomeAssistant,
+) -> None:
+    """Quick-setup path bypasses the building_profile step even when profiles exist."""
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={},
+        entry_id="test_profile_quick",
+        title="Bldg",
+    )
+    profile.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Quick Blind", CONF_MODE: CoverType.BLIND},
+    )
+    # Quick setup
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _VERTICAL_GEOMETRY
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _SUN_TRACKING
+    )
+    # Quick setup never shows the building_profile step.
+    assert result["step_id"] == "position"
 
 
 # ---------------------------------------------------------------------------

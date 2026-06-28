@@ -735,6 +735,16 @@
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
           "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren."
         }
+      },
+      "building_profile": {
+        "title": "Gebäudeprofil",
+        "description": "Verknüpfe diese Abdeckung mit einem Gebäudeprofil, um gebäudeweite Sensoren über mehrere Abdeckungen zu teilen. Durch die Verknüpfung werden die Sensoren des Profils in diese Abdeckung kopiert; leere Profilfelder behalten die eigenen Werte dieser Abdeckung.\n\n[Mehr erfahren]({learn_more})",
+        "data": {
+          "building_profile_id": "Gebäudeprofil"
+        },
+        "data_description": {
+          "building_profile_id": "Verknüpfe diese Abdeckung mit einem Gebäudeprofil, um seine gemeinsamen gebäudeweiten Sensoren zu erben. Wähle „Keine (nicht verknüpft)\" aus, um die Profilverknüpfung zu überspringen und die Sensoren dieser Abdeckung lokal zu verwalten."
+        }
       }
     },
     "abort": {

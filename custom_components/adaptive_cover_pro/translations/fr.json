@@ -735,6 +735,16 @@
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
           "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent."
         }
+      },
+      "building_profile": {
+        "title": "Profil de bâtiment",
+        "description": "Associez ce volet à un Profil de bâtiment pour partager les capteurs à l'échelle du bâtiment entre les volets. L'association copie les capteurs du profil dans ce volet ; les champs de profil vides conservent les valeurs propres de ce volet.\n\n[En savoir plus]({learn_more})",
+        "data": {
+          "building_profile_id": "Profil de bâtiment"
+        },
+        "data_description": {
+          "building_profile_id": "Associez ce volet à un Profil de bâtiment pour hériter de ses capteurs partagés à l'échelle du bâtiment. Sélectionnez « Aucun (non lié) » pour ignorer l'association de profil et gérer les capteurs de ce volet localement."
+        }
       }
     },
     "abort": {

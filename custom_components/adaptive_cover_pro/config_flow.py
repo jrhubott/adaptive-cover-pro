@@ -286,6 +286,7 @@ from .profile_link import (  # noqa: E402
     _covers_linked_to,
     clear_cover_override,
     compute_override_keys,
+    merge_profile_into_config,
     profile_for_cover,
 )
 
@@ -3333,11 +3334,19 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(canonical)
+            # In full setup, offer to link this cover to a Building Profile when
+            # any profiles exist. Check profiles first so the guard short-circuits
+            # safely in unit tests that build a bare ConfigFlowHandler without
+            # initialising setup_mode (profiles are [] with a MagicMock hass).
+            if (
+                _building_profile_entries(self.hass)
+                and self.setup_mode != "quick"
+                and get_policy(self.type_blind).controls_cover
+            ):
+                return await self.async_step_building_profile()
             # L1 physical setup: the blind-spot sub-step (when enabled) attaches
             # to the window here, before L2 positions. Quick setup skips it.
-            if self.config.get(CONF_ENABLE_BLIND_SPOT) and self.setup_mode != "quick":
-                return await self.async_step_blind_spot()
-            return await self.async_step_position()
+            return await self._route_after_window_config()
         return self._show_sun_tracking_form(self.config)
 
     def _show_sun_tracking_form(
@@ -3358,6 +3367,67 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             description_placeholders=_sun_tracking_placeholders(
                 self.type_blind, self.config
             ),
+        )
+
+    async def _route_after_window_config(self) -> FlowResult:
+        """Route to blind_spot or position after all window-config steps complete.
+
+        Called from ``async_step_sun_tracking`` (no profiles path) and from
+        ``async_step_building_profile`` (after profile selection), so the routing
+        logic lives in one place instead of being mirrored in both callers.
+        """
+        if self.config.get(CONF_ENABLE_BLIND_SPOT) and self.setup_mode != "quick":
+            return await self.async_step_blind_spot()
+        return await self.async_step_position()
+
+    async def async_step_building_profile(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Link this new cover to a Building Profile during creation.
+
+        Merges the profile's non-empty shared-sensor keys directly into
+        ``self.config`` (there is no existing entry yet) and stores
+        ``CONF_BUILDING_PROFILE_ID``. Selecting the none/skip choice leaves
+        the cover unlinked. On submit, routes to the same blind_spot/position
+        step that ``async_step_sun_tracking`` would have used, via the shared
+        ``_route_after_window_config`` helper.
+        """
+        if user_input is not None:
+            chosen = user_input.get(CONF_BUILDING_PROFILE_ID) or _PROFILE_NONE_SENTINEL
+            if chosen != _PROFILE_NONE_SENTINEL:
+                profile = self.hass.config_entries.async_get_entry(chosen)
+                if profile is not None:
+                    # Store only the link ID here. The sensor-value merge is
+                    # applied at entry-creation time (async_step_update) so that
+                    # profile values survive subsequent form steps that call
+                    # optional_entities() and overwrite absent keys with None.
+                    self.config[CONF_BUILDING_PROFILE_ID] = profile.entry_id
+            return await self._route_after_window_config()
+
+        profiles = _building_profile_entries(self.hass)
+        options = [
+            {"value": _PROFILE_NONE_SENTINEL, "label": "None (unlinked)"},
+            *({"value": e.entry_id, "label": e.title} for e in profiles),
+        ]
+        current = self.config.get(CONF_BUILDING_PROFILE_ID) or _PROFILE_NONE_SENTINEL
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_BUILDING_PROFILE_ID, default=current
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="building_profile",
+            data_schema=schema,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
@@ -3653,6 +3723,16 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             options.setdefault(
                 CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
             )
+
+        # If the user linked a Building Profile during creation, merge its
+        # non-empty shared-sensor keys into options now — after all form steps
+        # have run. This ensures profile values survive optional_entities() calls
+        # in later steps that would otherwise overwrite absent keys with None.
+        profile_id = options.get(CONF_BUILDING_PROFILE_ID)
+        if profile_id:
+            _profile_entry = self.hass.config_entries.async_get_entry(profile_id)
+            if _profile_entry is not None:
+                merge_profile_into_config(_profile_entry, options)
 
         return self.async_create_entry(
             title=title,

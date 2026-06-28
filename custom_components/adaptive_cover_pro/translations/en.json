@@ -735,6 +735,16 @@
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
           "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed."
         }
+      },
+      "building_profile": {
+        "title": "Building Profile",
+        "description": "Link this cover to a Building Profile to share building-level sensors across covers. Linking copies the profile's sensors into this cover; blank profile fields keep this cover's own values.\n\n[Learn more]({learn_more})",
+        "data": {
+          "building_profile_id": "Building Profile"
+        },
+        "data_description": {
+          "building_profile_id": "Link this cover to a Building Profile to inherit its shared building-level sensors. Select 'None (unlinked)' to skip profile linking and manage this cover's sensors locally."
+        }
       }
     },
     "abort": {
