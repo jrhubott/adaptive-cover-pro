@@ -485,6 +485,64 @@ class TestTiltNegativeDiscriminant:
         assert result >= 0.0
 
 
+class TestTiltSpecifyAngles:
+    """Explicit endpoint-angle mapping for calibrated tilt covers."""
+
+    @pytest.mark.unit
+    def test_specify_angles_converts_blocking_angle_to_tilt_percentage(
+        self, mock_sun_data, mock_logger
+    ):
+        """Calculated slat angle is interpolated between the configured endpoints."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=50.0,
+            angle_100=-70.0,
+        )
+        blocking_angle = cover.calculate_position()
+        expected = ((-blocking_angle - 50.0) / (-70.0 - 50.0)) * 100.0
+
+        assert cover._last_calc_details["max_degrees"] == pytest.approx(70.0)
+        assert cover.calculate_percentage() == pytest.approx(expected)
+        assert 0.0 <= cover.calculate_percentage() <= 100.0
+
+    @pytest.mark.unit
+    def test_specify_angles_clamps_to_configured_endpoint_range(
+        self, mock_sun_data, mock_logger
+    ):
+        """A target outside the calibrated physical travel is clipped to 0..100%."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=10.0,
+        )
+
+        assert cover.calculate_percentage() == pytest.approx(100.0)
+
+    @pytest.mark.unit
+    def test_specify_angles_target_angle_is_limited_to_useful_blocking_range(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """Endpoint calibration may exceed ±90°, but target slat angles do not."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=120.0,
+            angle_100=-120.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 110.0)
+
+        assert cover.calculate_percentage() == pytest.approx(87.5)
+        assert cover._specified_target_angle(110.0) == pytest.approx(-90.0)
+
+
 # ===========================================================================
 # 6. Horizontal awning division-by-zero guard
 # ===========================================================================

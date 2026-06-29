@@ -57,11 +57,51 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         beta = np.arctan(tan(rad(self.sol_elev)) / cos(rad(self.gamma)))
         return beta
 
-    def _max_degrees(self) -> int:
+    def _max_degrees(self) -> float:
         """Resolve max slat degrees for the configured mode (string or enum)."""
+        if self._is_specify_angles():
+            return max(abs(self.angle_0), abs(self.angle_100), 1.0)
         if isinstance(self.mode, TiltMode):
-            return self.mode.max_degrees
-        return TiltMode(self.mode).max_degrees
+            return float(self.mode.max_degrees)
+        return float(TiltMode(self.mode).max_degrees)
+
+    @property
+    def angle_0(self) -> float:
+        """Physical slat angle represented by 0% tilt."""
+        return float(self.tilt_config.angle_0)
+
+    @property
+    def angle_100(self) -> float:
+        """Physical slat angle represented by 100% tilt."""
+        return float(self.tilt_config.angle_100)
+
+    def _is_specify_angles(self) -> bool:
+        """Return True when endpoint-angle mapping is configured."""
+        return self.mode == TiltMode.SPECIFY_ANGLES or self.mode == (
+            TiltMode.SPECIFY_ANGLES.value
+        )
+
+    def _specified_target_angle(self, blocking_angle: float) -> float:
+        """Return the physical target angle for explicit endpoint calibration."""
+        travel = self.angle_100 - self.angle_0
+        close_direction = 1.0 if travel > 0 else -1.0
+        target_angle = close_direction * abs(float(blocking_angle))
+        return max(-90.0, min(90.0, target_angle))
+
+    def _percentage_from_specified_angles(self, blocking_angle: float) -> float:
+        """Map a target physical slat angle to the configured tilt percentage.
+
+        ``blocking_angle`` is the required distance away from horizontal. The
+        configured 100% endpoint tells us which physical direction closes the
+        slats for this cover, so we move from horizontal toward that endpoint
+        and interpolate across the user's 0%/100% calibration angles.
+        """
+        travel = self.angle_100 - self.angle_0
+        if travel == 0:
+            return 0.0
+
+        target_angle = self._specified_target_angle(blocking_angle)
+        return ((target_angle - self.angle_0) / travel) * 100.0
 
     def _build_trace(
         self,
@@ -95,7 +135,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 None if slat_angle_raw_deg is None else float(slat_angle_raw_deg)
             ),
             "nan_result": bool(nan_result),
-            "max_degrees": int(max_degrees),
+            "max_degrees": float(max_degrees),
             "tilt_mode": str(mode_value),
             "safety_margin": float(safety_margin),
         }
@@ -213,8 +253,21 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             Position as percentage (0-100).
 
         """
-        # 0 degrees is closed, 90 degrees is open (mode1), 180 degrees is closed (mode2)
+        # Legacy modes use a fixed degree range. The custom mode uses explicit
+        # physical endpoint angles and interpolates the target angle into that
+        # calibrated range.
         position = self.calculate_position()
+
+        if self._is_specify_angles():
+            percentage = self._percentage_from_specified_angles(position)
+            if hasattr(self, "_last_calc_details"):
+                self._last_calc_details[TRACE_KEY_POSITION_PCT] = float(percentage)
+                self._last_calc_details["target_angle_deg"] = (
+                    self._specified_target_angle(position)
+                )
+                self._last_calc_details["tilt_angle_0_deg"] = self.angle_0
+                self._last_calc_details["tilt_angle_100_deg"] = self.angle_100
+            return max(0.0, min(100.0, percentage))
 
         # Handle both string and TiltMode enum for backward compatibility
         if isinstance(self.mode, TiltMode):

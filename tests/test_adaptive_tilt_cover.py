@@ -330,6 +330,36 @@ def test_get_tilt_data_reads_min_tilt():
     assert result_default.min_tilt == 0
 
 
+def test_get_tilt_data_reads_specified_endpoint_angles():
+    """get_tilt_data stores explicit endpoint angles for specify-angles mode."""
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
+
+    config_entry = MagicMock()
+    config_entry.data = {"name": "Test Tilt"}
+    logger = MagicMock()
+    hass = MagicMock()
+
+    config_service = ConfigurationService(
+        hass, config_entry, logger, "cover_venetian", None, None, None
+    )
+
+    result = config_service.get_tilt_data(
+        {
+            "slat_distance": 3.0,
+            "slat_depth": 2.0,
+            "tilt_mode": "specify_angles",
+            "tilt_angle_0": 50,
+            "tilt_angle_100": -70,
+        }
+    )
+
+    assert result.mode == "specify_angles"
+    assert result.angle_0 == 50
+    assert result.angle_100 == -70
+
+
 @pytest.mark.unit
 def test_tilt_data_warns_on_small_values(caplog):
     """Test that ConfigurationService.get_tilt_data warns when values are suspiciously small.

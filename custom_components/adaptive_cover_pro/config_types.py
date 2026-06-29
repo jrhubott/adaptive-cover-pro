@@ -350,6 +350,8 @@ class TiltConfig:
     slat_distance: float
     depth: float
     mode: TiltMode | str
+    angle_0: float = 0.0
+    angle_100: float = 90.0
     max_tilt: int = 100
     min_tilt: int = 0
     # When True, the corresponding tilt limit is only enforced during active sun

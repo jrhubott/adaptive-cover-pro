@@ -272,11 +272,20 @@ class TestFieldValidators:
     def test_tilt_mode_select(self):
         FIELD_VALIDATORS["tilt_mode"]("mode1")
         FIELD_VALIDATORS["tilt_mode"]("mode2")
+        FIELD_VALIDATORS["tilt_mode"]("specify_angles")
         FIELD_VALIDATORS["tilt_mode"](None)
 
     def test_tilt_mode_rejects_invalid(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_mode"]("mode3")
+
+    def test_tilt_endpoint_angles_validate_range(self):
+        FIELD_VALIDATORS["tilt_angle_0"](-180)
+        FIELD_VALIDATORS["tilt_angle_100"](180)
+        FIELD_VALIDATORS["tilt_angle_0"](None)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_angle_100"](181)
 
     def test_blind_spot_elevation_mode_select(self):
         """Every slot's elevation-mode validator accepts below/above/None (#702)."""

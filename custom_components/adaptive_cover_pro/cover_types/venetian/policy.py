@@ -341,7 +341,14 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
         """Render window dimensions plus the slat-config block."""
-        from ...const import CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE
+        from ...const import (
+            CONF_TILT_ANGLE_0,
+            CONF_TILT_ANGLE_100,
+            CONF_TILT_DEPTH,
+            CONF_TILT_DISTANCE,
+            CONF_TILT_MODE,
+            TiltMode,
+        )
 
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         tilt_parts: list[str] = []
@@ -351,6 +358,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             tilt_parts.append(L["geometry.slat.spacing"].format(v=v))
         if (v := config.get(CONF_TILT_MODE)) is not None:
             tilt_parts.append(L["geometry.slat.mode"].format(v=v))
+        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
+            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
+                tilt_parts.append(L["geometry.slat.angle_0"].format(v=v))
+            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
+                tilt_parts.append(L["geometry.slat.angle_100"].format(v=v))
         slat_line = [", ".join(tilt_parts)] if tilt_parts else []
         skip_above = config.get(
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
