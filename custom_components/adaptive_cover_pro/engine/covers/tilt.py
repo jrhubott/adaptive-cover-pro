@@ -81,11 +81,12 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             TiltMode.SPECIFY_ANGLES.value
         )
 
-    def _specified_target_angle(self, blocking_angle: float) -> float:
+    def _specified_target_angle(self, legacy_angle: float) -> float:
         """Return the physical target angle for explicit endpoint calibration."""
-        travel = self.angle_100 - self.angle_0
-        close_direction = 1.0 if travel > 0 else -1.0
-        target_angle = close_direction * abs(float(blocking_angle))
+        # The solver returns the legacy tilt angle where 90° is horizontal/open
+        # and 0° is closed downward. User-entered endpoint angles are measured
+        # away from horizontal, so convert before interpolating to percent.
+        target_angle = float(legacy_angle) - 90.0
         return max(-90.0, min(90.0, target_angle))
 
     def _percentage_from_specified_angles(self, blocking_angle: float) -> float:

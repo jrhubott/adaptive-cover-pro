@@ -502,11 +502,47 @@ class TestTiltSpecifyAngles:
             angle_100=-70.0,
         )
         blocking_angle = cover.calculate_position()
-        expected = ((-blocking_angle - 50.0) / (-70.0 - 50.0)) * 100.0
+        expected = (((blocking_angle - 90.0) - 50.0) / (-70.0 - 50.0)) * 100.0
 
         assert cover._last_calc_details["max_degrees"] == pytest.approx(70.0)
         assert cover.calculate_percentage() == pytest.approx(expected)
         assert 0.0 <= cover.calculate_percentage() <= 100.0
+
+    @pytest.mark.unit
+    def test_specify_angles_converts_legacy_horizontal_angle_to_physical_zero(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """Legacy 90° is physical horizontal, so 50/-70 maps it to ~42%."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=50.0,
+            angle_100=-70.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 90.0)
+
+        assert cover._specified_target_angle(90.0) == pytest.approx(0.0)
+        assert cover.calculate_percentage() == pytest.approx(41.6666667)
+
+    @pytest.mark.unit
+    def test_specify_angles_low_sun_uses_physical_angle_from_horizontal(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """A legacy 61° target is physical -29°, not physical -61°."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=50.0,
+            angle_100=-70.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 61.0)
+
+        assert cover._specified_target_angle(61.0) == pytest.approx(-29.0)
+        assert cover.calculate_percentage() == pytest.approx(65.8333333)
 
     @pytest.mark.unit
     def test_specify_angles_clamps_to_configured_endpoint_range(
@@ -537,10 +573,10 @@ class TestTiltSpecifyAngles:
             angle_0=120.0,
             angle_100=-120.0,
         )
-        monkeypatch.setattr(cover, "calculate_position", lambda: 110.0)
+        monkeypatch.setattr(cover, "calculate_position", lambda: -20.0)
 
         assert cover.calculate_percentage() == pytest.approx(87.5)
-        assert cover._specified_target_angle(110.0) == pytest.approx(-90.0)
+        assert cover._specified_target_angle(-20.0) == pytest.approx(-90.0)
 
 
 # ===========================================================================
