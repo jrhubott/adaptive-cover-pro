@@ -878,9 +878,17 @@ async def test_coupled_cover_parks_at_reachable_position_with_option_on(svc, has
 
 
 @pytest.mark.asyncio
-async def test_coupled_cover_with_option_off_recovers_via_actual_aware_dedup(svc, hass):
-    """Flag OFF: 0 still bypasses delta (issue #629), but the actual-aware tilt
-    dedup recovers the slats — the cover never sticks permanently at 0/0.
+async def test_coupled_cover_with_option_off_stable_at_reachable_endpoint(svc, hass):
+    """Flag OFF: cover at reachable position 3 (within tolerance of endpoint 0) stays.
+
+    Issue #507 regression lock: when the cover's reachable resting position (3)
+    is within _position_tolerance of the hard endpoint (0), the same-position
+    gate treats the cover as "at the endpoint" and suppresses the command.  This
+    prevents the relay-click storm that repeated set_cover_position commands (every
+    solar cycle) would cause for a motor whose mechanical limit is 3% short of 0.
+
+    The cover and tilt are BOTH already at their desired state (3/100 is the
+    stable resting position; tilt=100 is correct), so no commands are needed.
     """
     from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
         EventBuffer,
@@ -894,28 +902,11 @@ async def test_coupled_cover_with_option_off_recovers_via_actual_aware_dedup(svc
     cover = _CoupledCover(position=3, tilt=100)
     policy = _attach_coupled_policy(svc, hass, cover, buf)
 
-    def _service_side_effect(domain, service, data, **_):
-        if service == "set_cover_position":
-            cover.position = data["position"]
-            cover.tilt = 0  # coupled: position command back-drives the slats
-            policy._sequencer._wait_for_position_settle = AsyncMock(
-                return_value=(True, cover.position)
-            )
-        elif service == "set_cover_tilt_position":
-            cover.tilt = data["tilt_position"]
-            if cover.position == 0 and cover.tilt >= 100:
-                cover.position = 3
-                policy._sequencer._wait_for_position_settle = AsyncMock(
-                    return_value=(True, cover.position)
-                )
-        return None
+    hass.services.async_call.side_effect = lambda *a, **kw: None
 
-    hass.services.async_call.side_effect = _service_side_effect
-
-    # Cycle: solar wants 0/100. 0 IS special (flag off) → position command fires
-    # → cover drives to 0/0 (tilt back-driven). after_position_command →
-    # run_sequence sends tilt 100 → coupled rise → settles at 3/100. The
-    # actual-aware dedup re-sends tilt because the live actuator drifted to 0.
+    # Solar wants 0/100. Cover is at 3/100 — within endpoint tolerance (default 3%)
+    # of position=0.  The same-position gate fires: abs(3-0)=3 <= 3 → skip.
+    # No position command is sent; no tilt command is needed (tilt already 100).
     hass.states.get.return_value = cover.state()
     with _patch_caps_dual_axis():
         outcome, _ = await svc.apply_position(
@@ -925,14 +916,10 @@ async def test_coupled_cover_with_option_off_recovers_via_actual_aware_dedup(svc
             _coupled_ctx(policy, tilt=100, special_positions=specials),
         )
 
-    assert outcome == "sent"
-    # The position command fired (0 is special) and a tilt command recovered
-    # the slats — the cover is NOT stuck at 0/0.
-    tilt_calls = [
-        c
-        for c in hass.services.async_call.call_args_list
-        if c.args[1] == "set_cover_tilt_position" and c.args[2]["tilt_position"] == 100
-    ]
-    assert tilt_calls, "tilt must be re-driven to 100 — no permanent 0/0 (issue #679)"
-    assert cover.tilt == 100
+    assert outcome == "skipped"
+    # No position command fired — the motor is already at its mechanical stop,
+    # within endpoint tolerance of 0.  No tilt command either (tilt already 100).
+    hass.services.async_call.assert_not_called()
+    # Cover rests stably at the reachable endpoint position, tilt correct.
     assert cover.position == 3
+    assert cover.tilt == 100

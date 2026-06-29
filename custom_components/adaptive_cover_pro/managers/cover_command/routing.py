@@ -185,9 +185,10 @@ def build_special_positions(options: dict) -> list[int]:
     Special positions (0, 100, default_height, sunset_pos) bypass the
     *delta-threshold* check so covers are always allowed to transition
     TO or FROM these key values even when the position change is smaller
-    than ``min_change``.  They do NOT bypass the same-position short-circuit
-    added in ``_check_position_delta`` — if the cover is already at the
-    target, no command is sent regardless of whether the target is special.
+    than ``min_change``.  They do NOT bypass the same-position short-circuit in
+    ``apply_position`` — if the cover is already at or within
+    endpoint-tolerance of the target,
+    no command is sent regardless of whether the target is special.
 
     When ``CONF_ENFORCE_DELTA_AT_ENDPOINTS`` is enabled (issue #679), the 0
     and 100 endpoints are omitted so the normal delta gate runs for those

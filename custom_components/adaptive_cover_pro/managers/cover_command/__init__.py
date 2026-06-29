@@ -988,18 +988,25 @@ class CoverCommandService:
 
         # Same-position band — applies to ALL callers, including force=True and
         # is_safety=True.  Issuing set_cover_position when the cover is already
-        # EXACTLY at the target is a true no-op that causes audible relay clicks
-        # on many motors (issue #290), so we suppress it here.
+        # at the target is a true no-op that causes audible relay clicks on many
+        # motors (issue #290), so we suppress it here.
         #
-        # This gate keys off EXACT equality only — it is NOT a hysteresis band.
-        # Movement hysteresis (how big a move must be before we re-command) is
-        # owned solely by _check_position_delta below, governed by the user's
-        # CONF_DELTA_POSITION.  Using the reconciliation tolerance here conflated
-        # the two concepts and suppressed legitimate small tracking moves (issue
-        # #567).  The relay-click / unreachable-target suppression that motivated
-        # the old tolerance band (issue #507) lives in the reconciliation path
-        # (run_reconciliation_pass: tolerance match + max_retries give-up), where
-        # _position_tolerance correctly belongs — not here.
+        # For non-endpoint targets (normal solar tracking moves) this gate uses
+        # EXACT equality only — it is NOT a hysteresis band.  Movement hysteresis
+        # (how big a move must be before we re-command) is owned solely by
+        # _check_position_delta below, governed by the user's CONF_DELTA_POSITION.
+        # Using the reconciliation tolerance for all targets conflated the two
+        # concepts and suppressed legitimate small tracking moves (issue #567).
+        #
+        # For the two hard mechanical endpoints (0 and 100) the delta gate is
+        # bypassed entirely (special-target bypass, issue #629/#127), so there is
+        # no hysteresis fallback.  A motor that physically settles a few percent
+        # short of a full-open/full-close endpoint would therefore be re-commanded
+        # every update cycle, causing audible relay clicks (issue #507).  To
+        # prevent this we apply _position_tolerance here, but ONLY when the target
+        # is 0 or 100 — the literal mechanical stops, not mid-range setpoints.
+        # Mid-range specials (default_height, sunset_pos, my_position) keep exact
+        # equality so a within-tolerance drift from those still triggers a move.
         #
         # sun_just_appeared is the one exception: the sun transitioning in/out of
         # validity is a sentinel that we must re-confirm the cover position even
@@ -1007,7 +1014,10 @@ class CoverCommandService:
         if (
             not context.sun_just_appeared
             and _current is not None
-            and _current == position
+            and (
+                _current == position
+                or (position in (0, 100) and self._at_target(_current, position))
+            )
         ):
             if context.policy is not None and context.tilt is not None:
                 await context.policy.maybe_update_tilt_only(
@@ -1176,6 +1186,19 @@ class CoverCommandService:
         return "sent", service
 
     # ------------------------------------------------------------------ #
+    # Position-tolerance helpers
+    # ------------------------------------------------------------------ #
+
+    def _at_target(self, actual: int, target: int) -> bool:
+        """Return True if *actual* is within ``_position_tolerance`` of *target*.
+
+        Single source of truth for the "close enough" predicate used by
+        check_target_reached, run_reconciliation_pass, get_diagnostics, and
+        the same-position gate in apply_position (endpoint-only tolerance).
+        """
+        return abs(actual - target) <= self._position_tolerance
+
+    # ------------------------------------------------------------------ #
     # Target-reached notification (called by coordinator state-change handler)
     # ------------------------------------------------------------------ #
 
@@ -1205,7 +1228,7 @@ class CoverCommandService:
             return False
 
         target = s.target
-        if abs(reported_position - target) <= self._position_tolerance:
+        if self._at_target(reported_position, target):
             s.waiting = False
             s.retry_count = 0
             self._logger.debug(
@@ -1348,7 +1371,7 @@ class CoverCommandService:
                 continue
 
             # 7. Check match
-            if abs(actual - target) <= self._position_tolerance:
+            if self._at_target(actual, target):
                 s.retry_count = 0
                 self._logger.debug(
                     "Reconcile: %s at target (actual=%s target=%s)",
@@ -1439,7 +1462,7 @@ class CoverCommandService:
         at_target = (
             target is not None
             and actual is not None
-            and abs(actual - target) <= self._position_tolerance
+            and self._at_target(actual, target)
         )
         return {
             "target": target,
