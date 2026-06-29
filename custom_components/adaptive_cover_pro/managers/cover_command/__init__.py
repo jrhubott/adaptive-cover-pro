@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import STATE_CLOSED, STATE_OPEN, STATE_UNAVAILABLE
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
@@ -17,6 +17,8 @@ from ...const import (
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     MAX_POSITION_RETRIES,
     POSITION_CHECK_INTERVAL_MINUTES,
+    POSITION_CLOSED,
+    POSITION_OPEN,
     POSITION_TOLERANCE_PERCENT,
 )
 from ...cover_types.base import (
@@ -958,6 +960,20 @@ class CoverCommandService:
 
         _current = self._get_current_position(entity_id)
 
+        # Full mechanical endpoint forcing (issue #755). When the owning
+        # cover-type policy (venetian) flagged this update as a paired full
+        # endpoint (0/0 or 100/100), the endpoint_use_open_close feature is on,
+        # and the cover is not actually parked at the mechanical stop (HA state
+        # not closed/open — NOT a position tolerance), bypass the same-position
+        # band and the delta/time gates so route_service_call can emit
+        # close_cover/open_cover (#697). This is cover-type-agnostic: the flag
+        # carries the decision, the manager never inspects cover type.
+        force_endpoint = (
+            context.full_endpoint_target
+            and self._endpoint_use_open_close
+            and not self._is_at_mechanical_stop(state_obj, position)
+        )
+
         # Hard kill switch — blocks ALL commands, including safety overrides and
         # force=True calls.  Must be checked before any bypass branch.
         if not self._enabled:
@@ -1011,8 +1027,16 @@ class CoverCommandService:
         # sun_just_appeared is the one exception: the sun transitioning in/out of
         # validity is a sentinel that we must re-confirm the cover position even
         # if it hasn't changed numerically.
+        #
+        # force_endpoint is the other exception (issue #755): a venetian whose
+        # desired final state is a full mechanical endpoint (0/0 or 100/100) must
+        # NOT be swallowed by this _position_tolerance carve-out — it falls
+        # through to routing so close_cover/open_cover fires. Idempotency for
+        # that case is owned by the HA-state mechanical-stop check above, not by
+        # tolerance, so the gap can't be reintroduced here.
         if (
             not context.sun_just_appeared
+            and not force_endpoint
             and _current is not None
             and (
                 _current == position
@@ -1035,7 +1059,7 @@ class CoverCommandService:
                 current_position=_current,
             )
 
-        if not context.force:
+        if not context.force and not force_endpoint:
             if not self._check_position_delta(
                 entity_id,
                 position,
@@ -1197,6 +1221,20 @@ class CoverCommandService:
         the same-position gate in apply_position (endpoint-only tolerance).
         """
         return abs(actual - target) <= self._position_tolerance
+
+    def _is_at_mechanical_stop(self, state_obj, position: int) -> bool:
+        """Return True if the cover is parked at the full mechanical stop.
+
+        Idempotency check for the issue #755 endpoint forcing: uses the HA
+        entity *state* (``closed`` for 0, ``open`` for 100) rather than position
+        tolerance, matching hardware that reports closed/open only at the exact
+        endpoint. Returns False for any non-endpoint target.
+        """
+        if position == POSITION_CLOSED:
+            return state_obj is not None and state_obj.state == STATE_CLOSED
+        if position == POSITION_OPEN:
+            return state_obj is not None and state_obj.state == STATE_OPEN
+        return False
 
     # ------------------------------------------------------------------ #
     # Target-reached notification (called by coordinator state-change handler)

@@ -564,10 +564,23 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         return replace(result, position=position, tilt=tilt, decision_trace=trace)
 
     def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
-        """Thread the resolved tilt into ``PositionContext.tilt``."""
+        """Thread the resolved tilt into ``PositionContext.tilt``.
+
+        When BOTH axes target the same full mechanical endpoint (0/0 or
+        100/100) also set the cover-type-agnostic ``full_endpoint_target`` flag
+        so the command manager forces close_cover/open_cover instead of dropping
+        the move as same_position (issue #755). Only the venetian policy knows
+        the paired tilt, so this decision lives here.
+        """
         if result is None or result.tilt is None:
             return {}
-        return {"tilt": result.tilt}
+        overrides: dict[str, Any] = {"tilt": result.tilt}
+        if result.position == result.tilt and result.position in (
+            POSITION_CLOSED,
+            POSITION_OPEN,
+        ):
+            overrides["full_endpoint_target"] = True
+        return overrides
 
     def attach(self, **kwargs: Any) -> None:  # noqa: D401
         """Construct the dual-axis sequencer once cmd_svc is available."""

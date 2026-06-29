@@ -539,6 +539,38 @@ def test_position_context_overrides_returns_empty_when_no_tilt() -> None:
     assert policy.position_context_overrides(None) == {}
 
 
+@pytest.mark.parametrize(
+    ("position", "tilt", "expect_flag"),
+    [
+        (0, 0, True),  # full closed endpoint
+        (100, 100, True),  # full open endpoint
+        (0, 100, False),  # solar 0/100 — legitimate non-endpoint
+        (100, 0, False),  # carriage open, slats closed — not a full endpoint
+        (0, 50, False),  # mismatched axes
+        (40, 40, False),  # equal but mid-range, not a mechanical stop
+    ],
+)
+def test_position_context_overrides_sets_full_endpoint_flag(
+    position: int, tilt: int, expect_flag: bool
+) -> None:
+    """A paired full mechanical endpoint (0/0 or 100/100) sets the bypass flag.
+
+    Issue #755 — the venetian policy is the only place that knows both axes,
+    so it owns the "is this a full endpoint" decision and exposes it via a
+    cover-type-agnostic PositionContext flag. Tilt must still be threaded in
+    every case.
+    """
+    policy = VenetianPolicy()
+    result = MagicMock()
+    result.position = position
+    result.tilt = tilt
+
+    overrides = policy.position_context_overrides(result)
+
+    assert overrides["tilt"] == tilt  # tilt always threaded
+    assert overrides.get("full_endpoint_target", False) is expect_flag
+
+
 def test_sequencer_property_exposes_attached_sequencer() -> None:
     """The ``sequencer`` property returns whatever attach() wired in."""
     policy = VenetianPolicy()

@@ -1090,10 +1090,14 @@ def _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance: int):
     return svc
 
 
-def _stub_state(mock_hass, current_position: int) -> None:
-    """Wire mock_hass so apply_position sees an available cover at *current_position*."""
+def _stub_state(mock_hass, current_position: int, state: str = "open") -> None:
+    """Wire mock_hass so apply_position sees an available cover at *current_position*.
+
+    ``state`` is the HA entity state string (e.g. "open", "closed") used by the
+    mechanical-stop check (issue #755).
+    """
     state_obj = MagicMock()
-    state_obj.state = "open"
+    state_obj.state = state
     state_obj.attributes = {
         "current_position": current_position,
         "supported_features": 15,
@@ -1168,6 +1172,221 @@ async def test_endpoint_zero_within_tolerance_skips_on_main_path(
     assert outcome == "skipped"
     assert reason == "same_position"
     mock_hass.services.async_call.assert_not_called()
+
+
+# --- full mechanical endpoint forcing (issue #755) ---
+
+
+def _ctx_full_endpoint(
+    *, full_endpoint_target: bool, tilt: int | None
+) -> PositionContext:
+    """PositionContext for a venetian whose desired final state is a full endpoint."""
+    return PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=10,
+        time_threshold=0,
+        special_positions=[0, 100],
+        tilt=tilt,
+        full_endpoint_target=full_endpoint_target,
+    )
+
+
+@pytest.mark.asyncio
+async def test_full_endpoint_zero_forces_close_cover_when_not_closed(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #755 — venetian 0/0 within tolerance but not mechanically closed: SENT.
+
+    Cover reports current_position=3 and HA state "open". The full-endpoint
+    flag is set (0/0), endpoint_use_open_close is on, so the same-position band
+    must be bypassed and close_cover issued.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=3, state="open")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=3),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("close_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=0),
+        )
+
+    assert outcome == "sent"
+    assert reason == "close_cover"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_full_endpoint_hundred_forces_open_cover_when_not_open(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #755 — venetian 100/100 within tolerance but not mechanically open: SENT."""
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=97, state="closed")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=97),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("open_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            100,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=100),
+        )
+
+    assert outcome == "sent"
+    assert reason == "open_cover"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_solar_zero_tilt_open_does_not_force(mock_hass, logger, grace_mgr):
+    """Issue #679 regression guard — solar 0/100 is NOT a full endpoint: SKIPPED.
+
+    Position 0 with tilt 100 is a legitimate non-endpoint state. With the
+    full-endpoint flag absent, the existing same-position band still suppresses
+    the no-op move at current_position=3.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=3, state="open")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=3),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("close_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "solar",
+            _ctx_full_endpoint(full_endpoint_target=False, tilt=100),
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_full_endpoint_zero_already_closed_skips(mock_hass, logger, grace_mgr):
+    """Issue #755 idempotency — already mechanically closed (state closed): SKIPPED."""
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=0, state="closed")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=0),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("close_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=0),
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_full_endpoint_no_force_when_open_close_disabled(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #755 scoping (#507 guard) — endpoint_use_open_close off: SKIPPED.
+
+    The forcing is scoped to the endpoint_use_open_close feature. With it
+    disabled the same-position band behaves exactly as before #755.
+    """
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=3,
+        endpoint_use_open_close=False,
+    )
+    _stub_state(mock_hass, current_position=3, state="open")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=3),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("close_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=0),
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_full_endpoint_inverted_zero_forces_open_cover(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #755 inversion lock — post-inverse 0/0 intent arrives as 100: SENT.
+
+    Inversion happens upstream of apply_position. ACP's 0/0 intent under
+    inverse_state becomes position 100; the manager adds no inversion logic and
+    simply forces open_cover because the cover is not mechanically open.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=97, state="closed")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=97),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("open_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            100,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=100),
+        )
+
+    assert outcome == "sent"
+    assert reason == "open_cover"
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
