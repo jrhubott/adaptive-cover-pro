@@ -39,6 +39,7 @@ from ...cover_types.base import (
     CoverAxis,
     caps_get,
 )
+from .gates import filter_endpoint_specials
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -210,4 +211,4 @@ def build_special_positions(options: dict) -> list[int]:
         special_positions.append(sunset_pos)
     if my_position_value is not None:
         special_positions.append(my_position_value)
-    return special_positions
+    return filter_endpoint_specials(special_positions, enforce_endpoints)

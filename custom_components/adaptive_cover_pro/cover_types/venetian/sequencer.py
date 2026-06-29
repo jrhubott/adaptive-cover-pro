@@ -55,7 +55,10 @@ from ...const import (
     VENETIAN_TILT_VERIFY_POLL_SECONDS,
     VENETIAN_TILT_VERIFY_TOLERANCE,
 )
-from ...managers.cover_command.gates import check_position_delta
+from ...managers.cover_command.gates import (
+    check_position_delta,
+    filter_endpoint_specials,
+)
 from ...managers.cover_command.transit import is_state_in_transit
 from ...managers.manual_override import inverse_state
 
@@ -472,14 +475,14 @@ class DualAxisSequencer:
         if not force and self._get_min_change is not None:
             anchor, anchor_source = self._resolve_tilt_anchor(entity_id)
             # When endpoint-delta enforcement is enabled (issue #679), drop the
-            # 0/100 special bypass so the gate applies to the full endpoints too
-            # — mirrors the position axis in ``build_special_positions``.
-            tilt_specials = (
-                []
-                if self._get_enforce_delta_at_endpoints
+            # 0/100 special bypass so the gate applies to the full endpoints too.
+            # Delegates to filter_endpoint_specials (gates.py) — the same helper
+            # used by build_special_positions on the position axis.
+            enforced = bool(
+                self._get_enforce_delta_at_endpoints
                 and self._get_enforce_delta_at_endpoints()
-                else _TILT_SPECIAL_POSITIONS
             )
+            tilt_specials = filter_endpoint_specials(_TILT_SPECIAL_POSITIONS, enforced)
             if anchor is not None and not check_position_delta(
                 entity_id,
                 tilt_target,

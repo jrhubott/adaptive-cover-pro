@@ -16,6 +16,26 @@ from __future__ import annotations
 
 import datetime as dt
 
+# Canonical endpoint values (mirrors POSITION_CLOSED / POSITION_OPEN from const.py;
+# kept as literals here so gates.py remains free of const imports).
+_ENDPOINT_VALUES: frozenset[int] = frozenset({0, 100})
+
+
+def filter_endpoint_specials(positions: list, enforced: bool) -> list:
+    """Remove 0/100 endpoint values from *positions* when *enforced* is True.
+
+    Single-point decision shared by :func:`build_special_positions` (routing.py)
+    and the venetian sequencer's tilt-specials computation (sequencer.py), so the
+    "drop endpoints when enforce_delta_at_endpoints is on" logic lives in exactly
+    one place (no-duplication guideline).
+
+    When *enforced* is False the list is returned unchanged — callers may pass the
+    same list they constructed; no copy is made in that branch.
+    """
+    if not enforced:
+        return positions
+    return [p for p in positions if p not in _ENDPOINT_VALUES]
+
 
 def check_position_delta(
     entity: str,

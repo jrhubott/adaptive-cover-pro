@@ -831,6 +831,103 @@ def test_endpoints_bypass_delta_when_not_enforced(logger):
     )
 
 
+# --- enforce_delta_at_endpoints: endpoint re-injection via config values (#679 reopen) ---
+
+
+def test_enforce_endpoints_drops_endpoint_when_sunset_position_is_0(logger):
+    """enforce=True + sunset_position=0 must NOT re-inject 0 into specials (#679 reopen).
+
+    The original v2.30.0 fix dropped [0, 100] from the seed but still appended
+    sunset_position unconditionally. When sunset_position=0 (the reporter's exact
+    config) the endpoint 0 was re-added, and check_position_delta bypassed the gate
+    for target 0.  The fix must filter 0/100 AFTER appending config values.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+        CONF_SUNSET_POS,
+    )
+
+    options = {CONF_ENFORCE_DELTA_AT_ENDPOINTS: True, CONF_SUNSET_POS: 0}
+    positions = build_special_positions(options)
+    assert 0 not in positions
+    # 2 → 0, delta=2 < min_change=5; no longer bypassed — gate must return False.
+    assert (
+        check_position_delta("cover.x", 0, 5, positions, position=2, logger=logger)
+        is False
+    )
+
+
+def test_enforce_endpoints_drops_endpoint_when_default_percentage_is_100(logger):
+    """enforce=True + default_percentage=100 must NOT re-inject 100 into specials (#679 reopen).
+
+    When default_percentage=100 (the reporter's exact config) the endpoint 100 was
+    re-appended after the initial seed was dropped, letting 97→100 bypass the gate.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+
+    options = {CONF_ENFORCE_DELTA_AT_ENDPOINTS: True, CONF_DEFAULT_HEIGHT: 100}
+    positions = build_special_positions(options)
+    assert 100 not in positions
+    # 97 → 100, delta=3 < min_change=5; endpoint must now be gated — False.
+    assert (
+        check_position_delta("cover.x", 100, 5, positions, position=97, logger=logger)
+        is False
+    )
+
+
+def test_enforce_endpoints_off_keeps_0_and_100_via_config_values(logger):
+    """Regression lock: flag OFF → 0/100 from config values remain in specials (#629).
+
+    default_percentage=100 and sunset_position=0 must still bypass the gate when
+    enforce_delta_at_endpoints is False (the default).
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+        CONF_SUNSET_POS,
+    )
+
+    options = {
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS: False,
+        CONF_DEFAULT_HEIGHT: 100,
+        CONF_SUNSET_POS: 0,
+    }
+    positions = build_special_positions(options)
+    assert 0 in positions
+    assert 100 in positions
+    # Both endpoints still bypass: gate returns True for near-endpoint moves.
+    assert (
+        check_position_delta("cover.x", 0, 5, positions, position=2, logger=logger)
+        is True
+    )
+    assert (
+        check_position_delta("cover.x", 100, 5, positions, position=97, logger=logger)
+        is True
+    )
+
+
+def test_enforce_endpoints_mid_range_sunset_still_bypasses(logger):
+    """enforce=True + sunset_position=40 → 40 remains special (only 0/100 are filtered)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+        CONF_SUNSET_POS,
+    )
+
+    options = {CONF_ENFORCE_DELTA_AT_ENDPOINTS: True, CONF_SUNSET_POS: 40}
+    positions = build_special_positions(options)
+    assert 40 in positions
+    assert 0 not in positions
+    assert 100 not in positions
+    # 38 → 40, delta=2 < min_change=5 but target IS special (40) → bypassed (True).
+    assert (
+        check_position_delta("cover.x", 40, 5, positions, position=38, logger=logger)
+        is True
+    )
+
+
 # --- Tilt-only entity under cover_blind config (bug fix coverage) ---
 
 
