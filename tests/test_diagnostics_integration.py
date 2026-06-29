@@ -7,6 +7,7 @@ data and that numpy float64 values do not cause JSON serialization errors
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 
 import numpy as np
@@ -16,6 +17,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
+    DIAG_CACHE_KEY,
     DOMAIN,
     CoverType,
 )
@@ -93,6 +95,75 @@ async def test_diagnostics_contains_entry_id(hass: HomeAssistant) -> None:
     result = await async_get_config_entry_diagnostics(hass, entry)
     assert "identifier" in result
     assert result["identifier"] == entry.entry_id
+
+
+@pytest.mark.integration
+async def test_diagnostics_contains_real_builder_output(hass: HomeAssistant) -> None:
+    """The diagnostics sub-key must carry real builder output, not the marker.
+
+    Regression guard for the lookup bug: the download handler read the legacy
+    ``hass.data[DOMAIN]`` registry after the coordinator moved to
+    ``entry.runtime_data``, so every download returned the "coordinator missing"
+    marker. Asserting the ``meta`` block (with the integration version) is present
+    fails on the buggy lookup and passes once it resolves runtime_data.
+    """
+    entry = await _setup(hass, entry_id="diag_real_01")
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    diag = result["diagnostics"]
+    assert diag.get("status") != "unavailable", f"Got unavailable marker: {diag}"
+    assert "meta" in diag, f"Expected real builder output, got: {diag}"
+    assert diag["meta"].get("integration_version"), "meta.integration_version missing"
+
+
+@pytest.mark.integration
+async def test_diagnostics_envelope_triage_fields(hass: HomeAssistant) -> None:
+    """Envelope carries triage fields HA core's wrapper does not provide."""
+    entry = await _setup(hass, entry_id="diag_envelope_01")
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    assert "config_entry_state" in result
+    assert "generated_at" in result
+    assert "config_entry_version" in result
+    assert "config_entry_minor_version" in result
+    # generated_at must be a parseable ISO timestamp.
+    dt.datetime.fromisoformat(result["generated_at"])
+
+
+@pytest.mark.integration
+async def test_diagnostics_reload_window_serves_cached_snapshot(
+    hass: HomeAssistant,
+) -> None:
+    """With no live coordinator but a cached snapshot, serve it marked stale."""
+    entry = await _setup(hass, entry_id="diag_cache_01")
+    # Simulate the reload window: runtime_data briefly unset, cache populated.
+    entry.runtime_data = None
+    captured = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=42)
+    hass.data.setdefault(DIAG_CACHE_KEY, {})[entry.entry_id] = {
+        "diagnostics": {"meta": {"integration_version": "9.9.9"}},
+        "ts": captured,
+    }
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    diag = result["diagnostics"]
+    assert diag["meta"]["integration_version"] == "9.9.9"
+    assert diag["cache_status"]["stale"] is True
+    assert diag["cache_status"]["age_seconds"] >= 42
+
+
+@pytest.mark.integration
+async def test_diagnostics_no_coordinator_no_cache_marker(
+    hass: HomeAssistant,
+) -> None:
+    """With neither coordinator nor cache, return the marker plus entry state."""
+    entry = await _setup(hass, entry_id="diag_marker_01")
+    entry.runtime_data = None
+    hass.data.get(DIAG_CACHE_KEY, {}).pop(entry.entry_id, None)
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    diag = result["diagnostics"]
+    assert diag["status"] == "unavailable"
+    assert "coordinator missing" in diag["reason"]
+    # The envelope still states whether the entry is set up.
+    assert "config_entry_state" in result
 
 
 @pytest.mark.integration

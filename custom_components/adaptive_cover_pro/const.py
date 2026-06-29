@@ -60,6 +60,10 @@ from enum import Enum, StrEnum
 # Domain string, package-level loggers, and HA service-call attribute keys.
 
 DOMAIN = "adaptive_cover_pro"  # HA integration domain; must match manifest.json
+# hass.data slot holding the last-good diagnostics snapshot per entry_id. Lives
+# outside the coordinator so it survives a reload (when entry.runtime_data is
+# briefly unset) and can be served by the diagnostics download as a stale fallback.
+DIAG_CACHE_KEY = f"{DOMAIN}_last_diagnostics"
 LOGGER = logging.getLogger(__package__)  # package-scoped logger
 _LOGGER = logging.getLogger(__name__)  # module-scoped; also imported by button.py
 

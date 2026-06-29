@@ -11,29 +11,31 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
-from custom_components.adaptive_cover_pro.const import DOMAIN
 from custom_components.adaptive_cover_pro.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
 
-def _make_entry(entry_id: str = "entry-1") -> MagicMock:
+def _make_entry(coordinator=None, entry_id: str = "entry-1") -> MagicMock:
+    """Build a config-entry mock; the coordinator lives on runtime_data."""
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = entry_id
     entry.data = {"name": "Test"}
     entry.options = {"opt": 1}
+    entry.runtime_data = coordinator
+    # Envelope triage fields read straight off the entry.
+    entry.state = ConfigEntryState.LOADED
+    entry.version = 1
+    entry.minor_version = 1
     return entry
 
 
-def _make_hass(coordinator, entry_id: str = "entry-1") -> MagicMock:
+def _make_hass() -> MagicMock:
     hass = MagicMock(spec=HomeAssistant)
-    data = (
-        {DOMAIN: {entry_id: coordinator}} if coordinator is not None else {DOMAIN: {}}
-    )
-    hass.data = data
+    hass.data = {}
     return hass
 
 
@@ -50,7 +52,8 @@ async def test_data_none_emits_marker_with_event_timeline():
     coordinator.async_refresh = AsyncMock()  # refresh runs but leaves data None
     coordinator._event_buffer.snapshot.return_value = events
 
-    hass = _make_hass(coordinator)
+    entry.runtime_data = coordinator
+    hass = _make_hass()
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     diag = result["diagnostics"]
@@ -64,7 +67,7 @@ async def test_data_none_emits_marker_with_event_timeline():
 async def test_coordinator_missing_emits_marker_without_timeline():
     """No coordinator at all → status unavailable, reason mentions missing, no timeline."""
     entry = _make_entry()
-    hass = _make_hass(None)
+    hass = _make_hass()
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -83,7 +86,8 @@ async def test_data_none_without_event_buffer_falls_back_to_reason_only():
     coordinator.data = None
     coordinator.async_refresh = AsyncMock()
 
-    hass = _make_hass(coordinator)
+    entry.runtime_data = coordinator
+    hass = _make_hass()
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     diag = result["diagnostics"]
@@ -100,7 +104,8 @@ async def test_data_present_returns_sanitized_passthrough_not_marker():
     coordinator = MagicMock()
     coordinator.data.diagnostics = {"control_status": "sun_tracking", "position": 42}
 
-    hass = _make_hass(coordinator)
+    entry.runtime_data = coordinator
+    hass = _make_hass()
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     diag = result["diagnostics"]
@@ -124,7 +129,8 @@ async def test_data_none_triggers_refresh_then_returns_full_diagnostics():
 
     coordinator.async_refresh = AsyncMock(side_effect=_refresh)
 
-    hass = _make_hass(coordinator)
+    entry.runtime_data = coordinator
+    hass = _make_hass()
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     coordinator.async_refresh.assert_awaited_once()
@@ -142,7 +148,8 @@ async def test_data_present_does_not_trigger_refresh():
     coordinator.data.diagnostics = {"control_status": "sun_tracking"}
     coordinator.async_refresh = AsyncMock()
 
-    hass = _make_hass(coordinator)
+    entry.runtime_data = coordinator
+    hass = _make_hass()
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     coordinator.async_refresh.assert_not_awaited()
@@ -159,7 +166,8 @@ async def test_refresh_failure_falls_back_to_marker():
     coordinator.async_refresh = AsyncMock()  # refresh runs but data stays None
     coordinator._event_buffer.snapshot.return_value = events
 
-    hass = _make_hass(coordinator)
+    entry.runtime_data = coordinator
+    hass = _make_hass()
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     coordinator.async_refresh.assert_awaited_once()

@@ -44,16 +44,14 @@ async def async_get_config_entry_diagnostics(
 ):
     """Return config entry diagnostics."""
     from custom_components.adaptive_cover_pro.const import (
-        DOMAIN as _DOMAIN,
+        DIAG_CACHE_KEY,
     )  # noqa: PLC0415
 
-    coordinator = hass.data.get(_DOMAIN, {}).get(config_entry.entry_id)
-    if coordinator is None:
-        coordinator_diagnostics = {
-            "status": "unavailable",
-            "reason": "coordinator missing — the integration is not set up for this entry",
-        }
-    else:
+    # The coordinator lives on entry.runtime_data (the registry every platform
+    # reads). Virtual Building-Profile entries have no coordinator, so this is
+    # legitimately None for them.
+    coordinator = getattr(config_entry, "runtime_data", None)
+    if coordinator is not None:
         if coordinator.data is None:
             # Diagnostics requested before the first completed update cycle (e.g.
             # right after a restart/reload). Trigger one refresh so the download
@@ -80,11 +78,42 @@ async def async_get_config_entry_diagnostics(
                     timeline
                 )
             coordinator_diagnostics = marker
+    else:
+        # No live coordinator — typically a reload window (entry.runtime_data is
+        # briefly unset) or a not-yet-loaded entry. Fall back to the last-good
+        # snapshot cached in hass.data so the download is still useful, annotated
+        # as stale so the reader knows it is not live.
+        cached = hass.data.get(DIAG_CACHE_KEY, {}).get(config_entry.entry_id)
+        if cached is not None:
+            snapshot = _sanitize(cached["diagnostics"])
+            age_seconds = (dt.datetime.now(dt.UTC) - cached["ts"]).total_seconds()
+            cache_status = {
+                "stale": True,
+                "captured_at": cached["ts"].isoformat(),
+                "age_seconds": round(age_seconds, 1),
+            }
+            coordinator_diagnostics = (
+                {**snapshot, "cache_status": cache_status}
+                if isinstance(snapshot, dict)
+                else {"cache_status": cache_status, "snapshot": snapshot}
+            )
+        else:
+            coordinator_diagnostics = {
+                "status": "unavailable",
+                "reason": "coordinator missing — the integration is not set up for this entry",
+            }
 
     return {
         "title": "Adaptive Cover Pro Configuration",
         "type": "config_entry",
         "identifier": config_entry.entry_id,
+        # Envelope triage fields HA core's diagnostics wrapper does not provide.
+        # Always present, so even a marker-only download states whether the entry
+        # is set up and which migration schema it is on.
+        "config_entry_state": config_entry.state.value,
+        "config_entry_version": config_entry.version,
+        "config_entry_minor_version": config_entry.minor_version,
+        "generated_at": dt.datetime.now(dt.UTC).isoformat(),
         "config_data": dict(config_entry.data),
         "config_options": dict(config_entry.options),
         "diagnostics": coordinator_diagnostics,

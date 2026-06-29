@@ -51,6 +51,7 @@ from .const import (
     CONF_WINDOW_WIDTH,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
+    DIAG_CACHE_KEY,
     DOMAIN,
     _LOGGER,
 )
@@ -389,7 +390,11 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     from every cover still linked to it so their profile pickers re-expose on the
     next options view. The last-copied sensor IDs are deliberately left in place
     so the covers keep functioning. Removing a real cover does nothing here.
+
+    Also drops the entry's last-good diagnostics snapshot from the hass.data cache
+    (written each update cycle, kept across reloads) so it does not leak.
     """
+    hass.data.get(DIAG_CACHE_KEY, {}).pop(entry.entry_id, None)
     if get_policy(entry.data.get(CONF_SENSOR_TYPE)).controls_cover:
         return
     for cover in _covers_linked_to(hass, entry):

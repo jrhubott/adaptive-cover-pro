@@ -85,6 +85,7 @@ from .const import (
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_MANUAL_OVERRIDE_STRATEGY,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+    DIAG_CACHE_KEY,
     DOMAIN,
     LOGGER,
     POSITION_TOLERANCE_PERCENT,
@@ -1418,6 +1419,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
 
+        # Cache this snapshot outside the coordinator so a diagnostics download
+        # during a reload window (when entry.runtime_data is briefly unset) can
+        # still serve the last-good data instead of an empty marker.
+        self._cache_last_good_diagnostics(diagnostics)
+
         # Record successful update time (after build_diagnostic_data so the
         # diagnostic for this cycle reports the *previous* completed success).
         self._last_update_success_time = dt.datetime.now(dt.UTC)
@@ -2506,6 +2512,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._last_position_explanation = explanation
 
         return diagnostics
+
+    def _cache_last_good_diagnostics(self, diagnostics: dict) -> None:
+        """Store the latest diagnostics snapshot in hass.data, keyed by entry_id.
+
+        Survives a coordinator teardown (unlike the in-memory event buffer), so the
+        diagnostics download can fall back to it when ``entry.runtime_data`` is
+        briefly unset during a reload. Pruned in ``async_remove_entry``.
+        """
+        cache = self.hass.data.setdefault(DIAG_CACHE_KEY, {})
+        cache[self.config_entry.entry_id] = {
+            "diagnostics": diagnostics,
+            "ts": dt.datetime.now(dt.UTC),
+        }
 
     @property
     def state(self) -> int:
