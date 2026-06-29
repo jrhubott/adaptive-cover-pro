@@ -178,6 +178,11 @@ class DualAxisSequencer:
         # guard (not reason-string sniffing): the reset's own open + return
         # sends must neither re-accumulate nor re-trigger another reset.
         self._reset_in_progress: set[str] = set()
+        # Tilt-only updates deferred because the back-rotate suppression window
+        # was still open (issue #756). Keyed by entity_id; cleared the moment a
+        # tilt actually sends via ``update_tilt_only``. Drives
+        # ``has_pending_tilt`` so the coordinator keeps re-attempting dispatch.
+        self._pending_tilt: dict[str, dict] = {}
 
     # -- tilt inversion ---------------------------------------------------- #
 
@@ -277,6 +282,47 @@ class DualAxisSequencer:
         if ts is None:
             return False
         return self._seconds_since(ts) < VENETIAN_TILT_SUPPRESSION_SECONDS
+
+    def suppression_remaining_seconds(self, entity_id: str) -> float | None:
+        """Seconds until the back-rotate suppression window closes (issue #756).
+
+        Returns ``None`` when no position command has been stamped for this
+        entity (no window open), otherwise the remaining seconds clamped to
+        ``>= 0`` so a just-expired window schedules an immediate wake.
+        """
+        ts = self._suppression_at.get(entity_id)
+        if ts is None:
+            return None
+        remaining = VENETIAN_TILT_SUPPRESSION_SECONDS - self._seconds_since(ts)
+        return remaining if remaining > 0 else 0.0
+
+    # -- deferred tilt (issue #756) --------------------------------------- #
+
+    def record_pending_tilt(
+        self,
+        entity_id: str,
+        *,
+        tilt_target: int | None,
+        current_position: int | None,
+        reason: str,
+    ) -> None:
+        """Queue a tilt-only update that was deferred by the suppression window.
+
+        Issue #756: when the override resolves with the carriage already at
+        target but the slat tilt differs, ``maybe_update_tilt_only`` cannot
+        send while the prior sequence's back-rotate window is open. Recording
+        the intent lets ``has_pending_tilt`` keep the coordinator re-attempting
+        dispatch until the window closes.
+        """
+        self._pending_tilt[entity_id] = {
+            "tilt_target": tilt_target,
+            "current_position": current_position,
+            "reason": reason,
+        }
+
+    def has_pending_tilt(self, entity_id: str) -> bool:
+        """Return whether a deferred tilt-only update is queued (issue #756)."""
+        return entity_id in self._pending_tilt
 
     def is_in_suppression_with_cap(self, entity_id: str, delta: float) -> bool:
         """Suppress back-rotate drift only when the delta is plausibly motor drift.
@@ -746,6 +792,9 @@ class DualAxisSequencer:
         gates. Used by the user-tilt path (issue #684): a user explicitly
         re-requesting the current tilt is not a no-op.
         """
+        # Any tilt-only send for this entity satisfies (or supersedes) a
+        # previously deferred tilt, so clear the pending marker (issue #756).
+        self._pending_tilt.pop(entity_id, None)
         if not force and self._target_already_satisfied(entity_id, tilt_target):
             self._record_event(
                 "tilt_command_skipped",

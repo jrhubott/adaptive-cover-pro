@@ -232,6 +232,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._tilt_skip_above: int = DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         self._venetian_mode: str = DEFAULT_VENETIAN_MODE
         self._last_tilt: int | None = None
+        # Coordinator callback to schedule a single refresh after N seconds,
+        # wired in attach(). Used to wake the update cycle at suppression expiry
+        # so a deferred tilt-only update fires promptly (issue #756).
+        self._schedule_refresh_after: Any | None = None
 
     def disallowed_geometry_fields(
         self,
@@ -613,6 +617,8 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             self._tilt_skip_above = int(kwargs["tilt_skip_above"])
         if "venetian_mode" in kwargs:
             self._venetian_mode = str(kwargs["venetian_mode"])
+        # Coordinator wake callback for deferred-tilt flushing (issue #756).
+        self._schedule_refresh_after = kwargs.get("schedule_refresh_after")
 
     @property
     def sequencer(self) -> DualAxisSequencer | None:
@@ -696,15 +702,37 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return
         if self._last_tilt is None:
             return
-        if self._sequencer.is_in_suppression(entity_id):
-            return
         tilt_target = self._resolve_skip_above_tilt(current_position, self._last_tilt)
+        if self._sequencer.is_in_suppression(entity_id):
+            # Issue #756: a tilt-only update that lands inside the prior
+            # sequence's back-rotate suppression window cannot send yet. Record
+            # the deferred tilt and schedule a single wake at suppression expiry
+            # so it fires promptly — instead of being dropped until the next
+            # unrelated tracked-entity change. has_pending_secondary_axis keeps
+            # the coordinator re-attempting dispatch in the meantime.
+            self._sequencer.record_pending_tilt(
+                entity_id,
+                tilt_target=tilt_target,
+                current_position=current_position,
+                reason=reason,
+            )
+            if self._schedule_refresh_after is not None:
+                remaining = self._sequencer.suppression_remaining_seconds(entity_id)
+                if remaining is not None:
+                    self._schedule_refresh_after(remaining)
+            return
         await self._sequencer.update_tilt_only(
             entity_id,
             tilt_target=tilt_target,
             current_position=current_position,
             reason=reason,
         )
+
+    def has_pending_secondary_axis(self, entity_id: str) -> bool:
+        """Return True while a deferred tilt-only update is queued (issue #756)."""
+        if self._sequencer is None:
+            return False
+        return self._sequencer.has_pending_tilt(entity_id)
 
     async def apply_user_tilt(
         self,

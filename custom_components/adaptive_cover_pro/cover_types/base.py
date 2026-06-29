@@ -297,6 +297,21 @@ class CoverTypePolicy(ABC):
         """
         return
 
+    def has_pending_secondary_axis(
+        self,
+        entity_id: str,  # noqa: ARG002
+    ) -> bool:
+        """Return whether a secondary-axis command is deferred for this entity.
+
+        Issue #756: dual-axis covers (venetian) can defer a tilt-only update
+        when the back-rotate suppression window from the prior position
+        sequence is still open. While such a tilt is pending the coordinator
+        must not record the resolved-target signature as dispatched — otherwise
+        the deferred tilt would never be re-attempted. Single-axis cover types
+        have no second axis to defer, so the safe Liskov default is ``False``.
+        """
+        return False
+
     def is_in_tilt_suppression(
         self,
         entity_id: str,  # noqa: ARG002

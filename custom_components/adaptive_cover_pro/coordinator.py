@@ -322,6 +322,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._pipeline = self._build_pipeline()
         self._pipeline_result = None
 
+        # Resolved-target signature last handed to the dispatch path (issue
+        # #756). The dispatch decision compares the current cycle's resolved
+        # target against this so an override that wins the pipeline is sent even
+        # when the transient ``state_change`` edge was lost (clobbered by a long
+        # in-flight venetian settle/tilt sequence holding the update cycle).
+        self._last_dispatched_target_sig: tuple | None = None
+
         # Snapshot of the last raw config-entry options. The update listener
         # uses it to distinguish Sun Tracking-only changes from options that
         # still require a full reload.
@@ -470,6 +477,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             get_enforce_delta_at_endpoints=lambda: self._enforce_delta_at_endpoints,
             get_tilt_reset_threshold=lambda: self._venetian_tilt_reset_threshold,
             get_tilt_reset_direction=lambda: self._venetian_tilt_reset_direction,
+            # Wake the update cycle at suppression expiry so a deferred
+            # tilt-only update fires promptly (issue #756). No-op for
+            # single-axis policies (base attach ignores it).
+            schedule_refresh_after=self._schedule_refresh_after,
         )
 
         # Time window manager (start/end time checks)
@@ -506,6 +517,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # astronomical fallback the moment the grace window expires (otherwise the
         # fallback would wait for the next state-change/periodic refresh).
         self._gate_fallback_unsub: Callable[[], None] | None = None
+
+        # Issue #756: cancel handle for the single ``async_call_later`` wake that
+        # re-runs the update cycle at venetian back-rotate suppression expiry, so
+        # a tilt-only update deferred while the window was open fires promptly.
+        self._refresh_after_unsub: Callable[[], None] | None = None
 
     def _make_detector_config(self, options) -> DetectorConfig:
         """Build the manual-override DetectorConfig from raw options.
@@ -1383,20 +1399,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             released_slots
         )
 
-        # Handle types of changes
-        if self.state_change:
-            await self.async_handle_state_change(
-                state,
-                options,
-                custom_position_released_entities,
-                safety_release=safety_release,
-                template_release=template_release,
-            )
-        elif auto_expired:
-            # One or more manual overrides just timed out.  Proactively send
-            # the fresh pipeline position so covers don't linger at the
-            # user-moved position until the next solar/entity-state event.
-            await self._async_send_after_override_clear(state, options)
+        # Handle types of changes — single dispatch authority (issue #756).
+        await self._dispatch_for_cycle(
+            state,
+            options,
+            auto_expired=auto_expired,
+            custom_position_released_entities=custom_position_released_entities,
+            safety_release=safety_release,
+            template_release=template_release,
+        )
         if self.cover_state_change:
             await self.async_handle_cover_state_change(state)
         if self.first_refresh:
@@ -1665,6 +1676,88 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 sent.add(cover)
         return sent
 
+    def _resolved_target_signature(self) -> tuple | None:
+        """Signature of this cycle's resolved cover target (issue #756).
+
+        Captures everything that decides what command would be sent —
+        winning handler, final position (post interpolation / inverse-state),
+        tilt, and the safety / bypass / skip / floor-clamp flags. Comparing it
+        against ``_last_dispatched_target_sig`` lets the dispatch path fire when
+        the resolved target changes between cycles even if the transient
+        ``state_change`` edge was lost. ``None`` when no pipeline result exists.
+        """
+        result = self._pipeline_result
+        if result is None:
+            return None
+        return (
+            result.control_method.value,
+            self.state,
+            result.tilt,
+            result.is_safety,
+            result.bypass_auto_control,
+            result.skip_command,
+            result.floor_clamp_applied,
+        )
+
+    async def _dispatch_for_cycle(
+        self,
+        state: int,
+        options,
+        *,
+        auto_expired: bool,
+        custom_position_released_entities: set[str],
+        safety_release: bool,
+        template_release: bool,
+    ) -> None:
+        """Decide and run command dispatch for this update cycle (issue #756).
+
+        The single dispatch authority. Dispatch fires when either:
+          * a tracked-entity ``state_change`` edge arrived this cycle, OR
+          * the resolved cover target changed versus the last-dispatched one
+            (``target_changed``) — even with no ``state_change`` edge. This is
+            the #756 fix: a long-blocking venetian settle/tilt sequence holding
+            the update cycle could clobber the ``state_change`` flag, stranding
+            an override that had already won the pipeline. Comparing resolved
+            targets recovers the lost dispatch on the very next cycle.
+
+        The last-dispatched signature is recorded only when no cover still has a
+        pending secondary-axis (venetian tilt) command, so a deferred tilt keeps
+        being re-attempted until it actually sends.
+        """
+        current_sig = self._resolved_target_signature()
+        target_changed = (
+            self._last_dispatched_target_sig is not None
+            and current_sig is not None
+            and current_sig != self._last_dispatched_target_sig
+        )
+        if self.state_change:
+            await self.async_handle_state_change(
+                state,
+                options,
+                custom_position_released_entities,
+                safety_release=safety_release,
+                template_release=template_release,
+                target_changed=target_changed,
+            )
+        elif auto_expired:
+            # One or more manual overrides just timed out.  Proactively send
+            # the fresh pipeline position so covers don't linger at the
+            # user-moved position until the next solar/entity-state event.
+            await self._async_send_after_override_clear(state, options)
+        elif target_changed:
+            # No state_change edge this cycle, but the resolved target moved
+            # since the last dispatch — send it through the same path.
+            await self.async_handle_state_change(
+                state,
+                options,
+                custom_position_released_entities,
+                safety_release=safety_release,
+                template_release=template_release,
+                target_changed=True,
+            )
+        if not any(self._policy.has_pending_secondary_axis(e) for e in self.entities):
+            self._last_dispatched_target_sig = current_sig
+
     async def async_handle_state_change(
         self,
         state: int,
@@ -1673,6 +1766,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         *,
         safety_release: bool = False,
         template_release: bool = False,
+        target_changed: bool = False,
     ):
         """Send position commands to all covers when a tracked entity changes.
 
@@ -1754,6 +1848,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             or custom_position_sensor_triggered
             or custom_position_released
             or floor_clamp
+            or target_changed
         )
         if custom_position_released or safety_release:
             reason = "custom_position_released"
@@ -1768,6 +1863,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug(
                 "Floor clamp active — bypassing time/position delta gates to "
                 "raise cover to floor position %s",
+                state,
+            )
+        elif target_changed and not self.state_change:
+            # Issue #756: dispatch driven purely by a resolved-target change
+            # (the lost-state-change-edge recovery), with no other force driver.
+            reason = "target_changed"
+            self.logger.debug(
+                "Resolved target changed without a state-change edge — "
+                "bypassing time/position delta gates to send position %s",
                 state,
             )
         else:
@@ -2881,6 +2985,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._gate_fallback_unsub = None
         await self.async_request_refresh()
 
+    @callback
+    def _schedule_refresh_after(self, secs: float) -> None:
+        """Schedule one refresh ``secs`` from now (issue #756).
+
+        Injected into the cover-type policy so a venetian tilt-only update that
+        was deferred while the back-rotate suppression window was open gets a
+        prompt wake at window expiry — instead of waiting for the next
+        unrelated tracked-entity change. Any in-flight wake is cancelled first
+        so there is never more than one outstanding.
+        """
+        if self._refresh_after_unsub is not None:
+            self._refresh_after_unsub()
+            self._refresh_after_unsub = None
+        delay = secs if secs and secs > 0 else 0
+        self._refresh_after_unsub = async_call_later(
+            self.hass, delay, self._on_refresh_after_due
+        )
+
+    async def _on_refresh_after_due(self, _now: dt.datetime) -> None:
+        """Fire when a scheduled deferred-tilt wake is due: request a refresh."""
+        self._refresh_after_unsub = None
+        await self.async_request_refresh()
+
     async def _check_sunset_window_transition(self) -> None:
         """Delegate astronomical-sunset-window transition handling to the tracker.
 
@@ -2936,6 +3063,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._gate_fallback_unsub is not None:
             self._gate_fallback_unsub()
             self._gate_fallback_unsub = None
+
+        # Cancel the deferred-tilt refresh wake (issue #756).
+        if self._refresh_after_unsub is not None:
+            self._refresh_after_unsub()
+            self._refresh_after_unsub = None
 
         self.logger.debug("Coordinator shutdown complete")
 
