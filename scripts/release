@@ -6,14 +6,13 @@
 # git tagging, and GitHub release creation.
 #
 # Usage:
-#   ./scripts/release                    Interactive mode
-#   ./scripts/release beta               Auto-increment beta version
-#   ./scripts/release patch              Increment patch version
-#   ./scripts/release minor              Increment minor version
-#   ./scripts/release major              Increment major version
-#   ./scripts/release 2.5.1-beta.7       Explicit version
-#   ./scripts/release beta --dry-run     Preview without executing
-#   ./scripts/release patch --editor     Use editor for release notes
+#   ./scripts/release                     Interactive mode
+#   ./scripts/release 2026.7.0            Monthly stable release (explicit CalVer)
+#   ./scripts/release 2026.7.1            In-month bug-fix patch
+#   ./scripts/release 2026.7.0-beta.1     Explicit beta version
+#   ./scripts/release beta                Auto-increment beta version
+#   ./scripts/release 2026.7.0 --dry-run  Preview without executing
+#   ./scripts/release beta --editor       Use editor for release notes
 #
 
 set -e
@@ -113,12 +112,15 @@ USAGE:
     ./scripts/release [VERSION_SPEC] [OPTIONS]
 
 VERSION_SPEC:
-    patch               Increment patch version (X.Y.Z+1)
-    minor               Increment minor version (X.Y+1.0)
-    major               Increment major version (X+1.0.0)
-    beta                Auto-increment beta version
-    X.Y.Z               Explicit version number
-    X.Y.Z-beta.N        Explicit beta version
+    This project uses CalVer (Year.Month.Patch, e.g. 2026.7.0). Pass an
+    explicit version for stable releases:
+
+    YYYY.M.PATCH        Stable release (monthly drop YYYY.M.0; in-month fix YYYY.M.N)
+    YYYY.M.PATCH-beta.N Explicit beta version
+    beta                Auto-increment the -beta.N suffix of the current version
+
+    The SemVer bump words (patch/minor/major) are rejected for CalVer projects;
+    they remain valid only for SemVer-versioned repos.
 
     If omitted, enters interactive mode.
 
@@ -135,31 +137,34 @@ EXAMPLES:
     # Interactive mode
     ./scripts/release
 
-    # Create beta release (auto-increment)
+    # Monthly stable drop
+    ./scripts/release 2026.7.0 --editor
+
+    # In-month bug-fix patch
+    ./scripts/release 2026.7.1 --editor
+
+    # First beta of the upcoming monthly
+    ./scripts/release 2026.7.0-beta.1 --editor
+
+    # Auto-increment an existing beta
     ./scripts/release beta --editor
 
-    # Create patch release
-    ./scripts/release patch --editor
-
-    # Explicit version
-    ./scripts/release 2.5.1-beta.8 --editor
-
     # Preview without changes
-    ./scripts/release beta --dry-run
+    ./scripts/release 2026.7.0 --dry-run
 
     # CI mode (no prompts, auto notes)
     ./scripts/release beta --yes --auto-notes
 
 RELEASE TYPES:
     Beta Release:
-        - Created from feature branches
-        - Version format: X.Y.Z-beta.N
+        - Cut from develop
+        - Version format: YYYY.M.PATCH-beta.N
         - Marked as prerelease on GitHub
         - Includes testing instructions
 
     Production Release:
-        - Created from main branch
-        - Version format: X.Y.Z
+        - Cut from main (monthly, first Tuesday)
+        - Version format: YYYY.M.PATCH
         - Stable, production-ready
         - Full release notes
 
@@ -409,14 +414,22 @@ validate_branch() {
 validate_version_format() {
     local version="$1"
 
-    # Semantic versioning regex: X.Y.Z or X.Y.Z-beta.N
+    # Three numeric segments, optional -beta.N. Accepts both SemVer (2.30.2)
+    # and CalVer (2026.7.0) since both are dotted numeric triples.
     if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
         log_error "Invalid version format: $version"
-        log_info "Expected: X.Y.Z or X.Y.Z-beta.N"
+        log_info "Expected: X.Y.Z / YYYY.M.PATCH, optionally -beta.N"
         return 1
     fi
 
     return 0
+}
+
+is_calver() {
+    # CalVer when the first dot-separated segment is a 4-digit year (>= 2000),
+    # e.g. 2026.7.0. SemVer (2.30.2) returns non-zero.
+    local first="${1%%.*}"
+    [[ $first =~ ^[0-9]{4}$ && $first -ge 2000 ]]
 }
 
 check_tag_exists() {
@@ -485,6 +498,22 @@ calculate_new_version() {
 
     if [[ -z $major ]]; then
         log_error "Could not parse current version: $current"
+        exit 1
+    fi
+
+    # CalVer projects drive stable cuts with an explicit Year.Month.Patch; the
+    # SemVer bump words don't map to a calendar scheme. `beta` is the one
+    # convenience word kept. All messages go to stderr — this function runs in a
+    # command substitution, so stdout is captured into NEW_VERSION.
+    if is_calver "$current" && [[ $spec == patch || $spec == minor || $spec == major ]]; then
+        local cal_year cal_month
+        cal_year=$(date -u +%Y)
+        cal_month=$(( 10#$(date -u +%m) ))
+        log_error "CalVer project — the '$spec' bump word isn't supported; pass an explicit version."
+        {
+            echo "    Monthly drop:    ./scripts/release ${cal_year}.${cal_month}.0"
+            echo "    In-month bugfix: ./scripts/release ${major}.${minor}.$((patch + 1))"
+        } >&2
         exit 1
     fi
 
@@ -904,34 +933,69 @@ get_release_url() {
 # ============================================================================
 
 interactive_version_selection() {
-    echo ""
-    echo -e "${BOLD}Select version increment type:${RESET}"
-    echo ""
-    echo "  1) Beta (auto-increment beta version)"
-    echo "  2) Patch (increment X.Y.Z+1)"
-    echo "  3) Minor (increment X.Y+1.0)"
-    echo "  4) Major (increment X+1.0.0)"
-    echo "  5) Custom (enter explicit version)"
-    echo ""
+    local current="$1"
+    # Only the chosen spec goes to stdout (it's captured by the caller); all
+    # menu/prompt text is routed to stderr so it stays visible and uncaptured.
+    {
+        echo ""
+        echo -e "${BOLD}Select the release version:${RESET}"
+        echo ""
+    } >&2
 
-    local choice
-    read -r -p "Choice [1-5]: " choice
-
-    case "$choice" in
-        1) echo "beta" ;;
-        2) echo "patch" ;;
-        3) echo "minor" ;;
-        4) echo "major" ;;
-        5)
+    local choice custom_version
+    if is_calver "$current"; then
+        local cur_major cur_minor cur_patch cal_year cal_month monthly bugfix
+        read -r cur_major cur_minor cur_patch _ <<< "$(parse_version "$current")"
+        cal_year=$(date -u +%Y)
+        cal_month=$(( 10#$(date -u +%m) ))
+        monthly="${cal_year}.${cal_month}.0"
+        bugfix="${cur_major}.${cur_minor}.$((cur_patch + 1))"
+        {
+            echo "  1) Monthly drop      ($monthly)"
+            echo "  2) In-month bug fix  ($bugfix)"
+            echo "  3) Beta (auto-increment -beta.N)"
+            echo "  4) Custom (enter explicit YYYY.M.PATCH)"
             echo ""
-            read -r -p "Enter version (e.g., 2.5.1 or 2.5.1-beta.8): " custom_version
-            echo "$custom_version"
-            ;;
-        *)
-            log_error "Invalid choice: $choice"
-            exit 1
-            ;;
-    esac
+        } >&2
+        read -r -p "Choice [1-4]: " choice
+        case "$choice" in
+            1) echo "$monthly" ;;
+            2) echo "$bugfix" ;;
+            3) echo "beta" ;;
+            4)
+                read -r -p "Enter version (e.g., 2026.7.0 or 2026.7.0-beta.1): " custom_version
+                echo "$custom_version"
+                ;;
+            *)
+                log_error "Invalid choice: $choice"
+                exit 1
+                ;;
+        esac
+    else
+        {
+            echo "  1) Beta (auto-increment beta version)"
+            echo "  2) Patch (increment X.Y.Z+1)"
+            echo "  3) Minor (increment X.Y+1.0)"
+            echo "  4) Major (increment X+1.0.0)"
+            echo "  5) Custom (enter explicit version)"
+            echo ""
+        } >&2
+        read -r -p "Choice [1-5]: " choice
+        case "$choice" in
+            1) echo "beta" ;;
+            2) echo "patch" ;;
+            3) echo "minor" ;;
+            4) echo "major" ;;
+            5)
+                read -r -p "Enter version (e.g., 2.5.1 or 2.5.1-beta.8): " custom_version
+                echo "$custom_version"
+                ;;
+            *)
+                log_error "Invalid choice: $choice"
+                exit 1
+                ;;
+        esac
+    fi
 }
 
 confirm_release() {
@@ -1028,7 +1092,7 @@ main() {
 
     # Interactive mode if no version spec provided
     if [[ -z $VERSION_SPEC ]]; then
-        VERSION_SPEC=$(interactive_version_selection)
+        VERSION_SPEC=$(interactive_version_selection "$CURRENT_VERSION")
     fi
 
     # Calculate new version
