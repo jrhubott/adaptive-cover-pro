@@ -407,3 +407,21 @@ def test_duplicate_configure_translation_keys_match_schema() -> None:
     assert (
         "azimuth" not in data
     ), "Wrong key 'azimuth' in duplicate_configure.data — must be 'set_azimuth' (CONF_AZIMUTH)"
+
+
+# ---------------------------------------------------------------------------
+# Issue #738 — non-EN translation files must not contain untranslated English
+# ---------------------------------------------------------------------------
+
+
+def test_no_untranslated_learn_more() -> None:
+    """Non-EN translation files must not contain the English '[Learn more]' string."""
+    non_en_files = [f for f in TRANSLATION_FILES if f.stem != "en"]
+    for lang_file in non_en_files:
+        values = _all_leaf_values(_load(lang_file))
+        offending = [v for v in values if "[Learn more]" in v]
+        assert not offending, (
+            f"{lang_file.name}: {len(offending)} value(s) contain untranslated "
+            f"'[Learn more]' — translate to the target language. "
+            f"First offender: {offending[0]!r}"
+        )
