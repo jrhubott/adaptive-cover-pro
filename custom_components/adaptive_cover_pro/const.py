@@ -276,6 +276,12 @@ CONF_SUNRISE_TIME_ENTITY = "sunrise_time_entity"
 CONF_DAYTIME_GATE_SENSORS = "daytime_gate_sensors"  # on/active = daytime/track
 CONF_DAYTIME_GATE_TEMPLATE = "daytime_gate_template"  # truthy = daytime/track
 CONF_DAYTIME_GATE_TEMPLATE_MODE = "daytime_gate_template_mode"  # TemplateCombineMode
+# Grace window (seconds) for which the gate holds its last-known daytime/dark
+# verdict when every gate source goes indeterminate (sensors unavailable/unknown/
+# missing, template unrenderable) — issue #742. After this elapses with no usable
+# source the gate falls back to the astronomical sunset/sunrise window (resolves to
+# ``daytime_gate=None``). Fixed, not user-configurable.
+DEFAULT_DAYTIME_GATE_GRACE_SECONDS = 120.0
 # Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
 CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
 CONF_SUNSET_TILT = (

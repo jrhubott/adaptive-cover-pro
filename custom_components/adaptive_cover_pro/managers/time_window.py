@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -10,10 +12,19 @@ if TYPE_CHECKING:
 
     from ..config_context_adapter import ConfigContextAdapter
 
-from ..const import BLANK_TIME, DEFAULT_TEMPLATE_COMBINE_MODE
-from ..helpers import get_datetime_from_str, get_safe_state, is_entity_active
-from ..templates import combine_with_mode, is_template_string, render_condition
+from ..const import (
+    BLANK_TIME,
+    DEFAULT_DAYTIME_GATE_GRACE_SECONDS,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
+)
+from ..helpers import get_datetime_from_str, get_safe_state
+from ..templates import (
+    combine_with_mode,
+    is_template_string,
+    render_condition_or_none,
+)
 from .common import EventRecorder
+from .common.graceful_source import GracefulSource, Resolution, SourceResolution
 
 
 class TimeWindowManager:
@@ -24,7 +35,12 @@ class TimeWindowManager:
     """
 
     def __init__(
-        self, hass: HomeAssistant, logger: ConfigContextAdapter, *, event_buffer=None
+        self,
+        hass: HomeAssistant,
+        logger: ConfigContextAdapter,
+        *,
+        event_buffer=None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Initialize time window manager.
 
@@ -32,6 +48,8 @@ class TimeWindowManager:
             hass: Home Assistant instance
             logger: Context-aware logger
             event_buffer: Shared diagnostic ring buffer (optional).
+            clock: Monotonic time source (seconds) for the daytime-gate grace
+                window. Injected so tests drive the grace timer deterministically.
 
         """
         self._hass = hass
@@ -50,6 +68,11 @@ class TimeWindowManager:
         self._gate_sensors: list[str] = []
         self._gate_template: str | None = None
         self._gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+
+        # Daytime-gate graceful-fallback state machine (issue #742): holds the
+        # last-known daytime/dark verdict for a grace window when every gate
+        # source goes indeterminate, then falls back to the astronomical window.
+        self._graceful = GracefulSource(DEFAULT_DAYTIME_GATE_GRACE_SECONDS, clock=clock)
 
         # Cached start time from last evaluation (for diagnostics)
         self._cached_start_time: dt.datetime | None = None
@@ -81,7 +104,17 @@ class TimeWindowManager:
         self._start_time_entity = start_time_entity
         self._end_time_config = end_time
         self._end_time_entity = end_time_entity
-        self._gate_sensors = list(gate_sensors)
+        # update_config runs every cycle, so only forget the held verdict when the
+        # gate config actually changed (issue #742) — otherwise a steady config
+        # would reset the grace machine each cycle and never hold anything.
+        new_sensors = list(gate_sensors)
+        if (
+            new_sensors != self._gate_sensors
+            or gate_template != self._gate_template
+            or gate_template_mode != self._gate_template_mode
+        ):
+            self._graceful.reset()
+        self._gate_sensors = new_sensors
         self._gate_template = gate_template
         self._gate_template_mode = gate_template_mode
 
@@ -129,52 +162,97 @@ class TimeWindowManager:
         """
         return bool(self._gate_sensors) or is_template_string(self._gate_template)
 
+    def _gate_verdict(self) -> bool | None:
+        """Read the gate's *live* daytime verdict, or ``None`` when indeterminate.
+
+        Tri-state — isolates the "is the gate indeterminate?" rule so the global
+        fail-open contract of :func:`is_entity_active` (other features depend on
+        it) stays untouched (issue #742):
+
+        * **sensor opinion** — ``None`` when there are no sensors or every
+          configured sensor reads invalid (``get_safe_state`` is ``None`` —
+          unavailable/unknown/missing); otherwise ``any`` valid sensor is ``"on"``.
+        * **template opinion** — :func:`render_condition_or_none` gives ``None``
+          when the template is absent or unrenderable, else its boolean.
+        * **combine** — both ``None`` → ``None`` (fully indeterminate); exactly
+          one ``None`` → the other; both present → folded via the configured
+          OR/AND mode (matching the pre-#742 gate evaluation).
+        """
+        sensor_states = [get_safe_state(self._hass, sid) for sid in self._gate_sensors]
+        valid_states = [s for s in sensor_states if s is not None]
+        sensor_opinion: bool | None = (
+            None if not valid_states else any(s == "on" for s in valid_states)
+        )
+        template_opinion = render_condition_or_none(self._hass, self._gate_template)
+
+        if sensor_opinion is None and template_opinion is None:
+            return None
+        if sensor_opinion is None:
+            return template_opinion
+        if template_opinion is None:
+            return sensor_opinion
+        return combine_with_mode(
+            template_opinion,
+            sensor_opinion,
+            self._gate_template_mode,
+            has_template=True,
+            has_others=True,
+        )
+
+    def _resolve(self) -> Resolution:
+        """Feed this cycle's gate verdict to the grace machine (idempotent)."""
+        return self._graceful.observe(self._gate_verdict())
+
+    @property
+    def effective_daytime_gate(self) -> bool | None:
+        """Tri-state gate verdict the coordinator forwards to the astral engine.
+
+        ``None`` means "no gate opinion → use the astronomical sunset/sunrise
+        window" — the single value passed as ``daytime_gate`` to
+        ``compute_effective_default`` (issue #632/#742). It is ``None`` when the
+        gate is unconfigured, and also when every gate source has been
+        indeterminate past the grace window (FELL_BACK). While a source is
+        determinate it is the live verdict; within the grace window it is the
+        held last-known verdict (HOLDING).
+        """
+        if not self.gate_is_configured:
+            return None
+        resolution = self._resolve()
+        if resolution.state is SourceResolution.FELL_BACK:
+            return None
+        return resolution.value
+
     @property
     def gate_is_daytime(self) -> bool:
         """Whether the daytime gate reports "daytime" (ACP should sun-track).
 
-        Mirrors :pyattr:`MotionManager.is_motion_detected`: the gate template and
-        the gate sensors are combined per the configured mode. Returns True when
-        the gate is unconfigured (feature disabled → astronomical fallback). The
-        template renders fail-open to *daytime* (``default=True``) — unlike motion's
-        ``default=False`` — so a broken template never forces a premature sunset.
+        Derived from :pyattr:`effective_daytime_gate`: ``None`` (unconfigured or
+        grace-expired fallback) reads as daytime so the clock factor of
+        :pyattr:`is_active` collapses to the pre-gate astronomical behaviour.
         """
-        if not self.gate_is_configured:
-            return True  # Unconfigured → daytime → astronomical fallback
-
-        has_template = is_template_string(self._gate_template)
-        # default=True ONLY when a template is actually set: fail-open to daytime so
-        # a broken template never slams the cover to the sunset position (motion's
-        # gate fails closed; this one must not, because "dark" here ends sun
-        # tracking). With no template the source must be neutral for the combine
-        # (False), or OR would read daytime even when a sensor says dark.
-        template_truthy = (
-            render_condition(self._hass, self._gate_template, default=True)
-            if has_template
-            else False
-        )
-        sensors_active = any(
-            is_entity_active(self._hass, sid) for sid in self._gate_sensors
-        )
-        return combine_with_mode(
-            template_truthy,
-            sensors_active,
-            self._gate_template_mode,
-            has_template=has_template,
-            has_others=bool(self._gate_sensors),
-        )
+        eff = self.effective_daytime_gate
+        return True if eff is None else eff
 
     @property
     def gate_is_dark(self) -> bool:
-        """Whether a *configured* gate reports "dark" (apply the sunset position).
+        """Whether a *configured* gate currently reports "dark".
 
-        ``None``-safe inverse of :pyattr:`gate_is_daytime` that stays False when the
-        gate is unconfigured, so the coordinator can pass it straight through as the
-        ``daytime_gate`` override to ``compute_effective_default`` (issue #632):
-        ``True`` forces the sunset position, ``False`` (here, unconfigured) leaves
-        the astronomical decision untouched.
+        False when the gate is unconfigured or has fallen back to astronomical
+        (``effective_daytime_gate`` is ``None``), so the gate-dark night position
+        only fires on a genuine dark verdict (live or held).
         """
         return self.gate_is_configured and not self.gate_is_daytime
+
+    def seconds_until_gate_fallback(self) -> float | None:
+        """Seconds until a HELD gate verdict expires to the astronomical fallback.
+
+        ``None`` when no prompt wake is needed (gate determinate, never observed,
+        already fell back, or unconfigured). The coordinator uses this to schedule
+        a single ``async_call_later`` refresh so the fallback engages promptly at
+        grace expiry instead of waiting for the next state-change/periodic cycle.
+        """
+        self._resolve()
+        return self._graceful.remaining()
 
     def _normalize_to_today(self, time: dt.datetime) -> dt.datetime:
         """Normalize a future-dated entity time to today's date.

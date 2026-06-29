@@ -1082,6 +1082,36 @@ class TestDaytimeGateOverride:
         assert active is False
         assert result == 80
 
+    def test_gate_none_is_the_fell_back_astral_target(self):
+        """Issue #742: the graceful-fallback target (daytime_gate=None) is astral.
+
+        When the gate has been indeterminate past its grace window the manager
+        resolves ``effective_daytime_gate`` to ``None``; this confirms that value
+        re-enters the astronomical sunset/sunrise branch (no new astral code) —
+        same outcome as an unconfigured gate at the same instant.
+        """
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        # Past astral sunset → astral branch must activate the sunset position.
+        evening = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        with _freeze_now(evening):
+            fell_back = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=None,
+            )
+            no_gate = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+            )
+        assert fell_back == no_gate == (20, True)
+
     def test_gate_false_ignores_window_explicitly_started(self):
         # The gate short-circuits before the window_explicitly_started branch.
         sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)

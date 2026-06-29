@@ -10,7 +10,7 @@ back to the astronomical sunset/sunrise calc — zero regression.
 from __future__ import annotations
 
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -102,11 +102,53 @@ def test_gate_sensor_on_keeps_window_open(mgr):
     assert mgr.is_active is True
 
 
-def test_gate_sensor_unknown_fails_open_to_daytime(mgr):
-    # Sensor never reported (no state) → is_entity_active fail-open → daytime.
+def _clock_mgr():
+    """Build a gate manager with an injectable fake clock (issue #742).
+
+    Returns ``(mgr, clock)`` where ``clock`` is a one-element list whose value is
+    "now" in seconds — mutate ``clock[0]`` to advance the grace window.
+    """
+    hass = _FakeHass()
+    clock = [0.0]
+    mgr = TimeWindowManager(
+        hass, logging.getLogger("test_issue_632_clock"), clock=lambda: clock[0]
+    )
+    return mgr, clock
+
+
+def test_gate_sensor_indeterminate_since_startup_falls_back_to_astral():
+    # Issue #742 (a): a gate source that has NEVER reported a verdict cannot be
+    # held — there is no last-known value — so the gate falls back to the
+    # astronomical window immediately (effective_daytime_gate is None → clock-open).
+    mgr, _clock = _clock_mgr()
     _configure_gate(mgr, sensors=["binary_sensor.never_reported"])
+    assert mgr.effective_daytime_gate is None
     assert mgr.gate_is_daytime is True
+    assert mgr.gate_is_dark is False
     assert mgr.is_active is True
+
+
+def test_gate_sensor_reported_then_gone_holds_then_falls_back():
+    # Issue #742 (b): a sensor that reported a verdict and then went unavailable is
+    # held for the grace window, then falls back to astronomical once it expires.
+    mgr, clock = _clock_mgr()
+    _configure_gate(mgr, sensors=["binary_sensor.gate"])
+
+    # Real verdict observed → recorded as last-known.
+    mgr._hass.states.set("binary_sensor.gate", "on")
+    clock[0] = 0.0
+    assert mgr.effective_daytime_gate is True
+
+    # Source goes unavailable inside the grace window → hold last-known daytime.
+    mgr._hass.states.set("binary_sensor.gate", "unavailable")
+    clock[0] = 60.0
+    assert mgr.effective_daytime_gate is True  # HOLDING
+
+    # Still unavailable past the grace window → fall back to astronomical.
+    clock[0] = 60.0 + 121.0
+    assert mgr.effective_daytime_gate is None  # FELL_BACK
+    assert mgr.gate_is_daytime is True
+    assert mgr.gate_is_dark is False
 
 
 def test_gate_multiple_sensors_any_on_is_daytime(mgr):
@@ -189,8 +231,9 @@ def _coord_with_gate(*, gate_is_dark: bool, gate_is_configured: bool):
     coord.hass.states.get.return_value = None  # no sunset/sunrise time entities
 
     time_mgr = MagicMock()
-    # gate_is_daytime is the verdict the coordinator forwards as ``daytime_gate``;
-    # keep gate_is_dark consistent as its inverse when configured.
+    # effective_daytime_gate is the verdict the coordinator forwards as
+    # ``daytime_gate`` (issue #742); keep gate_is_daytime/gate_is_dark consistent.
+    time_mgr.effective_daytime_gate = (not gate_is_dark) if gate_is_configured else None
     time_mgr.gate_is_daytime = (not gate_is_dark) if gate_is_configured else True
     time_mgr.gate_is_dark = gate_is_dark if gate_is_configured else False
     time_mgr.gate_is_configured = gate_is_configured
@@ -240,3 +283,100 @@ def test_coordinator_unconfigured_gate_uses_astronomical():
     eff, is_sunset_active = coord._compute_current_effective_default(options)
     assert isinstance(is_sunset_active, bool)
     assert eff in (20, 80)
+
+
+# ---------------------------------------------------------------------------
+# Coordinator wiring — graceful gate fallback (issue #742)
+# ---------------------------------------------------------------------------
+
+
+def test_coordinator_forwards_effective_daytime_gate_when_fell_back():
+    """A configured-but-fell-back gate forwards daytime_gate=None (astral)."""
+    coord = _coord_with_gate(gate_is_dark=True, gate_is_configured=True)
+    # Gate is configured and would read dark, BUT has fallen back to astronomical:
+    # the coordinator must forward the *effective* value (None), not gate_is_daytime.
+    coord._time_mgr.effective_daytime_gate = None
+    options = {CONF_SUNSET_POS: 20, "default_percentage": 80}
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+        return_value=(80, False),
+    ) as m:
+        coord._compute_current_effective_default(options)
+    assert m.call_args.kwargs["daytime_gate"] is None
+
+
+def _coord_for_wake(secs):
+    """Minimal coordinator stub for the gate-fallback wake scheduler."""
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord.hass = MagicMock()
+    coord._gate_fallback_unsub = None
+    time_mgr = MagicMock()
+    time_mgr.seconds_until_gate_fallback.return_value = secs
+    coord._time_mgr = time_mgr
+    return coord
+
+
+def test_schedule_gate_fallback_wake_when_holding():
+    """A HOLDING gate (remaining seconds) schedules exactly one async_call_later wake."""
+    coord = _coord_for_wake(secs=42.0)
+    cancel = MagicMock()
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.async_call_later",
+        return_value=cancel,
+    ) as m:
+        coord._schedule_gate_fallback_wake()
+    m.assert_called_once()
+    assert m.call_args.args[0] is coord.hass
+    assert m.call_args.args[1] == 42.0
+    assert coord._gate_fallback_unsub is cancel
+
+
+def test_schedule_gate_fallback_wake_no_wake_when_determinate():
+    """A determinate gate (None remaining) schedules no wake."""
+    coord = _coord_for_wake(secs=None)
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.async_call_later"
+    ) as m:
+        coord._schedule_gate_fallback_wake()
+    m.assert_not_called()
+    assert coord._gate_fallback_unsub is None
+
+
+def test_schedule_gate_fallback_wake_cancels_previous():
+    """A new wake cancels the previous in-flight handle first."""
+    coord = _coord_for_wake(secs=10.0)
+    previous = MagicMock()
+    coord._gate_fallback_unsub = previous
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.async_call_later",
+        return_value=MagicMock(),
+    ):
+        coord._schedule_gate_fallback_wake()
+    previous.assert_called_once()
+
+
+async def test_gate_fallback_due_callback_requests_refresh():
+    """The scheduled callback clears the handle and requests a refresh."""
+    coord = _coord_for_wake(secs=None)
+    coord._gate_fallback_unsub = MagicMock()
+    coord.async_request_refresh = AsyncMock()
+    await coord._on_gate_fallback_due(None)
+    assert coord._gate_fallback_unsub is None
+    coord.async_request_refresh.assert_awaited_once()
+
+
+async def test_async_shutdown_cancels_gate_fallback_handle():
+    """async_shutdown cancels and clears the gate-fallback wake handle."""
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._grace_mgr = MagicMock()
+    coord._cancel_motion_timeout = MagicMock()
+    coord._cancel_weather_timeout = MagicMock()
+    coord._cmd_svc = MagicMock()
+    coord._forecast_unsub = None
+    cancel = MagicMock()
+    coord._gate_fallback_unsub = cancel
+    await coord.async_shutdown()
+    cancel.assert_called_once()
+    assert coord._gate_fallback_unsub is None

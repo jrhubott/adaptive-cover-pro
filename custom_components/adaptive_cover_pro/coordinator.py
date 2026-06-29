@@ -31,6 +31,7 @@ try:
 except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -498,6 +499,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # ``async_track_time_interval`` cancel handle.
         self._position_forecast: Forecast | None = None
         self._forecast_unsub: Callable[[], None] | None = None
+
+        # Issue #742: cancel handle for the single ``async_call_later`` wake that
+        # flips the daytime gate from HOLDING its last-known verdict to the
+        # astronomical fallback the moment the grace window expires (otherwise the
+        # fallback would wait for the next state-change/periodic refresh).
+        self._gate_fallback_unsub: Callable[[], None] | None = None
 
     def _make_detector_config(self, options) -> DetectorConfig:
         """Build the manual-override DetectorConfig from raw options.
@@ -1420,6 +1427,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if hasattr(self._cover_data, "_last_calc_details"):
             details = self._cover_data._last_calc_details  # noqa: SLF001
             glare_active = len(details.get("glare_zones_active", [])) > 0
+
+        # Issue #742: now that the gate verdict is resolved for this cycle, arm a
+        # single wake at grace expiry if the gate is HOLDING its last-known value.
+        self._schedule_gate_fallback_wake()
 
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
@@ -2798,14 +2809,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if cover_data is None:
             cover_data = self.get_blind_data(options=options)
         # A configured daytime gate (issue #632) OWNS the day/night boundary:
-        # pass its daytime/dark verdict (True=daytime→no sunset, False=dark→apply
-        # sunset position) only when configured, else None so
-        # compute_effective_default keeps the astronomical decision.
-        daytime_gate = (
-            self._time_mgr.gate_is_daytime
-            if self._time_mgr.gate_is_configured
-            else None
-        )
+        # ``effective_daytime_gate`` is the single tri-state verdict to forward —
+        # True=daytime→no sunset, False=dark→apply sunset position, None=defer to
+        # the astronomical decision. None covers both an unconfigured gate and the
+        # graceful fallback after every gate source has been indeterminate past the
+        # grace window (issue #742).
+        daytime_gate = self._time_mgr.effective_daytime_gate
         # End-of-window position (issue #625): an optional, clearable position
         # applied once the operating window is clock-closed. ``before_end_time``
         # is True all morning (end is later today), so the override only fires in
@@ -2826,6 +2835,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             end_of_window_pos=eow_pos,
             end_of_window_active=window_is_closed,
         )
+
+    @callback
+    def _schedule_gate_fallback_wake(self) -> None:
+        """Schedule one refresh at daytime-gate grace expiry (issue #742).
+
+        While the gate is HOLDING its last-known verdict, nothing else would
+        trigger the fall-back to the astronomical window until the next
+        state-change or periodic refresh. Schedule a single ``async_call_later``
+        wake at the remaining grace so the fallback engages promptly. Any
+        in-flight wake is cancelled first so there is never more than one; a
+        determinate (or already-fallen-back) gate schedules none.
+        """
+        if self._gate_fallback_unsub is not None:
+            self._gate_fallback_unsub()
+            self._gate_fallback_unsub = None
+        secs = self._time_mgr.seconds_until_gate_fallback()
+        if secs is None:
+            return
+        self._gate_fallback_unsub = async_call_later(
+            self.hass, secs, self._on_gate_fallback_due
+        )
+
+    async def _on_gate_fallback_due(self, _now: dt.datetime) -> None:
+        """Fire when the daytime-gate grace window expires: request a refresh."""
+        self._gate_fallback_unsub = None
+        await self.async_request_refresh()
 
     async def _check_sunset_window_transition(self) -> None:
         """Delegate astronomical-sunset-window transition handling to the tracker.
@@ -2877,6 +2912,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._forecast_unsub is not None:
             self._forecast_unsub()
             self._forecast_unsub = None
+
+        # Cancel the daytime-gate fallback wake (issue #742).
+        if self._gate_fallback_unsub is not None:
+            self._gate_fallback_unsub()
+            self._gate_fallback_unsub = None
 
         self.logger.debug("Coordinator shutdown complete")
 

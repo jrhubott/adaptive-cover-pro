@@ -49,6 +49,7 @@ def _coord_with_window(
     time_mgr.gate_is_daytime = True
     time_mgr.gate_is_dark = False
     time_mgr.gate_is_configured = False  # astral path, no gate
+    time_mgr.effective_daytime_gate = None  # no gate → astral (issue #742)
     time_mgr.window_explicitly_started = False
     coord._time_mgr = time_mgr
 

@@ -722,6 +722,199 @@ async def test_check_transition_no_on_window_open_no_error():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Daytime-gate graceful fallback (issue #742)
+# ---------------------------------------------------------------------------
+
+
+class _FakeState:
+    def __init__(self, state: str) -> None:
+        self.state = state
+        self.attributes: dict = {}
+
+
+class _FakeStates:
+    def __init__(self) -> None:
+        self._d: dict[str, _FakeState] = {}
+
+    def set(self, entity_id: str, state: str) -> None:
+        self._d[entity_id] = _FakeState(state)
+
+    def get(self, entity_id: str):
+        return self._d.get(entity_id)
+
+
+class _FakeHass:
+    def __init__(self) -> None:
+        self.states = _FakeStates()
+
+
+def _clock_manager():
+    """TimeWindowManager with a fake hass + injectable fake clock (seconds)."""
+    hass = _FakeHass()
+    clock = [0.0]
+    logger = MagicMock()
+    mgr = TimeWindowManager(hass=hass, logger=logger, clock=lambda: clock[0])
+    return mgr, clock
+
+
+def _gate(mgr, *, sensors=(), template=None, mode="or"):
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+        gate_sensors=list(sensors),
+        gate_template=template,
+        gate_template_mode=mode,
+    )
+
+
+@pytest.mark.unit
+def test_gate_determinate_records_and_tracks():
+    """A live verdict is tracked directly and recorded for later holding."""
+    mgr, _clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    mgr._hass.states.set("binary_sensor.gate", "on")
+    assert mgr.effective_daytime_gate is True
+    assert mgr.is_active is True
+    mgr._hass.states.set("binary_sensor.gate", "off")
+    assert mgr.effective_daytime_gate is False
+    assert mgr.gate_is_dark is True
+    assert mgr.is_active is False
+
+
+@pytest.mark.unit
+def test_gate_within_grace_holds_last_known_dark():
+    """A dark verdict that goes indeterminate is held dark within the grace window."""
+    mgr, clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    mgr._hass.states.set("binary_sensor.gate", "off")
+    clock[0] = 0.0
+    assert mgr.effective_daytime_gate is False  # records dark
+    mgr._hass.states.set("binary_sensor.gate", "unknown")
+    clock[0] = 30.0
+    assert mgr.effective_daytime_gate is False  # HOLDING dark
+    assert mgr.gate_is_dark is True
+    assert mgr.is_active is False
+
+
+@pytest.mark.unit
+def test_gate_within_grace_no_last_known_falls_to_astral():
+    """No verdict ever observed → cannot hold → astral fallback (clock-open)."""
+    mgr, _clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])  # never reported
+    assert mgr.effective_daytime_gate is None
+    assert mgr.gate_is_daytime is True
+    assert mgr.is_active is True
+
+
+@pytest.mark.unit
+def test_gate_grace_expired_effective_none_and_clock_open():
+    """Past the grace window the gate falls back: effective None, is_active clock-open."""
+    mgr, clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    mgr._hass.states.set("binary_sensor.gate", "off")
+    clock[0] = 0.0
+    assert mgr.effective_daytime_gate is False
+    mgr._hass.states.set("binary_sensor.gate", "unavailable")
+    clock[0] = 1.0
+    assert mgr.effective_daytime_gate is False  # HOLDING (anchor=1.0)
+    clock[0] = 1.0 + 121.0
+    assert mgr.effective_daytime_gate is None  # FELL_BACK
+    assert mgr.is_active is True  # clock-open astral fallback
+
+
+@pytest.mark.unit
+def test_gate_one_valid_one_invalid_sensor_is_not_indeterminate():
+    """One valid sensor + one dead sensor is a real verdict, not indeterminate."""
+    mgr, _clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.a", "binary_sensor.b"])
+    mgr._hass.states.set("binary_sensor.a", "on")
+    mgr._hass.states.set("binary_sensor.b", "unavailable")
+    # b is ignored (invalid); a says on → daytime, determinately.
+    assert mgr.effective_daytime_gate is True
+    assert mgr.seconds_until_gate_fallback() is None
+
+
+@pytest.mark.unit
+def test_gate_valid_template_with_dead_sensor_is_not_indeterminate():
+    """A valid template opinion stands even when the only sensor is dead."""
+    mgr, _clock = _clock_manager()
+
+    # Render a fixed template result via the module-level render helper.
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.time_window."
+        "render_condition_or_none",
+        return_value=False,
+    ):
+        _gate(
+            mgr,
+            sensors=["binary_sensor.dead"],
+            template="{{ false }}",
+        )
+        mgr._hass.states.set("binary_sensor.dead", "unavailable")
+        # sensor opinion None, template opinion False → dark, determinately.
+        assert mgr.effective_daytime_gate is False
+        assert mgr.seconds_until_gate_fallback() is None
+
+
+@pytest.mark.unit
+def test_seconds_until_gate_fallback_phases():
+    """seconds_until_gate_fallback: None determinate / ~remaining holding / None expired."""
+    mgr, clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    mgr._hass.states.set("binary_sensor.gate", "on")
+    clock[0] = 0.0
+    assert mgr.effective_daytime_gate is True
+    assert mgr.seconds_until_gate_fallback() is None  # determinate → no wake
+
+    mgr._hass.states.set("binary_sensor.gate", "unavailable")
+    clock[0] = 20.0
+    # First indeterminate observation anchors the window at t=20 → full grace left.
+    assert mgr.effective_daytime_gate is True  # HOLDING
+    assert mgr.seconds_until_gate_fallback() == pytest.approx(120.0)
+    # 20s into the window → ~100s remain.
+    clock[0] = 40.0
+    assert mgr.seconds_until_gate_fallback() == pytest.approx(100.0)
+
+    clock[0] = 20.0 + 121.0
+    assert mgr.effective_daytime_gate is None  # FELL_BACK
+    assert mgr.seconds_until_gate_fallback() is None
+
+
+@pytest.mark.unit
+def test_update_config_no_reset_when_gate_unchanged_preserves_hold():
+    """An identical update_config call must NOT forget the held verdict."""
+    mgr, clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    mgr._hass.states.set("binary_sensor.gate", "on")
+    clock[0] = 0.0
+    assert mgr.effective_daytime_gate is True  # record last-known
+    mgr._hass.states.set("binary_sensor.gate", "unavailable")
+    clock[0] = 10.0
+    assert mgr.effective_daytime_gate is True  # HOLDING
+
+    # Re-apply the SAME gate config (as the coordinator does every cycle).
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    clock[0] = 20.0
+    assert mgr.effective_daytime_gate is True  # still HOLDING — not reset
+
+
+@pytest.mark.unit
+def test_update_config_resets_when_gate_changed_forgets_last_known():
+    """Changing the sensor list forgets the held verdict (fresh grace machine)."""
+    mgr, clock = _clock_manager()
+    _gate(mgr, sensors=["binary_sensor.gate"])
+    mgr._hass.states.set("binary_sensor.gate", "on")
+    clock[0] = 0.0
+    assert mgr.effective_daytime_gate is True  # record last-known on the old sensor
+
+    # Switch to a different (never-reported) sensor → reset → no last-known.
+    _gate(mgr, sensors=["binary_sensor.other"])
+    assert mgr.effective_daytime_gate is None  # FELL_BACK (nothing to hold)
+
+
 @pytest.mark.unit
 def test_after_start_time_with_utc_iso_sun_sensor_string():
     """Entity state is a real UTC ISO string — is converted through to local wall-clock.
