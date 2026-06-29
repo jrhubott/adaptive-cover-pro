@@ -23,7 +23,10 @@ from tests.cover_helpers import (
     build_vertical_cover,
 )
 
-pytestmark = pytest.mark.unit
+# Every test here asserts a wall-clock budget (`elapsed_ms < N`), which is
+# flaky on loaded hosts. Tag `perf` so the fast inner loop can skip them with
+# `-m "not perf"`; CI still runs them.
+pytestmark = [pytest.mark.unit, pytest.mark.perf]
 
 # ---------------------------------------------------------------------------
 # Helpers

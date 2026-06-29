@@ -13,14 +13,16 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
+# Coverage is NOT enabled here: it would run on every bare `pytest tests/test_x.py`
+# (whole-package measurement + a stray coverage.xml) with no benefit to the
+# inner dev loop. CI (.github/workflows/tests.yml) and `scripts/test coverage`
+# pass --cov explicitly where it's actually wanted.
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=custom_components/adaptive_cover_pro",
-    "--cov-report=term-missing",
-    "--cov-report=xml",
 ]
 markers = [
     "unit: Unit tests (fast, no I/O)",
     "integration: Integration tests (slower, may require Home Assistant)",
+    "perf: Wall-clock performance-budget tests (flaky on loaded hosts; skip with -m 'not perf')",
 ]

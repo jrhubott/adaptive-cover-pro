@@ -104,6 +104,40 @@ def expected_lingering_timers(request) -> bool:
     return False
 
 
+@pytest.fixture
+def neutralize_venetian_delays(monkeypatch):
+    """Zero the venetian sequencer's real-motor sleep delays for unit tests.
+
+    The dual-axis sequencer waits on several real ``asyncio.sleep`` timers
+    that model physical actuator lag (post-settle hold, post-tilt rebase,
+    drift-retry, tilt-verify poll). In production these are seconds; in tests
+    they add up to ~50 s of pure idle-waiting across the venetian suites.
+
+    Single source of truth for that neutralization — venetian behavioral test
+    files opt in with
+    ``pytestmark = pytest.mark.usefixtures("neutralize_venetian_delays")``
+    instead of each re-declaring its own delay-zeroing fixture.
+
+    Only the *pure-delay* constants are touched. The settle-loop constants
+    (``..._POLL_SECONDS`` / ``..._STARTUP_GRACE_SECONDS`` / ``..._TIMEOUT_SECONDS``)
+    drive branch logic and are asserted on by some tests, so they are left at
+    production values; the few settle-loop tests patch them locally.
+    """
+    seq = "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
+    monkeypatch.setattr(seq + "VENETIAN_POST_TILT_REBASE_DELAY_SECONDS", 0)
+    monkeypatch.setattr(seq + "VENETIAN_TILT_VERIFY_POLL_SECONDS", 0)
+    monkeypatch.setattr(seq + "VENETIAN_DRIFT_RETRY_DELAY_SECONDS", 0)
+    # The 3.0 s post-settle hold is an ``attach()`` default, not a sleep-site
+    # constant; zero the default so policies built without an explicit value
+    # don't pay it. Patched in the policy namespace only — the config-summary
+    # path reads the const namespace, so summary tests keep the 3.0 s default.
+    monkeypatch.setattr(
+        "custom_components.adaptive_cover_pro.cover_types.venetian.policy."
+        "DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS",
+        0,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _auto_enable_custom_integrations(request):
     """Auto-enable custom integration discovery for real HA integration tests.

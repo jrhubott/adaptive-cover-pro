@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./scripts/test              # Run all tests
+#   ./scripts/test fast         # Parallel, skip wall-clock perf-budget tests (inner loop)
 #   ./scripts/test unit         # Run only unit tests
 #   ./scripts/test coverage     # Run with detailed coverage
 
@@ -18,6 +19,10 @@ echo -e "${GREEN}Adaptive Cover Pro Test Runner${RESET}"
 echo ""
 
 case "${1:-all}" in
+  fast)
+    echo "Running fast inner loop (parallel, no perf budgets)..."
+    pytest -n auto -m "not perf" -q
+    ;;
   unit)
     echo "Running unit tests only..."
     pytest -m unit -v

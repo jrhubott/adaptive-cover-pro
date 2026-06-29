@@ -19,7 +19,12 @@ from tests.ha_helpers import (
     _patch_coordinator_refresh,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    # The venetian proxy tests drive the real dual-axis sequencer end-to-end;
+    # zero its motor-lag sleeps so they don't wait on real asyncio timers.
+    pytest.mark.usefixtures("neutralize_venetian_delays"),
+]
 
 
 async def _setup_proxy(

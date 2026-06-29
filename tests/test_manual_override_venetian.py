@@ -16,6 +16,8 @@ import datetime as dt
 from collections.abc import Callable
 from unittest.mock import MagicMock
 
+import pytest
+
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.venetian import (
     DualAxisSequencer,
@@ -32,6 +34,10 @@ from custom_components.adaptive_cover_pro.managers.manual_override import (
     SecondaryAxisCheck,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+# Zero the real-motor sleep delays — these tests drive run_sequence/attach()
+# against the real sequencer, which otherwise waits on the post-tilt rebase delay.
+pytestmark = pytest.mark.usefixtures("neutralize_venetian_delays")
 
 
 def _make_event(entity_id: str, *, position: int | None, tilt: int | None):

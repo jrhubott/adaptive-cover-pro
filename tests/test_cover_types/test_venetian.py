@@ -21,6 +21,10 @@ from custom_components.adaptive_cover_pro.const import (
 from custom_components.adaptive_cover_pro.cover_types.venetian import VenetianPolicy
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 
+# Zero the real-motor sleep delays — the apply-user-tilt tests route through the
+# sequencer's post-tilt rebase delay otherwise.
+pytestmark = pytest.mark.usefixtures("neutralize_venetian_delays")
+
 
 def test_retract_threshold_constants_exist() -> None:
     """CONF and DEFAULT constants for the retract threshold must be exported."""

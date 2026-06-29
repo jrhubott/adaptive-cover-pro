@@ -34,20 +34,7 @@ from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import 
 )
 from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
 
-
-@pytest.fixture(autouse=True)
-def _zero_post_tilt_delay(monkeypatch):
-    """Skip real-motor delays so the suite doesn't sleep on asyncio waits."""
-    monkeypatch.setattr(
-        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
-        "VENETIAN_POST_TILT_REBASE_DELAY_SECONDS",
-        0,
-    )
-    monkeypatch.setattr(
-        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
-        "VENETIAN_TILT_VERIFY_POLL_SECONDS",
-        0,
-    )
+pytestmark = pytest.mark.usefixtures("neutralize_venetian_delays")
 
 
 def _build_sequencer(
