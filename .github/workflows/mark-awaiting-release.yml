@@ -1,45 +1,35 @@
 name: "Mark Issues Awaiting Release"
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches:
+      - develop
       - main
 
 permissions:
   issues: write
-  pull-requests: write
   contents: read
 
 jobs:
   mark-awaiting-release:
-    name: "Label Referenced Issues and PRs"
+    name: "Label Referenced Issues"
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
 
     steps:
-      - name: "Process merged PR references"
+      - name: "Process pushed commit references"
         uses: actions/github-script@v9
         with:
           script: |
-            const prNumber = context.payload.pull_request.number;
-            const prBody = context.payload.pull_request.body || '';
+            // Parse issue references out of every commit message in this push.
+            // Squash-merged PRs carry the branch's "Refs #NNN" lines in the squash
+            // commit body; direct commits to develop carry them too. A single push
+            // trigger therefore covers both paths — no PR event needed.
+            const commits = context.payload.commits || [];
+            const allText = commits.map(c => c.message).join('\n');
 
-            // Fetch all commits in this PR
-            const commits = await github.rest.pulls.listCommits({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-              per_page: 100,
-            });
-
-            // Combine PR body + all commit messages for parsing
-            const allText = [
-              prBody,
-              ...commits.data.map(c => c.commit.message),
-            ].join('\n');
-
-            // Extract referenced issue/PR numbers
+            // Only keyword-prefixed references count, so squash titles like
+            // "fix: foo (#754)" (a PR ref with no keyword) are ignored — we only
+            // want the issues a fix actually resolves.
             const pattern = /(?:refs?|closes?|fixes?|resolves?)\s+#(\d+)/gi;
             const found = new Set();
             let match;
@@ -48,13 +38,13 @@ jobs:
             }
 
             if (found.size === 0) {
-              console.log('No issue/PR references found in this PR.');
+              console.log('No issue references found in this push.');
               return;
             }
 
             console.log(`Found references: #${[...found].join(', #')}`);
 
-            // Ensure the awaiting-release label exists
+            // Ensure the awaiting-release label exists.
             try {
               await github.rest.issues.getLabel({
                 owner: context.repo.owner,
@@ -73,9 +63,6 @@ jobs:
             }
 
             for (const num of found) {
-              // Skip the PR itself
-              if (num === prNumber) continue;
-
               let item;
               try {
                 const response = await github.rest.issues.get({
@@ -89,73 +76,66 @@ jobs:
                 continue;
               }
 
-              const isPR = !!item.pull_request;
+              // Never touch PRs — only issues get the awaiting-release lifecycle.
+              if (item.pull_request) {
+                console.log(`#${num} is a PR, skipping.`);
+                continue;
+              }
+
+              // Idempotency guard. Skipping anything already in the lifecycle keeps
+              // replayed pushes (the release-time develop→main merge, the hotfix
+              // main→develop forward-merge) from re-labeling or re-commenting, and
+              // prevents downgrading an already-shipped issue.
+              const labels = (item.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+              if (labels.includes('released')) {
+                console.log(`Issue #${num} already released, skipping.`);
+                continue;
+              }
+              if (labels.includes('awaiting-release')) {
+                console.log(`Issue #${num} already awaiting-release, skipping.`);
+                continue;
+              }
+
               const isOpen = item.state === 'open';
 
-              if (isPR) {
-                // Label merged PRs that are referenced (for tracking)
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                  labels: ['awaiting-release'],
-                }).catch(() => {});
-
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: num,
-                  body: `This PR was referenced in #${prNumber} which has been merged to \`main\` and will ship in the next stable release.`,
-                });
-                console.log(`Labeled PR #${num} as awaiting-release.`);
-              } else if (isOpen) {
-                // Label open issues
+              if (isOpen) {
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: num,
                   labels: ['awaiting-release'],
                 });
-
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: num,
-                  body: `A fix for this issue has been merged in #${prNumber} and will ship in the next stable release.`,
+                  body: `A fix for this issue has been merged and will ship in the next stable release.`,
                 });
                 console.log(`Labeled issue #${num} as awaiting-release.`);
+              } else if (item.state_reason === 'completed') {
+                // Auto-closed by a Closes/Fixes keyword on the default branch.
+                // Reopen so the normal release lifecycle can run. Issues closed as
+                // "not_planned" are intentional — leave them alone.
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  state: 'open',
+                });
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  labels: ['awaiting-release'],
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  body: `A fix for this issue has been merged and will ship in the next stable release.\n\n_(This issue was briefly auto-closed by a commit keyword and has been reopened to follow the normal release lifecycle.)_`,
+                });
+                console.log(`Reopened and labeled issue #${num} as awaiting-release.`);
               } else {
-                // Issue is closed. If GitHub auto-closed it via a Fixes/Closes keyword in
-                // this PR (state_reason: "completed"), reopen it so the normal release
-                // lifecycle can continue. Issues closed as "not_planned" are intentional —
-                // leave them alone.
-                const stateReason = item.state_reason;
-                if (stateReason === 'completed') {
-                  console.log(`Issue #${num} was auto-closed (state_reason: completed). Reopening for awaiting-release lifecycle.`);
-
-                  await github.rest.issues.update({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    state: 'open',
-                  });
-
-                  await github.rest.issues.addLabels({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    labels: ['awaiting-release'],
-                  });
-
-                  await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: num,
-                    body: `A fix for this issue has been merged in #${prNumber} and will ship in the next stable release.\n\n_(This issue was briefly auto-closed by a PR keyword and has been reopened to follow the normal release confirmation lifecycle.)_`,
-                  });
-                  console.log(`Reopened and labeled issue #${num} as awaiting-release.`);
-                } else {
-                  console.log(`Issue #${num} is closed (state_reason: ${stateReason}), skipping.`);
-                }
+                console.log(`Issue #${num} is closed (state_reason: ${item.state_reason}), skipping.`);
               }
             }
