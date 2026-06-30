@@ -283,6 +283,19 @@ class DualAxisSequencer:
             return False
         return self._seconds_since(ts) < VENETIAN_TILT_SUPPRESSION_SECONDS
 
+    def is_carriage_moving(self, entity_id: str) -> bool:
+        """Return whether the carriage is physically mid-travel.
+
+        Reads ``cover.state`` via the injected ``get_state`` callback and
+        reports True only while the motor is actively ``opening``/``closing``.
+        Single source of truth for the "carriage still settling" check, shared
+        by ``is_in_suppression_with_cap`` tier (a) and the forced-transition
+        tilt bypass (issue #770).
+        """
+        if self._get_state is None:
+            return False
+        return is_state_in_transit(self._get_state(entity_id))
+
     def suppression_remaining_seconds(self, entity_id: str) -> float | None:
         """Seconds until the back-rotate suppression window closes (issue #756).
 
@@ -354,10 +367,8 @@ class DualAxisSequencer:
         """
         if not self.is_in_suppression(entity_id):
             return False
-        if self._get_state is not None:
-            state = self._get_state(entity_id)
-            if is_state_in_transit(state):
-                return True
+        if self.is_carriage_moving(entity_id):
+            return True
         # (b) Command-grace tail anchored to stamp_position_command.
         stamp = self._suppression_at.get(entity_id)
         if stamp is not None and (

@@ -694,16 +694,39 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         entity_id: str,
         *,
         current_position: int | None,
-        context: Any,  # noqa: ARG002
+        context: Any,
         reason: str,
     ) -> None:
-        """Send a tilt-only update when the position axis won't fire this cycle."""
+        """Send a tilt-only update when the position axis won't fire this cycle.
+
+        Routine tracking cycles that land inside the prior sequence's
+        back-rotate suppression window defer the tilt (issue #756). A forced
+        handler transition (``context.force`` — e.g. ``custom_position_released``)
+        is new handler intent rather than motor back-rotate drift, so it
+        bypasses that deferral and sends the full new tilt immediately — but
+        only once the carriage has stopped moving, preserving the mid-travel
+        suppression guard (issue #770).
+        """
         if self._sequencer is None:
             return
         if self._last_tilt is None:
             return
         tilt_target = self._resolve_skip_above_tilt(current_position, self._last_tilt)
         if self._sequencer.is_in_suppression(entity_id):
+            if context.force and not self._sequencer.is_carriage_moving(entity_id):
+                # Issue #770: a forced handler transition (e.g.
+                # custom_position_released) is new handler intent, not motor
+                # back-rotate drift. Send the full new tilt immediately rather
+                # than deferring it — but only once the carriage has stopped
+                # moving, so tier (a) of the suppression cap still holds.
+                await self._sequencer.update_tilt_only(
+                    entity_id,
+                    tilt_target=tilt_target,
+                    current_position=current_position,
+                    reason=reason,
+                    force=True,
+                )
+                return
             # Issue #756: a tilt-only update that lands inside the prior
             # sequence's back-rotate suppression window cannot send yet. Record
             # the deferred tilt and schedule a single wake at suppression expiry

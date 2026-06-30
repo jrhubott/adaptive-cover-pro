@@ -14,6 +14,7 @@ sends.
 from __future__ import annotations
 
 import datetime as dt
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -84,7 +85,7 @@ async def test_tilt_deferred_and_refresh_scheduled_during_suppression(
     await policy.maybe_update_tilt_only(
         _ENTITY,
         current_position=0,
-        context=MagicMock(),
+        context=SimpleNamespace(force=False),
         reason="custom_position",
     )
 
@@ -109,7 +110,7 @@ async def test_pending_tilt_fires_and_clears_after_suppression_expires(
     await policy.maybe_update_tilt_only(
         _ENTITY,
         current_position=0,
-        context=MagicMock(),
+        context=SimpleNamespace(force=False),
         reason="custom_position",
     )
     assert policy.has_pending_secondary_axis(_ENTITY) is True
@@ -123,7 +124,7 @@ async def test_pending_tilt_fires_and_clears_after_suppression_expires(
     await policy.maybe_update_tilt_only(
         _ENTITY,
         current_position=0,
-        context=MagicMock(),
+        context=SimpleNamespace(force=False),
         reason="custom_position",
     )
 
