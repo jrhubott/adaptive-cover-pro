@@ -1389,7 +1389,12 @@
         "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.\n\n⚠️ **Azimuth is always excluded** — each cover keeps its own window orientation.",
         "data": {
           "target_entries": "Target covers",
+          "select_all_targets": "Select all covers",
           "sync_categories": "Categories to sync"
+        },
+        "data_description": {
+          "target_entries": "Covers to sync to. When 'Select all covers' is off, these are the covers that receive the settings. When it's on, these covers are excluded from the sync instead.",
+          "select_all_targets": "When enabled, all other covers of this type are synced; any cover selected above/below is removed from the sync."
         }
       },
       "summary": {

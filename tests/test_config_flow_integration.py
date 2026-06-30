@@ -880,6 +880,177 @@ async def test_options_flow_sync_empty_selection_no_abort(hass: HomeAssistant) -
 
 
 # ---------------------------------------------------------------------------
+# Phase 2d-1: Options flow — sync "Select all covers" toggle (issue #772)
+# ---------------------------------------------------------------------------
+
+
+async def _setup_sync_select_all_entries(
+    hass: HomeAssistant,
+    *,
+    source_options: dict | None = None,
+    target1_options: dict | None = None,
+    target2_options: dict | None = None,
+):
+    """Create a source + two same-type target entries for select-all sync tests.
+
+    Only the source is fully set up (options flow requires a loaded entry);
+    targets only need to be registered so they show up in ``other_entries``
+    and can receive ``async_update_entry`` calls.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    source = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Sync Select All Source", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(source_options or VERTICAL_OPTIONS),
+        entry_id="sync_sel_all_src",
+        title="Sync Select All Source",
+    )
+    source.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(source.entry_id)
+        await hass.async_block_till_done()
+
+    target1 = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Target One", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(target1_options or VERTICAL_OPTIONS),
+        entry_id="sync_sel_all_t1",
+        title="Target One",
+    )
+    target1.add_to_hass(hass)
+
+    target2 = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Target Two", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(target2_options or VERTICAL_OPTIONS),
+        entry_id="sync_sel_all_t2",
+        title="Target Two",
+    )
+    target2.add_to_hass(hass)
+
+    return source, target1, target2
+
+
+async def _navigate_to_sync_step(hass: HomeAssistant, entry_id: str):
+    """Init the options flow for ``entry_id`` and navigate to the sync step."""
+    result = await hass.config_entries.options.async_init(entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "sync"}
+        )
+    return result
+
+
+@pytest.mark.integration
+async def test_options_flow_sync_select_all_targets_all_same_type(
+    hass: HomeAssistant,
+) -> None:
+    """Select-all with no exclusions targets every same-type other cover (#772)."""
+    source, target1, target2 = await _setup_sync_select_all_entries(hass)
+
+    result = await _navigate_to_sync_step(hass, source.entry_id)
+    assert result["step_id"] == "sync"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"select_all_targets": True, "sync_categories": ["geometry"]},
+    )
+
+    assert result["step_id"] == "sync_confirm"
+    summary = result["description_placeholders"]["entries_summary"]
+    assert target1.title in summary
+    assert target2.title in summary
+
+
+@pytest.mark.integration
+async def test_sync_select_all_excludes_checked_targets(hass: HomeAssistant) -> None:
+    """Select-all removes any checked cover from the sync; the rest stay targeted (#772).
+
+    The multi-select becomes an *exclude* list when the toggle is on, not an
+    override — a checked cover is removed from the all-covers sync.
+    """
+    source, target1, target2 = await _setup_sync_select_all_entries(hass)
+
+    result = await _navigate_to_sync_step(hass, source.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "select_all_targets": True,
+            "target_entries": [target1.entry_id],
+            "sync_categories": ["geometry"],
+        },
+    )
+
+    assert result["step_id"] == "sync_confirm"
+    summary = result["description_placeholders"]["entries_summary"]
+    assert target1.title not in summary
+    assert target2.title in summary
+
+
+@pytest.mark.integration
+async def test_sync_toggle_off_uses_explicit_targets(hass: HomeAssistant) -> None:
+    """Toggle off keeps target_entries as an explicit include list (today's behavior, #772)."""
+    source, target1, target2 = await _setup_sync_select_all_entries(hass)
+
+    result = await _navigate_to_sync_step(hass, source.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "select_all_targets": False,
+            "target_entries": [target1.entry_id],
+            "sync_categories": ["geometry"],
+        },
+    )
+
+    assert result["step_id"] == "sync_confirm"
+    summary = result["description_placeholders"]["entries_summary"]
+    assert target1.title in summary
+    assert target2.title not in summary
+
+
+@pytest.mark.integration
+async def test_sync_select_all_e2e_copies_geometry_not_per_window_fields(
+    hass: HomeAssistant,
+) -> None:
+    """End-to-end: select-all sync copies geometry, leaves azimuth/entities untouched (#772)."""
+    from tests.ha_helpers import VERTICAL_OPTIONS
+
+    source_options = {**VERTICAL_OPTIONS, CONF_HEIGHT_WIN: 3.5, CONF_AZIMUTH: 180}
+    target_options = {
+        **VERTICAL_OPTIONS,
+        CONF_HEIGHT_WIN: 2.1,
+        CONF_AZIMUTH: 90,
+        CONF_ENTITIES: ["cover.target_blind"],
+    }
+    source, target1, target2 = await _setup_sync_select_all_entries(
+        hass,
+        source_options=source_options,
+        target1_options=target_options,
+        target2_options=target_options,
+    )
+
+    result = await _navigate_to_sync_step(hass, source.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"select_all_targets": True, "sync_categories": ["geometry"]},
+    )
+    assert result["step_id"] == "sync_confirm"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"confirm": True}
+    )
+    assert result["type"] in ("form", "menu", "create_entry")
+
+    updated_target1 = hass.config_entries.async_get_entry(target1.entry_id)
+    updated_target2 = hass.config_entries.async_get_entry(target2.entry_id)
+    for updated in (updated_target1, updated_target2):
+        assert updated.options[CONF_HEIGHT_WIN] == 3.5
+        assert updated.options[CONF_AZIMUTH] == 90  # per-window field, untouched
+        assert updated.options[CONF_ENTITIES] == ["cover.target_blind"]  # untouched
+
+
+# ---------------------------------------------------------------------------
 # Module-level helpers: _get_azimuth_edges, _get_geometry_schema,
 #                       _build_glare_zones_schema
 # ---------------------------------------------------------------------------

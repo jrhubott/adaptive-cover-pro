@@ -90,6 +90,11 @@ CONF_BUILDING_PROFILE_ID = (
 # model). Keys NOT in this list track the profile; keys in it keep the cover's
 # own value and are skipped by profile propagation. Absent = no overrides.
 CONF_PROFILE_SENSOR_OVERRIDES = "profile_sensor_overrides"
+# Transient OptionsFlow field for the "Copy to Other Covers" sync step (#772).
+# Never persisted to config_entry.options. When True, the sync targets every
+# same-type other cover except those checked in ``target_entries`` (the
+# multi-select becomes an exclude list instead of an include list).
+CONF_SYNC_SELECT_ALL = "select_all_targets"
 
 
 # =============================================================================

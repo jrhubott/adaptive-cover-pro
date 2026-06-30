@@ -1337,7 +1337,12 @@
         "description": "Wählen Sie, auf welche Behänge Sie Einstellungen kopieren möchten, und welche Kategorien synchronisiert werden sollen. Nur ausgewählte Kategorien werden auf Zielbehängen überschrieben.\n\n⚠️ **Azimut ist immer ausgeschlossen** – jeder Behang behält seine eigene Fensterorientierung.",
         "data": {
           "target_entries": "Zielleuchten",
-          "sync_categories": "Zu synchronisierende Kategorien"
+          "sync_categories": "Zu synchronisierende Kategorien",
+          "select_all_targets": "Alle Beschattungen auswählen"
+        },
+        "data_description": {
+          "target_entries": "Beschattungen zum Synchronisieren. Wenn 'Alle Beschattungen auswählen' aus ist, erhalten diese Beschattungen die Einstellungen. Wenn es an ist, sind diese Beschattungen stattdessen von der Synchronisierung ausgeschlossen.",
+          "select_all_targets": "Wenn aktiviert, werden alle anderen Beschattungen dieses Typs synchronisiert; jede oben/unten ausgewählte Beschattung wird aus der Synchronisierung entfernt."
         }
       },
       "summary": {

@@ -1337,7 +1337,12 @@
         "description": "Choisissez les stores vers lesquels copier les paramètres et les catégories à synchroniser. Seules les catégories sélectionnées seront écrasées sur les stores cibles.\n\n⚠️ **L'azimut est toujours exclu** — chaque store conserve son propre azimut de fenêtre.",
         "data": {
           "target_entries": "Stores cibles",
-          "sync_categories": "Catégories à synchroniser"
+          "sync_categories": "Catégories à synchroniser",
+          "select_all_targets": "Sélectionner toutes les protections"
+        },
+        "data_description": {
+          "target_entries": "Protections à synchroniser. Quand « Sélectionner toutes les protections » est désactivé, ces protections reçoivent les paramètres. Quand c'est activé, elles sont exclues de la synchronisation.",
+          "select_all_targets": "Quand activée, toutes les autres protections de ce type sont synchronisées ; les protections sélectionnées ci-dessus/ci-dessous en sont exclues."
         }
       },
       "summary": {
