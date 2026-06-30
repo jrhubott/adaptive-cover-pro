@@ -18,7 +18,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
+from custom_components.adaptive_cover_pro.const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+)
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     DefaultHandler,
@@ -550,23 +553,35 @@ _CP_ENTITY = "binary_sensor.cp_scene"
 
 
 class TestCustomPositionBypass:
-    """CustomPositionHandler must set bypass_auto_control=True unconditionally."""
+    """CustomPositionHandler gates bypass_auto_control on safety priority (#767).
 
-    def _handler(self, position: int = 50) -> CustomPositionHandler:
+    Only a priority-100 (safety) slot bypasses Automatic Control; a
+    default-priority (77) slot follows the switch like any other handler.
+    """
+
+    def _handler(
+        self,
+        position: int = 50,
+        priority: int = CUSTOM_POSITION_SAFETY_PRIORITY,
+    ) -> CustomPositionHandler:
         return CustomPositionHandler(
             slot=1,
             position=position,
-            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            priority=priority,
         )
 
-    def _snapshot_on(self, position: int = 50) -> object:
+    def _snapshot_on(
+        self,
+        position: int = 50,
+        priority: int = CUSTOM_POSITION_SAFETY_PRIORITY,
+    ) -> object:
         return make_snapshot(
             custom_position_sensors=[
                 CustomPositionSensorState(
                     entity_ids=(_CP_ENTITY,),
                     is_on=True,
                     position=position,
-                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                    priority=priority,
                     min_mode=False,
                     use_my=False,
                     slot=1,
@@ -576,16 +591,32 @@ class TestCustomPositionBypass:
         )
 
     def test_bypass_flag_set(self) -> None:
-        """Handler result has bypass_auto_control=True when sensor is on."""
+        """A safety-priority slot sets bypass_auto_control=True when sensor is on."""
         result = self._handler().evaluate(self._snapshot_on())
         assert result is not None
         assert result.bypass_auto_control is True
 
+    def test_non_safety_slot_does_not_bypass(self) -> None:
+        """A default-priority (77) slot does NOT bypass automatic control (#767)."""
+        result = self._handler(priority=DEFAULT_CUSTOM_POSITION_PRIORITY).evaluate(
+            self._snapshot_on(priority=DEFAULT_CUSTOM_POSITION_PRIORITY)
+        )
+        assert result is not None
+        assert result.bypass_auto_control is False
+
     def test_reason_includes_bypass_text(self) -> None:
-        """Reason string includes '[bypasses automatic control]' when sensor is on."""
+        """Safety-slot reason includes '[bypasses automatic control]' when sensor is on."""
         result = self._handler().evaluate(self._snapshot_on())
         assert result is not None
         assert "[bypasses automatic control]" in result.reason
+
+    def test_non_safety_reason_omits_bypass_text(self) -> None:
+        """A default-priority slot reason omits the bypass annotation (#767)."""
+        result = self._handler(priority=DEFAULT_CUSTOM_POSITION_PRIORITY).evaluate(
+            self._snapshot_on(priority=DEFAULT_CUSTOM_POSITION_PRIORITY)
+        )
+        assert result is not None
+        assert "[bypasses automatic control]" not in result.reason
 
     def test_sensor_off_returns_none(self) -> None:
         """No result when sensor is off — bypass flag irrelevant."""

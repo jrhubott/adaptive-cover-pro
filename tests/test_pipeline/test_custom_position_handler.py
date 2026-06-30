@@ -454,61 +454,110 @@ class TestMinimumPositionMode:
 
 
 # ---------------------------------------------------------------------------
-# bypass_auto_control — custom positions always bypass delta gates
+# bypass_auto_control — gated on safety priority (issue #767)
 # ---------------------------------------------------------------------------
 
 
 class TestBypassAutoControl:
-    """CustomPositionHandler must set bypass_auto_control=True on every active result."""
+    """CustomPositionHandler gates bypass_auto_control on safety priority (#767).
 
-    def test_bypass_flag_set_normal_path(self) -> None:
-        """Normal position path sets bypass_auto_control=True."""
+    Only a priority-100 (safety) slot bypasses Automatic Control; a
+    default-priority (77) slot respects the switch like any other handler.
+    """
+
+    def test_no_bypass_normal_path_non_safety(self) -> None:
+        """A default-priority (77) slot does NOT bypass automatic control."""
         snapshot = make_snapshot(
-            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
+            custom_position_sensors=[
+                _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, False)
+            ]
         )
         result = _handler(position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.bypass_auto_control is False
+
+    def test_bypass_set_normal_path_safety(self) -> None:
+        """A safety-priority (100) slot bypasses automatic control."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[
+                _make_state(
+                    _ENTITY, True, 50, CUSTOM_POSITION_SAFETY_PRIORITY, False, False
+                )
+            ]
+        )
+        result = _handler(
+            position=50, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+        ).evaluate(snapshot)
         assert result is not None
         assert result.bypass_auto_control is True
 
     def test_bypass_flag_min_mode_defers(self) -> None:
         """Min-mode handler defers (returns None) — bypass is moot since no
         result is produced. The floor-clamp composition pass in the registry
-        carries the bypass forward via the lower-priority winner.
+        carries the winner forward via the lower-priority handler.
         """
         snapshot = make_snapshot(
-            custom_position_sensors=[_make_state(_ENTITY, True, 30, 77, True, False)],
+            custom_position_sensors=[
+                _make_state(_ENTITY, True, 30, _DEFAULT_PRIORITY, True, False)
+            ],
             calculate_percentage_return=50.0,
         )
         result = _handler(position=30).evaluate(snapshot)
         assert result is None
 
-    def test_bypass_flag_set_use_my_path(self) -> None:
-        """Use-My path sets bypass_auto_control=True."""
+    def test_no_bypass_use_my_path_non_safety(self) -> None:
+        """The use-My path of a default-priority slot does NOT bypass automatic control."""
         snapshot = make_snapshot(
-            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, True)],
+            custom_position_sensors=[
+                _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, True)
+            ],
             my_position_value=30,
         )
         result = _handler(position=50).evaluate(snapshot)
         assert result is not None
         assert result.use_my_position is True
+        assert result.bypass_auto_control is False
+
+    def test_bypass_set_use_my_path_safety(self) -> None:
+        """The use-My path of a safety-priority slot bypasses automatic control."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[
+                _make_state(
+                    _ENTITY, True, 50, CUSTOM_POSITION_SAFETY_PRIORITY, False, True
+                )
+            ],
+            my_position_value=30,
+        )
+        result = _handler(
+            position=50, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+        ).evaluate(snapshot)
+        assert result is not None
+        assert result.use_my_position is True
         assert result.bypass_auto_control is True
 
-    def test_reason_includes_bypass_text_normal_path(self) -> None:
-        """Reason string includes '[bypasses automatic control]' on normal path."""
+    def test_reason_omits_bypass_text_non_safety(self) -> None:
+        """A default-priority slot reason omits the bypass annotation."""
         snapshot = make_snapshot(
-            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
+            custom_position_sensors=[
+                _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, False)
+            ]
         )
         result = _handler(position=50).evaluate(snapshot)
         assert result is not None
-        assert "[bypasses automatic control]" in result.reason
+        assert "[bypasses automatic control]" not in result.reason
 
-    def test_reason_includes_bypass_text_use_my_path(self) -> None:
-        """Reason string includes '[bypasses automatic control]' on use-My path."""
+    def test_reason_includes_bypass_text_safety(self) -> None:
+        """A safety-priority slot reason includes '[bypasses automatic control]'."""
         snapshot = make_snapshot(
-            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, True)],
-            my_position_value=30,
+            custom_position_sensors=[
+                _make_state(
+                    _ENTITY, True, 50, CUSTOM_POSITION_SAFETY_PRIORITY, False, False
+                )
+            ]
         )
-        result = _handler(position=50).evaluate(snapshot)
+        result = _handler(
+            position=50, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+        ).evaluate(snapshot)
         assert result is not None
         assert "[bypasses automatic control]" in result.reason
 

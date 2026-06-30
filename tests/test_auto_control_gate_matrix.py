@@ -79,14 +79,27 @@ from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 # ---------------------------------------------------------------------------
 
 
-def _make_pipeline_result(bypass: bool) -> PipelineResult:
-    """SOLAR result, or a safety-priority custom-position result when bypass=True."""
+def _make_pipeline_result(
+    bypass: bool, *, is_safety: bool | None = None
+) -> PipelineResult:
+    """SOLAR result, or a custom-position result when it bypasses or is safety.
+
+    ``is_safety`` defaults to ``bypass`` so existing call sites keep modeling a
+    safety-priority custom position (both flags set together). Pass it
+    explicitly to decouple the two — e.g. a non-safety slot (issue #767) that
+    bypasses nothing, or a safety target that does not set ``bypass``.
+    """
+    if is_safety is None:
+        is_safety = bypass
+    is_custom = bypass or is_safety
     return PipelineResult(
         position=50,
-        control_method=ControlMethod.CUSTOM_POSITION if bypass else ControlMethod.SOLAR,
-        reason="custom position #5 active" if bypass else "solar",
+        control_method=(
+            ControlMethod.CUSTOM_POSITION if is_custom else ControlMethod.SOLAR
+        ),
+        reason="custom position #5 active" if is_custom else "solar",
         bypass_auto_control=bypass,
-        is_safety=bypass,
+        is_safety=is_safety,
     )
 
 
@@ -197,6 +210,24 @@ async def _trigger_manual_override_expiry(coord):
 
 async def _trigger_state_change_safety_custom_position(coord):
     coord._pipeline_result = _make_pipeline_result(bypass=True)
+    coord._time_mgr = MagicMock()
+    coord._time_mgr.is_active = True
+    coord._check_sun_validity_transition = MagicMock(return_value=False)
+    coord.state_change = True
+    coord._last_state_change_entity = None
+    coord._custom_position_template_trigger = False
+    await coord.async_handle_state_change(50, {})
+
+
+async def _trigger_state_change_non_safety_custom_position(coord):
+    """Trigger: a default-priority (77) custom position is the active winner.
+
+    Issue #767: a non-safety custom position must respect Automatic Control.
+    With no fresh sensor edge and is_safety=False, the coordinator must NOT
+    force the command through when automatic_control=False — the slot's
+    bypass_auto_control flag does not earn it coordinator-level force treatment.
+    """
+    coord._pipeline_result = _make_pipeline_result(bypass=True, is_safety=False)
     coord._time_mgr = MagicMock()
     coord._time_mgr.is_active = True
     coord._check_sun_validity_transition = MagicMock(return_value=False)
@@ -420,6 +451,17 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         is_safety_target=True,
         setup=lambda _: None,
         trigger=_trigger_state_change_safety_custom_position,
+    ),
+    MatrixCase(
+        # Issue #767: a default-priority (77) custom position is non-safety.
+        # When automatic_control=False and no fresh sensor edge fired, the
+        # coordinator must NOT force it through and must NOT tag it as a safety
+        # target — it follows the Automatic Control switch like any other slot.
+        id="state_change_non_safety_custom_position",
+        is_safety_bypass=False,
+        is_safety_target=False,
+        setup=lambda _: None,
+        trigger=_trigger_state_change_non_safety_custom_position,
     ),
     MatrixCase(
         id="state_change_weather_bypass",

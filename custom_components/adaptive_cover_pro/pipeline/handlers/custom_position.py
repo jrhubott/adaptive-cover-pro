@@ -106,6 +106,12 @@ class CustomPositionHandler(OverrideHandler):
                         return None
                     raw = compute_raw_calculated_position(snapshot)
                     trigger = self._trigger_label(state)
+                    # Issue #767: only the priority-100 safety slot bypasses the
+                    # Automatic-Control-OFF gate. Ordinary slots respect the switch.
+                    bypass_auto_control = self._is_safety
+                    bypass_note = (
+                        " [bypasses automatic control]" if bypass_auto_control else ""
+                    )
                     # "Use My" path: route through the cover's hardware-stored My preset.
                     # my_position_value acts as both the target and the reason annotation.
                     # min_mode is ignored — My is hardware-pinned; floor semantics don't apply.
@@ -115,13 +121,13 @@ class CustomPositionHandler(OverrideHandler):
                             position=pos,
                             tilt=self._tilt,
                             use_my_position=True,
-                            bypass_auto_control=True,
+                            bypass_auto_control=bypass_auto_control,
                             is_safety=self._is_safety,
                             control_method=ControlMethod.CUSTOM_POSITION,
                             reason=(
                                 f"custom position #{self._slot} active ({trigger})"
                                 f" — use My position ({pos}%)"
-                                " [bypasses automatic control]"
+                                f"{bypass_note}"
                             ),
                             raw_calculated_position=raw,
                             custom_position_active_slot=self._slot,
@@ -134,13 +140,13 @@ class CustomPositionHandler(OverrideHandler):
                     return PipelineResult(
                         position=pos,
                         tilt=self._tilt,
-                        bypass_auto_control=True,
+                        bypass_auto_control=bypass_auto_control,
                         is_safety=self._is_safety,
                         control_method=ControlMethod.CUSTOM_POSITION,
                         reason=(
                             f"custom position #{self._slot} active ({trigger})"
                             f" — position {pos}%"
-                            " [bypasses automatic control]"
+                            f"{bypass_note}"
                         ),
                         raw_calculated_position=raw,
                         custom_position_active_slot=self._slot,

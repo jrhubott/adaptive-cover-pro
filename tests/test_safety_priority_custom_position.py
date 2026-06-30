@@ -13,13 +13,18 @@ force-override sensor scenarios:
 - reason/diagnostics reflect the active sensors
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
     ControlMethod,
+)
+from custom_components.adaptive_cover_pro.managers.cover_command import (
+    CoverCommandService,
+    PositionContext,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     CustomPositionHandler,
@@ -106,6 +111,88 @@ def _safety_registry(position: int = 90) -> PipelineRegistry:
             ManualOverrideHandler(),
             DefaultHandler(),
         ]
+    )
+
+
+def _non_safety_state(
+    is_on: bool,
+    *,
+    position: int = 90,
+    active: tuple[str, ...] = (),
+    use_my: bool = False,
+) -> CustomPositionSensorState:
+    """Pre-built slot-5 state at the default (non-safety) priority 77."""
+    return CustomPositionSensorState(
+        entity_ids=("binary_sensor.rain", "binary_sensor.wind"),
+        is_on=is_on,
+        position=position,
+        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        min_mode=False,
+        use_my=use_my,
+        slot=_SLOT,
+        active_entity_ids=active,
+    )
+
+
+def _non_safety_registry(position: int = 90) -> PipelineRegistry:
+    return PipelineRegistry(
+        [
+            CustomPositionHandler(
+                slot=_SLOT,
+                position=position,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            ),
+            ManualOverrideHandler(),
+            DefaultHandler(),
+        ]
+    )
+
+
+def _command_service() -> tuple[CoverCommandService, MagicMock]:
+    """Build a real CoverCommandService over a mock hass (mirrors the force-gate suite)."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    svc = CoverCommandService(
+        hass=hass,
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=MagicMock(),
+        open_close_threshold=50,
+    )
+    svc._enabled = True
+    return svc, hass
+
+
+def _gate_context(result, *, auto_control: bool = False) -> PositionContext:
+    """PositionContext mirroring how the coordinator forwards a pipeline result.
+
+    The two auto-control bypass channels (is_safety / bypass_auto_control) are
+    sourced straight from the pipeline result so the service gate sees exactly
+    what the handler produced.
+    """
+    return PositionContext(
+        auto_control=auto_control,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=1,
+        time_threshold=0,
+        special_positions=[0, 100],
+        force=True,
+        is_safety=result.is_safety,
+        bypass_auto_control=result.bypass_auto_control,
+    )
+
+
+def _patch_caps():
+    return patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={
+            "has_set_position": True,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+            "has_stop": True,
+        },
     )
 
 
@@ -312,6 +399,100 @@ def test_decision_trace_names_safety_slot():
     matched = [s for s in result.decision_trace if s.matched]
     assert len(matched) == 1
     assert matched[0].handler == f"custom_position_{_SLOT}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #767: only the priority-100 safety slot bypasses Automatic-Control-OFF
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_non_safety_slot_does_not_bypass_auto_control():
+    """A default-priority (77) slot wins but must NOT bypass automatic control."""
+    registry = _non_safety_registry(position=90)
+    snapshot = make_snapshot(
+        custom_position_sensors=[
+            _non_safety_state(True, active=("binary_sensor.rain",))
+        ],
+    )
+
+    result = registry.evaluate(snapshot)
+
+    assert result.control_method == ControlMethod.CUSTOM_POSITION
+    assert result.position == 90
+    assert result.is_safety is False
+    assert result.bypass_auto_control is False
+    assert "[bypasses automatic control]" not in result.reason
+
+
+@pytest.mark.unit
+def test_use_my_non_safety_slot_does_not_bypass_auto_control():
+    """The use-My branch of a non-safety slot must also respect automatic control."""
+    registry = _non_safety_registry(position=90)
+    snapshot = make_snapshot(
+        custom_position_sensors=[
+            _non_safety_state(True, use_my=True, active=("binary_sensor.rain",))
+        ],
+        my_position_value=42,
+    )
+
+    result = registry.evaluate(snapshot)
+
+    assert result.use_my_position is True
+    assert result.is_safety is False
+    assert result.bypass_auto_control is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_non_safety_slot_skipped_by_auto_control_gate():
+    """End-to-end: a non-safety slot is blocked by the auto-control-off gate."""
+    registry = _non_safety_registry(position=90)
+    snapshot = make_snapshot(
+        custom_position_sensors=[
+            _non_safety_state(True, active=("binary_sensor.rain",))
+        ],
+    )
+    result = registry.evaluate(snapshot)
+
+    svc, hass = _command_service()
+    with _patch_caps():
+        outcome, detail = await svc.apply_position(
+            "cover.test",
+            result.position,
+            "custom_position",
+            _gate_context(result),
+        )
+
+    assert outcome == "skipped"
+    assert detail == "auto_control_off"
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_safety_slot_still_bypasses_auto_control_gate():
+    """Regression guard: the priority-100 safety slot still bypasses the gate."""
+    registry = _safety_registry(position=0)
+    snapshot = make_snapshot(
+        custom_position_sensors=[
+            _safety_state(True, position=0, active=("binary_sensor.rain",))
+        ],
+    )
+    result = registry.evaluate(snapshot)
+    assert result.bypass_auto_control is True
+
+    svc, hass = _command_service()
+    with _patch_caps(), patch.object(svc, "_get_current_position", return_value=50):
+        outcome, _detail = await svc.apply_position(
+            "cover.test",
+            0,
+            "custom_position",
+            _gate_context(result),
+        )
+
+    assert outcome == "sent"
+    hass.services.async_call.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
