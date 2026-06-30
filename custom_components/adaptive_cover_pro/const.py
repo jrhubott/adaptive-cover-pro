@@ -91,6 +91,11 @@ CONF_BUILDING_PROFILE_ID = (
 # own value and are skipped by profile propagation. Absent = no overrides.
 CONF_PROFILE_SENSOR_OVERRIDES = "profile_sensor_overrides"
 
+# Default name prefix used by the config flow when auto-naming a cover from its
+# entity's friendly name (no linked device available) — see config_flow.py's
+# cover_entities auto-fill and async_step_update finalization fallback (#771).
+ADAPTIVE_NAME_PREFIX = "Adaptive"
+
 
 # =============================================================================
 # 3. Window / Vertical-Blind Geometry

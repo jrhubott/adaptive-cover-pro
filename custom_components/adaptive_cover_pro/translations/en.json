@@ -14,6 +14,9 @@
         "data": {
           "name": "Name",
           "mode": "Type of blind"
+        },
+        "data_description": {
+          "name": "Optional. Leave blank and the integration fills it in automatically: the linked device's name if one is attached, otherwise the cover entity's friendly name with an \"Adaptive\" prefix."
         }
       },
       "cover_entities": {

@@ -2002,6 +2002,25 @@ async def test_options_flow_venetian_geometry_saves_mode(hass: HomeAssistant) ->
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
+async def test_create_new_schema_name_field_is_optional() -> None:
+    """The "name" key in CONFIG_SCHEMA must be Optional, not Required (#771).
+
+    ha-form enforces a voluptuous ``Required`` marker client-side and blocks
+    submission of a blank text field before the request ever reaches the
+    flow handler, so the existing device/entity-name auto-fill logic can
+    never run. The field must be ``Optional`` so a blank "name" can reach
+    Python and trigger the auto-fill.
+    """
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.config_flow import CONFIG_SCHEMA
+
+    marker = next(k for k in CONFIG_SCHEMA.schema if k == "name")
+    assert isinstance(marker, vol.Optional)
+    assert not isinstance(marker, vol.Required)
+
+
 def _register_cover_with_device(
     hass: HomeAssistant,
     *,
@@ -2207,6 +2226,58 @@ async def test_create_flow_user_typed_name_overrides_device_name(
     # User name wins — device name is ignored
     assert entry.title == "Vertical Blind My Cover"
     assert entry.data["name"] == "My Cover"
+
+
+@pytest.mark.integration
+async def test_create_flow_blank_name_no_entities_gets_fallback_name(
+    hass: HomeAssistant,
+) -> None:
+    """Blank name + zero cover entities selected must not reach finalization
+    with an empty name (#771).
+
+    The auto-fill in ``cover_entities`` Pass 1 only runs when at least one
+    entity is selected; a user can legitimately submit zero entities (add the
+    cover entity later via Configure). Now that "name" is Optional, this
+    combination is reachable via the real UI and must still produce a sane
+    non-empty fallback name/title instead of the malformed
+    ``"Vertical Blind "`` (trailing space) title and empty
+    ``entry.data["name"]``.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "", CONF_MODE: CoverType.BLIND}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+    assert result["step_id"] == "cover_entities"
+
+    # Zero entities selected — auto-fill in Pass 1 never runs.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    # No entities → no devices to discover → proceeds straight to geometry.
+    assert result["step_id"] == "geometry"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _VERTICAL_GEOMETRY
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _SUN_TRACKING
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _POSITION
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+    entry = result["result"]
+    assert entry.data["name"]
+    assert entry.title != "Vertical Blind "
 
 
 # ---------------------------------------------------------------------------

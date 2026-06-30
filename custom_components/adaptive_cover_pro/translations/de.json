@@ -14,6 +14,9 @@
         "data": {
           "name": "Name",
           "mode": "Art der Jalousie"
+        },
+        "data_description": {
+          "name": "Optional. Leer lassen und die Integration füllt den Namen automatisch aus: den Namen des verknüpften Geräts, falls eines angeschlossen ist, oder den Anzeigenamen der Beschattungsentität mit dem Präfix \"Adaptive\"."
         }
       },
       "cover_entities": {

@@ -21,6 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
+    ADAPTIVE_NAME_PREFIX,
     BLANK_TIME,
     BLIND_SPOT_ELEV_MODE_ABOVE,
     BLIND_SPOT_SLOTS,
@@ -230,7 +231,7 @@ def _geometry_wiki_link(sensor_type: str | None) -> str:
 
 CONFIG_SCHEMA = vol.Schema(
     {
-        vol.Required("name"): selector.TextSelector(),
+        vol.Optional("name"): selector.TextSelector(),
         vol.Optional(CONF_MODE): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=SENSOR_TYPE_MENU, translation_key="mode"
@@ -3238,7 +3239,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                             or entity_entry.name
                             or first_entity_id.split(".")[-1].replace("_", " ").title()
                         )
-                        self.config["name"] = f"Adaptive {entity_name}"
+                        self.config["name"] = f"{ADAPTIVE_NAME_PREFIX} {entity_name}"
 
             entity_ids = self.config.get(CONF_ENTITIES, [])
             devices = await _get_devices_from_entities(self.hass, entity_ids)
@@ -3691,6 +3692,16 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if self.type_blind is None:
             msg = "type_blind must be set before calling async_step_update"
             raise ValueError(msg)
+
+        # "name" is Optional in CONFIG_SCHEMA (#771) — the cover_entities Pass 1
+        # auto-fill at the top of this class only runs when at least one entity
+        # is selected, so a user who submits zero entities reaches here with no
+        # name ever having been filled in. Building Profiles keep their own
+        # Required name field and never hit this path.
+        if get_policy(self.type_blind).controls_cover and not self.config.get("name"):
+            self.config["name"] = (
+                f"{ADAPTIVE_NAME_PREFIX} {_cover_type_label(self.type_blind)}"
+            )
 
         if self.config.pop("_title_is_device_name", False):
             title = self.config["name"]

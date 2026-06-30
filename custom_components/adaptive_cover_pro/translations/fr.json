@@ -14,6 +14,9 @@
         "data": {
           "name": "Nom",
           "mode": "Type de store"
+        },
+        "data_description": {
+          "name": "Optionnel. Laissez vide et l'intégration remplira automatiquement : le nom de l'appareil associé s'il y en a un, sinon le nom convivial de l'entité store avec le préfixe \"Adaptive\"."
         }
       },
       "cover_entities": {
