@@ -109,7 +109,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: num,
-                  body: `A fix for this issue has been merged and will ship in the next stable release.`,
+                  body: `A fix for this issue has been merged and will ship in the next stable release.\n\nIt is also included in the next [nightly dev build](https://github.com/${context.repo.owner}/${context.repo.repo}/releases) (a \`.dev\` pre-release built from \`develop\` each night) if you'd like to test it early.`,
                 });
                 console.log(`Labeled issue #${num} as awaiting-release.`);
               } else if (item.state_reason === 'completed') {
@@ -132,7 +132,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: num,
-                  body: `A fix for this issue has been merged and will ship in the next stable release.\n\n_(This issue was briefly auto-closed by a commit keyword and has been reopened to follow the normal release lifecycle.)_`,
+                  body: `A fix for this issue has been merged and will ship in the next stable release.\n\nIt is also included in the next [nightly dev build](https://github.com/${context.repo.owner}/${context.repo.repo}/releases) (a \`.dev\` pre-release built from \`develop\` each night) if you'd like to test it early.\n\n_(This issue was briefly auto-closed by a commit keyword and has been reopened to follow the normal release lifecycle.)_`,
                 });
                 console.log(`Reopened and labeled issue #${num} as awaiting-release.`);
               } else {
