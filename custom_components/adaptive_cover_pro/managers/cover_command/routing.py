@@ -23,7 +23,11 @@ from homeassistant.const import ATTR_ENTITY_ID
 
 from ...const import (
     CONF_DEFAULT_HEIGHT,
+    CONF_ENABLE_MAX_POSITION,
+    CONF_ENABLE_MIN_POSITION,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    CONF_MAX_POSITION,
+    CONF_MIN_POSITION,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_POS,
     DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
@@ -197,6 +201,17 @@ def build_special_positions(options: dict) -> list[int]:
     guarantee byte-for-byte. Useful on mechanically coupled covers where
     commanding a full endpoint disturbs the tilt axis.
 
+    Active position limits (issue #474): when ``CONF_MIN_POSITION`` /
+    ``CONF_MAX_POSITION`` is set AND the corresponding enable flag is
+    ``False`` (always-enforced, not sun-tracking-only), the limit value is
+    added to the special set.  This lets a target pinned to the configured
+    floor or ceiling bypass the delta gate and snap to the limit — the same
+    guarantee that endpoints (0/100) and default_height already have.
+    Conservative v1 restricts the bypass to always-enforced limits because
+    ``build_special_positions`` does not receive sun_valid context; the
+    sun-tracking-only case (enable flag = True) is handled by the ordinary
+    delta comparison once the limit is actually active.
+
     """
     enforce_endpoints = options.get(
         CONF_ENFORCE_DELTA_AT_ENDPOINTS, DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS
@@ -211,4 +226,14 @@ def build_special_positions(options: dict) -> list[int]:
         special_positions.append(sunset_pos)
     if my_position_value is not None:
         special_positions.append(my_position_value)
+
+    # Issue #474: always-enforced position limits bypass the delta gate.
+    min_position = options.get(CONF_MIN_POSITION)
+    if min_position is not None and options.get(CONF_ENABLE_MIN_POSITION) is False:
+        special_positions.append(min_position)
+
+    max_position = options.get(CONF_MAX_POSITION)
+    if max_position is not None and options.get(CONF_ENABLE_MAX_POSITION) is False:
+        special_positions.append(max_position)
+
     return filter_endpoint_specials(special_positions, enforce_endpoints)

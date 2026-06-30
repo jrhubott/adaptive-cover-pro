@@ -201,3 +201,79 @@ def test_button_reset_respects_delta():
 
     # This test documents the fix for Issue #10
     pass
+
+
+# ---------------------------------------------------------------------------
+# Issue #474 — snap-to-floor: active position limits bypass the delta gate
+# ---------------------------------------------------------------------------
+
+
+def test_build_special_positions_includes_active_min_floor():
+    """Active floor (always-enforced) is included in special positions (issue #474).
+
+    When enable_min_position is False the floor is always enforced regardless of
+    sun-tracking state.  A target pinned to 25 must bypass the delta gate so the
+    cover can reach its configured floor even when the delta is below min_change.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MIN_POSITION,
+        CONF_MIN_POSITION,
+    )
+
+    options = {CONF_MIN_POSITION: 25, CONF_ENABLE_MIN_POSITION: False}
+    special = build_special_positions(options)
+    assert 25 in special
+
+
+def test_delta_bypassed_when_target_is_active_min_floor():
+    """Cover at 29%, target 25% (active floor), delta_position=5 → command sent (issue #474).
+
+    Exact symptom from the issue: the 4-point delta (29→25) is below the 5% threshold
+    so the gate suppresses it — unless the floor (25) is in the special-positions set.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MIN_POSITION,
+        CONF_MIN_POSITION,
+    )
+
+    svc = _make_cmd_svc(current_position=29)
+    options = {CONF_MIN_POSITION: 25, CONF_ENABLE_MIN_POSITION: False}
+    special = build_special_positions(options)
+    result = svc._check_position_delta(
+        "cover.test", 25, min_change=5, special_positions=special
+    )
+    assert result is True  # floor bypass — command must reach the configured floor
+
+
+def test_build_special_positions_includes_active_max_ceiling():
+    """Active ceiling (always-enforced) is included in special positions (issue #474).
+
+    Symmetric with the floor: when enable_max_position is False the ceiling is
+    always active and a target pinned to it bypasses the delta gate.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MAX_POSITION,
+        CONF_MAX_POSITION,
+    )
+
+    options = {CONF_MAX_POSITION: 80, CONF_ENABLE_MAX_POSITION: False}
+    special = build_special_positions(options)
+    assert 80 in special
+
+
+def test_build_special_positions_skips_min_floor_when_sun_tracking_only():
+    """Floor is NOT bypassed when enable_min_position=True (sun-tracking-only, conservative v1).
+
+    Conservative v1: only always-enforced limits bypass the delta gate.
+    When the floor only applies during sun-tracking (enable_min_position=True),
+    we cannot determine activeness without sun_valid context, so we do not add it
+    to special_positions.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MIN_POSITION,
+        CONF_MIN_POSITION,
+    )
+
+    options = {CONF_MIN_POSITION: 25, CONF_ENABLE_MIN_POSITION: True}
+    special = build_special_positions(options)
+    assert 25 not in special
