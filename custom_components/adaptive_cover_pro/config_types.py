@@ -361,6 +361,10 @@ class VenetianSlice:
 
     post_settle_hold_seconds: float
     tilt_skip_above: int
+    # Above-threshold tilt behaviour (issue #748): ``neutral`` (default) sends a
+    # benign POSITION_OPEN tilt to overwrite the actuator cache; ``suppress``
+    # emits no tilt at all so coupled-axis covers stay on the open endpoint.
+    tilt_skip_mode: str
     venetian_mode: str
     # Accumulated commanded tilt-% change that triggers a mechanical drift
     # reset (issue #663). 0 disables. Consumed by ``DualAxisSequencer`` via a
@@ -549,6 +553,7 @@ class RuntimeConfig:
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
+            CONF_VENETIAN_TILT_SKIP_MODE,
             CONF_WEATHER_ENABLED,
             CONF_WEATHER_IS_RAINING_SENSOR,
             CONF_WEATHER_IS_RAINING_TEMPLATE,
@@ -577,6 +582,7 @@ class RuntimeConfig:
             DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
             DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
             DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
+            DEFAULT_VENETIAN_TILT_SKIP_MODE,
             DEFAULT_WEATHER_ENABLED,
             DEFAULT_WEATHER_RAIN_THRESHOLD,
             DEFAULT_WEATHER_TIMEOUT,
@@ -695,6 +701,9 @@ class RuntimeConfig:
                 ),
                 tilt_skip_above=options.get(
                     CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
+                ),
+                tilt_skip_mode=options.get(
+                    CONF_VENETIAN_TILT_SKIP_MODE, DEFAULT_VENETIAN_TILT_SKIP_MODE
                 ),
                 venetian_mode=options.get(CONF_VENETIAN_MODE, DEFAULT_VENETIAN_MODE),
                 tilt_reset_threshold=options.get(

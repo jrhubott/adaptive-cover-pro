@@ -72,6 +72,9 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.roof.height_above": "{v}m roof above window (ridge gate)",
     # Venetian-only extras.
     "geometry.venetian.skip_tilt": "skip tilt when position > {skip_above}%",
+    "geometry.venetian.skip_tilt_suppress": (
+        "suppress tilt at/above {skip_above}% (no neutral send)"
+    ),
     "geometry.venetian.mode_position_and_tilt": "position and tilt",
     "geometry.venetian.mode_tilt_only": "tilt only",
     "geometry.venetian.inverse_tilt": "Inverse tilt",

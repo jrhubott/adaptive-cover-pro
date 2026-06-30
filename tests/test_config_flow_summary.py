@@ -347,6 +347,28 @@ def test_geometry_venetian_shows_retract_threshold_custom():
     assert "skip tilt when position > 80%" in summary
 
 
+def test_geometry_venetian_skip_suppress_line_hidden_in_neutral_mode():
+    """The suppress-mode line is absent under the default neutral skip mode."""
+    summary = _build_config_summary({}, CoverType.VENETIAN)
+    assert "suppress tilt at/above" not in summary
+
+
+def test_geometry_venetian_skip_suppress_line_shown_in_suppress_mode():
+    """Suppress mode renders an extra 'suppress tilt at/above N%' line."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_SKIP_ABOVE,
+        CONF_VENETIAN_TILT_SKIP_MODE,
+        VENETIAN_TILT_SKIP_SUPPRESS,
+    )
+
+    cfg = {
+        CONF_VENETIAN_TILT_SKIP_MODE: VENETIAN_TILT_SKIP_SUPPRESS,
+        CONF_VENETIAN_TILT_SKIP_ABOVE: 90,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "suppress tilt at/above 90% (no neutral send)" in summary
+
+
 def test_geometry_venetian_shows_max_tilt_default():
     """Venetian summary includes max tilt at the default value (100%)."""
     summary = _build_config_summary({}, CoverType.VENETIAN)

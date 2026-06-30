@@ -465,6 +465,165 @@ async def test_after_position_command_skips_when_service_is_not_set_position() -
     policy._sequencer.run_sequence.assert_not_awaited()
 
 
+# ---------------------------------------------------------------------------
+# venetian_tilt_skip_mode: suppress vs neutral (issue #748)
+# ---------------------------------------------------------------------------
+
+
+def test_tilt_skip_mode_constants_exist() -> None:
+    """CONF/DEFAULT/value/tuple constants for the skip mode must be exported."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_SKIP_MODE,
+        DEFAULT_VENETIAN_TILT_SKIP_MODE,
+        VENETIAN_TILT_SKIP_MODES,
+        VENETIAN_TILT_SKIP_NEUTRAL,
+        VENETIAN_TILT_SKIP_SUPPRESS,
+    )
+
+    assert CONF_VENETIAN_TILT_SKIP_MODE == "venetian_tilt_skip_mode"
+    assert VENETIAN_TILT_SKIP_NEUTRAL == "neutral"
+    assert VENETIAN_TILT_SKIP_SUPPRESS == "suppress"
+    # Default MUST stay neutral — preserves the #33 cache-overwrite behaviour.
+    assert DEFAULT_VENETIAN_TILT_SKIP_MODE == VENETIAN_TILT_SKIP_NEUTRAL
+    assert VENETIAN_TILT_SKIP_MODES == (
+        VENETIAN_TILT_SKIP_NEUTRAL,
+        VENETIAN_TILT_SKIP_SUPPRESS,
+    )
+
+
+def test_geometry_schema_skip_mode_default_and_validation() -> None:
+    """GEOMETRY_VENETIAN_SCHEMA defaults skip_mode to neutral and rejects bad values."""
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_SKIP_MODE,
+        DEFAULT_VENETIAN_TILT_SKIP_MODE,
+        VENETIAN_TILT_SKIP_SUPPRESS,
+    )
+    from custom_components.adaptive_cover_pro.cover_types.venetian import (
+        GEOMETRY_VENETIAN_SCHEMA,
+    )
+
+    assert (
+        GEOMETRY_VENETIAN_SCHEMA({})[CONF_VENETIAN_TILT_SKIP_MODE]
+        == DEFAULT_VENETIAN_TILT_SKIP_MODE
+    )
+    out = GEOMETRY_VENETIAN_SCHEMA(
+        {CONF_VENETIAN_TILT_SKIP_MODE: VENETIAN_TILT_SKIP_SUPPRESS}
+    )
+    assert out[CONF_VENETIAN_TILT_SKIP_MODE] == VENETIAN_TILT_SKIP_SUPPRESS
+    with pytest.raises(vol.Invalid):
+        GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_TILT_SKIP_MODE: "bogus"})
+
+
+def test_default_skip_mode_is_neutral() -> None:
+    """A freshly constructed policy defaults to neutral skip behaviour."""
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_NEUTRAL
+
+    policy = VenetianPolicy()
+    assert policy._tilt_skip_mode == VENETIAN_TILT_SKIP_NEUTRAL
+
+
+def test_resolve_skip_above_tilt_neutral_returns_position_open() -> None:
+    """Neutral mode keeps the #33 behaviour: above threshold → POSITION_OPEN."""
+    policy = _make_policy(tilt_skip_above=95)
+    assert policy._resolve_skip_above_tilt(98, 40) == POSITION_OPEN
+
+
+def test_resolve_skip_above_tilt_suppress_returns_none() -> None:
+    """Suppress mode returns None above the threshold so no tilt is emitted."""
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    policy = _make_policy(tilt_skip_above=95)
+    policy._tilt_skip_mode = VENETIAN_TILT_SKIP_SUPPRESS
+    assert policy._resolve_skip_above_tilt(98, 40) is None
+
+
+def test_resolve_skip_above_tilt_suppress_below_threshold_uses_fallback() -> None:
+    """Suppress mode below the threshold still returns the fallback tilt."""
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    policy = _make_policy(tilt_skip_above=95)
+    policy._tilt_skip_mode = VENETIAN_TILT_SKIP_SUPPRESS
+    assert policy._resolve_skip_above_tilt(60, 40) == 40
+
+
+@pytest.mark.asyncio
+async def test_after_position_command_suppress_mode_skips_tilt_above_threshold() -> (
+    None
+):
+    """Suppress mode: above the threshold NO tilt is sequenced at the open endpoint.
+
+    Coupled-axis exterior venetians (Somfy + Shelly) get dragged off 100 when
+    ANY tilt command is sent at the fully-open endpoint, so the suppress mode
+    emits nothing there (issue #748).
+    """
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    policy = _make_policy(tilt_skip_above=95)
+    policy._tilt_skip_mode = VENETIAN_TILT_SKIP_SUPPRESS
+
+    await policy.after_position_command(
+        cmd_svc=MagicMock(),
+        entity_id="cover.venetian_x",
+        service=SERVICE_SET_COVER_POSITION,
+        position=100,
+        context=_ctx(policy),
+        reason="solar",
+    )
+
+    policy._sequencer.stamp_position_command.assert_not_called()
+    policy._sequencer.run_sequence.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_after_position_command_suppress_mode_still_sends_below_threshold() -> (
+    None
+):
+    """Suppress mode below the threshold still runs the full dual-axis sequence."""
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    policy = _make_policy(tilt_skip_above=95)
+    policy._tilt_skip_mode = VENETIAN_TILT_SKIP_SUPPRESS
+
+    await policy.after_position_command(
+        cmd_svc=MagicMock(),
+        entity_id="cover.venetian_x",
+        service=SERVICE_SET_COVER_POSITION,
+        position=60,
+        context=_ctx(policy, tilt=80),
+        reason="solar",
+    )
+
+    policy._sequencer.run_sequence.assert_awaited_once()
+    kwargs = policy._sequencer.run_sequence.await_args.kwargs
+    assert kwargs["tilt_target"] == 80
+
+
+@pytest.mark.asyncio
+async def test_maybe_update_tilt_only_suppress_mode_skips_above_threshold() -> None:
+    """Suppress mode: a tilt-only update above the threshold sends nothing.
+
+    The None-guard added after ``_resolve_skip_above_tilt`` short-circuits the
+    tilt-only path so coupled-axis covers are not nudged off the open endpoint.
+    """
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    policy = _make_policy(tilt_skip_above=95)
+    policy._tilt_skip_mode = VENETIAN_TILT_SKIP_SUPPRESS
+    policy._last_tilt = 40
+    mock_seq = MagicMock()
+    mock_seq.update_tilt_only = AsyncMock()
+    mock_seq.is_in_suppression = MagicMock(return_value=False)
+    policy._sequencer = mock_seq
+
+    await policy.maybe_update_tilt_only(
+        "cover.x", current_position=98, context=MagicMock(), reason="solar"
+    )
+
+    policy._sequencer.update_tilt_only.assert_not_awaited()
+
+
 def test_disallowed_geometry_fields_rejects_only_awning_only() -> None:
     """Venetian accepts vertical and tilt geometry; awning-only fields are rejected."""
     policy = VenetianPolicy()

@@ -235,7 +235,8 @@
       "min_tilt": "min. Neigung {min_tilt}%",
       "post_settle_hold": "Nach-Stabilisierungshalte {hold}s",
       "backrotate_lag": "Rück-Rotationsverzögerung {lag}s",
-      "drift_reset": "Drift-Reset alle {threshold}% akkumulierte Neigung (über {direction})"
+      "drift_reset": "Drift-Reset alle {threshold}% akkumulierte Neigung (über {direction})",
+      "skip_tilt_suppress": "Neigung ab {skip_above}% unterdrücken (kein neutrales Senden)"
     },
     "fov": {
       "computed": "Berechnetes Sichtfeld ≈ {deg}°/{deg}° ({w}m Breite, {d}m Laibungstiefe)"

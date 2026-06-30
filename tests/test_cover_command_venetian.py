@@ -121,6 +121,33 @@ def test_attach_applies_custom_threshold(svc, hass):
     assert policy._tilt_skip_above == 80
 
 
+def test_attach_applies_default_skip_mode(svc, hass, attached_policy):
+    """attach() without venetian_tilt_skip_mode uses the neutral default."""
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_VENETIAN_TILT_SKIP_MODE,
+    )
+
+    assert attached_policy._tilt_skip_mode == DEFAULT_VENETIAN_TILT_SKIP_MODE
+
+
+def test_attach_applies_suppress_skip_mode(svc, hass):
+    """attach() with venetian_tilt_skip_mode='suppress' overrides the default."""
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    policy = VenetianPolicy()
+    policy.attach(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=MagicMock(),
+        set_commanded_position=MagicMock(),
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        venetian_tilt_skip_mode=VENETIAN_TILT_SKIP_SUPPRESS,
+    )
+    assert policy._tilt_skip_mode == VENETIAN_TILT_SKIP_SUPPRESS
+
+
 def _state_with_position(pos: int):
     state = MagicMock()
     state.state = "open"
@@ -277,6 +304,34 @@ async def test_apply_position_endpoint_open_runs_tilt_sequence(
     services = [c.args[1] for c in hass.services.async_call.call_args_list]
     assert "open_cover" in services
     assert "set_cover_tilt_position" in services
+
+
+@pytest.mark.asyncio
+async def test_apply_position_suppress_mode_skips_tilt_at_open_endpoint(
+    svc, hass, attached_policy
+):
+    """Suppress mode: opening to 100 fires only open_cover, no tilt service (issue #748).
+
+    The coupled-axis exterior venetian (Somfy + Shelly) must not receive ANY
+    tilt command at the fully-open endpoint, since that nudges the carriage off
+    its resting position. Contrast with the neutral-mode companion above, which
+    DOES send POSITION_OPEN to overwrite the actuator cache.
+    """
+    from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_SUPPRESS
+
+    attached_policy._tilt_skip_mode = VENETIAN_TILT_SKIP_SUPPRESS
+    entity_id = "cover.venetian_suppress"
+    hass.states.get.return_value = _state_with_position(0)  # opening 0 → 100
+
+    with _patch_caps_dual_axis():
+        outcome, _ = await svc.apply_position(
+            entity_id, 100, "solar", _ctx_venetian(attached_policy, tilt=80)
+        )
+
+    assert outcome == "sent"
+    services = [c.args[1] for c in hass.services.async_call.call_args_list]
+    assert "open_cover" in services
+    assert "set_cover_tilt_position" not in services
 
 
 @pytest.mark.asyncio

@@ -37,6 +37,7 @@ from ...const import (
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
+    CONF_VENETIAN_TILT_SKIP_MODE,
     ControlMethod,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MAX_TILT,
@@ -48,6 +49,7 @@ from ...const import (
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
+    DEFAULT_VENETIAN_TILT_SKIP_MODE,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_TILT_RESET_THRESHOLD,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
@@ -61,6 +63,8 @@ from ...const import (
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
     VENETIAN_TILT_RESET_DIRECTIONS,
+    VENETIAN_TILT_SKIP_MODES,
+    VENETIAN_TILT_SKIP_SUPPRESS,
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import SecondaryAxisCheck
@@ -102,6 +106,7 @@ _POSITION_AXIS_SERVICES = frozenset(
 # Re-exported for callers that want the unit-independent venetian-only keys.
 _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_TILT_SKIP_ABOVE,
+    CONF_VENETIAN_TILT_SKIP_MODE,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
@@ -135,6 +140,9 @@ def _venetian_extras_schema() -> dict:
                 min=MIN_VENETIAN_TILT_SKIP_ABOVE, max=MAX_VENETIAN_TILT_SKIP_ABOVE
             ),
         ),
+        vol.Optional(
+            CONF_VENETIAN_TILT_SKIP_MODE, default=DEFAULT_VENETIAN_TILT_SKIP_MODE
+        ): vol.In(VENETIAN_TILT_SKIP_MODES),
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             default=DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -230,6 +238,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._sequencer: DualAxisSequencer | None = None
         self._grace_mgr = None
         self._tilt_skip_above: int = DEFAULT_VENETIAN_TILT_SKIP_ABOVE
+        self._tilt_skip_mode: str = DEFAULT_VENETIAN_TILT_SKIP_MODE
         self._venetian_mode: str = DEFAULT_VENETIAN_MODE
         self._last_tilt: int | None = None
         # Coordinator callback to schedule a single refresh after N seconds,
@@ -301,6 +310,16 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         )
         retract_line = [L["geometry.venetian.skip_tilt"].format(skip_above=skip_above)]
+        # Suppress mode (issue #748) gets an extra line — rendered only when
+        # opted in, like the drift-reset line.
+        skip_mode = config.get(
+            CONF_VENETIAN_TILT_SKIP_MODE, DEFAULT_VENETIAN_TILT_SKIP_MODE
+        )
+        skip_suppress_line = (
+            [L["geometry.venetian.skip_tilt_suppress"].format(skip_above=skip_above)]
+            if skip_mode == VENETIAN_TILT_SKIP_SUPPRESS
+            else []
+        )
         venetian_mode = config.get(CONF_VENETIAN_MODE, DEFAULT_VENETIAN_MODE)
         _mode_label = {
             VENETIAN_MODE_POSITION_AND_TILT: L[
@@ -354,6 +373,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             window_dimensions_lines(config, labels)
             + slat_line
             + retract_line
+            + skip_suppress_line
             + mode_line
             + inverse_tilt_line
             + min_tilt_line
@@ -615,6 +635,8 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         )
         if "tilt_skip_above" in kwargs:
             self._tilt_skip_above = int(kwargs["tilt_skip_above"])
+        if "venetian_tilt_skip_mode" in kwargs:
+            self._tilt_skip_mode = str(kwargs["venetian_tilt_skip_mode"])
         if "venetian_mode" in kwargs:
             self._venetian_mode = str(kwargs["venetian_mode"])
         # Coordinator wake callback for deferred-tilt flushing (issue #756).
@@ -679,13 +701,23 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     ) -> int | None:
         """Apply the ``tilt_skip_above`` guard to a tilt decision.
 
-        Returns ``POSITION_OPEN`` (neutral) when the carriage is commanded
-        above the skip threshold so the actuator's tilt cache is overwritten
-        with a benign value rather than the prior solar-cycle tilt; returns
-        ``fallback_tilt`` otherwise. Shared by ``after_position_command`` and
+        Above the skip threshold the behaviour depends on
+        ``venetian_tilt_skip_mode`` (issue #748):
+
+        * ``neutral`` (default) returns ``POSITION_OPEN`` so the actuator's
+          tilt cache is overwritten with a benign value rather than the prior
+          solar-cycle tilt (the #33 behaviour KNX/Shelly need).
+        * ``suppress`` returns ``None`` so NO tilt command is emitted at the
+          open endpoint — mechanically-coupled exterior venetians otherwise
+          get dragged off 100 by any tilt send.
+
+        Returns ``fallback_tilt`` when at or below the threshold. Shared by
+        ``before_position_command``, ``after_position_command`` and
         ``maybe_update_tilt_only`` so the threshold rule lives in one place.
         """
         if position is not None and position > self._tilt_skip_above:
+            if self._tilt_skip_mode == VENETIAN_TILT_SKIP_SUPPRESS:
+                return None
             return POSITION_OPEN
         return fallback_tilt
 
@@ -712,6 +744,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         if self._last_tilt is None:
             return
         tilt_target = self._resolve_skip_above_tilt(current_position, self._last_tilt)
+        if tilt_target is None:
+            # Suppress mode above the skip threshold: emit no tilt command so
+            # coupled-axis covers are not nudged off the open endpoint (#748).
+            return
         if self._sequencer.is_in_suppression(entity_id):
             if context.force and not self._sequencer.is_carriage_moving(entity_id):
                 # Issue #770: a forced handler transition (e.g.

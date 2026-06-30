@@ -388,6 +388,24 @@ class TestFieldValidators:
         assert CONF_VENETIAN_MODE in FIELD_VALIDATORS
         assert CONF_VENETIAN_TILT_SKIP_ABOVE in FIELD_VALIDATORS
 
+    def test_field_validators_venetian_tilt_skip_mode(self):
+        """venetian_tilt_skip_mode accepts neutral/suppress; rejects out-of-set."""
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_VENETIAN_TILT_SKIP_MODE,
+            VENETIAN_TILT_SKIP_NEUTRAL,
+            VENETIAN_TILT_SKIP_SUPPRESS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_VENETIAN_TILT_SKIP_MODE]
+        v(VENETIAN_TILT_SKIP_NEUTRAL)
+        v(VENETIAN_TILT_SKIP_SUPPRESS)
+        v(None)  # optional clear
+
+        with pytest.raises(vol.Invalid):
+            v("bogus")
+
 
 class TestCrossFieldValidate:
     """Unit tests for _cross_field_validate."""

@@ -232,6 +232,7 @@
     },
     "venetian": {
       "skip_tilt": "skip tilt when position > {skip_above}%",
+      "skip_tilt_suppress": "suppress tilt at/above {skip_above}% (no neutral send)",
       "mode_position_and_tilt": "position and tilt",
       "mode_tilt_only": "tilt only",
       "inverse_tilt": "Inverse tilt",

@@ -61,7 +61,8 @@
           "venetian_tilt_reset_threshold": "Jalousie-Drift-Reset-Schwellenwert (akkumulierte Neigung %)",
           "venetian_tilt_reset_direction": "Drift-Reset-Richtung",
           "roof_pitch": "Dachneigung",
-          "roof_height_above": "Dachabstand über Fenster"
+          "roof_height_above": "Dachabstand über Fenster",
+          "venetian_tilt_skip_mode": "Skip-Neigungsmodus"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -88,7 +89,8 @@
           "venetian_tilt_reset_threshold": "Fahren Sie die Lamellen vollständig auf und zurück, um angesammelte mechanische Drift zu spülen, sobald diese Menge an kommandierter Neigungsänderung angesammelt wurde. 0 deaktiviert Drift-Reset.",
           "venetian_tilt_reset_direction": "Bestimmt die Richtung, in die der Drift-Reset die Lamellen vor der Rückkehr zur Zielposition fährt. **Offen** (Standard): ganz öffnen und dann zurück — das ursprüngliche Verhalten. **Geschlossen**: ganz schließen und dann zurück. Wählen Sie Geschlossen, wenn die Beschattung während der Verfolgung nahe der geschlossenen Position sitzt (leiser und schneller zurückgesetzt) oder wenn Ihr Aktor die Lamellen beim Schließbefehl neu kalibriert.",
           "roof_pitch": "Neigung der Dachverglasung gemessen VON DER HORIZONTALEN (0–90°). 0° = ein flaches Oberlicht (Sonne scheint herein, wann immer sie über dem Horizont ist); 90° = ein vertikales Fenster (verhält sich genau wie eine vertikale Jalousie). Typische Velux-Dachfenster haben 30–50°. Falls Sie von der vertikalen-Jalousie-Workaround migrieren, die eine maximale-Höhen-Begrenzung verwendete, ist diese Neigung das Komplement dieses Winkels (z. B. 35° Dach ↔ ~55° maximale-Höhen-Workaround).",
-          "roof_height_above": "Entfernung entlang der Dachschräge von der Oberkante des Fensters zum Dachfirst (0–10 m). Bei Wert > 0 kann das Dach über dem Fenster die Sonne verbergen, wenn diese über den First hinaus wandert und tiefer sinkt (das First-Okklusions-Gate). Auf 0 (Standard) setzen, um das Gate zu deaktivieren — z. B. ein Fenster direkt am First ohne Dach darüber. Wird in der von Home Assistant konfigurierten Einheit angezeigt."
+          "roof_height_above": "Entfernung entlang der Dachschräge von der Oberkante des Fensters zum Dachfirst (0–10 m). Bei Wert > 0 kann das Dach über dem Fenster die Sonne verbergen, wenn diese über den First hinaus wandert und tiefer sinkt (das First-Okklusions-Gate). Auf 0 (Standard) setzen, um das Gate zu deaktivieren — z. B. ein Fenster direkt am First ohne Dach darüber. Wird in der von Home Assistant konfigurierten Einheit angezeigt.",
+          "venetian_tilt_skip_mode": "Was mit dem Neigungsbefehl passiert, wenn die Jalousie über die Skip-Schwelle gefahren wird. **Neutral** (Standard): sendet eine neutrale, vollständig offene Neigung, um die im Aktor gespeicherte Neigung zu überschreiben — notwendig für KNX/Shelly-Motoren, die sonst den vorherigen Lamellenwinkel bei einer angehobenen Jalousie erneut durchsetzen. **Suppress**: sendet keinen Neigungsbefehl ab. Wählen Sie Suppress für mechanisch gekoppelte Außenjalousien (z. B. Somfy auf Shelly), bei denen jeder Neigungsbefehl in der Endlage (vollständig offen) den Behang aus seiner Ruheposition zieht."
         }
       },
       "sun_tracking": {
@@ -853,7 +855,8 @@
           "venetian_tilt_reset_threshold": "Jalousie-Drift-Reset-Schwellenwert (akkumulierte Neigung %)",
           "venetian_tilt_reset_direction": "Drift-Reset-Richtung",
           "roof_pitch": "Dachneigung",
-          "roof_height_above": "Dachabstand über Fenster"
+          "roof_height_above": "Dachabstand über Fenster",
+          "venetian_tilt_skip_mode": "Skip-Neigungsmodus"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -880,7 +883,8 @@
           "venetian_tilt_reset_threshold": "Fahren Sie die Lamellen vollständig auf und zurück, um angesammelte mechanische Drift zu spülen, sobald diese Menge an kommandierter Neigungsänderung angesammelt wurde. 0 deaktiviert Drift-Reset.",
           "venetian_tilt_reset_direction": "Bestimmt die Richtung, in die der Drift-Reset die Lamellen vor der Rückkehr zur Zielposition fährt. **Offen** (Standard): ganz öffnen und dann zurück — das ursprüngliche Verhalten. **Geschlossen**: ganz schließen und dann zurück. Wählen Sie Geschlossen, wenn die Beschattung während der Verfolgung nahe der geschlossenen Position sitzt (leiser und schneller zurückgesetzt) oder wenn Ihr Aktor die Lamellen beim Schließbefehl neu kalibriert.",
           "roof_pitch": "Neigung der Dachverglasung gemessen VON DER HORIZONTALEN (0–90°). 0° = ein flaches Oberlicht (Sonne scheint herein, wann immer sie über dem Horizont ist); 90° = ein vertikales Fenster (verhält sich genau wie eine vertikale Jalousie). Typische Velux-Dachfenster haben 30–50°. Falls Sie von der vertikalen-Jalousie-Workaround migrieren, die eine maximale-Höhen-Begrenzung verwendete, ist diese Neigung das Komplement dieses Winkels (z. B. 35° Dach ↔ ~55° maximale-Höhen-Workaround).",
-          "roof_height_above": "Entfernung entlang der Dachschräge von der Oberkante des Fensters zum Dachfirst (0–10 m). Bei Wert > 0 kann das Dach über dem Fenster die Sonne verbergen, wenn diese über den First hinaus wandert und tiefer sinkt (das First-Okklusions-Gate). Auf 0 (Standard) setzen, um das Gate zu deaktivieren — z. B. ein Fenster direkt am First ohne Dach darüber. Wird in der von Home Assistant konfigurierten Einheit angezeigt."
+          "roof_height_above": "Entfernung entlang der Dachschräge von der Oberkante des Fensters zum Dachfirst (0–10 m). Bei Wert > 0 kann das Dach über dem Fenster die Sonne verbergen, wenn diese über den First hinaus wandert und tiefer sinkt (das First-Okklusions-Gate). Auf 0 (Standard) setzen, um das Gate zu deaktivieren — z. B. ein Fenster direkt am First ohne Dach darüber. Wird in der von Home Assistant konfigurierten Einheit angezeigt.",
+          "venetian_tilt_skip_mode": "Was mit dem Neigungsbefehl passiert, wenn die Jalousie über die Skip-Schwelle gefahren wird. **Neutral** (Standard): sendet eine neutrale, vollständig offene Neigung, um die im Aktor gespeicherte Neigung zu überschreiben — notwendig für KNX/Shelly-Motoren, die sonst den vorherigen Lamellenwinkel bei einer angehobenen Jalousie erneut durchsetzen. **Suppress**: sendet keinen Neigungsbefehl ab. Wählen Sie Suppress für mechanisch gekoppelte Außenjalousien (z. B. Somfy auf Shelly), bei denen jeder Neigungsbefehl in der Endlage (vollständig offen) den Behang aus seiner Ruheposition zieht."
         }
       },
       "sun_tracking": {

@@ -1005,6 +1005,21 @@ VENETIAN_TILT_RESET_DIRECTIONS = (
     VENETIAN_TILT_RESET_CLOSE,
 )
 
+# How the tilt-skip-above guard behaves once the carriage is commanded above
+# ``venetian_tilt_skip_above`` (issue #748). ``neutral`` (default, back-compat)
+# sends a benign POSITION_OPEN tilt to overwrite the actuator's cache (the #33
+# behaviour KNX/Shelly need); ``suppress`` emits NO tilt command at all so
+# mechanically-coupled exterior venetians are not dragged off the open endpoint.
+# Venetian-only enum.
+CONF_VENETIAN_TILT_SKIP_MODE = "venetian_tilt_skip_mode"  # one of below
+VENETIAN_TILT_SKIP_NEUTRAL = "neutral"  # send neutral POSITION_OPEN tilt (default)
+VENETIAN_TILT_SKIP_SUPPRESS = "suppress"  # send no tilt command at all
+DEFAULT_VENETIAN_TILT_SKIP_MODE = VENETIAN_TILT_SKIP_NEUTRAL  # back-compat
+VENETIAN_TILT_SKIP_MODES = (
+    VENETIAN_TILT_SKIP_NEUTRAL,
+    VENETIAN_TILT_SKIP_SUPPRESS,
+)
+
 # Venetian cover operating mode.  position_and_tilt tracks both axes with solar
 # geometry; tilt_only closes the cover to 0% and tracks only the slat angle.
 CONF_VENETIAN_MODE = "venetian_mode"  # one of VENETIAN_MODES
