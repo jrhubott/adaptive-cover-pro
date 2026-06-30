@@ -1989,11 +1989,11 @@
           "name": "Mode d'inclinaison"
         },
         "tilt_angle_0": {
-          "description": "Angle physique de la lamelle par rapport à l'horizontale lorsque la protection indique 0 % d'inclinaison. Positif incline vers le haut ; négatif incline vers le bas.",
+          "description": "Angle brut de la lamelle lorsque la protection indique 0 % d'inclinaison : 0° fermé vers le bas, 90° horizontal, 180° fermé vers le haut.",
           "name": "Angle d'inclinaison à 0 %"
         },
         "tilt_angle_100": {
-          "description": "Angle physique de la lamelle par rapport à l'horizontale lorsque la protection indique 100 % d'inclinaison. Positif incline vers le haut ; négatif incline vers le bas.",
+          "description": "Angle brut de la lamelle lorsque la protection indique 100 % d'inclinaison : 0° fermé vers le bas, 90° horizontal, 180° fermé vers le haut.",
           "name": "Angle d'inclinaison à 100 %"
         },
         "window_depth": {

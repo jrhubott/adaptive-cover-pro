@@ -60,19 +60,19 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
     def _max_degrees(self) -> float:
         """Resolve max slat degrees for the configured mode (string or enum)."""
         if self._is_specify_angles():
-            return max(abs(self.angle_0), abs(self.angle_100), 1.0)
+            return float(TiltMode.MODE2.max_degrees)
         if isinstance(self.mode, TiltMode):
             return float(self.mode.max_degrees)
         return float(TiltMode(self.mode).max_degrees)
 
     @property
     def angle_0(self) -> float:
-        """Physical slat angle represented by 0% tilt."""
+        """Raw slat angle represented by 0% tilt."""
         return float(self.tilt_config.angle_0)
 
     @property
     def angle_100(self) -> float:
-        """Physical slat angle represented by 100% tilt."""
+        """Raw slat angle represented by 100% tilt."""
         return float(self.tilt_config.angle_100)
 
     def _is_specify_angles(self) -> bool:
@@ -81,27 +81,21 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             TiltMode.SPECIFY_ANGLES.value
         )
 
-    def _specified_target_angle(self, legacy_angle: float) -> float:
-        """Return the physical target angle for explicit endpoint calibration."""
-        # The solver returns the legacy tilt angle where 90° is horizontal/open
-        # and 0° is closed downward. User-entered endpoint angles are measured
-        # away from horizontal, so convert before interpolating to percent.
-        target_angle = float(legacy_angle) - 90.0
-        return max(-90.0, min(90.0, target_angle))
+    def _specified_target_angle(self, raw_angle: float) -> float:
+        """Return the useful raw target angle for explicit endpoint calibration."""
+        return max(0.0, min(180.0, float(raw_angle)))
 
-    def _percentage_from_specified_angles(self, blocking_angle: float) -> float:
-        """Map a target physical slat angle to the configured tilt percentage.
+    def _percentage_from_specified_angles(self, raw_angle: float) -> float:
+        """Map a target raw slat angle to the configured tilt percentage.
 
-        ``blocking_angle`` is the required distance away from horizontal. The
-        configured 100% endpoint tells us which physical direction closes the
-        slats for this cover, so we move from horizontal toward that endpoint
-        and interpolate across the user's 0%/100% calibration angles.
+        The solver and the configured endpoints both use ACP's raw/card angle
+        convention: 0° closed downward, 90° horizontal, 180° closed upward.
         """
         travel = self.angle_100 - self.angle_0
         if travel == 0:
             return 0.0
 
-        target_angle = self._specified_target_angle(blocking_angle)
+        target_angle = self._specified_target_angle(raw_angle)
         return ((target_angle - self.angle_0) / travel) * 100.0
 
     def _build_trace(
@@ -255,7 +249,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         """
         # Legacy modes use a fixed degree range. The custom mode uses explicit
-        # physical endpoint angles and interpolates the target angle into that
+        # raw endpoint angles and interpolates the target angle into that
         # calibrated range.
         position = self.calculate_position()
 

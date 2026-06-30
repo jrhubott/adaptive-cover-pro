@@ -841,6 +841,15 @@ def _cross_field_validate(
                 f"temp_low ({low}) must be less than temp_high ({high})."
             )
 
+    # Specify-angles endpoint ordering.
+    if CONF_TILT_ANGLE_0 in patch or CONF_TILT_ANGLE_100 in patch:
+        angle_0 = _as_number(merged_active.get(CONF_TILT_ANGLE_0))
+        angle_100 = _as_number(merged_active.get(CONF_TILT_ANGLE_100))
+        if angle_0 is not None and angle_100 is not None and angle_0 >= angle_100:
+            raise ServiceValidationError(
+                f"tilt_angle_0 ({angle_0}) must be less than tilt_angle_100 ({angle_100})."
+            )
+
     # Custom position slot completeness: a slot needs a trigger (sensors,
     # legacy sensor, or template) AND a position — or neither.
     for i in CUSTOM_POSITION_SLOT_NUMBERS if check_slot_completeness else ():

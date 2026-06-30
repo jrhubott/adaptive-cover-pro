@@ -1640,13 +1640,13 @@ _GEOMETRY_SPECS = _spec(
         CONF_TILT_ANGLE_0,
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
-        rng=const._RANGE_TILT_ENDPOINT_ANGLE,
+        rng=const._RANGE_TILT_ANGLE_0,
     ),
     FieldSpec(
         CONF_TILT_ANGLE_100,
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
-        rng=const._RANGE_TILT_ENDPOINT_ANGLE,
+        rng=const._RANGE_TILT_ANGLE_100,
     ),
     FieldSpec(
         CONF_MAX_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MAX_TILT

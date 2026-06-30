@@ -1989,11 +1989,11 @@
           "name": "Neigungs-Modus"
         },
         "tilt_angle_0": {
-          "description": "Physischer Lamellenwinkel relativ zur Horizontalen, wenn die Abdeckung 0% Neigung meldet. Positiv neigt nach oben; negativ neigt nach unten.",
+          "description": "Roher Lamellenwinkel, wenn die Abdeckung 0% Neigung meldet: 0° nach unten geschlossen, 90° horizontal, 180° nach oben geschlossen.",
           "name": "Neigungswinkel bei 0%"
         },
         "tilt_angle_100": {
-          "description": "Physischer Lamellenwinkel relativ zur Horizontalen, wenn die Abdeckung 100% Neigung meldet. Positiv neigt nach oben; negativ neigt nach unten.",
+          "description": "Roher Lamellenwinkel, wenn die Abdeckung 100% Neigung meldet: 0° nach unten geschlossen, 90° horizontal, 180° nach oben geschlossen.",
           "name": "Neigungswinkel bei 100%"
         },
         "window_depth": {

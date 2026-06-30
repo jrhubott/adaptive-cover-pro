@@ -74,7 +74,7 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
                 CONF_TILT_ANGLE_100, default=DEFAULT_TILT_ANGLE_100
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=-180, max=180, step=1, mode=selector.NumberSelectorMode.BOX
+                    min=0, max=360, step=1, mode=selector.NumberSelectorMode.BOX
                 )
             ),
         }

@@ -350,14 +350,41 @@ def test_get_tilt_data_reads_specified_endpoint_angles():
             "slat_distance": 3.0,
             "slat_depth": 2.0,
             "tilt_mode": "specify_angles",
-            "tilt_angle_0": 50,
-            "tilt_angle_100": -70,
+            "tilt_angle_0": 20,
+            "tilt_angle_100": 140,
         }
     )
 
     assert result.mode == "specify_angles"
-    assert result.angle_0 == 50
-    assert result.angle_100 == -70
+    assert result.angle_0 == 20
+    assert result.angle_100 == 140
+
+
+def test_get_tilt_data_defaults_specified_endpoint_angles_to_full_raw_range():
+    """Missing specify-angles endpoints default to 0°..180°."""
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
+
+    config_entry = MagicMock()
+    config_entry.data = {"name": "Test Tilt"}
+    logger = MagicMock()
+    hass = MagicMock()
+
+    config_service = ConfigurationService(
+        hass, config_entry, logger, "cover_venetian", None, None, None
+    )
+
+    result = config_service.get_tilt_data(
+        {
+            "slat_distance": 3.0,
+            "slat_depth": 2.0,
+            "tilt_mode": "specify_angles",
+        }
+    )
+
+    assert result.angle_0 == 0
+    assert result.angle_100 == 180
 
 
 @pytest.mark.unit

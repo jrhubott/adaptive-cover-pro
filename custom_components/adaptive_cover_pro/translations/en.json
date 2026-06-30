@@ -2307,11 +2307,11 @@
         },
         "tilt_angle_0": {
           "name": "Tilt angle at 0%",
-          "description": "Physical slat angle away from horizontal when the cover reports 0% tilt. Positive tilts up; negative tilts down."
+          "description": "Raw slat angle when the cover reports 0% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
         },
         "tilt_angle_100": {
           "name": "Tilt angle at 100%",
-          "description": "Physical slat angle away from horizontal when the cover reports 100% tilt. Positive tilts up; negative tilts down."
+          "description": "Raw slat angle when the cover reports 100% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
         },
         "venetian_tilt_skip_above": {
           "name": "Skip tilt above position (%)",
