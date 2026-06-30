@@ -157,7 +157,7 @@ if $DRY_RUN; then
     echo "==> Dry run complete — no files were copied."
 else
     # ── Stamp a PEP440 .dev version in the deployed manifest.json ─────────────
-    # Mirror the CI nightly versioning (see .github/workflows/nightly.yml): a
+    # Mirror the CI develop-build versioning (see .github/workflows/develop-build.yml): a
     # `<core>.dev<TS>` version sorts BELOW the current beta and the eventual
     # stable in AwesomeVersion (the library HACS uses), so a locally-deployed dev
     # build never masquerades as the newest version and blocks real HACS updates.

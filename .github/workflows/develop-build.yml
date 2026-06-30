@@ -1,0 +1,167 @@
+# Develop build — a `.dev` pre-release built from the tip of `develop` whenever
+# develop changes (every push), gated on the test suite.
+#
+# This workflow is push-triggered, so GitHub runs the copy of this file that
+# lives on `develop` — push events use the workflow from the pushed branch, so
+# there's no dependence on the default branch the way `on: schedule` has.
+#
+# Flow: compute a `.dev<date>` (PEP440) version → run the test suite as a gate →
+# make an ephemeral manifest-bump commit, tag it, and push ONLY the tag. The
+# existing `publish-release.yml` then builds + publishes the pre-release.
+#
+# Retention: at most one build per calendar day (earlier same-day builds are
+# pruned before the new tag is pushed), keeping the 7 most recent days.
+#
+# The tag MUST be pushed with RELEASE_PAT: a tag pushed with the default
+# GITHUB_TOKEN does not trigger other workflows, so publish-release.yml would
+# never fire.
+name: Develop Build
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: develop-build
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Compute version
+        id: compute
+        run: |
+          set -euo pipefail
+
+          # PEP440 dev release of the in-progress target. A `.dev<date>` suffix
+          # sorts BELOW the current beta and the eventual stable in AwesomeVersion
+          # (the library HACS uses), so dev builds never appear as the newest
+          # version to stable/beta users. Two traps this avoids: `nightly` is NOT
+          # an AwesomeVersion modifier (sorts alphabetically high), and bumping the
+          # patch makes the base outrank everything before the modifier is checked.
+          BASE=$(jq -r '.version' custom_components/adaptive_cover_pro/manifest.json)
+          TS=$(date -u +%Y%m%d%H%M)
+          if [[ "$BASE" == *-* ]]; then
+            # Mid-cycle (manifest carries -beta.N): dev of the in-progress release.
+            CORE=${BASE%%-*}
+            VERSION="${CORE}.dev${TS}"
+          else
+            # Clean stable: dev of the NEXT patch, so the build doesn't sort below
+            # the just-shipped stable.
+            IFS=. read -r MAJ MIN PAT <<< "$BASE"
+            VERSION="${MAJ}.${MIN}.$((PAT + 1)).dev${TS}"
+          fi
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Computed develop build version: $VERSION"
+
+  test:
+    name: Test gate
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
+  release:
+    name: Tag & publish develop build
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout develop (with release PAT)
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Delete today's existing develop build (one per day)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          # Enforce one build per calendar day, race-free: any existing .dev
+          # release dated today is necessarily older than the one we're about to
+          # create, so remove it now — before the new tag is pushed. This does NOT
+          # depend on publish-release.yml having created the new release yet.
+          TODAY=$(date -u +%Y%m%d)
+          mapfile -t TAGS < <(gh release list --limit 100 --json tagName \
+            --jq '.[].tagName | select(test("\\.dev|-nightly\\."))')
+          for t in "${TAGS[@]:-}"; do
+            [ -z "$t" ] && continue
+            d=$(printf '%s' "$t" | sed -n 's/.*\.dev\([0-9]\{8\}\).*/\1/p')
+            if [ "$d" = "$TODAY" ]; then
+              echo "Deleting earlier same-day develop build ${t}"
+              gh release delete "$t" --cleanup-tag --yes
+            fi
+          done
+
+      - name: Build ephemeral bump commit & push tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Set the dev version in manifest.json so the zipped build carries it.
+          # This commit is NEVER pushed to develop — only the tag is pushed, which
+          # keeps develop's history clean.
+          jq --arg v "$VERSION" '.version = $v' \
+            custom_components/adaptive_cover_pro/manifest.json > manifest.tmp
+          mv manifest.tmp custom_components/adaptive_cover_pro/manifest.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: develop build ${TAG}"
+          git tag -a "${TAG}" -m "Develop build ${TAG}"
+
+          # PAT push so publish-release.yml triggers (GITHUB_TOKEN would not).
+          git push origin "refs/tags/${TAG}"
+          echo "Pushed ${TAG}; publish-release.yml will build the pre-release."
+
+      - name: Prune develop builds (keep newest 7 days)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          # Keep the 7 most recent distinct dates; delete older builds, plus any
+          # legacy -nightly. / unparseable stragglers. Same-day dupes were already
+          # removed in the step above, so each kept date is a single build.
+          # gh returns newest-first by creation; --cleanup-tag removes the git tag
+          # along with the release, so no orphan tags are left behind.
+          mapfile -t TAGS < <(gh release list --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[].tagName | select(test("\\.dev|-nightly\\."))')
+          declare -A seen
+          kept=0
+          for t in "${TAGS[@]:-}"; do
+            [ -z "$t" ] && continue
+            d=$(printf '%s' "$t" | sed -n 's/.*\.dev\([0-9]\{8\}\).*/\1/p')
+            if [ -z "$d" ]; then
+              echo "Deleting legacy/unparseable develop build ${t}"
+              gh release delete "$t" --cleanup-tag --yes
+              continue
+            fi
+            if [ -n "${seen[$d]:-}" ]; then
+              echo "Deleting same-day duplicate develop build ${t}"
+              gh release delete "$t" --cleanup-tag --yes
+              continue
+            fi
+            kept=$((kept + 1))
+            seen[$d]=1
+            if [ "$kept" -gt 7 ]; then
+              echo "Deleting old develop build ${t} (beyond newest 7 days)"
+              gh release delete "$t" --cleanup-tag --yes
+            fi
+          done

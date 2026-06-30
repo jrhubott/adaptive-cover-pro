@@ -15,6 +15,10 @@ jobs:
     steps:
       - name: "Checkout the repository"
         uses: "actions/checkout@v7"
+        with:
+          # Full history + all tags so develop builds can find the last stable
+          # tag and span their changelog from it (see --notes-start-tag below).
+          fetch-depth: 0
 
       - name: "Get tag name"
         id: tag
@@ -28,20 +32,32 @@ jobs:
           TAG="${{ steps.tag.outputs.tag }}"
 
           # Pre-release tags carry a hyphenated identifier (-beta.N) OR a PEP440
-          # dev suffix (.dev<date>, the nightly builds). The dev suffix has NO
-          # hyphen, so it must be matched explicitly or nightlies would publish
+          # dev suffix (.dev<date>, the develop builds). The dev suffix has NO
+          # hyphen, so it must be matched explicitly or dev builds would publish
           # as stable releases and leak to stable-channel users.
           EXTRA=""
           NOTES="Release $TAG - See full changelog below"
+          NOTES_START=""
           case "$TAG" in
             *-* | *.dev*) EXTRA="--prerelease --latest=false" ;;
           esac
           case "$TAG" in
             *.dev*)
               NOTES=$(printf '%s\n' \
-                '> 🌙 **Nightly build from `develop` — unstable, for testing.**' \
+                '> 🛠️ **Develop build from `develop` — unstable, for testing.**' \
                 '> Auto-generated from the latest development code. Expect rough edges — not for production use.' \
-                '> Hit a problem? Open an issue and include this nightly version string.')
+                '> Hit a problem? Open an issue and include this develop build version string.')
+              # Span the changelog from the last STABLE release, not the previous
+              # dev/beta tag (the default --generate-notes start point), so a
+              # develop build lists every change accumulated since stable. Same
+              # filter release-issue-lifecycle.yml uses to find the prior stable.
+              LAST_STABLE=$(git tag --sort=-version:refname \
+                | grep -v -E '\-(beta|alpha|rc|nightly)\.|\.dev' \
+                | grep -v "^${TAG}$" | head -1 || true)
+              if [ -n "$LAST_STABLE" ]; then
+                NOTES_START="--notes-start-tag $LAST_STABLE"
+                echo "Develop build changelog starts from last stable: $LAST_STABLE"
+              fi
               ;;
           esac
 
@@ -53,7 +69,7 @@ jobs:
             gh release create "$TAG" \
               --title "Adaptive Cover Pro ⛅ $TAG" \
               --notes "$NOTES" \
-              --generate-notes $EXTRA
+              --generate-notes $EXTRA $NOTES_START
           else
             echo "Release already exists for $TAG"
           fi
