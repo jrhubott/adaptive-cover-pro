@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from homeassistant.const import ATTR_FRIENDLY_NAME
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from ..const import (
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -35,6 +37,7 @@ from ..const import (
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_TIME,
+    CONF_DEVICE_ID,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
@@ -90,6 +93,7 @@ from .types import (
 )
 
 if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from ..config_types import ConfigContextAdapter
@@ -112,6 +116,7 @@ class PipelineSnapshotBuilder:
         toggles: ToggleManager,
         policy: CoverTypePolicy,
         config_service: ConfigurationService,
+        config_entry: ConfigEntry,
     ) -> None:
         """Bind the builder to its long-lived collaborators."""
         self._hass = hass
@@ -120,6 +125,7 @@ class PipelineSnapshotBuilder:
         self._toggles = toggles
         self._policy = policy
         self._config_service = config_service
+        self._config_entry = config_entry
 
     # ---- HA reads ---------------------------------------------------------
 
@@ -147,7 +153,8 @@ class PipelineSnapshotBuilder:
             cloud_suppression_enabled and irradiance_entity is not None
         )
         return self._climate_provider.read(
-            temp_entity=options.get(CONF_TEMP_ENTITY),
+            temp_entity=options.get(CONF_TEMP_ENTITY)
+            or self._resolve_area_temp_entity(),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
             presence_template=options.get(CONF_PRESENCE_TEMPLATE),
@@ -169,6 +176,47 @@ class PipelineSnapshotBuilder:
             is_sunny_template_mode=options.get(CONF_IS_SUNNY_TEMPLATE_MODE)
             or DEFAULT_TEMPLATE_COMBINE_MODE,
         )
+
+    def _resolve_area_temp_entity(self) -> str | None:
+        """Return the entity_id of a temperature sensor in the cover's HA area.
+
+        Resolution order:
+        1. Read ``linked_device_id`` from the config entry options.
+        2. Look up that device in the device registry to get its ``area_id``.
+        3. Scan the entity registry for sensor entities with
+           ``device_class == "temperature"`` assigned to the same area.
+        4. Return the first matching entity_id, or ``None`` if any step fails.
+
+        This is called only when ``CONF_TEMP_ENTITY`` is absent or empty from
+        the cover's options, so replacing a sensor in the HA area is picked up
+        automatically on the next update cycle without any user intervention.
+        """
+        linked_device_id: str | None = self._config_entry.options.get(CONF_DEVICE_ID)
+        if not linked_device_id:
+            return None
+
+        device_reg = dr.async_get(self._hass)
+        device_entry = device_reg.async_get(linked_device_id)
+        if device_entry is None or not device_entry.area_id:
+            return None
+
+        area_id: str = device_entry.area_id
+        entity_reg = er.async_get(self._hass)
+
+        for entity in er.async_entries_for_area(entity_reg, area_id):
+            if (
+                entity.domain == "sensor"
+                and entity.device_class == "temperature"
+                and not entity.disabled_by
+            ):
+                self._logger.debug(
+                    "Area temp sensor auto-resolved: %s (area=%s)",
+                    entity.entity_id,
+                    area_id,
+                )
+                return entity.entity_id
+
+        return None
 
     def read_custom_position_sensors(
         self, options: dict

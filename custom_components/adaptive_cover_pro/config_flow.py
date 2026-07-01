@@ -2555,7 +2555,7 @@ async def _get_device_name_for_entity(
     return device_entry.name_by_user or device_entry.name or None
 
 
-_SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
+_SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID, CONF_TEMP_ENTITY})
 
 # Maps each syncable category (matching options menu names) to its config keys.
 # Used by the sync flow to let users choose which setting groups to copy.

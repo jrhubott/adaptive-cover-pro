@@ -367,6 +367,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             toggles=self._toggles,
             policy=self._policy,
             config_service=self._config_service,
+            config_entry=self.config_entry,
         )
 
         # Current state snapshot (built at start of each update cycle)
