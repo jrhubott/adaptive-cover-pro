@@ -22,11 +22,14 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CUSTOM_POSITION_SENSOR_1,
     CONF_DELTA_POSITION,
     CONF_DEVICE_ID,
+    CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_FOV_LEFT,
+    CONF_FOV_RIGHT,
     CONF_HEIGHT_WIN,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
@@ -426,6 +429,49 @@ class TestSyncCategorySplit:
             assert (
                 key in SYNC_CATEGORIES
             ), f"Legacy key '{key}' missing from SYNC_CATEGORIES"
+
+
+class TestSunTrackingToGeometrySyncMove:
+    """#778: FOV + shaded distance move from the sun_tracking category to geometry.
+
+    Azimuth is NOT added to any category — it stays in _SHARED_OPTIONS_EXCLUDED
+    (maintainer decision b), so it never actually syncs.
+    """
+
+    @pytest.mark.parametrize("key", [CONF_FOV_LEFT, CONF_FOV_RIGHT, CONF_DISTANCE])
+    def test_fov_and_distance_in_geometry_category(self, key):
+        assert key in SYNC_CATEGORIES["geometry"]
+
+    @pytest.mark.parametrize("key", [CONF_FOV_LEFT, CONF_FOV_RIGHT, CONF_DISTANCE])
+    def test_fov_and_distance_not_in_sun_tracking_category(self, key):
+        assert key not in SYNC_CATEGORIES["sun_tracking"]
+
+    def test_azimuth_not_added_to_geometry_category(self):
+        # Azimuth stays excluded from actual sync; it must not appear in geometry.
+        assert CONF_AZIMUTH not in SYNC_CATEGORIES["geometry"]
+
+    def test_syncing_only_sun_tracking_no_longer_copies_fov_or_distance(self):
+        entry = _make_entry(
+            {
+                CONF_FOV_LEFT: 30,
+                CONF_FOV_RIGHT: 40,
+                CONF_DISTANCE: 1.2,
+                CONF_ENABLE_BLIND_SPOT: True,
+            }
+        )
+        result = _extract_shared_options(entry, ["sun_tracking"])
+        assert CONF_FOV_LEFT not in result
+        assert CONF_FOV_RIGHT not in result
+        assert CONF_DISTANCE not in result
+        # Behavioural sun-tracking settings still copy.
+        assert result[CONF_ENABLE_BLIND_SPOT] is True
+
+    def test_syncing_geometry_copies_fov_and_distance(self):
+        entry = _make_entry({CONF_FOV_LEFT: 30, CONF_FOV_RIGHT: 40, CONF_DISTANCE: 1.2})
+        result = _extract_shared_options(entry, ["geometry"])
+        assert result[CONF_FOV_LEFT] == 30
+        assert result[CONF_FOV_RIGHT] == 40
+        assert result[CONF_DISTANCE] == 1.2
 
 
 class TestEnsureUniqueName:

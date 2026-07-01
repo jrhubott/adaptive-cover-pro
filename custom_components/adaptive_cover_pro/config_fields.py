@@ -460,29 +460,34 @@ _SUN_TRACKING_SPECS = _spec(
         required=True,
         make_selector=_bool(),
     ),
+    # Azimuth / FOV / shaded distance moved to the geometry step (#778); the
+    # section metadata follows so the registry (and the config-summary grouping)
+    # reflects where they now render. The stored option keys are unchanged, and
+    # ``services.options_service._SECTION_SUN_TRACKING`` deliberately still groups
+    # them for the stable ``acp.set_sun_tracking`` service API.
     FieldSpec(
         CONF_AZIMUTH,
-        SECTION_SUN_TRACKING,
+        SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_AZIMUTH,
         default=DEFAULT_WINDOW_AZIMUTH,
         required=True,
         make_selector=_number(minimum=0, maximum=359, unit="°"),
     ),
-    # "Generate FOV from measurements" button (#565). Vertical-blind only —
-    # BlindPolicy advertises it as a sun-tracking extra; awning/tilt never render
-    # it. A transient toggle: ticking it fills fov_left/right from the window
-    # width + reveal depth on submit, then re-renders un-ticked. Never persisted.
+    # "Generate FOV from measurements" button (#565). Vertical-blind + venetian
+    # + roof only — those policies advertise it; awning/tilt never render it. A
+    # transient toggle: ticking it fills fov_left/right from the window width +
+    # reveal depth on submit, then re-renders un-ticked. Never persisted.
     FieldSpec(
         CONF_FOV_COMPUTE,
-        SECTION_SUN_TRACKING,
+        SECTION_GEOMETRY,
         ValidatorKind.BOOL,
         default=False,
         make_selector=_bool(),
     ),
     FieldSpec(
         CONF_FOV_LEFT,
-        SECTION_SUN_TRACKING,
+        SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_FOV,
         default=90,
@@ -491,7 +496,7 @@ _SUN_TRACKING_SPECS = _spec(
     ),
     FieldSpec(
         CONF_FOV_RIGHT,
-        SECTION_SUN_TRACKING,
+        SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_FOV,
         default=90,
@@ -513,10 +518,11 @@ _SUN_TRACKING_SPECS = _spec(
         make_selector=_number(minimum=0, maximum=90, step=1, unit="°"),
     ),
     # CONF_DISTANCE is length/locale-aware → dynamic builder owns the selector,
-    # but the spec records its range + canonical default-in-metres role.
+    # but the spec records its range + canonical default-in-metres role. Moved to
+    # the geometry step with the other window-facing fields (#778).
     FieldSpec(
         CONF_DISTANCE,
-        SECTION_SUN_TRACKING,
+        SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_DISTANCE,
         required=True,

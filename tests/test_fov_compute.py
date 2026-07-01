@@ -13,7 +13,7 @@ import pytest
 import voluptuous as vol
 
 from custom_components.adaptive_cover_pro import config_fields as cf
-from custom_components.adaptive_cover_pro.config_flow import _get_sun_tracking_schema
+from custom_components.adaptive_cover_pro.config_flow import _get_geometry_schema
 from custom_components.adaptive_cover_pro.const import (
     CONF_FOV_COMPUTE,
     CONF_FOV_LEFT,
@@ -34,7 +34,7 @@ def test_conf_fov_compute_key():
 def test_fov_compute_field_spec_registered_as_bool():
     spec = cf.FIELD_SPECS[CONF_FOV_COMPUTE]
     assert spec.validator is cf.ValidatorKind.BOOL
-    assert spec.section == cf.SECTION_SUN_TRACKING
+    assert spec.section == cf.SECTION_GEOMETRY
 
 
 def test_fov_compute_default_is_false():
@@ -64,14 +64,14 @@ def test_supports_fov_compute_per_cover_type(cover_type, supported):
 
 @pytest.mark.parametrize("cover_type", [CoverType.BLIND, CoverType.VENETIAN])
 def test_toggle_in_schema_before_sliders(cover_type):
-    keys = _keys(_get_sun_tracking_schema(cover_type))
+    keys = _keys(_get_geometry_schema(cover_type))
     assert CONF_FOV_COMPUTE in keys
     assert keys.index(CONF_FOV_COMPUTE) < keys.index(CONF_FOV_LEFT)
 
 
 @pytest.mark.parametrize("cover_type", [CoverType.AWNING, CoverType.TILT])
 def test_no_toggle_for_unsupported_cover_types(cover_type):
-    keys = _keys(_get_sun_tracking_schema(cover_type))
+    keys = _keys(_get_geometry_schema(cover_type))
     assert CONF_FOV_COMPUTE not in keys
     # The plain fov sliders are still present.
     assert CONF_FOV_LEFT in keys
@@ -89,7 +89,7 @@ def test_toggle_is_transient_not_a_live_option_key(cover_type):
 def test_fov_sliders_optional_with_default_when_button_present(cover_type):
     # The sliders are relaxed to vol.Optional so the frontend "required field"
     # check never blocks the button's re-render submit (#565). Default preserved.
-    schema = _get_sun_tracking_schema(cover_type)
+    schema = _get_geometry_schema(cover_type)
     markers = {str(m): m for m in schema.schema}
     for key in (CONF_FOV_LEFT, CONF_FOV_RIGHT):
         assert isinstance(markers[key], vol.Optional)
@@ -98,7 +98,7 @@ def test_fov_sliders_optional_with_default_when_button_present(cover_type):
 
 @pytest.mark.parametrize("cover_type", [CoverType.AWNING, CoverType.TILT])
 def test_fov_sliders_stay_required_without_button(cover_type):
-    schema = _get_sun_tracking_schema(cover_type)
+    schema = _get_geometry_schema(cover_type)
     markers = {str(m): m for m in schema.schema}
     for key in (CONF_FOV_LEFT, CONF_FOV_RIGHT):
         assert isinstance(markers[key], vol.Required)

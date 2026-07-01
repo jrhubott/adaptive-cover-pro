@@ -17,8 +17,8 @@ from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 from custom_components.adaptive_cover_pro.config_flow import (
     ConfigFlowHandler,
     OptionsFlowHandler,
-    _get_sun_tracking_schema,
-    _sun_tracking_placeholders,
+    _geometry_placeholders,
+    _get_geometry_schema,
 )
 from custom_components.adaptive_cover_pro.const import (
     CONF_DISTANCE,
@@ -44,7 +44,8 @@ def _suggested(result, key):
 
 
 # ----------------------------------------------------------------------------
-# Computed-FOV preview placeholder (rendered in the fov_compute help text, #565)
+# Computed-FOV preview placeholder (rendered in the fov_compute help text on the
+# geometry step now, #565 + #778)
 # ----------------------------------------------------------------------------
 
 
@@ -52,7 +53,7 @@ def test_preview_shows_hemisphere_at_zero_depth():
     # A flush window (depth 0, the default) is not "nothing to derive" — it is
     # the full hemisphere, 90°/90°. The preview must always render, never be
     # blank, so the button's help text fulfils its "computed value" promise.
-    ph = _sun_tracking_placeholders(
+    ph = _geometry_placeholders(
         CoverType.BLIND, {CONF_WINDOW_WIDTH: 0, CONF_WINDOW_DEPTH: 0}
     )
     assert "90°/90°" in ph["computed_fov"]
@@ -60,7 +61,7 @@ def test_preview_shows_hemisphere_at_zero_depth():
 
 def test_preview_narrows_with_reveal_depth():
     # width 2.0 / depth 0.5 → atan(4) ≈ 76°.
-    ph = _sun_tracking_placeholders(
+    ph = _geometry_placeholders(
         CoverType.BLIND, {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}
     )
     assert "76°/76°" in ph["computed_fov"]
@@ -69,7 +70,7 @@ def test_preview_narrows_with_reveal_depth():
 def test_preview_empty_for_type_without_button():
     # Awnings have no FOV-from-measurements button → no computed preview, but
     # the placeholder key is still present (HA raises on a missing reference).
-    ph = _sun_tracking_placeholders(
+    ph = _geometry_placeholders(
         CoverType.AWNING, {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}
     )
     assert ph["computed_fov"] == ""
@@ -82,14 +83,14 @@ def test_preview_empty_for_type_without_button():
 
 @pytest.mark.parametrize("cover_type", [CoverType.BLIND, CoverType.VENETIAN])
 def test_supported_types_show_button_and_sliders(cover_type):
-    keys = _keys(_get_sun_tracking_schema(cover_type))
+    keys = _keys(_get_geometry_schema(cover_type))
     assert CONF_FOV_COMPUTE in keys
     assert CONF_FOV_LEFT in keys
     assert CONF_FOV_RIGHT in keys
 
 
 def test_awning_has_no_button():
-    keys = _keys(_get_sun_tracking_schema(CoverType.AWNING))
+    keys = _keys(_get_geometry_schema(CoverType.AWNING))
     assert CONF_FOV_COMPUTE not in keys
     assert CONF_FOV_LEFT in keys
     assert CONF_FOV_RIGHT in keys
@@ -116,8 +117,8 @@ def _options_flow(options: dict, sensor_type=CoverType.BLIND) -> OptionsFlowHand
 @pytest.mark.asyncio
 async def test_button_press_derives_fov_and_rerenders():
     # width 2.0 / depth 0.5 → atan(4) ≈ 76°. Ticking the button fills the
-    # sliders and re-renders the form rather than advancing.
-    flow = _options_flow({CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5})
+    # sliders and re-renders the geometry form rather than advancing.
+    flow = _options_flow({})
     advanced = False
 
     async def _next():
@@ -126,8 +127,10 @@ async def test_button_press_derives_fov_and_rerenders():
         return {"type": "menu"}
 
     flow.async_step_init = _next
-    result = await flow.async_step_sun_tracking(
+    result = await flow.async_step_geometry(
         {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_FOV_COMPUTE: True,
             CONF_FOV_LEFT: 90,
             CONF_FOV_RIGHT: 90,
@@ -136,7 +139,7 @@ async def test_button_press_derives_fov_and_rerenders():
     )
     assert advanced is False
     assert result["type"] == "form"
-    assert result["step_id"] == "sun_tracking"
+    assert result["step_id"] == "geometry"
     # The re-rendered form shows the derived angle as the suggested value.
     assert _suggested(result, CONF_FOV_LEFT) == 76
     assert _suggested(result, CONF_FOV_RIGHT) == 76
@@ -145,10 +148,34 @@ async def test_button_press_derives_fov_and_rerenders():
 
 
 @pytest.mark.asyncio
-async def test_button_not_pressed_saves_typed_values():
-    flow = _options_flow({CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5})
-    result = await flow.async_step_sun_tracking(
+async def test_button_uses_fresh_submitted_width_depth():
+    # #565 guard on the merged step: stale width/depth live in the entry, but the
+    # user edits them AND ticks the button in one submit. The derived FOV must
+    # come from the SUBMITTED (fresh) measurements, not the stored ones.
+    from custom_components.adaptive_cover_pro.engine.sun_geometry import (
+        fov_from_reveal,
+    )
+
+    flow = _options_flow({CONF_WINDOW_WIDTH: 5.0, CONF_WINDOW_DEPTH: 0.0})  # stale → 90
+    result = await flow.async_step_geometry(
         {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
+            CONF_FOV_COMPUTE: True,
+            "distance_shaded_area": 0.5,
+        }
+    )
+    assert result["type"] == "form"
+    assert _suggested(result, CONF_FOV_LEFT) == round(fov_from_reveal(2.0, 0.5)) == 76
+
+
+@pytest.mark.asyncio
+async def test_button_not_pressed_saves_typed_values():
+    flow = _options_flow({})
+    result = await flow.async_step_geometry(
+        {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_FOV_COMPUTE: False,
             CONF_FOV_LEFT: 30,
             CONF_FOV_RIGHT: 40,
@@ -164,9 +191,11 @@ async def test_button_not_pressed_saves_typed_values():
 @pytest.mark.asyncio
 async def test_absent_toggle_saves_typed_values():
     # The toggle may be omitted entirely (default off) → typed values saved.
-    flow = _options_flow({CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5})
-    await flow.async_step_sun_tracking(
+    flow = _options_flow({})
+    await flow.async_step_geometry(
         {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_FOV_LEFT: 55,
             CONF_FOV_RIGHT: 65,
             "distance_shaded_area": 0.5,
@@ -177,25 +206,12 @@ async def test_absent_toggle_saves_typed_values():
 
 
 @pytest.mark.asyncio
-async def test_legacy_fov_mode_key_dropped_on_save():
-    # An entry created before the button replaced the selector may carry a stale
-    # ``fov_mode`` option — it must be dropped on the next sun-tracking save.
-    flow = _options_flow(
-        {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5, "fov_mode": "measurements"}
-    )
-    await flow.async_step_sun_tracking(
-        {CONF_FOV_LEFT: 45, CONF_FOV_RIGHT: 45, "distance_shaded_area": 0.5}
-    )
-    assert "fov_mode" not in flow.options
-
-
-@pytest.mark.asyncio
 async def test_button_works_for_venetian():
-    flow = _options_flow(
-        {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}, sensor_type=CoverType.VENETIAN
-    )
-    result = await flow.async_step_sun_tracking(
+    flow = _options_flow({}, sensor_type=CoverType.VENETIAN)
+    result = await flow.async_step_geometry(
         {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_FOV_COMPUTE: True,
             CONF_FOV_LEFT: 90,
             CONF_FOV_RIGHT: 90,
@@ -206,8 +222,18 @@ async def test_button_works_for_venetian():
     assert _suggested(result, CONF_FOV_LEFT) == 76
 
 
+@pytest.mark.asyncio
+async def test_legacy_fov_mode_key_dropped_on_save():
+    # An entry created before the button replaced the selector may carry a stale
+    # ``fov_mode`` option — it must be dropped on the next sun-tracking save.
+    flow = _options_flow({"fov_mode": "measurements"})
+    await flow.async_step_sun_tracking({})
+    assert "fov_mode" not in flow.options
+
+
 # ----------------------------------------------------------------------------
-# Imperial round-trip stability across the button re-render (#565)
+# Imperial round-trip stability across the button re-render (#565, now on the
+# geometry step per #778)
 # ----------------------------------------------------------------------------
 
 
@@ -223,21 +249,38 @@ async def test_imperial_shaded_area_stable_across_button_rerender():
     # The button press re-renders the form. On an imperial hass the "shaded
     # area" (distance) value must NOT be re-converted metres->inches a second
     # time, or it compounds on each rerender until the slider overruns.
-    flow = _imperial_options_flow({CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5})
+    flow = _imperial_options_flow({})
     expected_in = options_to_display(
         flow.hass, {CONF_DISTANCE: 0.5}, length_keys=(CONF_DISTANCE,)
     )[CONF_DISTANCE]
+    width_in = options_to_display(
+        flow.hass, {CONF_WINDOW_WIDTH: 2.0}, length_keys=(CONF_WINDOW_WIDTH,)
+    )[CONF_WINDOW_WIDTH]
+    depth_in = options_to_display(
+        flow.hass, {CONF_WINDOW_DEPTH: 0.5}, length_keys=(CONF_WINDOW_DEPTH,)
+    )[CONF_WINDOW_DEPTH]
 
-    result1 = await flow.async_step_sun_tracking(
-        {CONF_FOV_COMPUTE: True, CONF_DISTANCE: expected_in}
+    result1 = await flow.async_step_geometry(
+        {
+            CONF_WINDOW_WIDTH: width_in,
+            CONF_WINDOW_DEPTH: depth_in,
+            CONF_FOV_COMPUTE: True,
+            CONF_DISTANCE: expected_in,
+        }
     )
     assert result1["type"] == "form"
     s1 = _suggested(result1, CONF_DISTANCE)
     assert s1 == pytest.approx(expected_in, abs=0.1)
 
     # Second submit without the button: saves rather than looping.
-    result2 = await flow.async_step_sun_tracking(
-        {CONF_DISTANCE: s1, CONF_FOV_LEFT: 76, CONF_FOV_RIGHT: 76}
+    result2 = await flow.async_step_geometry(
+        {
+            CONF_WINDOW_WIDTH: width_in,
+            CONF_WINDOW_DEPTH: depth_in,
+            CONF_DISTANCE: s1,
+            CONF_FOV_LEFT: 76,
+            CONF_FOV_RIGHT: 76,
+        }
     )
     assert result2["type"] == "menu"
     import math
@@ -259,8 +302,8 @@ def _create_flow(sensor_type: str = CoverType.BLIND) -> ConfigFlowHandler:
     flow.hass.states.get.return_value = None
     flow.type_blind = sensor_type
     flow.config = {}
-    flow.async_step_position = AsyncMock(
-        return_value={"type": "form", "step_id": "position"}
+    flow.async_step_sun_tracking = AsyncMock(
+        return_value={"type": "form", "step_id": "sun_tracking"}
     )
     return flow
 
@@ -268,28 +311,37 @@ def _create_flow(sensor_type: str = CoverType.BLIND) -> ConfigFlowHandler:
 @pytest.mark.asyncio
 async def test_create_flow_button_press_then_save():
     flow = _create_flow()
-    flow.config[CONF_WINDOW_WIDTH] = 2.0
-    flow.config[CONF_WINDOW_DEPTH] = 0.5
 
-    # Button press → re-render, no advance.
-    result1 = await flow.async_step_sun_tracking(
-        {CONF_FOV_COMPUTE: True, "distance_shaded_area": 0.5}
+    # Button press → re-render geometry, no advance.
+    result1 = await flow.async_step_geometry(
+        {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
+            CONF_FOV_COMPUTE: True,
+            "distance_shaded_area": 0.5,
+        }
     )
     assert result1["type"] == "form"
-    assert result1["step_id"] == "sun_tracking"
+    assert result1["step_id"] == "geometry"
     assert _suggested(result1, CONF_FOV_LEFT) == 76
 
-    # Plain submit → advance to position, persisting the fov values.
-    result2 = await flow.async_step_sun_tracking(
-        {CONF_FOV_LEFT: 76, CONF_FOV_RIGHT: 76, "distance_shaded_area": 0.5}
+    # Plain submit → advance to sun_tracking, persisting the fov values.
+    result2 = await flow.async_step_geometry(
+        {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
+            CONF_FOV_LEFT: 76,
+            CONF_FOV_RIGHT: 76,
+            "distance_shaded_area": 0.5,
+        }
     )
-    assert result2["step_id"] == "position"
+    assert result2["step_id"] == "sun_tracking"
     assert flow.config[CONF_FOV_LEFT] == 76
     assert CONF_FOV_COMPUTE not in flow.config
 
 
 def test_supported_type_sliders_are_optional():
-    schema = _get_sun_tracking_schema(CoverType.BLIND)
+    schema = _get_geometry_schema(CoverType.BLIND)
     markers = {str(m): m for m in schema.schema}
     assert isinstance(markers[CONF_FOV_LEFT], vol.Optional)
     assert isinstance(markers[CONF_FOV_RIGHT], vol.Optional)

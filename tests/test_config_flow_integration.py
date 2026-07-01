@@ -74,18 +74,26 @@ pytestmark = pytest.mark.integration
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Per-window facing fields relocated from the sun-tracking step to the geometry
+# step (#778): azimuth, FOV left/right, and shaded distance now submit on
+# geometry alongside the window dimensions.
+_WINDOW_FACING = {
+    CONF_AZIMUTH: 180,
+    CONF_FOV_LEFT: 45,
+    CONF_FOV_RIGHT: 45,
+    CONF_DISTANCE: 0.5,
+}
+
 _VERTICAL_GEOMETRY = {
     CONF_HEIGHT_WIN: 2.1,
     CONF_WINDOW_DEPTH: 0.0,
     CONF_SILL_HEIGHT: 0.0,
+    **_WINDOW_FACING,
 }
 
 _SUN_TRACKING = {
-    CONF_AZIMUTH: 180,
-    CONF_FOV_LEFT: 45,
-    CONF_FOV_RIGHT: 45,
-    # CONF_MIN_ELEVATION / CONF_MAX_ELEVATION are Optional — omit to use defaults
-    CONF_DISTANCE: 0.5,
+    # Behavioural sun-tracking only — the window-facing fields moved to the
+    # geometry step (#778). CONF_MIN_ELEVATION / CONF_MAX_ELEVATION are Optional.
     "blind_spot": False,
 }
 
@@ -1085,14 +1093,46 @@ def test_get_azimuth_edges_sums_fov():
 
 @pytest.mark.unit
 def test_get_geometry_schema_unknown_type_returns_vertical():
-    """_get_geometry_schema falls back to GEOMETRY_VERTICAL_SCHEMA for unknown types."""
+    """_get_geometry_schema falls back to the vertical geometry for unknown types.
+
+    The window-facing fields (azimuth / FOV / distance) are composed on for every
+    type (#778), so the result is the vertical geometry schema extended with those
+    fields rather than the bare GEOMETRY_VERTICAL_SCHEMA identity.
+    """
     from custom_components.adaptive_cover_pro.config_flow import (
         _get_geometry_schema,
         GEOMETRY_VERTICAL_SCHEMA,
     )
 
     result = _get_geometry_schema("unknown_type")
-    assert result is GEOMETRY_VERTICAL_SCHEMA
+    keys = {str(k) for k in result.schema}
+    assert {str(k) for k in GEOMETRY_VERTICAL_SCHEMA.schema} <= keys
+    for facing in (CONF_AZIMUTH, CONF_FOV_LEFT, CONF_FOV_RIGHT, CONF_DISTANCE):
+        assert facing in keys
+    # Unknown type has no policy → the FOV button is not added.
+    assert CONF_FOV_COMPUTE not in keys
+
+
+@pytest.mark.unit
+def test_get_geometry_schema_unknown_type_with_hass_locale_composes_window_facing():
+    """Unknown type + hass composes window-facing fields via the locale fallback.
+
+    The locale-aware fallback still adds azimuth / FOV / distance with no button.
+    """
+    from unittest.mock import MagicMock
+
+    from homeassistant.util.unit_system import METRIC_SYSTEM
+
+    from custom_components.adaptive_cover_pro.config_flow import _get_geometry_schema
+
+    hass = MagicMock()
+    hass.config.units = METRIC_SYSTEM
+    hass.states.get.return_value = None
+
+    keys = {str(k) for k in _get_geometry_schema("unknown_type", hass).schema}
+    for facing in (CONF_AZIMUTH, CONF_FOV_LEFT, CONF_FOV_RIGHT, CONF_DISTANCE):
+        assert facing in keys
+    assert CONF_FOV_COMPUTE not in keys
 
 
 @pytest.mark.unit
@@ -2644,39 +2684,37 @@ async def test_full_setup_persists_fov_and_window_width(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: []}
     )
-    # Feed CONF_WINDOW_WIDTH (+ a reveal depth) in the geometry step.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {**_VERTICAL_GEOMETRY, CONF_WINDOW_WIDTH: 1.6, CONF_WINDOW_DEPTH: 0.5},
-    )
-    # First sun_tracking submit: tick the "Generate FOV from measurements" button.
-    # This triggers a re-render with the derived fov values filled in.
+    # Geometry step now carries the window dims AND the FOV button (#778). First
+    # submit: feed width + reveal depth and tick "Generate FOV from measurements"
+    # → re-render on the same geometry step with the derived fov filled in.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
-            CONF_AZIMUTH: 180,
+            **_VERTICAL_GEOMETRY,
+            CONF_WINDOW_WIDTH: 1.6,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_FOV_LEFT: 90,
             CONF_FOV_RIGHT: 90,
-            CONF_DISTANCE: 0.5,
-            "blind_spot": False,
-            "enable_glare_zones": False,
             CONF_FOV_COMPUTE: True,
         },
     )
     assert (
-        result.get("step_id") == "sun_tracking"
+        result.get("step_id") == "geometry"
     ), f"expected re-render on button press, got {result!r}"
-    # Second submit without the button: keep the (now derived) angles and advance.
+    # Second geometry submit without the button: keep the angles and advance.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
-            CONF_AZIMUTH: 180,
+            **_VERTICAL_GEOMETRY,
+            CONF_WINDOW_WIDTH: 1.6,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_FOV_LEFT: 45,
             CONF_FOV_RIGHT: 45,
-            CONF_DISTANCE: 0.5,
-            "blind_spot": False,
-            "enable_glare_zones": False,
         },
+    )
+    # Then the behavioural sun-tracking step.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _SUN_TRACKING_VERTICAL
     )
     # 4-layer order (#613): position → behavior → L3 handlers → L4 automation.
     result = await hass.config_entries.flow.async_configure(
@@ -2726,16 +2764,13 @@ async def test_full_setup_persists_fov_and_window_width(
 
 
 @pytest.mark.asyncio
-async def test_create_flow_sun_tracking_rerender_keeps_typed_azimuth() -> None:
+async def test_create_flow_geometry_rerender_keeps_typed_azimuth() -> None:
     """Create-flow button re-render must not discard the azimuth the user typed.
 
-    Regression guard for issue #565 Defect B: the create-flow _show_sun_tracking_form
-    took no ``values`` argument and never called add_suggested_values_to_schema, so
-    after a re-render the form redrew with the bare schema defaults
-    (DEFAULT_WINDOW_AZIMUTH) instead of the user's just-typed value.
-
-    After the fix, the re-rendered form carries the typed azimuth as a suggested value
-    and self.config[CONF_AZIMUTH] is preserved on the subsequent submit.
+    Regression guard for issue #565 Defect B, now on the geometry step (#778):
+    ``_show_geometry_form`` must re-feed the just-submitted values via
+    add_suggested_values_to_schema so a button re-render redraws with the user's
+    typed azimuth, not the bare schema default (DEFAULT_WINDOW_AZIMUTH).
     """
     from unittest.mock import AsyncMock, MagicMock
 
@@ -2747,15 +2782,17 @@ async def test_create_flow_sun_tracking_rerender_keeps_typed_azimuth() -> None:
     flow.hass.config.units.is_metric = True
     flow.hass.states.get.return_value = None
     flow.type_blind = CoverType.BLIND
-    flow.config = {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}
-    flow.async_step_position = AsyncMock(
-        return_value={"type": "form", "step_id": "position"}
+    flow.config = {}
+    flow.async_step_sun_tracking = AsyncMock(
+        return_value={"type": "form", "step_id": "sun_tracking"}
     )
 
     # First submit: the user types azimuth 137 and presses the FOV-from-
-    # measurements button → re-render path.
-    result = await flow.async_step_sun_tracking(
+    # measurements button → re-render path on the geometry step.
+    result = await flow.async_step_geometry(
         {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
             CONF_AZIMUTH: 137,
             CONF_FOV_LEFT: 30,
             CONF_FOV_RIGHT: 30,
@@ -2764,10 +2801,10 @@ async def test_create_flow_sun_tracking_rerender_keeps_typed_azimuth() -> None:
         }
     )
     assert result["type"] == "form", "expected re-render on button press"
-    assert result["step_id"] == "sun_tracking"
+    assert result["step_id"] == "geometry"
 
-    # After the fix: the re-rendered form must carry 137 as suggested_value for
-    # CONF_AZIMUTH — the user's just-typed input must not be discarded.
+    # The re-rendered form must carry 137 as suggested_value for CONF_AZIMUTH —
+    # the user's just-typed input must not be discarded.
     schema = result.get("data_schema")
     assert schema is not None, "re-render must return a data_schema"
     suggested_azimuth = None
@@ -2778,5 +2815,5 @@ async def test_create_flow_sun_tracking_rerender_keeps_typed_azimuth() -> None:
     assert suggested_azimuth == 137, (
         f"Re-rendered form must carry typed azimuth 137 as suggested_value, "
         f"got {suggested_azimuth!r}. "
-        "Defect B: create-flow _show_sun_tracking_form discards typed input."
+        "Defect B: _show_geometry_form discards typed input."
     )

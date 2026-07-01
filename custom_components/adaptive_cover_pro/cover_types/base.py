@@ -570,7 +570,15 @@ class CoverTypePolicy(ABC):
 
         opts = options or {}
         if name == cf.SECTION_GEOMETRY:
+            # Per-window facing fields (azimuth / FOV / shaded distance) are shared
+            # across every cover type, so they compose onto each policy's geometry
+            # schema through the single ``window_facing_schema`` seam (#778) rather
+            # than being duplicated into every ``geometry_schema``. This keeps them
+            # in ``live_option_keys`` for all types. The FOV-from-measurements
+            # button is NOT added here — it is a transient toggle layered on in
+            # ``config_flow._get_geometry_schema`` only, never a persisted key.
             base = self.geometry_schema(hass, opts)
+            base = base.extend(cd.window_facing_schema(hass).schema)
         elif name == cf.SECTION_SUN_TRACKING:
             base = cd.sun_tracking_schema(hass)
         elif name == cf.SECTION_BLIND_SPOT:

@@ -62,7 +62,11 @@
           "awning_housing_offset": "Housing Offset Above Window",
           "awning_pivot_offset": "Pivot Offset From Window",
           "roof_pitch": "Roof Pitch",
-          "roof_height_above": "Roof Height Above Window"
+          "roof_height_above": "Roof Height Above Window",
+          "set_azimuth": "Window Azimuth",
+          "fov_compute": "Generate field of view from measurements",
+          "fov_left": "Field of view left",
+          "fov_right": "Field of view right"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -90,35 +94,29 @@
           "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top.",
           "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall.",
           "roof_pitch": "Pitch of the roof glass measured FROM HORIZONTAL (0–90°). 0° = a flat skylight (sun lets in whenever it is above the horizon); 90° = a vertical window (behaves exactly like a vertical blind). Typical Velux-style roof windows are 30–50°. If you are migrating from the vertical-blind workaround that used a max-elevation limit, this pitch is the complement of that angle (e.g. a 35° roof ↔ a ~55° max-elevation workaround).",
-          "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for."
+          "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for.",
+          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
+          "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth above, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
+          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
+          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone."
         }
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
+        "description": "Choose whether the cover tracks the sun and set the elevation limits for tracking. The integration holds the cover at its default position when the sun is outside the tracked range.\n\n**Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed. The window's orientation and field of view are set on the Cover Geometry page.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
-          "set_azimuth": "Window Azimuth",
-          "fov_compute": "Generate field of view from measurements",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
           "blind_spot": "Setup Blindspot",
-          "enable_glare_zones": "Enable Glare Zones",
-          "distance_shaded_area": "Shaded area"
+          "enable_glare_zones": "Enable Glare Zones"
         },
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
-          "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
-          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room. Shown in the unit Home Assistant is configured for. This defines your acceptable 'glare zone' — the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Zero (0 m / 0 in) keeps direct sun from passing the glass plane (full closure on hot days); Small glare zone (0.3–0.5 m / 12–20 in) keeps sunlight very close to the window; Medium glare zone (0.5–1.0 m / 20–40 in) allows sun to reach desk or seating area; Large glare zone (2.0–3.0 m / 79–118 in) allows sunlight deep into the room. KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)"
         }
       },
       "position": {
@@ -878,7 +876,11 @@
           "awning_housing_offset": "Housing Offset Above Window",
           "awning_pivot_offset": "Pivot Offset From Window",
           "roof_pitch": "Roof Pitch",
-          "roof_height_above": "Roof Height Above Window"
+          "roof_height_above": "Roof Height Above Window",
+          "set_azimuth": "Window Azimuth",
+          "fov_compute": "Generate field of view from measurements",
+          "fov_left": "Field of view left",
+          "fov_right": "Field of view right"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -906,35 +908,29 @@
           "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top.",
           "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall.",
           "roof_pitch": "Pitch of the roof glass measured FROM HORIZONTAL (0–90°). 0° = a flat skylight (sun lets in whenever it is above the horizon); 90° = a vertical window (behaves exactly like a vertical blind). Typical Velux-style roof windows are 30–50°. If you are migrating from the vertical-blind workaround that used a max-elevation limit, this pitch is the complement of that angle (e.g. a 35° roof ↔ a ~55° max-elevation workaround).",
-          "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for."
+          "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for.",
+          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
+          "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth above, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
+          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
+          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone."
         }
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
+        "description": "Choose whether the cover tracks the sun and set the elevation limits for tracking. The integration holds the cover at its default position when the sun is outside the tracked range.\n\n**Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed. The window's orientation and field of view are set on the Cover Geometry page.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
-          "set_azimuth": "Window Azimuth",
-          "fov_compute": "Generate field of view from measurements",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
           "blind_spot": "Setup Blindspot",
-          "enable_glare_zones": "Enable Glare Zones",
-          "distance_shaded_area": "Shaded area"
+          "enable_glare_zones": "Enable Glare Zones"
         },
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
-          "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
-          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room. Shown in the unit Home Assistant is configured for. This defines your acceptable 'glare zone' — the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Zero (0 m / 0 in) keeps direct sun from passing the glass plane (full closure on hot days); Small glare zone (0.3–0.5 m / 12–20 in) keeps sunlight very close to the window; Medium glare zone (0.5–1.0 m / 20–40 in) allows sun to reach desk or seating area; Large glare zone (2.0–3.0 m / 79–118 in) allows sunlight deep into the room. KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)"
         }
       },
       "position": {

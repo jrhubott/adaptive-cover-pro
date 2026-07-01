@@ -11,12 +11,14 @@ from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 from custom_components.adaptive_cover_pro import unit_system
 from custom_components.adaptive_cover_pro.config_flow import (
     light_cloud_schema,
-    sun_tracking_schema,
     temperature_climate_schema,
     weather_override_schema,
     _build_glare_zones_schema,
+    _geometry_unit_keys,
+    _get_geometry_schema,
     _glare_zone_length_keys,
     _stringify_templatable,
+    _SUN_TRACKING_LENGTH_KEYS,
 )
 from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
@@ -121,16 +123,47 @@ class TestTiltSlatLabels:
 
 
 @pytest.mark.unit
-class TestSunTrackingDistance:
-    """CONF_DISTANCE follows the length-unit locale."""
+class TestGeometryDistance:
+    """CONF_DISTANCE moved to the geometry step (#778) and follows the locale.
+
+    The unit conversion happens on the geometry step now: the field is one of
+    that step's length keys for every cover type and no longer belongs to the
+    sun-tracking step's (now empty) length-key set.
+    """
 
     def test_metric(self):
-        cfg = _selector_for(sun_tracking_schema(_hass(imperial=False)), CONF_DISTANCE)
+        cfg = _selector_for(
+            _get_geometry_schema("cover_blind", _hass(imperial=False)), CONF_DISTANCE
+        )
         assert cfg["unit_of_measurement"] == "m"
 
     def test_imperial(self):
-        cfg = _selector_for(sun_tracking_schema(_hass(imperial=True)), CONF_DISTANCE)
+        cfg = _selector_for(
+            _get_geometry_schema("cover_blind", _hass(imperial=True)), CONF_DISTANCE
+        )
         assert cfg["unit_of_measurement"] == "in"
+
+    @pytest.mark.parametrize(
+        "cover_type", ["cover_blind", "cover_awning", "cover_tilt", "cover_venetian"]
+    )
+    def test_distance_is_a_geometry_length_key(self, cover_type):
+        length_keys, _slat_keys = _geometry_unit_keys(cover_type)
+        assert CONF_DISTANCE in length_keys
+
+    def test_distance_no_longer_a_sun_tracking_length_key(self):
+        assert CONF_DISTANCE not in _SUN_TRACKING_LENGTH_KEYS
+
+    def test_distance_selector_accepts_zero(self):
+        # #427: a flush shaded distance of 0 must stay valid after the move.
+        cfg = _selector_for(
+            _get_geometry_schema("cover_blind", _hass(imperial=False)), CONF_DISTANCE
+        )
+        assert cfg["min"] == 0
+
+    def test_distance_option_range_floor_is_zero(self):
+        from custom_components.adaptive_cover_pro.const import OPTION_RANGES
+
+        assert OPTION_RANGES[CONF_DISTANCE] == (0.0, 50.0)
 
 
 @pytest.mark.unit

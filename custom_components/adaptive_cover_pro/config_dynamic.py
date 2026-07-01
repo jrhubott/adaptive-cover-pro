@@ -173,17 +173,17 @@ def _condition_template_schema(template_key: str, mode_key: str) -> dict:
     }
 
 
-def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
-    """Sun-tracking schema. ``hass=None`` → metric labels.
+def window_facing_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+    """Per-window facing fields: azimuth + FOV left/right + shaded distance.
 
-    Only ``CONF_DISTANCE`` is unit-dependent; every other field is angles or
-    booleans.
+    Single definition of the four fields relocated from the sun-tracking step to
+    the geometry step (#778), composed onto every cover type's geometry schema so
+    they sit beside the window width/depth the FOV button derives from. Only
+    ``CONF_DISTANCE`` is unit-dependent; azimuth and FOV are angles. ``min_m=0.0``
+    keeps a flush shaded distance of 0 valid (#427).
     """
     return vol.Schema(
         {
-            vol.Required(
-                CONF_ENABLE_SUN_TRACKING, default=True
-            ): selector.BooleanSelector(),
             vol.Required(
                 CONF_AZIMUTH, default=DEFAULT_WINDOW_AZIMUTH
             ): selector.NumberSelector(
@@ -212,6 +212,33 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
                     unit_of_measurement="°",
                 )
             ),
+            vol.Required(
+                CONF_DISTANCE, default=length_default(0.5, hass)
+            ): length_selector(
+                hass,
+                min_m=0.0,
+                max_m=50,
+                metric_step=0.1,
+            ),
+        }
+    )
+
+
+def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+    """Sun-tracking (behavioural) schema. ``hass=None`` → metric labels.
+
+    Purely behavioural sun-tracking settings: the master enable toggle, the
+    min/max elevation limits, and the blind-spot enable. The per-window facing
+    fields (azimuth, FOV, shaded distance) moved to the geometry step (#778) —
+    see ``window_facing_schema``. ``hass`` is retained in the signature so the
+    call sites stay symmetric with the other locale-aware builders even though
+    no field here is unit-dependent any more.
+    """
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_ENABLE_SUN_TRACKING, default=True
+            ): selector.BooleanSelector(),
             vol.Optional(CONF_MIN_ELEVATION): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0,
@@ -229,14 +256,6 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
                     mode=selector.NumberSelectorMode.SLIDER,
                     unit_of_measurement="°",
                 )
-            ),
-            vol.Required(
-                CONF_DISTANCE, default=length_default(0.5, hass)
-            ): length_selector(
-                hass,
-                min_m=0.0,
-                max_m=50,
-                metric_step=0.1,
             ),
             vol.Optional(
                 CONF_ENABLE_BLIND_SPOT, default=False
