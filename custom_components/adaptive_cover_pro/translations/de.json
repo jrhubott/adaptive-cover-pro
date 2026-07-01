@@ -1343,7 +1343,7 @@
         "title": "Einstellungen auf andere Behänge kopieren",
         "description": "Wählen Sie, auf welche Behänge Sie Einstellungen kopieren möchten, und welche Kategorien synchronisiert werden sollen. Nur ausgewählte Kategorien werden auf Zielbehängen überschrieben.\n\n⚠️ **Azimut ist immer ausgeschlossen** – jeder Behang behält seine eigene Fensterorientierung.",
         "data": {
-          "target_entries": "Zielleuchten",
+          "target_entries": "Ziel-/ausgeschlossene Beschattungen",
           "sync_categories": "Zu synchronisierende Kategorien",
           "select_all_targets": "Alle Beschattungen auswählen"
         },

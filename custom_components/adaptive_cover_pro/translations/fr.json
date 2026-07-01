@@ -1343,7 +1343,7 @@
         "title": "Copier les paramètres vers d'autres stores",
         "description": "Choisissez les stores vers lesquels copier les paramètres et les catégories à synchroniser. Seules les catégories sélectionnées seront écrasées sur les stores cibles.\n\n⚠️ **L'azimut est toujours exclu** — chaque store conserve son propre azimut de fenêtre.",
         "data": {
-          "target_entries": "Stores cibles",
+          "target_entries": "Stores cibles/exclus",
           "sync_categories": "Catégories à synchroniser",
           "select_all_targets": "Sélectionner toutes les protections"
         },

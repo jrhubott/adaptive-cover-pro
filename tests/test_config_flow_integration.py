@@ -57,6 +57,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_END_TIME,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
+    CONF_SYNC_SELECT_ALL,
     CONF_INVERSE_STATE,
     CONF_IS_SUNNY_SENSOR,
     CONF_WINDOW_DEPTH,
@@ -1007,6 +1008,22 @@ async def test_sync_toggle_off_uses_explicit_targets(hass: HomeAssistant) -> Non
     summary = result["description_placeholders"]["entries_summary"]
     assert target1.title in summary
     assert target2.title not in summary
+
+
+@pytest.mark.integration
+async def test_sync_step_toggle_field_rendered_first(hass: HomeAssistant) -> None:
+    """The 'Select all covers' toggle renders above the cover list (#772 follow-up)."""
+    source, target1, target2 = await _setup_sync_select_all_entries(hass)
+
+    result = await _navigate_to_sync_step(hass, source.entry_id)
+    assert result["step_id"] == "sync"
+
+    field_names = [str(key) for key in result["data_schema"].schema]
+
+    toggle_index = field_names.index(CONF_SYNC_SELECT_ALL)
+    targets_index = field_names.index("target_entries")
+
+    assert toggle_index < targets_index
 
 
 @pytest.mark.integration

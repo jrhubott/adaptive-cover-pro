@@ -4492,6 +4492,9 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="sync",
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_SYNC_SELECT_ALL, default=False
+                    ): selector.BooleanSelector(),
                     vol.Required("target_entries", default=[]): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             multiple=True,
@@ -4501,9 +4504,6 @@ class OptionsFlowHandler(OptionsFlow):
                             ],
                         )
                     ),
-                    vol.Optional(
-                        CONF_SYNC_SELECT_ALL, default=False
-                    ): selector.BooleanSelector(),
                     vol.Required(
                         "sync_categories", default=[]
                     ): selector.SelectSelector(
