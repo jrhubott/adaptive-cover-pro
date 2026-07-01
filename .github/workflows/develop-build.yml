@@ -1,11 +1,18 @@
-# Develop build — a `.dev` pre-release built from the tip of `develop` whenever
-# develop changes (every push), gated on the test suite.
+# Develop build — a `.dev` pre-release built from the commit that just passed
+# the `Tests` suite on `develop`, gated on that run succeeding.
 #
-# This workflow is push-triggered, so GitHub runs the copy of this file that
-# lives on `develop` — push events use the workflow from the pushed branch, so
-# there's no dependence on the default branch the way `on: schedule` has.
+# Trigger: `workflow_run` on the `Tests` workflow completing for the `develop`
+# branch. This replaces a former `push: [develop]` trigger that re-ran the whole
+# test matrix as an internal gate — `Tests` already runs on every develop push,
+# so this workflow now just waits for it instead of duplicating it.
 #
-# Flow: compute a `.dev<date>` (PEP440) version → run the test suite as a gate →
+#   ⚠️ `workflow_run` runs the copy of THIS file that lives on the DEFAULT
+#   branch (`main`), NOT on develop. So edits to develop-build.yml only take
+#   effect once merged to `main`. (The old push trigger ran develop's copy;
+#   this inverts that. We pin the checkouts below to the tested head_sha so we
+#   still operate on the develop commit that passed, not on main.)
+#
+# Flow: `Tests` passes on develop → compute a `.dev<date>` (PEP440) version →
 # make an ephemeral manifest-bump commit, tag it, and push ONLY the tag. The
 # existing `publish-release.yml` then builds + publishes the pre-release.
 #
@@ -17,7 +24,9 @@
 name: Develop Build
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
     branches: [develop]
   workflow_dispatch:
 
@@ -28,15 +37,20 @@ concurrency:
 jobs:
   version:
     name: Compute version
+    # Gate the whole build on the Tests run succeeding (or a manual dispatch).
+    # `release` needs `version`, so a skipped `version` skips `release` too.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.compute.outputs.version }}
       tag: ${{ steps.compute.outputs.tag }}
     steps:
-      - name: Checkout develop
+      - name: Checkout tested develop commit
         uses: actions/checkout@v7
         with:
-          ref: develop
+          # The exact commit Tests passed on; falls back to develop tip for a
+          # manual dispatch (where workflow_run context is absent).
+          ref: ${{ github.event.workflow_run.head_sha || 'develop' }}
           fetch-depth: 0
 
       - name: Compute version
@@ -67,22 +81,17 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Computed develop build version: $VERSION"
 
-  test:
-    name: Test gate
-    uses: ./.github/workflows/tests.yml
-    secrets: inherit
-
   release:
     name: Tag & publish develop build
-    needs: [version, test]
+    needs: [version]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout develop (with release PAT)
+      - name: Checkout tested develop commit (with release PAT)
         uses: actions/checkout@v7
         with:
-          ref: develop
+          ref: ${{ github.event.workflow_run.head_sha || 'develop' }}
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
