@@ -1761,3 +1761,137 @@ async def test_reconcile_gives_up_on_unreachable_target(mock_hass, logger, grace
     mock_hass.services.async_call.assert_not_called()
     assert svc.state("cover.unreachable").gave_up is True
     assert svc.state("cover.unreachable").retry_count == 2  # not incremented
+
+
+# --- same-position gate: unknown current position fallback (issue #779) ---
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_gate_uses_last_target_when_current_unknown(
+    cmd_svc, mock_hass
+):
+    """Issue #779: Somfy RTS covers sit at HA state unknown/unavailable forever,
+    so _get_current_position always returns None and the same-position gate
+    never fires — open_cover/close_cover gets resent every cycle even though
+    the cover was already commanded to that state.
+
+    First call (current unknown, no prior target): must proceed and send
+    close_cover, recording routed_target=0 as the commanded target. Second
+    call with the same continuously-computed position (30, which is not
+    itself an endpoint but still routes to close_cover) must be recognised
+    as a no-op via the routed-decision fallback and skipped as
+    same_position.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="unknown", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=None),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts", 30, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("sent", "close_cover")
+        assert cmd_svc.get_target("cover.rts") == 0
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts", 30, "solar", _ctx_with_special()
+        )
+
+    assert (outcome2, reason2) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_gate_literal_endpoint_when_current_unknown(
+    cmd_svc, mock_hass
+):
+    """Issue #779 boundary case: raw position is itself a literal endpoint (0).
+
+    Confirms the amended fallback still suppresses the resend in the
+    "parked at a literal 0/100 default" case that the reporter's original
+    (unamended) proposal handled, not just the general mid-range case
+    covered above.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="unknown", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=None),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_endpoint", 0, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("sent", "close_cover")
+        assert cmd_svc.get_target("cover.rts_endpoint") == 0
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_endpoint", 0, "solar", _ctx_with_special()
+        )
+
+    assert (outcome2, reason2) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_position_capable_current_unknown_uses_raw_target_fallback(
+    cmd_svc, mock_hass
+):
+    """Position-capable axis: no regression from the issue #779 fallback.
+
+    For a position-capable axis, routed_target == the raw commanded position
+    (see route_service_call), so the fallback must compare the last
+    commanded target against ``position`` directly (no routed-decision
+    translation) — the same outcome as if ``_current`` had been read
+    successfully.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="unknown", attributes={"current_position": None}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    cmd_svc.set_target("cover.rts_pos", 42)
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=None),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_pos", 42, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
