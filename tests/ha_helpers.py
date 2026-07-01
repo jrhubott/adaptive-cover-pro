@@ -77,7 +77,7 @@ VERTICAL_OPTIONS: dict[str, Any] = {
     CONF_RETURN_SUNSET: False,
     CONF_INVERSE_STATE: False,
     CONF_DELTA_POSITION: 5,
-    CONF_DELTA_TIME: {"hours": 0, "minutes": 2, "seconds": 0},
+    CONF_DELTA_TIME: 2,
     CONF_MANUAL_OVERRIDE_DURATION: {"hours": 1, "minutes": 0, "seconds": 0},
     CONF_MANUAL_OVERRIDE_RESET: False,
     CONF_MANUAL_THRESHOLD: 5,

@@ -100,6 +100,21 @@ if TYPE_CHECKING:
     from ..state.climate_provider import ClimateProvider, ClimateReadings
 
 
+def _delta_time_minutes(value: object) -> int:
+    """Coerce a ``delta_time`` option to whole minutes.
+
+    Production stores ``CONF_DELTA_TIME`` as a plain int (``NumberSelector``),
+    but a malformed value (e.g. a legacy duration dict) must never crash the
+    whole update cycle downstream — ``anticipated_solar_position`` compares this
+    with ``<=``, and a non-numeric value there raises ``TypeError`` and takes
+    out the coordinator refresh. Anything non-numeric falls back to ``0``
+    (anticipation disabled), the safe no-op.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return 0
+    return int(value)
+
+
 class PipelineSnapshotBuilder:
     """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`."""
 
@@ -399,5 +414,5 @@ class PipelineSnapshotBuilder:
             default_tilt=options.get(CONF_DEFAULT_TILT),
             sunset_tilt=options.get(CONF_SUNSET_TILT),
             solar_floor_active=solar_floor_active,
-            time_threshold_minutes=options.get(CONF_DELTA_TIME) or 0,
+            time_threshold_minutes=_delta_time_minutes(options.get(CONF_DELTA_TIME)),
         )

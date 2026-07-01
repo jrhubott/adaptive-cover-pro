@@ -346,3 +346,31 @@ def test_raw_calculated_position_routes_through_anticipation():
 
     assert compute_raw_calculated_position(snap) == anticipated_solar_position(snap)
     assert compute_raw_calculated_position(snap) < compute_solar_position(snap)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (2, 2),
+        (0, 0),
+        (25.0, 25),
+        (None, 0),
+        # Malformed values must never crash the update cycle — a legacy duration
+        # dict (or any non-number) coerces to 0 (anticipation disabled), not a
+        # ``dict``/``str`` that later blows up ``horizon <= 0`` with a TypeError.
+        ({"hours": 0, "minutes": 2, "seconds": 0}, 0),
+        ("nonsense", 0),
+        (True, 0),
+        (False, 0),
+    ],
+)
+def test_delta_time_minutes_coerces_safely(value, expected):
+    from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
+        _delta_time_minutes,
+    )
+
+    result = _delta_time_minutes(value)
+    assert result == expected
+    # The whole point of the guard: the result is always ``<=``-comparable.
+    assert result <= 0 or result > 0
