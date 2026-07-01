@@ -5,9 +5,12 @@ on:
   workflow_call:
   pull_request:
   push:
+    # `develop` is intentionally omitted: develop-build.yml runs this workflow
+    # via workflow_call on every develop push, so a `push: develop` trigger here
+    # would run the full matrix a second time. PRs into develop still run via
+    # `pull_request`; `main` pushes run directly.
     branches:
       - main
-      - develop
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -15,9 +18,8 @@ concurrency:
 
 jobs:
   lint:
-    name: Format check (Black)
+    name: Lint (Ruff + Black)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -26,11 +28,21 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
 
-      - name: Install Black
-        run: pip install "black~=26.5"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: requirements-dev.txt
+
+      # Install only the linters, pinned via requirements-dev.txt as a
+      # constraints file — no HA core needed, so this stays fast, and the
+      # versions never drift from the source of truth.
+      - name: Install linters
+        run: uv pip install --system -c requirements-dev.txt ruff black
+
+      - name: Run ruff check
+        run: ruff check .
 
       - name: Run black --check
         run: black --check .
@@ -54,26 +66,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+      - name: Set up Python + dev deps
+        uses: ./.github/actions/setup-python-deps
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
 
-      - name: Install dependencies (stable — HA 2026.3.1)
-        if: matrix.ha-channel == 'stable'
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-
-      - name: Install dependencies (dev — HA dev branch)
+      - name: Install HA dev branch (dev channel only)
         if: matrix.ha-channel == 'dev'
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install --upgrade --no-cache-dir pytest-homeassistant-custom-component
-          pip install --upgrade --no-cache-dir git+https://github.com/home-assistant/core.git@dev
+          uv pip install --system --upgrade pytest-homeassistant-custom-component
+          uv pip install --system --upgrade git+https://github.com/home-assistant/core.git@dev
 
       - name: Show HA version
         run: python -c "from homeassistant.const import __version__; print('HA version:', __version__)"

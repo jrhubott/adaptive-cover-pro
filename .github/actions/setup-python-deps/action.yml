@@ -1,0 +1,30 @@
+name: Set up Python + dev deps
+description: >-
+  Set up Python and install the project's dev requirements with uv (fast,
+  cached). Single source for the setup boilerplate shared by the test and
+  notebook jobs. Channel-specific extras (e.g. the HA dev branch) stay in the
+  caller.
+
+inputs:
+  python-version:
+    description: Python version to set up
+    required: false
+    default: "3.14"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: requirements-dev.txt
+
+    - name: Install dev requirements
+      shell: bash
+      run: uv pip install --system -r requirements-dev.txt
