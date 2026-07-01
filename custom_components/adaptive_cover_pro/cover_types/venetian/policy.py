@@ -36,6 +36,7 @@ from ...const import (
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
+    CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
     ControlMethod,
@@ -48,13 +49,16 @@ from ...const import (
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
+    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     DEFAULT_VENETIAN_TILT_SKIP_MODE,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_TILT_RESET_THRESHOLD,
+    MAX_VENETIAN_TILT_SAFETY_MARGIN,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
     MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MIN_VENETIAN_TILT_RESET_THRESHOLD,
+    MIN_VENETIAN_TILT_SAFETY_MARGIN,
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -180,6 +184,17 @@ def _venetian_extras_schema() -> dict:
         ),
         vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(
+            CONF_VENETIAN_TILT_SAFETY_MARGIN,
+            default=DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=MIN_VENETIAN_TILT_SAFETY_MARGIN,
+                max=MAX_VENETIAN_TILT_SAFETY_MARGIN,
+                step=0.05,
+                mode=selector.NumberSelectorMode.SLIDER,
+            )
         ),
     }
 
@@ -369,6 +384,20 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             if reset_threshold
             else []
         )
+        # Tilt safety margin is opt-in (issue #783): render only when non-zero,
+        # matching the drift-reset line's zero-disables convention.
+        safety_margin = config.get(
+            CONF_VENETIAN_TILT_SAFETY_MARGIN, DEFAULT_VENETIAN_TILT_SAFETY_MARGIN
+        )
+        safety_margin_line = (
+            [
+                L["geometry.venetian.tilt_safety_margin"].format(
+                    pct=round(safety_margin * 100)
+                )
+            ]
+            if safety_margin
+            else []
+        )
         return (
             window_dimensions_lines(config, labels)
             + slat_line
@@ -378,6 +407,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             + inverse_tilt_line
             + min_tilt_line
             + max_tilt_line
+            + safety_margin_line
             + post_settle_line
             + backrotate_line
             + drift_reset_line

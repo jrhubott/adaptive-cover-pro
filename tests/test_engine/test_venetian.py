@@ -265,6 +265,83 @@ class TestVenetianCoverCalculation:
             assert calc.tilt_for_position(resolved_position) == dual.tilt
 
 
+class TestVenetianTiltSafetyMargin:
+    """Configurable tilt safety margin composes through the dual-axis engine (#783)."""
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_safety_margin_delegates_to_tilt_engine(self, mock_datetime):
+        """Dual-path tilt equals the standalone tilt engine with the same margin."""
+        from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+        config = make_cover_config(win_azi=180)
+        vert_config = make_vertical_config()
+        # Extreme geometry (low elev, high gamma) so the margin actually bites.
+        tilt_config = make_tilt_config(
+            slat_distance=0.02, depth=0.03, mode="mode1", safety_margin=0.5
+        )
+        sol_azi, sol_elev = 255.0, 8.0
+
+        calc = VenetianCoverCalculation(
+            config=config,
+            vert_config=vert_config,
+            tilt_config=tilt_config,
+            sun_data=sun_data,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            logger=logger,
+        )
+        standalone = AdaptiveTiltCover(
+            logger=logger,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            sun_data=sun_data,
+            config=config,
+            tilt_config=tilt_config,
+        )
+        assert calc.calculate_dual().tilt == round(standalone.calculate_percentage())
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_safety_margin_respects_max_tilt_clamp(self, mock_datetime):
+        """The margin runs inside the tilt engine; ``max_tilt`` still caps it after."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        cap = 80
+        sol_azi, sol_elev = 255.0, 8.0
+        uncapped = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(
+                slat_distance=0.02, depth=0.03, mode="mode1", safety_margin=1.0
+            ),
+            sun_data=_make_sun_data(),
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            logger=_make_logger(),
+        )
+        capped = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(
+                slat_distance=0.02,
+                depth=0.03,
+                mode="mode1",
+                safety_margin=1.0,
+                max_tilt=cap,
+            ),
+            sun_data=_make_sun_data(),
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            logger=_make_logger(),
+        )
+        uncapped_tilt = uncapped.calculate_dual().tilt
+        assert (
+            uncapped_tilt > cap
+        ), f"test setup: margin-adjusted tilt {uncapped_tilt} must exceed cap {cap}"
+        assert capped.calculate_dual().tilt == cap
+
+
 class TestMaxTiltCap:
     """Tests for max_tilt configuration cap on slat angle."""
 

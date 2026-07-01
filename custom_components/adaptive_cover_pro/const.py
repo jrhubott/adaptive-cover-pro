@@ -197,6 +197,18 @@ DEFAULT_MAX_TILT = 100  # default: no upper cap
 CONF_MIN_TILT = "min_tilt"  # floor on sun-derived tilt %, 0-100
 DEFAULT_MIN_TILT = 0  # default: no lower floor
 
+# Slat angle (degrees) at which the slats sit horizontal — the geometric pivot
+# the safety-margin transform closes away from. MODE1: 90° = fully open.
+TILT_HORIZONTAL_DEG = 90
+
+# Configurable venetian tilt safety margin (issue #783): scales the automatic
+# angle-dependent geometry margin (0.0 = no-op = today's exact grazing angle,
+# 1.0 = full geometry margin applied in the closing direction).
+CONF_VENETIAN_TILT_SAFETY_MARGIN = "venetian_tilt_safety_margin"
+DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = 0.0
+MIN_VENETIAN_TILT_SAFETY_MARGIN = 0.0
+MAX_VENETIAN_TILT_SAFETY_MARGIN = 1.0
+
 
 # =============================================================================
 # 6. Position Limits & Inverse State
@@ -1206,6 +1218,10 @@ _RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm
 _RANGE_TILT_DISTANCE = (0.1, 15.0)  # CONF_TILT_DISTANCE, cm
 _RANGE_MAX_TILT = (0, 100)  # CONF_MAX_TILT, percent
 _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
+_RANGE_VENETIAN_TILT_SAFETY_MARGIN = (
+    MIN_VENETIAN_TILT_SAFETY_MARGIN,
+    MAX_VENETIAN_TILT_SAFETY_MARGIN,
+)  # CONF_VENETIAN_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
 
 # Sun tracking.
 _RANGE_AZIMUTH = (0, 359)  # CONF_AZIMUTH, degrees

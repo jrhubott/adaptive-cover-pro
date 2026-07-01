@@ -124,6 +124,7 @@ class TestTiltTrace:
         "nan_result",
         "max_degrees",
         "tilt_mode",
+        "safety_margin",
     }
 
     def test_normal_branch_keys(self, tilt_cover_instance):

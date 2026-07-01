@@ -10,11 +10,13 @@ from numpy import radians as rad
 
 from ...config_types import TiltConfig
 from ...const import (
+    TILT_HORIZONTAL_DEG,
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
     TiltMode,
 )
+from ...geometry import SafetyMarginCalculator
 from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
 
@@ -71,6 +73,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         nan_result: bool,
         max_degrees: int,
         result: float,
+        safety_margin: float = 1.0,
     ) -> dict:
         """Assemble the raw tilt solar-calculation trace (issue #682).
 
@@ -94,6 +97,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             "nan_result": bool(nan_result),
             "max_degrees": int(max_degrees),
             "tilt_mode": str(mode_value),
+            "safety_margin": float(safety_margin),
         }
 
     def calculate_position(self) -> float:
@@ -162,6 +166,20 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             return 0.0
 
         slat_angle_raw_deg = float(result)
+
+        # Configurable safety margin (issue #783): reuse the vertical axis'
+        # angle-dependent geometry margin (>=1.0), scaled by the user's
+        # ``safety_margin`` (0.0-1.0), applied in the slat-CLOSING direction.
+        # Vertical multiplies a drop by the margin; tilt must instead close the
+        # slats further, so we scale the closure away from horizontal. At
+        # ``safety_margin=0.0`` (or a benign geometry where the geometry margin
+        # is 1.0) ``eff_margin`` is exactly 1.0 and the block is skipped — a
+        # provable byte-for-byte no-op that preserves the exact grazing angle.
+        geo_margin = SafetyMarginCalculator.calculate(self.gamma, self.sol_elev)
+        eff_margin = 1.0 + (geo_margin - 1.0) * self.tilt_config.safety_margin
+        if eff_margin != 1.0:
+            result = TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - result) * eff_margin
+
         result = max(0.0, min(float(max_degrees), float(result)))
 
         self.logger.debug(
@@ -179,6 +197,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             nan_result=False,
             max_degrees=max_degrees,
             result=result,
+            safety_margin=eff_margin,
         )
         return result
 

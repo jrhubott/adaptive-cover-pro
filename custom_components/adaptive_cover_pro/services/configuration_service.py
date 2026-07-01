@@ -30,12 +30,14 @@ from ..const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_DISTANCE,
     DEFAULT_GLARE_ZONE_Z,
     DEFAULT_MAX_TILT,
     DEFAULT_MIN_TILT,
+    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
     DEFAULT_WINDOW_HEIGHT,
 )
 
@@ -144,6 +146,12 @@ class ConfigurationService:
             mode=options.get(CONF_TILT_MODE),
             max_tilt=options.get(CONF_MAX_TILT, DEFAULT_MAX_TILT),
             min_tilt=options.get(CONF_MIN_TILT, DEFAULT_MIN_TILT),
+            safety_margin=float(
+                options.get(
+                    CONF_VENETIAN_TILT_SAFETY_MARGIN,
+                    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
+                )
+            ),
         )
 
     def get_glare_zones_config(self, options: dict) -> GlareZonesConfig | None:

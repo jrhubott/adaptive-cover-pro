@@ -139,3 +139,16 @@ def test_sunset_tilt_in_option_ranges() -> None:
     """CONF_SUNSET_TILT must appear in OPTION_RANGES with (0, 100)."""
     assert CONF_SUNSET_TILT in OPTION_RANGES, "sunset_tilt missing from OPTION_RANGES"
     assert OPTION_RANGES[CONF_SUNSET_TILT] == (0, 100)
+
+
+@pytest.mark.unit
+def test_venetian_tilt_safety_margin_in_option_ranges() -> None:
+    """CONF_VENETIAN_TILT_SAFETY_MARGIN must appear in OPTION_RANGES with (0.0, 1.0)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_SAFETY_MARGIN,
+    )
+
+    assert (
+        CONF_VENETIAN_TILT_SAFETY_MARGIN in OPTION_RANGES
+    ), "venetian_tilt_safety_margin missing from OPTION_RANGES"
+    assert OPTION_RANGES[CONF_VENETIAN_TILT_SAFETY_MARGIN] == (0.0, 1.0)

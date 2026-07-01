@@ -238,6 +238,7 @@
       "inverse_tilt": "Inverse tilt",
       "max_tilt": "max tilt {max_tilt}%",
       "min_tilt": "min tilt {min_tilt}%",
+      "tilt_safety_margin": "tilt safety margin {pct}%",
       "post_settle_hold": "post-settle hold {hold}s",
       "backrotate_lag": "back-rotate publish lag {lag}s",
       "drift_reset": "drift-reset every {threshold}% accumulated tilt (via {direction})"

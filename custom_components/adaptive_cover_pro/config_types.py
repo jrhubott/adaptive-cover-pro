@@ -348,6 +348,11 @@ class TiltConfig:
     mode: TiltMode | str
     max_tilt: int = 100
     min_tilt: int = 0
+    # Configurable venetian tilt safety margin (issue #783): 0.0 (default) is a
+    # provable no-op; 1.0 applies the full angle-dependent geometry margin in the
+    # slat-closing direction. Scales the automatic ``SafetyMarginCalculator``
+    # factor — see ``engine/covers/tilt.py``.
+    safety_margin: float = 0.0
 
 
 # ---------------------------------------------------------------------------

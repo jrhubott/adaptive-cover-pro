@@ -69,6 +69,7 @@ def make_tilt_config(**overrides) -> TiltConfig:
         "mode": "mode1",
         "max_tilt": 100,
         "min_tilt": 0,
+        "safety_margin": 0.0,
     }
     defaults.update(overrides)
     return TiltConfig(**defaults)
@@ -116,7 +117,7 @@ _VERT_CONFIG_FIELDS = {
 _HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle"}
 
 # TiltConfig field names
-_TILT_CONFIG_FIELDS = {"slat_distance", "depth", "mode"}
+_TILT_CONFIG_FIELDS = {"slat_distance", "depth", "mode", "safety_margin"}
 
 
 def build_vertical_cover(**kwargs):
