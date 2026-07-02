@@ -1796,7 +1796,7 @@
       "name": "Set position limits",
       "description": "Update default height, min/max position, open/close threshold, and inverse state.",
       "fields": {
-        "default_height": {
+        "default_percentage": {
           "name": "Default height",
           "description": "Default cover position when sun is not visible (0–100%)."
         },
@@ -1836,7 +1836,7 @@
       "fields": {
         "sunset_position": {
           "name": "Sunset position",
-          "description": "Position to move to at end of time window. Null = use default_height."
+          "description": "Position to move to at end of time window. Null = use default_percentage."
         },
         "sunset_offset": {
           "name": "Sunset offset",

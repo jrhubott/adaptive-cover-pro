@@ -743,17 +743,29 @@ _CUSTOM_SLOT_KEYS = CUSTOM_POSITION_SLOTS
 # ---------------------------------------------------------------------------
 
 
+# Service field names that differ from their internal option key. The canonical
+# service field is now `default_percentage`, matching CONF_DEFAULT_HEIGHT; the
+# older `default_height` wire-format name is kept as a deprecated alias so
+# existing automations keep working (issue #792).
+_SERVICE_FIELD_ALIASES: dict[str, str] = {
+    "default_height": CONF_DEFAULT_HEIGHT,
+}
+
+
 def _build_patch(call_data: dict, allowed_keys: frozenset[str]) -> dict:
     """Extract allowed keys from a service call's data dict.
 
-    Keys whose value is None are included (they signal "clear this option").
-    HA plumbing keys (entity_id, device_id, area_id) are always excluded.
+    Any known field-name alias (_SERVICE_FIELD_ALIASES) is resolved to its
+    internal option key before filtering. Keys whose value is None are included
+    (they signal "clear this option"). HA plumbing keys (entity_id, device_id,
+    area_id) are always excluded.
     """
-    return {
-        k: v
-        for k, v in call_data.items()
-        if k in allowed_keys and k not in _PLUMBING_KEYS
-    }
+    patch: dict = {}
+    for k, v in call_data.items():
+        key = _SERVICE_FIELD_ALIASES.get(k, k)
+        if key in allowed_keys and key not in _PLUMBING_KEYS:
+            patch[key] = v
+    return patch
 
 
 def _validate_fields(patch: dict) -> None:

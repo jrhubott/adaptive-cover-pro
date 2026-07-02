@@ -83,6 +83,10 @@ from custom_components.adaptive_cover_pro.services.options_service import (
     IDENTITY_KEYS,
     OPTIONS_SERVICE_NAMES,
     _SECTION_CLIMATE,
+    _SECTION_POSITION_LIMITS,
+    _SECTION_SUNSET_SUNRISE,
+    _SERVICE_FIELD_ALIASES,
+    _build_patch,
     _cross_field_validate,
     apply_options_patch,
     validate_options_patch,
@@ -625,16 +629,57 @@ class TestServiceRegistration:
             ), f"Service '{service}' not registered"
 
 
+class TestBuildPatchAliasing:
+    """Unit tests for _build_patch's field-name alias resolution (issue #792)."""
+
+    def test_known_alias_resolves_to_option_key(self):
+        patch = _build_patch({"default_height": 75}, _SECTION_POSITION_LIMITS)
+        assert patch == {CONF_DEFAULT_HEIGHT: 75}
+
+    def test_canonical_key_still_works_unaliased(self):
+        patch = _build_patch({CONF_DEFAULT_HEIGHT: 75}, _SECTION_POSITION_LIMITS)
+        assert patch == {CONF_DEFAULT_HEIGHT: 75}
+
+    def test_unknown_key_still_dropped(self):
+        patch = _build_patch({"not_a_real_field": 1}, _SECTION_POSITION_LIMITS)
+        assert patch == {}
+
+    def test_alias_outside_its_section_still_filtered(self):
+        # default_height's alias resolves to CONF_DEFAULT_HEIGHT; a section that
+        # does not include that key must still drop it.
+        patch = _build_patch({"default_height": 75}, _SECTION_SUNSET_SUNRISE)
+        assert patch == {}
+
+    def test_default_height_alias_is_registered(self):
+        assert _SERVICE_FIELD_ALIASES["default_height"] == CONF_DEFAULT_HEIGHT
+
+
 class TestSetPositionLimits:
     """Integration tests for set_position_limits service."""
 
-    async def test_updates_default_height(self, hass: HomeAssistant):
+    async def test_updates_default_percentage(self, hass: HomeAssistant):
+        """The canonical field name (== CONF_DEFAULT_HEIGHT, 'default_percentage')."""
         await _setup(hass, entry_id="pos_01")
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
             patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
         ):
             await _call(hass, "set_position_limits", {CONF_DEFAULT_HEIGHT: 75})
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_DEFAULT_HEIGHT] == 75
+
+    async def test_updates_default_height_deprecated_alias(self, hass: HomeAssistant):
+        """Issue #792: the pre-rename wire field name 'default_height' must keep
+        working via the deprecated alias, resolving to CONF_DEFAULT_HEIGHT.
+        """
+        await _setup(hass, entry_id="pos_alias_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_position_limits", {"default_height": 75})
 
         mock_update.assert_called_once()
         new_opts = mock_update.call_args[1]["options"]

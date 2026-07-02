@@ -131,7 +131,7 @@ set_position_limits:
     entity:
       integration: adaptive_cover_pro
   fields:
-    default_height:
+    default_percentage:
       name: Default height
       description: "Default cover position when sun is not visible (0–100%)."
       selector:
@@ -207,7 +207,7 @@ set_sunset_sunrise:
   fields:
     sunset_position:
       name: Sunset position
-      description: "Position to move to at end of time window. Null = use default_height."
+      description: "Position to move to at end of time window. Null = use default_percentage."
       selector:
         number:
           min: 0

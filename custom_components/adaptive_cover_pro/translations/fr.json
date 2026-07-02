@@ -2119,7 +2119,7 @@
     "set_position_limits": {
       "description": "Mettre à jour la hauteur par défaut, la position min/max, le seuil d'ouverture/fermeture, et l'état inverse.",
       "fields": {
-        "default_height": {
+        "default_percentage": {
           "description": "Position de protection par défaut lorsque le soleil n'est pas visible (0–100%).",
           "name": "Hauteur par défaut"
         },
@@ -2212,7 +2212,7 @@
           "name": "Décalage du coucher de soleil"
         },
         "sunset_position": {
-          "description": "Position vers laquelle se déplacer à la fin de la fenêtre de temps. Null = utiliser default_height.",
+          "description": "Position vers laquelle se déplacer à la fin de la fenêtre de temps. Null = utiliser default_percentage.",
           "name": "Position du coucher de soleil"
         },
         "sunset_use_my": {

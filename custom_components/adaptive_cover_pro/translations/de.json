@@ -2119,7 +2119,7 @@
     "set_position_limits": {
       "description": "Aktualisiert Standardhöhe, Min/Max-Position, Öffnungs-/Schließungsschwelle und inversen Status.",
       "fields": {
-        "default_height": {
+        "default_percentage": {
           "description": "Standardposition der Beschattung wenn Sonne nicht sichtbar ist (0–100%).",
           "name": "Standardhöhe"
         },
@@ -2212,7 +2212,7 @@
           "name": "Sonnenuntergangs-Offset"
         },
         "sunset_position": {
-          "description": "Position zum Bewegen beim Fenster-Ende. Null = default_height verwenden.",
+          "description": "Position zum Bewegen beim Fenster-Ende. Null = default_percentage verwenden.",
           "name": "Sonnenuntergangsposition"
         },
         "sunset_use_my": {

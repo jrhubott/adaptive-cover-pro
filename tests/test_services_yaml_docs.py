@@ -103,3 +103,13 @@ def test_all_registered_services_have_yaml_entry():
     assert (
         not missing
     ), f"Service(s) registered in Python but missing from services.yaml: {sorted(missing)}"
+
+
+def test_set_position_limits_field_is_default_percentage_not_default_height():
+    """Issue #792: the service field name must match the CONF_DEFAULT_HEIGHT option
+    key (``default_percentage``), or _build_patch silently drops it. The old
+    ``default_height`` name is kept working via a deprecated alias, not the yaml.
+    """
+    fields = _load()["set_position_limits"]["fields"]
+    assert "default_percentage" in fields
+    assert "default_height" not in fields
