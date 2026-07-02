@@ -74,7 +74,7 @@ class TestExportAll:
 
         with (
             patch(
-                "custom_components.adaptive_cover_pro.services.export_service.loaded_coordinators",
+                "custom_components.adaptive_cover_pro.services.loaded_coordinators",
                 return_value=coordinators,
             ),
             patch(
@@ -113,7 +113,7 @@ class TestExportAll:
 
         with (
             patch(
-                "custom_components.adaptive_cover_pro.services.export_service.loaded_coordinators",
+                "custom_components.adaptive_cover_pro.services.loaded_coordinators",
                 return_value={"id-x": MagicMock()},
             ),
             patch(
@@ -141,7 +141,7 @@ class TestExportAll:
 
         with (
             patch(
-                "custom_components.adaptive_cover_pro.services.export_service.loaded_coordinators",
+                "custom_components.adaptive_cover_pro.services.loaded_coordinators",
                 return_value={},
             ),
             patch(
@@ -193,7 +193,11 @@ class TestImportConfig:
         call.hass = hass
         call.data = {"filename": str(export_path)}
 
-        result = await async_handle_import_config(call)
+        with patch(
+            "custom_components.adaptive_cover_pro.services.import_service._CONFIG_ROOT",
+            tmp_path,
+        ):
+            result = await async_handle_import_config(call)
 
         assert result["id-1"] == "updated"
         # azimuth updated, internal key preserved, new key added
@@ -230,7 +234,11 @@ class TestImportConfig:
         call.hass = hass
         call.data = {"filename": str(export_path)}
 
-        await async_handle_import_config(call)
+        with patch(
+            "custom_components.adaptive_cover_pro.services.import_service._CONFIG_ROOT",
+            tmp_path,
+        ):
+            await async_handle_import_config(call)
 
         # File had _orphan_prune_v1=False but live entry had True — live wins
         assert entry.options["_orphan_prune_v1"] is True
@@ -254,7 +262,11 @@ class TestImportConfig:
         call.hass = hass
         call.data = {"filename": str(export_path)}
 
-        result = await async_handle_import_config(call)
+        with patch(
+            "custom_components.adaptive_cover_pro.services.import_service._CONFIG_ROOT",
+            tmp_path,
+        ):
+            result = await async_handle_import_config(call)
 
         assert result["ghost-id"] == "skipped"
 
@@ -356,7 +368,11 @@ class TestImportConfig:
         call.hass = hass
         call.data = {"filename": str(export_path)}
 
-        result = await async_handle_import_config(call)
+        with patch(
+            "custom_components.adaptive_cover_pro.services.import_service._CONFIG_ROOT",
+            tmp_path,
+        ):
+            result = await async_handle_import_config(call)
 
         assert result["id-good"] == "updated"
         assert result["id-ghost"] == "skipped"
