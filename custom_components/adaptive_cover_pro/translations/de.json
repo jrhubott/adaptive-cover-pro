@@ -2343,6 +2343,20 @@
           "description": "Wenn aktiviert, die Aktivierung der Manuellen Übersteuerung überspringen. Standard: deaktiviert — Dienstaufrufe aktivieren die Manuelle Übersteuerung wie ein Dashboard-Schieberegler."
         }
       }
+    },
+    "engage_manual_override": {
+      "name": "Manuelle Übersteuerung aktivieren",
+      "description": "Aktiviert oder verlängert die Manuelle Übersteuerung für die ausgewählten Beschattungen, ohne sie zu bewegen — es wird kein Beschattungsbefehl gesendet. Ohne Endzeit und ohne Dauer gilt die Übersteuerung für die konfigurierte Dauer der Manuellen Übersteuerung ab jetzt. Geben Sie eine Endzeit für ein absolutes Ende an oder eine Dauer, um eine aktive Übersteuerung zu verlängern (oder neu für diese Dauer zu aktivieren, falls keine aktiv ist). Werden beide angegeben, hat die Endzeit Vorrang.",
+      "fields": {
+        "end_time": {
+          "name": "Endzeit",
+          "description": "Absolute Zeit, zu der die Übersteuerung enden soll. Wird ignoriert (Rückfall auf die konfigurierte Dauer), wenn sie in der Vergangenheit liegt oder nicht lesbar ist. Hat Vorrang vor der Dauer."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Verlängert eine aktive Übersteuerung um diesen Betrag oder aktiviert sie neu für diese Dauer, falls keine aktiv ist. Wird ignoriert, wenn eine Endzeit gesetzt ist."
+        }
+      }
     }
   }
 }

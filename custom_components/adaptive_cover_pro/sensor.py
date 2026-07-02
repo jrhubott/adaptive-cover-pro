@@ -48,6 +48,10 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod
+from .managers.manual_override.expiry import (
+    expiry_for_started_at,
+    started_at_for_expiry,
+)
 from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_sensors,
@@ -248,7 +252,7 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
             expiry = dt.datetime.fromisoformat(expiry_iso)
             if expiry <= now:
                 continue
-            started_at = expiry - manager.reset_duration
+            started_at = started_at_for_expiry(expiry, manager.reset_duration)
             manager.manual_control[eid] = True
             manager.manual_control_time[eid] = started_at
             manager._record_event(  # noqa: SLF001
@@ -595,7 +599,7 @@ def _manual_override_end_value(s: _ManualOverrideEndSensor) -> dt.datetime | Non
     if not times:
         return None
     duration = s.coordinator.manager.reset_duration
-    return max(t + duration for t in times.values())
+    return max(expiry_for_started_at(t, duration) for t in times.values())
 
 
 def _manual_override_end_attrs(
@@ -607,7 +611,8 @@ def _manual_override_end_attrs(
     duration = s.coordinator.manager.reset_duration
     return {
         "per_entity": {
-            entity_id: (t + duration).isoformat() for entity_id, t in times.items()
+            entity_id: expiry_for_started_at(t, duration).isoformat()
+            for entity_id, t in times.items()
         }
     }
 

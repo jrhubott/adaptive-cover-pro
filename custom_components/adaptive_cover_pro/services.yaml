@@ -122,6 +122,38 @@ set_tilt:
       selector:
         boolean:
 
+engage_manual_override:
+  name: Engage manual override
+  description: >-
+    Engages (or extends) manual override on the targeted covers WITHOUT moving
+    them — no cover command is sent. Use it to pause automatic control and hold
+    the cover where it is. With no end time and no duration, the override lasts
+    the configured manual-override duration starting now. Provide end_time for
+    an absolute end, or duration to extend an active override by that amount
+    (or engage fresh for that long if none is active). If both are given,
+    end_time wins.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    end_time:
+      name: End time
+      description: >-
+        Absolute time the override should end. Ignored (falls back to the
+        configured duration) if it is in the past or unparseable. Takes
+        precedence over duration.
+      required: false
+      selector:
+        datetime:
+    duration:
+      name: Duration
+      description: >-
+        Extend an active override by this much, or engage fresh for this long
+        if none is active. Ignored when end_time is set.
+      required: false
+      selector:
+        duration:
+
 set_position_limits:
   name: Set position limits
   description: >-

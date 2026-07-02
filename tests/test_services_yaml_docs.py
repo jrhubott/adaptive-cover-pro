@@ -77,6 +77,7 @@ REGISTERED_SERVICES = {
     "emergency_stop",
     "set_position",
     "set_tilt",
+    "engage_manual_override",
     # Options services (registered via register_options_services / OPTIONS_SERVICE_NAMES)
     "set_position_limits",
     "set_sunset_sunrise",

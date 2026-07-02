@@ -34,6 +34,7 @@ from .detector import (
     StopToMy,
     UserContextChange,
 )
+from .expiry import expiry_for_started_at, started_at_for_expiry
 from .position_delta import PositionDeltaDetector
 from .secondary_axis import SecondaryAxisCheck
 
@@ -603,27 +604,53 @@ class AdaptiveCoverManager:
         """
         self.manual_control[cover] = True
 
+    def _engage(self, entity_id: str, *, timestamp: dt.datetime, reason: str) -> None:
+        """Engage manual override on one cover without commanding movement.
+
+        Shared engine for the wall-switch / input-sensor path
+        (:meth:`engage_manual_override_from_external`) and the
+        ``engage_manual_override`` service (:meth:`engage_override`) — both
+        delegate here rather than re-implementing the mark/event/edge block
+        (no-duplication rule). Routes through :meth:`_apply_decision` with
+        ``mark_manual=True`` and a ``set_timestamp`` that **overwrites**
+        ``manual_control_time`` with ``timestamp`` (extend semantics — the
+        overwrite lands even when the cover was already manual). Sends no cover
+        command; the not-manual→manual edge fires ``on_engaged`` so any latched
+        target is discarded.
+
+        Args:
+            entity_id: Cover entity ID to engage.
+            timestamp: Value written to ``manual_control_time`` — the derived
+                end time is ``timestamp + reset_duration``.
+            reason: Short label recorded into the diagnostic event buffer.
+
+        """
+        self._apply_decision(
+            entity_id,
+            OverrideDecision(
+                mark_manual=True,
+                event_name="manual_override_set",
+                event_kwargs={
+                    "our_state": None,
+                    "new_position": None,
+                    "reason": reason,
+                },
+            ),
+            set_timestamp=lambda: self.manual_control_time.__setitem__(
+                entity_id, timestamp
+            ),
+        )
+
     def engage_manual_override_from_external(self, reason: str) -> None:
         """Engage manual override on every tracked cover from an external trigger.
 
         Wall-switch / input-sensor path (issue #688): an off→on edge on a
         configured input binary sensor means the user physically operated the
         cover, so ACP pauses auto-control on *every* cover in this instance and
-        drops any latched target. Routes each cover through :meth:`_apply_decision`
-        with ``mark_manual=True`` (sharing the mark/event/edge block rather than
-        re-implementing it — no-duplication rule).
-
-        Two deliberate divergences from :meth:`mark_user_command`:
-
-        * It **must** fire the ``on_engaged`` edge (→ ``discard_target``): unlike
-          the ACP-owned surfaces, this path issues no command afterward, so the
-          latched target has to be discarded or the next cycle would yank the
-          cover back.
-        * Each press **overwrites** ``manual_control_time`` with a fresh ``now``,
-          re-arming the full override duration on every press — the opposite of
-          ``mark_user_command``'s ``setdefault``. ``_apply_decision`` calls
-          ``set_timestamp`` whenever it marks, so the overwrite lands even when
-          the cover was already manual.
+        drops any latched target. Each cover is engaged via :meth:`_engage`
+        with a fresh ``now`` timestamp, re-arming the full override duration on
+        every press (overwrite, not ``setdefault``) and firing the
+        ``on_engaged`` edge on the fresh transition.
 
         Args:
             reason: Short label recorded into the diagnostic event buffer
@@ -632,21 +659,72 @@ class AdaptiveCoverManager:
         """
         now = dt.datetime.now(dt.UTC)
         for entity_id in self.covers:
-            self._apply_decision(
-                entity_id,
-                OverrideDecision(
-                    mark_manual=True,
-                    event_name="manual_override_set",
-                    event_kwargs={
-                        "our_state": None,
-                        "new_position": None,
-                        "reason": reason,
-                    },
-                ),
-                set_timestamp=lambda eid=entity_id: self.manual_control_time.__setitem__(
-                    eid, now
-                ),
-            )
+            self._engage(entity_id, timestamp=now, reason=reason)
+
+    def engage_override(
+        self,
+        entity_id: str,
+        *,
+        end_time: dt.datetime | None = None,
+        duration: dt.timedelta | None = None,
+        reason: str,
+    ) -> None:
+        """Engage or extend manual override on one cover, without moving it.
+
+        Backs the ``adaptive_cover_pro.engage_manual_override`` service. Sends
+        no cover command — engages purely through the override state machine via
+        :meth:`_engage`. Never raises: an invalid ``end_time`` / ``duration``
+        falls through to the next rule.
+
+        Precedence (first valid wins):
+
+        1. ``end_time`` present and strictly in the future → the override ends
+           at ``end_time``; ``duration`` is ignored (logged at debug). A naive
+           ``end_time`` is treated as UTC.
+        2. else ``duration`` positive → EXTEND-BY: if the cover is already under
+           manual override, add ``duration`` to its **current** end; otherwise
+           engage fresh for ``now + duration``.
+        3. else (both absent/invalid) → fall back to ``now + reset_duration``
+           (i.e. ``manual_control_time = now``).
+
+        The chosen target end is converted to the stored start via the SSOT
+        inverse :func:`.expiry.started_at_for_expiry`; the timestamp is
+        overwritten so a later call can move the end.
+
+        Args:
+            entity_id: Cover entity ID to engage.
+            end_time: Optional absolute end (aware or naive-UTC datetime).
+            duration: Optional relative extend-by timedelta.
+            reason: Short label recorded into the diagnostic event buffer.
+
+        """
+        now = dt.datetime.now(dt.UTC)
+        if end_time is not None and end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=dt.UTC)
+
+        target_expiry: dt.datetime | None = None
+        if end_time is not None and end_time > now:
+            target_expiry = end_time
+            if duration is not None:
+                self.logger.debug(
+                    "engage_override: both end_time and duration supplied for "
+                    "%s — using end_time, ignoring duration",
+                    entity_id,
+                )
+        elif duration is not None and duration > dt.timedelta(0):
+            if self.is_cover_manual(entity_id):
+                current_end = expiry_for_started_at(
+                    self.manual_control_time[entity_id], self.reset_duration
+                )
+                target_expiry = current_end + duration
+            else:
+                target_expiry = now + duration
+
+        if target_expiry is not None:
+            timestamp = started_at_for_expiry(target_expiry, self.reset_duration)
+        else:
+            timestamp = now
+        self._engage(entity_id, timestamp=timestamp, reason=reason)
 
     def mark_user_command(self, entity_id: str, *, reason: str) -> None:
         """Engage manual override pre-emptively from an ACP-owned surface.

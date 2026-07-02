@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 
 from ..const import DOMAIN
 from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
+from .engage_manual_override_service import (
+    ENGAGE_MANUAL_OVERRIDE_SCHEMA,
+    async_handle_engage_manual_override,
+)
 from .export_service import EXPORT_CONFIG_SCHEMA, async_handle_export
 from .options_service import OPTIONS_SERVICE_NAMES, register_options_services
 from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
@@ -211,6 +215,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         DOMAIN, "set_tilt", async_handle_set_tilt, schema=SET_TILT_SCHEMA
     )
     hass.services.async_register(DOMAIN, "stop", async_handle_stop)
+    hass.services.async_register(
+        DOMAIN,
+        "engage_manual_override",
+        async_handle_engage_manual_override,
+        schema=ENGAGE_MANUAL_OVERRIDE_SCHEMA,
+    )
 
     register_options_services(hass)
 
@@ -231,5 +241,6 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, "set_position")
     hass.services.async_remove(DOMAIN, "set_tilt")
     hass.services.async_remove(DOMAIN, "stop")
+    hass.services.async_remove(DOMAIN, "engage_manual_override")
     for name in OPTIONS_SERVICE_NAMES:
         hass.services.async_remove(DOMAIN, name)

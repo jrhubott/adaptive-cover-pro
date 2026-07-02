@@ -949,6 +949,38 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = True
         await self.async_refresh()
 
+    async def async_engage_manual_override(
+        self,
+        entity_ids: list[str],
+        *,
+        end_time: dt.datetime | None = None,
+        duration: dt.timedelta | None = None,
+        trigger: str = "engage_manual_override",
+    ) -> None:
+        """Engage or extend manual override on the given covers, without moving them.
+
+        Backs the ``adaptive_cover_pro.engage_manual_override`` service. Engages
+        each cover purely through the override state machine
+        (:meth:`AdaptiveCoverManager.engage_override` — no ``apply_position``,
+        no command), then refreshes once so the ``manual_override`` binary
+        sensor and ``manual_override_end_time`` sensor reflect the new state
+        immediately (mirrors the input-sensor path at
+        :meth:`async_check_manual_override_input_change`).
+
+        Args:
+            entity_ids: Cover entity IDs to engage.
+            end_time: Optional absolute end passed through to the manager.
+            duration: Optional relative extend-by passed through to the manager.
+            trigger: Diagnostic reason label recorded per cover.
+
+        """
+        for entity_id in entity_ids:
+            self.manager.engage_override(
+                entity_id, end_time=end_time, duration=duration, reason=trigger
+            )
+        self.state_change = True
+        await self.async_refresh()
+
     async def async_check_motion_template_change(
         self, event: Event | None, updates: list
     ) -> None:

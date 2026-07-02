@@ -2343,6 +2343,20 @@
           "description": "Lorsque cette option est activée, ignore l'engagement de dérogation manuelle. Par défaut false — les appels de service engagent la dérogation manuelle comme un curseur du tableau de bord."
         }
       }
+    },
+    "engage_manual_override": {
+      "name": "Engager la dérogation manuelle",
+      "description": "Engage (ou prolonge) la dérogation manuelle sur les protections ciblées sans les déplacer — aucune commande de protection n'est envoyée. Sans heure de fin ni durée, la dérogation dure la durée de dérogation manuelle configurée à partir de maintenant. Indiquez une heure de fin pour une fin absolue, ou une durée pour prolonger une dérogation active (ou en engager une nouvelle pour cette durée si aucune n'est active). Si les deux sont fournies, l'heure de fin l'emporte.",
+      "fields": {
+        "end_time": {
+          "name": "Heure de fin",
+          "description": "Heure absolue à laquelle la dérogation doit se terminer. Ignorée (retour à la durée configurée) si elle est passée ou illisible. Prioritaire sur la durée."
+        },
+        "duration": {
+          "name": "Durée",
+          "description": "Prolonge une dérogation active de cette valeur, ou en engage une nouvelle pour cette durée si aucune n'est active. Ignorée lorsqu'une heure de fin est définie."
+        }
+      }
     }
   }
 }
