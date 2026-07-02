@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import functools
+import json
 import logging
+import pathlib
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
@@ -52,6 +56,10 @@ EXPORT_CONFIG_SCHEMA = vol.Schema(
         vol.Required("config_entry_id"): str,
     }
 )
+
+EXPORT_ALL_CONFIG_SCHEMA = vol.Schema({})
+
+DEFAULT_EXPORT_PATH = "/config/adaptive_cover_pro_export.json"
 
 
 async def async_handle_export(call: ServiceCall) -> dict:
@@ -123,3 +131,49 @@ async def async_handle_export(call: ServiceCall) -> dict:
             CONF_TILT_MODE: options.get(CONF_TILT_MODE),
         },
     }
+
+
+async def async_handle_export_all(call: ServiceCall) -> dict:
+    """Handle the export_all_config service call.
+
+    Writes all non-virtual ACP cover entries (those with a loaded coordinator) to
+    ``/config/adaptive_cover_pro_export.json`` as a lossless JSON snapshot.  The
+    file is written atomically via the executor so the event loop is never blocked.
+
+    Returns ``{"file": <path>, "count": <n>}`` so the call is also useful in
+    Developer Tools (the response is visible immediately).
+    """
+    from . import (
+        loaded_coordinators,
+    )  # local import avoids circular dependency  # noqa: PLC0415
+
+    hass: HomeAssistant = call.hass
+    coordinators = loaded_coordinators(hass)
+
+    entries = []
+    for entry_id, _coord in coordinators.items():
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            continue
+        entries.append(
+            {
+                "entry_id": entry_id,
+                "title": entry.title,
+                "options": dict(entry.options),
+            }
+        )
+
+    payload = {
+        "export_version": 1,
+        "exported_at": datetime.now(UTC).isoformat(),
+        "entries": entries,
+    }
+
+    path = pathlib.Path(DEFAULT_EXPORT_PATH)
+    json_text = json.dumps(payload, indent=2, ensure_ascii=False)
+    await hass.async_add_executor_job(
+        functools.partial(path.write_text, json_text, "utf-8")
+    )
+
+    _LOGGER.info("export_all_config: wrote %d entries to %s", len(entries), path)
+    return {"file": str(path), "count": len(entries)}

@@ -22,7 +22,13 @@ from .engage_manual_override_service import (
     ENGAGE_MANUAL_OVERRIDE_SCHEMA,
     async_handle_engage_manual_override,
 )
-from .export_service import EXPORT_CONFIG_SCHEMA, async_handle_export
+from .export_service import (
+    EXPORT_ALL_CONFIG_SCHEMA,
+    EXPORT_CONFIG_SCHEMA,
+    async_handle_export,
+    async_handle_export_all,
+)
+from .import_service import IMPORT_CONFIG_SCHEMA, async_handle_import_config
 from .options_service import OPTIONS_SERVICE_NAMES, register_options_services
 from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
 from .set_tilt_service import SET_TILT_SCHEMA, async_handle_set_tilt
@@ -166,6 +172,22 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=GET_DIAGNOSTICS_SCHEMA,
             supports_response=SupportsResponse.ONLY,
         )
+    if not hass.services.has_service(DOMAIN, "export_all_config"):
+        hass.services.async_register(
+            DOMAIN,
+            "export_all_config",
+            async_handle_export_all,
+            schema=EXPORT_ALL_CONFIG_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
+    if not hass.services.has_service(DOMAIN, "import_config"):
+        hass.services.async_register(
+            DOMAIN,
+            "import_config",
+            async_handle_import_config,
+            schema=IMPORT_CONFIG_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
 
     async def handle_integration_enable(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
@@ -234,6 +256,8 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     if loaded_coordinators(hass):
         return  # Other entries still active
     hass.services.async_remove(DOMAIN, "export_config")
+    hass.services.async_remove(DOMAIN, "export_all_config")
+    hass.services.async_remove(DOMAIN, "import_config")
     hass.services.async_remove(DOMAIN, "get_diagnostics")
     hass.services.async_remove(DOMAIN, "integration_enable")
     hass.services.async_remove(DOMAIN, "integration_disable")

@@ -55,6 +55,33 @@ export_config:
         config_entry:
           integration: adaptive_cover_pro
 
+export_all_config:
+  name: Export all configurations
+  description: >-
+    Writes the full options of every ACP cover entry to
+    ``/config/adaptive_cover_pro_export.json`` as a lossless JSON snapshot.
+    The file can then be edited with AI, a script, or regex and re-imported
+    with ``import_config``. Also returns ``{file, count}`` as a service response
+    for confirmation in Developer Tools.
+
+import_config:
+  name: Import configurations
+  description: >-
+    Reads a JSON file previously written by ``export_all_config`` and applies
+    the options of each entry (matched by ``entry_id``) to the live config
+    entries. Internal ``_``-prefixed migration markers are preserved from the
+    current live entry. Returns a per-entry result dict.
+  fields:
+    filename:
+      name: File path
+      description: >-
+        Absolute path to the JSON file to import. Must be inside ``/config/``.
+        Defaults to ``/config/adaptive_cover_pro_export.json``.
+      required: false
+      default: /config/adaptive_cover_pro_export.json
+      selector:
+        text:
+
 set_position:
   name: Set position
   description: >-
