@@ -1283,6 +1283,17 @@ async def async_setup_entry(
     """Initialize Adaptive Cover Pro config entry."""
     coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
 
+    # Cover groups expose their own aggregate sensors, never the cover set.
+    from .cover_types import get_policy
+
+    if get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
+        from .group_entities import build_group_sensors
+
+        async_add_entities(
+            build_group_sensors(config_entry.entry_id, hass, config_entry, coordinator)
+        )
+        return
+
     entities: list[SensorEntity] = []
 
     for spec in _STANDARD_SPECS:

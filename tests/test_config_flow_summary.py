@@ -3176,3 +3176,47 @@ def test_summary_building_profile_line_absent_when_unlinked() -> None:
     assert (
         "building profile" not in summary.lower()
     ), "Summary must not mention 'building profile' for an unlinked cover"
+
+
+# ---------------------------------------------------------------------------
+# Cover Group summary (issue #790)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_group_shows_header_and_member_counts():
+    """A group renders its own compact summary, never the cover chain."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MEMBER_COVERS,
+        CONF_MEMBER_ENTRIES,
+    )
+
+    summary = _build_config_summary(
+        {
+            CONF_MEMBER_ENTRIES: ["entry_a", "entry_b"],
+            CONF_MEMBER_COVERS: ["cover.generic"],
+        },
+        CoverType.GROUP,
+    )
+
+    assert "**Cover Group**" in summary
+    assert "2 ACP member(s)" in summary
+    assert "1 generic cover(s)" in summary
+    assert "cover.generic" in summary
+    # None of the cover-chain sections appear for a group.
+    assert "How It Decides" not in summary
+
+
+def test_summary_group_empty_roster_warns():
+    """An empty group is called out — it will not command anything."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MEMBER_COVERS,
+        CONF_MEMBER_ENTRIES,
+    )
+
+    summary = _build_config_summary(
+        {CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: []},
+        CoverType.GROUP,
+    )
+
+    assert "**Cover Group**" in summary
+    assert "no members" in summary

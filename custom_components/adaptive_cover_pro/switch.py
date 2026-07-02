@@ -211,6 +211,15 @@ async def async_setup_entry(
     """Set up the demo switch platform."""
     coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
 
+    # Cover groups expose the bulk automation switch, never the cover set.
+    if get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
+        from .group_entities import build_group_switches
+
+        async_add_entities(
+            build_group_switches(config_entry.entry_id, hass, config_entry, coordinator)
+        )
+        return
+
     specs: list[_SwitchSpec] = [
         spec for spec in _SWITCH_SPECS if spec.enabled_when(config_entry)
     ]

@@ -48,6 +48,7 @@ import custom_components.adaptive_cover_pro.binary_sensor  # noqa: F401
 import custom_components.adaptive_cover_pro.switch  # noqa: F401
 import custom_components.adaptive_cover_pro.button  # noqa: F401
 import custom_components.adaptive_cover_pro.cover  # noqa: F401
+import custom_components.adaptive_cover_pro.select  # noqa: F401
 
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
@@ -73,6 +74,16 @@ from custom_components.adaptive_cover_pro.button import (
 )
 from custom_components.adaptive_cover_pro.cover import AdaptiveProxyCover
 from custom_components.adaptive_cover_pro.number import AdaptiveCoverMyPositionNumber
+from custom_components.adaptive_cover_pro.const import GroupScene
+from custom_components.adaptive_cover_pro.group_entities import (
+    GroupActiveSceneSensor,
+    GroupAutomationSwitch,
+    GroupClearOverridesButton,
+    GroupPositionSensor,
+    GroupSceneButton,
+    GroupSceneSelect,
+    GroupStateSensor,
+)
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -245,6 +256,53 @@ ENTITY_FACTORIES: dict[type, object] = {
         coordinator=_make_coordinator(),
         source_entity_id="cover.test_source",
         multi=False,
+    ),
+    # --- group_entities.py (issue #790) ---
+    GroupPositionSensor: lambda: GroupPositionSensor(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+        "group_position",
+    ),
+    GroupStateSensor: lambda: GroupStateSensor(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+        "group_state",
+    ),
+    GroupActiveSceneSensor: lambda: GroupActiveSceneSensor(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+        "group_active_scene",
+    ),
+    GroupAutomationSwitch: lambda: GroupAutomationSwitch(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+    ),
+    GroupSceneButton: lambda: GroupSceneButton(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+        GroupScene.ALL_OPEN,
+    ),
+    GroupClearOverridesButton: lambda: GroupClearOverridesButton(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+    ),
+    GroupSceneSelect: lambda: GroupSceneSelect(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
     ),
 }
 

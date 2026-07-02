@@ -57,6 +57,7 @@ from .const import (
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
+from .group_coordinator import GroupCoordinator
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
     custom_position_slot_sensors,
@@ -79,6 +80,16 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.COVER,
     Platform.NUMBER,
+]
+# Platform set for cover-group entries (``is_orchestrator = True``). A group
+# exposes aggregate sensors, bulk switches, scene buttons, and the scene
+# select — no proxy cover, number, or binary sensor. Setup and unload must
+# use the same list (load/unload symmetry, the #712/#714 lesson).
+GROUP_PLATFORMS = [
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.BUTTON,
+    Platform.SELECT,
 ]
 CONF_SUN = ["sun.sun"]
 
@@ -134,8 +145,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     # guard stays unambiguous. Register a propagation update-listener so a change
     # to the profile reaches its linked covers, then return without forwarding
     # platforms.
-    if not get_policy(entry.data[CONF_SENSOR_TYPE]).controls_cover:
+    policy = get_policy(entry.data[CONF_SENSOR_TYPE])
+    if not policy.controls_cover:
         entry.async_on_unload(entry.add_update_listener(_async_profile_propagate))
+        return True
+
+    # Cover groups (``is_orchestrator = True``) control covers but are not
+    # geometry-driven: build the GroupCoordinator and forward only the group
+    # platform set — never the sun/geometry coordinator below.
+    if policy.is_orchestrator:
+        group_coordinator = GroupCoordinator(hass, entry)
+        entry.runtime_data = group_coordinator
+        await hass.config_entries.async_forward_entry_setups(entry, GROUP_PLATFORMS)
+        await group_coordinator.async_config_entry_first_refresh()
+        entry.async_on_unload(entry.add_update_listener(_async_group_update_listener))
         return True
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
@@ -373,13 +396,26 @@ async def async_unload_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) ->
     """Unload a config entry."""
     # Virtual entry types (Building Profile, controls_cover == False) forwarded
     # no platforms in async_setup_entry, so unloading platforms would raise
-    # "Config entry was never loaded!". Mirror the setup short-circuit.
-    if not get_policy(entry.data[CONF_SENSOR_TYPE]).controls_cover:
+    # "Config entry was never loaded!". Mirror the setup short-circuit, and
+    # unload exactly the platform set setup forwarded (groups use their own).
+    policy = get_policy(entry.data[CONF_SENSOR_TYPE])
+    if not policy.controls_cover:
         await async_unload_services(hass)
         return True
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+    platforms = GROUP_PLATFORMS if policy.is_orchestrator else PLATFORMS
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, platforms):
         await async_unload_services(hass)
     return unload_ok
+
+
+async def _async_group_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload a group entry when its options (membership) change.
+
+    The group holds no long-running state worth preserving across an options
+    edit, so a full reload is the simplest way to re-resolve the roster and
+    rebuild the per-scene entities.
+    """
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

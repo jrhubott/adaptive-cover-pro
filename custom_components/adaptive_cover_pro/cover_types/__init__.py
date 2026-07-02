@@ -21,10 +21,13 @@ from .roof_window import RoofWindowPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
 
-# Virtual entry type — imported LAST so it sorts to the bottom of the
-# cover-type picker (``SENSOR_TYPE_MENU`` follows registration order). It is
-# not a physical cover (``controls_cover = False``).
+# Virtual entry types — imported LAST so they sort to the bottom of
+# registry-derived menus (``SENSOR_TYPE_MENU`` follows registration order).
+# The building profile is not a physical cover (``controls_cover = False``);
+# the group controls covers but is an orchestrator (``is_orchestrator =
+# True``) — both are filtered out of the cover-type picker by capability.
 from .building_profile import BuildingProfilePolicy
+from .group import GroupPolicy
 
 
 def get_policy(cover_type) -> CoverTypePolicy:
@@ -55,6 +58,7 @@ __all__ = [
     "BlindPolicy",
     "BuildingProfilePolicy",
     "CoverTypePolicy",
+    "GroupPolicy",
     "OscillatingAwningPolicy",
     "RoofWindowPolicy",
     "TiltPolicy",

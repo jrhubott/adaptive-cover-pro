@@ -21,6 +21,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from custom_components.adaptive_cover_pro.group_entities import (
+    GroupActiveSceneSensor,
+    GroupAutomationSwitch,
+    GroupPositionSensor,
+    GroupStateSensor,
+)
 from custom_components.adaptive_cover_pro.sensor import (
     _DIAGNOSTIC_SPECS,
     _STANDARD_SPECS,
@@ -53,6 +59,28 @@ _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
 # Switch keys that appear in en.json under entity.switch but are generated
 # dynamically (not in _SWITCH_SPECS) and therefore excluded from the spec check.
 _DYNAMIC_SWITCH_KEYS_PREFIX = "glare_zone_"
+
+# Cover-group entities (issue #790) are class-driven, not spec-driven; their
+# translation_keys come straight from the classes so a rename stays in sync.
+# HA's CachedProperties metaclass rewrites class-level ``_attr_translation_key``
+# into a property whose default lands under ``__attr_translation_key``.
+
+
+def _class_translation_key(cls: type) -> str:
+    value = cls.__dict__.get(
+        "__attr_translation_key", cls.__dict__.get("_attr_translation_key")
+    )
+    assert isinstance(value, str), f"{cls.__name__} has no class translation_key"
+    return value
+
+
+_GROUP_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
+    _class_translation_key(cls)
+    for cls in (GroupPositionSensor, GroupStateSensor, GroupActiveSceneSensor)
+)
+_GROUP_SWITCH_TRANSLATION_KEYS: frozenset[str] = frozenset(
+    {_class_translation_key(GroupAutomationSwitch)}
+)
 
 
 class TestSensorSpecTranslationKeys:
@@ -109,7 +137,7 @@ class TestSensorSpecTranslationKeys:
         )
         en_keys = frozenset(_EN_JSON.get("entity", {}).get("sensor", {}).keys())
 
-        orphaned = en_keys - spec_keys
+        orphaned = en_keys - spec_keys - _GROUP_SENSOR_TRANSLATION_KEYS
         assert not orphaned, (
             f"en.json entity.sensor contains entries with no matching sensor spec "
             f"translation_key: {sorted(orphaned)}\n"
@@ -134,7 +162,7 @@ class TestSwitchTranslationKeys:
             k for k in en_switch_keys if not k.startswith(_DYNAMIC_SWITCH_KEYS_PREFIX)
         )
 
-        orphaned = static_en_keys - spec_keys
+        orphaned = static_en_keys - spec_keys - _GROUP_SWITCH_TRANSLATION_KEYS
         assert not orphaned, (
             f"en.json entity.switch contains static entries with no matching "
             f"_SwitchSpec key: {sorted(orphaned)}\n"

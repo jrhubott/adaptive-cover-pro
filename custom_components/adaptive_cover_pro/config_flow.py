@@ -58,6 +58,8 @@ from .const import (
     CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_ENTITIES,
+    CONF_MEMBER_COVERS,
+    CONF_MEMBER_ENTRIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
@@ -206,7 +208,11 @@ _LOGGER = logging.getLogger(__name__)
 from .cover_types import POLICY_REGISTRY as _POLICY_REGISTRY  # noqa: E402
 from .cover_types import get_policy as _get_policy  # noqa: E402
 
-SENSOR_TYPE_MENU = [k for k in _POLICY_REGISTRY if _get_policy(k).controls_cover]
+SENSOR_TYPE_MENU = [
+    k
+    for k in _POLICY_REGISTRY
+    if _get_policy(k).controls_cover and not _get_policy(k).is_orchestrator
+]
 
 _STANDALONE_SENTINEL = "__standalone__"
 # Sentinel value for the "no profile / unlink" choice in the link selector.
@@ -355,6 +361,66 @@ BUILDING_PROFILE_CREATE_SCHEMA = vol.Schema(
         **building_profile_sensors_schema().schema,
     }
 )
+
+
+def _group_membership_schema_dict(hass, *, exclude_entry_id: str | None = None) -> dict:
+    """Build the two cover-group membership selectors (issue #790).
+
+    ACP members are picked as config entries (an ACP instance may expose no
+    ``cover.`` entity at all when its proxy is off, and one with a proxy must
+    still be orchestrated through its pipeline), generic covers as plain
+    entities. ``_cover_entries`` already excludes profiles and groups, so a
+    group can never nest another group; ``exclude_entry_id`` drops the group
+    itself when editing.
+    """
+    acp_options = [
+        {"value": e.entry_id, "label": e.title}
+        for e in _cover_entries(hass)
+        if e.entry_id != exclude_entry_id
+    ]
+    return {
+        vol.Optional(CONF_MEMBER_ENTRIES, default=[]): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=acp_options, multiple=True)
+        ),
+        vol.Optional(CONF_MEMBER_COVERS, default=[]): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="cover", multiple=True)
+        ),
+    }
+
+
+def _sanitize_group_membership(
+    hass, user_input: dict, *, own_entry_id: str | None = None
+) -> dict[str, list[str]]:
+    """Clean the submitted membership rosters.
+
+    Deduplicates while preserving order, drops the group's own entry id, and
+    drops a generic entity that is already controlled by a selected ACP
+    member — the entry is preferred so the member's pipeline orchestrates the
+    cover instead of it being double-commanded through adopt mode.
+    """
+    member_entries = list(
+        dict.fromkeys(
+            entry_id
+            for entry_id in user_input.get(CONF_MEMBER_ENTRIES, [])
+            if entry_id != own_entry_id
+        )
+    )
+    owned_covers: set[str] = set()
+    for entry_id in member_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is not None:
+            owned_covers.update(entry.options.get(CONF_ENTITIES, []))
+    member_covers = list(
+        dict.fromkeys(
+            entity_id
+            for entity_id in user_input.get(CONF_MEMBER_COVERS, [])
+            if entity_id not in owned_covers
+        )
+    )
+    return {
+        CONF_MEMBER_ENTRIES: member_entries,
+        CONF_MEMBER_COVERS: member_covers,
+    }
 
 
 # The sun-tracking step no longer carries any length field — the shaded distance
@@ -1483,6 +1549,16 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "headers.decision_priority": (
         "**Decision Priority** (highest wins, ✅ active ❌ not configured)"
     ),
+    # --- Cover Group (issue #790) ---
+    "group.header": "**Cover Group**",
+    "group.members": (
+        "Controls {acp_count} ACP member(s) + {generic_count} generic cover(s)"
+    ),
+    "group.member_acp": "- 🪟 {title} (ACP)",
+    "group.member_generic": "- 🪟 {entity} (generic)",
+    "warnings.group_empty": (
+        "⚠️ This group has no members — it will not command anything."
+    ),
 }
 
 
@@ -1545,6 +1621,40 @@ async def _load_summary_labels(hass: HomeAssistant, language: str) -> dict[str, 
     return await hass.async_add_executor_job(_load_summary_labels_sync, language)
 
 
+def _build_group_summary(
+    config: dict,
+    hass: HomeAssistant | None,
+    L: dict[str, str],
+) -> str:
+    """Compact configuration summary for a Cover Group entry (issue #790).
+
+    Header, roster counts, and the member list (ACP member titles resolve
+    only when ``hass`` is available). An empty roster gets a warning — a
+    memberless group commands nothing.
+    """
+    member_entries: list[str] = config.get(CONF_MEMBER_ENTRIES) or []
+    member_covers: list[str] = config.get(CONF_MEMBER_COVERS) or []
+    lines = [L["group.header"], ""]
+    if not member_entries and not member_covers:
+        lines.append(L["warnings.group_empty"])
+        return "\n".join(lines)
+    lines.append(
+        L["group.members"].format(
+            acp_count=len(member_entries), generic_count=len(member_covers)
+        )
+    )
+    if hass is not None:
+        for entry_id in member_entries:
+            entry = hass.config_entries.async_get_entry(entry_id)
+            if entry is not None:
+                lines.append(L["group.member_acp"].format(title=entry.title))
+    lines.extend(
+        L["group.member_generic"].format(entity=entity_id)
+        for entity_id in member_covers
+    )
+    return "\n".join(lines)
+
+
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     config: dict,
     sensor_type: str | None,
@@ -1566,6 +1676,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     are used, so the output is byte-identical to the pre-i18n strings.
     """
     L = labels or _SUMMARY_LABELS_EN
+
+    # Cover groups render their own compact summary — a group has no cover
+    # chain, geometry, or handler ladder (issue #790).
+    if sensor_type is not None and get_policy(sensor_type).is_orchestrator:
+        return _build_group_summary(config, hass, L)
+
     _ph = L["fragments.template_value"]
     # ---- Gather all values up front ----------------------------------------
     # ``L`` here is the FULL flow bundle (``_SUMMARY_LABELS_EN`` keys + the
@@ -3188,7 +3304,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         choices. The duplicate option only appears when prior entries exist.
         """
         acp_entries = _cover_entries(self.hass)
-        menu_options = ["create_new", "create_building_profile"] + (
+        menu_options = ["create_new", "create_building_profile", "create_group"] + (
             ["duplicate_existing"] if acp_entries else []
         )
         return self.async_show_menu(step_id="user", menu_options=menu_options)
@@ -3222,6 +3338,34 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             data_schema=BUILDING_PROFILE_CREATE_SCHEMA,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
+        )
+
+    async def async_step_create_group(self, user_input: dict[str, Any] | None = None):
+        """Create a Cover Group entry from a single combined form (issue #790).
+
+        One step collects the group name together with the two membership
+        rosters (ACP members first, generic covers below), then delegates to
+        the shared finalize (``async_step_update``) — the same path the
+        Building Profile flow uses.
+        """
+        if user_input is not None:
+            self.config = {
+                "name": user_input["name"],
+                **_sanitize_group_membership(self.hass, user_input),
+            }
+            self.type_blind = CoverType.GROUP
+            return await self.async_step_update()
+        return self.async_show_form(
+            step_id="create_group",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): selector.TextSelector(),
+                    **_group_membership_schema_dict(self.hass),
+                }
+            ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
             },
         )
 
@@ -3767,10 +3911,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
         # Quick setup skips some steps (e.g. automation) leaving critical keys
         # absent from self.config.  Apply constant-backed defaults so the
-        # coordinator never receives None for gating values (issue #133). A
-        # virtual entry type (Building Profile) builds no coordinator, so it
-        # keeps only the sensor IDs it collected — no cover automation defaults.
-        if get_policy(self.type_blind).controls_cover:
+        # coordinator never receives None for gating values (issue #133).
+        # Virtual entry types skip this: a Building Profile builds no
+        # coordinator, and a cover group builds a GroupCoordinator that reads
+        # none of the cover-automation options — both keep only what their
+        # create step collected.
+        _finalize_policy = get_policy(self.type_blind)
+        if _finalize_policy.controls_cover and not _finalize_policy.is_orchestrator:
             options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
             options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
             options.setdefault(
@@ -3944,6 +4091,23 @@ class OptionsFlowHandler(OptionsFlow):
                     "profile_sensors",
                     "profile_overview",
                     "profile_overrides",
+                    "done",
+                ],
+                description_placeholders={
+                    "instance_name": self._config_entry.title,
+                    "coffee_url": "https://www.buymeacoffee.com/jrhubott",
+                    "profile_line": "",
+                },
+            )
+
+        # Cover groups are orchestrators, not geometry covers — their own
+        # small menu (membership + summary), never the cover categories.
+        if get_policy(self.sensor_type).is_orchestrator:
+            return self.async_show_menu(
+                step_id="init",
+                menu_options=[
+                    "group_membership",
+                    "summary",
                     "done",
                 ],
                 description_placeholders={
@@ -4355,6 +4519,39 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=schema,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
+        )
+
+    async def async_step_group_membership(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit the cover-group membership rosters (issue #790).
+
+        Same one page as the create flow: ACP members first, generic covers
+        below. Saves on submit, mirroring ``profile_sensors``. Sanitization
+        drops duplicates, the group itself, and generic entities owned by a
+        selected ACP member.
+        """
+        if user_input is not None:
+            self.options.update(
+                _sanitize_group_membership(
+                    self.hass,
+                    user_input,
+                    own_entry_id=self._config_entry.entry_id,
+                )
+            )
+            return self.async_create_entry(title="", data=self.options)
+
+        schema = vol.Schema(
+            _group_membership_schema_dict(
+                self.hass, exclude_entry_id=self._config_entry.entry_id
+            )
+        )
+        return self.async_show_form(
+            step_id="group_membership",
+            data_schema=self.add_suggested_values_to_schema(schema, self.options),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
             },
         )
 

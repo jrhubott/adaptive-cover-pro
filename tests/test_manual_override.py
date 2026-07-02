@@ -209,14 +209,17 @@ def test_cancel_grace_period_handles_missing_entity():
 
 
 @pytest.mark.asyncio
-async def test_reset_button_clears_manual_override_and_sends_post_refresh_position():
-    """Reset button must reset override, refresh, then delegate to the shared send path.
+async def test_reset_clears_manual_override_and_sends_post_refresh_position():
+    """Reset must clear override, refresh, then delegate to the shared send path.
 
     The shared path (_async_send_after_override_clear) owns force=True and the
-    time-window / auto-control gates.  The button supplies the post-refresh state,
-    the options dict, the target entities, and the "manual_reset" trigger.
+    time-window / auto-control gates.  async_reset_manual_overrides supplies the
+    post-refresh state, the options dict, the target entities, and the
+    "manual_reset" trigger.  (Sequence moved from the button in issue #790.)
     """
-    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     entity_id = "cover.living_room"
     POST_REFRESH_STATE = 52  # position pipeline returns after override is cleared
@@ -230,11 +233,9 @@ async def test_reset_button_clears_manual_override_and_sends_post_refresh_positi
     coordinator.async_refresh = AsyncMock()
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
-    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
-    button.coordinator = coordinator
-    button._entities = [entity_id]
-
-    await button.async_press()
+    await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
+        coordinator, [entity_id]
+    )
 
     # Manager reset must be called before the refresh
     coordinator.manager.reset.assert_called_once_with(entity_id)
@@ -250,9 +251,11 @@ async def test_reset_button_clears_manual_override_and_sends_post_refresh_positi
 
 
 @pytest.mark.asyncio
-async def test_reset_button_suppresses_redetection_during_refresh():
+async def test_reset_suppresses_redetection_during_refresh():
     """wait_for_target must be True while async_refresh runs to block re-detection."""
-    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     entity_id = "cover.bedroom"
     states_during_refresh = []
@@ -282,25 +285,25 @@ async def test_reset_button_suppresses_redetection_during_refresh():
     coordinator.cover_state_change = False
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
-    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
-    button.coordinator = coordinator
-    button._entities = [entity_id]
-
-    await button.async_press()
+    await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
+        coordinator, [entity_id]
+    )
 
     # During refresh the suppression flag must be active
     assert states_during_refresh == [True]
 
 
 @pytest.mark.asyncio
-async def test_reset_button_clears_wait_for_target_when_no_command_sent():
+async def test_reset_clears_wait_for_target_when_no_command_sent():
     """wait_for_target must be False after reset when the shared send path skips the entity.
 
     The shared method (_async_send_after_override_clear) returns a set of sent
     entity_ids.  If an entity is absent (gated by time window, auto-control off,
     or no positioning capability), the button must clear wait_for_target.
     """
-    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     entity_id = "cover.no_position_support"
 
@@ -313,11 +316,9 @@ async def test_reset_button_clears_wait_for_target_when_no_command_sent():
     coordinator.async_refresh = AsyncMock()
     coordinator.cover_state_change = False
 
-    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
-    button.coordinator = coordinator
-    button._entities = [entity_id]
-
-    await button.async_press()
+    await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
+        coordinator, [entity_id]
+    )
 
     # Not in sent set — wait_for_target must be cleared so state tracking resumes
     coordinator._cmd_svc.set_waiting.assert_any_call(entity_id, False)
@@ -382,13 +383,15 @@ async def test_reset_if_needed_returns_empty_when_nothing_expired():
 
 
 @pytest.mark.asyncio
-async def test_reset_button_sends_correct_position_with_climate_mode():
-    """Button must pass the post-refresh pipeline position to the shared send path.
+async def test_reset_sends_correct_position_with_climate_mode():
+    """Reset must pass the post-refresh pipeline position to the shared send path.
 
     Covers the climate-mode scenario where ManualOverrideHandler returns solar/default
     but ClimateHandler wins after the override is cleared.
     """
-    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     entity_id = "cover.climate_room"
     CLIMATE_POSITION = 70  # what ClimateHandler returns after override clears
@@ -404,11 +407,9 @@ async def test_reset_button_sends_correct_position_with_climate_mode():
     coordinator.async_refresh = AsyncMock()
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
-    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
-    button.coordinator = coordinator
-    button._entities = [entity_id]
-
-    await button.async_press()
+    await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
+        coordinator, [entity_id]
+    )
 
     # The state passed to the shared method must be the post-refresh climate position
     call = coordinator._async_send_after_override_clear.call_args
