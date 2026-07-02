@@ -899,33 +899,31 @@ class CoverCommandService:
             logger=self._logger,
         )
 
-    def _same_position_via_target_fallback(self, entity_id: str, position: int) -> bool:
+    def _same_position_via_target_fallback(
+        self,
+        entity_id: str,
+        position: int,
+        context: PositionContext,
+    ) -> bool:
         """Same-position gate fallback for an unresolved current position (issue #779).
 
         Somfy RTS (and any open/close-only cover without genuine position
         feedback) reports HA state ``unknown``/``unavailable`` forever, so
         ``_get_current_position`` always returns ``None`` and the
         same-position gate in ``apply_position`` never sees a genuine
-        reading to compare against — the exact same open/close command gets
-        resent on every update cycle even though the cover was already
-        commanded to (and mechanically at) that state.
+        reading to compare against — the exact same command gets resent on
+        every update cycle even though the cover was already commanded to
+        (and mechanically at) that state.
 
-        Falls back to the last *commanded* target (``get_target``) instead of
-        a live reading:
-
-        - Position-capable axis: ``route_service_call`` sets
-          ``routed_target == state``, so the commanded target mirrors the raw
-          position 1:1. Comparing it against ``position`` directly is
-          equivalent to the normal exact-equality gate — no behavior change.
-        - Open/close-only axis: ``route_service_call`` always snaps
-          ``routed_target`` to the routed endpoint (0 or 100), regardless of
-          the raw ``position`` value. Comparing the commanded target against
-          ``position`` directly would therefore only match when this cycle's
-          calculated position happens to also be a literal 0/100. Instead,
-          compare against the *routed decision* for this cycle's ``position``
-          (the same threshold math ``route_service_call`` applies) so a
-          continuously varying tracking position that still routes to the
-          same hardware action is correctly recognised as a no-op.
+        Falls back to the last *commanded* target (``get_target``) compared
+        against this cycle's *routed decision* rather than the raw
+        ``position``. Delegates to :func:`route_service_call` — the single
+        source of truth for routing — instead of re-deriving the threshold
+        math, so every axis (position-capable, My-preset ``stop_cover``, and
+        open/close endpoint) is compared using the exact same rule that
+        ``_prepare_service_call`` uses to build the outbound command
+        (issue #779 follow-up regression from PR #781, which hand-rolled a
+        partial copy of this math and ignored ``use_my_position``).
 
         Only consulted when ``_current is None``; the delta/time gates and
         reconciliation intentionally keep reading the real (unknown) current
@@ -937,11 +935,16 @@ class CoverCommandService:
 
         caps = self.get_cover_capabilities(entity_id)
         axis = self._policy.select_default_axis(caps)
-        if caps_get(caps, axis.capability_key, default=True):
-            return last_target == position
-
-        routed_position = 100 if position >= self._open_close_threshold else 0
-        return last_target == routed_position
+        plan = route_service_call(
+            entity_id,
+            position,
+            caps,
+            axis=axis,
+            use_my_position=context.use_my_position,
+            open_close_threshold=self._open_close_threshold,
+            endpoint_use_open_close=self._endpoint_use_open_close,
+        )
+        return last_target == plan.routed_target
 
     # ------------------------------------------------------------------ #
     # Primary entry point
@@ -1082,13 +1085,14 @@ class CoverCommandService:
         # _current is None is its own exception (issue #779): Somfy RTS covers
         # (and any open/close-only cover without genuine position feedback) sit
         # at HA state unknown/unavailable forever, so _current never resolves
-        # and this gate would never fire — the same open_cover/close_cover gets
-        # resent every cycle. _same_position_via_target_fallback compares the
-        # last *commanded* target against this cycle's position instead of a
-        # live reading (see its docstring for the position-capable vs.
-        # open/close-only distinction). Delta/time gates and reconciliation
-        # deliberately keep reading the real (unknown) _current — this fallback
-        # is scoped to the same-position gate only.
+        # and this gate would never fire — the same command gets resent every
+        # cycle. _same_position_via_target_fallback compares the last
+        # *commanded* target against this cycle's *routed* decision (via
+        # route_service_call, see its docstring) instead of a live reading, so
+        # position-capable, My-preset stop_cover, and open/close endpoint
+        # covers are all handled by the one routing source of truth. Delta/time
+        # gates and reconciliation deliberately keep reading the real (unknown)
+        # _current — this fallback is scoped to the same-position gate only.
         if (
             not context.sun_just_appeared
             and not force_endpoint
@@ -1104,7 +1108,9 @@ class CoverCommandService:
                 )
                 or (
                     _current is None
-                    and self._same_position_via_target_fallback(entity_id, position)
+                    and self._same_position_via_target_fallback(
+                        entity_id, position, context
+                    )
                 )
             )
         ):

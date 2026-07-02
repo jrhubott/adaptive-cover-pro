@@ -1066,8 +1066,13 @@ async def test_apply_position_proceeds_when_state_loaded_with_unknown_position(
 # --- same-position exact-equality gate + reconciliation tolerance (issues #507/#567) ---
 
 
-def _ctx_with_special() -> PositionContext:
-    """PositionContext that passes every gate except same-position."""
+def _ctx_with_special(*, use_my_position: bool = False) -> PositionContext:
+    """PositionContext that passes every gate except same-position.
+
+    ``use_my_position=True`` selects the My-preset routing variant (issue
+    #779 follow-up) so tests can exercise the ``stop_cover``/My path through
+    the same shared context builder used by every other test in this file.
+    """
     return PositionContext(
         auto_control=True,
         manual_override=False,
@@ -1075,6 +1080,7 @@ def _ctx_with_special() -> PositionContext:
         min_change=10,
         time_threshold=0,
         special_positions=[0, 100],
+        use_my_position=use_my_position,
     )
 
 
@@ -1894,4 +1900,106 @@ async def test_apply_position_position_capable_current_unknown_uses_raw_target_f
         )
 
     assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
+# --- same-position gate: My-preset fallback correctness (issue #779 regression
+# from PR #781 — the fallback ignored use_my_position and hand-rolled the
+# open/close threshold math, so a My move collapsed to the same routed
+# decision as a stored full-close target) ---
+
+
+@pytest.mark.asyncio
+async def test_apply_position_my_preset_move_not_suppressed_by_stored_close_target_when_current_unknown(
+    cmd_svc, mock_hass
+):
+    """A My-preset move to a sub-threshold value (e.g. 2%) must not be
+    swallowed by a stored full-close target (0).
+
+    ``_same_position_via_target_fallback`` used to hand-roll
+    ``100 if position >= threshold else 0``, which ignores
+    ``use_my_position`` entirely: a My move to 2% collapsed to the same
+    routed decision (0) as a prior full close, so the gate suppressed the
+    My move as ``same_position`` and the cover never received
+    ``stop_cover``. The fallback must delegate to ``route_service_call``
+    (the single routing source of truth) so a My target routes to its real
+    decision (``stop_cover``, routed_target=2) instead of the hand-rolled
+    open/close snap.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="unknown", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=None),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_my", 0, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("sent", "close_cover")
+        assert cmd_svc.get_target("cover.rts_my") == 0
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_my", 2, "solar", _ctx_with_special(use_my_position=True)
+        )
+
+    assert (outcome2, reason2) == ("sent", "stop_cover")
+
+
+@pytest.mark.asyncio
+async def test_apply_position_repeated_my_preset_suppressed_when_current_unknown(
+    cmd_svc, mock_hass
+):
+    """A second identical My-preset move must be suppressed as
+    ``same_position``, not resent — the residual #779 relay-click bug for
+    the My path.
+
+    ``_same_position_via_target_fallback`` stores the raw My value
+    (``routed_target=state``) but compared it against the hand-rolled
+    ``100 if position >= threshold else 0`` snap, which never matches a
+    mid-range My value — so every cycle re-sent ``stop_cover`` even though
+    the cover was already commanded to the same My preset.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="unknown", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=None),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_my_repeat", 2, "solar", _ctx_with_special(use_my_position=True)
+        )
+        assert (outcome, reason) == ("sent", "stop_cover")
+        assert cmd_svc.get_target("cover.rts_my_repeat") == 2
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_my_repeat", 2, "solar", _ctx_with_special(use_my_position=True)
+        )
+
+    assert (outcome2, reason2) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
