@@ -1,0 +1,35 @@
+name: Deprecated HA Helpers
+
+# Standalone CI task that fails if the integration references a deprecated Home
+# Assistant helper (see scripts/check_deprecated_ha_helpers.py). Kept separate
+# from the unit-test workflow so a flagged deprecation surfaces as its own check
+# rather than a failing unit test, and so it runs version-independently (no HA
+# core install needed — the scan is pure ast). Seeded by issue #815.
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Deprecation Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Check for deprecated Home Assistant helper usage
+        run: python scripts/check_deprecated_ha_helpers.py
