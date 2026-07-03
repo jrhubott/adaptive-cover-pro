@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import pathlib
+from collections import Counter
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
@@ -17,8 +18,6 @@ from ..const import DOMAIN
 from .export_service import DEFAULT_EXPORT_PATH
 
 _LOGGER = logging.getLogger(__name__)
-
-_CONFIG_ROOT = pathlib.Path("/config")
 
 IMPORT_CONFIG_SCHEMA = vol.Schema(
     {
@@ -48,14 +47,21 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     hass: HomeAssistant = call.hass
     filename: str = call.data["filename"]
 
-    # Path safety: reject traversal outside /config/
-    path = pathlib.Path(filename).resolve()
+    # Resolve relative filenames against the HA config directory.
+    p = pathlib.Path(filename)
+    if not p.is_absolute():
+        p = pathlib.Path(hass.config.config_dir) / p
+
+    # Path safety: reject traversal outside the HA config directory.
+    config_root = pathlib.Path(hass.config.config_dir).resolve()
+    path = p.resolve()
     try:
-        path.relative_to(_CONFIG_ROOT.resolve())
+        path.relative_to(config_root)
     except ValueError as exc:
         raise ServiceValidationError(
-            f"import_config: filename '{filename}' is not inside /config/ — "
-            "only files under /config/ may be imported"
+            f"import_config: filename '{filename}' is not inside the HA config "
+            f"directory ('{config_root}') — only files under the config directory "
+            "may be imported"
         ) from exc
 
     # Read file in executor
@@ -76,7 +82,13 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
             f"import_config: '{path}' is not valid JSON: {exc}"
         ) from exc
 
-    file_entries: list[dict] = data.get("entries", [])
+    if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+        raise ServiceValidationError(
+            f"import_config: '{path}' is not a valid ACP export "
+            '(expected {{"export_version": 1, "entries": [...]}})'
+        )
+
+    file_entries: list[dict] = data["entries"]
     results: dict[str, str] = {}
 
     for item in file_entries:
@@ -114,10 +126,6 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
         "import_config: processed %d entries from '%s': %s",
         len(file_entries),
         path,
-        {
-            v: sum(1 for r in results.values() if r == v)
-            for v in ("updated", "skipped")
-            if v in results.values()
-        },
+        dict(Counter(results.values())),
     )
     return results

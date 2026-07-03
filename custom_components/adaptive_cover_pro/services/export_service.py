@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import logging
+import os
 import pathlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -59,7 +59,9 @@ EXPORT_CONFIG_SCHEMA = vol.Schema(
 
 EXPORT_ALL_CONFIG_SCHEMA = vol.Schema({})
 
-DEFAULT_EXPORT_PATH = "/config/adaptive_cover_pro_export.json"
+_EXPORT_FILENAME = "adaptive_cover_pro_export.json"
+# Kept as a schema-default hint for the import service (relative filename only).
+DEFAULT_EXPORT_PATH = _EXPORT_FILENAME
 
 
 async def async_handle_export(call: ServiceCall) -> dict:
@@ -137,8 +139,10 @@ async def async_handle_export_all(call: ServiceCall) -> dict:
     """Handle the export_all_config service call.
 
     Writes all non-virtual ACP cover entries (those with a loaded coordinator) to
-    ``/config/adaptive_cover_pro_export.json`` as a lossless JSON snapshot.  The
-    file is written atomically via the executor so the event loop is never blocked.
+    ``<config_dir>/adaptive_cover_pro_export.json`` as a lossless JSON snapshot.
+    The file is written atomically (write to ``.tmp`` then ``os.replace``) via the
+    executor so the event loop is never blocked and a concurrent read never sees a
+    partial file.
 
     Returns ``{"file": <path>, "count": <n>}`` so the call is also useful in
     Developer Tools (the response is visible immediately).
@@ -169,11 +173,15 @@ async def async_handle_export_all(call: ServiceCall) -> dict:
         "entries": entries,
     }
 
-    path = pathlib.Path(DEFAULT_EXPORT_PATH)
+    path = pathlib.Path(hass.config.path(_EXPORT_FILENAME))
     json_text = json.dumps(payload, indent=2, ensure_ascii=False)
-    await hass.async_add_executor_job(
-        functools.partial(path.write_text, json_text, "utf-8")
-    )
+
+    def _atomic_write() -> None:
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json_text, "utf-8")
+        os.replace(tmp, path)
+
+    await hass.async_add_executor_job(_atomic_write)
 
     _LOGGER.info("export_all_config: wrote %d entries to %s", len(entries), path)
     return {"file": str(path), "count": len(entries)}
