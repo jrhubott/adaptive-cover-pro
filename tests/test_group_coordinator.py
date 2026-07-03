@@ -14,17 +14,23 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
+    CONF_GROUP_MEMBER_OPT_OUT,
+    CONF_GROUP_STAGGER_DELAY,
     CONF_MEMBER_COVERS,
     CONF_MEMBER_ENTRIES,
     CONF_SENSOR_TYPE,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     DOMAIN,
+    GROUP_SCENE_PRIORITY,
+    OPT_OUT_ALL_SCENES,
     POSITION_CLOSED,
-    POSITION_OPEN,
     CoverType,
+    GroupIntentKind,
     GroupScene,
     GroupState,
 )
 from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
+from custom_components.adaptive_cover_pro.pipeline.types import GroupIntent
 
 pytestmark = pytest.mark.integration
 
@@ -52,6 +58,7 @@ def _mock_member_coordinator() -> MagicMock:
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
     coord.async_reset_manual_overrides = AsyncMock(return_value=[])
     coord.async_refresh = AsyncMock()
+    coord.async_request_refresh = AsyncMock()
     return coord
 
 
@@ -115,22 +122,24 @@ async def test_member_resolution_skips_unset_runtime_data(hass) -> None:
     assert resolved[0][1] is ok_coord
 
 
-async def test_activate_scene_resolves_target_per_member_policy(group_setup) -> None:
-    """PRIVACY resolves through each member's own policy: blind 0, awning 100."""
+async def test_activate_scene_pushes_intent_and_refreshes(group_setup) -> None:
+    """Phase 2: scenes ride the pipeline — intent push + refresh, never the
+    user-position path (which would engage manual override).
+    """
     coordinator, blind_coord, awning_coord = group_setup
 
     await coordinator.async_activate_scene(GroupScene.PRIVACY)
 
-    blind_coord.async_apply_user_position.assert_awaited_once_with(
-        BLIND_ENTITY,
-        POSITION_CLOSED,
-        trigger="group_scene_privacy",
+    expected = GroupIntent(
+        kind=GroupIntentKind.SCENE,
+        scene=GroupScene.PRIVACY,
+        priority=GROUP_SCENE_PRIORITY,
+        group_id="group_01",
     )
-    awning_coord.async_apply_user_position.assert_awaited_once_with(
-        AWNING_ENTITY,
-        POSITION_OPEN,
-        trigger="group_scene_privacy",
-    )
+    for member in (blind_coord, awning_coord):
+        member.set_group_intent.assert_called_once_with("group_01", expected)
+        member.async_request_refresh.assert_awaited_once()
+        member.async_apply_user_position.assert_not_awaited()
 
 
 async def test_activate_scene_adopt_commands_generic_covers(group_setup) -> None:
@@ -264,3 +273,188 @@ async def test_member_state_change_triggers_refresh(hass, group_setup) -> None:
     await coordinator.async_shutdown()
     assert coordinator._unsub_state is None
     coordinator._cmd_svc.stop.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — intent arbitration, opt-out, stagger, lock, clear, who-won
+# ---------------------------------------------------------------------------
+
+
+def _group_with_options(hass, extra_options, entry_id="group_10"):
+    blind_entry = _member_entry(
+        hass, f"{entry_id}_blind", CoverType.BLIND, [BLIND_ENTITY]
+    )
+    awning_entry = _member_entry(
+        hass, f"{entry_id}_awning", CoverType.AWNING, [AWNING_ENTITY]
+    )
+    blind_coord = _mock_member_coordinator()
+    awning_coord = _mock_member_coordinator()
+    blind_entry.runtime_data = blind_coord
+    awning_entry.runtime_data = awning_coord
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": entry_id, CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [f"{entry_id}_blind", f"{entry_id}_awning"],
+            CONF_MEMBER_COVERS: [GENERIC_ENTITY],
+            **extra_options,
+        },
+        entry_id=entry_id,
+        title=entry_id,
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+    coordinator._cmd_svc = MagicMock(
+        apply_position=AsyncMock(return_value=("sent", "")), stop=MagicMock()
+    )
+    return coordinator, blind_coord, awning_coord
+
+
+async def test_opt_out_skips_member_for_that_scene_only(hass) -> None:
+    """A member opted out of PRIVACY is skipped for it but included elsewhere."""
+    coordinator, blind_coord, awning_coord = _group_with_options(
+        hass, {CONF_GROUP_MEMBER_OPT_OUT: {"group_10_blind": [str(GroupScene.PRIVACY)]}}
+    )
+
+    await coordinator.async_activate_scene(GroupScene.PRIVACY)
+    blind_coord.set_group_intent.assert_not_called()
+    awning_coord.set_group_intent.assert_called_once()
+
+    blind_coord.reset_mock()
+    awning_coord.reset_mock()
+    await coordinator.async_activate_scene(GroupScene.ALL_OPEN)
+    blind_coord.set_group_intent.assert_called_once()
+    awning_coord.set_group_intent.assert_called_once()
+
+
+async def test_opt_out_star_skips_member_for_all_scenes(hass) -> None:
+    coordinator, blind_coord, _ = _group_with_options(
+        hass, {CONF_GROUP_MEMBER_OPT_OUT: {"group_10_blind": [OPT_OUT_ALL_SCENES]}}
+    )
+
+    await coordinator.async_activate_scene(GroupScene.ALL_CLOSED)
+
+    blind_coord.set_group_intent.assert_not_called()
+
+
+async def test_clear_scene_removes_intents(group_setup) -> None:
+    """Clearing the scene removes this group's claim and refreshes members."""
+    coordinator, blind_coord, awning_coord = group_setup
+    await coordinator.async_activate_scene(GroupScene.ALL_OPEN)
+    assert coordinator.active_scene is GroupScene.ALL_OPEN
+
+    for member in (blind_coord, awning_coord):
+        member.reset_mock()
+    await coordinator.async_clear_scene()
+
+    assert coordinator.active_scene is None
+    for member in (blind_coord, awning_coord):
+        member.set_group_intent.assert_called_once_with("group_01", None)
+        member.async_request_refresh.assert_awaited_once()
+
+
+async def test_lock_pushes_and_clears_lock_intent(group_setup) -> None:
+    """The group lock is a LOCK intent at safety priority on every member."""
+    coordinator, blind_coord, awning_coord = group_setup
+
+    await coordinator.async_set_lock(True)
+    assert coordinator.group_locked is True
+    expected = GroupIntent(
+        kind=GroupIntentKind.LOCK,
+        scene=None,
+        priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+        group_id="group_01",
+    )
+    for member in (blind_coord, awning_coord):
+        member.set_group_intent.assert_called_once_with("group_01", expected)
+
+    for member in (blind_coord, awning_coord):
+        member.reset_mock()
+    await coordinator.async_set_lock(False)
+    assert coordinator.group_locked is False
+    for member in (blind_coord, awning_coord):
+        member.set_group_intent.assert_called_once_with("group_01", None)
+
+
+async def test_lock_ignores_scene_opt_out(hass) -> None:
+    """Opt-out is per-scene; the lock is a safety claim on every member."""
+    coordinator, blind_coord, _ = _group_with_options(
+        hass, {CONF_GROUP_MEMBER_OPT_OUT: {"group_10_blind": [OPT_OUT_ALL_SCENES]}}
+    )
+
+    await coordinator.async_set_lock(True)
+
+    blind_coord.set_group_intent.assert_called_once()
+
+
+async def test_stagger_spaces_member_commands(hass) -> None:
+    """With a stagger configured, successive commands are spaced apart."""
+    from custom_components.adaptive_cover_pro import group_coordinator as gc_module
+
+    coordinator, _, _ = _group_with_options(
+        hass, {CONF_GROUP_STAGGER_DELAY: 1.5}, entry_id="group_11"
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        sleeper = AsyncMock()
+        mp.setattr(gc_module.asyncio, "sleep", sleeper)
+        await coordinator.async_activate_scene(GroupScene.ALL_OPEN)
+
+    # 2 ACP members + 1 generic = 3 commands → 2 gaps.
+    assert sleeper.await_count == 2
+    sleeper.assert_awaited_with(1.5)
+
+
+async def test_no_stagger_no_sleep(group_setup) -> None:
+    from custom_components.adaptive_cover_pro import group_coordinator as gc_module
+
+    coordinator, _, _ = group_setup
+    with pytest.MonkeyPatch.context() as mp:
+        sleeper = AsyncMock()
+        mp.setattr(gc_module.asyncio, "sleep", sleeper)
+        await coordinator.async_activate_scene(GroupScene.ALL_OPEN)
+
+    sleeper.assert_not_awaited()
+
+
+async def test_shutdown_clears_group_intents(group_setup) -> None:
+    """A group being unloaded must not leave stale intents on members."""
+    coordinator, blind_coord, awning_coord = group_setup
+    await coordinator.async_activate_scene(GroupScene.PRIVACY)
+
+    await coordinator.async_shutdown()
+
+    for member in (blind_coord, awning_coord):
+        assert member.set_group_intent.call_args_list[-1].args == ("group_01", None)
+
+
+async def test_member_winners_maps_entities_to_pipeline_winner(group_setup) -> None:
+    """Who-won: each member cover mapped to its pipeline's winning handler."""
+    coordinator, blind_coord, awning_coord = group_setup
+    blind_coord.pipeline_winner_name = "group_scene"
+    awning_coord.pipeline_winner_name = "weather_override"
+
+    winners = coordinator.member_winners()
+
+    assert winners == {
+        BLIND_ENTITY: "group_scene",
+        AWNING_ENTITY: "weather_override",
+    }
+
+
+async def test_unlock_repushes_active_scene(group_setup) -> None:
+    """Unlocking with a scene active re-pushes the scene, not unmanaged state."""
+    coordinator, blind_coord, _ = group_setup
+    await coordinator.async_activate_scene(GroupScene.PRIVACY)
+    await coordinator.async_set_lock(True)
+
+    blind_coord.reset_mock()
+    await coordinator.async_set_lock(False)
+
+    pushed = [
+        call.args[1]
+        for call in blind_coord.set_group_intent.call_args_list
+        if call.args[1] is not None
+    ]
+    assert pushed and pushed[-1].kind is GroupIntentKind.SCENE
+    assert pushed[-1].scene is GroupScene.PRIVACY

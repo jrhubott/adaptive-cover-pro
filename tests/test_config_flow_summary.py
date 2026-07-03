@@ -3220,3 +3220,41 @@ def test_summary_group_empty_roster_warns():
 
     assert "**Cover Group**" in summary
     assert "no members" in summary
+
+
+def test_summary_group_shows_arbitration_lines():
+    """Phase 2: scene/lock priorities and the stagger, from the imported consts."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_STAGGER_DELAY,
+        CONF_MEMBER_COVERS,
+        CONF_MEMBER_ENTRIES,
+        CUSTOM_POSITION_SAFETY_PRIORITY,
+        GROUP_SCENE_PRIORITY,
+    )
+
+    summary = _build_config_summary(
+        {
+            CONF_MEMBER_ENTRIES: ["entry_a"],
+            CONF_MEMBER_COVERS: [],
+            CONF_GROUP_STAGGER_DELAY: 2.5,
+        },
+        CoverType.GROUP,
+    )
+
+    assert f"priority {GROUP_SCENE_PRIORITY}" in summary
+    assert f"priority {CUSTOM_POSITION_SAFETY_PRIORITY}" in summary
+    assert "2.5" in summary
+
+
+def test_summary_group_omits_stagger_line_when_zero():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MEMBER_COVERS,
+        CONF_MEMBER_ENTRIES,
+    )
+
+    summary = _build_config_summary(
+        {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []},
+        CoverType.GROUP,
+    )
+
+    assert "apart" not in summary

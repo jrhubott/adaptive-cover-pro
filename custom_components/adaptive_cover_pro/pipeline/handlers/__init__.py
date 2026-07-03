@@ -34,6 +34,8 @@ from .cloud_suppression import CloudSuppressionHandler
 from .custom_position import CustomPositionHandler
 from .default import DefaultHandler
 from .glare_zone import GlareZoneHandler
+from .group_lock import GroupLockHandler
+from .group_scene import GroupSceneHandler
 from .manual_override import ManualOverrideHandler
 from .motion_timeout import MotionTimeoutHandler
 from .solar import SolarHandler
@@ -144,6 +146,12 @@ HANDLER_FACTORIES: tuple[HandlerFactory, ...] = (
     _single(GlareZoneHandler),
     _solar_handler,
     _single(DefaultHandler),
+    # Group handlers LAST (issue #790 Phase 2): the registry's priority sort
+    # is stable, so on a 100-tie a member's own custom-position safety slot
+    # (built above) wins over the group lock — physical safety local to the
+    # cover trumps a zone command. Always built; they defer when no intent.
+    _single(GroupSceneHandler),
+    _single(GroupLockHandler),
 )
 
 
@@ -175,6 +183,8 @@ __all__ = [
     "CustomPositionHandler",
     "DefaultHandler",
     "GlareZoneHandler",
+    "GroupLockHandler",
+    "GroupSceneHandler",
     "HandlerFactory",
     "ManualOverrideHandler",
     "MotionTimeoutHandler",

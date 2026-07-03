@@ -16,8 +16,9 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
 
-from .const import GroupScene
+from .const import GROUP_SCENE_SELECT_AUTO, GroupScene
 from .entity_base import AdaptiveCoverBaseEntity
+from .pipeline.handlers import GroupLockHandler, GroupSceneHandler
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -120,6 +121,58 @@ class GroupAutomationSwitch(_GroupEntityBase, SwitchEntity):
         self.async_write_ha_state()
 
 
+class GroupLockSwitch(_GroupEntityBase, SwitchEntity):
+    """Freeze every member in place via the LOCK intent at safety priority."""
+
+    _attr_translation_key = "group_lock"
+    _attr_icon = "mdi:lock-outline"
+
+    def __init__(self, *args) -> None:
+        """Initialize unlocked."""
+        super().__init__(*args, "group_lock")
+        self._attr_is_on = False
+
+    async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
+        """Push the lock intent to every member."""
+        await self.coordinator.async_set_lock(True)
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
+        """Release the lock (re-pushing an active scene, if any)."""
+        await self.coordinator.async_set_lock(False)
+        self._attr_is_on = False
+        self.async_write_ha_state()
+
+
+class GroupWhoWonSensor(_GroupEntityBase, SensorEntity):
+    """How many members this group currently drives, with per-member detail.
+
+    A member counts as group-driven when its pipeline's winning handler is
+    one of the group handlers (names imported, never string literals).
+    """
+
+    _attr_translation_key = "group_who_won"
+    _attr_native_unit_of_measurement = "members"
+    _attr_icon = "mdi:scale-balance"
+
+    _GROUP_HANDLER_NAMES = frozenset({GroupSceneHandler.name, GroupLockHandler.name})
+
+    @property
+    def native_value(self) -> int:
+        """Count of members whose pipeline is currently won by this group."""
+        return sum(
+            1
+            for winner in self.coordinator.member_winners().values()
+            if winner in self._GROUP_HANDLER_NAMES
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Per-member winning-handler map."""
+        return {"member_winners": self.coordinator.member_winners()}
+
+
 class GroupSceneButton(_GroupEntityBase, ButtonEntity):
     """Activate one built-in scene across the group."""
 
@@ -166,19 +219,25 @@ class GroupSceneSelect(_GroupEntityBase, SelectEntity):
     _attr_icon = "mdi:palette-swatch"
 
     def __init__(self, *args) -> None:
-        """Initialize the scene picker with the built-in scene options."""
+        """Initialize the scene picker: Auto (no scene) plus the built-ins."""
         super().__init__(*args, "group_scene_select")
-        self._attr_options = [str(scene) for scene in GroupScene]
+        self._attr_options = [
+            GROUP_SCENE_SELECT_AUTO,
+            *(str(scene) for scene in GroupScene),
+        ]
 
     @property
     def current_option(self) -> str | None:
-        """Wire value of the last activated scene, or None."""
+        """Wire value of the active scene; Auto when no scene claims the group."""
         scene = self.coordinator.active_scene
-        return str(scene) if scene is not None else None
+        return str(scene) if scene is not None else GROUP_SCENE_SELECT_AUTO
 
     async def async_select_option(self, option: str) -> None:
-        """Activate the picked scene across the group."""
-        await self.coordinator.async_activate_scene(GroupScene(option))
+        """Activate the picked scene — or release the claim via Auto."""
+        if option == GROUP_SCENE_SELECT_AUTO:
+            await self.coordinator.async_clear_scene()
+        else:
+            await self.coordinator.async_activate_scene(GroupScene(option))
         self.async_write_ha_state()
 
 
@@ -194,6 +253,7 @@ def build_group_sensors(
         GroupPositionSensor(*args, "group_position"),
         GroupStateSensor(*args, "group_state"),
         GroupActiveSceneSensor(*args, "group_active_scene"),
+        GroupWhoWonSensor(*args, "group_who_won"),
     ]
 
 
@@ -204,7 +264,10 @@ def build_group_switches(
     coordinator: GroupCoordinator,
 ) -> list[SwitchEntity]:
     """Build the bulk switches for one group entry."""
-    return [GroupAutomationSwitch(entry_id, hass, config_entry, coordinator)]
+    return [
+        GroupAutomationSwitch(entry_id, hass, config_entry, coordinator),
+        GroupLockSwitch(entry_id, hass, config_entry, coordinator),
+    ]
 
 
 def build_group_buttons(

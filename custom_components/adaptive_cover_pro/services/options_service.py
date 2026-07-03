@@ -56,6 +56,7 @@ from ..const import (
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_GLARE_ZONE_PRIORITY,
+    CONF_GROUP_STAGGER_DELAY,
     CONF_HEIGHT_WIN,
     CONF_INTERP,
     CONF_INTERP_END,
@@ -521,6 +522,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_CLIMATE_PRIORITY: _range(CONF_CLIMATE_PRIORITY),
     CONF_GLARE_ZONE_PRIORITY: _range(CONF_GLARE_ZONE_PRIORITY),
     CONF_SOLAR_PRIORITY: _range(CONF_SOLAR_PRIORITY),
+    # Cover group (issue #790, Phase 2)
+    CONF_GROUP_STAGGER_DELAY: _range(CONF_GROUP_STAGGER_DELAY),
 }
 
 # ---------------------------------------------------------------------------

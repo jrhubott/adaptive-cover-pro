@@ -253,6 +253,9 @@
     "header": "**Beschattungsgruppe**",
     "members": "Steuert {acp_count} ACP-Mitglied(er) + {generic_count} allgemeine Beschattung(en)",
     "member_acp": "- 🪟 {title} (ACP)",
-    "member_generic": "- 🪟 {entity} (generic)"
+    "member_generic": "- 🪟 {entity} (generic)",
+    "scene_priority": "Beschattungsgruppen-Szenen gelten mit Priorität {scene_priority} (über manuelle Übersteuerung, unter Wetterschutz)",
+    "lock": "🔒 Gruppensperre mit Priorität {lock_priority} — friert Mitglieder an Ort und Stelle ein; die eigene Sicherheit eines Mitglieds gewinnt immer noch Gleichstände",
+    "stagger": "Mitglieder mit {stagger}s Abstand befohlen"
   }
 }

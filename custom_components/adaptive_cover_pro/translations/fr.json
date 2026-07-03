@@ -808,7 +808,8 @@
           "profile_sensors": "📡 Capteurs partagés",
           "profile_overview": "🏢 Aperçu du profil",
           "profile_overrides": "🧹 Dérogations locales",
-          "group_membership": "👥 Membres du groupe"
+          "group_membership": "👥 Membres du groupe",
+          "group_arbitration": "⚖️ Arbitrage & Synchronisation"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1606,6 +1607,18 @@
           "member_entries": "Les membres sont orchestrés via leur propre instance, donc les portails et dérogations s'appliquent toujours.",
           "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré."
         }
+      },
+      "group_arbitration": {
+        "title": "Arbitrage & Synchronisation",
+        "description": "Les scènes de groupe l'emportent sur la dérogation manuelle d'un membre, mais cèdent à la sécurité météo ; le verrouillage de groupe prime sur tout sauf le déclencheur de sécurité propre d'un membre. [En savoir plus]({learn_more})",
+        "data": {
+          "group_stagger_delay": "Délai d'échelonnement",
+          "scene_opt_outs": "Exclusions de scène"
+        },
+        "data_description": {
+          "group_stagger_delay": "Secondes entre les commandes successives des membres lors d'une scène. 0 = commander tous les membres à la fois.",
+          "scene_opt_outs": "Les membres cochés ici sont ignorés pour la scène sélectionnée. « Toutes les scènes » ignore le membre pour chaque scène. Le verrouillage de groupe ignore les exclusions."
+        }
       }
     },
     "abort": {
@@ -1682,6 +1695,9 @@
           "all_closed": "Tous fermés",
           "privacy": "Confidentialité"
         }
+      },
+      "group_who_won": {
+        "name": "Membres dirigés par le groupe"
       }
     },
     "switch": {
@@ -1734,6 +1750,9 @@
       },
       "group_automation": {
         "name": "Automation du groupe"
+      },
+      "group_lock": {
+        "name": "Verrouillage de groupe"
       }
     },
     "button": {
@@ -1764,7 +1783,8 @@
         "state": {
           "all_open": "Tous ouverts",
           "all_closed": "Tous fermés",
-          "privacy": "Confidentialité"
+          "privacy": "Confidentialité",
+          "auto": "Auto"
         }
       }
     }

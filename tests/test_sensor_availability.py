@@ -79,10 +79,12 @@ from custom_components.adaptive_cover_pro.group_entities import (
     GroupActiveSceneSensor,
     GroupAutomationSwitch,
     GroupClearOverridesButton,
+    GroupLockSwitch,
     GroupPositionSensor,
     GroupSceneButton,
     GroupSceneSelect,
     GroupStateSensor,
+    GroupWhoWonSensor,
 )
 
 # ---------------------------------------------------------------------------
@@ -303,6 +305,19 @@ ENTITY_FACTORIES: dict[type, object] = {
         _make_hass(),
         _make_config_entry(),
         _make_coordinator(),
+    ),
+    GroupLockSwitch: lambda: GroupLockSwitch(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+    ),
+    GroupWhoWonSensor: lambda: GroupWhoWonSensor(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+        "group_who_won",
     ),
 }
 

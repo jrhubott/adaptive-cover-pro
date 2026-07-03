@@ -104,6 +104,25 @@ CONF_SYNC_SELECT_ALL = "select_all_targets"
 CONF_MEMBER_ENTRIES = "member_entries"  # ACP member config-entry ids
 CONF_MEMBER_COVERS = "member_covers"  # generic cover entity_ids
 
+# Per-member scene opt-out, stored on the GROUP entry keyed by member
+# entry_id so a member removal prunes cleanly: {member_id: [scene, ...]}.
+# The sentinel OPT_OUT_ALL_SCENES ("*") opts a member out of every scene.
+# Enforced group-side at intent-push time (the member handler stays dumb);
+# the group lock ignores opt-out — it is a safety claim on every member.
+CONF_GROUP_MEMBER_OPT_OUT = "group_member_opt_out"
+OPT_OUT_ALL_SCENES = "*"
+
+# Seconds between successive member commands during a group fan-out
+# (scene activation). 0 = simultaneous. Issue #790 Phase 2.
+CONF_GROUP_STAGGER_DELAY = "group_stagger_delay"
+DEFAULT_GROUP_STAGGER_DELAY = 0.0
+_RANGE_GROUP_STAGGER = (0.0, 30.0)
+
+# The scene select's "no scene" option (wire-stable select state). Not a
+# GroupScene member — it is the absence of a scene: choosing it clears the
+# group's claim so members return to their own pipelines.
+GROUP_SCENE_SELECT_AUTO = "auto"
+
 # Default name prefix used by the config flow when auto-naming a cover from its
 # entity's friendly name (no linked device available) — see config_flow.py's
 # cover_entities auto-fill and async_step_update finalization fallback (#771).
@@ -540,6 +559,16 @@ CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = tuple(
 # semantics: they command the cover outside the start/end time window and
 # bypass the delta-position/delta-time send gates (issue #563).
 CUSTOM_POSITION_SAFETY_PRIORITY = 100
+
+# Cover-group scene intents claim the pipeline at this priority (issue #790,
+# Phase 2): above manual_override (80) so "put the room in Privacy" wins over
+# a stale per-cover manual state, below weather (90) so wind/rain safety on an
+# outdoor member still overrides a group scene. Declared on GroupSceneHandler;
+# the const exists so the config-flow chain summary and tests import it. Not
+# user-overridable (group-injected handler, not one of HANDLER_PRIORITY_CONF).
+# The group lock reuses CUSTOM_POSITION_SAFETY_PRIORITY (100); a member's own
+# safety slot wins ties via handler build order.
+GROUP_SCENE_PRIORITY = 85
 
 
 def _custom_position_slot_keys(n: int) -> dict[str, str]:
@@ -1454,6 +1483,19 @@ class GroupScene(StrEnum):
     PRIVACY = "privacy"
 
 
+class GroupIntentKind(StrEnum):
+    """What a cover-group intent asks of a member's pipeline (issue #790).
+
+    ``SCENE`` — claim the position axis at ``GROUP_SCENE_PRIORITY`` with the
+    member policy's resolution of the intent's scene. ``LOCK`` — freeze the
+    member at ``CUSTOM_POSITION_SAFETY_PRIORITY``: the handler wins the
+    pipeline but sends no command, so the cover holds its position.
+    """
+
+    SCENE = "scene"
+    LOCK = "lock"
+
+
 class GroupState(StrEnum):
     """Aggregate open/closed classification of a cover group's members.
 
@@ -1603,6 +1645,12 @@ class ControlMethod(StrEnum):
 
     GLARE_ZONE = "glare_zone"
     """Glare zone protection active; cover extends to shield a floor zone."""
+
+    GROUP_SCENE = "group_scene"
+    """A cover-group scene intent claims the position (issue #790, Phase 2)."""
+
+    GROUP_LOCK = "group_lock"
+    """A cover-group lock freezes the cover in place (issue #790, Phase 2)."""
 
 
 class SunState(StrEnum):

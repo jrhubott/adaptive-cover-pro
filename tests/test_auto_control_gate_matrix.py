@@ -110,6 +110,7 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     coord._toggles = ToggleManager()
     coord.automatic_control = False
     coord.entities = [MagicMock()]
+    coord._group_intents = {}
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))

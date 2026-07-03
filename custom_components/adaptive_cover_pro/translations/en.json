@@ -809,7 +809,8 @@
           "profile_sensors": "📡 Shared Sensors",
           "profile_overview": "🏢 Profile Overview",
           "profile_overrides": "🧹 Local Overrides",
-          "group_membership": "👥 Group Members"
+          "group_membership": "👥 Group Members",
+          "group_arbitration": "⚖️ Arbitration & Timing"
         }
       },
       "pipeline_priorities": {
@@ -1606,6 +1607,18 @@
           "member_entries": "Members are orchestrated through their own instance, so gates and overrides still apply.",
           "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped."
         }
+      },
+      "group_arbitration": {
+        "title": "Arbitration & Timing",
+        "description": "Group scenes win over a member's manual override but yield to weather safety; the group lock outranks everything except a member's own safety trigger. [Learn more]({learn_more})",
+        "data": {
+          "group_stagger_delay": "Stagger delay",
+          "scene_opt_outs": "Scene opt-outs"
+        },
+        "data_description": {
+          "group_stagger_delay": "Seconds between successive member commands during a scene. 0 = command all members at once.",
+          "scene_opt_outs": "Members checked here are skipped for the selected scene. 'All scenes' skips the member for every scene. The group lock ignores opt-outs."
+        }
       }
     },
     "abort": {
@@ -1682,6 +1695,9 @@
           "all_closed": "All Closed",
           "privacy": "Privacy"
         }
+      },
+      "group_who_won": {
+        "name": "Group-Driven Members"
       }
     },
     "switch": {
@@ -1734,6 +1750,9 @@
       },
       "group_automation": {
         "name": "Group Automation"
+      },
+      "group_lock": {
+        "name": "Group Lock"
       }
     },
     "button": {
@@ -1762,6 +1781,7 @@
       "group_scene_select": {
         "name": "Scene",
         "state": {
+          "auto": "Auto",
           "all_open": "All Open",
           "all_closed": "All Closed",
           "privacy": "Privacy"

@@ -808,7 +808,8 @@
           "profile_sensors": "📡 Gemeinsame Sensoren",
           "profile_overview": "🏢 Profil-Übersicht",
           "profile_overrides": "🧹 Lokale Übersteuerungen",
-          "group_membership": "👥 Gruppenmitglieder"
+          "group_membership": "👥 Gruppenmitglieder",
+          "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1606,6 +1607,18 @@
           "member_entries": "Mitglieder werden über ihre eigene Instanz gesteuert, daher gelten Eingaben und Übersteuerungen weiterhin.",
           "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen."
         }
+      },
+      "group_arbitration": {
+        "title": "Schiedsverfahren & Zeitplanung",
+        "description": "Beschattungsgruppen-Szenen übersteuern die manuelle Übersteuerung eines Mitglieds, weichen aber dem Wetterschutz; die Gruppensperre übertrumpft alles außer einem Sicherheitsauslöser eines Mitglieds. [Weitere Informationen]({learn_more})",
+        "data": {
+          "group_stagger_delay": "Staffelverzögerung",
+          "scene_opt_outs": "Szenen-Ausnahmen"
+        },
+        "data_description": {
+          "group_stagger_delay": "Sekunden zwischen aufeinanderfolgenden Befehlen für Mitglieder während einer Szene. 0 = alle Mitglieder auf einmal befehlen.",
+          "scene_opt_outs": "Überprüfte Mitglieder werden für die ausgewählte Szene übersprungen. 'Alle Szenen' überspringt das Mitglied für jede Szene. Die Gruppensperre ignoriert Ausnahmen."
+        }
       }
     },
     "abort": {
@@ -1682,6 +1695,9 @@
           "all_closed": "Alle geschlossen",
           "privacy": "Datenschutz"
         }
+      },
+      "group_who_won": {
+        "name": "Gruppengesteuerte Mitglieder"
       }
     },
     "switch": {
@@ -1734,6 +1750,9 @@
       },
       "group_automation": {
         "name": "Gruppenautomatisierung"
+      },
+      "group_lock": {
+        "name": "Gruppensperre"
       }
     },
     "button": {
@@ -1764,7 +1783,8 @@
         "state": {
           "all_open": "Alle offen",
           "all_closed": "Alle geschlossen",
-          "privacy": "Datenschutz"
+          "privacy": "Datenschutz",
+          "auto": "Auto"
         }
       }
     }
