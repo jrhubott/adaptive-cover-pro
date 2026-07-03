@@ -432,8 +432,15 @@ class DualAxisSequencer:
         position_target: int,
         tilt_target: int,
         reason: str,
+        drift_reset_eligible: bool = True,
     ) -> None:
-        """Wait for vertical motion to settle, then send the tilt command."""
+        """Wait for vertical motion to settle, then send the tilt command.
+
+        ``drift_reset_eligible`` (issue #808) is threaded to
+        ``_send_tilt_command``; the owning policy sets it False to keep a
+        non-solar tilt from accumulating drift when scope is ``sun_tracking_only``.
+        Defaults to True so existing callers preserve today's behaviour.
+        """
         settled, _last = await self._wait_for_position_settle(
             entity_id, position_target
         )
@@ -475,6 +482,7 @@ class DualAxisSequencer:
             position_target=position_target,
             reason=reason,
             position_settled=settled,
+            drift_reset_eligible=drift_reset_eligible,
         )
 
     async def _send_tilt_command(
@@ -487,6 +495,7 @@ class DualAxisSequencer:
         force: bool = False,
         position_settled: bool = True,
         verify: bool = True,
+        drift_reset_eligible: bool = True,
         _retry_depth: int = 0,
     ) -> None:
         """Emit ``set_cover_tilt_position`` and rebase the commanded position.
@@ -603,7 +612,8 @@ class DualAxisSequencer:
         # skipping it when disabled keeps the read sequence identical to the
         # pre-#663 behaviour for the dominant disabled case.
         drift_reset_enabled = (
-            entity_id not in self._reset_in_progress
+            drift_reset_eligible
+            and entity_id not in self._reset_in_progress
             and self._get_tilt_reset_threshold() > 0
         )
         pre_send_anchor: int | None = None
@@ -806,6 +816,7 @@ class DualAxisSequencer:
         current_position: int | None,
         reason: str,
         force: bool = False,
+        drift_reset_eligible: bool = True,
     ) -> None:
         """Emit a tilt command without a position settle wait or suppression stamp.
 
@@ -837,6 +848,7 @@ class DualAxisSequencer:
             position_target=current_position if current_position is not None else 0,
             reason=reason,
             force=force,
+            drift_reset_eligible=drift_reset_eligible,
         )
 
     def _rebase_commanded_position(self, entity_id: str, position_target: int) -> None:

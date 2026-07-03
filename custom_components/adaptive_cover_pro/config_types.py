@@ -384,6 +384,12 @@ class VenetianSlice:
     # (issue #686): ``open`` (default, back-compat) or ``close``. Consumed by
     # ``DualAxisSequencer`` via a live ``get_tilt_reset_direction`` lambda.
     tilt_reset_direction: str
+    # Scope that decides which tilt commands accumulate drift (issue #808):
+    # ``all_tilt_commands`` (default, back-compat) counts every tilt send;
+    # ``sun_tracking_only`` restricts the accumulator to solar-tracking commands
+    # (winning ``ControlMethod == SOLAR``). Consumed by ``VenetianPolicy`` via a
+    # live ``get_tilt_reset_scope`` lambda threaded through ``attach()``.
+    tilt_reset_scope: str
     # Width (seconds) of the publish-lag suppression window anchored to the
     # cover's ``moving → settled`` transition (issue #33 Phase 5). Used by
     # ``DualAxisSequencer.is_in_suppression_with_cap`` for the tilt axis and
@@ -562,6 +568,7 @@ class RuntimeConfig:
             CONF_VENETIAN_POST_SETTLE_HOLD,
             CONF_VENETIAN_POST_SETTLE_MODE,
             CONF_VENETIAN_TILT_RESET_DIRECTION,
+            CONF_VENETIAN_TILT_RESET_SCOPE,
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
             CONF_VENETIAN_TILT_SKIP_MODE,
@@ -592,6 +599,7 @@ class RuntimeConfig:
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
             DEFAULT_VENETIAN_POST_SETTLE_MODE,
             DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
+            DEFAULT_VENETIAN_TILT_RESET_SCOPE,
             DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
             DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
             DEFAULT_VENETIAN_TILT_SKIP_MODE,
@@ -729,6 +737,10 @@ class RuntimeConfig:
                 tilt_reset_direction=options.get(
                     CONF_VENETIAN_TILT_RESET_DIRECTION,
                     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
+                ),
+                tilt_reset_scope=options.get(
+                    CONF_VENETIAN_TILT_RESET_SCOPE,
+                    DEFAULT_VENETIAN_TILT_RESET_SCOPE,
                 ),
                 backrotate_publish_lag_seconds=options.get(
                     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,

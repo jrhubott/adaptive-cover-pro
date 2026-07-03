@@ -236,6 +236,7 @@
       "post_settle_hold": "maintien post-stabilisation {hold}s",
       "backrotate_lag": "délai de publication back-rotate {lag}s",
       "drift_reset": "réinitialisation de dérive tous les {threshold}% d'inclinaison cumulée (via {direction})",
+      "drift_reset_scope_solar": "commandes de suivi solaire uniquement",
       "skip_tilt_suppress": "supprimer l'inclinaison à partir de {skip_above}% (pas d'envoi neutre)",
       "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%"
     },

@@ -425,6 +425,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # passed to policy.attach reads a value before the first _update_options
         # cycle; refreshed each cycle (issue #686).
         self._venetian_tilt_reset_direction = _rc_attach.venetian.tilt_reset_direction
+        # Seeded alongside the threshold so the live drift-reset scope lambda
+        # passed to policy.attach reads a value before the first _update_options
+        # cycle; refreshed each cycle (issue #808).
+        self._venetian_tilt_reset_scope = _rc_attach.venetian.tilt_reset_scope
 
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
@@ -490,6 +494,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             get_enforce_delta_at_endpoints=lambda: self._enforce_delta_at_endpoints,
             get_tilt_reset_threshold=lambda: self._venetian_tilt_reset_threshold,
             get_tilt_reset_direction=lambda: self._venetian_tilt_reset_direction,
+            get_tilt_reset_scope=lambda: self._venetian_tilt_reset_scope,
             # Wake the update cycle at suppression expiry so a deferred
             # tilt-only update fires promptly (issue #756). No-op for
             # single-axis policies (base attach ignores it).
@@ -1609,6 +1614,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
             ),
             policy=self._policy,
+            # Neutral winning-control-method value (issue #808). Cover-type-
+            # agnostic here; the venetian policy reads it to gate drift-reset
+            # scope. None when no pipeline result is available yet.
+            control_method=(
+                self._pipeline_result.control_method if self._pipeline_result else None
+            ),
             **self._policy.position_context_overrides(self._pipeline_result),
         )
 
@@ -2232,6 +2243,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Mirror the venetian drift-reset direction (issue #686) so the live
         # lambda wired into policy.attach picks up mid-session changes.
         self._venetian_tilt_reset_direction = rc.venetian.tilt_reset_direction
+        # Mirror the venetian drift-reset scope (issue #808) so the live
+        # lambda wired into policy.attach picks up mid-session changes.
+        self._venetian_tilt_reset_scope = rc.venetian.tilt_reset_scope
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,

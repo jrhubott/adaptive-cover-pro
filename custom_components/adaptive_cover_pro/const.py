@@ -1034,6 +1034,21 @@ VENETIAN_TILT_RESET_DIRECTIONS = (
     VENETIAN_TILT_RESET_CLOSE,
 )
 
+# Scope that decides which tilt commands are eligible to accumulate drift and
+# trigger a reset (issue #808). ``all_tilt_commands`` keeps the original
+# behaviour (every real tilt send counts). ``sun_tracking_only`` restricts the
+# accumulator to solar-tracking commands (winning ControlMethod == SOLAR), so
+# custom-position / manual / climate-discrete tilts no longer trigger the
+# full-open-then-return reset cycle. Venetian-only enum.
+CONF_VENETIAN_TILT_RESET_SCOPE = "venetian_tilt_reset_scope"  # one of below
+VENETIAN_TILT_RESET_SCOPE_ALL = "all_tilt_commands"  # every tilt send (default)
+VENETIAN_TILT_RESET_SCOPE_SOLAR = "sun_tracking_only"  # solar tracking only
+DEFAULT_VENETIAN_TILT_RESET_SCOPE = VENETIAN_TILT_RESET_SCOPE_ALL  # back-compat
+VENETIAN_TILT_RESET_SCOPES = (
+    VENETIAN_TILT_RESET_SCOPE_ALL,
+    VENETIAN_TILT_RESET_SCOPE_SOLAR,
+)
+
 # How the tilt-skip-above guard behaves once the carriage is commanded above
 # ``venetian_tilt_skip_above`` (issue #748). ``neutral`` (default, back-compat)
 # sends a benign POSITION_OPEN tilt to overwrite the actuator's cache (the #33

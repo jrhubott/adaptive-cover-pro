@@ -241,7 +241,8 @@
       "tilt_safety_margin": "tilt safety margin {pct}%",
       "post_settle_hold": "post-settle hold {hold}s",
       "backrotate_lag": "back-rotate publish lag {lag}s",
-      "drift_reset": "drift-reset every {threshold}% accumulated tilt (via {direction})"
+      "drift_reset": "drift-reset every {threshold}% accumulated tilt (via {direction})",
+      "drift_reset_scope_solar": "sun-tracking commands only"
     },
     "fov": {
       "computed": "Computed FOV ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"

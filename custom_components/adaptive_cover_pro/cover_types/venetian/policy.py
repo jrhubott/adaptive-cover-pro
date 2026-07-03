@@ -36,6 +36,7 @@ from ...const import (
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
+    CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
@@ -50,6 +51,7 @@ from ...const import (
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_MODE,
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
+    DEFAULT_VENETIAN_TILT_RESET_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
     DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
@@ -70,6 +72,9 @@ from ...const import (
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
     VENETIAN_TILT_RESET_DIRECTIONS,
+    VENETIAN_TILT_RESET_SCOPE_ALL,
+    VENETIAN_TILT_RESET_SCOPE_SOLAR,
+    VENETIAN_TILT_RESET_SCOPES,
     VENETIAN_TILT_SKIP_MODES,
     VENETIAN_TILT_SKIP_SUPPRESS,
 )
@@ -165,6 +170,10 @@ def _venetian_extras_schema() -> dict:
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             default=DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
         ): vol.In(VENETIAN_TILT_RESET_DIRECTIONS),
+        vol.Optional(
+            CONF_VENETIAN_TILT_RESET_SCOPE,
+            default=DEFAULT_VENETIAN_TILT_RESET_SCOPE,
+        ): vol.In(VENETIAN_TILT_RESET_SCOPES),
         vol.Optional(CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE): vol.In(
             VENETIAN_MODES
         ),
@@ -263,6 +272,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._tilt_skip_mode: str = DEFAULT_VENETIAN_TILT_SKIP_MODE
         self._venetian_mode: str = DEFAULT_VENETIAN_MODE
         self._last_tilt: int | None = None
+        # Drift-reset scope gate (issue #808); replaced by the live lambda in
+        # attach(). Defaults to the back-compat "count every tilt send" scope.
+        self._get_tilt_reset_scope = lambda: DEFAULT_VENETIAN_TILT_RESET_SCOPE
         # Coordinator callback to schedule a single refresh after N seconds,
         # wired in attach(). Used to wake the update cycle at suppression expiry
         # so a deferred tilt-only update fires promptly (issue #756).
@@ -382,15 +394,23 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
         )
-        drift_reset_line = (
-            [
-                L["geometry.venetian.drift_reset"].format(
-                    threshold=reset_threshold, direction=reset_direction
-                )
-            ]
-            if reset_threshold
-            else []
+        # Scope suffix appears only when narrowed to sun-tracking (#808); the
+        # default all_tilt_commands keeps the original single-line phrasing.
+        reset_scope = config.get(
+            CONF_VENETIAN_TILT_RESET_SCOPE,
+            DEFAULT_VENETIAN_TILT_RESET_SCOPE,
         )
+        if reset_threshold:
+            drift_reset_text = L["geometry.venetian.drift_reset"].format(
+                threshold=reset_threshold, direction=reset_direction
+            )
+            if reset_scope == VENETIAN_TILT_RESET_SCOPE_SOLAR:
+                drift_reset_text += (
+                    " — " + L["geometry.venetian.drift_reset_scope_solar"]
+                )
+            drift_reset_line = [drift_reset_text]
+        else:
+            drift_reset_line = []
         # Tilt safety margin is opt-in (issue #783): render only when non-zero,
         # matching the drift-reset line's zero-disables convention.
         safety_margin = config.get(
@@ -673,6 +693,13 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             ),
         )
+        # Drift-reset scope (issue #808) is a policy-level gate: the policy owns
+        # the ControlMethod == SOLAR decision (cover-type knowledge stays inside
+        # cover_types/) and passes a neutral ``drift_reset_eligible`` bool to the
+        # sequencer. Default to ``all_tilt_commands`` (back-compat) when unset.
+        self._get_tilt_reset_scope = kwargs.get("get_tilt_reset_scope") or (
+            lambda: DEFAULT_VENETIAN_TILT_RESET_SCOPE
+        )
         if "tilt_skip_above" in kwargs:
             self._tilt_skip_above = int(kwargs["tilt_skip_above"])
         if "venetian_tilt_skip_mode" in kwargs:
@@ -801,6 +828,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                     current_position=current_position,
                     reason=reason,
                     force=True,
+                    drift_reset_eligible=self._drift_reset_eligible(context),
                 )
                 return
             # Issue #756: a tilt-only update that lands inside the prior
@@ -825,6 +853,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             tilt_target=tilt_target,
             current_position=current_position,
             reason=reason,
+            drift_reset_eligible=self._drift_reset_eligible(context),
         )
 
     def has_pending_secondary_axis(self, entity_id: str) -> bool:
@@ -904,6 +933,21 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             suppression=self.primary_axis_suppression,
         )
 
+    def _drift_reset_eligible(self, context: Any) -> bool:
+        """Whether this tilt send may accumulate drift and trigger a reset (#808).
+
+        ``all_tilt_commands`` (default) always eligible; ``sun_tracking_only``
+        restricts eligibility to solar-tracking wins (``ControlMethod.SOLAR``).
+        The cover-type-specific ``== SOLAR`` decision lives here so the shared
+        managers/sequencer stay cover-type-agnostic: the policy reads the
+        neutral ``control_method`` off the context and hands the sequencer a
+        plain bool.
+        """
+        return (
+            self._get_tilt_reset_scope() == VENETIAN_TILT_RESET_SCOPE_ALL
+            or getattr(context, "control_method", None) == ControlMethod.SOLAR
+        )
+
     async def before_position_command(
         self,
         cmd_svc,  # noqa: ARG002
@@ -949,6 +993,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             reason=reason,
             force=True,
             verify=False,
+            drift_reset_eligible=self._drift_reset_eligible(context),
         )
 
     async def after_position_command(
@@ -992,4 +1037,5 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             position_target=position,
             tilt_target=tilt_target,
             reason=reason,
+            drift_reset_eligible=self._drift_reset_eligible(context),
         )

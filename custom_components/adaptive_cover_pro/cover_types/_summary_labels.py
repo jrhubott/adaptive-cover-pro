@@ -86,6 +86,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.venetian.drift_reset": (
         "drift-reset every {threshold}% accumulated tilt (via {direction})"
     ),
+    "geometry.venetian.drift_reset_scope_solar": "sun-tracking commands only",
     # Computed-FOV read-only line (blind + venetian Measurements mode, #565).
     "geometry.fov.computed": (
         "Computed FOV ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"

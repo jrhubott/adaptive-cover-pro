@@ -14,6 +14,7 @@ top exercise the config/runtime wiring.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,13 +22,18 @@ import pytest
 from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
 from custom_components.adaptive_cover_pro.const import (
     CONF_VENETIAN_TILT_RESET_DIRECTION,
+    CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
+    DEFAULT_VENETIAN_TILT_RESET_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
     POSITION_CLOSED,
     POSITION_OPEN,
     VENETIAN_TILT_RESET_CLOSE,
     VENETIAN_TILT_RESET_OPEN,
+    VENETIAN_TILT_RESET_SCOPE_ALL,
+    VENETIAN_TILT_RESET_SCOPE_SOLAR,
+    ControlMethod,
 )
 from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import (
     DualAxisSequencer,
@@ -574,3 +580,316 @@ class TestResetDirectionPlumbing:
         assert seq._get_tilt_reset_direction() == VENETIAN_TILT_RESET_OPEN
         box["value"] = VENETIAN_TILT_RESET_CLOSE
         assert seq._get_tilt_reset_direction() == VENETIAN_TILT_RESET_CLOSE
+
+
+# ---------------------------------------------------------------------------
+# Step 13 — Configurable drift-reset SCOPE (issue #808).
+# ---------------------------------------------------------------------------
+
+
+def _attach_venetian_policy(*, scope=None, threshold, current_position=40):
+    """Attach a real venetian policy wired for drift-reset scope tests.
+
+    Returns ``(hass, policy, event_buffer)``. The sequencer's drift-reset
+    threshold and (optionally) scope lambdas are live so tests can drive the
+    policy hooks and observe whether a reset fires.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    buf = EventBuffer(maxlen=100)
+    policy = get_policy("cover_venetian")
+    extra: dict = {}
+    if scope is not None:
+        extra["get_tilt_reset_scope"] = lambda: scope
+    policy.attach(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: current_position,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        event_buffer=buf,
+        get_tilt_reset_threshold=lambda: threshold,
+        **extra,
+    )
+    return hass, policy, buf
+
+
+@pytest.mark.asyncio
+class TestDriftResetScope:
+    """Drift-reset eligibility is gated by scope + winning control method."""
+
+    async def test_eligible_false_suppresses_reset(self):
+        """A tilt-only send flagged ineligible never triggers a reset."""
+        _, seq = _build_sequencer(get_tilt_reset_threshold=lambda: 1)
+        seq._tilt_targets["cover.x"] = 0  # anchor 0 → delta 60 ≥ 1
+        buf = EventBuffer(maxlen=100)
+        seq._event_buffer = buf
+        await seq.update_tilt_only(
+            "cover.x",
+            tilt_target=60,
+            current_position=40,
+            reason="solar",
+            drift_reset_eligible=False,
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert not any(ev.startswith("tilt_reset_") for ev in events)
+        # No accumulation either — the pre-send anchor resolve is skipped.
+        assert seq._accumulated_tilt.get("cover.x", 0) == 0
+
+    async def test_eligible_true_still_resets(self):
+        """Regression guard: the default eligible path fires as before."""
+        buf = EventBuffer(maxlen=100)
+        hass, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 1, event_buffer=buf
+        )
+        seq._tilt_targets["cover.x"] = 0
+        await seq.update_tilt_only(
+            "cover.x",
+            tilt_target=60,
+            current_position=40,
+            reason="solar",
+            drift_reset_eligible=True,
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_triggered" in events
+
+    async def test_solar_only_scope_suppresses_custom_position(self):
+        """sun_tracking_only: a CUSTOM_POSITION win does not trigger a reset."""
+        hass, policy, buf = _attach_venetian_policy(
+            scope=VENETIAN_TILT_RESET_SCOPE_SOLAR, threshold=1
+        )
+        policy._last_tilt = 60
+        policy.sequencer._tilt_targets["cover.x"] = 0
+        ctx = SimpleNamespace(force=False, control_method=ControlMethod.CUSTOM_POSITION)
+        await policy.maybe_update_tilt_only(
+            "cover.x", current_position=40, context=ctx, reason="solar"
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert not any(ev.startswith("tilt_reset_") for ev in events)
+
+    async def test_solar_only_scope_allows_solar(self):
+        """sun_tracking_only: a SOLAR win still triggers the reset."""
+        hass, policy, buf = _attach_venetian_policy(
+            scope=VENETIAN_TILT_RESET_SCOPE_SOLAR, threshold=1
+        )
+        policy._last_tilt = 60
+        policy.sequencer._tilt_targets["cover.x"] = 0
+        ctx = SimpleNamespace(force=False, control_method=ControlMethod.SOLAR)
+        await policy.maybe_update_tilt_only(
+            "cover.x", current_position=40, context=ctx, reason="solar"
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_triggered" in events
+
+    async def test_all_scope_allows_custom_position(self):
+        """all_tilt_commands (default): a CUSTOM_POSITION win still resets."""
+        hass, policy, buf = _attach_venetian_policy(
+            scope=VENETIAN_TILT_RESET_SCOPE_ALL, threshold=1
+        )
+        policy._last_tilt = 60
+        policy.sequencer._tilt_targets["cover.x"] = 0
+        ctx = SimpleNamespace(force=False, control_method=ControlMethod.CUSTOM_POSITION)
+        await policy.maybe_update_tilt_only(
+            "cover.x", current_position=40, context=ctx, reason="solar"
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_triggered" in events
+
+    async def test_default_scope_is_all_allows_custom_position(self):
+        """No scope lambda → default all_tilt_commands → reset fires."""
+        hass, policy, buf = _attach_venetian_policy(scope=None, threshold=1)
+        policy._last_tilt = 60
+        policy.sequencer._tilt_targets["cover.x"] = 0
+        ctx = SimpleNamespace(force=False, control_method=ControlMethod.CUSTOM_POSITION)
+        await policy.maybe_update_tilt_only(
+            "cover.x", current_position=40, context=ctx, reason="solar"
+        )
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_triggered" in events
+
+
+@pytest.mark.unit
+class TestPositionContextControlMethod:
+    """PositionContext carries a neutral control_method for the scope gate."""
+
+    def test_field_defaults_none(self):
+        from custom_components.adaptive_cover_pro.managers.cover_command.state_store import (  # noqa: E501
+            PositionContext,
+        )
+
+        ctx = PositionContext(
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=1,
+            time_threshold=0,
+            special_positions=[],
+        )
+        assert ctx.control_method is None
+
+    def test_field_accepts_control_method(self):
+        from custom_components.adaptive_cover_pro.managers.cover_command.state_store import (  # noqa: E501
+            PositionContext,
+        )
+
+        ctx = PositionContext(
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=1,
+            time_threshold=0,
+            special_positions=[],
+            control_method=ControlMethod.SOLAR,
+        )
+        assert ctx.control_method is ControlMethod.SOLAR
+
+    def test_coordinator_populates_from_pipeline_result(self):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        from custom_components.adaptive_cover_pro.managers.toggles import (
+            ToggleManager,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord._toggles = ToggleManager()
+        # automatic_control=True short-circuits the bypass property in
+        # _build_position_context, so no _pipeline_result is required there.
+        coord.automatic_control = True
+        coord.min_change = 1
+        coord.time_threshold = 0
+        coord._inverse_state = False
+        coord.manager = MagicMock()
+        coord.manager.is_cover_manual.return_value = False
+        coord._policy = MagicMock()
+        coord._policy.position_context_overrides.return_value = {}
+        coord._pipeline_result = SimpleNamespace(
+            control_method=ControlMethod.CUSTOM_POSITION,
+            use_my_position=False,
+            bypass_auto_control=False,
+        )
+        ctx = coord._build_position_context("cover.x", {})
+        assert ctx.control_method is ControlMethod.CUSTOM_POSITION
+
+    def test_coordinator_populates_none_without_pipeline_result(self):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        from custom_components.adaptive_cover_pro.managers.toggles import (
+            ToggleManager,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord._toggles = ToggleManager()
+        # automatic_control=True short-circuits the bypass property in
+        # _build_position_context, so no _pipeline_result is required there.
+        coord.automatic_control = True
+        coord.min_change = 1
+        coord.time_threshold = 0
+        coord._inverse_state = False
+        coord.manager = MagicMock()
+        coord.manager.is_cover_manual.return_value = False
+        coord._policy = MagicMock()
+        coord._policy.position_context_overrides.return_value = {}
+        coord._pipeline_result = None
+        ctx = coord._build_position_context("cover.x", {})
+        assert ctx.control_method is None
+
+
+@pytest.mark.unit
+class TestSummaryScope:
+    """The config summary shows the drift-reset scope only when narrowed."""
+
+    def test_summary_shows_scope_when_narrowed(self):
+        from custom_components.adaptive_cover_pro.config_flow import (
+            _build_config_summary,
+        )
+
+        config = {
+            CONF_VENETIAN_TILT_RESET_THRESHOLD: 300,
+            CONF_VENETIAN_TILT_RESET_SCOPE: VENETIAN_TILT_RESET_SCOPE_SOLAR,
+        }
+        summary = _build_config_summary(config, "cover_venetian")
+        assert "drift" in summary.lower()
+        assert "sun-tracking" in summary.lower()
+
+    def test_summary_no_scope_when_default(self):
+        from custom_components.adaptive_cover_pro.config_flow import (
+            _build_config_summary,
+        )
+
+        config = {CONF_VENETIAN_TILT_RESET_THRESHOLD: 300}  # default = all
+        summary = _build_config_summary(config, "cover_venetian")
+        assert "drift" in summary.lower()
+        assert "sun-tracking" not in summary.lower()
+
+
+@pytest.mark.unit
+class TestRuntimeConfigScopePlumbing:
+    """Config + validator wiring for the drift-reset scope option."""
+
+    def test_runtime_config_reads_scope(self):
+        rc = RuntimeConfig.from_options(
+            {CONF_VENETIAN_TILT_RESET_SCOPE: VENETIAN_TILT_RESET_SCOPE_SOLAR}
+        )
+        assert rc.venetian.tilt_reset_scope == VENETIAN_TILT_RESET_SCOPE_SOLAR
+
+    def test_runtime_config_default_scope(self):
+        rc = RuntimeConfig.from_options({})
+        assert rc.venetian.tilt_reset_scope == DEFAULT_VENETIAN_TILT_RESET_SCOPE
+        assert DEFAULT_VENETIAN_TILT_RESET_SCOPE == VENETIAN_TILT_RESET_SCOPE_ALL
+
+    def test_scope_not_in_option_ranges(self):
+        from custom_components.adaptive_cover_pro.const import OPTION_RANGES
+
+        assert CONF_VENETIAN_TILT_RESET_SCOPE not in OPTION_RANGES
+
+    def test_validator_accepts_and_rejects(self):
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        validator = FIELD_VALIDATORS[CONF_VENETIAN_TILT_RESET_SCOPE]
+        assert (
+            validator(VENETIAN_TILT_RESET_SCOPE_SOLAR)
+            == VENETIAN_TILT_RESET_SCOPE_SOLAR
+        )
+        assert validator(VENETIAN_TILT_RESET_SCOPE_ALL) == VENETIAN_TILT_RESET_SCOPE_ALL
+        with pytest.raises(Exception):
+            validator("sometimes")
+
+    def test_extras_schema_has_scope_selector(self):
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
+            _venetian_extras_schema,
+        )
+
+        schema = _venetian_extras_schema()
+        keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema}
+        assert CONF_VENETIAN_TILT_RESET_SCOPE in keys
+
+    def test_attach_forwards_live_scope_lambda(self):
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        policy = get_policy("cover_venetian")
+        box = {"value": VENETIAN_TILT_RESET_SCOPE_ALL}
+        policy.attach(
+            hass=MagicMock(),
+            logger=MagicMock(),
+            grace_mgr=MagicMock(),
+            get_current_position=lambda _eid: None,
+            set_commanded_position=lambda *_: None,
+            position_tolerance=5,
+            is_dry_run=lambda: False,
+            get_tilt_reset_scope=lambda: box["value"],
+        )
+        assert policy._get_tilt_reset_scope() == VENETIAN_TILT_RESET_SCOPE_ALL
+        box["value"] = VENETIAN_TILT_RESET_SCOPE_SOLAR
+        assert policy._get_tilt_reset_scope() == VENETIAN_TILT_RESET_SCOPE_SOLAR
