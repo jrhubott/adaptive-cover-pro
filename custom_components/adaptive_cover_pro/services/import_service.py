@@ -36,12 +36,17 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     are preserved from the current live entry so that version-migration state is
     never overwritten by an older export.
 
+    No range or type validation is performed on imported values — the file is
+    assumed to be a product of ``export_all_config`` and is trusted accordingly.
+    Invalid values will surface as errors when the entry is reloaded.
+
     Returns a per-entry result dict:
         ``{entry_id: "updated" | "skipped" | "error: <msg>"}``
 
     Raises:
-        ServiceValidationError: if the filename resolves outside ``/config/``, if
-            the file cannot be read, or if the file is not valid JSON.
+        ServiceValidationError: if the filename resolves outside the HA config
+            directory, if the file cannot be read, if the file is not valid JSON,
+            or if the file is not a valid ACP export shape.
 
     """
     hass: HomeAssistant = call.hass
