@@ -59,10 +59,10 @@ export_all_config:
   name: Export all configurations
   description: >-
     Writes the full options of every ACP cover entry to
-    ``/config/adaptive_cover_pro_export.json`` as a lossless JSON snapshot.
-    The file can then be edited with AI, a script, or regex and re-imported
-    with ``import_config``. Also returns ``{file, count}`` as a service response
-    for confirmation in Developer Tools.
+    ``adaptive_cover_pro_export.json`` in your HA config directory as a lossless
+    JSON snapshot. The file can then be edited with AI, a script, or regex and
+    re-imported with ``import_config``. Also returns ``{file, count}`` as a
+    service response for confirmation in Developer Tools.
 
 import_config:
   name: Import configurations
@@ -71,14 +71,19 @@ import_config:
     the options of each entry (matched by ``entry_id``) to the live config
     entries. Internal ``_``-prefixed migration markers are preserved from the
     current live entry. Returns a per-entry result dict.
+
+    **Note — full replace:** any public option key present in the live entry
+    but absent from the import file will be dropped and reset to its default on
+    the next reload. Export first, then edit only the keys you want to change.
   fields:
     filename:
       name: File path
       description: >-
-        Absolute path to the JSON file to import. Must be inside ``/config/``.
-        Defaults to ``/config/adaptive_cover_pro_export.json``.
+        Path to the JSON file to import. Relative paths are resolved against the
+        HA config directory. The file must stay inside the config directory.
+        Defaults to ``adaptive_cover_pro_export.json`` (in the config directory).
       required: false
-      default: /config/adaptive_cover_pro_export.json
+      default: adaptive_cover_pro_export.json
       selector:
         text:
 
