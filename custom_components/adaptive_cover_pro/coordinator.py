@@ -204,6 +204,17 @@ type AdaptiveConfigEntry = ConfigEntry[AdaptiveDataUpdateCoordinator]
 """Config entry whose ``runtime_data`` holds the coordinator instance."""
 
 
+# Skip-record label for a hold-mode dispatch, keyed by the winning control
+# method.  Motion timeout and manual override both hold the cover in place
+# (skip_command=True); the label distinguishes them in diagnostics so a manual
+# hold is not mislabeled as motion (issue #809).  Single source of truth — do
+# not fork a per-method guard block in ``_dispatch_to_cover``.
+_HOLD_SKIP_LABEL: dict[ControlMethod, str] = {
+    ControlMethod.MOTION: "motion_hold",
+    ControlMethod.MANUAL: "manual_override_hold",
+}
+
+
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
 
@@ -1610,24 +1621,38 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> tuple[str, str] | None:
         """Send a position command or record a hold-mode skip.
 
-        When the active pipeline result has skip_command=True (hold_position
-        mode during motion timeout), no command is issued. A motion_hold skip
-        record is written instead so diagnostics show why the cover didn't move.
-        All other callers (forced transitions, override clears, window events)
-        bypass this helper and call apply_position directly so they are never
-        blocked by hold mode.
+        When the active pipeline result has skip_command=True (motion-timeout
+        hold_position mode, or a manual-override hold), no command is issued. A
+        hold skip record is written instead so diagnostics show why the cover
+        didn't move; the label reflects the winning control method (motion_hold
+        vs manual_override_hold — issue #809). All other callers (forced
+        transitions, override clears, window events) bypass this helper and call
+        apply_position directly so they are never blocked by hold mode.
         """
         if self._pipeline_result is not None and self._pipeline_result.skip_command:
+            result = self._pipeline_result
+            label = _HOLD_SKIP_LABEL.get(result.control_method, "hold")
+            # Motion holds carry the physical position in ``position`` and leave
+            # held_position None; manual holds keep ``position`` as the would-be
+            # shadow and put the physical position in held_position.  Prefer
+            # held_position when present so the recorded value is the true
+            # physical position for both (byte-identical to the old behaviour
+            # for motion, which has held_position None).
+            held = (
+                result.held_position
+                if result.held_position is not None
+                else result.position
+            )
             self._cmd_svc.record_skipped_action(
                 cover,
-                "motion_hold",
+                label,
                 state,
                 trigger=reason,
                 inverse_state=self._inverse_state,
                 extras={
-                    "held_position": self._pipeline_result.position,
+                    "held_position": held,
                     "would_be_position": state,
-                    "motion_timeout_mode": "hold_position",
+                    "hold_control_method": result.control_method.value,
                 },
             )
             return None

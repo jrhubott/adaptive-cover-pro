@@ -153,9 +153,15 @@ class PipelineRegistry:
             if winner.held_position is not None
             else winner.position
         )
-        clamped_position = winner.position
-        if floor_info is not None and floor_pos > effective_winner_pos:
-            clamped_position = floor_pos
+        # A floor "raises" when it sits above where the cover will actually end
+        # up (its effective position).  Key on this — NOT on
+        # ``clamped_position != winner.position`` — so the raise still fires on
+        # the alignment edge where the floor equals the would-be ``position`` but
+        # exceeds the held one (a manual-override hold with position==floor but
+        # held below it must still be lifted; issue #809).
+        floor_raised = floor_info is not None and floor_pos > effective_winner_pos
+        clamped_position = floor_pos if floor_raised else winner.position
+        if floor_raised:
             trace.append(
                 DecisionStep(
                     handler="floor_clamp",
@@ -174,11 +180,7 @@ class PipelineRegistry:
         floor_sources = {info.source for info in active_floors}
         trace = _drop_trace_steps(trace, floor_sources)
         for info in active_floors:
-            if (
-                floor_info is not None
-                and info is floor_info
-                and floor_pos > effective_winner_pos
-            ):
+            if floor_raised and info is floor_info:
                 continue  # this floor *did* win — already emitted as floor_clamp
             trace.append(
                 DecisionStep(
@@ -249,11 +251,15 @@ class PipelineRegistry:
         # The coordinator annotates them via dataclasses.replace()
         # after evaluation so they never appear in the snapshot
         # that handlers can read.
-        if clamped_position != winner.position:
+        if floor_raised:
+            # A floor raise must reach the cover even when the winner is a hold
+            # (manual-override / motion): clear skip_command so the composed
+            # result is dispatched, not suppressed (issue #809 / #534).
             winner = dataclasses.replace(
                 winner,
                 position=clamped_position,
                 floor_clamp_applied=True,
+                skip_command=False,
             )
         # The dedicated tilt-axis overlay (issue #514) wins the tilt field over
         # the generic _MERGEABLE tilt fill — both only fire when the winner's

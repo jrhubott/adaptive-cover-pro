@@ -641,6 +641,9 @@ def test_floor_raises_manual_override_held_below_floor() -> None:
     assert winner_step.handler == "manual_override"
     assert result.position == 80
     assert result.floor_clamp_applied is True
+    # The floor raise must reach the cover: a manual-override hold sets
+    # skip_command=True, but the composed floor result clears it (#809/#534).
+    assert result.skip_command is False
     clamp_steps = [
         s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
     ]
@@ -682,9 +685,52 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
     assert winner_step.handler == "manual_override"
     # No clamp: the held physical position (85) is already above the floor (80).
     assert result.floor_clamp_applied is False
+    # The manual-override hold is inert-floor: it genuinely holds the cover, so
+    # skip_command stays set (no floor raise to clear it)  (#809).
+    assert result.skip_command is True
     assert not any(
         s.handler == "floor_clamp" and s.matched for s in result.decision_trace
     )
+
+
+def test_floor_equal_to_would_be_but_above_held_still_raises() -> None:
+    """Alignment edge: floor == would-be position but still above the held one.
+
+    Manual override holds the cover at 0 (physical) while its would-be shadow is
+    the default (100).  A min-mode floor at 100 equals the would-be position but
+    sits far above the held 0 — the floor must still fire (raise the cover to
+    100) and clear the hold, or the blind stays closed forever  (#809/#534).
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=0,
+        default_position=100,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=100,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [
+        _cp_handler(1, 100),
+        ManualOverrideHandler(),
+    ]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "manual_override"
+    assert result.position == 100
+    assert result.floor_clamp_applied is True
+    assert result.skip_command is False
 
 
 def test_floor_label_falls_back_to_entity_id_then_template() -> None:

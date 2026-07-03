@@ -63,6 +63,13 @@ class ManualOverrideHandler(OverrideHandler):
             reason=reason,
             raw_calculated_position=compute_raw_calculated_position(snapshot),
             held_position=held_position,
+            # When the cover's physical position is known, genuinely hold there:
+            # ``position`` stays the would-be shadow for diagnostics, but
+            # skip_command suppresses the dispatch so we don't drive the cover to
+            # the default it merely shadows (issue #809).  When held_position is
+            # None (no feedback) fall through without holding — parity with
+            # motion_timeout's ``current_cover_position is not None`` guard.
+            skip_command=held_position is not None,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

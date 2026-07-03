@@ -380,6 +380,65 @@ def test_handler_reason_string_outside_fov_held_none() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_handler_sets_skip_command_when_held_position_known_outside_fov() -> None:
+    """Override active, sun outside FOV, held position known → hold the cover.
+
+    The handler must emit skip_command=True so dispatch does not drive the cover
+    to the would-be default.  position stays the would-be shadow (100),
+    held_position carries the physical position (0)  (issue #809).
+    """
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=False,
+        current_cover_position=0,
+        default_position=100,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    assert result.skip_command is True
+    assert result.position == 100  # would-be shadow preserved
+    assert result.held_position == 0
+
+
+def test_handler_sets_skip_command_when_held_position_known_in_fov() -> None:
+    """Override active, sun in FOV, held position known → hold the cover.
+
+    skip_command=True; position is the solar would-be (20); held_position is the
+    physical position (50)  (issue #809).
+    """
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=True,
+        calculate_percentage_return=20.0,
+        current_cover_position=50,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    assert result.skip_command is True
+    assert result.position == 20  # solar would-be
+    assert result.held_position == 50
+
+
+def test_handler_no_skip_command_when_held_position_unknown() -> None:
+    """Override active but no physical position reported → do NOT hold.
+
+    With held_position unknown the handler cannot hold at a known position, so
+    skip_command stays False (parity with motion_timeout's guard)  (issue #809).
+    """
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=False,
+        current_cover_position=None,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    assert result.skip_command is False
+    assert result.held_position is None
+
+
 def test_sensor_trace_attrs_include_held_position_for_manual_override() -> None:
     """The decision_trace sensor attribute trace includes held_position for manual_override."""
     step_with_held = DecisionStep(
