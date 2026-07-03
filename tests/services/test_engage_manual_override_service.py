@@ -55,6 +55,15 @@ async def test_iso_end_time_parsed_and_passed_through() -> None:
 
 
 @pytest.mark.asyncio
+async def test_offset_end_time_preserved_as_correct_absolute_instant() -> None:
+    """A non-UTC offset is preserved (not re-stamped), landing at the right instant."""
+    coord = await _run({"end_time": "2026-07-04T22:00:00+02:00"})
+    _, kwargs = coord.async_engage_manual_override.call_args
+    # 22:00 +02:00 == 20:00 UTC
+    assert kwargs["end_time"] == dt.datetime(2026, 7, 4, 20, 0, tzinfo=dt.UTC)
+
+
+@pytest.mark.asyncio
 async def test_naive_iso_end_time_normalized_to_utc() -> None:
     coord = await _run({"end_time": "2026-07-02T15:00:00"})
     _, kwargs = coord.async_engage_manual_override.call_args
