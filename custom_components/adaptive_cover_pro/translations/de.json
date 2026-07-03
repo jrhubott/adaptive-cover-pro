@@ -2148,7 +2148,7 @@
           "name": "Inverser Status"
         },
         "max_position": {
-          "description": "Maximale Position, zu der sich die Beschattung bewegen kann (1–100%).",
+          "description": "Maximale Position, zu der sich die Beschattung bewegen kann (0–100%; 0 = immer geschlossen).",
           "name": "Maximale Position"
         },
         "min_position": {

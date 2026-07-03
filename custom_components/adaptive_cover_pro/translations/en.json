@@ -1822,7 +1822,7 @@
         },
         "max_position": {
           "name": "Maximum position",
-          "description": "Maximum position the cover may move to (1–100%)."
+          "description": "Maximum position the cover may move to (0–100%; 0 = always closed)."
         },
         "enable_max_position": {
           "name": "Enable max position only during tracking",

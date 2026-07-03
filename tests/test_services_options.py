@@ -214,7 +214,10 @@ class TestFieldValidators:
             (CONF_DEFAULT_HEIGHT, 100),
             (CONF_MIN_POSITION, 0),
             (CONF_MIN_POSITION, 99),
-            (CONF_MAX_POSITION, 1),
+            (
+                CONF_MAX_POSITION,
+                0,
+            ),  # issue #806: 0 = "always closed" (roof-window impulse motor)
             (CONF_MAX_POSITION, 100),
             (CONF_AZIMUTH, 0),
             (CONF_AZIMUTH, 359),

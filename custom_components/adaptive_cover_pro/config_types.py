@@ -210,7 +210,11 @@ class CoverConfig:
                 CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)
             )
             or 0,
-            max_pos=options.get(CONF_MAX_POSITION) or 100,
+            max_pos=(  # no `or` — 0 ("always closed", #806) must survive, not fall back to 100
+                options[CONF_MAX_POSITION]
+                if options.get(CONF_MAX_POSITION) is not None
+                else 100
+            ),
             min_pos=options.get(CONF_MIN_POSITION) or 0,
             max_pos_sun_only=options.get(CONF_ENABLE_MAX_POSITION, False),
             min_pos_sun_only=options.get(CONF_ENABLE_MIN_POSITION, False),

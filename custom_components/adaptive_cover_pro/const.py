@@ -217,7 +217,7 @@ MAX_VENETIAN_TILT_SAFETY_MARGIN = 1.0
 # flags (some covers report 0=open instead of 0=closed), and the two named
 # fixed points POSITION_CLOSED / POSITION_OPEN used widely in calc code.
 
-CONF_MAX_POSITION = "max_position"  # upper clamp on commanded position (1-100)
+CONF_MAX_POSITION = "max_position"  # upper clamp on commanded position (0-100)
 CONF_MIN_POSITION = "min_position"  # lower clamp on commanded position (0-99)
 # Optional separate floor that applies only during sun tracking (0-99, optional).
 # When set, overrides CONF_MIN_POSITION for sun-tracking paths only.
@@ -1269,7 +1269,7 @@ _RANGE_BLIND_SPOT_ELEVATION = (0, 90)  # CONF_BLIND_SPOT_ELEVATION, degrees
 
 # Position limits & sunset.
 _RANGE_DEFAULT_HEIGHT = (0, 100)  # CONF_DEFAULT_HEIGHT, percent
-_RANGE_MAX_POSITION = (1, 100)  # CONF_MAX_POSITION, percent
+_RANGE_MAX_POSITION = (0, 100)  # CONF_MAX_POSITION, percent (0 = always closed, #806)
 _RANGE_MIN_POSITION = (0, 99)  # CONF_MIN_POSITION, percent
 _RANGE_SUNSET_POS = (0, 100)  # CONF_SUNSET_POS, percent
 _RANGE_END_OF_WINDOW_POS = (0, 100)  # CONF_END_OF_WINDOW_POS, percent

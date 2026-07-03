@@ -411,7 +411,7 @@ POSITION_SCHEMA = vol.Schema(
         ): selector.BooleanSelector(),
         vol.Optional(CONF_MAX_POSITION, default=100): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=1,
+                min=0,
                 max=100,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,

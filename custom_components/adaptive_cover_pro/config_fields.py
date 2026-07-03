@@ -581,7 +581,14 @@ _POSITION_SPECS = _spec(
         ValidatorKind.RANGE,
         rng=const._RANGE_MAX_POSITION,
         default=100,
-        make_selector=_number(minimum=1, maximum=100, step=1, unit="%"),
+        # Selector bounds derive from the range so 0 ("always closed", #806) can't
+        # drift back out of sync with the validator.
+        make_selector=_number(
+            minimum=const._RANGE_MAX_POSITION[0],
+            maximum=const._RANGE_MAX_POSITION[1],
+            step=1,
+            unit="%",
+        ),
     ),
     FieldSpec(
         CONF_ENABLE_MIN_POSITION,

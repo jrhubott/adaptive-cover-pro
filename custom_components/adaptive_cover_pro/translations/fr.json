@@ -2148,7 +2148,7 @@
           "name": "État inverse"
         },
         "max_position": {
-          "description": "Position maximale vers laquelle la protection peut se déplacer (1–100%).",
+          "description": "Position maximale vers laquelle la protection peut se déplacer (0–100%; 0 = toujours fermé).",
           "name": "Position maximale"
         },
         "min_position": {

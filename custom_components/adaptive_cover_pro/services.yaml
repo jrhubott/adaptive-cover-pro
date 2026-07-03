@@ -194,10 +194,10 @@ set_position_limits:
         boolean:
     max_position:
       name: Maximum position
-      description: "Maximum position the cover may move to (1–100%)."
+      description: "Maximum position the cover may move to (0–100%; 0 = always closed)."
       selector:
         number:
-          min: 1
+          min: 0
           max: 100
           step: 1
           mode: slider
