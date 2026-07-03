@@ -984,6 +984,23 @@ VENETIAN_DRIFT_RETRY_DELAY_SECONDS = 2.0
 CONF_VENETIAN_POST_SETTLE_HOLD = "venetian_post_settle_hold"  # s, 0.0-10.0
 DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS = 3.0  # default post-settle hold
 
+# How the post-settle wait is performed (issue #801). ``fixed_delay`` (default,
+# back-compat) always sleeps ``post_settle_hold_seconds`` before the tilt
+# command. ``entity_state`` instead polls the cover entity's ``cover.state``
+# and proceeds the moment it is no longer opening/closing — better for
+# actuators (e.g. Shelly 2PM) with reliable motion states. Falls back to the
+# fixed-delay sleep when the entity state is unavailable, or when the
+# ``post_settle_hold_seconds`` budget elapses without the carriage going
+# stationary. Venetian-only enum.
+CONF_VENETIAN_POST_SETTLE_MODE = "venetian_post_settle_mode"  # one of below
+VENETIAN_POST_SETTLE_MODE_FIXED = "fixed_delay"  # always sleep the fixed hold (default)
+VENETIAN_POST_SETTLE_MODE_ENTITY_STATE = "entity_state"  # poll cover.state instead
+DEFAULT_VENETIAN_POST_SETTLE_MODE = VENETIAN_POST_SETTLE_MODE_FIXED  # back-compat
+VENETIAN_POST_SETTLE_MODES = (
+    VENETIAN_POST_SETTLE_MODE_FIXED,
+    VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+)
+
 # Skip the tilt command when the commanded position exceeds this threshold —
 # at high positions the slats are retracted into the housing and tilting is
 # physically meaningless. The value is configurable per-instance.

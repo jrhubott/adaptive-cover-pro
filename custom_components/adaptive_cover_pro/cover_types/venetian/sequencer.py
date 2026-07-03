@@ -37,6 +37,7 @@ from ...const import (
     ATTR_TILT_POSITION,
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+    DEFAULT_VENETIAN_POST_SETTLE_MODE,
     POSITION_CLOSED,
     POSITION_OPEN,
     VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
@@ -46,6 +47,7 @@ from ...const import (
     VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS,
     VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
     VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
+    VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
     VENETIAN_POST_TILT_REBASE_DELAY_SECONDS,
     VENETIAN_REBASE_MAX_DRIFT_PERCENT,
     VENETIAN_TILT_RESET_CLOSE,
@@ -111,6 +113,7 @@ class DualAxisSequencer:
         get_tilt_reset_threshold: Callable[[], int] | None = None,
         get_tilt_reset_direction: Callable[[], str] | None = None,
         post_settle_hold_seconds: float = DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+        post_settle_mode: str = DEFAULT_VENETIAN_POST_SETTLE_MODE,
         backrotate_publish_lag_seconds: float = (
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
         ),
@@ -123,6 +126,14 @@ class DualAxisSequencer:
         Bigger values absorb longer republish lags (slow KNX bus, Somfy IO
         via Tahoma); smaller values tighten false-touch detection on fast
         actuators.
+
+        ``post_settle_mode`` (issue #801) selects how ``run_sequence`` waits
+        between position settle and the tilt command: the default
+        ``fixed_delay`` always sleeps ``post_settle_hold_seconds``;
+        ``entity_state`` instead polls :meth:`_wait_for_stationary`, which
+        proceeds the moment ``cover.state`` is no longer opening/closing and
+        falls back to the fixed sleep on timeout or when state is
+        unavailable.
         """
         self._hass = hass
         self._logger = logger
@@ -149,6 +160,7 @@ class DualAxisSequencer:
             lambda: VENETIAN_TILT_RESET_OPEN
         )
         self._post_settle_hold_seconds = post_settle_hold_seconds
+        self._post_settle_mode = post_settle_mode
         self._backrotate_publish_lag_seconds = backrotate_publish_lag_seconds
         # Per-entity timestamps. Keep these on the sequencer (rather than on
         # CoverCommandService.PerEntityState) so non-venetian covers carry no
@@ -425,7 +437,10 @@ class DualAxisSequencer:
         settled, _last = await self._wait_for_position_settle(
             entity_id, position_target
         )
-        await asyncio.sleep(self._post_settle_hold_seconds)
+        if self._post_settle_mode == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE:
+            await self._wait_for_stationary(entity_id)
+        else:
+            await asyncio.sleep(self._post_settle_hold_seconds)
         # The window protects the position-axis settle + tilt-induced back-drive.
         # Only the position-sequence path owns this stamp; tilt-only sends from
         # update_tilt_only must not extend it (issue #33 follow-on).
@@ -867,6 +882,40 @@ class DualAxisSequencer:
             actual,
         )
         self._set_commanded_position(entity_id, actual)
+
+    async def _wait_for_stationary(self, entity_id: str) -> None:
+        """Poll ``cover.state`` until the carriage is no longer opening/closing.
+
+        Backs the ``entity_state`` post-settle mode (issue #801): returns as
+        soon as the *first* poll observes a non-transit state — no
+        consecutive-poll debounce, by explicit design decision — instead of
+        always sleeping the fixed ``post_settle_hold_seconds`` hold. Reuses
+        :data:`VENETIAN_POSITION_SETTLE_POLL_SECONDS` as the poll interval and
+        ``post_settle_hold_seconds`` as the timeout budget, the same knobs
+        ``_wait_for_position_settle`` already exposes to the user.
+
+        Falls back to sleeping the full fixed hold — not the remaining
+        budget, so the fallback is exactly the ``fixed_delay`` behaviour —
+        when ``get_state`` was never wired up, or when the budget elapses
+        with the carriage still in transit (or state unreadable).
+        """
+        if self._get_state is None:
+            await asyncio.sleep(self._post_settle_hold_seconds)
+            return
+        deadline = dt.datetime.now(dt.UTC) + dt.timedelta(
+            seconds=self._post_settle_hold_seconds
+        )
+        while dt.datetime.now(dt.UTC) < deadline:
+            if not is_state_in_transit(self._get_state(entity_id)):
+                return
+            await asyncio.sleep(VENETIAN_POSITION_SETTLE_POLL_SECONDS)
+        self._logger.debug(
+            "Venetian post-settle entity_state wait: %s still in transit after "
+            "%.1fs budget, falling back to fixed hold",
+            entity_id,
+            self._post_settle_hold_seconds,
+        )
+        await asyncio.sleep(self._post_settle_hold_seconds)
 
     async def _wait_for_position_settle(
         self, entity_id: str, target: int

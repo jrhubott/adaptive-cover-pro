@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    DEFAULT_VENETIAN_POST_SETTLE_MODE,
     VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_TILT_SUPPRESSION_SECONDS,
@@ -49,6 +50,7 @@ def _build_sequencer(
     get_min_change=None,
     get_enforce_delta_at_endpoints=None,
     post_settle_hold_seconds: float = 0,
+    post_settle_mode: str = DEFAULT_VENETIAN_POST_SETTLE_MODE,
 ):
     hass = MagicMock()
     hass.services.async_call = AsyncMock()
@@ -74,6 +76,7 @@ def _build_sequencer(
             get_min_change=get_min_change,
             get_enforce_delta_at_endpoints=get_enforce_delta_at_endpoints,
             post_settle_hold_seconds=post_settle_hold_seconds,
+            post_settle_mode=post_settle_mode,
         ),
     )
 
@@ -2320,6 +2323,131 @@ async def test_run_sequence_uses_configured_post_settle_hold() -> None:
     assert (
         2.0 not in sleep_calls
     ), f"2.0 (module default) must not appear, got {sleep_calls}"
+
+
+@pytest.mark.asyncio
+class TestPostSettleEntityStateMode:
+    """``post_settle_mode="entity_state"`` polls ``cover.state`` instead of a
+    fixed sleep (issue #801). First stationary poll wins — there is
+    intentionally no consecutive-poll debounce (explicitly rejected by the
+    maintainer): the tilt command fires the moment the carriage is observed
+    to have left ``opening``/``closing``.
+    """
+
+    async def test_entity_state_mode_sends_tilt_when_state_leaves_moving(
+        self, monkeypatch
+    ):
+        """State goes closing -> closed: tilt sends without the fixed hold."""
+        sleep_calls: list[float] = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer.asyncio.sleep",
+            _capture_sleep,
+        )
+        state_seq = iter(["closing", "closed"])
+        set_cmd_pos = MagicMock()
+        hass, seq = _build_sequencer(
+            set_commanded_position=set_cmd_pos,
+            get_state=lambda _eid: next(state_seq, "closed"),
+            post_settle_hold_seconds=5.0,
+            post_settle_mode="entity_state",
+        )
+        seq._get_current_position = lambda _eid: 60
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 60))
+
+        await seq.run_sequence(
+            "cover.x", position_target=60, tilt_target=80, reason="solar"
+        )
+
+        assert hass.services.async_call.await_count == 1, "tilt command was never sent"
+        assert 5.0 not in sleep_calls, (
+            "the fixed post_settle_hold_seconds sleep must not be used in "
+            f"entity_state mode when the carriage stops promptly, got {sleep_calls}"
+        )
+
+    async def test_entity_state_mode_falls_back_to_fixed_hold_on_timeout(
+        self, monkeypatch
+    ):
+        """State never leaves ``closing``: budget elapses, fixed hold is the fallback."""
+        sleep_calls: list[float] = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer.asyncio.sleep",
+            _capture_sleep,
+        )
+        state_calls = [0]
+
+        def _always_closing(_eid):
+            state_calls[0] += 1
+            return "closing"
+
+        set_cmd_pos = MagicMock()
+        hass, seq = _build_sequencer(
+            set_commanded_position=set_cmd_pos,
+            get_state=_always_closing,
+            post_settle_hold_seconds=0.05,
+            post_settle_mode="entity_state",
+        )
+        seq._get_current_position = lambda _eid: 60
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 60))
+
+        await seq.run_sequence(
+            "cover.x", position_target=60, tilt_target=80, reason="solar"
+        )
+
+        assert state_calls[0] > 1, "expected multiple polls before the timeout"
+        assert (
+            hass.services.async_call.await_count == 1
+        ), "tilt command must still be sent after the fallback"
+        # 0.05 (the fixed hold) must appear exactly once, distinct from the
+        # repeated 0.5 s poll-interval sleeps consumed while waiting out the
+        # budget — proves the timeout fallback actually fired.
+        assert sleep_calls.count(0.05) == 1, (
+            "expected the fixed post_settle_hold_seconds sleep as the fallback, "
+            f"got {sleep_calls}"
+        )
+
+    async def test_entity_state_mode_falls_back_when_get_state_missing(
+        self, monkeypatch
+    ):
+        """No ``get_state`` callback → straight fallback to the fixed hold."""
+        sleep_calls: list[float] = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer.asyncio.sleep",
+            _capture_sleep,
+        )
+        set_cmd_pos = MagicMock()
+        hass, seq = _build_sequencer(
+            set_commanded_position=set_cmd_pos,
+            get_state=None,
+            post_settle_hold_seconds=0.5,
+            post_settle_mode="entity_state",
+        )
+        seq._get_current_position = lambda _eid: 60
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 60))
+
+        await seq.run_sequence(
+            "cover.x", position_target=60, tilt_target=80, reason="solar"
+        )
+
+        assert (
+            hass.services.async_call.await_count == 1
+        ), "tilt command must still be sent after the fallback"
+        # No get_state means no polling loop at all — the fixed hold must be
+        # the very first sleep, with no poll-interval sleeps ahead of it.
+        assert (
+            sleep_calls[0] == 0.5
+        ), f"expected the fixed-hold fallback as the first sleep, got {sleep_calls}"
 
 
 class TestClearTiltTargets:

@@ -34,6 +34,7 @@ from ...const import (
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_VENETIAN_POST_SETTLE_MODE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
@@ -47,6 +48,7 @@ from ...const import (
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+    DEFAULT_VENETIAN_POST_SETTLE_MODE,
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
     DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
@@ -66,6 +68,7 @@ from ...const import (
     VENETIAN_MODE_POSITION_AND_TILT,
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
+    VENETIAN_POST_SETTLE_MODES,
     VENETIAN_TILT_RESET_DIRECTIONS,
     VENETIAN_TILT_SKIP_MODES,
     VENETIAN_TILT_SKIP_SUPPRESS,
@@ -113,6 +116,7 @@ _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_TILT_SKIP_MODE,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_VENETIAN_POST_SETTLE_MODE,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_INVERSE_TILT,
     CONF_MAX_TILT,
@@ -168,6 +172,9 @@ def _venetian_extras_schema() -> dict:
             CONF_VENETIAN_POST_SETTLE_HOLD,
             default=DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+        vol.Optional(
+            CONF_VENETIAN_POST_SETTLE_MODE, default=DEFAULT_VENETIAN_POST_SETTLE_MODE
+        ): vol.In(VENETIAN_POST_SETTLE_MODES),
         vol.Optional(
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             default=DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
@@ -657,6 +664,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             get_tilt_reset_direction=kwargs.get("get_tilt_reset_direction"),
             post_settle_hold_seconds=kwargs.get(
                 "post_settle_hold_seconds", DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
+            ),
+            post_settle_mode=kwargs.get(
+                "post_settle_mode", DEFAULT_VENETIAN_POST_SETTLE_MODE
             ),
             backrotate_publish_lag_seconds=kwargs.get(
                 "backrotate_publish_lag_seconds",

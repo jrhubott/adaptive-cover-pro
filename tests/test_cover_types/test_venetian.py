@@ -554,6 +554,57 @@ def test_geometry_schema_skip_mode_default_and_validation() -> None:
         GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_TILT_SKIP_MODE: "bogus"})
 
 
+# ---------------------------------------------------------------------------
+# venetian_post_settle_mode: fixed_delay vs entity_state (issue #801)
+# ---------------------------------------------------------------------------
+
+
+def test_post_settle_mode_constants_exist() -> None:
+    """CONF/DEFAULT/value/tuple constants for the post-settle mode must be exported."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_POST_SETTLE_MODE,
+        DEFAULT_VENETIAN_POST_SETTLE_MODE,
+        VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+        VENETIAN_POST_SETTLE_MODE_FIXED,
+        VENETIAN_POST_SETTLE_MODES,
+    )
+
+    assert CONF_VENETIAN_POST_SETTLE_MODE == "venetian_post_settle_mode"
+    assert VENETIAN_POST_SETTLE_MODE_FIXED == "fixed_delay"
+    assert VENETIAN_POST_SETTLE_MODE_ENTITY_STATE == "entity_state"
+    # Default MUST stay fixed_delay — preserves back-compat behaviour.
+    assert DEFAULT_VENETIAN_POST_SETTLE_MODE == VENETIAN_POST_SETTLE_MODE_FIXED
+    assert VENETIAN_POST_SETTLE_MODES == (
+        VENETIAN_POST_SETTLE_MODE_FIXED,
+        VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+    )
+
+
+def test_geometry_schema_post_settle_mode_default_and_validation() -> None:
+    """GEOMETRY_VENETIAN_SCHEMA defaults post_settle_mode to fixed_delay and rejects bad values."""
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_POST_SETTLE_MODE,
+        DEFAULT_VENETIAN_POST_SETTLE_MODE,
+        VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+    )
+    from custom_components.adaptive_cover_pro.cover_types.venetian import (
+        GEOMETRY_VENETIAN_SCHEMA,
+    )
+
+    assert (
+        GEOMETRY_VENETIAN_SCHEMA({})[CONF_VENETIAN_POST_SETTLE_MODE]
+        == DEFAULT_VENETIAN_POST_SETTLE_MODE
+    )
+    out = GEOMETRY_VENETIAN_SCHEMA(
+        {CONF_VENETIAN_POST_SETTLE_MODE: VENETIAN_POST_SETTLE_MODE_ENTITY_STATE}
+    )
+    assert out[CONF_VENETIAN_POST_SETTLE_MODE] == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE
+    with pytest.raises(vol.Invalid):
+        GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_POST_SETTLE_MODE: "bogus"})
+
+
 def test_default_skip_mode_is_neutral() -> None:
     """A freshly constructed policy defaults to neutral skip behaviour."""
     from custom_components.adaptive_cover_pro.const import VENETIAN_TILT_SKIP_NEUTRAL
@@ -825,6 +876,35 @@ def test_attach_forwards_post_settle_hold_to_sequencer() -> None:
         )
         _, kwargs = MockSeq.call_args
         assert kwargs.get("post_settle_hold_seconds") == 7.0
+
+
+def test_attach_forwards_post_settle_mode_to_sequencer() -> None:
+    """attach() with post_settle_mode="entity_state" wires that value into DualAxisSequencer."""
+    from unittest.mock import MagicMock, patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+    )
+
+    policy = VenetianPolicy()
+    hass = MagicMock()
+
+    with patch(
+        "custom_components.adaptive_cover_pro.cover_types.venetian.policy.DualAxisSequencer"
+    ) as MockSeq:
+        MockSeq.return_value = MagicMock()
+        policy.attach(
+            hass=hass,
+            logger=MagicMock(),
+            grace_mgr=MagicMock(),
+            get_current_position=lambda _: None,
+            set_commanded_position=lambda *_: None,
+            position_tolerance=5,
+            is_dry_run=lambda: False,
+            post_settle_mode=VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+        )
+        _, kwargs = MockSeq.call_args
+        assert kwargs.get("post_settle_mode") == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE
 
 
 def test_attach_threads_invert_tilt_callable_into_sequencer() -> None:

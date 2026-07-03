@@ -387,3 +387,52 @@ async def test_coordinator_wires_post_settle_hold_into_sequencer(
     seq = coordinator._policy.sequencer
     assert seq is not None
     assert seq._post_settle_hold_seconds == 7.5
+
+
+@pytest.mark.integration
+async def test_coordinator_wires_post_settle_mode_into_sequencer(
+    hass: HomeAssistant,
+) -> None:
+    """Coordinator passes venetian_post_settle_mode from options into the sequencer.
+
+    Regression guard (issue #801): if the coordinator forgets to forward the
+    mode, the sequencer silently stays on ``fixed_delay`` regardless of the
+    user's configured value, making the entity_state option a no-op.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_POST_SETTLE_MODE,
+        VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+    )
+
+    opts = dict(VERTICAL_OPTIONS)
+    opts[CONF_VENETIAN_POST_SETTLE_MODE] = VENETIAN_POST_SETTLE_MODE_ENTITY_STATE
+
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {
+            "current_position": 100,
+            "current_tilt_position": 50,
+            "supported_features": 143,
+        },
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "name": "Venetian Post-Settle Mode Test",
+            CONF_SENSOR_TYPE: CoverType.VENETIAN,
+        },
+        options=opts,
+        entry_id="venetian_post_settle_mode_01",
+        title="Venetian Post-Settle Mode Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data
+    seq = coordinator._policy.sequencer
+    assert seq is not None
+    assert seq._post_settle_mode == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE

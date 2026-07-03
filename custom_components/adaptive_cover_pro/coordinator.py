@@ -470,6 +470,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             venetian_tilt_skip_mode=_rc_attach.venetian.tilt_skip_mode,
             venetian_mode=_rc_attach.venetian.venetian_mode,
             post_settle_hold_seconds=_rc_attach.venetian.post_settle_hold_seconds,
+            post_settle_mode=_rc_attach.venetian.post_settle_mode,
             backrotate_publish_lag_seconds=(
                 _rc_attach.venetian.backrotate_publish_lag_seconds
             ),

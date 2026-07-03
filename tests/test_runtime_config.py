@@ -278,6 +278,14 @@ def test_runtime_config_venetian_slice_defaults() -> None:
 
     assert rc.venetian.tilt_skip_mode == DEFAULT_VENETIAN_TILT_SKIP_MODE
     assert rc.venetian.tilt_skip_mode == VENETIAN_TILT_SKIP_NEUTRAL
+    # post_settle_mode defaults to fixed_delay (issue #801 back-compat).
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_VENETIAN_POST_SETTLE_MODE,
+        VENETIAN_POST_SETTLE_MODE_FIXED,
+    )
+
+    assert rc.venetian.post_settle_mode == DEFAULT_VENETIAN_POST_SETTLE_MODE
+    assert rc.venetian.post_settle_mode == VENETIAN_POST_SETTLE_MODE_FIXED
 
 
 @pytest.mark.unit
@@ -291,7 +299,9 @@ def test_runtime_config_venetian_slice_reads_options() -> None:
     )
 
     from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_POST_SETTLE_MODE,
         CONF_VENETIAN_TILT_SKIP_MODE,
+        VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
         VENETIAN_TILT_SKIP_SUPPRESS,
     )
 
@@ -300,12 +310,14 @@ def test_runtime_config_venetian_slice_reads_options() -> None:
         CONF_VENETIAN_TILT_SKIP_ABOVE: 80,
         CONF_VENETIAN_TILT_SKIP_MODE: VENETIAN_TILT_SKIP_SUPPRESS,
         CONF_VENETIAN_MODE: VENETIAN_MODE_TILT_ONLY,
+        CONF_VENETIAN_POST_SETTLE_MODE: VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
     }
     rc = RuntimeConfig.from_options(options)
     assert rc.venetian.post_settle_hold_seconds == 5.5
     assert rc.venetian.tilt_skip_above == 80
     assert rc.venetian.tilt_skip_mode == VENETIAN_TILT_SKIP_SUPPRESS
     assert rc.venetian.venetian_mode == VENETIAN_MODE_TILT_ONLY
+    assert rc.venetian.post_settle_mode == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE
 
 
 @pytest.mark.unit

@@ -365,6 +365,11 @@ class VenetianSlice:
     """Venetian-specific runtime options."""
 
     post_settle_hold_seconds: float
+    # How the post-settle wait is performed (issue #801): ``fixed_delay``
+    # (default) always sleeps ``post_settle_hold_seconds``; ``entity_state``
+    # polls ``cover.state`` and proceeds as soon as the carriage is no longer
+    # opening/closing, falling back to the fixed sleep on timeout.
+    post_settle_mode: str
     tilt_skip_above: int
     # Above-threshold tilt behaviour (issue #748): ``neutral`` (default) sends a
     # benign POSITION_OPEN tilt to overwrite the actuator cache; ``suppress``
@@ -555,6 +560,7 @@ class RuntimeConfig:
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             CONF_VENETIAN_MODE,
             CONF_VENETIAN_POST_SETTLE_HOLD,
+            CONF_VENETIAN_POST_SETTLE_MODE,
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
@@ -584,6 +590,7 @@ class RuntimeConfig:
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+            DEFAULT_VENETIAN_POST_SETTLE_MODE,
             DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
             DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
             DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
@@ -703,6 +710,10 @@ class RuntimeConfig:
                 post_settle_hold_seconds=options.get(
                     CONF_VENETIAN_POST_SETTLE_HOLD,
                     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+                ),
+                post_settle_mode=options.get(
+                    CONF_VENETIAN_POST_SETTLE_MODE,
+                    DEFAULT_VENETIAN_POST_SETTLE_MODE,
                 ),
                 tilt_skip_above=options.get(
                     CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE

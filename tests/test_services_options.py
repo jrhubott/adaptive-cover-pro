@@ -410,6 +410,23 @@ class TestFieldValidators:
         with pytest.raises(vol.Invalid):
             v("bogus")
 
+    def test_field_validators_venetian_post_settle_mode(self):
+        """venetian_post_settle_mode accepts fixed_delay/entity_state; rejects bogus (issue #801)."""
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_VENETIAN_POST_SETTLE_MODE,
+            VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
+            VENETIAN_POST_SETTLE_MODE_FIXED,
+        )
+
+        v = FIELD_VALIDATORS[CONF_VENETIAN_POST_SETTLE_MODE]
+        v(VENETIAN_POST_SETTLE_MODE_FIXED)
+        v(VENETIAN_POST_SETTLE_MODE_ENTITY_STATE)
+        v(None)  # optional clear
+        with pytest.raises(vol.Invalid):
+            v("bogus")
+
 
 class TestCrossFieldValidate:
     """Unit tests for _cross_field_validate."""
