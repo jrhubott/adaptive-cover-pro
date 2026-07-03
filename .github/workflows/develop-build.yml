@@ -41,6 +41,8 @@ jobs:
 
       - name: Compute version
         id: compute
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -51,16 +53,21 @@ jobs:
           # an AwesomeVersion modifier (sorts alphabetically high), and bumping the
           # patch makes the base outrank everything before the modifier is checked.
           BASE=$(jq -r '.version' custom_components/adaptive_cover_pro/manifest.json)
+          CORE=${BASE%%-*}   # strip any -beta.N suffix
           TS=$(date -u +%Y%m%d%H%M)
-          if [[ "$BASE" == *-* ]]; then
-            # Mid-cycle (manifest carries -beta.N): dev of the in-progress release.
-            CORE=${BASE%%-*}
-            VERSION="${CORE}.dev${TS}"
-          else
-            # Clean stable: dev of the NEXT patch, so the build doesn't sort below
-            # the just-shipped stable.
-            IFS=. read -r MAJ MIN PAT <<< "$BASE"
+
+          # Decide the dev base by asking the real question the suffix used to
+          # proxy: has CORE already SHIPPED as a stable (non-prerelease) release?
+          #   - shipped   → dev of the NEXT patch, so it outsorts that stable.
+          #   - unshipped → dev of CORE itself (mid-cycle beta OR bare target).
+          # This is robust to a bare, not-yet-shipped target version on develop
+          # (e.g. the CalVer month rollover sets `YYYY.M.0` with no -beta suffix),
+          # which the old string test mislabeled as `YYYY.M.1.dev`.
+          if gh release view "v${CORE}" --json isPrerelease --jq '.isPrerelease==false' 2>/dev/null | grep -q true; then
+            IFS=. read -r MAJ MIN PAT <<< "$CORE"
             VERSION="${MAJ}.${MIN}.$((PAT + 1)).dev${TS}"
+          else
+            VERSION="${CORE}.dev${TS}"
           fi
           TAG="v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
