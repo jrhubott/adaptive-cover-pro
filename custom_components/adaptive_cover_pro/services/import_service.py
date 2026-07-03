@@ -14,7 +14,7 @@ from homeassistant.exceptions import ServiceValidationError
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN
+from ..const import DOMAIN, OPTION_RANGES
 from .export_service import DEFAULT_EXPORT_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,9 +36,11 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     are preserved from the current live entry so that version-migration state is
     never overwritten by an older export.
 
-    No range or type validation is performed on imported values — the file is
-    assumed to be a product of ``export_all_config`` and is trusted accordingly.
-    Invalid values will surface as errors when the entry is reloaded.
+    Numeric keys present in ``OPTION_RANGES`` are validated against their
+    declared bounds before the entry is updated; a failed check records
+    ``"error: ..."`` for that entry in the result dict without aborting the
+    rest of the import. Keys absent from ``OPTION_RANGES`` (booleans, strings,
+    enums, and unknown future keys) are accepted as-is.
 
     Returns a per-entry result dict:
         ``{entry_id: "updated" | "skipped" | "error: <msg>"}``
@@ -116,6 +118,27 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
             imported_public = {
                 k: v for k, v in file_opts.items() if not k.startswith("_")
             }
+
+            # Validate numeric keys against their declared OPTION_RANGES bounds.
+            validation_errors: list[str] = []
+            for key, value in imported_public.items():
+                if key not in OPTION_RANGES or value is None:
+                    continue
+                lo, hi = OPTION_RANGES[key]
+                try:
+                    num = float(value)
+                    if not (lo <= num <= hi):
+                        validation_errors.append(
+                            f"{key}={value} out of range [{lo}, {hi}]"
+                        )
+                except (TypeError, ValueError):
+                    validation_errors.append(f"{key}={value!r} is not a valid number")
+            if validation_errors:
+                raise ServiceValidationError(
+                    f"import_config: invalid values for entry '{entry_id}': "
+                    + "; ".join(validation_errors)
+                )
+
             new_options = {**current_internal, **imported_public}
 
             hass.config_entries.async_update_entry(entry, options=new_options)

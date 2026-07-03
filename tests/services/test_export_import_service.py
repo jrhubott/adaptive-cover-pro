@@ -338,6 +338,34 @@ class TestImportConfig:
                 await async_handle_import_config(call)
 
     @pytest.mark.asyncio
+    async def test_out_of_range_value_recorded_as_error(self, tmp_path):
+        """A numeric value outside OPTION_RANGES bounds records an error for that entry."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {"azimuth": 90})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        # azimuth valid range is [0, 359]; 999 is out of range
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"azimuth": 999}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"].startswith("error:")
+        assert "azimuth" in result["id-1"]
+        # entry options must not have been modified
+        assert entry.options["azimuth"] == 90
+
+    @pytest.mark.asyncio
     async def test_mixed_results(self, tmp_path):
         """One valid entry and one unknown entry produce mixed results dict."""
         from custom_components.adaptive_cover_pro.services.import_service import (
