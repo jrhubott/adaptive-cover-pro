@@ -104,6 +104,12 @@ CONF_SYNC_SELECT_ALL = "select_all_targets"
 CONF_MEMBER_ENTRIES = "member_entries"  # ACP member config-entry ids
 CONF_MEMBER_COVERS = "member_covers"  # generic cover entity_ids
 
+# Optional area-based membership source (issue #790, Phase 4). LIVE, not a
+# one-shot seed: the effective rosters are the static lists ∪ the area's
+# resolved members (ACP entries with a controlled cover in the area; free
+# ``cover.*`` entities in the area), re-resolved on registry changes.
+CONF_GROUP_AREA = "group_area"
+
 # Per-member scene opt-out, stored on the GROUP entry keyed by member
 # entry_id so a member removal prunes cleanly: {member_id: [scene, ...]}.
 # The sentinel OPT_OUT_ALL_SCENES ("*") opts a member out of every scene.

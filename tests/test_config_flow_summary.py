@@ -3275,3 +3275,20 @@ def test_summary_group_shows_cover_entity_line_when_enabled():
         {**base, CONF_GROUP_ENABLE_COVER_ENTITY: True}, CoverType.GROUP
     )
     assert "Aggregate cover entity" in with_cover
+
+
+def test_summary_group_shows_area_line_when_configured():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_AREA,
+        CONF_MEMBER_COVERS,
+        CONF_MEMBER_ENTRIES,
+    )
+
+    base = {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []}
+    without = _build_config_summary(base, CoverType.GROUP)
+    assert "area" not in without.lower()
+
+    with_area = _build_config_summary(
+        {**base, CONF_GROUP_AREA: "living_room"}, CoverType.GROUP
+    )
+    assert "living_room" in with_area

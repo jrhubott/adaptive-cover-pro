@@ -257,6 +257,7 @@
     "scene_priority": "Beschattungsgruppen-Szenen gelten mit Priorität {scene_priority} (über manuelle Übersteuerung, unter Wetterschutz)",
     "lock": "🔒 Gruppensperre mit Priorität {lock_priority} — friert Mitglieder an Ort und Stelle ein; die eigene Sicherheit eines Mitglieds gewinnt immer noch Gleichstände",
     "stagger": "Mitglieder mit {stagger}s Abstand befohlen",
-    "cover_entity": "Aggregierte Beschattungs-Entität verfügbar — das Ziehen befiehlt jedem Mitglied"
+    "cover_entity": "Aggregierte Beschattungs-Entität verfügbar — das Ziehen befiehlt jedem Mitglied",
+    "area": "Mitgliedschaft verfolgt Bereich „{area}\" – Beschattungen dort treten automatisch bei"
   }
 }

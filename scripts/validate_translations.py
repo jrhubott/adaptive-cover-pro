@@ -57,6 +57,7 @@ UNIVERSAL_KEYS: set[str] = {
     "services.set_custom_position.fields.slot.name",  # "Slot" — HA service parameter, language-universal
     "services.set_custom_position.fields.position.name",  # "Position" — HA service parameter, language-universal
     "services.set_position.fields.position.name",  # "Position" — HA service parameter, language-universal
+    "services.group_set_position.fields.position.name",  # "Position" — same in DE/FR
     "entity.select.group_scene_select.state.auto",  # "Auto" — same in DE/FR
 }
 

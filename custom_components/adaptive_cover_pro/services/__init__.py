@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 from ..const import DOMAIN
 from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
+from .group_service import GROUP_SERVICE_NAMES, register_group_services
 from .engage_manual_override_service import (
     ENGAGE_MANUAL_OVERRIDE_SCHEMA,
     async_handle_engage_manual_override,
@@ -59,6 +60,27 @@ def loaded_coordinators(
     }
 
 
+def cover_coordinators(
+    hass: HomeAssistant,
+) -> dict[str, AdaptiveDataUpdateCoordinator]:
+    """``loaded_coordinators`` restricted to real cover coordinators.
+
+    Cover groups also live on ``runtime_data`` but expose none of the cover
+    coordinator's surface — a cover service that walked them would crash
+    (issue #790 Phase 4). The discriminator is the coordinator type itself
+    (not a re-fetched entry) so callers with partially-mocked ``hass`` still
+    resolve. Cover services resolve through this; group services use
+    ``group_service.group_coordinators``.
+    """
+    from ..group_coordinator import GroupCoordinator  # noqa: PLC0415
+
+    return {
+        entry_id: coordinator
+        for entry_id, coordinator in loaded_coordinators(hass).items()
+        if not isinstance(coordinator, GroupCoordinator)
+    }
+
+
 def _resolve_targets(
     hass: HomeAssistant,
     call: ServiceCall,
@@ -76,8 +98,9 @@ def _resolve_targets(
     - area_id targets        → expand device_ids via device registry, then device_id rule
 
     Unmanaged entity_ids (not owned by any ACP coordinator) are silently skipped.
+    Cover groups are excluded — group services have their own resolver.
     """
-    all_coordinators = loaded_coordinators(hass)
+    all_coordinators = cover_coordinators(hass)
 
     entity_ids: list[str] = cv.ensure_list(call.data.get("entity_id"))
     device_ids: list[str] = cv.ensure_list(call.data.get("device_id"))
@@ -244,6 +267,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         schema=ENGAGE_MANUAL_OVERRIDE_SCHEMA,
     )
 
+    register_group_services(hass)
     register_options_services(hass)
 
 
@@ -266,5 +290,7 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, "set_tilt")
     hass.services.async_remove(DOMAIN, "stop")
     hass.services.async_remove(DOMAIN, "engage_manual_override")
+    for name in GROUP_SERVICE_NAMES:
+        hass.services.async_remove(DOMAIN, name)
     for name in OPTIONS_SERVICE_NAMES:
         hass.services.async_remove(DOMAIN, name)

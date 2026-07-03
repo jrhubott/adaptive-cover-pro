@@ -58,6 +58,7 @@ from .const import (
     CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_ENTITIES,
+    CONF_GROUP_AREA,
     CONF_GROUP_ENABLE_CLIMATE_SENSOR,
     CONF_GROUP_ENABLE_COVER_ENTITY,
     CONF_GROUP_ENABLE_POSITION_SENSOR,
@@ -398,6 +399,10 @@ def _group_membership_schema_dict(hass, *, exclude_entry_id: str | None = None) 
         vol.Optional(CONF_MEMBER_COVERS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="cover", multiple=True)
         ),
+        # LIVE area membership source (issue #790, Phase 4): the effective
+        # rosters are the lists above ∪ the area's covers, tracking registry
+        # changes — not a one-shot copy.
+        vol.Optional(CONF_GROUP_AREA): selector.AreaSelector(),
     }
 
 
@@ -1600,6 +1605,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "group.cover_entity": (
         "Aggregate cover entity exposed — dragging it commands every member"
     ),
+    "group.area": ("Membership tracks area '{area}' — covers there join automatically"),
     "warnings.group_empty": (
         "⚠️ This group has no members — it will not command anything."
     ),
@@ -1706,6 +1712,9 @@ def _build_group_summary(
         lines.append(L["group.stagger"].format(stagger=stagger))
     if config.get(CONF_GROUP_ENABLE_COVER_ENTITY, DEFAULT_GROUP_ENABLE_COVER_ENTITY):
         lines.append(L["group.cover_entity"])
+    area_id = config.get(CONF_GROUP_AREA)
+    if area_id:
+        lines.append(L["group.area"].format(area=area_id))
     return "\n".join(lines)
 
 
@@ -3408,6 +3417,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 "name": user_input["name"],
                 **_sanitize_group_membership(self.hass, user_input),
             }
+            if user_input.get(CONF_GROUP_AREA):
+                self.config[CONF_GROUP_AREA] = user_input[CONF_GROUP_AREA]
             self.type_blind = CoverType.GROUP
             return await self.async_step_update()
         return self.async_show_form(
@@ -4596,6 +4607,10 @@ class OptionsFlowHandler(OptionsFlow):
                 own_entry_id=self._config_entry.entry_id,
             )
             self.options.update(sanitized)
+            if user_input.get(CONF_GROUP_AREA):
+                self.options[CONF_GROUP_AREA] = user_input[CONF_GROUP_AREA]
+            else:
+                self.options.pop(CONF_GROUP_AREA, None)
             # A removed member's opt-out entry is stale — prune it in the
             # same save so the arbitration step never lists ghosts.
             opt_out = self.options.get(CONF_GROUP_MEMBER_OPT_OUT)

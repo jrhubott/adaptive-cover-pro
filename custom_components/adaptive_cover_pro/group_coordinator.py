@@ -33,13 +33,17 @@ from homeassistant.components.cover import (
     SERVICE_SET_COVER_TILT_POSITION,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, SERVICE_STOP_COVER
+from homeassistant.const import ATTR_ENTITY_ID, SERVICE_STOP_COVER, Platform
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_ENTITIES,
+    CONF_GROUP_AREA,
     CONF_GROUP_MEMBER_OPT_OUT,
     CONF_GROUP_STAGGER_DELAY,
     CONF_MEMBER_COVERS,
@@ -100,6 +104,8 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         self.active_scene: GroupScene | None = None
         self.group_locked: bool = False
         self._unsub_state: CALLBACK_TYPE | None = None
+        self._unsub_registry: list[CALLBACK_TYPE] = []
+        self._roster_snapshot: tuple[tuple[str, ...], tuple[str, ...]] | None = None
         self._adopt_policy = get_policy(_ADOPT_COVER_TYPE)
         self._grace_mgr = GracePeriodManager(_LOGGER)
         self._cmd_svc = CoverCommandService(
@@ -111,6 +117,85 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
 
     # ---- Roster resolution ------------------------------------------------ #
 
+    def _entity_area_id(self, entity_id: str) -> str | None:
+        """Return the entity's area — its own, or inherited from its device."""
+        reg_entry = er.async_get(self.hass).async_get(entity_id)
+        if reg_entry is None:
+            return None
+        if reg_entry.area_id:
+            return reg_entry.area_id
+        if reg_entry.device_id:
+            device = dr.async_get(self.hass).async_get(reg_entry.device_id)
+            if device is not None:
+                return device.area_id
+        return None
+
+    def _cover_entities_in_area(self, area_id: str) -> list[str]:
+        """Every ``cover.`` entity in the area (own or device-inherited)."""
+        ent_reg = er.async_get(self.hass)
+        return [
+            reg_entry.entity_id
+            for reg_entry in ent_reg.entities.values()
+            if reg_entry.domain == Platform.COVER
+            and self._entity_area_id(reg_entry.entity_id) == area_id
+        ]
+
+    def member_entry_ids(self) -> list[str]:
+        """Effective ACP member entry ids: static roster ∪ area members.
+
+        An ACP entry belongs to the area when any of its controlled covers is
+        in it (its own registry area or its device's). Order: static first,
+        area additions after, deduped, self-excluded. With no area set this
+        is exactly the stored roster — static groups are unchanged.
+        """
+        ids = list(
+            dict.fromkeys(
+                entry_id
+                for entry_id in self.entry.options.get(CONF_MEMBER_ENTRIES, [])
+                if entry_id != self.entry.entry_id
+            )
+        )
+        area_id = self.entry.options.get(CONF_GROUP_AREA)
+        if area_id:
+            from .profile_link import _cover_entries  # noqa: PLC0415
+
+            for entry in _cover_entries(self.hass):
+                if entry.entry_id in ids:
+                    continue
+                if any(
+                    self._entity_area_id(entity_id) == area_id
+                    for entity_id in entry.options.get(CONF_ENTITIES, [])
+                ):
+                    ids.append(entry.entry_id)
+        return ids
+
+    def generic_cover_ids(self) -> list[str]:
+        """Effective generic cover ids: static roster ∪ free area covers.
+
+        A cover controlled by ANY ACP entry is excluded (orchestration wins
+        over adoption), as are ACP's own entities (the proxy covers). Order:
+        static first, area additions after, deduped.
+        """
+        ids = list(dict.fromkeys(self.entry.options.get(CONF_MEMBER_COVERS, [])))
+        area_id = self.entry.options.get(CONF_GROUP_AREA)
+        if area_id:
+            from .profile_link import _cover_entries  # noqa: PLC0415
+
+            owned = {
+                entity_id
+                for entry in _cover_entries(self.hass)
+                for entity_id in entry.options.get(CONF_ENTITIES, [])
+            }
+            ent_reg = er.async_get(self.hass)
+            for entity_id in self._cover_entities_in_area(area_id):
+                if entity_id in ids or entity_id in owned:
+                    continue
+                reg_entry = ent_reg.async_get(entity_id)
+                if reg_entry is not None and reg_entry.platform == DOMAIN:
+                    continue
+                ids.append(entity_id)
+        return ids
+
     def resolved_members(self) -> list[tuple[ConfigEntry, object]]:
         """ACP members whose entry exists and whose coordinator is loaded.
 
@@ -120,7 +205,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         absence is non-membership for this cycle.
         """
         members: list[tuple[ConfigEntry, object]] = []
-        for entry_id in self.entry.options.get(CONF_MEMBER_ENTRIES, []):
+        for entry_id in self.member_entry_ids():
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None:
                 continue
@@ -138,12 +223,12 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
     def member_cover_entities(self) -> list[str]:
         """All member cover entity_ids: ACP members' covers, then generic."""
         entities: list[str] = []
-        for entry_id in self.entry.options.get(CONF_MEMBER_ENTRIES, []):
+        for entry_id in self.member_entry_ids():
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None:
                 continue
             entities.extend(entry.options.get(CONF_ENTITIES, []))
-        entities.extend(self.entry.options.get(CONF_MEMBER_COVERS, []))
+        entities.extend(self.generic_cover_ids())
         return entities
 
     # ---- Fan-out operations ------------------------------------------------ #
@@ -188,7 +273,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             await self._stagger_gap(commands)
             commands += 1
             await member_action(entry, coordinator)
-        for entity_id in self.entry.options.get(CONF_MEMBER_COVERS, []):
+        for entity_id in self.generic_cover_ids():
             await self._stagger_gap(commands)
             commands += 1
             await generic_action(entity_id)
@@ -339,8 +424,8 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
 
         from .cover_types.base import AXIS_NAME_TILT
 
-        member_ids = self.entry.options.get(CONF_MEMBER_ENTRIES, [])
-        generic = self.entry.options.get(CONF_MEMBER_COVERS, [])
+        member_ids = self.member_entry_ids()
+        generic = self.generic_cover_ids()
         if not member_ids and not generic:
             return False
         for entry_id in member_ids:
@@ -412,12 +497,50 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
     # ---- Aggregates --------------------------------------------------------- #
 
     async def _async_setup(self) -> None:
-        """Subscribe to member cover state changes to keep aggregates live."""
+        """Subscribe to member-state and (with an area) registry changes.
+
+        The registry subscriptions keep area membership live: covers moved
+        into or out of the area re-resolve the rosters.
+        """
         entities = self.member_cover_entities()
         if entities:
             self._unsub_state = async_track_state_change_event(
                 self.hass, entities, self._handle_member_state_change
             )
+        if self.entry.options.get(CONF_GROUP_AREA):
+            self._roster_snapshot = self._current_roster_snapshot()
+            self._unsub_registry = [
+                self.hass.bus.async_listen(
+                    er.EVENT_ENTITY_REGISTRY_UPDATED, self._handle_registry_change
+                ),
+                self.hass.bus.async_listen(
+                    ar.EVENT_AREA_REGISTRY_UPDATED, self._handle_registry_change
+                ),
+            ]
+
+    def _current_roster_snapshot(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return a comparable snapshot of the effective rosters."""
+        return (tuple(self.member_entry_ids()), tuple(self.generic_cover_ids()))
+
+    @callback
+    def _handle_registry_change(self, _event: Event) -> None:
+        """Reload the group when a registry change alters area membership.
+
+        The changed-guard makes registry chatter free: only an actual roster
+        difference triggers the (single) reload, which rebuilds listeners and
+        per-member entities consistently.
+        """
+        current = self._current_roster_snapshot()
+        if current == self._roster_snapshot:
+            return
+        self._roster_snapshot = current
+        _LOGGER.debug(
+            "Group %s: area membership changed — reloading entry",
+            self.entry.entry_id,
+        )
+        self.hass.async_create_task(
+            self.hass.config_entries.async_reload(self.entry.entry_id)
+        )
 
     @callback
     def _handle_member_state_change(self, _event: Event) -> None:
@@ -437,13 +560,16 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         if self._unsub_state is not None:
             self._unsub_state()
             self._unsub_state = None
+        for unsub in self._unsub_registry:
+            unsub()
+        self._unsub_registry = []
         self._cmd_svc.stop()
         await super().async_shutdown()
 
     async def _async_update_data(self) -> GroupAggregates:
         """Recompute the group position/state aggregates from member covers."""
         member_positions: dict[str, int | None] = {}
-        for entry_id in self.entry.options.get(CONF_MEMBER_ENTRIES, []):
+        for entry_id in self.member_entry_ids():
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None:
                 continue
@@ -452,7 +578,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
                 member_positions[entity_id] = policy.read_axis_value(
                     self.hass, entity_id, caps=None
                 )
-        for entity_id in self.entry.options.get(CONF_MEMBER_COVERS, []):
+        for entity_id in self.generic_cover_ids():
             member_positions[entity_id] = self._adopt_policy.read_axis_value(
                 self.hass, entity_id, caps=None
             )

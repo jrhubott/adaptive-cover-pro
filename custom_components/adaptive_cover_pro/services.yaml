@@ -1249,3 +1249,116 @@ get_diagnostics:
       selector:
         config_entry:
           integration: adaptive_cover_pro
+
+group_activate_scene:
+  name: "Group: activate scene"
+  description: >-
+    Activates a scene on the targeted cover groups. Scenes ride each member's
+    pipeline (weather safety and member safety still win). Pass "auto" to
+    release the group's scene claim so members return to their own automation.
+    With no target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+    device:
+      integration: adaptive_cover_pro
+  fields:
+    scene:
+      name: Scene
+      description: The scene to activate, or "auto" to release the claim.
+      required: true
+      selector:
+        select:
+          options:
+            - "auto"
+            - "all_open"
+            - "all_closed"
+            - "privacy"
+
+group_set_position:
+  name: "Group: set position"
+  description: >-
+    Moves every member of the targeted cover groups to the given position as a
+    user command (member manual-override engagement and floor clamps apply,
+    like dragging the group cover). With no target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+    device:
+      integration: adaptive_cover_pro
+  fields:
+    position:
+      name: Position
+      description: >-
+        Position (0-100%) to move member covers to. 0% = closed (blinds
+        lowered / awning retracted), 100% = open (blinds raised / awning
+        extended).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    tilt:
+      name: Tilt
+      description: Optional slat tilt (0-100%) fanned out on the tilt axis.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+group_lock:
+  name: "Group: lock"
+  description: >-
+    Freezes every member of the targeted cover groups in place at safety
+    priority. A member's own safety trigger still wins ties. With no target,
+    locks all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+    device:
+      integration: adaptive_cover_pro
+
+group_unlock:
+  name: "Group: unlock"
+  description: >-
+    Releases the group lock on the targeted cover groups. An active scene is
+    re-applied; otherwise members return to their own automation. With no
+    target, unlocks all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+    device:
+      integration: adaptive_cover_pro
+
+group_clear_overrides:
+  name: "Group: clear member overrides"
+  description: >-
+    Clears manual overrides on every ACP member of the targeted cover groups
+    and resends each member's pipeline position. With no target, acts on all
+    cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+    device:
+      integration: adaptive_cover_pro
+
+group_set_automation:
+  name: "Group: set automation"
+  description: >-
+    Bulk-enables or disables sun-tracking automation on every ACP member of
+    the targeted cover groups. With no target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+    device:
+      integration: adaptive_cover_pro
+  fields:
+    enabled:
+      name: Enabled
+      description: True to enable member automation, false to disable it.
+      required: true
+      selector:
+        boolean:

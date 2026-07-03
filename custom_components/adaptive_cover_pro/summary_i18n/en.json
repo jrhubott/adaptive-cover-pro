@@ -257,6 +257,7 @@
     "scene_priority": "Group scenes apply at priority {scene_priority} (above manual override, below weather safety)",
     "lock": "🔒 Group lock at priority {lock_priority} — freezes members in place; a member's own safety still wins ties",
     "stagger": "Members commanded {stagger}s apart",
-    "cover_entity": "Aggregate cover entity exposed — dragging it commands every member"
+    "cover_entity": "Aggregate cover entity exposed — dragging it commands every member",
+    "area": "Membership tracks area '{area}' — covers there join automatically"
   }
 }

@@ -766,11 +766,13 @@
         "data": {
           "name": "Gruppenname",
           "member_entries": "Adaptive-Cover-Pro-Mitglieder",
-          "member_covers": "Allgemeine Beschattungsentitäten"
+          "member_covers": "Allgemeine Beschattungsentitäten",
+          "group_area": "Bereich (Live-Mitgliedschaft)"
         },
         "data_description": {
           "member_entries": "Mitglieder werden über ihre eigene Instanz gesteuert, daher gelten Eingaben und Übersteuerungen weiterhin.",
-          "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen."
+          "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen.",
+          "group_area": "Optional: Beschattungen in diesem Bereich treten der Gruppe automatisch bei und die Mitgliedschaft folgt Registrierungsänderungen. Kombiniert mit den obigen Listen."
         }
       }
     },
@@ -1602,11 +1604,13 @@
         "description": "Bearbeiten Sie, welche Beschattungen diese Gruppe steuert. [Weitere Informationen]({learn_more})",
         "data": {
           "member_entries": "Adaptive-Cover-Pro-Mitglieder",
-          "member_covers": "Allgemeine Beschattungsentitäten"
+          "member_covers": "Allgemeine Beschattungsentitäten",
+          "group_area": "Bereich (Live-Mitgliedschaft)"
         },
         "data_description": {
           "member_entries": "Mitglieder werden über ihre eigene Instanz gesteuert, daher gelten Eingaben und Übersteuerungen weiterhin.",
-          "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen."
+          "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen.",
+          "group_area": "Optional: Beschattungen in diesem Bereich treten der Gruppe automatisch bei und die Mitgliedschaft folgt Registrierungsänderungen. Kombiniert mit den obigen Listen."
         }
       },
       "group_arbitration": {
@@ -2506,6 +2510,52 @@
         "filename": {
           "name": "Dateipfad",
           "description": "Pfad zur JSON-Datei zum Importieren. Relative Pfade werden relativ zum Konfigurationsverzeichnis von Home Assistant aufgelöst und müssen darin bleiben. Standard: adaptive_cover_pro_export.json."
+        }
+      }
+    },
+    "group_activate_scene": {
+      "name": "Gruppe: Szene aktivieren",
+      "description": "Aktiviert eine Szene auf den angestrebten Beschattungsgruppen oder gibt die Anspruch mit „auto\" frei. Szenen nutzen die Pipeline jedes Mitglieds — Wetter und Mitgliedersicherheit gewinnen immer noch.",
+      "fields": {
+        "scene": {
+          "name": "Szene",
+          "description": "Die Szene zum Aktivieren oder „auto\" um den Anspruch freizugeben."
+        }
+      }
+    },
+    "group_set_position": {
+      "name": "Gruppe: Position festlegen",
+      "description": "Verschiebt alle Mitglieder der angestrebten Beschattungsgruppen zur angegebenen Position als Benutzerbefehl (manuelle Übersteuerung und Positionsgrenzen gelten).",
+      "fields": {
+        "position": {
+          "name": "Position",
+          "description": "Position (0–100%), zu der Mitgliedsbeschattungen verschoben werden. 0% = geschlossen (Jalousien heruntergefahren / Markise eingefahren), 100% = offen (Jalousien hochgefahren / Markise ausgefahren)."
+        },
+        "tilt": {
+          "name": "Neigung",
+          "description": "Optionale Lamellenneigung (0–100%), ausgebreitet auf der Neigungsachse."
+        }
+      }
+    },
+    "group_lock": {
+      "name": "Gruppe: Sperre",
+      "description": "Friert alle Mitglieder der angestrebten Beschattungsgruppen mit Sicherheitspriorität an Ort und Stelle ein. Das eigene Sicherheitsauslöser eines Mitglieds gewinnt bei Gleichstand."
+    },
+    "group_unlock": {
+      "name": "Gruppe: Entsperren",
+      "description": "Gibt die Gruppensperrung frei. Eine aktive Szene wird erneut angewendet; andernfalls kehren Mitglieder zu ihrer eigenen Automatisierung zurück."
+    },
+    "group_clear_overrides": {
+      "name": "Gruppe: Manuelle Übersteuerungen von Mitgliedern löschen",
+      "description": "Löscht manuelle Übersteuerungen auf jedem ACP-Mitglied der angestrebten Beschattungsgruppen und sendet die Pipeline-Position jedes Mitglieds erneut."
+    },
+    "group_set_automation": {
+      "name": "Gruppe: Automatisierung festlegen",
+      "description": "Aktiviert oder deaktiviert Sonnen-Tracking-Automatisierung in Massen auf jedem ACP-Mitglied der angestrebten Beschattungsgruppen.",
+      "fields": {
+        "enabled": {
+          "name": "Aktiviert",
+          "description": "true zum Aktivieren der Mitgliedersautomatisierung, false zum Deaktivieren."
         }
       }
     }

@@ -766,11 +766,13 @@
         "data": {
           "name": "Nom du groupe",
           "member_entries": "Membres Adaptive Cover Pro",
-          "member_covers": "Entités de store génériques"
+          "member_covers": "Entités de store génériques",
+          "group_area": "Zone (adhésion dynamique)"
         },
         "data_description": {
           "member_entries": "Les membres sont orchestrés via leur propre instance, donc les portails et dérogations s'appliquent toujours.",
-          "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré."
+          "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré.",
+          "group_area": "Optionnel : les stores de cette zone rejoignent le groupe automatiquement et l'adhésion suit les modifications du registre. Combiné avec les listes ci-dessus."
         }
       }
     },
@@ -1602,11 +1604,13 @@
         "description": "Modifiez quels stores ce groupe commande. [En savoir plus]({learn_more})",
         "data": {
           "member_entries": "Membres Adaptive Cover Pro",
-          "member_covers": "Entités de store génériques"
+          "member_covers": "Entités de store génériques",
+          "group_area": "Zone (adhésion dynamique)"
         },
         "data_description": {
           "member_entries": "Les membres sont orchestrés via leur propre instance, donc les portails et dérogations s'appliquent toujours.",
-          "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré."
+          "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré.",
+          "group_area": "Optionnel : les stores de cette zone rejoignent le groupe automatiquement et l'adhésion suit les modifications du registre. Combiné avec les listes ci-dessus."
         }
       },
       "group_arbitration": {
@@ -2506,6 +2510,52 @@
         "filename": {
           "name": "Chemin du fichier",
           "description": "Chemin du fichier JSON à importer. Les chemins relatifs se résolvent par rapport au répertoire de configuration Home Assistant et doivent rester à l'intérieur. Par défaut adaptive_cover_pro_export.json."
+        }
+      }
+    },
+    "group_activate_scene": {
+      "name": "Groupe : activer la scène",
+      "description": "Active une scène sur les groupes de stores ciblés, ou libère la prise avec « auto ». Les scènes suivent le pipeline de chaque membre — la météo et la sécurité du membre gagnent toujours.",
+      "fields": {
+        "scene": {
+          "name": "Scène",
+          "description": "La scène à activer, ou « auto » pour libérer la prise."
+        }
+      }
+    },
+    "group_set_position": {
+      "name": "Groupe : définir la position",
+      "description": "Déplace chaque membre des groupes de stores ciblés à la position donnée en tant que commande utilisateur (l'engagement de la dérogation manuelle et les pinces limites s'appliquent).",
+      "fields": {
+        "position": {
+          "name": "Position",
+          "description": "Position (0-100%) pour déplacer les stores membres. 0% = fermé (stores baissés / store enroulé rétracté), 100% = ouvert (stores levés / store enroulé déroulé)."
+        },
+        "tilt": {
+          "name": "Inclinaison",
+          "description": "Inclinaison facultative des lames (0-100%) éventée sur l'axe d'inclinaison."
+        }
+      }
+    },
+    "group_lock": {
+      "name": "Groupe : verrouiller",
+      "description": "Gèle chaque membre des groupes de stores ciblés en place à la priorité de sécurité. Le propre déclencheur de sécurité d'un membre gagne toujours les égalités."
+    },
+    "group_unlock": {
+      "name": "Groupe : déverrouiller",
+      "description": "Libère le verrouillage du groupe. Une scène active est réappliquée ; sinon, les membres reviennent à leur propre automatisation."
+    },
+    "group_clear_overrides": {
+      "name": "Groupe : effacer les dérogations des membres",
+      "description": "Efface les dérogations manuelles sur chaque membre ACP des groupes de stores ciblés et renvoie la position du pipeline de chaque membre."
+    },
+    "group_set_automation": {
+      "name": "Groupe : définir l'automatisation",
+      "description": "Active ou désactive en masse l'automatisation du suivi du soleil sur chaque membre ACP des groupes de stores ciblés.",
+      "fields": {
+        "enabled": {
+          "name": "Activé",
+          "description": "True pour activer l'automatisation des membres, false pour la désactiver."
         }
       }
     }

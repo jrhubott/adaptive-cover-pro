@@ -575,3 +575,186 @@ async def test_stop_calls_stop_service_per_member_cover(hass, group_setup) -> No
         AWNING_ENTITY,
         GENERIC_ENTITY,
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — area membership
+# ---------------------------------------------------------------------------
+
+
+def _registry_cover(hass, unique_id, object_id, *, area_id=None, platform="test"):
+    from homeassistant.helpers import entity_registry as er
+
+    reg = er.async_get(hass)
+    entry = reg.async_get_or_create(
+        "cover", platform, unique_id, suggested_object_id=object_id
+    )
+    if area_id is not None:
+        reg.async_update_entity(entry.entity_id, area_id=area_id)
+    return entry.entity_id
+
+
+@pytest.fixture
+def area_setup(hass):
+    """Build an area with one ACP-controlled cover and one free generic
+    cover, plus an out-of-area ACP member for the static roster.
+    """
+    from homeassistant.helpers import area_registry as ar
+
+    area = ar.async_get(hass).async_get_or_create("Living Room")
+
+    acp_cover = _registry_cover(hass, "acp1", "acp_blind", area_id=area.id)
+    generic_cover = _registry_cover(hass, "gen1", "free_cover", area_id=area.id)
+    _registry_cover(hass, "elsewhere", "other_room_cover", area_id=None)
+    # An ACP-owned proxy entity in the area must never be adopted.
+    proxy_cover = _registry_cover(
+        hass, "proxy1", "acp_proxy", area_id=area.id, platform=DOMAIN
+    )
+
+    area_member = _member_entry(hass, "area_member", CoverType.BLIND, [acp_cover])
+    area_member.runtime_data = _mock_member_coordinator()
+    static_member = _member_entry(
+        hass, "static_member", CoverType.AWNING, ["cover.static1"]
+    )
+    static_member.runtime_data = _mock_member_coordinator()
+
+    from custom_components.adaptive_cover_pro.const import CONF_GROUP_AREA
+
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: ["static_member"],
+            CONF_MEMBER_COVERS: ["cover.static_generic"],
+            CONF_GROUP_AREA: area.id,
+        },
+        entry_id="group_area",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+    return coordinator, acp_cover, generic_cover, proxy_cover
+
+
+async def test_area_membership_resolves_acp_entries(area_setup) -> None:
+    """Static roster ∪ ACP entries with a controlled cover in the area."""
+    coordinator, _, _, _ = area_setup
+    assert coordinator.member_entry_ids() == ["static_member", "area_member"]
+
+
+async def test_area_membership_resolves_generic_covers(area_setup) -> None:
+    """Area cover entities join the generic roster — except covers already
+    controlled by an ACP entry (orchestrate wins) and ACP's own proxy
+    entities.
+    """
+    coordinator, acp_cover, generic_cover, proxy_cover = area_setup
+
+    generic = coordinator.generic_cover_ids()
+
+    assert generic == ["cover.static_generic", generic_cover]
+    assert acp_cover not in generic
+    assert proxy_cover not in generic
+
+
+async def test_area_membership_feeds_resolved_members(area_setup) -> None:
+    coordinator, _, _, _ = area_setup
+    resolved_ids = [entry.entry_id for entry, _ in coordinator.resolved_members()]
+    assert resolved_ids == ["static_member", "area_member"]
+
+
+async def test_area_membership_via_device_area(hass) -> None:
+    """An entity with no own area inherits its device's area."""
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.adaptive_cover_pro.const import CONF_GROUP_AREA
+
+    area = ar.async_get(hass).async_get_or_create("Bedroom")
+    helper_entry = MockConfigEntry(domain="test", entry_id="helper")
+    helper_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id="helper",
+        identifiers={("test", "dev1")},
+    )
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+    reg_entry = er.async_get(hass).async_get_or_create(
+        "cover",
+        "test",
+        "dev_cover",
+        suggested_object_id="bed_cover",
+        device_id=device.id,
+    )
+
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [],
+            CONF_MEMBER_COVERS: [],
+            CONF_GROUP_AREA: area.id,
+        },
+        entry_id="group_dev_area",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+
+    assert coordinator.generic_cover_ids() == [reg_entry.entity_id]
+
+
+async def test_no_area_behaves_statically(group_setup) -> None:
+    """Without an area, the effective rosters equal the stored rosters."""
+    coordinator, _, _ = group_setup
+    assert coordinator.member_entry_ids() == ["member_blind", "member_awning"]
+    assert coordinator.generic_cover_ids() == [GENERIC_ENTITY]
+
+
+async def test_registry_change_reloads_when_roster_changes(hass, area_setup) -> None:
+    """Moving a cover into the area changes the roster → one entry reload."""
+    from unittest.mock import patch
+
+    coordinator, _, _, _ = area_setup
+    await coordinator._async_setup()
+
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload_mock:
+        # A registry event with no roster impact must not reload.
+        hass.bus.async_fire(
+            "entity_registry_updated",
+            {"action": "update", "entity_id": "cover.other_room_cover"},
+        )
+        await hass.async_block_till_done()
+        reload_mock.assert_not_awaited()
+
+        # A new free cover appears in the area → roster changes → reload once.
+        from homeassistant.helpers import area_registry as ar
+
+        area = ar.async_get(hass).async_get_or_create("Living Room")
+        _registry_cover(hass, "newgen", "new_free_cover", area_id=area.id)
+        await hass.async_block_till_done()
+        reload_mock.assert_awaited_once_with("group_area")
+
+    await coordinator.async_shutdown()
+
+
+async def test_registry_listener_absent_without_area(hass, group_setup) -> None:
+    """Static-only groups subscribe to no registry events."""
+    from unittest.mock import patch
+
+    coordinator, _, _ = group_setup
+    await coordinator._async_setup()
+
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload_mock:
+        hass.bus.async_fire(
+            "entity_registry_updated", {"action": "create", "entity_id": "cover.x"}
+        )
+        await hass.async_block_till_done()
+        reload_mock.assert_not_awaited()
+
+    await coordinator.async_shutdown()
+
+
+async def test_entity_area_id_unregistered_entity(group_setup) -> None:
+    """An entity absent from the registry has no area."""
+    coordinator, _, _ = group_setup
+    assert coordinator._entity_area_id("cover.not_registered") is None

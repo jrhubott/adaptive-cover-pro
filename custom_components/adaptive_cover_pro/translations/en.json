@@ -766,11 +766,13 @@
         "data": {
           "name": "Group name",
           "member_entries": "Adaptive Cover Pro members",
-          "member_covers": "Generic cover entities"
+          "member_covers": "Generic cover entities",
+          "group_area": "Area (live membership)"
         },
         "data_description": {
           "member_entries": "Members are orchestrated through their own instance, so gates and overrides still apply.",
-          "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped."
+          "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped.",
+          "group_area": "Optional: covers in this area join the group automatically and membership tracks registry changes. Combined with the lists above."
         }
       }
     },
@@ -1602,11 +1604,13 @@
         "description": "Edit which covers this group commands. [Learn more]({learn_more})",
         "data": {
           "member_entries": "Adaptive Cover Pro members",
-          "member_covers": "Generic cover entities"
+          "member_covers": "Generic cover entities",
+          "group_area": "Area (live membership)"
         },
         "data_description": {
           "member_entries": "Members are orchestrated through their own instance, so gates and overrides still apply.",
-          "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped."
+          "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped.",
+          "group_area": "Optional: covers in this area join the group automatically and membership tracks registry changes. Combined with the lists above."
         }
       },
       "group_arbitration": {
@@ -2506,6 +2510,52 @@
         "duration": {
           "name": "Duration",
           "description": "Extend an active override by this much, or engage fresh for this long if none is active. Ignored when an end time is set."
+        }
+      }
+    },
+    "group_activate_scene": {
+      "name": "Group: activate scene",
+      "description": "Activates a scene on the targeted cover groups, or releases the claim with 'auto'. Scenes ride each member's pipeline — weather and member safety still win.",
+      "fields": {
+        "scene": {
+          "name": "Scene",
+          "description": "The scene to activate, or 'auto' to release the claim."
+        }
+      }
+    },
+    "group_set_position": {
+      "name": "Group: set position",
+      "description": "Moves every member of the targeted cover groups to the given position as a user command (manual-override engagement and floor clamps apply).",
+      "fields": {
+        "position": {
+          "name": "Position",
+          "description": "Position (0-100%) to move member covers to. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended)."
+        },
+        "tilt": {
+          "name": "Tilt",
+          "description": "Optional slat tilt (0-100%) fanned out on the tilt axis."
+        }
+      }
+    },
+    "group_lock": {
+      "name": "Group: lock",
+      "description": "Freezes every member of the targeted cover groups in place at safety priority. A member's own safety trigger still wins ties."
+    },
+    "group_unlock": {
+      "name": "Group: unlock",
+      "description": "Releases the group lock. An active scene is re-applied; otherwise members return to their own automation."
+    },
+    "group_clear_overrides": {
+      "name": "Group: clear member overrides",
+      "description": "Clears manual overrides on every ACP member of the targeted cover groups and resends each member's pipeline position."
+    },
+    "group_set_automation": {
+      "name": "Group: set automation",
+      "description": "Bulk-enables or disables sun-tracking automation on every ACP member of the targeted cover groups.",
+      "fields": {
+        "enabled": {
+          "name": "Enabled",
+          "description": "True to enable member automation, false to disable it."
         }
       }
     }

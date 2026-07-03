@@ -98,10 +98,13 @@ async def test_create_group_combined_form_and_entry(hass: HomeAssistant) -> None
     )
     assert result["type"] == "form"
     assert result["step_id"] == "create_group"
+    from custom_components.adaptive_cover_pro.const import CONF_GROUP_AREA
+
     assert _schema_keys(result["data_schema"]) == {
         "name",
         CONF_MEMBER_ENTRIES,
         CONF_MEMBER_COVERS,
+        CONF_GROUP_AREA,
     }
     # The ACP-member selector lists existing cover entries.
     values = {
@@ -367,3 +370,51 @@ async def test_group_entities_step_saves_toggles(hass: HomeAssistant) -> None:
     assert result["type"] == "create_entry"
     assert result["data"][CONF_GROUP_ENABLE_COVER_ENTITY] is True
     assert result["data"][CONF_GROUP_ENABLE_STATE_SENSOR] is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — area membership picker
+# ---------------------------------------------------------------------------
+
+
+async def test_create_group_offers_and_stores_area(hass: HomeAssistant) -> None:
+    from custom_components.adaptive_cover_pro.const import CONF_GROUP_AREA
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "create_group"}
+    )
+    assert CONF_GROUP_AREA in _schema_keys(result["data_schema"])
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Area Group", CONF_GROUP_AREA: "living_room"},
+    )
+    assert result["type"] == "create_entry"
+    assert result["result"].options[CONF_GROUP_AREA] == "living_room"
+
+
+async def test_membership_step_updates_and_clears_area(hass: HomeAssistant) -> None:
+    from custom_components.adaptive_cover_pro.const import CONF_GROUP_AREA
+
+    group = _add_group(hass, "group_1")
+    hass.config_entries.async_update_entry(
+        group, options={**group.options, CONF_GROUP_AREA: "old_area"}
+    )
+
+    flow = OptionsFlowHandler(group)
+    flow.hass = hass
+    result = await flow.async_step_group_membership(
+        {CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: [], CONF_GROUP_AREA: "new_area"}
+    )
+    assert result["data"][CONF_GROUP_AREA] == "new_area"
+
+    # Clearing the picker removes the area source entirely.
+    flow2 = OptionsFlowHandler(hass.config_entries.async_get_entry("group_1"))
+    flow2.hass = hass
+    result = await flow2.async_step_group_membership(
+        {CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: []}
+    )
+    assert CONF_GROUP_AREA not in result["data"]
