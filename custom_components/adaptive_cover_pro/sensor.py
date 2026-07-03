@@ -686,16 +686,9 @@ def _motion_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
 
 
 def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
-    if s.data.diagnostics is None:
-        return None
-    data = s.data.diagnostics.get("climate_conditions")
-    if data is None:
-        return None
-    if data.get("is_summer"):
-        return "summer_mode"
-    if data.get("is_winter"):
-        return "winter_mode"
-    return "intermediate"
+    from .helpers import climate_mode_from_diagnostics
+
+    return climate_mode_from_diagnostics(s.data.diagnostics)
 
 
 def _round_threshold(value: float | str | None) -> float | None:

@@ -3258,3 +3258,20 @@ def test_summary_group_omits_stagger_line_when_zero():
     )
 
     assert "apart" not in summary
+
+
+def test_summary_group_shows_cover_entity_line_when_enabled():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_ENABLE_COVER_ENTITY,
+        CONF_MEMBER_COVERS,
+        CONF_MEMBER_ENTRIES,
+    )
+
+    base = {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []}
+    without = _build_config_summary(base, CoverType.GROUP)
+    assert "Aggregate cover entity" not in without
+
+    with_cover = _build_config_summary(
+        {**base, CONF_GROUP_ENABLE_COVER_ENTITY: True}, CoverType.GROUP
+    )
+    assert "Aggregate cover entity" in with_cover

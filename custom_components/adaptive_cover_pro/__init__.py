@@ -82,14 +82,15 @@ PLATFORMS = [
     Platform.NUMBER,
 ]
 # Platform set for cover-group entries (``is_orchestrator = True``). A group
-# exposes aggregate sensors, bulk switches, scene buttons, and the scene
-# select — no proxy cover, number, or binary sensor. Setup and unload must
-# use the same list (load/unload symmetry, the #712/#714 lesson).
+# exposes aggregate sensors, bulk switches, scene buttons, the scene select,
+# and the opt-in aggregate cover — no number or binary sensor. Setup and
+# unload must use the same list (load/unload symmetry, the #712/#714 lesson).
 GROUP_PLATFORMS = [
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.SELECT,
+    Platform.COVER,
 ]
 CONF_SUN = ["sun.sun"]
 

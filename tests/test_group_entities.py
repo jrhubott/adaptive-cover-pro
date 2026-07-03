@@ -64,6 +64,7 @@ async def test_sensor_platform_builds_group_sensors(hass, group_entry) -> None:
         "group_01_group_position",
         "group_01_group_state",
         "group_01_group_active_scene",
+        "group_01_group_climate_mode",
         "group_01_group_who_won",
     }
 
@@ -225,3 +226,244 @@ async def test_who_won_sensor_reads_member_winners(hass, group_entry) -> None:
         "cover.awning1": "weather_override",
         "cover.tilt1": "group_lock",
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — climate rollup sensor, group cover entity, exposure toggles
+# ---------------------------------------------------------------------------
+
+
+async def test_group_climate_sensor_states(hass, group_entry) -> None:
+    """Agree → the mode; disagree → mixed; none reporting → None."""
+    coordinator = group_entry.runtime_data
+    entities = {
+        e.unique_id: e for e in await _added_entities(sensor, hass, group_entry)
+    }
+    climate = entities["group_01_group_climate_mode"]
+
+    coordinator.member_climate_modes = MagicMock(
+        return_value={"cover.a": "summer_mode", "cover.b": "summer_mode"}
+    )
+    assert climate.native_value == "summer_mode"
+
+    coordinator.member_climate_modes = MagicMock(
+        return_value={"cover.a": "summer_mode", "cover.b": "winter_mode"}
+    )
+    assert climate.native_value == "mixed"
+
+    coordinator.member_climate_modes = MagicMock(
+        return_value={"cover.a": None, "cover.b": None}
+    )
+    assert climate.native_value is None
+
+    coordinator.member_climate_modes = MagicMock(
+        return_value={"cover.a": "winter_mode", "cover.b": None}
+    )
+    assert climate.native_value == "winter_mode"
+    assert climate.extra_state_attributes["member_climate_modes"] == {
+        "cover.a": "winter_mode",
+        "cover.b": None,
+    }
+
+
+async def test_sensor_platform_includes_climate_by_default(hass, group_entry) -> None:
+    entities = {e.unique_id for e in await _added_entities(sensor, hass, group_entry)}
+    assert "group_01_group_climate_mode" in entities
+
+
+async def test_sensor_toggles_gate_creation(hass) -> None:
+    """Disabled exposure toggles suppress the matching sensors."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_ENABLE_CLIMATE_SENSOR,
+        CONF_GROUP_ENABLE_POSITION_SENSOR,
+        CONF_GROUP_ENABLE_STATE_SENSOR,
+        CONF_GROUP_ENABLE_WHO_WON_SENSOR,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [],
+            CONF_MEMBER_COVERS: ["cover.g1"],
+            CONF_GROUP_ENABLE_POSITION_SENSOR: False,
+            CONF_GROUP_ENABLE_STATE_SENSOR: False,
+            CONF_GROUP_ENABLE_CLIMATE_SENSOR: False,
+            CONF_GROUP_ENABLE_WHO_WON_SENSOR: False,
+        },
+        entry_id="group_05",
+        title="G",
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = GroupCoordinator(hass, entry)
+
+    entities = {e.unique_id for e in await _added_entities(sensor, hass, entry)}
+
+    # Only the always-on active-scene sensor remains.
+    assert entities == {"group_05_group_active_scene"}
+
+
+async def test_cover_platform_builds_group_cover_only_when_enabled(hass) -> None:
+    from custom_components.adaptive_cover_pro import cover
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_ENABLE_COVER_ENTITY,
+    )
+
+    # Default: off — no group cover entity.
+    entry_off = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: ["cover.g1"]},
+        entry_id="group_06",
+        title="G",
+    )
+    entry_off.add_to_hass(hass)
+    entry_off.runtime_data = GroupCoordinator(hass, entry_off)
+    assert await _added_entities(cover, hass, entry_off) == []
+
+    entry_on = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G2", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [],
+            CONF_MEMBER_COVERS: ["cover.g1"],
+            CONF_GROUP_ENABLE_COVER_ENTITY: True,
+        },
+        entry_id="group_07",
+        title="G2",
+    )
+    entry_on.add_to_hass(hass)
+    entry_on.runtime_data = GroupCoordinator(hass, entry_on)
+    entities = await _added_entities(cover, hass, entry_on)
+    assert [e.unique_id for e in entities] == ["group_07_group_cover"]
+
+
+async def test_group_cover_reads_aggregates_and_commands(hass, group_entry) -> None:
+    from custom_components.adaptive_cover_pro.group_entities import AdaptiveGroupCover
+
+    coordinator = group_entry.runtime_data
+    group_cover = AdaptiveGroupCover("group_01", hass, group_entry, coordinator)
+    coordinator.async_set_updated_data(
+        GroupAggregates(
+            position=0, state=GroupState.CLOSED, member_positions={"cover.g1": 0}
+        )
+    )
+
+    assert group_cover.current_cover_position == 0
+    assert group_cover.is_closed is True
+
+    coordinator.async_set_position = AsyncMock()
+    coordinator.async_stop = AsyncMock()
+    await group_cover.async_set_cover_position(position=70)
+    coordinator.async_set_position.assert_awaited_once_with(70)
+    await group_cover.async_open_cover()
+    coordinator.async_set_position.assert_awaited_with(100)
+    await group_cover.async_close_cover()
+    coordinator.async_set_position.assert_awaited_with(0)
+    await group_cover.async_stop_cover()
+    coordinator.async_stop.assert_awaited_once()
+
+
+async def test_group_cover_tilt_only_when_all_members_tilt(hass) -> None:
+    """Tilt features appear only when every member (ACP + generic) tilts."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    from custom_components.adaptive_cover_pro.const import CONF_ENTITIES
+    from custom_components.adaptive_cover_pro.group_entities import AdaptiveGroupCover
+
+    # Mixed group: blind member (no tilt axis) → no tilt features.
+    blind_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "b", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={CONF_ENTITIES: ["cover.b1"]},
+        entry_id="m_blind",
+        title="b",
+    )
+    blind_entry.add_to_hass(hass)
+    blind_entry.runtime_data = MagicMock()
+    mixed = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["m_blind"], CONF_MEMBER_COVERS: []},
+        entry_id="group_08",
+        title="G",
+    )
+    mixed.add_to_hass(hass)
+    mixed_cover = AdaptiveGroupCover(
+        "group_08", hass, mixed, GroupCoordinator(hass, mixed)
+    )
+    assert not mixed_cover.supported_features & CoverEntityFeature.SET_TILT_POSITION
+
+    # All-venetian group + tilt-capable generic → tilt exposed.
+    ven_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "v", CONF_SENSOR_TYPE: CoverType.VENETIAN},
+        options={CONF_ENTITIES: ["cover.v1"]},
+        entry_id="m_ven",
+        title="v",
+    )
+    ven_entry.add_to_hass(hass)
+    ven_entry.runtime_data = MagicMock()
+    hass.states.async_set(
+        "cover.gt1",
+        "open",
+        {"supported_features": int(CoverEntityFeature.SET_TILT_POSITION)},
+    )
+    tilty = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G2", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["m_ven"], CONF_MEMBER_COVERS: ["cover.gt1"]},
+        entry_id="group_09",
+        title="G2",
+    )
+    tilty.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, tilty)
+    tilt_cover = AdaptiveGroupCover("group_09", hass, tilty, coordinator)
+    assert tilt_cover.supported_features & CoverEntityFeature.SET_TILT_POSITION
+
+    coordinator.async_set_tilt = AsyncMock()
+    await tilt_cover.async_set_cover_tilt_position(tilt_position=40)
+    coordinator.async_set_tilt.assert_awaited_once_with(40)
+
+
+async def test_group_cover_edge_cases(hass) -> None:
+    """Empty roster → no tilt; unknown aggregates → is_closed None; generic
+    cover without tilt bit → no tilt; removed member id skipped.
+    """
+    from homeassistant.components.cover import CoverEntityFeature
+
+    from custom_components.adaptive_cover_pro.group_entities import AdaptiveGroupCover
+
+    empty = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "E", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: ["gone_member"],
+            CONF_MEMBER_COVERS: ["cover.no_tilt"],
+        },
+        entry_id="group_20",
+        title="E",
+    )
+    empty.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, empty)
+    hass.states.async_set("cover.no_tilt", "open", {"supported_features": 0})
+    group_cover = AdaptiveGroupCover("group_20", hass, empty, coordinator)
+
+    # gone_member is skipped; cover.no_tilt lacks the tilt bit → no tilt.
+    assert not group_cover.supported_features & CoverEntityFeature.SET_TILT_POSITION
+
+    coordinator.async_set_updated_data(
+        GroupAggregates(position=None, state=GroupState.UNKNOWN, member_positions={})
+    )
+    assert group_cover.is_closed is None
+
+    # A group with no members at all is not tiltable.
+    bare = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "B", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: []},
+        entry_id="group_21",
+        title="B",
+    )
+    bare.add_to_hass(hass)
+    assert GroupCoordinator(hass, bare).all_members_tilt() is False

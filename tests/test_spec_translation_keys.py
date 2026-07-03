@@ -24,6 +24,7 @@ from pathlib import Path
 from custom_components.adaptive_cover_pro.group_entities import (
     GroupActiveSceneSensor,
     GroupAutomationSwitch,
+    GroupClimateSensor,
     GroupLockSwitch,
     GroupPositionSensor,
     GroupStateSensor,
@@ -82,6 +83,7 @@ _GROUP_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
         GroupPositionSensor,
         GroupStateSensor,
         GroupActiveSceneSensor,
+        GroupClimateSensor,
         GroupWhoWonSensor,
     )
 )

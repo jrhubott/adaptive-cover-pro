@@ -53,6 +53,7 @@ UNIVERSAL_KEYS: set[str] = {
     "config.step.duplicate_configure.data.name",  # "Name" — same in DE/FR
     "config.step.create_building_profile.data.name",  # "Name" — same in DE/FR
     "entity.sensor.decision_trace.state.winter",  # "Winter" — same in DE/FR
+    "entity.sensor.group_climate_mode.state.winter_mode",  # "Winter" — same in DE
     "services.set_custom_position.fields.slot.name",  # "Slot" — HA service parameter, language-universal
     "services.set_custom_position.fields.position.name",  # "Position" — HA service parameter, language-universal
     "services.set_position.fields.position.name",  # "Position" — HA service parameter, language-universal

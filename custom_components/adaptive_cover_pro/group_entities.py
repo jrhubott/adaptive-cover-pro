@@ -12,11 +12,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
 
-from .const import GROUP_SCENE_SELECT_AUTO, GroupScene
+from .const import (
+    CONF_GROUP_ENABLE_CLIMATE_SENSOR,
+    CONF_GROUP_ENABLE_POSITION_SENSOR,
+    CONF_GROUP_ENABLE_STATE_SENSOR,
+    CONF_GROUP_ENABLE_WHO_WON_SENSOR,
+    DEFAULT_GROUP_ENABLE_SENSOR,
+    GROUP_SCENE_SELECT_AUTO,
+    GroupScene,
+    GroupState,
+)
 from .entity_base import AdaptiveCoverBaseEntity
 from .pipeline.handlers import GroupLockHandler, GroupSceneHandler
 
@@ -173,6 +183,105 @@ class GroupWhoWonSensor(_GroupEntityBase, SensorEntity):
         return {"member_winners": self.coordinator.member_winners()}
 
 
+class GroupClimateSensor(_GroupEntityBase, SensorEntity):
+    """Read-only rollup of member climate modes (issue #790, Phase 3).
+
+    The mode when all reporting members agree, "mixed" when they disagree,
+    None when no member reports one. Values reuse the member Climate Status
+    sensor's wire strings (single-sourced in
+    ``helpers.climate_mode_from_diagnostics``); the group shares no climate
+    inputs — that stays Building Profile territory.
+    """
+
+    _attr_translation_key = "group_climate_mode"
+    _attr_native_unit_of_measurement = ""
+    _attr_icon = "mdi:sun-thermometer-outline"
+
+    # Wire-stable disagreement state, file-private: produced only by this
+    # sensor (distinct concept from GroupState.MIXED, which is positional).
+    _CLIMATE_MIXED = "mixed"
+
+    @property
+    def native_value(self) -> str | None:
+        """The agreed member climate mode, "mixed", or None."""
+        reported = {
+            mode
+            for mode in self.coordinator.member_climate_modes().values()
+            if mode is not None
+        }
+        if not reported:
+            return None
+        if len(reported) == 1:
+            return next(iter(reported))
+        return self._CLIMATE_MIXED
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Per-member climate-mode map."""
+        return {"member_climate_modes": self.coordinator.member_climate_modes()}
+
+
+class AdaptiveGroupCover(_GroupEntityBase, CoverEntity):
+    """Opt-in aggregate cover entity for a group (issue #790, Phase 3).
+
+    Position reads the group aggregates; commands are USER semantics — a
+    dashboard drag, routed exactly like the per-cover proxy (member
+    manual-override engagement and floor clamps apply). Tilt features are
+    exposed only when every member — ACP and generic — has a tilt axis.
+    """
+
+    _attr_translation_key = "group_cover"
+
+    def __init__(self, *args) -> None:
+        """Initialize the aggregate cover."""
+        super().__init__(*args, "group_cover")
+
+    @property
+    def supported_features(self) -> CoverEntityFeature:
+        """Position/open/close/stop always; tilt only for all-tilt rosters."""
+        features = (
+            CoverEntityFeature.OPEN
+            | CoverEntityFeature.CLOSE
+            | CoverEntityFeature.SET_POSITION
+            | CoverEntityFeature.STOP
+        )
+        if self.coordinator.all_members_tilt():
+            features |= CoverEntityFeature.SET_TILT_POSITION
+        return features
+
+    @property
+    def current_cover_position(self) -> int | None:
+        """Aggregate (average) member position."""
+        return self.coordinator.data.position
+
+    @property
+    def is_closed(self) -> bool | None:
+        """True when every member reports fully closed."""
+        if self.coordinator.data.state is GroupState.UNKNOWN:
+            return None
+        return self.coordinator.data.state is GroupState.CLOSED
+
+    async def async_set_cover_position(self, **kwargs) -> None:
+        """Fan the requested position out as a user command."""
+        await self.coordinator.async_set_position(int(kwargs["position"]))
+
+    async def async_open_cover(self, **kwargs) -> None:  # noqa: ARG002
+        """Open all members (position 100)."""
+        await self.coordinator.async_set_position(100)
+
+    async def async_close_cover(self, **kwargs) -> None:  # noqa: ARG002
+        """Close all members (position 0)."""
+        await self.coordinator.async_set_position(0)
+
+    async def async_set_cover_tilt_position(self, **kwargs) -> None:
+        """Fan the requested tilt out on the dedicated tilt path."""
+        await self.coordinator.async_set_tilt(int(kwargs["tilt_position"]))
+
+    async def async_stop_cover(self, **kwargs) -> None:  # noqa: ARG002
+        """Stop every member immediately."""
+        await self.coordinator.async_stop()
+
+
 class GroupSceneButton(_GroupEntityBase, ButtonEntity):
     """Activate one built-in scene across the group."""
 
@@ -249,12 +358,23 @@ def build_group_sensors(
 ) -> list[SensorEntity]:
     """Build the aggregate sensors for one group entry."""
     args = (entry_id, hass, config_entry, coordinator)
-    return [
-        GroupPositionSensor(*args, "group_position"),
-        GroupStateSensor(*args, "group_state"),
-        GroupActiveSceneSensor(*args, "group_active_scene"),
-        GroupWhoWonSensor(*args, "group_who_won"),
-    ]
+    options = config_entry.options
+
+    def _enabled(key: str) -> bool:
+        return bool(options.get(key, DEFAULT_GROUP_ENABLE_SENSOR))
+
+    sensors: list[SensorEntity] = []
+    if _enabled(CONF_GROUP_ENABLE_POSITION_SENSOR):
+        sensors.append(GroupPositionSensor(*args, "group_position"))
+    if _enabled(CONF_GROUP_ENABLE_STATE_SENSOR):
+        sensors.append(GroupStateSensor(*args, "group_state"))
+    # Active scene is always exposed — it is the select's state twin.
+    sensors.append(GroupActiveSceneSensor(*args, "group_active_scene"))
+    if _enabled(CONF_GROUP_ENABLE_CLIMATE_SENSOR):
+        sensors.append(GroupClimateSensor(*args, "group_climate_mode"))
+    if _enabled(CONF_GROUP_ENABLE_WHO_WON_SENSOR):
+        sensors.append(GroupWhoWonSensor(*args, "group_who_won"))
+    return sensors
 
 
 def build_group_switches(
@@ -292,3 +412,13 @@ def build_group_selects(
 ) -> list[SelectEntity]:
     """Build the scene-picker select for one group entry."""
     return [GroupSceneSelect(entry_id, hass, config_entry, coordinator)]
+
+
+def build_group_covers(
+    entry_id: str,
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    coordinator: GroupCoordinator,
+) -> list[CoverEntity]:
+    """Build the opt-in aggregate cover (empty when the toggle is off)."""
+    return [AdaptiveGroupCover(entry_id, hass, config_entry, coordinator)]

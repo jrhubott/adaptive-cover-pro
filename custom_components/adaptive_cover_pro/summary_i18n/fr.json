@@ -256,6 +256,7 @@
     "member_generic": "- 🪟 {entity} (générique)",
     "scene_priority": "Les scènes de groupe s'appliquent à la priorité {scene_priority} (au-dessus de la dérogation manuelle, en dessous de la sécurité météo)",
     "lock": "🔒 Verrouillage de groupe à la priorité {lock_priority} — gèle les membres en place ; la sécurité propre d'un membre gagne toujours en cas d'égalité",
-    "stagger": "Membres commandés à {stagger}s d'intervalle"
+    "stagger": "Membres commandés à {stagger}s d'intervalle",
+    "cover_entity": "Entité de store agrégée exposée — la faire glisser commande chaque membre"
   }
 }

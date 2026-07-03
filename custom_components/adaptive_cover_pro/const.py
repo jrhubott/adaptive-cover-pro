@@ -123,6 +123,18 @@ _RANGE_GROUP_STAGGER = (0.0, 30.0)
 # group's claim so members return to their own pipelines.
 GROUP_SCENE_SELECT_AUTO = "auto"
 
+# Entity-exposure toggles for a group entry (issue #790, Phase 3). The
+# aggregate cover entity defaults OFF (dashboard/voice clutter); the sensors
+# default ON. The active-scene sensor, scene controls, and bulk switches are
+# always created (primary control surface, no toggle).
+CONF_GROUP_ENABLE_COVER_ENTITY = "group_enable_cover_entity"
+DEFAULT_GROUP_ENABLE_COVER_ENTITY = False
+CONF_GROUP_ENABLE_POSITION_SENSOR = "group_enable_position_sensor"
+CONF_GROUP_ENABLE_STATE_SENSOR = "group_enable_state_sensor"
+CONF_GROUP_ENABLE_CLIMATE_SENSOR = "group_enable_climate_sensor"
+CONF_GROUP_ENABLE_WHO_WON_SENSOR = "group_enable_who_won_sensor"
+DEFAULT_GROUP_ENABLE_SENSOR = True  # shared default for the four sensor toggles
+
 # Default name prefix used by the config flow when auto-naming a cover from its
 # entity's friendly name (no linked device available) — see config_flow.py's
 # cover_entities auto-fill and async_step_update finalization fallback (#771).
@@ -165,6 +177,9 @@ TRIGGER_PROXY_POSITION = "proxy_managed"
 TRIGGER_PROXY_OPEN = "proxy_open"
 TRIGGER_PROXY_CLOSE = "proxy_close"
 TRIGGER_PROXY_TILT = "proxy_tilt"
+# Cover-group aggregate cover entity commands (issue #790, Phase 3).
+TRIGGER_GROUP_COVER = "group_cover"
+TRIGGER_GROUP_COVER_TILT = "group_cover_tilt"
 
 
 # =============================================================================
