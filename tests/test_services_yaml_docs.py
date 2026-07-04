@@ -56,6 +56,32 @@ def test_set_position_has_target_block():
     assert svc["target"]["entity"]["integration"] == "adaptive_cover_pro"
 
 
+def test_entity_targeted_services_also_offer_device_target():
+    """Every entity-targeted service must also expose a device selector (#824).
+
+    ACP owns no `cover` entities (only sensor/switch/binary_sensor/button), so an
+    `entity: integration:` target picker can only list helper entities. Adding a
+    `device: integration:` selector lets the picker offer the ACP instance device
+    ("Patio Right TV Shade") — the intuitive target — without breaking the call
+    schema, which still accepts entity_id/device_id/area_id.
+    """
+    offenders = []
+    for name, svc in _load().items():
+        target = (svc or {}).get("target")
+        if not isinstance(target, dict) or "entity" not in target:
+            continue  # global / config_entry-based services have no entity target
+        device = target.get("device")
+        if (
+            not isinstance(device, dict)
+            or device.get("integration") != "adaptive_cover_pro"
+        ):
+            offenders.append(name)
+    assert not offenders, (
+        "Entity-targeted services missing a `device: integration: adaptive_cover_pro` "
+        f"target selector (#824): {sorted(offenders)}"
+    )
+
+
 def test_set_position_has_position_field_with_correct_range():
     fields = _load()["set_position"]["fields"]
     assert "position" in fields
