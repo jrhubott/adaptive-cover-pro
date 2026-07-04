@@ -2201,12 +2201,12 @@ def test_priority_badge_default_zero():
 
 
 def test_return_sunset_line_rendered():
-    """CONF_RETURN_SUNSET toggles a '🔚 Return to sunset position at end time: on' line."""
+    """CONF_RETURN_SUNSET toggles a '🔚 Move to default position at end time: on' line."""
     from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
 
     cfg = {CONF_SUNSET_POS: 30, CONF_RETURN_SUNSET: True}
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Return to sunset position at end time: on" in summary
+    assert "Move to default position at end time: on" in summary
 
 
 def test_return_sunset_line_absent_when_false():
@@ -2215,7 +2215,7 @@ def test_return_sunset_line_absent_when_false():
 
     cfg = {CONF_SUNSET_POS: 30, CONF_RETURN_SUNSET: False}
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Return to sunset position at end time" not in summary
+    assert "Move to default position at end time" not in summary
 
 
 def test_end_of_window_line_rendered_with_return_on():
