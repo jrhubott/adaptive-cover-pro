@@ -2358,7 +2358,7 @@
       "fields": {
         "end_time": {
           "name": "Endzeit",
-          "description": "Absolute Zeit, zu der die Übersteuerung enden soll. Ein Wert ohne UTC-Offset (kein nachfolgendes Z oder +HH:MM) wird als UTC behandelt, nicht als Ihre Ortszeit. Für Ortszeit verwenden Sie einen ISO-String mit explizitem Offset (z. B. 2026-07-04T22:00:00+02:00) oder ein Template wie {{ (now() + timedelta(hours=2)).isoformat() }}. Wird ignoriert (Rückfall auf die konfigurierte Dauer), wenn sie in der Vergangenheit liegt oder nicht lesbar ist. Hat Vorrang vor der Dauer."
+          "description": "Absolute Zeit, zu der die Übersteuerung enden soll. Ein Wert ohne UTC-Offset (kein nachfolgendes Z oder +HH:MM) wird als UTC behandelt, nicht als Ihre Ortszeit. Für Ortszeit verwenden Sie einen ISO-String mit explizitem Offset (z. B. 2026-07-04T22:00:00+02:00) oder ein Template wie '{{' (now() + timedelta(hours=2)).isoformat() '}}'. Wird ignoriert (Rückfall auf die konfigurierte Dauer), wenn sie in der Vergangenheit liegt oder nicht lesbar ist. Hat Vorrang vor der Dauer."
         },
         "duration": {
           "name": "Dauer",

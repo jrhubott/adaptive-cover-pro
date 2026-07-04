@@ -2358,7 +2358,7 @@
       "fields": {
         "end_time": {
           "name": "Heure de fin",
-          "description": "Heure absolue à laquelle la dérogation doit se terminer. Une valeur sans décalage UTC (sans Z de fin ou +HH:MM) est traitée comme UTC, pas votre heure locale. Pour l'heure locale, utilisez une chaîne ISO avec un décalage explicite (par exemple 2026-07-04T22:00:00+02:00) ou un modèle comme {{ (now() + timedelta(hours=2)).isoformat() }}. Ignorée (retour à la durée configurée) si elle est passée ou illisible. Prioritaire sur la durée."
+          "description": "Heure absolue à laquelle la dérogation doit se terminer. Une valeur sans décalage UTC (sans Z de fin ou +HH:MM) est traitée comme UTC, pas votre heure locale. Pour l'heure locale, utilisez une chaîne ISO avec un décalage explicite (par exemple 2026-07-04T22:00:00+02:00) ou un modèle comme '{{' (now() + timedelta(hours=2)).isoformat() '}}'. Ignorée (retour à la durée configurée) si elle est passée ou illisible. Prioritaire sur la durée."
         },
         "duration": {
           "name": "Durée",

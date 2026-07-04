@@ -180,7 +180,7 @@ engage_manual_override:
         (no trailing Z or +HH:MM) is treated as UTC, not your local time.
         For local time, use an ISO string with an explicit offset (e.g.
         2026-07-04T22:00:00+02:00) or a template like
-        {{ (now() + timedelta(hours=2)).isoformat() }}. Ignored (falls back
+        '{{' (now() + timedelta(hours=2)).isoformat() '}}'. Ignored (falls back
         to the configured duration) if it is in the past or unparseable.
         Takes precedence over duration.
       required: false

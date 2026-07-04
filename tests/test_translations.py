@@ -425,3 +425,80 @@ def test_no_untranslated_learn_more() -> None:
             f"'[Learn more]' — translate to the target language. "
             f"First offender: {offending[0]!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #793 — service field descriptions must be ICU-safe (no unescaped braces)
+# ---------------------------------------------------------------------------
+
+# HA renders `services` translation text through the frontend's IntlMessageFormat
+# (ICU) parser, which reads `{...}` as a placeholder. A literal Jinja example like
+# `{{ (now()).isoformat() }}` triggers "Translation error: MALFORMED_ARGUMENT" and
+# blanks the whole description. Literal braces must be escaped ICU-style with ASCII
+# single quotes: `'{{'` renders `{{`, `'}}'` renders `}}`.
+
+_ICU_SPECIAL = "{}#|"
+
+
+def _has_unescaped_brace(text: str) -> bool:
+    """Return True if ``text`` contains a `{`/`}` outside ICU apostrophe quoting.
+
+    Mirrors intl-messageformat: a `'` only opens a literal-quote span when the
+    next char is an ICU special char (`{ } # |`) or another `'`; a lone `'`
+    (e.g. French "l'heure") is a literal apostrophe and does not start quoting.
+    """
+    i, n = 0, len(text)
+    in_quote = False
+    while i < n:
+        c = text[i]
+        if c == "'":
+            nxt = text[i + 1] if i + 1 < n else ""
+            if in_quote:
+                if nxt == "'":  # '' -> literal apostrophe
+                    i += 2
+                    continue
+                in_quote = False
+                i += 1
+                continue
+            # not currently quoting
+            if nxt in _ICU_SPECIAL:
+                in_quote = True
+                i += 1
+                continue
+            if nxt == "'":  # '' -> literal apostrophe
+                i += 2
+                continue
+            i += 1  # lone apostrophe, literal
+            continue
+        if not in_quote and c in "{}":
+            return True
+        i += 1
+    return False
+
+
+def _service_field_descriptions(data: dict) -> list[tuple[str, str]]:
+    """Yield (dotpath, description) for every services.*.fields.*.description."""
+    out: list[tuple[str, str]] = []
+    for svc_name, svc in data.get("services", {}).items():
+        for field_name, field in svc.get("fields", {}).items():
+            desc = field.get("description")
+            if isinstance(desc, str):
+                out.append(
+                    (f"services.{svc_name}.fields.{field_name}.description", desc)
+                )
+    return out
+
+
+@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
+def test_service_field_descriptions_icu_safe(lang_file: Path) -> None:
+    """Service field descriptions must not carry an unescaped ICU brace (#793)."""
+    offending = [
+        path
+        for path, desc in _service_field_descriptions(_load(lang_file))
+        if _has_unescaped_brace(desc)
+    ]
+    assert not offending, (
+        f"{lang_file.name}: {len(offending)} service field description(s) contain "
+        f"an unescaped '{{'/'}}' — escape literal braces ICU-style as '{{{{' … '}}}}' "
+        f"so the frontend does not raise MALFORMED_ARGUMENT. Offenders: {offending}"
+    )
