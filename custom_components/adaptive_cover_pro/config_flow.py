@@ -1393,7 +1393,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "timing.after_sunrise": (
         "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes)."
     ),
-    "timing.return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    "timing.return_sunset": "{indent}🔚 Move to default position at end time: on",
     "timing.end_of_window": (
         "{indent}🔚 End-of-window position → {target} from end time until sunset "
         "(then the sunset position applies, if set)."

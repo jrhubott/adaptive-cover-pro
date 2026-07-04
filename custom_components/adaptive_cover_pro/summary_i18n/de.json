@@ -149,7 +149,7 @@
     "label_end_or_sunset": "Endzeit/Sonnenuntergang",
     "label_sunset": "Sonnenuntergang",
     "after_sunrise": "{indent}🌄 Nach Sonnenaufgang{ann} → {default_pos}% (Verfolgung fortgesetzt).",
-    "return_sunset": "{indent}🔚 Zurück zur Sonnenuntergangsposition bei Endzeit: aktiviert",
+    "return_sunset": "{indent}🔚 Zur Standardposition bei Endzeit: aktiviert",
     "end_of_window": "{indent}🔚 Position bei Fensterende → {target} von der Endzeit bis zum Sonnenuntergang (danach gilt die Sonnenuntergangsposition, falls gesetzt).",
     "end_of_window_needs_return": "{indent}⚠️ Position bei Fensterende ist gesetzt, aber \"Abdeckungen bei Erreichen der Endzeit bewegen\" ist AUS — sie wird nicht angewendet. Schalte diese Option ein.",
     "gate_sensors": "{indent}🌗 Tageslicht-Gate: {sensors} entscheiden über Tag vs. Dunkelheit.",

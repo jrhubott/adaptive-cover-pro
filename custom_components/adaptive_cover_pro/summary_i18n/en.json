@@ -149,7 +149,7 @@
     "label_end_or_sunset": "end time/sunset",
     "label_sunset": "sunset",
     "after_sunrise": "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes).",
-    "return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    "return_sunset": "{indent}🔚 Move to default position at end time: on",
     "end_of_window": "{indent}🔚 End-of-window position → {target} from end time until sunset (then the sunset position applies, if set).",
     "end_of_window_needs_return": "{indent}⚠️ End-of-window position is set but \"Move covers when end time is reached\" is OFF — it will not be applied. Turn that toggle on.",
     "gate_sensors": "{indent}🌗 Daytime gate: {sensors} decide day vs dark.",
