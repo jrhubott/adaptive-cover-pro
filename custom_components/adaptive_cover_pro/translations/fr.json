@@ -2357,6 +2357,20 @@
           "description": "Prolonge une dérogation active de cette valeur, ou en engage une nouvelle pour cette durée si aucune n'est active. Ignorée lorsqu'une heure de fin est définie."
         }
       }
+    },
+    "export_all_config": {
+      "name": "Exporter toutes les configurations",
+      "description": "Écrit les options complètes de chaque entrée de protection Adaptive Cover Pro dans adaptive_cover_pro_export.json dans votre répertoire de configuration Home Assistant en tant qu'instantané JSON sans perte. Retourne le chemin du fichier et le nombre d'entrées. Modifiez le fichier et réimportez-le avec Importer les configurations."
+    },
+    "import_config": {
+      "name": "Importer les configurations",
+      "description": "Lit un fichier JSON précédemment écrit par Exporter toutes les configurations et applique les options de chaque entrée (appariées par identifiant d'entrée) aux entrées de configuration actives. Les marqueurs de migration internes sont préservés de l'entrée actuelle. Les options numériques sont vérifiées par rapport à leurs limites min/max ; une entrée défaillante est signalée sans abandonner le reste. Toute option publique absente du fichier est réinitialisée à sa valeur par défaut lors du rechargement — exportez d'abord, puis modifiez uniquement ce que vous devez changer.",
+      "fields": {
+        "filename": {
+          "name": "Chemin du fichier",
+          "description": "Chemin du fichier JSON à importer. Les chemins relatifs se résolvent par rapport au répertoire de configuration Home Assistant et doivent rester à l'intérieur. Par défaut adaptive_cover_pro_export.json."
+        }
+      }
     }
   }
 }

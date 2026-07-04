@@ -2357,6 +2357,20 @@
           "description": "Verlängert eine aktive Übersteuerung um diesen Betrag oder aktiviert sie neu für diese Dauer, falls keine aktiv ist. Wird ignoriert, wenn eine Endzeit gesetzt ist."
         }
       }
+    },
+    "export_all_config": {
+      "name": "Alle Konfigurationen exportieren",
+      "description": "Schreibt die vollständigen Optionen jedes Adaptive Cover Pro-Konfigurationseintrags in adaptive_cover_pro_export.json im Konfigurationsverzeichnis von Home Assistant als verlustfreien JSON-Snapshot. Gibt den Dateipfad und die Anzahl der Einträge zurück. Bearbeiten Sie die Datei und importieren Sie sie mit Konfigurationen importieren erneut."
+    },
+    "import_config": {
+      "name": "Konfigurationen importieren",
+      "description": "Liest eine JSON-Datei, die zuvor von Alle Konfigurationen exportieren geschrieben wurde, und wendet die Optionen jedes Eintrags (abgeglichen nach Eintrag-ID) auf die aktiven Konfigurationseinträge an. Interne Migrationsmarker werden vom aktuellen Eintrag beibehalten. Numerische Optionen werden gegen ihre Min-/Max-Grenzen überprüft. Ein fehlgeschlagener Eintrag wird gemeldet, ohne den Rest abzubrechen. Jede öffentliche Option, die in der Datei fehlt, wird beim Neuladen auf ihren Standard zurückgesetzt – exportieren Sie zuerst, bearbeiten Sie dann nur, was Sie ändern müssen.",
+      "fields": {
+        "filename": {
+          "name": "Dateipfad",
+          "description": "Pfad zur JSON-Datei zum Importieren. Relative Pfade werden relativ zum Konfigurationsverzeichnis von Home Assistant aufgelöst und müssen darin bleiben. Standard: adaptive_cover_pro_export.json."
+        }
+      }
     }
   }
 }

@@ -1782,6 +1782,20 @@
         }
       }
     },
+    "export_all_config": {
+      "name": "Export all configurations",
+      "description": "Writes the full options of every Adaptive Cover Pro cover entry to adaptive_cover_pro_export.json in your Home Assistant config directory as a lossless JSON snapshot. Returns the file path and entry count. Edit the file and re-import it with Import configurations."
+    },
+    "import_config": {
+      "name": "Import configurations",
+      "description": "Reads a JSON file previously written by Export all configurations and applies each entry's options (matched by entry id) to the live config entries. Internal migration markers are preserved from the current entry. Numeric options are checked against their min/max bounds; a failing entry is reported without aborting the rest. Any public option absent from the file is reset to its default on reload — export first, then edit only what you need to change.",
+      "fields": {
+        "filename": {
+          "name": "File path",
+          "description": "Path to the JSON file to import. Relative paths resolve against the Home Assistant config directory and must stay inside it. Defaults to adaptive_cover_pro_export.json."
+        }
+      }
+    },
     "get_diagnostics": {
       "name": "Get diagnostics",
       "description": "Returns the live diagnostics snapshot for the targeted Adaptive Cover Pro instances — pipeline decision trace, cover positions, climate readings, sun data, and coordinator health.",

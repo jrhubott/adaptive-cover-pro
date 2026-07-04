@@ -76,8 +76,10 @@ import_config:
     but absent from the import file will be dropped and reset to its default on
     the next reload. Export first, then edit only the keys you want to change.
 
-    **Note — no validation:** imported values are applied as-is without range or
-    type checking. Invalid values will surface as errors when the entry reloads.
+    **Note — partial validation:** numeric options are checked against their
+    declared min/max bounds and a failing entry is reported as an error without
+    aborting the rest of the import. Non-numeric options (booleans, strings,
+    enums) are applied as-is and may surface errors when the entry reloads.
   fields:
     filename:
       name: File path

@@ -332,9 +332,7 @@ class TestImportConfig:
             call.hass = hass
             call.data = {"filename": str(bad_file)}
 
-            with pytest.raises(
-                ServiceValidationError, match="not a valid ACP export"
-            ):
+            with pytest.raises(ServiceValidationError, match="not a valid ACP export"):
                 await async_handle_import_config(call)
 
     @pytest.mark.asyncio
@@ -344,14 +342,14 @@ class TestImportConfig:
             async_handle_import_config,
         )
 
-        entry = _make_entry("id-1", "Blind A", {"azimuth": 90})
+        entry = _make_entry("id-1", "Blind A", {"set_azimuth": 90})
         hass = _make_hass([entry], config_dir=str(tmp_path))
 
         export_path = tmp_path / "import.json"
-        # azimuth valid range is [0, 359]; 999 is out of range
+        # set_azimuth valid range is [0, 359]; 999 is out of range
         self._write_export(
             export_path,
-            [{"entry_id": "id-1", "options": {"azimuth": 999}}],
+            [{"entry_id": "id-1", "options": {"set_azimuth": 999}}],
         )
 
         call = MagicMock()
@@ -361,9 +359,9 @@ class TestImportConfig:
         result = await async_handle_import_config(call)
 
         assert result["id-1"].startswith("error:")
-        assert "azimuth" in result["id-1"]
+        assert "set_azimuth" in result["id-1"]
         # entry options must not have been modified
-        assert entry.options["azimuth"] == 90
+        assert entry.options["set_azimuth"] == 90
 
     @pytest.mark.asyncio
     async def test_mixed_results(self, tmp_path):
