@@ -2587,6 +2587,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TILT_DEPTH,
             CONF_TILT_DISTANCE,
             CONF_TILT_MODE,
+            CONF_TILT_ANGLE_0,
+            CONF_TILT_ANGLE_100,
             # Per-window aperture fields relocated from sun_tracking (#778). They
             # live on the geometry step and sync with the physical measurements.
             # CONF_AZIMUTH is intentionally NOT listed — it stays in
