@@ -29,7 +29,9 @@ from ...const import (
     CONF_INVERSE_TILT,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
+    CONF_MIN_TILT_SUN_ONLY,
     CONF_MINIMIZE_MOVEMENTS,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
@@ -44,7 +46,9 @@ from ...const import (
     ControlMethod,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MAX_TILT,
+    DEFAULT_MAX_TILT_SUN_ONLY,
     DEFAULT_MIN_TILT,
+    DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
@@ -125,7 +129,9 @@ _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_INVERSE_TILT,
     CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
+    CONF_MIN_TILT_SUN_ONLY,
 )
 
 # Control methods that carry an explicit, user-specified position.
@@ -198,9 +204,15 @@ def _venetian_extras_schema() -> dict:
         vol.Optional(CONF_MAX_TILT, default=DEFAULT_MAX_TILT): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=100)
         ),
+        vol.Optional(
+            CONF_MAX_TILT_SUN_ONLY, default=DEFAULT_MAX_TILT_SUN_ONLY
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=100)
         ),
+        vol.Optional(
+            CONF_MIN_TILT_SUN_ONLY, default=DEFAULT_MIN_TILT_SUN_ONLY
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_VENETIAN_TILT_SAFETY_MARGIN,
             default=DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,

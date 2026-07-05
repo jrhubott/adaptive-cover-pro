@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...const import ControlMethod
+from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
 from ..helpers import compute_default_position
 from ..types import PipelineResult, PipelineSnapshot
@@ -25,6 +26,12 @@ class DefaultHandler(OverrideHandler):
         # Resolve tilt: sunset_tilt takes precedence during the sunset window,
         # then fall back to default_tilt. None means the venetian policy will
         # use solar-computed tilt instead.
+        # Sunset tilt (and its default_tilt fallback) is a deliberate carve-out
+        # and stays UNclamped, mirroring the sunset *position* bypass (#128).
+        # Only the non-sunset default_tilt honors the global min_tilt/max_tilt
+        # clamp (#503) — exactly as default *position* is clamped. tilt is None
+        # for non-venetian covers, so the clamp is a natural no-op there (no
+        # cover-type string branch needed).
         tilt: int | None
         if snapshot.is_sunset_active:
             tilt = (
@@ -34,6 +41,15 @@ class DefaultHandler(OverrideHandler):
             )
         else:
             tilt = snapshot.default_tilt
+            if tilt is not None:
+                tilt = PositionConverter.apply_tilt_limits(
+                    tilt,
+                    snapshot.min_tilt,
+                    snapshot.max_tilt,
+                    snapshot.min_tilt_sun_only,
+                    snapshot.max_tilt_sun_only,
+                    sun_valid=False,
+                )
         # "Use My at sunset" path: route through the cover's hardware-stored My preset
         # when the sunset window is active and the user has opted in.
         if (

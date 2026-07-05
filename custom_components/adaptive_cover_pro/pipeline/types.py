@@ -182,6 +182,17 @@ class PipelineSnapshot:
         None  # tilt during sunset window; falls back to default_tilt
     )
 
+    # Global tilt clamps (issue #503). The DefaultHandler clamps its non-sunset
+    # default_tilt to [min_tilt, max_tilt]; sunset_tilt and custom-position tilt
+    # are deliberate carve-outs and are never clamped. The *_sun_only toggles
+    # mirror enable_min/max_position: False (default) = always enforce, True =
+    # only during sun tracking. Defaults are no-ops (0 / 100 / False) so
+    # snapshots that don't set them behave exactly as before.
+    min_tilt: int = 0
+    max_tilt: int = 100
+    min_tilt_sun_only: bool = False
+    max_tilt_sun_only: bool = False
+
     # Motion timeout mode:
     #   "return_to_default" (default) — handler sends the configured default position
     #   "hold_position" — handler emits skip_command=True so the cover stays put while

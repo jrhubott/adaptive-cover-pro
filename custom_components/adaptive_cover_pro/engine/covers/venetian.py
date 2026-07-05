@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 
 from ...config_types import CoverConfig, TiltConfig, VerticalConfig
+from ...position_utils import PositionConverter
 from ...sun import SunData
 from .tilt import AdaptiveTiltCover
 from .vertical import AdaptiveVerticalCover
@@ -88,9 +89,23 @@ class VenetianCoverCalculation:
 
         Applied to every engine-derived tilt — including the NaN fallback — so
         ``min_tilt`` is a true floor, not just "applied when geometry resolves".
+
+        Delegates to the shared :meth:`PositionConverter.apply_tilt_limits`
+        primitive with ``sun_valid=True`` (this is the sun-tracking engine
+        path), so the clamp policy lives in exactly one place shared with the
+        DefaultHandler default-tilt clamp (#503). With ``sun_valid=True`` the
+        limits always apply regardless of the ``*_sun_only`` toggles, preserving
+        the original unconditional ``max(min, min(v, max))`` behavior.
         """
         cfg = self._tilt.tilt_config
-        return max(cfg.min_tilt, min(value, cfg.max_tilt))
+        return PositionConverter.apply_tilt_limits(
+            value,
+            cfg.min_tilt,
+            cfg.max_tilt,
+            cfg.min_tilt_sun_only,
+            cfg.max_tilt_sun_only,
+            sun_valid=True,
+        )
 
     def _compute_tilt(self) -> int:
         try:

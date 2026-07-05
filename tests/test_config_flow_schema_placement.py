@@ -155,6 +155,25 @@ def test_venetian_mode_in_geometry_venetian_schema() -> None:
     assert CONF_VENETIAN_MODE in keys
 
 
+def test_tilt_sun_only_toggles_in_venetian_schema_default_false() -> None:
+    """min/max_tilt_sun_only toggles live on the venetian schema, default False (#503)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_TILT_SUN_ONLY,
+        CONF_MIN_TILT_SUN_ONLY,
+    )
+    from custom_components.adaptive_cover_pro.cover_types.venetian import (
+        GEOMETRY_VENETIAN_SCHEMA,
+    )
+
+    schema = GEOMETRY_VENETIAN_SCHEMA.schema
+    keys = {str(k) for k in schema}
+    assert CONF_MAX_TILT_SUN_ONLY in keys
+    assert CONF_MIN_TILT_SUN_ONLY in keys
+    for marker in schema:
+        if str(marker) in (CONF_MAX_TILT_SUN_ONLY, CONF_MIN_TILT_SUN_ONLY):
+            assert marker.default() is False
+
+
 # ---------------------------------------------------------------------------
 # Per-slot tilt slider — venetian only (Step 12)
 # ---------------------------------------------------------------------------

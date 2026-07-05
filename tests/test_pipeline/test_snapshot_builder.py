@@ -18,6 +18,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_LUX_ENTITY,
+    CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_TEMP_HIGH,
@@ -533,6 +535,63 @@ def test_build_forwards_explicit_effective_default():
     assert snapshot.motion_control_enabled is True
     assert snapshot.default_tilt == 50
     assert snapshot.cover_type == "cover_tilt"
+
+
+@pytest.mark.unit
+def test_build_reads_tilt_limits_and_sun_only_toggles():
+    """max_tilt / *_sun_only options flow onto the snapshot (issue #503)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        {CONF_MAX_TILT: 60, CONF_MAX_TILT_SUN_ONLY: True},
+        cover_data=cover_data,
+        cover_type="cover_tilt",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.max_tilt == 60
+    assert snapshot.max_tilt_sun_only is True
+    # Absent keys fall back to no-op defaults.
+    assert snapshot.min_tilt == 0
+    assert snapshot.min_tilt_sun_only is False
+
+
+@pytest.mark.unit
+def test_build_tilt_limits_default_when_options_absent():
+    """No tilt options → snapshot uses no-op defaults (100 / 0 / False)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+
+    snapshot = builder.build(
+        {},
+        cover_data=cover_data,
+        cover_type="cover_tilt",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.max_tilt == 100
+    assert snapshot.min_tilt == 0
+    assert snapshot.max_tilt_sun_only is False
+    assert snapshot.min_tilt_sun_only is False
 
 
 @pytest.mark.unit

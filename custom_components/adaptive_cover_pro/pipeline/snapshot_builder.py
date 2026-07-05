@@ -44,6 +44,10 @@ from ..const import (
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
+    CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
+    CONF_MIN_TILT,
+    CONF_MIN_TILT_SUN_ONLY,
     CONF_MINIMIZE_MOVEMENTS,
     CONF_MOTION_TIMEOUT_MODE,
     CONF_MY_POSITION_VALUE,
@@ -73,6 +77,10 @@ from ..const import (
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
     DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MAX_TILT,
+    DEFAULT_MAX_TILT_SUN_ONLY,
+    DEFAULT_MIN_TILT,
+    DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
@@ -413,6 +421,14 @@ class PipelineSnapshotBuilder:
             ),
             default_tilt=options.get(CONF_DEFAULT_TILT),
             sunset_tilt=options.get(CONF_SUNSET_TILT),
+            min_tilt=int(options.get(CONF_MIN_TILT, DEFAULT_MIN_TILT)),
+            max_tilt=int(options.get(CONF_MAX_TILT, DEFAULT_MAX_TILT)),
+            min_tilt_sun_only=bool(
+                options.get(CONF_MIN_TILT_SUN_ONLY, DEFAULT_MIN_TILT_SUN_ONLY)
+            ),
+            max_tilt_sun_only=bool(
+                options.get(CONF_MAX_TILT_SUN_ONLY, DEFAULT_MAX_TILT_SUN_ONLY)
+            ),
             solar_floor_active=solar_floor_active,
             time_threshold_minutes=_delta_time_minutes(options.get(CONF_DELTA_TIME)),
         )

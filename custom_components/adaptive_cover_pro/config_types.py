@@ -352,6 +352,11 @@ class TiltConfig:
     mode: TiltMode | str
     max_tilt: int = 100
     min_tilt: int = 0
+    # When True, the corresponding tilt limit is only enforced during active sun
+    # tracking (mirrors enable_min/max_position). False (default) = always
+    # enforce. Issue #503/#629.
+    min_tilt_sun_only: bool = False
+    max_tilt_sun_only: bool = False
     # Configurable venetian tilt safety margin (issue #783): 0.0 (default) is a
     # provable no-op; 1.0 applies the full angle-dependent geometry margin in the
     # slat-closing direction. Scales the automatic ``SafetyMarginCalculator``

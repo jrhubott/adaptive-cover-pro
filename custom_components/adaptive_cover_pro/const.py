@@ -196,6 +196,14 @@ CONF_MAX_TILT = "max_tilt"  # cap on sun-derived tilt %, 0-100
 DEFAULT_MAX_TILT = 100  # default: no upper cap
 CONF_MIN_TILT = "min_tilt"  # floor on sun-derived tilt %, 0-100
 DEFAULT_MIN_TILT = 0  # default: no lower floor
+# If True, min_tilt/max_tilt are only enforced during active sun tracking —
+# mirroring CONF_ENABLE_MIN/MAX_POSITION. False (default) = always enforce,
+# including the sun-invalid default_tilt path (issue #503/#629). Sunset and
+# custom-position tilts are deliberate carve-outs and are never affected.
+CONF_MIN_TILT_SUN_ONLY = "min_tilt_sun_only"
+DEFAULT_MIN_TILT_SUN_ONLY = False
+CONF_MAX_TILT_SUN_ONLY = "max_tilt_sun_only"
+DEFAULT_MAX_TILT_SUN_ONLY = False
 
 # Slat angle (degrees) at which the slats sit horizontal — the geometric pivot
 # the safety-margin transform closes away from. MODE1: 90° = fully open.

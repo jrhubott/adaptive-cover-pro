@@ -717,6 +717,57 @@ class TestDefaultHandler:
         assert result is not None
         assert result.tilt == 20
 
+    # -- default_tilt clamp against min_tilt/max_tilt (issue #503) ----------
+
+    def test_default_tilt_clamped_by_max_tilt(self) -> None:
+        """default_tilt above max_tilt is clamped down to max_tilt (non-sunset)."""
+        snap = make_snapshot(default_tilt=80, max_tilt=60)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 60
+
+    def test_default_tilt_clamped_by_min_tilt(self) -> None:
+        """default_tilt below min_tilt is raised up to min_tilt (non-sunset)."""
+        snap = make_snapshot(default_tilt=5, min_tilt=20)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 20
+
+    def test_default_tilt_unchanged_when_within_limits(self) -> None:
+        """default_tilt within [min_tilt, max_tilt] is stamped verbatim."""
+        snap = make_snapshot(default_tilt=50, min_tilt=10, max_tilt=90)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 50
+
+    def test_default_tilt_not_clamped_when_max_sun_only(self) -> None:
+        """max_tilt_sun_only=True: max cap does not apply on the sun-invalid default path."""
+        snap = make_snapshot(default_tilt=80, max_tilt=60, max_tilt_sun_only=True)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 80
+
+    def test_default_tilt_not_clamped_when_min_sun_only(self) -> None:
+        """min_tilt_sun_only=True: min floor does not apply on the sun-invalid default path."""
+        snap = make_snapshot(default_tilt=5, min_tilt=20, min_tilt_sun_only=True)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 5
+
+    def test_sunset_tilt_not_clamped(self) -> None:
+        """sunset_tilt is a deliberate carve-out — never clamped (issue #128)."""
+        snap = make_snapshot(is_sunset_active=True, sunset_tilt=80, max_tilt=60)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 80
+
+    def test_sunset_default_tilt_fallback_not_clamped(self) -> None:
+        """When sunset active with no sunset_tilt, the default_tilt fallback stays unclamped."""
+        snap = make_snapshot(is_sunset_active=True, default_tilt=80, max_tilt=60)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 80
+
 
 # ---------------------------------------------------------------------------
 # Handler result structure

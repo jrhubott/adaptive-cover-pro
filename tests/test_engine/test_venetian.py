@@ -572,3 +572,44 @@ class TestMinTiltFloor:
         )
         calc._tilt.calculate_percentage = Mock(return_value=math.nan)
         assert calc.calculate_dual().tilt == floor
+
+
+class TestClampTiltDelegation:
+    """Characterization: engine tilt clamp delegates to the shared primitive (#503).
+
+    The engine path is a sun-tracking path (``sun_valid=True``), so the clamp
+    always applies regardless of the ``*_sun_only`` toggles — preserving the
+    original unconditional ``max(min_tilt, min(value, max_tilt))`` behavior.
+    """
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_max_tilt_60_clamps_high_geometry_tilt(self, mock_datetime):
+        """Geometry that yields tilt 80 is clamped to max_tilt=60."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(max_tilt=60),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=80.0,
+            logger=_make_logger(),
+        )
+        calc._tilt.calculate_percentage = Mock(return_value=80.0)
+        assert calc.calculate_dual().tilt == 60
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_nan_fallback_floored_by_min_tilt(self, mock_datetime):
+        """NaN geometry falls back to 0, then min_tilt=20 floors it to 20."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(min_tilt=20),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            logger=_make_logger(),
+        )
+        calc._tilt.calculate_percentage = Mock(return_value=math.nan)
+        assert calc.calculate_dual().tilt == 20

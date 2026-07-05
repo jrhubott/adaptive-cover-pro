@@ -197,6 +197,18 @@ class TestEvaluateSensorOn:
         assert result is not None
         assert result.position == 100
 
+    def test_custom_position_tilt_not_clamped_by_max_tilt(self) -> None:
+        """Custom-position tilt is a deliberate carve-out — max_tilt never clamps it (issue #503/#515)."""
+        snapshot = make_snapshot(
+            max_tilt=85,
+            custom_position_sensors=[
+                _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, False)
+            ],
+        )
+        result = _handler(position=50, tilt=100).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt == 100
+
 
 # ---------------------------------------------------------------------------
 # Multi-sensor / template trigger reasons (issue #563)

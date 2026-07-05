@@ -168,3 +168,50 @@ class PositionConverter:
                 result = max(result, effective_min)
 
         return int(result)
+
+    @staticmethod
+    def apply_tilt_limits(
+        value: int,
+        min_tilt: int | None,
+        max_tilt: int | None,
+        min_tilt_sun_only: bool,
+        max_tilt_sun_only: bool,
+        *,
+        sun_valid: bool,
+    ) -> int:
+        """Clamp a tilt value to the configured ``[min_tilt, max_tilt]`` range.
+
+        Single shared tilt-limit primitive (issue #503): the engine's
+        sun-derived tilt (``sun_valid=True``) and the DefaultHandler's
+        non-sunset default tilt (``sun_valid=False``) both delegate here so the
+        clamp policy lives in exactly one place.
+
+        Delegates to :meth:`apply_limits` — ``min_tilt_sun_only`` /
+        ``max_tilt_sun_only`` map onto its ``apply_min`` / ``apply_max`` flags
+        (False = always enforce; True = enforce only during sun tracking),
+        exactly mirroring the ``enable_min/max_position`` position semantics.
+        There is no sun-tracking floor for tilt, so ``sun_tracking_min_pos`` is
+        left unset.
+
+        Args:
+            value: Tilt value to constrain (0-100).
+            min_tilt: Minimum tilt limit (0 = no floor).
+            max_tilt: Maximum tilt limit (100 = no cap).
+            min_tilt_sun_only: When True, the floor applies only while
+                ``sun_valid`` is True; when False it always applies.
+            max_tilt_sun_only: When True, the cap applies only while
+                ``sun_valid`` is True; when False it always applies.
+            sun_valid: Whether the sun is currently tracked (direct sunlight).
+
+        Returns:
+            Constrained tilt value (0-100).
+
+        """
+        return PositionConverter.apply_limits(
+            value,
+            min_tilt,
+            max_tilt,
+            apply_min=min_tilt_sun_only,
+            apply_max=max_tilt_sun_only,
+            sun_valid=sun_valid,
+        )
