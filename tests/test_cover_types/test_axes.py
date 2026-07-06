@@ -47,6 +47,7 @@ ALL_COVER_TYPES = [
     "cover_tilt",
     "cover_venetian",
     "cover_roof_window",
+    "cover_sliding_curtain",
 ]
 
 
@@ -169,6 +170,7 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
+                "cover_sliding_curtain": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -180,6 +182,7 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,  # cover_tilt always routes tilt
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
+                "cover_sliding_curtain": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -193,6 +196,7 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_TILT,
                 "cover_roof_window": AXIS_NAME_TILT,
+                "cover_sliding_curtain": AXIS_NAME_TILT,
             },
         ),
     ],

@@ -1460,6 +1460,7 @@ class CoverType(StrEnum):
     VENETIAN = "cover_venetian"
     OSCILLATING_AWNING = "cover_oscillating_awning"
     ROOF_WINDOW = "cover_roof_window"
+    SLIDING_CURTAIN = "cover_sliding_curtain"
     # Virtual entry type — not a physical cover. Holds shared building-level
     # sensor entity IDs that linked covers copy into their own options. Its
     # policy registers no platforms (``controls_cover = False``).
@@ -1485,6 +1486,7 @@ class CoverType(StrEnum):
             self.VENETIAN: "Venetian",
             self.OSCILLATING_AWNING: "Oscillating Awning",
             self.ROOF_WINDOW: "Roof Window",
+            self.SLIDING_CURTAIN: "Sliding Curtain",
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
         }[self]
