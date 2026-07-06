@@ -201,7 +201,8 @@
     "tilt": "Venetian / Tilt Blind",
     "oscillating_awning": "Oscillating Awning",
     "venetian": "Venetian Blind (Dual-Axis)",
-    "roof_window": "Roof Window"
+    "roof_window": "Roof Window",
+    "louvered_roof": "Louvered Roof"
   },
   "geometry": {
     "window": {

@@ -201,7 +201,8 @@
     "tilt": "Store vénitien / inclinaison",
     "oscillating_awning": "Store oscillant",
     "venetian": "Store vénitien (deux axes)",
-    "roof_window": "Fenêtre de toit"
+    "roof_window": "Fenêtre de toit",
+    "louvered_roof": "Toit à lames"
   },
   "geometry": {
     "window": {

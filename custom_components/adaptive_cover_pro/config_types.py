@@ -344,6 +344,36 @@ class RoofWindowConfig:
 
 
 @dataclass
+class LouveredRoofConfig:
+    """Configuration specific to louvered (lamella) roofs (#830).
+
+    A louvered roof rotates slats around a horizontal axis lying in a horizontal
+    (or pitched) roof plane — a bioclimatic pergola / "Lamellendach". It reuses
+    the venetian slat geometry (depth, spacing, mode — carried in a sibling
+    ``TiltConfig``) and adds only the roof-plane pitch.
+
+    ``roof_pitch`` is measured FROM HORIZONTAL: ``0`` = flat roof (the default),
+    ``90`` = vertical plane (reduces to the venetian/tilt profile angle exactly).
+    """
+
+    roof_pitch: float = 0.0
+
+    @classmethod
+    def from_options(cls, options: dict) -> LouveredRoofConfig:
+        """Build from a config-entry options dict, applying defaults."""
+        from .const import CONF_ROOF_PITCH, DEFAULT_LOUVERED_ROOF_PITCH
+
+        pitch = options.get(CONF_ROOF_PITCH)
+        return cls(
+            roof_pitch=(
+                float(pitch)
+                if pitch is not None
+                else float(DEFAULT_LOUVERED_ROOF_PITCH)
+            ),
+        )
+
+
+@dataclass
 class TiltConfig:
     """Configuration specific to tilt/venetian blinds."""
 

@@ -47,6 +47,7 @@ ALL_COVER_TYPES = [
     "cover_tilt",
     "cover_venetian",
     "cover_roof_window",
+    "cover_louvered_roof",
 ]
 
 
@@ -136,6 +137,7 @@ class TestPolicyAxesDeclarations:
             ("cover_awning", (AXIS_NAME_POSITION,)),
             ("cover_tilt", (AXIS_NAME_TILT,)),
             ("cover_venetian", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
+            ("cover_louvered_roof", (AXIS_NAME_TILT,)),
         ],
     )
     def test_axes_declaration(self, cover_type, expected_axis_names):
@@ -144,7 +146,12 @@ class TestPolicyAxesDeclarations:
 
     @pytest.mark.unit
     def test_blind_tilt_venetian_dont_treat_open_as_sun_blocked(self):
-        for cover_type in ("cover_blind", "cover_tilt", "cover_venetian"):
+        for cover_type in (
+            "cover_blind",
+            "cover_tilt",
+            "cover_venetian",
+            "cover_louvered_roof",
+        ):
             assert get_policy(cover_type).axes[0].open_blocks_sun is False
 
     @pytest.mark.unit
@@ -169,6 +176,7 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
+                "cover_louvered_roof": AXIS_NAME_TILT,
             },
         ),
         (
@@ -180,6 +188,8 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,  # cover_tilt always routes tilt
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
+                # louvered roof is a tilt-axis type like cover_tilt.
+                "cover_louvered_roof": AXIS_NAME_TILT,
             },
         ),
         (
@@ -193,6 +203,7 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_TILT,
                 "cover_roof_window": AXIS_NAME_TILT,
+                "cover_louvered_roof": AXIS_NAME_TILT,
             },
         ),
     ],
@@ -252,6 +263,7 @@ class TestPositionForIntent:
             ("cover_awning", POSITION_CLOSED, POSITION_OPEN),
             ("cover_tilt", POSITION_OPEN, POSITION_CLOSED),
             ("cover_venetian", POSITION_OPEN, POSITION_CLOSED),
+            ("cover_louvered_roof", POSITION_OPEN, POSITION_CLOSED),
         ],
     )
     def test_intent_map(self, cover_type, sun_through_value, sun_blocked_value):
@@ -451,6 +463,7 @@ def test_is_in_tilt_suppression_uniform_signature(cover_type: str) -> None:
         ("cover_awning", True),
         ("cover_tilt", False),
         ("cover_venetian", False),
+        ("cover_louvered_roof", False),
     ],
 )
 def test_supports_return_to_default_switch(cover_type: str, expected: bool) -> None:
@@ -627,6 +640,7 @@ def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_louvered_roof", False),
     ],
 )
 def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
@@ -647,6 +661,7 @@ def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_louvered_roof", False),
     ],
 )
 def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
@@ -667,6 +682,7 @@ def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
         ("cover_awning", "Configuration-Horizontal"),
         ("cover_tilt", "Configuration-Tilt"),
         ("cover_venetian", "Venetian-Blinds"),
+        ("cover_louvered_roof", "Configuration-Louvered-Roof"),
     ],
 )
 def test_wiki_anchor(cover_type: str, anchor: str) -> None:
@@ -686,6 +702,7 @@ def test_wiki_anchor(cover_type: str, anchor: str) -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_louvered_roof", False),
     ],
 )
 def test_drift_reset_option_is_venetian_only(cover_type: str, expected: bool) -> None:
@@ -742,6 +759,12 @@ class TestLiftTravelMetres:
         svc = self._fake_config_service()
         assert get_policy("cover_tilt").lift_travel_metres(svc, {}) is None
 
+    @pytest.mark.unit
+    def test_louvered_roof_returns_none(self) -> None:
+        # Tilt-axis type — no lift axis, so it inherits the ``None`` default.
+        svc = self._fake_config_service()
+        assert get_policy("cover_louvered_roof").lift_travel_metres(svc, {}) is None
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
@@ -751,6 +774,7 @@ class TestLiftTravelMetres:
         ("cover_awning", "Horizontal Awning"),
         ("cover_tilt", "Venetian / Tilt Blind"),
         ("cover_venetian", "Venetian Blind (Dual-Axis)"),
+        ("cover_louvered_roof", "Louvered Roof"),
     ],
 )
 def test_display_label(cover_type: str, label: str) -> None:

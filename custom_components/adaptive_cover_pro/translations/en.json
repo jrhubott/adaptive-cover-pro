@@ -1830,7 +1830,8 @@
         "cover_tilt": "Tilted blind",
         "cover_venetian": "Venetian blind (dual-axis)",
         "cover_oscillating_awning": "Oscillating awning (drop-arm)",
-        "cover_roof_window": "Roof window"
+        "cover_roof_window": "Roof window",
+        "cover_louvered_roof": "Louvered roof"
       }
     },
     "tilt_mode": {

@@ -1830,7 +1830,8 @@
         "cover_tilt": "Dreh-Jalousie",
         "cover_venetian": "Jalousette (zweiachsig)",
         "cover_oscillating_awning": "Gelenkarmmarkise (drop-arm)",
-        "cover_roof_window": "Dachfenster"
+        "cover_roof_window": "Dachfenster",
+        "cover_louvered_roof": "Lamellendach"
       }
     },
     "tilt_mode": {

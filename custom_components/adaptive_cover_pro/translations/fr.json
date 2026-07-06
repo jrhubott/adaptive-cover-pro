@@ -1830,7 +1830,8 @@
         "cover_tilt": "Store à inclinaison",
         "cover_venetian": "Store vénitien (double axe)",
         "cover_oscillating_awning": "Store banne à bras articulé",
-        "cover_roof_window": "Fenêtre de toit"
+        "cover_roof_window": "Fenêtre de toit",
+        "cover_louvered_roof": "Toit à lames"
       }
     },
     "tilt_mode": {

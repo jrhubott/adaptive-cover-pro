@@ -21,6 +21,33 @@ from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
 
 
+def slat_cutoff_angle(
+    beta: float, slat_distance: float, depth: float
+) -> tuple[float, float, bool]:
+    """Solve the venetian slat cut-off angle for a profile angle ``beta``.
+
+    Single source of truth for the MDPI cut-off expression
+    (https://www.mdpi.com/1996-1073/13/7/1731) plus its negative-discriminant
+    guard, shared by :class:`AdaptiveTiltCover` (vertical-facade profile angle)
+    and the louvered-roof engine (pitched-plane profile angle). Only ``beta``
+    changes between callers; the slat geometry solve is identical.
+
+    Returns ``(slat_angle_deg, discriminant, negative_discriminant)``:
+
+    * ``negative_discriminant`` is ``True`` when the slat_distance/depth ratio is
+      large relative to ``tan(beta)`` (``sqrt`` of a negative). NumPy would
+      return ``nan`` silently; the caller returns ``0.0`` (closed) instead, so
+      the angle is ``0.0`` in that case.
+    * otherwise the angle is ``2·arctan((tan β + √disc)/(1 + ratio))`` in degrees.
+    """
+    ratio = slat_distance / depth
+    discriminant = (tan(beta) ** 2) - (ratio**2) + 1
+    if discriminant < 0:
+        return 0.0, float(discriminant), True
+    slat = 2 * np.arctan((tan(beta) + np.sqrt(discriminant)) / (1 + ratio))
+    return float(np.rad2deg(slat)), float(discriminant), False
+
+
 @dataclass
 class AdaptiveTiltCover(AdaptiveGeneralCover):
     """Calculate state for tilted blinds."""
@@ -123,9 +150,13 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         # Guard: discriminant can be negative when slat_distance/depth ratio is
         # large relative to tan(beta), making sqrt of a negative.  NumPy returns
-        # nan silently; we return 0.0 (closed) as a safe fallback instead.
-        discriminant = (tan(beta) ** 2) - ((self.slat_distance / self.depth) ** 2) + 1
-        if discriminant < 0:
+        # nan silently; we return 0.0 (closed) as a safe fallback instead. The
+        # cut-off math is shared with the louvered-roof engine via
+        # ``slat_cutoff_angle`` (only ``beta`` differs between them).
+        result, discriminant, negative_discriminant = slat_cutoff_angle(
+            beta, self.slat_distance, self.depth
+        )
+        if negative_discriminant:
             self.logger.debug(
                 "Tilt calc: negative discriminant (%.4f) — returning 0° (closed)",
                 float(discriminant),
@@ -140,11 +171,6 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 result=0.0,
             )
             return 0.0
-
-        slat = 2 * np.arctan(
-            (tan(beta) + np.sqrt(discriminant)) / (1 + self.slat_distance / self.depth)
-        )
-        result = np.rad2deg(slat)
 
         # Additional nan guard in case of unexpected floating-point edge cases
         if np.isnan(result):

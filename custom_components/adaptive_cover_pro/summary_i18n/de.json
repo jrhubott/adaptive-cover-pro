@@ -201,7 +201,8 @@
     "tilt": "Jalousie / Neigung",
     "oscillating_awning": "Schwenkmarkise",
     "venetian": "Jalousie (Zwei-Achsen)",
-    "roof_window": "Dachfenster"
+    "roof_window": "Dachfenster",
+    "louvered_roof": "Lamellendach"
   },
   "geometry": {
     "window": {
