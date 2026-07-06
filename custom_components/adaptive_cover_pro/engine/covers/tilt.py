@@ -90,6 +90,25 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             return self.mode.max_degrees
         return TiltMode(self.mode).max_degrees
 
+    def _effective_max_degrees(self) -> int:
+        """Ceiling + percentage denominator for the slat angle.
+
+        Polymorphic hook. Base: the tilt mode's max (90 for MODE1, 180 for
+        MODE2). The louvered-roof engine overrides this to honour a configurable
+        physical ``max_slat_angle`` for pergola drives whose mechanical travel
+        is neither 90° nor 180°.
+        """
+        return self._max_degrees()
+
+    def _resolve_slat_angle(self, cutoff_angle: float) -> float:
+        """Map the magnitude cut-off angle to the physical slat angle.
+
+        Polymorphic hook. Base: identity — the vertical-facade venetian/tilt
+        angle IS the physical slat angle. The louvered-roof engine overrides
+        this to realize far-side sun as the flipped face (``180° − θ``).
+        """
+        return cutoff_angle
+
     def _build_trace(
         self,
         *,
@@ -146,7 +165,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         """
         beta = self.beta
-        max_degrees = self._max_degrees()
+        max_degrees = self._effective_max_degrees()
 
         # Guard: discriminant can be negative when slat_distance/depth ratio is
         # large relative to tan(beta), making sqrt of a negative.  NumPy returns
@@ -191,6 +210,10 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             )
             return 0.0
 
+        # Realize the physical slat angle from the magnitude cut-off (identity
+        # for tilt/venetian; the louvered-roof engine flips the far-side face to
+        # ``180° − θ`` here, before the safety margin closes it toward 180).
+        result = self._resolve_slat_angle(result)
         slat_angle_raw_deg = float(result)
 
         # Configurable safety margin (issue #783): reuse the vertical axis'
@@ -241,13 +264,6 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         # 0 degrees is closed, 90 degrees is open (mode1), 180 degrees is closed (mode2)
         position = self.calculate_position()
-
-        # Handle both string and TiltMode enum for backward compatibility
-        if isinstance(self.mode, TiltMode):
-            max_degrees = self.mode.max_degrees
-        else:
-            # Convert string to TiltMode
-            mode_enum = TiltMode(self.mode)
-            max_degrees = mode_enum.max_degrees
-
-        return PositionConverter.to_percentage(position, max_degrees)
+        # Same effective ceiling the position solve clamps to (the mode max for
+        # tilt/venetian; a configurable physical max for the louvered roof).
+        return PositionConverter.to_percentage(position, self._effective_max_degrees())

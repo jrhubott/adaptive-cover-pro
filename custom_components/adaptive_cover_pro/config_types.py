@@ -413,21 +413,38 @@ class LouveredRoofConfig:
 
     ``roof_pitch`` is measured FROM HORIZONTAL: ``0`` = flat roof (the default),
     ``90`` = vertical plane (reduces to the venetian/tilt profile angle exactly).
+
+    ``max_slat_angle`` optionally overrides the tilt mode's 90°/180° ceiling for
+    a pergola drive whose mechanical travel is neither (e.g. 0–160°). ``0`` (the
+    default sentinel) keeps the mode's max; a nonzero value becomes BOTH the
+    clamp ceiling and the tilt%→angle denominator.
     """
 
     roof_pitch: float = 0.0
+    max_slat_angle: float = 0.0
 
     @classmethod
     def from_options(cls, options: dict) -> LouveredRoofConfig:
         """Build from a config-entry options dict, applying defaults."""
-        from .const import CONF_ROOF_PITCH, DEFAULT_LOUVERED_ROOF_PITCH
+        from .const import (
+            CONF_MAX_SLAT_ANGLE,
+            CONF_ROOF_PITCH,
+            DEFAULT_LOUVERED_ROOF_PITCH,
+            DEFAULT_MAX_SLAT_ANGLE,
+        )
 
         pitch = options.get(CONF_ROOF_PITCH)
+        max_slat = options.get(CONF_MAX_SLAT_ANGLE)
         return cls(
             roof_pitch=(
                 float(pitch)
                 if pitch is not None
                 else float(DEFAULT_LOUVERED_ROOF_PITCH)
+            ),
+            max_slat_angle=(
+                float(max_slat)
+                if max_slat is not None
+                else float(DEFAULT_MAX_SLAT_ANGLE)
             ),
         )
 

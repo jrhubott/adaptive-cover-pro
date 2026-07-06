@@ -47,6 +47,10 @@ from .roof_window import (
 )
 from .tilt import AdaptiveTiltCover
 
+# Decision-trace key: which side of the slat axis the sun is on. ``True`` = far
+# side (``cos(gamma) < 0``), where the cut-off angle is realized as ``180° − θ``.
+TRACE_KEY_FAR_SIDE_BRANCH = "louvered_far_side_branch"
+
 
 @dataclass
 class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
@@ -73,13 +77,42 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
         """Profile angle of the sun relative to the roof plane (radians).
 
         Overrides the vertical-facade profile angle with the roof-plane slope
-        ratio. The magnitude is taken (the sign only encodes up- vs down-slope
-        direction); the slat cut-off solver squares/uses ``tan(beta)`` and the
+        ratio. The magnitude is taken here; the near/far sign is re-applied in
+        ``_resolve_slat_angle`` (far-side sun realizes the flipped face,
+        ``180° − θ``). The slat cut-off solver squares/uses ``tan(beta)`` and the
         AOI gate handles the sun-behind-face case separately.
         """
         return float(
             np.arctan(abs(roof_slope_ratio(self.gamma, self.sol_elev, self.roof_pitch)))
         )
+
+    def _is_far_side(self) -> bool:
+        """Whether the sun is on the far side of the slat axis (``cos(gamma) < 0``).
+
+        The magnitude profile angle ``beta`` discards the near/far sign, so the
+        raw cut-off is identical either side of the axis. On a flat roof the AOI
+        gate is azimuth-independent, so far-side (evening) sun is tracked and the
+        cut-off must be realized on the flipped face. ``cos(gamma) < 0`` gives the
+        correct near/far split on a flat roof and — unlike ``sign(slope_ratio)`` —
+        never fires at vertical pitch, where lit sun is always near side and the
+        venetian anchor must stay byte-for-byte.
+        """
+        return bool(float(np.cos(np.radians(self.gamma))) < 0)
+
+    def _resolve_slat_angle(self, cutoff_angle: float) -> float:
+        """Realize the far-side cut-off as the flipped face past the 90° turnover."""
+        if self._is_far_side():
+            return 180.0 - cutoff_angle
+        return cutoff_angle
+
+    def _effective_max_degrees(self) -> int:
+        """Honour a configured physical ``max_slat_angle`` over the tilt-mode max.
+
+        ``0`` (the sentinel default) falls back to the mode's 90°/180°; a nonzero
+        value becomes BOTH the clamp ceiling and the tilt%→angle denominator.
+        """
+        m = self.roof_config.max_slat_angle
+        return int(m) if m else self._max_degrees()
 
     @property
     def valid_elevation(self) -> bool:
@@ -114,5 +147,6 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
             TRACE_KEY_SLOPE_RATIO: float(
                 roof_slope_ratio(self.gamma, self.sol_elev, self.roof_pitch)
             ),
+            TRACE_KEY_FAR_SIDE_BRANCH: self._is_far_side(),
         }
         return result

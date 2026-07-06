@@ -6,10 +6,12 @@ import voluptuous as vol
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_MAX_SLAT_ANGLE,
     CONF_ROOF_PITCH,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    DEFAULT_MAX_SLAT_ANGLE,
 )
 from custom_components.adaptive_cover_pro.config_types import LouveredRoofConfig
 from custom_components.adaptive_cover_pro.const import CoverType
@@ -35,6 +37,13 @@ class TestLouveredRoofConfig:
 
     def test_from_options_reads_roof_pitch(self) -> None:
         assert LouveredRoofConfig.from_options({CONF_ROOF_PITCH: 30}).roof_pitch == 30.0
+
+    def test_from_options_defaults_max_slat_angle_to_zero(self) -> None:
+        assert LouveredRoofConfig.from_options({}).max_slat_angle == 0
+
+    def test_from_options_reads_max_slat_angle(self) -> None:
+        cfg = LouveredRoofConfig.from_options({CONF_MAX_SLAT_ANGLE: 160})
+        assert cfg.max_slat_angle == 160.0
 
 
 def _schema_keys(schema: vol.Schema) -> set[str]:
@@ -85,6 +94,14 @@ class TestLouveredRoofPolicy:
     def test_roof_pitch_defaults_to_zero(self) -> None:
         schema = get_policy(COVER_TYPE).geometry_schema()
         assert _schema_default(schema, CONF_ROOF_PITCH) == 0
+
+    def test_geometry_schema_has_max_slat_angle(self) -> None:
+        keys = _schema_keys(get_policy(COVER_TYPE).geometry_schema())
+        assert CONF_MAX_SLAT_ANGLE in keys
+
+    def test_max_slat_angle_defaults_to_zero(self) -> None:
+        schema = get_policy(COVER_TYPE).geometry_schema()
+        assert _schema_default(schema, CONF_MAX_SLAT_ANGLE) == DEFAULT_MAX_SLAT_ANGLE
 
     def test_disallows_vertical_and_awning_geometry(self) -> None:
         policy = get_policy(COVER_TYPE)
@@ -141,6 +158,30 @@ class TestLouveredRoofPolicy:
         # Roof pitch with no slat fields still renders a pitch-only line.
         lines = get_policy(COVER_TYPE).summary_geometry_lines({CONF_ROOF_PITCH: 12})
         assert lines == ["roof pitch 12° from horizontal"]
+
+    def test_summary_includes_max_slat_angle_when_set(self) -> None:
+        policy = get_policy(COVER_TYPE)
+        config = {
+            CONF_TILT_DEPTH: 3.0,
+            CONF_TILT_DISTANCE: 2.0,
+            CONF_TILT_MODE: "mode2",
+            CONF_ROOF_PITCH: 15,
+            CONF_MAX_SLAT_ANGLE: 160,
+        }
+        joined = " ".join(policy.summary_geometry_lines(config))
+        assert "roof pitch 15° from horizontal" in joined
+        assert "max slat angle 160°" in joined
+
+    def test_summary_omits_max_slat_angle_when_zero(self) -> None:
+        policy = get_policy(COVER_TYPE)
+        config = {
+            CONF_TILT_DEPTH: 3.0,
+            CONF_TILT_DISTANCE: 2.0,
+            CONF_TILT_MODE: "mode2",
+            CONF_ROOF_PITCH: 15,
+            CONF_MAX_SLAT_ANGLE: 0,
+        }
+        assert "max slat angle" not in " ".join(policy.summary_geometry_lines(config))
 
     def test_geometry_schema_localized_branch(self) -> None:
         from unittest.mock import MagicMock

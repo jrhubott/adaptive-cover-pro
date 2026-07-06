@@ -22,8 +22,11 @@ from homeassistant.helpers import selector
 
 from ..config_types import LouveredRoofConfig
 from ..const import (
+    CONF_MAX_SLAT_ANGLE,
     CONF_ROOF_PITCH,
     DEFAULT_LOUVERED_ROOF_PITCH,
+    DEFAULT_MAX_SLAT_ANGLE,
+    OPTION_RANGES,
 )
 from ..engine.covers import AdaptiveLouveredRoofCover
 from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
@@ -49,11 +52,28 @@ if TYPE_CHECKING:
     from ..services.configuration_service import ConfigurationService
 
 
+def _max_slat_angle_selector() -> selector.NumberSelector:
+    """Box selector for the optional physical max slat angle (0 = use tilt mode)."""
+    lo, hi = OPTION_RANGES[CONF_MAX_SLAT_ANGLE]
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=lo,
+            max=hi,
+            step=1,
+            mode=selector.NumberSelectorMode.BOX,
+            unit_of_measurement="°",
+        )
+    )
+
+
 def geometry_louvered_roof_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Slat geometry (shared with tilt) plus the roof-plane pitch. ``hass=None`` → metric."""
     fields = dict(geometry_tilt_schema(hass).schema)
     fields[vol.Required(CONF_ROOF_PITCH, default=DEFAULT_LOUVERED_ROOF_PITCH)] = (
         _roof_pitch_selector()
+    )
+    fields[vol.Optional(CONF_MAX_SLAT_ANGLE, default=DEFAULT_MAX_SLAT_ANGLE)] = (
+        _max_slat_angle_selector()
     )
     return vol.Schema(fields)
 
@@ -109,15 +129,20 @@ class LouveredRoofPolicy(CoverTypePolicy, register=True):
     def summary_geometry_lines(
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
-        """Render the shared slat block, then append the roof-plane pitch."""
+        """Render the shared slat block, then the roof pitch and (if set) max angle."""
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         lines = TiltPolicy().summary_geometry_lines(config, labels)
+        parts: list[str] = []
         if (v := config.get(CONF_ROOF_PITCH)) is not None:
-            pitch = L["geometry.roof.pitch"].format(v=v)
+            parts.append(L["geometry.roof.pitch"].format(v=v))
+        if m := config.get(CONF_MAX_SLAT_ANGLE):  # 0/None → omit
+            parts.append(L["geometry.roof.max_slat_angle"].format(v=m))
+        if parts:
+            extra = ", ".join(parts)
             if lines:
-                lines[0] = f"{lines[0]}, {pitch}"
+                lines[0] = f"{lines[0]}, {extra}"
             else:
-                lines = [pitch]
+                lines = [extra]
         return lines
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

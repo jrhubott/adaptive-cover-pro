@@ -248,7 +248,8 @@
     },
     "roof": {
       "pitch": "Dachneigung {v}° von Horizontal",
-      "height_above": "{v}m Dach über Fenster (First-Gate)"
+      "height_above": "{v}m Dach über Fenster (First-Gate)",
+      "max_slat_angle": "max. Lamellenwinkel {v}°"
     },
     "sliding": {
       "slide": "schieben: {v}",

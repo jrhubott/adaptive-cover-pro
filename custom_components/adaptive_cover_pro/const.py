@@ -191,6 +191,12 @@ DEFAULT_SLIDING_POINT_Y = 0.0  # metres — y <= 0 → curtain fully open (guard
 # CONF_ROOF_PITCH / _RANGE_ROOF_PITCH but defaults to a FLAT plane (0° from
 # horizontal), unlike the roof window's 40° glass default.
 DEFAULT_LOUVERED_ROOF_PITCH = 0  # degrees from horizontal — 0 = flat roof
+# Louvered-roof physical max slat angle (#830 follow-up). Optional override of
+# the tilt-mode's 90°/180° ceiling for pergola drives whose mechanical travel is
+# neither (e.g. a 0–160° motor). 0 (the sentinel default) = use the tilt mode's
+# max. When set it becomes BOTH the clamp ceiling AND the tilt%→angle denominator.
+CONF_MAX_SLAT_ANGLE = "max_slat_angle"  # degrees; 0 = use tilt-mode max
+DEFAULT_MAX_SLAT_ANGLE = 0  # 0 sentinel → tilt mode's 90/180
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -1333,6 +1339,8 @@ _RANGE_AWNING_PIVOT_OFFSET = (0.0, 2.0)  # CONF_AWNING_PIVOT_OFFSET, metres
 # Geometry — roof / skylight window (#212).
 _RANGE_ROOF_PITCH = (0, 90)  # CONF_ROOF_PITCH, degrees (0=flat, 90=vertical)
 _RANGE_ROOF_HEIGHT_ABOVE = (0.0, 10.0)  # CONF_ROOF_HEIGHT_ABOVE, metres
+# Geometry — louvered roof (#830 follow-up).
+_RANGE_MAX_SLAT_ANGLE = (0, 180)  # CONF_MAX_SLAT_ANGLE, degrees (0 = use tilt mode)
 
 # Geometry — tilt / venetian slats.
 _RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm

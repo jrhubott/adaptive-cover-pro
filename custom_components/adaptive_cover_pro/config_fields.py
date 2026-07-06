@@ -102,6 +102,7 @@ from .const import (
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
+    CONF_MAX_SLAT_ANGLE,
     CONF_MAX_TILT,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
@@ -1625,6 +1626,15 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_ROOF_HEIGHT_ABOVE,
+    ),
+    # Louvered-roof physical max slat angle (#830 follow-up). The dynamic
+    # selector is built by the policy's geometry_schema; this spec single-sources
+    # the bounds / validator entry for OPTION_RANGES + FIELD_VALIDATORS.
+    FieldSpec(
+        CONF_MAX_SLAT_ANGLE,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_MAX_SLAT_ANGLE,
     ),
     # Sliding-curtain shade-area geometry (#829, Part 2). Dynamic selectors are
     # built by the policy's geometry_schema; these specs single-source the

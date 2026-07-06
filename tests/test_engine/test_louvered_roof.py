@@ -54,6 +54,7 @@ def _louvered(
     win_azi: float = 180.0,
     fov_left: float = 90.0,
     fov_right: float = 90.0,
+    max_slat_angle: float = 0.0,
 ) -> AdaptiveLouveredRoofCover:
     """Build a louvered-roof engine at an explicit sun/slat geometry."""
     return AdaptiveLouveredRoofCover(
@@ -67,7 +68,9 @@ def _louvered(
         tilt_config=make_tilt_config(
             slat_distance=slat_distance, depth=depth, mode=mode
         ),
-        roof_config=LouveredRoofConfig(roof_pitch=roof_pitch),
+        roof_config=LouveredRoofConfig(
+            roof_pitch=roof_pitch, max_slat_angle=max_slat_angle
+        ),
     )
 
 
@@ -278,6 +281,109 @@ class TestCalculatePositionFlatRoof:
 # ---------------------------------------------------------------------------
 # FOV gate — in-plane effective gamma below vertical, raw gamma at vertical
 # ---------------------------------------------------------------------------
+
+
+class TestFarSideFlip:
+    """Far-side sun realizes the flipped face (180° − θ) past the 90° turnover.
+
+    On a flat roof the AOI gate (sin(elev)) is azimuth-independent, so far-side
+    (evening) sun is tracked. The raw cut-off magnitude is identical near/far —
+    the flip picks the correct physical face. Criterion: ``cos(gamma) < 0``.
+    """
+
+    def test_flat_roof_near_and_far_mirror(self) -> None:
+        elev = 40.0
+        # win_azi=180: gamma = (180 - sol_azi + 180) % 360 - 180.
+        # sol_azi=120 → gamma=60 (near, cos>0); sol_azi=60 → gamma=120 (far).
+        near = _louvered(sol_azi=120, sol_elev=elev, roof_pitch=0, mode="mode2")
+        far = _louvered(sol_azi=60, sol_elev=elev, roof_pitch=0, mode="mode2")
+        assert near.gamma == pytest.approx(60.0)
+        assert far.gamma == pytest.approx(120.0)
+
+        near_angle = near.calculate_position()
+        far_angle = far.calculate_position()
+
+        # The two physical slat angles mirror across the 90° turnover.
+        assert near_angle + far_angle == pytest.approx(180.0)
+
+        # Near side is the unchanged raw MDPI cut-off (the pre-fix behaviour).
+        beta = math.atan(abs(roof_slope_ratio(60.0, elev, 0)))
+        raw, _, _ = slat_cutoff_angle(beta, near.slat_distance, near.depth)
+        assert near_angle == pytest.approx(raw)
+        assert far_angle == pytest.approx(180.0 - raw)
+        # Pin the concrete numbers so a formula drift is caught.
+        assert near_angle == pytest.approx(85.9, abs=0.1)
+        assert far_angle == pytest.approx(94.1, abs=0.1)
+
+    def test_no_flip_at_pitch_90_near_side(self) -> None:
+        # At vertical pitch the lit sun is always near side (cos_aoi needs
+        # cos(gamma) > 0), so the flip never fires and the vertical/venetian
+        # anchor is byte-for-byte preserved.
+        louvered = _louvered(sol_azi=205, sol_elev=35, roof_pitch=90, mode="mode2")
+        tilt = _tilt(sol_azi=205, sol_elev=35, mode="mode2")
+        assert louvered.calculate_position() == pytest.approx(tilt.calculate_position())
+        assert louvered._last_calc_details["louvered_far_side_branch"] is False
+
+    def test_mode1_far_side_clamps_to_open(self) -> None:
+        # Mode1 caps at 90°; a far-side angle (> 90) clamps to fully open (90).
+        far = _louvered(sol_azi=60, sol_elev=40, roof_pitch=0, mode="mode1")
+        assert far.gamma == pytest.approx(120.0)
+        assert far.calculate_position() == pytest.approx(90.0)
+
+    def test_trace_far_side_branch_flag(self) -> None:
+        near = _louvered(sol_azi=120, sol_elev=40, roof_pitch=0)
+        far = _louvered(sol_azi=60, sol_elev=40, roof_pitch=0)
+        near.calculate_position()
+        far.calculate_position()
+        assert near._last_calc_details["louvered_far_side_branch"] is False
+        assert far._last_calc_details["louvered_far_side_branch"] is True
+
+
+class TestMaxSlatAngle:
+    """``max_slat_angle`` overrides the mode's 90/180 as clamp + %-denominator."""
+
+    def test_ceiling_above_raw_scales_percentage(self) -> None:
+        # gamma=0 (near side, no flip), elev=30 → raw ~130.5° on a flat roof.
+        base = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        raw = base.calculate_position()
+        assert raw == pytest.approx(130.5, abs=0.2)
+
+        denom = int(raw) + 10  # ceiling above the raw angle: position unchanged
+        wide = _louvered(
+            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=denom
+        )
+        assert wide.calculate_position() == pytest.approx(raw)
+        assert wide.calculate_percentage() == round(raw / denom * 100)
+
+    def test_ceiling_below_raw_clamps_and_saturates(self) -> None:
+        base = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        raw = base.calculate_position()
+
+        ceil = int(raw) - 20  # ceiling below the raw angle: clamp + 100%
+        low = _louvered(
+            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=ceil
+        )
+        assert low.calculate_position() == pytest.approx(float(ceil))
+        assert low.calculate_percentage() == 100
+
+    def test_explicit_denominator_example(self) -> None:
+        # A raw angle of 120° with a 160° ceiling maps to 75% (plan example).
+        assert round(120.0 / 160.0 * 100) == 75
+
+    def test_default_zero_matches_mode(self) -> None:
+        m = _louvered(
+            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=0
+        )
+        ref = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        assert m.calculate_position() == pytest.approx(ref.calculate_position())
+        assert m.calculate_percentage() == ref.calculate_percentage()
+
+    def test_trace_max_degrees_reflects_effective_ceiling(self) -> None:
+        cover = _louvered(
+            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=160
+        )
+        cover.calculate_position()
+        assert cover._last_calc_details["max_degrees"] == 160
 
 
 class TestFovAngle:
