@@ -202,7 +202,8 @@
     "oscillating_awning": "Store oscillant",
     "venetian": "Store vénitien (deux axes)",
     "roof_window": "Fenêtre de toit",
-    "sliding_curtain": "Rideau coulissant"
+    "sliding_curtain": "Rideau coulissant",
+    "louvered_roof": "Toit à lames"
   },
   "geometry": {
     "window": {

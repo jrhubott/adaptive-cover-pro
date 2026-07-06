@@ -202,7 +202,8 @@
     "oscillating_awning": "Oscillating Awning",
     "venetian": "Venetian Blind (Dual-Axis)",
     "roof_window": "Roof Window",
-    "sliding_curtain": "Sliding Curtain"
+    "sliding_curtain": "Sliding Curtain",
+    "louvered_roof": "Louvered Roof"
   },
   "geometry": {
     "window": {

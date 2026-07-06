@@ -187,6 +187,10 @@ CONF_SLIDING_POINT2_Y = "sliding_point2_y"  # shade point 2, depth into room, m 
 DEFAULT_SLIDING_ENABLE_SHADE_AREA = False
 DEFAULT_SLIDING_POINT_X = 0.0  # metres
 DEFAULT_SLIDING_POINT_Y = 0.0  # metres — y <= 0 → curtain fully open (guard)
+# Louvered (lamella) roof plane pitch default (#830). A louvered roof reuses
+# CONF_ROOF_PITCH / _RANGE_ROOF_PITCH but defaults to a FLAT plane (0° from
+# horizontal), unlike the roof window's 40° glass default.
+DEFAULT_LOUVERED_ROOF_PITCH = 0  # degrees from horizontal — 0 = flat roof
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -1509,6 +1513,7 @@ class CoverType(StrEnum):
     OSCILLATING_AWNING = "cover_oscillating_awning"
     ROOF_WINDOW = "cover_roof_window"
     SLIDING_CURTAIN = "cover_sliding_curtain"
+    LOUVERED_ROOF = "cover_louvered_roof"
     # Virtual entry type — not a physical cover. Holds shared building-level
     # sensor entity IDs that linked covers copy into their own options. Its
     # policy registers no platforms (``controls_cover = False``).
@@ -1535,6 +1540,7 @@ class CoverType(StrEnum):
             self.OSCILLATING_AWNING: "Oscillating Awning",
             self.ROOF_WINDOW: "Roof Window",
             self.SLIDING_CURTAIN: "Sliding Curtain",
+            self.LOUVERED_ROOF: "Louvered Roof",
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
         }[self]

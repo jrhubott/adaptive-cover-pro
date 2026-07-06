@@ -334,6 +334,23 @@ def test_geometry_tilt_shows_tilt_fields():
     assert "mode1" in summary
 
 
+def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
+    """Louvered roof renders the shared slat block plus the roof-plane pitch."""
+    from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH
+
+    cfg = {
+        CONF_TILT_DEPTH: 3.0,
+        CONF_TILT_DISTANCE: 2.0,
+        CONF_TILT_MODE: "mode2",
+        CONF_ROOF_PITCH: 15,
+    }
+    summary = _build_config_summary(cfg, CoverType.LOUVERED_ROOF)
+    assert "slat depth 3.0cm" in summary
+    assert "spacing 2.0cm" in summary
+    assert "roof pitch 15° from horizontal" in summary
+    assert "Louvered Roof" in summary
+
+
 def test_geometry_venetian_shows_retract_threshold_default():
     """Venetian summary includes the upper retract threshold at the default value."""
     summary = _build_config_summary({}, CoverType.VENETIAN)

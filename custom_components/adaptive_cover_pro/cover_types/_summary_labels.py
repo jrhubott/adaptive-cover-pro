@@ -40,6 +40,7 @@ COVER_TYPE_LABELS_EN: dict[str, str] = {
     "cover_types.venetian": "Venetian Blind (Dual-Axis)",
     "cover_types.roof_window": "Roof Window",
     "cover_types.sliding_curtain": "Sliding Curtain",
+    "cover_types.louvered_roof": "Louvered Roof",
 }
 
 # --- Geometry / physical-dimension templates (namespace config_summary.geometry.*)

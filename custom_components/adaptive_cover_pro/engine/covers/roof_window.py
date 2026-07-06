@@ -40,7 +40,7 @@ from math import atan, cos, degrees, radians, sin, tan
 import numpy as np
 
 from ...config_types import RoofWindowConfig
-from .vertical import AdaptiveVerticalCover
+from .vertical import MIN_COS_GAMMA_CLAMP, AdaptiveVerticalCover
 
 # --- Numeric guards (file-local) ---
 # Pitch (from horizontal) at which the glass is vertical and the geometry
@@ -91,6 +91,44 @@ def roof_effective_gamma(gamma, elev, pitch):
     return np.degrees(
         np.arctan2(np.cos(e) * np.sin(g), roof_cos_aoi(gamma, elev, pitch))
     )
+
+
+def roof_slope_ratio(gamma: float, elev: float, pitch: float) -> float:
+    """Down-slope shadow ratio ``(s·t)/(s·n)`` on a plane pitched ``pitch`` from horizontal.
+
+    Single source of truth for the slope-projection math shared by the
+    roof-window drop projection (``_project_drop``) and the louvered-roof
+    profile angle (``beta = arctan|slope_ratio|``).
+
+    Factoring the numerator and denominator by ``cos(elev)·cos Δazi`` expresses
+    the ratio through the vertical foreshortening ``f = tan(elev)/cos(gamma)``::
+
+        (s·t)/(s·n) = (−cosβ + sinβ·f) / (sinβ + cosβ·f)
+
+    which collapses to ``f`` at ``β = 90°`` (vertical plane — the roof-window
+    bit-for-bit regression anchor) and to ``−1/f = −cot(elev)`` at ``β = 0°``,
+    ``gamma = 0`` (flat plane, aligned sun). ``cos(gamma)`` is clamped exactly as
+    the vertical engine clamps it (``MIN_COS_GAMMA_CLAMP``) so the roof-window
+    projection stays byte-for-byte; the tiny ``β`` denominator is clamped by
+    ``MIN_SLOPE_DENOMINATOR`` at the grazing limit.
+    """
+    cos_gamma = float(cos(radians(gamma)))
+    cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
+        1 if cos_gamma >= 0 else -1
+    )
+    f = float(tan(radians(elev))) / cos_gamma_clamped
+    if pitch == VERTICAL_GLASS_PITCH_DEG:
+        return f
+    beta = radians(pitch)
+    sin_b = sin(beta)
+    cos_b = cos(beta)
+    numerator = -cos_b + sin_b * f
+    denominator = sin_b + cos_b * f
+    if abs(denominator) < MIN_SLOPE_DENOMINATOR:
+        denominator = (
+            MIN_SLOPE_DENOMINATOR if denominator >= 0 else -MIN_SLOPE_DENOMINATOR
+        )
+    return numerator / denominator
 
 
 @dataclass
@@ -242,23 +280,14 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
         base_height, cos_gamma, cos_gamma_clamped, path_length = super()._project_drop(
             effective_distance
         )
-        # Vertical foreshortening f = tan(elev)/cos(gamma): the slope ratio at β=90°.
-        f = float(tan(radians(self.sol_elev))) / cos_gamma_clamped
+        # Slope ratio (s·t)/(s·n) via the shared helper — at β=90° it is the
+        # vertical foreshortening f = tan(elev)/cos(gamma) and the vertical drop
+        # is returned unchanged (bit-for-bit anchor).
+        slope_ratio = roof_slope_ratio(self.gamma, self.sol_elev, self.roof_pitch)
+        self._roof_slope_ratio = slope_ratio
         if self.roof_pitch == VERTICAL_GLASS_PITCH_DEG:
-            self._roof_slope_ratio = f
             return base_height, cos_gamma, cos_gamma_clamped, path_length
 
-        beta = radians(self.roof_pitch)
-        sin_b = sin(beta)
-        cos_b = cos(beta)
-        numerator = -cos_b + sin_b * f
-        denominator = sin_b + cos_b * f
-        if abs(denominator) < MIN_SLOPE_DENOMINATOR:
-            denominator = (
-                MIN_SLOPE_DENOMINATOR if denominator >= 0 else -MIN_SLOPE_DENOMINATOR
-            )
-        slope_ratio = numerator / denominator
-        self._roof_slope_ratio = slope_ratio
         slope_drop = abs(effective_distance * slope_ratio)
         return slope_drop, cos_gamma, cos_gamma_clamped, path_length
 

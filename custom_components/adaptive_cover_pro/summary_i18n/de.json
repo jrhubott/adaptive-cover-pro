@@ -202,7 +202,8 @@
     "oscillating_awning": "Schwenkmarkise",
     "venetian": "Jalousie (Zwei-Achsen)",
     "roof_window": "Dachfenster",
-    "sliding_curtain": "Schiebevorhang"
+    "sliding_curtain": "Schiebevorhang",
+    "louvered_roof": "Lamellendach"
   },
   "geometry": {
     "window": {
