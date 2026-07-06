@@ -168,6 +168,25 @@ CONF_ROOF_HEIGHT_ABOVE = (
 )
 DEFAULT_ROOF_PITCH = 40  # degrees — typical Velux roof window pitch
 DEFAULT_ROOF_HEIGHT_ABOVE = 0.0  # metres — 0 disables the ridge occlusion gate
+# Sliding-curtain shade-area geometry (#829, Part 2). A horizontal sliding
+# curtain can close a continuous fraction across the window from a two-point
+# shade area given in floor Cartesian coordinates (x = along the wall, signed,
+# positive = right facing the window from inside; y = depth into the room, > 0)
+# — the SAME frame as glare zones. When the shade area is disabled the curtain
+# falls back to the Part 1 binary open/close. ``SlideDirection`` / the default
+# live in the enums block near ``CoverType`` (needed before the config_fields
+# import); the flat point/width keys reuse the shared ``window_width`` field.
+CONF_SLIDING_ENABLE_SHADE_AREA = "sliding_enable_shade_area"  # bool master toggle
+CONF_SLIDING_SLIDE_DIRECTION = (
+    "sliding_slide_direction"  # one of SLIDING_SLIDE_DIRECTIONS
+)
+CONF_SLIDING_POINT1_X = "sliding_point1_x"  # shade point 1, along-wall x, m (signed)
+CONF_SLIDING_POINT1_Y = "sliding_point1_y"  # shade point 1, depth into room, m (>0)
+CONF_SLIDING_POINT2_X = "sliding_point2_x"  # shade point 2, along-wall x, m (signed)
+CONF_SLIDING_POINT2_Y = "sliding_point2_y"  # shade point 2, depth into room, m (>0)
+DEFAULT_SLIDING_ENABLE_SHADE_AREA = False
+DEFAULT_SLIDING_POINT_X = 0.0  # metres
+DEFAULT_SLIDING_POINT_Y = 0.0  # metres — y <= 0 → curtain fully open (guard)
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -1327,6 +1346,13 @@ _RANGE_FOV = (0, 180)  # CONF_FOV_LEFT / CONF_FOV_RIGHT, degrees
 _RANGE_ELEVATION = (0, 90)  # min/max elevation, degrees
 _RANGE_DISTANCE = (0.0, 50.0)  # CONF_DISTANCE, metres
 
+# Geometry — sliding-curtain shade area (#829, Part 2). y (depth into the room)
+# reuses the 0–50 m distance span; x (along the wall) is signed — no existing
+# signed range spans a wide window's half-width (glare-zone x is only ±5 m), so a
+# dedicated ±25 m bound (half the 50 m max window width) is added here.
+_RANGE_SLIDING_POINT_X = (-25.0, 25.0)  # CONF_SLIDING_POINT{1,2}_X, metres (signed)
+_RANGE_SLIDING_POINT_Y = _RANGE_DISTANCE  # CONF_SLIDING_POINT{1,2}_Y, metres (0–50)
+
 # Blind spot.
 # Asymmetric LEFT vs RIGHT bounds are a historical quirk; preserved for compat.
 _RANGE_BLIND_SPOT_LEFT = (0, 359)  # CONF_BLIND_SPOT_LEFT, degrees
@@ -1421,6 +1447,28 @@ class TemplateCombineMode(StrEnum):
 # custom-position slots, future consumers): additive OR (back-compat).
 DEFAULT_TEMPLATE_COMBINE_MODE = TemplateCombineMode.OR.value
 DEFAULT_MOTION_TEMPLATE_MODE = DEFAULT_TEMPLATE_COMBINE_MODE
+
+
+# Defined here (above the ``config_fields`` import at the bottom of this module)
+# because ``config_fields`` reads ``SLIDING_SLIDE_DIRECTIONS`` at its own import
+# time for the slide-direction ``FieldSpec`` select options.
+class SlideDirection(StrEnum):
+    """Which way a horizontal sliding curtain draws its fabric (#829, Part 2).
+
+    Wire-stable identifiers stored in the cover's options. ``LEFT`` / ``RIGHT``
+    are single-slide leaves anchored to one window edge; ``BI_PART`` parts from
+    the centre (both edges covered, a central gap opens). Governs how a covered
+    along-wall interval maps to an open percentage.
+    """
+
+    LEFT = "left"
+    RIGHT = "right"
+    BI_PART = "bi_part"
+
+
+# Default slide direction: centre-parting, the most common curtain layout.
+DEFAULT_SLIDING_SLIDE_DIRECTION = SlideDirection.BI_PART.value
+SLIDING_SLIDE_DIRECTIONS = tuple(d.value for d in SlideDirection)
 
 
 # ``OPTION_RANGES`` is now assembled from the single field registry in

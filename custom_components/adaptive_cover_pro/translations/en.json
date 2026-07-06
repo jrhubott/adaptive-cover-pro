@@ -69,6 +69,12 @@
           "awning_pivot_offset": "Pivot Offset From Window",
           "roof_pitch": "Roof Pitch",
           "roof_height_above": "Roof Height Above Window",
+          "sliding_enable_shade_area": "Use a shade area (continuous coverage)",
+          "sliding_slide_direction": "Slide Direction",
+          "sliding_point1_x": "Shade Point 1 — Along Wall (X)",
+          "sliding_point1_y": "Shade Point 1 — Into Room (Y)",
+          "sliding_point2_x": "Shade Point 2 — Along Wall (X)",
+          "sliding_point2_y": "Shade Point 2 — Into Room (Y)",
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
@@ -106,6 +112,12 @@
           "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall.",
           "roof_pitch": "Pitch of the roof glass measured FROM HORIZONTAL (0–90°). 0° = a flat skylight (sun lets in whenever it is above the horizon); 90° = a vertical window (behaves exactly like a vertical blind). Typical Velux-style roof windows are 30–50°. If you are migrating from the vertical-blind workaround that used a max-elevation limit, this pitch is the complement of that angle (e.g. a 35° roof ↔ a ~55° max-elevation workaround).",
           "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for.",
+          "sliding_enable_shade_area": "When on, the curtain closes only as far as needed to keep a two-point floor shade area out of direct sun, giving continuous coverage instead of the default full open/close. Define the two shade-area points below. When off, the curtain draws fully across whenever direct sun reaches the window and retracts otherwise.",
+          "sliding_slide_direction": "How the fabric draws across the opening. **Centre-parting** (default): two leaves part from the middle. **Single (left)**: one leaf anchored at the left edge, closing rightward. **Single (right)**: one leaf anchored at the right edge, closing leftward. Determines how the covered floor area maps to an open percentage.",
+          "sliding_point1_x": "Along-wall position of shade-area point 1, measured from the window centre (0), positive to the right when facing the window from inside. Shown in the unit Home Assistant is configured for. Same coordinate frame as glare zones.",
+          "sliding_point1_y": "Depth of shade-area point 1 into the room, measured from the window plane (must be greater than 0). Shown in the unit Home Assistant is configured for. The two points bound the floor area you want kept in shadow.",
+          "sliding_point2_x": "Along-wall position of shade-area point 2, measured from the window centre (0), positive to the right when facing the window from inside. Shown in the unit Home Assistant is configured for. Same coordinate frame as glare zones.",
+          "sliding_point2_y": "Depth of shade-area point 2 into the room, measured from the window plane (must be greater than 0). Shown in the unit Home Assistant is configured for. The two points bound the floor area you want kept in shadow.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth above, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
@@ -911,6 +923,12 @@
           "awning_pivot_offset": "Pivot Offset From Window",
           "roof_pitch": "Roof Pitch",
           "roof_height_above": "Roof Height Above Window",
+          "sliding_enable_shade_area": "Use a shade area (continuous coverage)",
+          "sliding_slide_direction": "Slide Direction",
+          "sliding_point1_x": "Shade Point 1 — Along Wall (X)",
+          "sliding_point1_y": "Shade Point 1 — Into Room (Y)",
+          "sliding_point2_x": "Shade Point 2 — Along Wall (X)",
+          "sliding_point2_y": "Shade Point 2 — Into Room (Y)",
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
@@ -948,6 +966,12 @@
           "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall.",
           "roof_pitch": "Pitch of the roof glass measured FROM HORIZONTAL (0–90°). 0° = a flat skylight (sun lets in whenever it is above the horizon); 90° = a vertical window (behaves exactly like a vertical blind). Typical Velux-style roof windows are 30–50°. If you are migrating from the vertical-blind workaround that used a max-elevation limit, this pitch is the complement of that angle (e.g. a 35° roof ↔ a ~55° max-elevation workaround).",
           "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for.",
+          "sliding_enable_shade_area": "When on, the curtain closes only as far as needed to keep a two-point floor shade area out of direct sun, giving continuous coverage instead of the default full open/close. Define the two shade-area points below. When off, the curtain draws fully across whenever direct sun reaches the window and retracts otherwise.",
+          "sliding_slide_direction": "How the fabric draws across the opening. **Centre-parting** (default): two leaves part from the middle. **Single (left)**: one leaf anchored at the left edge, closing rightward. **Single (right)**: one leaf anchored at the right edge, closing leftward. Determines how the covered floor area maps to an open percentage.",
+          "sliding_point1_x": "Along-wall position of shade-area point 1, measured from the window centre (0), positive to the right when facing the window from inside. Shown in the unit Home Assistant is configured for. Same coordinate frame as glare zones.",
+          "sliding_point1_y": "Depth of shade-area point 1 into the room, measured from the window plane (must be greater than 0). Shown in the unit Home Assistant is configured for. The two points bound the floor area you want kept in shadow.",
+          "sliding_point2_x": "Along-wall position of shade-area point 2, measured from the window centre (0), positive to the right when facing the window from inside. Shown in the unit Home Assistant is configured for. Same coordinate frame as glare zones.",
+          "sliding_point2_y": "Depth of shade-area point 2 into the room, measured from the window plane (must be greater than 0). Shown in the unit Home Assistant is configured for. The two points bound the floor area you want kept in shadow.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth above, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
@@ -1838,6 +1862,13 @@
       "options": {
         "mode1": "single direction (0% = closed / 100% = open)",
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
+      }
+    },
+    "sliding_slide_direction": {
+      "options": {
+        "left": "Single leaf — anchored left, closes rightward",
+        "right": "Single leaf — anchored right, closes leftward",
+        "bi_part": "Centre-parting — two leaves meet in the middle"
       }
     },
     "template_combine_mode": {

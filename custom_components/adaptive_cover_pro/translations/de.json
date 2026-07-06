@@ -72,7 +72,13 @@
           "venetian_tilt_safety_margin": "Neigungssicherheitsmarge",
           "venetian_post_settle_mode": "Wartemodus nach Absetzen",
           "max_tilt_sun_only": "Maximale Neigung nur bei Sonnenverfolgung anwenden",
-          "min_tilt_sun_only": "Minimale Neigung nur bei Sonnenverfolgung anwenden"
+          "min_tilt_sun_only": "Minimale Neigung nur bei Sonnenverfolgung anwenden",
+          "sliding_enable_shade_area": "Beschattungsbereich verwenden (durchgehende Abdeckung)",
+          "sliding_slide_direction": "Schieberichtung",
+          "sliding_point1_x": "Schattenpunkt 1 – Entlang der Wand (X)",
+          "sliding_point1_y": "Schattenpunkt 1 – In den Raum (Y)",
+          "sliding_point2_x": "Schattenpunkt 2 – Entlang der Wand (X)",
+          "sliding_point2_y": "Schattenpunkt 2 – In den Raum (Y)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -109,7 +115,13 @@
           "venetian_tilt_safety_margin": "Zusätzliche Schließmarge für Randsonne (nur Jalousien), 0.0–1.0. Skaliert die automatische winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, jedoch in der Schließrichtung. Standard 0.0 behält den exakten Grenzwinkel bei (heutiges Verhalten); erhöhen Sie auf 1.0, um die Lamellen bei extremem Sonnenwinkel etwas weiter zu schließen, sodass kein direktes Sonnenlicht eindringt. Verwenden Sie dies lieber, statt die Maximale Lamellenneigung zu senken, was eine pauschale globale Begrenzung ist.",
           "venetian_post_settle_mode": "Wie die Integration zwischen dem Absetzen des Schlittens und dem Senden des Neigungsbefehls wartet. **Feste Verzögerung** (Standard): Wartet immer auf die konfigurierte Nach-Absetzen-Haltezeit, bevor die Neigung gesendet wird — sicher für alle Aktoren. **Entity-Status**: Stattdessen den Status der Beschattung abfragen und den Neigungsbefehl sofort senden, sobald der Status nicht mehr 'opening'/'closing' ist, für Aktoren (z. B. Shelly 2PM) mit zuverlässigen Bewegungsstatus. Greift auf die feste Haltezeit zurück, wenn der Status nicht verfügbar ist oder der Schlitten sich noch bewegt, nachdem die Haltezeit abgelaufen ist.",
           "max_tilt_sun_only": "Wenn aus (Standard), wird die maximale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Obergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
-          "min_tilt_sun_only": "Wenn aus (Standard), wird die minimale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Untergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen."
+          "min_tilt_sun_only": "Wenn aus (Standard), wird die minimale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Untergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
+          "sliding_enable_shade_area": "Wenn aktiviert, schließt sich der Vorhang nur so weit wie nötig, um einen Beschattungsbereich auf dem Boden vor direkter Sonne zu schützen und bietet damit durchgehende Abdeckung statt des Standard-Vollöffnens/Schließens. Definieren Sie die zwei Beschattungspunkte unten. Wenn deaktiviert, wird der Vorhang vollständig über die Öffnung gezogen, wenn direkte Sonne das Fenster erreicht, und zieht sich ansonsten zurück.",
+          "sliding_slide_direction": "Wie der Stoff über die Öffnung gezogen wird. **Mittig öffnend** (Standard): zwei Flügel trennen sich in der Mitte. **Einflügelig (links)**: ein Flügel am linken Rand befestigt, schließt nach rechts. **Einflügelig (rechts)**: ein Flügel am rechten Rand befestigt, schließt nach links. Bestimmt, wie die abgedeckte Bodenfläche auf einen Öffnungsprozentsatz abgebildet wird.",
+          "sliding_point1_x": "Position des Beschattungspunkts 1 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
+          "sliding_point1_y": "Tiefe des Beschattungspunkts 1 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll.",
+          "sliding_point2_x": "Position des Beschattungspunkts 2 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
+          "sliding_point2_y": "Tiefe des Beschattungspunkts 2 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll."
         }
       },
       "sun_tracking": {
@@ -892,7 +904,13 @@
           "venetian_tilt_safety_margin": "Neigungssicherheitsmarge",
           "venetian_post_settle_mode": "Wartemodus nach Absetzen",
           "max_tilt_sun_only": "Maximale Neigung nur bei Sonnenverfolgung anwenden",
-          "min_tilt_sun_only": "Minimale Neigung nur bei Sonnenverfolgung anwenden"
+          "min_tilt_sun_only": "Minimale Neigung nur bei Sonnenverfolgung anwenden",
+          "sliding_enable_shade_area": "Beschattungsbereich verwenden (durchgehende Abdeckung)",
+          "sliding_slide_direction": "Schieberichtung",
+          "sliding_point1_x": "Schattenpunkt 1 – Entlang der Wand (X)",
+          "sliding_point1_y": "Schattenpunkt 1 – In den Raum (Y)",
+          "sliding_point2_x": "Schattenpunkt 2 – Entlang der Wand (X)",
+          "sliding_point2_y": "Schattenpunkt 2 – In den Raum (Y)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -929,7 +947,13 @@
           "venetian_tilt_safety_margin": "Zusätzliche Schließmarge für Randsonne (nur Jalousien), 0.0–1.0. Skaliert die automatische winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, jedoch in der Schließrichtung. Standard 0.0 behält den exakten Grenzwinkel bei (heutiges Verhalten); erhöhen Sie auf 1.0, um die Lamellen bei extremem Sonnenwinkel etwas weiter zu schließen, sodass kein direktes Sonnenlicht eindringt. Verwenden Sie dies lieber, statt die Maximale Lamellenneigung zu senken, was eine pauschale globale Begrenzung ist.",
           "venetian_post_settle_mode": "Wie die Integration zwischen dem Absetzen des Schlittens und dem Senden des Neigungsbefehls wartet. **Feste Verzögerung** (Standard): Wartet immer auf die konfigurierte Nach-Absetzen-Haltezeit, bevor die Neigung gesendet wird — sicher für alle Aktoren. **Entity-Status**: Stattdessen den Status der Beschattung abfragen und den Neigungsbefehl sofort senden, sobald der Status nicht mehr 'opening'/'closing' ist, für Aktoren (z. B. Shelly 2PM) mit zuverlässigen Bewegungsstatus. Greift auf die feste Haltezeit zurück, wenn der Status nicht verfügbar ist oder der Schlitten sich noch bewegt, nachdem die Haltezeit abgelaufen ist.",
           "max_tilt_sun_only": "Wenn aus (Standard), wird die maximale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Obergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
-          "min_tilt_sun_only": "Wenn aus (Standard), wird die minimale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Untergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen."
+          "min_tilt_sun_only": "Wenn aus (Standard), wird die minimale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Untergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
+          "sliding_enable_shade_area": "Wenn aktiviert, schließt sich der Vorhang nur so weit wie nötig, um einen Beschattungsbereich auf dem Boden vor direkter Sonne zu schützen und bietet damit durchgehende Abdeckung statt des Standard-Vollöffnens/Schließens. Definieren Sie die zwei Beschattungspunkte unten. Wenn deaktiviert, wird der Vorhang vollständig über die Öffnung gezogen, wenn direkte Sonne das Fenster erreicht, und zieht sich ansonsten zurück.",
+          "sliding_slide_direction": "Wie der Stoff über die Öffnung gezogen wird. **Mittig öffnend** (Standard): zwei Flügel trennen sich in der Mitte. **Einflügelig (links)**: ein Flügel am linken Rand befestigt, schließt nach rechts. **Einflügelig (rechts)**: ein Flügel am rechten Rand befestigt, schließt nach links. Bestimmt, wie die abgedeckte Bodenfläche auf einen Öffnungsprozentsatz abgebildet wird.",
+          "sliding_point1_x": "Position des Beschattungspunkts 1 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
+          "sliding_point1_y": "Tiefe des Beschattungspunkts 1 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll.",
+          "sliding_point2_x": "Position des Beschattungspunkts 2 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
+          "sliding_point2_y": "Tiefe des Beschattungspunkts 2 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll."
         }
       },
       "sun_tracking": {
@@ -1894,6 +1918,13 @@
       "options": {
         "below": "Unterhalb — blockiert tiefe Sonne (Baum oder Dachüberhang)",
         "above": "Oberhalb — blockiert hohe Sonne (Hindernis über Kopf, z.B. Balkon)"
+      }
+    },
+    "sliding_slide_direction": {
+      "options": {
+        "bi_part": "Mittig öffnend – zwei Flügel treffen sich in der Mitte",
+        "left": "Einflügelig – am linken Rand befestigt, schließt nach rechts",
+        "right": "Einflügelig – am rechten Rand befestigt, schließt nach links"
       }
     }
   },

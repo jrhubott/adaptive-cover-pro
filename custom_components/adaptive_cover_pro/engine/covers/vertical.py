@@ -17,6 +17,7 @@ from ...const import (
 )
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
+from ..sun_geometry import ray_x_at_window_plane
 from .base import AdaptiveGeneralCover
 
 # --- Numeric guards (file-local) ---
@@ -86,7 +87,7 @@ def glare_zone_effective_distance(
 
     # Project back to find where the sun ray enters the window.
     # A ray hitting floor point (fx, fy) entered at x_w = fx + fy * tan(γ).
-    x_at_window = nearest_x + nearest_y * float(tan(gamma_rad))
+    x_at_window = ray_x_at_window_plane(nearest_x, nearest_y, gamma)
     if abs(x_at_window) > window_half_width:
         return None  # Ray enters outside the window opening — zone is naturally blocked
 

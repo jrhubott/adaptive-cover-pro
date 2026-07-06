@@ -248,6 +248,15 @@
     "roof": {
       "pitch": "pente de toit {v}° depuis l'horizontale",
       "height_above": "{v}m de toit au-dessus de la fenêtre (porte de faîtage)"
+    },
+    "sliding": {
+      "slide": "glissement : {v}",
+      "dir_left": "un seul pan (gauche)",
+      "dir_right": "un seul pan (droite)",
+      "dir_bi_part": "ouverture centrale",
+      "width": "largeur de fenêtre {v}m",
+      "shade_area": "zone d'ombrage ({x1}, {y1})–({x2}, {y2}) m",
+      "binary": "ouverture/fermeture binaire (pas de zone d'ombrage)"
     }
   },
   "group": {

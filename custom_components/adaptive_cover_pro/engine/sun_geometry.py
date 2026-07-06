@@ -5,7 +5,7 @@ Extracted from AdaptiveGeneralCover to enable standalone testing and reuse.
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from math import atan, degrees
+from math import atan, degrees, radians, tan
 
 import pandas as pd
 
@@ -36,6 +36,22 @@ def _in_fov_cone(angle, fov_left, fov_right):
 def azimuth_within_fov(angle: float, fov_left: float, fov_right: float) -> bool:
     """Sun azimuth (deg, relative to window normal) inside the FOV cone."""
     return bool(_in_fov_cone(angle, fov_left, fov_right))
+
+
+def ray_x_at_window_plane(x_floor: float, y_floor: float, gamma_deg: float) -> float:
+    """Along-wall coordinate where a sun ray crossed the window plane.
+
+    A ray arriving at surface-solar azimuth ``gamma_deg`` (degrees) and landing on
+    the floor at ``(x_floor, y_floor)`` — ``x`` along the wall (signed), ``y``
+    depth into the room — entered the window opening at along-wall coordinate
+    ``x_floor + y_floor * tan(gamma)``.
+
+    Extracted from :func:`vertical.glare_zone_effective_distance` so the
+    glare-zone projection and the sliding-curtain shade-area projection share one
+    formula (#829). Positive ``gamma`` shifts the entry point toward +x; ``gamma =
+    0`` (perpendicular sun) crosses at the floor point's own ``x``.
+    """
+    return x_floor + y_floor * tan(radians(gamma_deg))
 
 
 def fov_from_reveal(width_m: float, depth_m: float) -> int:

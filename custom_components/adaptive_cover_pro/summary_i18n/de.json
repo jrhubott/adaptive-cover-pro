@@ -248,6 +248,15 @@
     "roof": {
       "pitch": "Dachneigung {v}° von Horizontal",
       "height_above": "{v}m Dach über Fenster (First-Gate)"
+    },
+    "sliding": {
+      "slide": "schieben: {v}",
+      "dir_left": "einflügelig (links)",
+      "dir_right": "einflügelig (rechts)",
+      "dir_bi_part": "mittig öffnend",
+      "width": "{v}m Fensterbreite",
+      "shade_area": "Beschattungsbereich ({x1}, {y1})–({x2}, {y2}) m",
+      "binary": "Binär öffnen/schließen (kein Beschattungsbereich)"
     }
   },
   "group": {

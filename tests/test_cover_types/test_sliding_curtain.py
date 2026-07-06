@@ -149,3 +149,125 @@ def test_disallowed_geometry_rejects_awning_and_tilt():
 def test_position_axis_is_default_when_positionable(caps):
     axis = get_policy(_SLUG).select_default_axis(caps)
     assert axis.name == POSITION_AXIS.name
+
+
+# ---------------------------------------------------------------------------
+# Part 2 — shade-area geometry schema, length keys, summary, engine wiring
+# ---------------------------------------------------------------------------
+
+
+def test_geometry_schema_has_shade_area_keys():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        CONF_SLIDING_POINT1_X,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_POINT2_X,
+        CONF_SLIDING_POINT2_Y,
+        CONF_SLIDING_SLIDE_DIRECTION,
+        CONF_WINDOW_WIDTH,
+    )
+
+    schema = get_policy(_SLUG).geometry_schema()
+    keys = {str(m.schema) for m in schema.schema}
+    assert {
+        CONF_WINDOW_WIDTH,
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        CONF_SLIDING_SLIDE_DIRECTION,
+        CONF_SLIDING_POINT1_X,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_POINT2_X,
+        CONF_SLIDING_POINT2_Y,
+    } <= keys
+
+
+def test_geometry_schema_localised_path_returns_schema():
+    from custom_components.adaptive_cover_pro.const import CONF_SLIDING_SLIDE_DIRECTION
+
+    schema = get_policy(_SLUG).geometry_schema(hass=MagicMock())
+    keys = {str(m.schema) for m in schema.schema}
+    assert CONF_SLIDING_SLIDE_DIRECTION in keys
+
+
+def test_geometry_length_keys_are_width_and_points():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SLIDING_POINT1_X,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_POINT2_X,
+        CONF_SLIDING_POINT2_Y,
+        CONF_WINDOW_WIDTH,
+    )
+
+    keys = set(get_policy(_SLUG).geometry_length_keys())
+    assert keys == {
+        CONF_WINDOW_WIDTH,
+        CONF_SLIDING_POINT1_X,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_POINT2_X,
+        CONF_SLIDING_POINT2_Y,
+    }
+
+
+def test_summary_geometry_lines_render_slide_width_and_points():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        CONF_SLIDING_POINT1_X,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_POINT2_X,
+        CONF_SLIDING_POINT2_Y,
+        CONF_SLIDING_SLIDE_DIRECTION,
+        CONF_WINDOW_WIDTH,
+    )
+
+    config = {
+        CONF_SLIDING_SLIDE_DIRECTION: "left",
+        CONF_WINDOW_WIDTH: 2.4,
+        CONF_SLIDING_ENABLE_SHADE_AREA: True,
+        CONF_SLIDING_POINT1_X: -0.5,
+        CONF_SLIDING_POINT1_Y: 3.0,
+        CONF_SLIDING_POINT2_X: 0.8,
+        CONF_SLIDING_POINT2_Y: 4.5,
+    }
+    joined = " ".join(get_policy(_SLUG).summary_geometry_lines(config))
+    assert "2.4" in joined  # window width
+    assert "-0.5" in joined and "0.8" in joined  # shade-area point x
+    assert "left" in joined.lower() or "single" in joined.lower()  # slide direction
+
+
+def test_summary_geometry_lines_note_binary_when_area_off():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        CONF_WINDOW_WIDTH,
+    )
+
+    config = {CONF_WINDOW_WIDTH: 2.0, CONF_SLIDING_ENABLE_SHADE_AREA: False}
+    joined = " ".join(get_policy(_SLUG).summary_geometry_lines(config))
+    assert "binary" in joined.lower()
+
+
+def test_build_calc_engine_passes_populated_sc_config():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_SLIDE_DIRECTION,
+        CONF_WINDOW_WIDTH,
+    )
+
+    options = {
+        CONF_SLIDING_ENABLE_SHADE_AREA: True,
+        CONF_SLIDING_SLIDE_DIRECTION: "left",
+        CONF_WINDOW_WIDTH: 2.4,
+        CONF_SLIDING_POINT1_Y: 3.0,
+    }
+    engine = get_policy(_SLUG).build_calc_engine(
+        logger=MagicMock(),
+        sol_azi=180.0,
+        sol_elev=45.0,
+        sun_data=MagicMock(timezone="UTC"),
+        config=make_cover_config(),
+        config_service=MagicMock(),
+        options=options,
+    )
+    assert engine.sc_config is not None
+    assert engine.sc_config.is_area_configured is True
+    assert engine.sc_config.slide_direction == "left"
+    assert engine.sc_config.window_width == 2.4

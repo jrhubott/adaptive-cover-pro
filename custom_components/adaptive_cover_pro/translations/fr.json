@@ -72,7 +72,13 @@
           "venetian_tilt_safety_margin": "Marge de Sécurité d'Inclinaison",
           "venetian_post_settle_mode": "Mode Attente Post-stabilisation",
           "max_tilt_sun_only": "Appliquer l'inclinaison maximale uniquement pendant le suivi du soleil",
-          "min_tilt_sun_only": "Appliquer l'inclinaison minimale uniquement pendant le suivi du soleil"
+          "min_tilt_sun_only": "Appliquer l'inclinaison minimale uniquement pendant le suivi du soleil",
+          "sliding_enable_shade_area": "Utiliser une zone d'ombrage (couverture continue)",
+          "sliding_slide_direction": "Sens de glissement",
+          "sliding_point1_x": "Point d'ombrage 1 — Le long du mur (X)",
+          "sliding_point1_y": "Point d'ombrage 1 — Vers l'intérieur (Y)",
+          "sliding_point2_x": "Point d'ombrage 2 — Le long du mur (X)",
+          "sliding_point2_y": "Point d'ombrage 2 — Vers l'intérieur (Y)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -109,7 +115,13 @@
           "venetian_tilt_safety_margin": "Marge supplémentaire de fermeture des lamelles pour le soleil en bord de champ (stores vénitiens uniquement), 0.0–1.0. Ajuste la marge de géométrie automatique dépendante de l'angle que l'axe vertical applique déjà, mais dans la direction de fermeture des lamelles. La valeur par défaut 0.0 conserve l'angle de rasance exact (comportement actuel) ; augmentez vers 1.0 pour fermer un peu plus les lamelles aux angles solaires extrêmes pour qu'un rayon de soleil direct ne s'échappe pas. Préférez ceci à l'abaissement de l'Inclinaison maximale des lamelles, qui est un plafond global peu nuancé.",
           "venetian_post_settle_mode": "Comment l'intégration attend entre la stabilisation du chariot et l'envoi de la commande d'inclinaison. **Délai fixe** (par défaut) : toujours attendre le délai Post-stabilisation configuré avant d'incliner — sûr pour tous les actionneurs. **État de l'entité** : au lieu de cela, interroger l'état propre de la protection et envoyer l'inclinaison dès qu'il ne se fait plus « ouvrir »/« fermer », pour les actionneurs (p. ex. Shelly 2PM) avec des états de mouvement fiables. Revient au délai fixe si l'état n'est pas disponible ou si le chariot est encore en mouvement une fois la durée d'attente écoulée.",
           "max_tilt_sun_only": "Lorsque désactivé (par défaut), le plafond d'inclinaison maximale est appliqué à tout moment, y compris l'inclinaison par défaut utilisée lorsque le soleil est en dehors du champ de vision. Lorsqu'activé, le plafond s'applique uniquement pendant le suivi actif du soleil. L'inclinaison au coucher du soleil et les inclinaisons de position personnalisée ne sont jamais affectées de l'une ou l'autre façon.",
-          "min_tilt_sun_only": "Lorsque désactivé (par défaut), le plancher d'inclinaison minimale est appliqué à tout moment, y compris l'inclinaison par défaut utilisée lorsque le soleil est en dehors du champ de vision. Lorsqu'activé, le plancher s'applique uniquement pendant le suivi actif du soleil. L'inclinaison au coucher du soleil et les inclinaisons de position personnalisée ne sont jamais affectées de l'une ou l'autre façon."
+          "min_tilt_sun_only": "Lorsque désactivé (par défaut), le plancher d'inclinaison minimale est appliqué à tout moment, y compris l'inclinaison par défaut utilisée lorsque le soleil est en dehors du champ de vision. Lorsqu'activé, le plancher s'applique uniquement pendant le suivi actif du soleil. L'inclinaison au coucher du soleil et les inclinaisons de position personnalisée ne sont jamais affectées de l'une ou l'autre façon.",
+          "sliding_enable_shade_area": "Lorsqu'elle est activée, le rideau se ferme uniquement autant que nécessaire pour garder une zone d'ombrage au sol à deux points à l'abri du soleil direct, offrant une couverture continue au lieu de l'ouverture/fermeture complète par défaut. Définissez les deux points de la zone d'ombrage ci-dessous. Lorsqu'elle est désactivée, le rideau se déploie entièrement chaque fois que le soleil direct atteint la fenêtre et se rétracte sinon.",
+          "sliding_slide_direction": "Comment le tissu se déploie sur l'ouverture. **Ouverture centrale** (par défaut) : deux pans se séparent du milieu. **Un seul pan (gauche)** : un pan ancré au bord gauche, se ferme vers la droite. **Un seul pan (droite)** : un pan ancré au bord droit, se ferme vers la gauche. Détermine comment la zone de sol couverte correspond à un pourcentage d'ouverture.",
+          "sliding_point1_x": "Position le long du mur du point 1 de la zone d'ombrage, mesurée à partir du centre de la fenêtre (0), positive vers la droite en regardant la fenêtre de l'intérieur. Affichée dans l'unité configurée pour Home Assistant. Même système de coordonnées que les zones d'éblouissement.",
+          "sliding_point1_y": "Profondeur du point 1 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre.",
+          "sliding_point2_x": "Position le long du mur du point 2 de la zone d'ombrage, mesurée à partir du centre de la fenêtre (0), positive vers la droite en regardant la fenêtre de l'intérieur. Affichée dans l'unité configurée pour Home Assistant. Même système de coordonnées que les zones d'éblouissement.",
+          "sliding_point2_y": "Profondeur du point 2 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre."
         }
       },
       "sun_tracking": {
@@ -892,7 +904,13 @@
           "venetian_tilt_safety_margin": "Marge de Sécurité d'Inclinaison",
           "venetian_post_settle_mode": "Mode Attente Post-stabilisation",
           "max_tilt_sun_only": "Appliquer l'inclinaison maximale uniquement pendant le suivi du soleil",
-          "min_tilt_sun_only": "Appliquer l'inclinaison minimale uniquement pendant le suivi du soleil"
+          "min_tilt_sun_only": "Appliquer l'inclinaison minimale uniquement pendant le suivi du soleil",
+          "sliding_enable_shade_area": "Utiliser une zone d'ombrage (couverture continue)",
+          "sliding_slide_direction": "Sens de glissement",
+          "sliding_point1_x": "Point d'ombrage 1 — Le long du mur (X)",
+          "sliding_point1_y": "Point d'ombrage 1 — Vers l'intérieur (Y)",
+          "sliding_point2_x": "Point d'ombrage 2 — Le long du mur (X)",
+          "sliding_point2_y": "Point d'ombrage 2 — Vers l'intérieur (Y)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -929,7 +947,13 @@
           "venetian_tilt_safety_margin": "Marge supplémentaire de fermeture des lamelles pour le soleil en bord de champ (stores vénitiens uniquement), 0.0–1.0. Ajuste la marge de géométrie automatique dépendante de l'angle que l'axe vertical applique déjà, mais dans la direction de fermeture des lamelles. La valeur par défaut 0.0 conserve l'angle de rasance exact (comportement actuel) ; augmentez vers 1.0 pour fermer un peu plus les lamelles aux angles solaires extrêmes pour qu'un rayon de soleil direct ne s'échappe pas. Préférez ceci à l'abaissement de l'Inclinaison maximale des lamelles, qui est un plafond global peu nuancé.",
           "venetian_post_settle_mode": "Comment l'intégration attend entre la stabilisation du chariot et l'envoi de la commande d'inclinaison. **Délai fixe** (par défaut) : toujours attendre le délai Post-stabilisation configuré avant d'incliner — sûr pour tous les actionneurs. **État de l'entité** : au lieu de cela, interroger l'état propre de la protection et envoyer l'inclinaison dès qu'il ne se fait plus « ouvrir »/« fermer », pour les actionneurs (p. ex. Shelly 2PM) avec des états de mouvement fiables. Revient au délai fixe si l'état n'est pas disponible ou si le chariot est encore en mouvement une fois la durée d'attente écoulée.",
           "max_tilt_sun_only": "Lorsque désactivé (par défaut), le plafond d'inclinaison maximale est appliqué à tout moment, y compris l'inclinaison par défaut utilisée lorsque le soleil est en dehors du champ de vision. Lorsqu'activé, le plafond s'applique uniquement pendant le suivi actif du soleil. L'inclinaison au coucher du soleil et les inclinaisons de position personnalisée ne sont jamais affectées de l'une ou l'autre façon.",
-          "min_tilt_sun_only": "Lorsque désactivé (par défaut), le plancher d'inclinaison minimale est appliqué à tout moment, y compris l'inclinaison par défaut utilisée lorsque le soleil est en dehors du champ de vision. Lorsqu'activé, le plancher s'applique uniquement pendant le suivi actif du soleil. L'inclinaison au coucher du soleil et les inclinaisons de position personnalisée ne sont jamais affectées de l'une ou l'autre façon."
+          "min_tilt_sun_only": "Lorsque désactivé (par défaut), le plancher d'inclinaison minimale est appliqué à tout moment, y compris l'inclinaison par défaut utilisée lorsque le soleil est en dehors du champ de vision. Lorsqu'activé, le plancher s'applique uniquement pendant le suivi actif du soleil. L'inclinaison au coucher du soleil et les inclinaisons de position personnalisée ne sont jamais affectées de l'une ou l'autre façon.",
+          "sliding_enable_shade_area": "Lorsqu'elle est activée, le rideau se ferme uniquement autant que nécessaire pour garder une zone d'ombrage au sol à deux points à l'abri du soleil direct, offrant une couverture continue au lieu de l'ouverture/fermeture complète par défaut. Définissez les deux points de la zone d'ombrage ci-dessous. Lorsqu'elle est désactivée, le rideau se déploie entièrement chaque fois que le soleil direct atteint la fenêtre et se rétracte sinon.",
+          "sliding_slide_direction": "Comment le tissu se déploie sur l'ouverture. **Ouverture centrale** (par défaut) : deux pans se séparent du milieu. **Un seul pan (gauche)** : un pan ancré au bord gauche, se ferme vers la droite. **Un seul pan (droite)** : un pan ancré au bord droit, se ferme vers la gauche. Détermine comment la zone de sol couverte correspond à un pourcentage d'ouverture.",
+          "sliding_point1_x": "Position le long du mur du point 1 de la zone d'ombrage, mesurée à partir du centre de la fenêtre (0), positive vers la droite en regardant la fenêtre de l'intérieur. Affichée dans l'unité configurée pour Home Assistant. Même système de coordonnées que les zones d'éblouissement.",
+          "sliding_point1_y": "Profondeur du point 1 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre.",
+          "sliding_point2_x": "Position le long du mur du point 2 de la zone d'ombrage, mesurée à partir du centre de la fenêtre (0), positive vers la droite en regardant la fenêtre de l'intérieur. Affichée dans l'unité configurée pour Home Assistant. Même système de coordonnées que les zones d'éblouissement.",
+          "sliding_point2_y": "Profondeur du point 2 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre."
         }
       },
       "sun_tracking": {
@@ -1894,6 +1918,13 @@
       "options": {
         "below": "En dessous — bloque le soleil bas (arbre ou avant-toit)",
         "above": "Au-dessus — bloque le soleil haut (obstacle en surplomb, par ex. balcon)"
+      }
+    },
+    "sliding_slide_direction": {
+      "options": {
+        "bi_part": "Ouverture centrale — deux pans se rejoignent au milieu",
+        "left": "Un seul pan — ancré à gauche, se ferme vers la droite",
+        "right": "Un seul pan — ancré à droite, se ferme vers la gauche"
       }
     }
   },

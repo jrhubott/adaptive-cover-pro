@@ -135,6 +135,12 @@ from .const import (
     CONF_SUNSET_TIME_ENTITY,
     CONF_ROOF_HEIGHT_ABOVE,
     CONF_ROOF_PITCH,
+    CONF_SLIDING_ENABLE_SHADE_AREA,
+    CONF_SLIDING_POINT1_X,
+    CONF_SLIDING_POINT1_Y,
+    CONF_SLIDING_POINT2_X,
+    CONF_SLIDING_POINT2_Y,
+    CONF_SLIDING_SLIDE_DIRECTION,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -1619,6 +1625,44 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_ROOF_HEIGHT_ABOVE,
+    ),
+    # Sliding-curtain shade-area geometry (#829, Part 2). Dynamic selectors are
+    # built by the policy's geometry_schema; these specs single-source the
+    # bounds / validator entries for OPTION_RANGES + FIELD_VALIDATORS.
+    FieldSpec(
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        SECTION_GEOMETRY,
+        ValidatorKind.BOOL,
+    ),
+    FieldSpec(
+        CONF_SLIDING_SLIDE_DIRECTION,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.SLIDING_SLIDE_DIRECTIONS,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT1_X,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_X,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT1_Y,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_Y,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT2_X,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_X,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT2_Y,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_Y,
     ),
     FieldSpec(
         CONF_TILT_DEPTH,
