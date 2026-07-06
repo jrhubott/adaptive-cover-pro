@@ -1,25 +1,29 @@
-"""Coordinator for the virtual Cover Group entry type (issue #790, Phase 1).
+"""Coordinator for the virtual Cover Group entry type (issue #790).
 
 Orchestrates a roster of member covers:
 
-* **ACP members** (config entries) are commanded through each member's own
-  coordinator (``async_apply_user_position`` / ``async_reset_manual_overrides``
-  / the ``automatic_control`` toggle) so the member's gates, inverse-state,
-  and override semantics all apply.
-* **Generic members** (plain ``cover.*`` entity_ids, "adopt mode") are
-  commanded through a group-owned ``CoverCommandService`` so capability
-  fallback (open/close-only covers), unavailable-cover skips, and no-op
-  suppression come for free.
+* **ACP members** (config entries): scenes and the group lock are pushed as
+  a :class:`~.pipeline.types.GroupIntent` into each member coordinator
+  (``set_group_intent`` + refresh, Phase 2) — the member's pipeline
+  arbitrates, so weather safety still outranks a scene and a member's own
+  safety slot outranks the group lock. Bulk operations
+  (``async_reset_manual_overrides``, the ``automatic_control`` toggle) call
+  the member's own entry points.
+* **Generic members** (plain ``cover.*`` entity_ids, "adopt mode") have no
+  pipeline: they are commanded directly through a group-owned
+  ``CoverCommandService`` so capability fallback (open/close-only covers),
+  unavailable-cover skips, and no-op suppression come for free.
 
-Phase 1 acts only on explicit user actions (scene buttons/select, bulk
-switches); it never moves covers autonomously, so there is no boot-time
-fan-out path. Scene targets are resolved per member via the member policy's
-``position_for_scene`` — a scene is an intent, not a shared absolute
-position.
+The group acts only on explicit user actions (scene buttons/select, bulk
+switches); it never moves covers autonomously and its intents are not
+persisted, so there is no boot-time fan-out path. Scene targets resolve per
+member via the member policy's ``position_for_scene`` — a scene is an
+intent, not a shared absolute position.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import logging
 
@@ -30,15 +34,22 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_ENTITIES,
+    CONF_GROUP_MEMBER_OPT_OUT,
+    CONF_GROUP_STAGGER_DELAY,
     CONF_MEMBER_COVERS,
     CONF_MEMBER_ENTRIES,
     CONF_SENSOR_TYPE,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_DELTA_POSITION,
     DEFAULT_DELTA_TIME,
+    DEFAULT_GROUP_STAGGER_DELAY,
     DOMAIN,
+    GROUP_SCENE_PRIORITY,
+    OPT_OUT_ALL_SCENES,
     POSITION_CLOSED,
     POSITION_OPEN,
     CoverType,
+    GroupIntentKind,
     GroupScene,
     GroupState,
 )
@@ -46,6 +57,7 @@ from .cover_types import get_policy
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
+from .pipeline.types import GroupIntent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +89,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         )
         self.entry = entry
         self.active_scene: GroupScene | None = None
+        self.group_locked: bool = False
         self._unsub_state: CALLBACK_TYPE | None = None
         self._adopt_policy = get_policy(_ADOPT_COVER_TYPE)
         self._grace_mgr = GracePeriodManager(_LOGGER)
@@ -126,20 +139,50 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
 
     # ---- Fan-out operations ------------------------------------------------ #
 
+    def _scene_opted_out(self, member_entry_id: str, scene: GroupScene) -> bool:
+        """Whether the member opted out of this scene (or all scenes)."""
+        opted = self.entry.options.get(CONF_GROUP_MEMBER_OPT_OUT, {}).get(
+            member_entry_id, []
+        )
+        return OPT_OUT_ALL_SCENES in opted or str(scene) in opted
+
+    async def _stagger_gap(self, commands_sent: int) -> None:
+        """Sleep the configured stagger before every command but the first."""
+        stagger = float(
+            self.entry.options.get(
+                CONF_GROUP_STAGGER_DELAY, DEFAULT_GROUP_STAGGER_DELAY
+            )
+        )
+        if commands_sent and stagger > 0:
+            await asyncio.sleep(stagger)
+
     async def async_activate_scene(self, scene: GroupScene) -> None:
-        """Fan a scene out to every member, resolving the target per policy."""
-        trigger = f"group_scene_{scene}"
+        """Fan a scene out as a pipeline intent, resolved per member (Phase 2).
+
+        ACP members get a SCENE intent + refresh — their pipeline arbitrates
+        (weather and member safety still win). Generic members have no
+        pipeline and are commanded directly with the adopt-policy target.
+        Per-member opt-out and the stagger gap apply to both kinds.
+        """
+        intent = GroupIntent(
+            kind=GroupIntentKind.SCENE,
+            scene=scene,
+            priority=GROUP_SCENE_PRIORITY,
+            group_id=self.entry.entry_id,
+        )
+        commands = 0
         for entry, coordinator in self.resolved_members():
-            policy = get_policy(entry.data[CONF_SENSOR_TYPE])
-            target = policy.position_for_scene(scene)
-            for entity_id in entry.options.get(CONF_ENTITIES, []):
-                await coordinator.async_apply_user_position(
-                    entity_id,
-                    target,
-                    trigger=trigger,
-                )
+            if self._scene_opted_out(entry.entry_id, scene):
+                continue
+            await self._stagger_gap(commands)
+            commands += 1
+            coordinator.set_group_intent(self.entry.entry_id, intent)
+            await coordinator.async_request_refresh()
         adopt_target = self._adopt_policy.position_for_scene(scene)
+        trigger = f"group_scene_{scene}"
         for entity_id in self.entry.options.get(CONF_MEMBER_COVERS, []):
+            await self._stagger_gap(commands)
+            commands += 1
             await self._cmd_svc.apply_position(
                 entity_id,
                 adopt_target,
@@ -148,6 +191,50 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             )
         self.active_scene = scene
         await self.async_refresh()
+
+    async def async_clear_scene(self) -> None:
+        """Release this group's scene claim — members return to their pipeline."""
+        for _entry, coordinator in self.resolved_members():
+            coordinator.set_group_intent(self.entry.entry_id, None)
+            await coordinator.async_request_refresh()
+        self.active_scene = None
+        await self.async_refresh()
+
+    async def async_set_lock(self, locked: bool) -> None:
+        """Push or release the group lock (LOCK intent at safety priority).
+
+        The lock ignores per-scene opt-out — it is a safety claim on every
+        member — and applies immediately (no stagger; nothing moves). On
+        release, an active scene is re-pushed so unlocking returns the room
+        to the scene, not to unmanaged state.
+        """
+        self.group_locked = locked
+        if locked:
+            intent = GroupIntent(
+                kind=GroupIntentKind.LOCK,
+                scene=None,
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                group_id=self.entry.entry_id,
+            )
+            for _entry, coordinator in self.resolved_members():
+                coordinator.set_group_intent(self.entry.entry_id, intent)
+                await coordinator.async_request_refresh()
+        else:
+            for _entry, coordinator in self.resolved_members():
+                coordinator.set_group_intent(self.entry.entry_id, None)
+                await coordinator.async_request_refresh()
+            if self.active_scene is not None:
+                await self.async_activate_scene(self.active_scene)
+        await self.async_refresh()
+
+    def member_winners(self) -> dict[str, str | None]:
+        """Who-won: each ACP member cover mapped to its pipeline's winner."""
+        winners: dict[str, str | None] = {}
+        for entry, coordinator in self.resolved_members():
+            winner = getattr(coordinator, "pipeline_winner_name", None)
+            for entity_id in entry.options.get(CONF_ENTITIES, []):
+                winners[entity_id] = winner
+        return winners
 
     async def async_set_automation(self, enabled: bool) -> None:
         """Bulk-enable/disable sun-tracking automation on every ACP member."""
@@ -197,7 +284,15 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         self.hass.async_create_task(self.async_request_refresh())
 
     async def async_shutdown(self) -> None:
-        """Tear down listeners and the adopt-mode command service."""
+        """Tear down listeners, the command service, and any live intents.
+
+        Clearing this group's intent from every member matters on reload and
+        delete: a stale intent would keep claiming the member's pipeline for
+        a group that no longer exists (#712/#714 lifecycle lesson).
+        """
+        for _entry, coordinator in self.resolved_members():
+            coordinator.set_group_intent(self.entry.entry_id, None)
+            await coordinator.async_request_refresh()
         if self._unsub_state is not None:
             self._unsub_state()
             self._unsub_state = None

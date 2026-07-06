@@ -222,6 +222,10 @@ SECTION_CUSTOM_POSITION = "custom_position"
 SECTION_MOTION_OVERRIDE = "motion_override"
 SECTION_PIPELINE_PRIORITIES = "pipeline_priorities"
 SECTION_DEBUG = "debug"
+# Cover-group-only fields (issue #790). Not in COMMON_SECTION_ORDER, so the
+# section never renders in a cover's options flow — it exists so group
+# numeric fields feed OPTION_RANGES / FIELD_VALIDATORS like every other one.
+SECTION_GROUP = "group"
 
 
 # =============================================================================
@@ -1720,6 +1724,23 @@ _GLARE_ZONE_SPECS = _spec(
 # Registry assembly
 # =============================================================================
 
+_GROUP_SPECS = _spec(
+    FieldSpec(
+        const.CONF_GROUP_STAGGER_DELAY,
+        SECTION_GROUP,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_GROUP_STAGGER,
+        default=const.DEFAULT_GROUP_STAGGER_DELAY,
+        make_selector=_number(
+            minimum=const._RANGE_GROUP_STAGGER[0],
+            maximum=const._RANGE_GROUP_STAGGER[1],
+            step=0.5,
+            unit="s",
+        ),
+    ),
+)
+
+
 _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _GEOMETRY_SPECS,
     _SUN_TRACKING_SPECS,
@@ -1739,6 +1760,7 @@ _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _MOTION_OVERRIDE_SPECS,
     _PIPELINE_PRIORITY_SPECS,
     _DEBUG_SPECS,
+    _GROUP_SPECS,
 )
 
 

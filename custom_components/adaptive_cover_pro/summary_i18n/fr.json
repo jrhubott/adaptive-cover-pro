@@ -253,6 +253,9 @@
     "header": "**Groupe de stores**",
     "members": "Contrôle {acp_count} membre(s) ACP + {generic_count} store(s) générique(s)",
     "member_acp": "- 🪟 {title} (ACP)",
-    "member_generic": "- 🪟 {entity} (générique)"
+    "member_generic": "- 🪟 {entity} (générique)",
+    "scene_priority": "Les scènes de groupe s'appliquent à la priorité {scene_priority} (au-dessus de la dérogation manuelle, en dessous de la sécurité météo)",
+    "lock": "🔒 Verrouillage de groupe à la priorité {lock_priority} — gèle les membres en place ; la sécurité propre d'un membre gagne toujours en cas d'égalité",
+    "stagger": "Membres commandés à {stagger}s d'intervalle"
   }
 }

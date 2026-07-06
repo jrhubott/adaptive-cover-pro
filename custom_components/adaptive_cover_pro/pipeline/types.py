@@ -5,13 +5,30 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ..const import ClimateStrategy, ControlMethod
+from ..const import ClimateStrategy, ControlMethod, GroupIntentKind, GroupScene
 
 if TYPE_CHECKING:
     from ..config_types import CoverConfig, GlareZonesConfig
     from ..cover_types.base import CoverTypePolicy
     from ..engine.covers.base import AdaptiveGeneralCover
     from ..state.climate_provider import ClimateReadings
+
+
+@dataclass(frozen=True, slots=True)
+class GroupIntent:
+    """A cover-group's live claim on a member cover (issue #790, Phase 2).
+
+    Pushed by a ``GroupCoordinator`` via the member's ``set_group_intent``;
+    the member folds its highest-priority live intent into each snapshot,
+    where ``GroupSceneHandler`` / ``GroupLockHandler`` read it. ``scene`` is
+    only meaningful for ``kind == SCENE`` — the handler resolves it through
+    the member's own policy, never an absolute shared position.
+    """
+
+    kind: GroupIntentKind
+    scene: GroupScene | None
+    priority: int
+    group_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +226,12 @@ class PipelineSnapshot:
     # Defaults to ``None`` so test fixtures that build snapshots directly keep
     # working; runtime always populates it via ``coordinator._build_snapshot``.
     policy: CoverTypePolicy | None = None
+
+    # The highest-priority live cover-group intent targeting this member, or
+    # None when no group claims it (issue #790, Phase 2). Read by
+    # GroupSceneHandler / GroupLockHandler; absence of an intent IS
+    # non-membership — the handlers defer without any membership lookup.
+    group_intent: GroupIntent | None = None
 
     # Sun-tracking movement minimization (opt-in). When True, the solar branch
     # quantizes the calculated position into ``max_coverage_steps`` evenly-spaced

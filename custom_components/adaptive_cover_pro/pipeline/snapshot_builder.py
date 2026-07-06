@@ -94,6 +94,7 @@ from ..templates import combine_with_mode, is_template_string, render_condition
 from .types import (
     ClimateOptions,
     CustomPositionSensorState,
+    GroupIntent,
     PipelineSnapshot,
 )
 
@@ -322,6 +323,7 @@ class PipelineSnapshotBuilder:
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
         cover_capabilities: dict | None = None,
+        group_intent: GroupIntent | None = None,
     ) -> PipelineSnapshot:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
@@ -413,6 +415,7 @@ class PipelineSnapshotBuilder:
             ),
             current_cover_position=current_cover_position,
             policy=self._policy,
+            group_intent=group_intent,
             minimize_movements=bool(
                 options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
             ),

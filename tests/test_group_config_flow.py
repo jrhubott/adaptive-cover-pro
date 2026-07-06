@@ -166,7 +166,12 @@ async def test_group_options_flow_shows_group_menu(hass: HomeAssistant) -> None:
     result = await flow.async_step_init()
 
     assert result["type"] == "menu"
-    assert result["menu_options"] == ["group_membership", "summary", "done"]
+    assert result["menu_options"] == [
+        "group_membership",
+        "group_arbitration",
+        "summary",
+        "done",
+    ]
 
 
 async def test_group_membership_step_excludes_self_and_other_groups(
@@ -221,3 +226,101 @@ async def test_cover_entries_excludes_groups(hass: HomeAssistant) -> None:
     entries = _cover_entries(hass)
 
     assert [e.entry_id for e in entries] == ["cover_a"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — arbitration step (stagger + per-member opt-out)
+# ---------------------------------------------------------------------------
+
+
+async def test_group_arbitration_step_saves_stagger_and_opt_out(
+    hass: HomeAssistant,
+) -> None:
+    """One page: stagger slider + one opt-out multi-select per ACP member."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_MEMBER_OPT_OUT,
+        CONF_GROUP_STAGGER_DELAY,
+        GroupScene,
+        OPT_OUT_ALL_SCENES,
+    )
+
+    _add_cover(hass, "cover_a", entities=["cover.a"])
+    _add_cover(hass, "cover_b", entities=["cover.b"])
+    group = _add_group(hass, "group_1", member_entries=["cover_a", "cover_b"])
+
+    flow = OptionsFlowHandler(group)
+    flow.hass = hass
+
+    result = await flow.async_step_group_arbitration()
+    assert result["type"] == "form"
+    keys = _schema_keys(result["data_schema"])
+    assert keys == {CONF_GROUP_STAGGER_DELAY, "scene_opt_outs"}
+    # One multi-select: per member, the all-scenes sentinel plus every scene,
+    # encoded as "member|scene" with a human label naming the member.
+    opts = _select_options(result["data_schema"], "scene_opt_outs")
+    values = [o["value"] for o in opts]
+    assert values == [
+        *(f"cover_a|{v}" for v in (OPT_OUT_ALL_SCENES, *(str(s) for s in GroupScene))),
+        *(f"cover_b|{v}" for v in (OPT_OUT_ALL_SCENES, *(str(s) for s in GroupScene))),
+    ]
+    assert all("cover_a" in o["label"] for o in opts[:4])
+
+    result = await flow.async_step_group_arbitration(
+        {
+            CONF_GROUP_STAGGER_DELAY: 2.5,
+            "scene_opt_outs": [f"cover_a|{GroupScene.PRIVACY}"],
+        }
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_GROUP_STAGGER_DELAY] == 2.5
+    # Only members with opt-outs are stored.
+    assert result["data"][CONF_GROUP_MEMBER_OPT_OUT] == {
+        "cover_a": [str(GroupScene.PRIVACY)]
+    }
+
+
+async def test_membership_save_prunes_opt_out_of_removed_members(
+    hass: HomeAssistant,
+) -> None:
+    """Removing a member from the roster drops its opt-out entry too."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_MEMBER_OPT_OUT,
+        GroupScene,
+    )
+
+    _add_cover(hass, "cover_a", entities=["cover.a"])
+    _add_cover(hass, "cover_b", entities=["cover.b"])
+    group = _add_group(hass, "group_1", member_entries=["cover_a", "cover_b"])
+    hass.config_entries.async_update_entry(
+        group,
+        options={
+            **group.options,
+            CONF_GROUP_MEMBER_OPT_OUT: {
+                "cover_a": [str(GroupScene.PRIVACY)],
+                "cover_b": [str(GroupScene.ALL_OPEN)],
+            },
+        },
+    )
+
+    flow = OptionsFlowHandler(group)
+    flow.hass = hass
+
+    result = await flow.async_step_group_membership(
+        {CONF_MEMBER_ENTRIES: ["cover_a"], CONF_MEMBER_COVERS: []}
+    )
+
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_GROUP_MEMBER_OPT_OUT] == {
+        "cover_a": [str(GroupScene.PRIVACY)]
+    }
+
+
+async def test_stagger_registered_in_option_ranges() -> None:
+    """The stagger range feeds OPTION_RANGES (validators + selectors)."""
+    from custom_components.adaptive_cover_pro.const import (
+        _RANGE_GROUP_STAGGER,
+        CONF_GROUP_STAGGER_DELAY,
+        OPTION_RANGES,
+    )
+
+    assert OPTION_RANGES[CONF_GROUP_STAGGER_DELAY] == _RANGE_GROUP_STAGGER

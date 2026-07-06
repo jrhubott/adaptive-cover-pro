@@ -89,6 +89,7 @@ def make_snapshot(
     min_tilt_sun_only: bool = False,
     max_tilt_sun_only: bool = False,
     solar_floor_active: bool = True,
+    group_intent=None,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -137,4 +138,5 @@ def make_snapshot(
         min_tilt_sun_only=min_tilt_sun_only,
         max_tilt_sun_only=max_tilt_sun_only,
         solar_floor_active=solar_floor_active,
+        group_intent=group_intent,
     )

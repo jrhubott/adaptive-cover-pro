@@ -24,8 +24,10 @@ from pathlib import Path
 from custom_components.adaptive_cover_pro.group_entities import (
     GroupActiveSceneSensor,
     GroupAutomationSwitch,
+    GroupLockSwitch,
     GroupPositionSensor,
     GroupStateSensor,
+    GroupWhoWonSensor,
 )
 from custom_components.adaptive_cover_pro.sensor import (
     _DIAGNOSTIC_SPECS,
@@ -76,10 +78,15 @@ def _class_translation_key(cls: type) -> str:
 
 _GROUP_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
     _class_translation_key(cls)
-    for cls in (GroupPositionSensor, GroupStateSensor, GroupActiveSceneSensor)
+    for cls in (
+        GroupPositionSensor,
+        GroupStateSensor,
+        GroupActiveSceneSensor,
+        GroupWhoWonSensor,
+    )
 )
 _GROUP_SWITCH_TRANSLATION_KEYS: frozenset[str] = frozenset(
-    {_class_translation_key(GroupAutomationSwitch)}
+    _class_translation_key(cls) for cls in (GroupAutomationSwitch, GroupLockSwitch)
 )
 
 

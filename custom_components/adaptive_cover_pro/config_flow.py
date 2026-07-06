@@ -58,6 +58,8 @@ from .const import (
     CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_ENTITIES,
+    CONF_GROUP_MEMBER_OPT_OUT,
+    CONF_GROUP_STAGGER_DELAY,
     CONF_MEMBER_COVERS,
     CONF_MEMBER_ENTRIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
@@ -172,8 +174,11 @@ from .const import (
     CONF_WINDOW_WIDTH,
     DEFAULT_DELTA_POSITION,
     DEFAULT_DELTA_TIME,
+    DEFAULT_GROUP_STAGGER_DELAY,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MOTION_TIMEOUT,
+    GROUP_SCENE_PRIORITY,
+    OPT_OUT_ALL_SCENES,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
@@ -188,6 +193,7 @@ from .const import (
     MODE2_OPEN_HORIZONTAL_PERCENT,
     DOMAIN,
     CoverType,
+    GroupScene,
     TemplateCombineMode,
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
@@ -421,6 +427,25 @@ def _sanitize_group_membership(
         CONF_MEMBER_ENTRIES: member_entries,
         CONF_MEMBER_COVERS: member_covers,
     }
+
+
+# Transient opt-out multi-select in the group_arbitration step: one field
+# whose option values are "member_id|scene" tokens (labels carry the member
+# title), folded into the persisted CONF_GROUP_MEMBER_OPT_OUT dict on submit.
+# Entry ids are UUID hex (no "|"), so the separator is unambiguous.
+_OPT_OUT_FIELD = "scene_opt_outs"
+_OPT_OUT_TOKEN_SEP = "|"
+
+
+def _group_opt_out_choices() -> list[dict[str, str]]:
+    """Build the opt-out select options: the all-scenes sentinel plus every scene."""
+    return [
+        {"value": OPT_OUT_ALL_SCENES, "label": "All scenes"},
+        *(
+            {"value": str(scene), "label": str(scene).replace("_", " ").title()}
+            for scene in GroupScene
+        ),
+    ]
 
 
 # The sun-tracking step no longer carries any length field — the shaded distance
@@ -1556,6 +1581,15 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     "group.member_acp": "- 🪟 {title} (ACP)",
     "group.member_generic": "- 🪟 {entity} (generic)",
+    "group.scene_priority": (
+        "Group scenes apply at priority {scene_priority} "
+        "(above manual override, below weather safety)"
+    ),
+    "group.lock": (
+        "🔒 Group lock at priority {lock_priority} — freezes members in "
+        "place; a member's own safety still wins ties"
+    ),
+    "group.stagger": "Members commanded {stagger}s apart",
     "warnings.group_empty": (
         "⚠️ This group has no members — it will not command anything."
     ),
@@ -1652,6 +1686,14 @@ def _build_group_summary(
         L["group.member_generic"].format(entity=entity_id)
         for entity_id in member_covers
     )
+    # Arbitration (Phase 2): priorities from the imported consts, never baked
+    # into the templates.
+    lines.append("")
+    lines.append(L["group.scene_priority"].format(scene_priority=GROUP_SCENE_PRIORITY))
+    lines.append(L["group.lock"].format(lock_priority=CUSTOM_POSITION_SAFETY_PRIORITY))
+    stagger = config.get(CONF_GROUP_STAGGER_DELAY, DEFAULT_GROUP_STAGGER_DELAY)
+    if stagger:
+        lines.append(L["group.stagger"].format(stagger=stagger))
     return "\n".join(lines)
 
 
@@ -4101,12 +4143,14 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
         # Cover groups are orchestrators, not geometry covers — their own
-        # small menu (membership + summary), never the cover categories.
+        # small menu (membership + arbitration + summary), never the cover
+        # categories.
         if get_policy(self.sensor_type).is_orchestrator:
             return self.async_show_menu(
                 step_id="init",
                 menu_options=[
                     "group_membership",
+                    "group_arbitration",
                     "summary",
                     "done",
                 ],
@@ -4533,13 +4577,22 @@ class OptionsFlowHandler(OptionsFlow):
         selected ACP member.
         """
         if user_input is not None:
-            self.options.update(
-                _sanitize_group_membership(
-                    self.hass,
-                    user_input,
-                    own_entry_id=self._config_entry.entry_id,
-                )
+            sanitized = _sanitize_group_membership(
+                self.hass,
+                user_input,
+                own_entry_id=self._config_entry.entry_id,
             )
+            self.options.update(sanitized)
+            # A removed member's opt-out entry is stale — prune it in the
+            # same save so the arbitration step never lists ghosts.
+            opt_out = self.options.get(CONF_GROUP_MEMBER_OPT_OUT)
+            if opt_out:
+                roster = set(sanitized[CONF_MEMBER_ENTRIES])
+                self.options[CONF_GROUP_MEMBER_OPT_OUT] = {
+                    member: scenes
+                    for member, scenes in opt_out.items()
+                    if member in roster
+                }
             return self.async_create_entry(title="", data=self.options)
 
         schema = vol.Schema(
@@ -4550,6 +4603,71 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="group_membership",
             data_schema=self.add_suggested_values_to_schema(schema, self.options),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
+            },
+        )
+
+    async def async_step_group_arbitration(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit stagger and per-member scene opt-out (issue #790, Phase 2).
+
+        Opt-outs use ONE multi-select whose options are ``member|scene``
+        pairs with human labels — the same dynamic-row pattern as the
+        profile-overrides step, so the field itself stays translatable.
+        Unchecked members are pruned so ``CONF_GROUP_MEMBER_OPT_OUT`` holds
+        only members that actually opt out. The group lock ignores opt-out.
+        """
+        member_ids = [
+            entry_id
+            for entry_id in self.options.get(CONF_MEMBER_ENTRIES, [])
+            if self.hass.config_entries.async_get_entry(entry_id) is not None
+        ]
+        if user_input is not None:
+            self.options[CONF_GROUP_STAGGER_DELAY] = user_input.get(
+                CONF_GROUP_STAGGER_DELAY, DEFAULT_GROUP_STAGGER_DELAY
+            )
+            opt_out: dict[str, list[str]] = {}
+            for token in user_input.get(_OPT_OUT_FIELD, []):
+                member_id, _, scene_value = token.partition(_OPT_OUT_TOKEN_SEP)
+                if member_id in member_ids:
+                    opt_out.setdefault(member_id, []).append(scene_value)
+            self.options[CONF_GROUP_MEMBER_OPT_OUT] = opt_out
+            return self.async_create_entry(title="", data=self.options)
+
+        stagger_spec = config_fields.FIELD_SPECS[CONF_GROUP_STAGGER_DELAY]
+        stagger_marker, stagger_selector = stagger_spec.to_marker(
+            self.hass, self.options
+        )
+        current_opt_out = self.options.get(CONF_GROUP_MEMBER_OPT_OUT, {})
+        choices: list[dict[str, str]] = []
+        selected: list[str] = []
+        for member_id in member_ids:
+            entry = self.hass.config_entries.async_get_entry(member_id)
+            for choice in _group_opt_out_choices():
+                token = f"{member_id}{_OPT_OUT_TOKEN_SEP}{choice['value']}"
+                choices.append(
+                    {"value": token, "label": f"{entry.title} — {choice['label']}"}
+                )
+                if choice["value"] in current_opt_out.get(member_id, []):
+                    selected.append(token)
+        schema_dict: dict = {
+            stagger_marker: stagger_selector,
+            vol.Optional(_OPT_OUT_FIELD, default=selected): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=choices,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+        }
+        return self.async_show_form(
+            step_id="group_arbitration",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(schema_dict),
+                {CONF_GROUP_STAGGER_DELAY: self.options.get(CONF_GROUP_STAGGER_DELAY)},
+            ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
             },
