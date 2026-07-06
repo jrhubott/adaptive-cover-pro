@@ -76,7 +76,8 @@
     "somfy_my_unset": "⚠️ Préréglage Somfy My est activé pour une ou plusieurs cibles mais Valeur du préréglage My n'est pas définie — revient au % configuré.",
     "proxy_no_min": "⚠️ Store mandataire est activé mais aucun emplacement de position personnalisée n'a Utiliser comme minimum activé — le store géré ne limitera pas.",
     "custom_and_no_sensors": "⚠️ Personnalisé #{slot} : le mode de combinaison ET est défini mais aucun capteur déclencheur n'est configuré — le template seul active le slot.",
-    "custom_safety_bypass": "⚠️ L'emplacement personnalisé #{slot} est à la priorité de sécurité ({safety}) — il contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin, pour que le store puisse se déplacer même quand le contrôle automatique est DÉSACTIVÉ et en dehors de votre horaire. Réduisez sa priorité en dessous de {safety} pour qu'elle respecte ces seuils."
+    "custom_safety_bypass": "⚠️ L'emplacement personnalisé #{slot} est à la priorité de sécurité ({safety}) — il contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin, pour que le store puisse se déplacer même quand le contrôle automatique est DÉSACTIVÉ et en dehors de votre horaire. Réduisez sa priorité en dessous de {safety} pour qu'elle respecte ces seuils.",
+    "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien."
   },
   "motion": {
     "action_hold": "stores maintiennent la position actuelle (reviennent au défaut quand le soleil quitte le FOV)",
@@ -247,5 +248,11 @@
       "pitch": "pente de toit {v}° depuis l'horizontale",
       "height_above": "{v}m de toit au-dessus de la fenêtre (porte de faîtage)"
     }
+  },
+  "group": {
+    "header": "**Groupe de stores**",
+    "members": "Contrôle {acp_count} membre(s) ACP + {generic_count} store(s) générique(s)",
+    "member_acp": "- 🪟 {title} (ACP)",
+    "member_generic": "- 🪟 {entity} (générique)"
   }
 }

@@ -6,7 +6,8 @@
         "menu_options": {
           "create_new": "Create new cover",
           "create_building_profile": "Create building profile",
-          "duplicate_existing": "Duplicate from existing cover"
+          "duplicate_existing": "Duplicate from existing cover",
+          "create_group": "Create cover group"
         }
       },
       "create_new": {
@@ -758,6 +759,19 @@
         "data_description": {
           "building_profile_id": "Link this cover to a Building Profile to inherit its shared building-level sensors. Select 'None (unlinked)' to skip profile linking and manage this cover's sensors locally."
         }
+      },
+      "create_group": {
+        "title": "Create Cover Group",
+        "description": "A cover group commands a set of covers together: scenes (All Open, All Closed, Privacy), bulk automation control, and clearing manual overrides. Pick Adaptive Cover Pro instances as members, and add plain cover entities for covers without their own instance. [Learn more]({learn_more})",
+        "data": {
+          "name": "Group name",
+          "member_entries": "Adaptive Cover Pro members",
+          "member_covers": "Generic cover entities"
+        },
+        "data_description": {
+          "member_entries": "Members are orchestrated through their own instance, so gates and overrides still apply.",
+          "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped."
+        }
       }
     },
     "abort": {
@@ -794,7 +808,8 @@
           "building_profile": "🏢 Building Profile",
           "profile_sensors": "📡 Shared Sensors",
           "profile_overview": "🏢 Profile Overview",
-          "profile_overrides": "🧹 Local Overrides"
+          "profile_overrides": "🧹 Local Overrides",
+          "group_membership": "👥 Group Members"
         }
       },
       "pipeline_priorities": {
@@ -1579,6 +1594,18 @@
         "data": {
           "clear_overrides": "Clear selected overrides"
         }
+      },
+      "group_membership": {
+        "title": "Group Members",
+        "description": "Edit which covers this group commands. [Learn more]({learn_more})",
+        "data": {
+          "member_entries": "Adaptive Cover Pro members",
+          "member_covers": "Generic cover entities"
+        },
+        "data_description": {
+          "member_entries": "Members are orchestrated through their own instance, so gates and overrides still apply.",
+          "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped."
+        }
       }
     },
     "abort": {
@@ -1635,6 +1662,26 @@
       },
       "position_forecast": {
         "name": "Position Forecast"
+      },
+      "group_position": {
+        "name": "Group Position"
+      },
+      "group_state": {
+        "name": "Group State",
+        "state": {
+          "open": "Open",
+          "closed": "Closed",
+          "mixed": "Mixed",
+          "unknown": "Unknown"
+        }
+      },
+      "group_active_scene": {
+        "name": "Active Scene",
+        "state": {
+          "all_open": "All Open",
+          "all_closed": "All Closed",
+          "privacy": "Privacy"
+        }
       }
     },
     "switch": {
@@ -1684,16 +1731,41 @@
           "on": "On",
           "off": "Off"
         }
+      },
+      "group_automation": {
+        "name": "Group Automation"
       }
     },
     "button": {
       "my_position": {
         "name": "Managed My Position"
+      },
+      "group_scene_all_open": {
+        "name": "Scene: All Open"
+      },
+      "group_scene_all_closed": {
+        "name": "Scene: All Closed"
+      },
+      "group_scene_privacy": {
+        "name": "Scene: Privacy"
+      },
+      "group_clear_overrides": {
+        "name": "Clear Member Overrides"
       }
     },
     "number": {
       "my_position_value": {
         "name": "Managed My Position Value"
+      }
+    },
+    "select": {
+      "group_scene_select": {
+        "name": "Scene",
+        "state": {
+          "all_open": "All Open",
+          "all_closed": "All Closed",
+          "privacy": "Privacy"
+        }
       }
     }
   },

@@ -12,6 +12,7 @@ from .const import (
     CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENTITIES,
     CONF_MY_POSITION_VALUE,
+    CONF_SENSOR_TYPE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
@@ -25,6 +26,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up the button platform."""
     coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
+
+    # Cover groups expose scene + clear-overrides buttons, never the cover set.
+    from .cover_types import get_policy
+
+    if get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
+        from .group_entities import build_group_buttons
+
+        async_add_entities(
+            build_group_buttons(config_entry.entry_id, hass, config_entry, coordinator)
+        )
+        return
 
     buttons: list[ButtonEntity] = []
 
@@ -69,54 +81,13 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
         return self._button_name
 
     async def async_press(self) -> None:
-        """Handle the button press."""
-        reset_entities = []
-        for entity in self._entities:
-            if self.coordinator.manager.is_cover_manual(entity):
-                _LOGGER.debug("Resetting manual override for: %s", entity)
-                self.coordinator.manager.reset(entity)
-                # Suppress re-detection: cover state events during refresh must
-                # not be treated as a new manual override.
-                self.coordinator._cmd_svc.set_waiting(entity, True)  # noqa: SLF001
-                self.coordinator.cover_state_change = False
-                reset_entities.append(entity)
-            else:
-                _LOGGER.debug(
-                    "Resetting manual override for %s is not needed since it is already auto-controlled",
-                    entity,
-                )
+        """Handle the button press.
 
-        if not reset_entities:
-            return
-
-        # Refresh so the pipeline re-runs without the override active,
-        # producing the correct post-override position (climate, solar,
-        # default — whichever handler wins now).
-        await self.coordinator.async_refresh()
-
-        # Delegate to the shared post-override send path.
-        # Time-window and automatic-control gates live there, along with
-        # force=True so time_delta/position_delta are bypassed for this
-        # intentional user reset.
-        sent = await self.coordinator._async_send_after_override_clear(
-            self.coordinator.state,
-            self.coordinator.config_entry.options,
-            entities=reset_entities,
-            trigger="manual_reset",
-        )
-
-        # Entities not sent to (gated by time window / auto-control, or
-        # skipped inside apply_position) must have wait_for_target cleared so
-        # later cover state events are not silently swallowed.
-        # Entities that were sent already have wait_for_target=True set by
-        # apply_position; leave those untouched.
-        for entity in reset_entities:
-            if entity not in sent:
-                _LOGGER.debug(
-                    "Manual override reset: no position change sent for %s",
-                    entity,
-                )
-                self.coordinator._cmd_svc.set_waiting(entity, False)  # noqa: SLF001
+        The full clear-and-resend sequence lives on the coordinator
+        (``async_reset_manual_overrides``) so this button and the cover-group
+        bulk clear (issue #790) share one path.
+        """
+        await self.coordinator.async_reset_manual_overrides(self._entities)
 
 
 class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):

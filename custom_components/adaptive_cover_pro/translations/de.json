@@ -6,7 +6,8 @@
         "menu_options": {
           "create_new": "Neue Beschattung erstellen",
           "create_building_profile": "Gebäudeprofil erstellen",
-          "duplicate_existing": "Von vorhandener Beschattung duplizieren"
+          "duplicate_existing": "Von vorhandener Beschattung duplizieren",
+          "create_group": "Beschattungsgruppe erstellen"
         }
       },
       "create_new": {
@@ -758,6 +759,19 @@
         "data_description": {
           "building_profile_id": "Verknüpfe diese Abdeckung mit einem Gebäudeprofil, um seine gemeinsamen gebäudeweiten Sensoren zu erben. Wähle „Keine (nicht verknüpft)\" aus, um die Profilverknüpfung zu überspringen und die Sensoren dieser Abdeckung lokal zu verwalten."
         }
+      },
+      "create_group": {
+        "title": "Beschattungsgruppe erstellen",
+        "description": "Eine Beschattungsgruppe steuert mehrere Beschattungen zusammen: Szenen (Alle offen, Alle geschlossen, Datenschutz), Massenautomatisierungskontrolle und Löschen manueller Übersteuerungen. Wählen Sie Adaptive-Cover-Pro-Instanzen als Mitglieder und fügen Sie einfache Beschattungsentitäten für Beschattungen ohne eigene Instanz hinzu. [Weitere Informationen]({learn_more})",
+        "data": {
+          "name": "Gruppenname",
+          "member_entries": "Adaptive-Cover-Pro-Mitglieder",
+          "member_covers": "Allgemeine Beschattungsentitäten"
+        },
+        "data_description": {
+          "member_entries": "Mitglieder werden über ihre eigene Instanz gesteuert, daher gelten Eingaben und Übersteuerungen weiterhin.",
+          "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen."
+        }
       }
     },
     "abort": {
@@ -793,7 +807,8 @@
           "building_profile": "🏢 Gebäudeprofil",
           "profile_sensors": "📡 Gemeinsame Sensoren",
           "profile_overview": "🏢 Profil-Übersicht",
-          "profile_overrides": "🧹 Lokale Übersteuerungen"
+          "profile_overrides": "🧹 Lokale Übersteuerungen",
+          "group_membership": "👥 Gruppenmitglieder"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1579,6 +1594,18 @@
         "data": {
           "clear_overrides": "Ausgewählte Übersteuerungen löschen"
         }
+      },
+      "group_membership": {
+        "title": "Gruppenmitglieder",
+        "description": "Bearbeiten Sie, welche Beschattungen diese Gruppe steuert. [Weitere Informationen]({learn_more})",
+        "data": {
+          "member_entries": "Adaptive-Cover-Pro-Mitglieder",
+          "member_covers": "Allgemeine Beschattungsentitäten"
+        },
+        "data_description": {
+          "member_entries": "Mitglieder werden über ihre eigene Instanz gesteuert, daher gelten Eingaben und Übersteuerungen weiterhin.",
+          "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen."
+        }
       }
     },
     "abort": {
@@ -1635,6 +1662,26 @@
       },
       "solar_calculation": {
         "name": "Solarberechnung"
+      },
+      "group_position": {
+        "name": "Gruppenposition"
+      },
+      "group_state": {
+        "name": "Gruppenstatus",
+        "state": {
+          "open": "Offen",
+          "closed": "Geschlossen",
+          "mixed": "Gemischt",
+          "unknown": "Unbekannt"
+        }
+      },
+      "group_active_scene": {
+        "name": "Aktive Szene",
+        "state": {
+          "all_open": "Alle offen",
+          "all_closed": "Alle geschlossen",
+          "privacy": "Datenschutz"
+        }
       }
     },
     "switch": {
@@ -1684,16 +1731,41 @@
           "on": "An",
           "off": "Aus"
         }
+      },
+      "group_automation": {
+        "name": "Gruppenautomatisierung"
       }
     },
     "button": {
       "my_position": {
         "name": "Verwaltete My-Position"
+      },
+      "group_scene_all_open": {
+        "name": "Szene: Alle offen"
+      },
+      "group_scene_all_closed": {
+        "name": "Szene: Alle geschlossen"
+      },
+      "group_scene_privacy": {
+        "name": "Szene: Datenschutz"
+      },
+      "group_clear_overrides": {
+        "name": "Mitglied-Übersteuerungen löschen"
       }
     },
     "number": {
       "my_position_value": {
         "name": "Verwalteter My-Positionswert"
+      }
+    },
+    "select": {
+      "group_scene_select": {
+        "name": "Szene",
+        "state": {
+          "all_open": "Alle offen",
+          "all_closed": "Alle geschlossen",
+          "privacy": "Datenschutz"
+        }
       }
     }
   },

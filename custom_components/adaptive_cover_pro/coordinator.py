@@ -1669,6 +1669,71 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return None
         return await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
 
+    async def async_reset_manual_overrides(
+        self,
+        entities: list[str] | None = None,
+        *,
+        trigger: str = "manual_reset",
+    ) -> list[str]:
+        """Clear manual override on covers and resend the pipeline position.
+
+        Single authoritative reset sequence shared by the Reset Manual
+        Override button and the cover-group bulk clear (issue #790): clear the
+        override flag, suppress re-detection during the refresh, re-run the
+        pipeline, then delegate to the shared post-override send path. Returns
+        the entities whose override was actually cleared.
+        """
+        covers = (
+            entities
+            if entities is not None
+            else self.config_entry.options.get(CONF_ENTITIES, [])
+        )
+        reset_entities: list[str] = []
+        for entity in covers:
+            if self.manager.is_cover_manual(entity):
+                _LOGGER.debug("Resetting manual override for: %s", entity)
+                self.manager.reset(entity)
+                # Suppress re-detection: cover state events during refresh must
+                # not be treated as a new manual override.
+                self._cmd_svc.set_waiting(entity, True)
+                self.cover_state_change = False
+                reset_entities.append(entity)
+            else:
+                _LOGGER.debug(
+                    "Resetting manual override for %s is not needed since it is already auto-controlled",
+                    entity,
+                )
+
+        if not reset_entities:
+            return []
+
+        # Refresh so the pipeline re-runs without the override active,
+        # producing the correct post-override position (climate, solar,
+        # default — whichever handler wins now).
+        await self.async_refresh()
+
+        # Time-window and automatic-control gates live in the shared send
+        # path, along with force=True so time_delta/position_delta are
+        # bypassed for this intentional reset.
+        sent = await self._async_send_after_override_clear(
+            self.state,
+            self.config_entry.options,
+            entities=reset_entities,
+            trigger=trigger,
+        )
+
+        # Entities not sent to (gated by time window / auto-control, or
+        # skipped inside apply_position) must have wait_for_target cleared so
+        # later cover state events are not silently swallowed.
+        for entity in reset_entities:
+            if entity not in sent:
+                _LOGGER.debug(
+                    "Manual override reset: no position change sent for %s",
+                    entity,
+                )
+                self._cmd_svc.set_waiting(entity, False)
+        return reset_entities
+
     async def _async_send_after_override_clear(
         self,
         state: int,

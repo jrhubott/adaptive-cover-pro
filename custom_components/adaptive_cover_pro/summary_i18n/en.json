@@ -76,7 +76,8 @@
     "somfy_my_unset": "⚠️ Somfy My preset is enabled for one or more targets but My Preset Value is not set — falls back to configured %.",
     "proxy_no_min": "⚠️ Proxy cover is enabled but no custom-position slot has Use as minimum on — the managed cover will not clamp.",
     "custom_and_no_sensors": "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are configured — the template alone activates the slot.",
-    "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates."
+    "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates.",
+    "group_empty": "⚠️ This group has no members — it will not command anything."
   },
   "motion": {
     "template_source": "occupancy template",
@@ -247,5 +248,11 @@
     "fov": {
       "computed": "Computed FOV ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"
     }
+  },
+  "group": {
+    "header": "**Cover Group**",
+    "members": "Controls {acp_count} ACP member(s) + {generic_count} generic cover(s)",
+    "member_acp": "- 🪟 {title} (ACP)",
+    "member_generic": "- 🪟 {entity} (generic)"
   }
 }

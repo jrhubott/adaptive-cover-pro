@@ -96,6 +96,14 @@ CONF_PROFILE_SENSOR_OVERRIDES = "profile_sensor_overrides"
 # multi-select becomes an exclude list instead of an include list).
 CONF_SYNC_SELECT_ALL = "select_all_targets"
 
+# Cover-group membership rosters, stored on the GROUP entry only (issue #790).
+# Two lists because the member kinds are structural: ACP members are config
+# entries (orchestrated through their own coordinator — an ACP instance may
+# expose no cover entity at all when the proxy is off), generic members are
+# plain ``cover.*`` entity_ids (adopt mode, commanded directly).
+CONF_MEMBER_ENTRIES = "member_entries"  # ACP member config-entry ids
+CONF_MEMBER_COVERS = "member_covers"  # generic cover entity_ids
+
 # Default name prefix used by the config flow when auto-naming a cover from its
 # entity's friendly name (no linked device available) — see config_flow.py's
 # cover_entities auto-fill and async_step_update finalization fallback (#771).
@@ -1406,6 +1414,11 @@ class CoverType(StrEnum):
     # sensor entity IDs that linked covers copy into their own options. Its
     # policy registers no platforms (``controls_cover = False``).
     BUILDING_PROFILE = "cover_building_profile"
+    # Virtual entry type — orchestrates a roster of member covers (ACP
+    # entries + generic ``cover.*`` entities). Controls covers
+    # (``controls_cover = True``) but is not geometry-driven: setup branches
+    # on ``is_orchestrator`` to a ``GroupCoordinator`` (issue #790).
+    GROUP = "cover_group"
 
     @property
     def display_name(self) -> str:
@@ -1423,7 +1436,36 @@ class CoverType(StrEnum):
             self.OSCILLATING_AWNING: "Oscillating Awning",
             self.ROOF_WINDOW: "Roof Window",
             self.BUILDING_PROFILE: "Building Profile",
+            self.GROUP: "Cover Group",
         }[self]
+
+
+class GroupScene(StrEnum):
+    """Built-in cover-group scenes (issue #790, Phase 1).
+
+    Wire-stable identifiers: stored as the group's active-scene state and the
+    scene ``select``/``button`` option values. Each scene is a semantic intent
+    resolved per member cover type via ``CoverTypePolicy.position_for_scene``
+    — never an absolute position shared across a mixed group.
+    """
+
+    ALL_OPEN = "all_open"
+    ALL_CLOSED = "all_closed"
+    PRIVACY = "privacy"
+
+
+class GroupState(StrEnum):
+    """Aggregate open/closed classification of a cover group's members.
+
+    Wire-stable: the group state sensor reports these values. ``MIXED`` covers
+    every non-uniform roster (members disagree, or sit between endpoints);
+    ``UNKNOWN`` means no member position was readable.
+    """
+
+    OPEN = "open"
+    CLOSED = "closed"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
 
 
 # =============================================================================

@@ -24,7 +24,13 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import selector
 
-from ..const import ATTR_POSITION, ATTR_TILT_POSITION, POSITION_CLOSED, POSITION_OPEN
+from ..const import (
+    ATTR_POSITION,
+    ATTR_TILT_POSITION,
+    POSITION_CLOSED,
+    POSITION_OPEN,
+    GroupScene,
+)
 from ..helpers import get_open_close_state, should_use_tilt, state_attr
 
 if TYPE_CHECKING:
@@ -163,6 +169,14 @@ class CoverTypePolicy(ABC):
     # cover-only menus, and the setup path can filter them out by capability
     # rather than by branching on the cover-type string.
     controls_cover: ClassVar[bool] = True
+
+    # Whether this policy orchestrates *other* covers instead of driving a
+    # geometry pipeline of its own. Only the cover group sets this ``True``:
+    # it controls covers (``controls_cover = True``) but setup must build a
+    # ``GroupCoordinator`` rather than the sun/geometry coordinator. A second
+    # capability flag keeps that branch off the cover-type string, same as
+    # ``controls_cover`` (issue #790).
+    is_orchestrator: ClassVar[bool] = False
 
     def __init_subclass__(cls, *, register: bool = False, **kwargs: Any) -> None:
         """Auto-register a concrete policy by its ``cover_type``.
@@ -481,6 +495,26 @@ class CoverTypePolicy(ABC):
         if sun_through:
             return POSITION_CLOSED if primary.open_blocks_sun else POSITION_OPEN
         return POSITION_OPEN if primary.open_blocks_sun else POSITION_CLOSED
+
+    def position_for_scene(self, scene: GroupScene) -> int:
+        """Map a cover-group scene to this cover type's primary-axis position.
+
+        Scenes are semantic intents resolved per member (issue #790):
+
+          - ``ALL_OPEN`` / ``ALL_CLOSED`` follow HA cover semantics — 100 =
+            open (blinds raised / awning extended), 0 = closed.
+          - ``PRIVACY`` means maximum coverage, delegated to the existing
+            ``position_for_intent(sun_through=False)`` polymorphism so the
+            awning's open-blocks-sun axis flips the answer.
+
+        Never called on axis-less virtual policies (group, building profile)
+        — the group resolves scenes through each *member's* policy.
+        """
+        if scene is GroupScene.ALL_OPEN:
+            return POSITION_OPEN
+        if scene is GroupScene.ALL_CLOSED:
+            return POSITION_CLOSED
+        return self.position_for_intent(sun_through=False)
 
     def more_protective_position(self, a: int, b: int) -> int:
         """Return whichever of two primary-axis positions blocks more sun.

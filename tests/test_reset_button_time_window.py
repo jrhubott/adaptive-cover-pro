@@ -236,13 +236,28 @@ async def test_send_after_override_clear_returns_only_sent_entities():
 
 
 # ---------------------------------------------------------------------------
-# Button path — issue #193 regression tests
+# Shared clear-and-resend sequence — issue #193 regression tests
+#
+# The sequence historically lived in the button's async_press; it moved to
+# AdaptiveDataUpdateCoordinator.async_reset_manual_overrides (issue #790) so
+# the cover-group bulk clear shares it. Tests exercise the method unbound,
+# same pattern as the _async_send_after_override_clear tests above.
 # ---------------------------------------------------------------------------
 
 
+async def _reset_via_coordinator(coordinator, entities):
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    return await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
+        coordinator, entities
+    )
+
+
 @pytest.mark.asyncio
-async def test_reset_button_skips_send_when_outside_time_window():
-    """Pressing Reset outside the active-hours window must clear override but not move the cover.
+async def test_reset_skips_send_when_outside_time_window():
+    """Reset outside the active-hours window must clear override but not move the cover.
 
     Regression test for issue #193: cover was moved to default (100%) even when
     Control Status showed outside_time_window.
@@ -255,23 +270,22 @@ async def test_reset_button_skips_send_when_outside_time_window():
     coordinator.state = 0
     coordinator.config_entry.options = {}
     coordinator.async_refresh = AsyncMock()
-    # The shared method handles the gate; button must delegate to it
+    # The shared send path handles the gate; the reset must delegate to it
     coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
 
-    button = _make_button(coordinator, [entity_id])
-    await button.async_press()
+    await _reset_via_coordinator(coordinator, [entity_id])
 
     # Override flag must be cleared regardless of time window
     coordinator.manager.reset.assert_called_once_with(entity_id)
-    # No direct apply_position call from the button — it delegates
+    # No direct apply_position call — the send path owns dispatch
     coordinator._cmd_svc.apply_position.assert_not_called()
     # wait_for_target must be unblocked (entity not in sent set)
     coordinator._cmd_svc.set_waiting.assert_any_call(entity_id, False)
 
 
 @pytest.mark.asyncio
-async def test_reset_button_skips_send_when_auto_control_off():
-    """Pressing Reset with Automatic Control OFF must clear override but not move the cover."""
+async def test_reset_skips_send_when_auto_control_off():
+    """Reset with Automatic Control OFF must clear override but not move the cover."""
     entity_id = "cover.bedroom"
 
     coordinator = _make_coordinator(automatic_control=False)
@@ -282,8 +296,7 @@ async def test_reset_button_skips_send_when_auto_control_off():
     coordinator.async_refresh = AsyncMock()
     coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
 
-    button = _make_button(coordinator, [entity_id])
-    await button.async_press()
+    await _reset_via_coordinator(coordinator, [entity_id])
 
     coordinator.manager.reset.assert_called_once_with(entity_id)
     coordinator._cmd_svc.apply_position.assert_not_called()
@@ -291,8 +304,8 @@ async def test_reset_button_skips_send_when_auto_control_off():
 
 
 @pytest.mark.asyncio
-async def test_reset_button_delegates_to_shared_method_with_correct_args():
-    """Button must call _async_send_after_override_clear with entities and trigger kwargs."""
+async def test_reset_delegates_to_shared_method_with_correct_args():
+    """The reset must call _async_send_after_override_clear with entities and trigger kwargs."""
     entity_id = "cover.kitchen"
     options = {"some_opt": True}
 
@@ -304,9 +317,9 @@ async def test_reset_button_delegates_to_shared_method_with_correct_args():
     coordinator.async_refresh = AsyncMock()
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
-    button = _make_button(coordinator, [entity_id])
-    await button.async_press()
+    reset = await _reset_via_coordinator(coordinator, [entity_id])
 
+    assert reset == [entity_id]
     coordinator._async_send_after_override_clear.assert_called_once()
     call = coordinator._async_send_after_override_clear.call_args
     assert call[0][0] == 55  # state
@@ -316,7 +329,7 @@ async def test_reset_button_delegates_to_shared_method_with_correct_args():
 
 
 @pytest.mark.asyncio
-async def test_reset_button_clears_wait_for_target_for_unsent_entities():
+async def test_reset_clears_wait_for_target_for_unsent_entities():
     """Entities the shared method did not send to must have wait_for_target cleared."""
     entity_a = "cover.sent"
     entity_b = "cover.not_sent"
@@ -330,10 +343,9 @@ async def test_reset_button_clears_wait_for_target_for_unsent_entities():
     # Simulate: shared method sent to entity_a but not entity_b
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_a})
 
-    button = _make_button(coordinator, [entity_a, entity_b])
-    await button.async_press()
+    await _reset_via_coordinator(coordinator, [entity_a, entity_b])
 
-    # entity_a was sent — apply_position would set waiting=True; button does NOT clear it
+    # entity_a was sent — apply_position would set waiting=True; reset does NOT clear it
     set_waiting_calls = coordinator._cmd_svc.set_waiting.call_args_list
     cleared = [call for call in set_waiting_calls if call.args == (entity_a, False)]
     assert not cleared, "entity_a was sent — wait_for_target must not be cleared"
@@ -342,7 +354,7 @@ async def test_reset_button_clears_wait_for_target_for_unsent_entities():
 
 
 @pytest.mark.asyncio
-async def test_reset_button_happy_path_inside_window():
+async def test_reset_happy_path_inside_window():
     """Inside the window with auto-control on, position must be sent normally."""
     entity_id = "cover.sun_room"
 
@@ -354,13 +366,27 @@ async def test_reset_button_happy_path_inside_window():
     coordinator.async_refresh = AsyncMock()
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
-    button = _make_button(coordinator, [entity_id])
-    await button.async_press()
+    reset = await _reset_via_coordinator(coordinator, [entity_id])
 
+    assert reset == [entity_id]
     coordinator.manager.reset.assert_called_once_with(entity_id)
     coordinator.async_refresh.assert_called_once()
     coordinator._async_send_after_override_clear.assert_called_once()
-    # entity was sent — button must NOT clear waiting (apply_position set it)
+    # entity was sent — reset must NOT clear waiting (apply_position set it)
     set_waiting_calls = coordinator._cmd_svc.set_waiting.call_args_list
     cleared = [call for call in set_waiting_calls if call.args == (entity_id, False)]
     assert not cleared
+
+
+@pytest.mark.asyncio
+async def test_reset_button_delegates_to_coordinator():
+    """The button is a thin wrapper over the coordinator's shared reset method."""
+    entity_id = "cover.hall"
+
+    coordinator = MagicMock()
+    coordinator.async_reset_manual_overrides = AsyncMock(return_value=[entity_id])
+
+    button = _make_button(coordinator, [entity_id])
+    await button.async_press()
+
+    coordinator.async_reset_manual_overrides.assert_awaited_once_with([entity_id])

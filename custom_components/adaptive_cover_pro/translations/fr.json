@@ -6,7 +6,8 @@
         "menu_options": {
           "create_new": "Créer un nouveau store",
           "create_building_profile": "Créer un profil de bâtiment",
-          "duplicate_existing": "Dupliquer à partir d'un store existant"
+          "duplicate_existing": "Dupliquer à partir d'un store existant",
+          "create_group": "Créer un groupe de stores"
         }
       },
       "create_new": {
@@ -758,6 +759,19 @@
         "data_description": {
           "building_profile_id": "Associez ce volet à un Profil de bâtiment pour hériter de ses capteurs partagés à l'échelle du bâtiment. Sélectionnez « Aucun (non lié) » pour ignorer l'association de profil et gérer les capteurs de ce volet localement."
         }
+      },
+      "create_group": {
+        "title": "Créer un groupe de stores",
+        "description": "Un groupe de stores commande un ensemble de stores ensemble : scènes (Tous ouverts, Tous fermés, Confidentialité), contrôle d'automation en masse et suppression des dérogations manuelles. Sélectionnez les instances Adaptive Cover Pro comme membres, et ajoutez les entités de store simples pour les stores sans leur propre instance. [En savoir plus]({learn_more})",
+        "data": {
+          "name": "Nom du groupe",
+          "member_entries": "Membres Adaptive Cover Pro",
+          "member_covers": "Entités de store génériques"
+        },
+        "data_description": {
+          "member_entries": "Les membres sont orchestrés via leur propre instance, donc les portails et dérogations s'appliquent toujours.",
+          "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré."
+        }
       }
     },
     "abort": {
@@ -793,7 +807,8 @@
           "building_profile": "🏢 Profil de bâtiment",
           "profile_sensors": "📡 Capteurs partagés",
           "profile_overview": "🏢 Aperçu du profil",
-          "profile_overrides": "🧹 Dérogations locales"
+          "profile_overrides": "🧹 Dérogations locales",
+          "group_membership": "👥 Membres du groupe"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1579,6 +1594,18 @@
         },
         "title": "Profil de bâtiment — Dérogations locales",
         "description": "Capteurs qu'une couverture liée a dérogée, ou définis localement lorsque ce profil les laisse vides. Sélectionnez-en un pour réinitialiser — un capteur dérogaté réhérite la valeur du profil; un capteur local est effacé.\n\n{overrides}"
+      },
+      "group_membership": {
+        "title": "Membres du groupe",
+        "description": "Modifiez quels stores ce groupe commande. [En savoir plus]({learn_more})",
+        "data": {
+          "member_entries": "Membres Adaptive Cover Pro",
+          "member_covers": "Entités de store génériques"
+        },
+        "data_description": {
+          "member_entries": "Les membres sont orchestrés via leur propre instance, donc les portails et dérogations s'appliquent toujours.",
+          "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré."
+        }
       }
     },
     "abort": {
@@ -1635,6 +1662,26 @@
       },
       "solar_calculation": {
         "name": "Calcul solaire"
+      },
+      "group_position": {
+        "name": "Position du groupe"
+      },
+      "group_state": {
+        "name": "État du groupe",
+        "state": {
+          "open": "Ouvert",
+          "closed": "Fermé",
+          "mixed": "Mixte",
+          "unknown": "Inconnu"
+        }
+      },
+      "group_active_scene": {
+        "name": "Scène active",
+        "state": {
+          "all_open": "Tous ouverts",
+          "all_closed": "Tous fermés",
+          "privacy": "Confidentialité"
+        }
       }
     },
     "switch": {
@@ -1684,16 +1731,41 @@
           "on": "Activé",
           "off": "Désactivé"
         }
+      },
+      "group_automation": {
+        "name": "Automation du groupe"
       }
     },
     "button": {
       "my_position": {
         "name": "Position My gérée"
+      },
+      "group_scene_all_open": {
+        "name": "Scène : Tous ouverts"
+      },
+      "group_scene_all_closed": {
+        "name": "Scène : Tous fermés"
+      },
+      "group_scene_privacy": {
+        "name": "Scène : Confidentialité"
+      },
+      "group_clear_overrides": {
+        "name": "Supprimer les dérogations des membres"
       }
     },
     "number": {
       "my_position_value": {
         "name": "Valeur de position My gérée"
+      }
+    },
+    "select": {
+      "group_scene_select": {
+        "name": "Scène",
+        "state": {
+          "all_open": "Tous ouverts",
+          "all_closed": "Tous fermés",
+          "privacy": "Confidentialité"
+        }
       }
     }
   },

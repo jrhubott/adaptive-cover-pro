@@ -84,11 +84,19 @@ def _building_profile_entries(hass: HomeAssistant) -> list[ConfigEntry]:
 
 
 def _cover_entries(hass: HomeAssistant) -> list[ConfigEntry]:
-    """Return all physical cover config entries (controls_cover == True)."""
+    """Return all physical cover config entries.
+
+    Filters on capability, never a cover-type string: virtual entry types are
+    excluded — the Building Profile (``controls_cover == False``) and the
+    cover group (``is_orchestrator == True``), which controls covers but is
+    not itself a physical cover. Consumers (duplicate sources, profile link
+    lists, group membership pickers) all want real covers only.
+    """
     return [
         e
         for e in hass.config_entries.async_entries(DOMAIN)
         if get_policy(e.data.get(CONF_SENSOR_TYPE)).controls_cover
+        and not get_policy(e.data.get(CONF_SENSOR_TYPE)).is_orchestrator
     ]
 
 

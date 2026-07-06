@@ -76,7 +76,8 @@
     "somfy_my_unset": "⚠️ Somfy My-Preset ist für ein oder mehrere Ziele aktiviert, aber My Preset Value ist nicht gesetzt — fällt auf konfiguriertes % zurück.",
     "proxy_no_min": "⚠️ Proxy-Beschattung ist aktiviert, aber kein benutzerdefinierter Positionsslot hat Als Minimum verwenden aktiviert — die verwaltete Beschattung wird nicht begrenzt.",
     "custom_and_no_sensors": "⚠️ Benutzerdefiniert #{slot}: Kombinationsmodus UND ist gesetzt, aber keine Auslösesensoren konfiguriert — das Template allein aktiviert den Slot.",
-    "custom_safety_bypass": "⚠️ Benutzerdefiniert #{slot} hat Sicherheitspriorität ({safety}) – umgeht den Schalter für die automatische Steuerung, die manuelle Übersteuerung und das Start-/Endzeitfenster, kann die Beschattung also auch dann bewegen, wenn die automatische Steuerung AUS ist und außerhalb Ihres Zeitplans. Senken Sie seine Priorität unter {safety}, um diese Gates einzuhalten."
+    "custom_safety_bypass": "⚠️ Benutzerdefiniert #{slot} hat Sicherheitspriorität ({safety}) – umgeht den Schalter für die automatische Steuerung, die manuelle Übersteuerung und das Start-/Endzeitfenster, kann die Beschattung also auch dann bewegen, wenn die automatische Steuerung AUS ist und außerhalb Ihres Zeitplans. Senken Sie seine Priorität unter {safety}, um diese Gates einzuhalten.",
+    "group_empty": "⚠️ Diese Gruppe hat keine Mitglieder – sie wird nichts steuern."
   },
   "motion": {
     "action_hold": "Beschattungen halten aktuelle Position (zurück auf Standard, wenn Sonne FOV verlässt)",
@@ -247,5 +248,11 @@
       "pitch": "Dachneigung {v}° von Horizontal",
       "height_above": "{v}m Dach über Fenster (First-Gate)"
     }
+  },
+  "group": {
+    "header": "**Beschattungsgruppe**",
+    "members": "Steuert {acp_count} ACP-Mitglied(er) + {generic_count} allgemeine Beschattung(en)",
+    "member_acp": "- 🪟 {title} (ACP)",
+    "member_generic": "- 🪟 {entity} (generic)"
   }
 }
