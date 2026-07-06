@@ -58,6 +58,11 @@ from .const import (
     CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_ENTITIES,
+    CONF_GROUP_ENABLE_CLIMATE_SENSOR,
+    CONF_GROUP_ENABLE_COVER_ENTITY,
+    CONF_GROUP_ENABLE_POSITION_SENSOR,
+    CONF_GROUP_ENABLE_STATE_SENSOR,
+    CONF_GROUP_ENABLE_WHO_WON_SENSOR,
     CONF_GROUP_MEMBER_OPT_OUT,
     CONF_GROUP_STAGGER_DELAY,
     CONF_MEMBER_COVERS,
@@ -174,6 +179,8 @@ from .const import (
     CONF_WINDOW_WIDTH,
     DEFAULT_DELTA_POSITION,
     DEFAULT_DELTA_TIME,
+    DEFAULT_GROUP_ENABLE_COVER_ENTITY,
+    DEFAULT_GROUP_ENABLE_SENSOR,
     DEFAULT_GROUP_STAGGER_DELAY,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MOTION_TIMEOUT,
@@ -1590,6 +1597,9 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "place; a member's own safety still wins ties"
     ),
     "group.stagger": "Members commanded {stagger}s apart",
+    "group.cover_entity": (
+        "Aggregate cover entity exposed — dragging it commands every member"
+    ),
     "warnings.group_empty": (
         "⚠️ This group has no members — it will not command anything."
     ),
@@ -1694,6 +1704,8 @@ def _build_group_summary(
     stagger = config.get(CONF_GROUP_STAGGER_DELAY, DEFAULT_GROUP_STAGGER_DELAY)
     if stagger:
         lines.append(L["group.stagger"].format(stagger=stagger))
+    if config.get(CONF_GROUP_ENABLE_COVER_ENTITY, DEFAULT_GROUP_ENABLE_COVER_ENTITY):
+        lines.append(L["group.cover_entity"])
     return "\n".join(lines)
 
 
@@ -4151,6 +4163,7 @@ class OptionsFlowHandler(OptionsFlow):
                 menu_options=[
                     "group_membership",
                     "group_arbitration",
+                    "group_entities",
                     "summary",
                     "done",
                 ],
@@ -4668,6 +4681,46 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Schema(schema_dict),
                 {CONF_GROUP_STAGGER_DELAY: self.options.get(CONF_GROUP_STAGGER_DELAY)},
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
+            },
+        )
+
+    async def async_step_group_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit the group's entity-exposure toggles (issue #790, Phase 3).
+
+        Five booleans: the opt-in aggregate cover (off by default) and the
+        four aggregate sensors (on by default). Saving reloads the entry, so
+        toggles take effect immediately.
+        """
+        if user_input is not None:
+            self.options.update(user_input)
+            return self.async_create_entry(title="", data=self.options)
+
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_GROUP_ENABLE_COVER_ENTITY,
+                    default=DEFAULT_GROUP_ENABLE_COVER_ENTITY,
+                ): selector.BooleanSelector(),
+                **{
+                    vol.Optional(
+                        key, default=DEFAULT_GROUP_ENABLE_SENSOR
+                    ): selector.BooleanSelector()
+                    for key in (
+                        CONF_GROUP_ENABLE_POSITION_SENSOR,
+                        CONF_GROUP_ENABLE_STATE_SENSOR,
+                        CONF_GROUP_ENABLE_CLIMATE_SENSOR,
+                        CONF_GROUP_ENABLE_WHO_WON_SENSOR,
+                    )
+                },
+            }
+        )
+        return self.async_show_form(
+            step_id="group_entities",
+            data_schema=self.add_suggested_values_to_schema(schema, self.options),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
             },

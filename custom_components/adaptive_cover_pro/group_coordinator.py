@@ -27,7 +27,13 @@ import asyncio
 from dataclasses import dataclass
 import logging
 
+from homeassistant.components.cover import (
+    ATTR_TILT_POSITION,
+    DOMAIN as COVER_DOMAIN,
+    SERVICE_SET_COVER_TILT_POSITION,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_ENTITY_ID, SERVICE_STOP_COVER
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -48,12 +54,15 @@ from .const import (
     OPT_OUT_ALL_SCENES,
     POSITION_CLOSED,
     POSITION_OPEN,
+    TRIGGER_GROUP_COVER,
+    TRIGGER_GROUP_COVER_TILT,
     CoverType,
     GroupIntentKind,
     GroupScene,
     GroupState,
 )
 from .cover_types import get_policy
+from .helpers import climate_mode_from_diagnostics
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
@@ -156,6 +165,34 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         if commands_sent and stagger > 0:
             await asyncio.sleep(stagger)
 
+    async def _fan_out_commands(
+        self,
+        member_action,
+        generic_action,
+        *,
+        scene_filter: GroupScene | None = None,
+    ) -> None:
+        """Run one action per ACP member and per generic cover, staggered.
+
+        The single fan-out loop shared by scene activation and the group
+        cover's user commands: roster iteration, per-scene opt-out (when
+        ``scene_filter`` is given), and the stagger gap between successive
+        commands all live here exactly once.
+        """
+        commands = 0
+        for entry, coordinator in self.resolved_members():
+            if scene_filter is not None and self._scene_opted_out(
+                entry.entry_id, scene_filter
+            ):
+                continue
+            await self._stagger_gap(commands)
+            commands += 1
+            await member_action(entry, coordinator)
+        for entity_id in self.entry.options.get(CONF_MEMBER_COVERS, []):
+            await self._stagger_gap(commands)
+            commands += 1
+            await generic_action(entity_id)
+
     async def async_activate_scene(self, scene: GroupScene) -> None:
         """Fan a scene out as a pipeline intent, resolved per member (Phase 2).
 
@@ -170,27 +207,82 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             priority=GROUP_SCENE_PRIORITY,
             group_id=self.entry.entry_id,
         )
-        commands = 0
-        for entry, coordinator in self.resolved_members():
-            if self._scene_opted_out(entry.entry_id, scene):
-                continue
-            await self._stagger_gap(commands)
-            commands += 1
-            coordinator.set_group_intent(self.entry.entry_id, intent)
-            await coordinator.async_request_refresh()
         adopt_target = self._adopt_policy.position_for_scene(scene)
         trigger = f"group_scene_{scene}"
-        for entity_id in self.entry.options.get(CONF_MEMBER_COVERS, []):
-            await self._stagger_gap(commands)
-            commands += 1
+
+        async def _member(_entry, coordinator) -> None:
+            coordinator.set_group_intent(self.entry.entry_id, intent)
+            await coordinator.async_request_refresh()
+
+        async def _generic(entity_id: str) -> None:
             await self._cmd_svc.apply_position(
-                entity_id,
-                adopt_target,
-                trigger,
-                context=self._adopt_context(),
+                entity_id, adopt_target, trigger, context=self._adopt_context()
             )
+
+        await self._fan_out_commands(_member, _generic, scene_filter=scene)
         self.active_scene = scene
         await self.async_refresh()
+
+    async def async_set_position(self, position: int) -> None:
+        """Fan a user position out to every member (group cover slider).
+
+        A group-cover drag is a user action: ACP members ride their own
+        user-position path (manual-override engagement and floor clamps
+        apply, exactly like the per-cover proxy); generic covers go through
+        the adopt-mode command service. Stagger applies.
+        """
+
+        async def _member(entry, coordinator) -> None:
+            for entity_id in entry.options.get(CONF_ENTITIES, []):
+                await coordinator.async_apply_user_position(
+                    entity_id, position, trigger=TRIGGER_GROUP_COVER
+                )
+
+        async def _generic(entity_id: str) -> None:
+            await self._cmd_svc.apply_position(
+                entity_id, position, TRIGGER_GROUP_COVER, context=self._adopt_context()
+            )
+
+        await self._fan_out_commands(_member, _generic)
+        await self.async_refresh()
+
+    async def async_set_tilt(self, tilt: int) -> None:
+        """Fan a user tilt out to every member (group cover tilt slider).
+
+        ACP members ride the dedicated tilt path so dual-axis covers move
+        only their slats (#684); generic covers get the plain tilt service.
+        """
+
+        async def _member(entry, coordinator) -> None:
+            for entity_id in entry.options.get(CONF_ENTITIES, []):
+                await coordinator.async_apply_user_tilt(
+                    entity_id, tilt, trigger=TRIGGER_GROUP_COVER_TILT
+                )
+
+        async def _generic(entity_id: str) -> None:
+            await self.hass.services.async_call(
+                COVER_DOMAIN,
+                SERVICE_SET_COVER_TILT_POSITION,
+                {ATTR_ENTITY_ID: entity_id, ATTR_TILT_POSITION: tilt},
+                blocking=False,
+            )
+
+        await self._fan_out_commands(_member, _generic)
+        await self.async_refresh()
+
+    async def async_stop(self) -> None:
+        """Stop every member cover immediately — no stagger, no gates.
+
+        Mirrors the proxy cover's stop: a plain ``cover.stop_cover`` per
+        member entity, ACP and generic alike.
+        """
+        for entity_id in self.member_cover_entities():
+            await self.hass.services.async_call(
+                COVER_DOMAIN,
+                SERVICE_STOP_COVER,
+                {ATTR_ENTITY_ID: entity_id},
+                blocking=False,
+            )
 
     async def async_clear_scene(self) -> None:
         """Release this group's scene claim — members return to their pipeline."""
@@ -235,6 +327,55 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             for entity_id in entry.options.get(CONF_ENTITIES, []):
                 winners[entity_id] = winner
         return winners
+
+    def all_members_tilt(self) -> bool:
+        """Whether every member — ACP and generic — has a tilt axis.
+
+        Gates the group cover's tilt features (issue #790 §3): ACP members
+        are checked via their policy's declared axes, generic covers via the
+        HA ``supported_features`` tilt bit. An empty roster is not tiltable.
+        """
+        from homeassistant.components.cover import CoverEntityFeature
+
+        from .cover_types.base import AXIS_NAME_TILT
+
+        member_ids = self.entry.options.get(CONF_MEMBER_ENTRIES, [])
+        generic = self.entry.options.get(CONF_MEMBER_COVERS, [])
+        if not member_ids and not generic:
+            return False
+        for entry_id in member_ids:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                continue
+            policy = get_policy(entry.data[CONF_SENSOR_TYPE])
+            if not any(axis.name == AXIS_NAME_TILT for axis in policy.axes):
+                return False
+        for entity_id in generic:
+            state = self.hass.states.get(entity_id)
+            features = (
+                int(state.attributes.get("supported_features", 0)) if state else 0
+            )
+            if not features & CoverEntityFeature.SET_TILT_POSITION:
+                return False
+        return True
+
+    def member_climate_modes(self) -> dict[str, str | None]:
+        """Climate rollup: each ACP member cover mapped to its climate mode.
+
+        Read-only view over the same diagnostics the member's own Climate
+        Status sensor renders — the group shares no climate inputs (that is
+        Building Profile's job); it only reports. Generic covers have no
+        pipeline and are excluded.
+        """
+        modes: dict[str, str | None] = {}
+        for entry, coordinator in self.resolved_members():
+            diagnostics = getattr(
+                getattr(coordinator, "data", None), "diagnostics", None
+            )
+            mode = climate_mode_from_diagnostics(diagnostics)
+            for entity_id in entry.options.get(CONF_ENTITIES, []):
+                modes[entity_id] = mode
+        return modes
 
     async def async_set_automation(self, enabled: bool) -> None:
         """Bulk-enable/disable sun-tracking automation on every ACP member."""

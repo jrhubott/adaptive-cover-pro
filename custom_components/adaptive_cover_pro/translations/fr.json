@@ -809,7 +809,8 @@
           "profile_overview": "🏢 Aperçu du profil",
           "profile_overrides": "🧹 Dérogations locales",
           "group_membership": "👥 Membres du groupe",
-          "group_arbitration": "⚖️ Arbitrage & Synchronisation"
+          "group_arbitration": "⚖️ Arbitrage & Synchronisation",
+          "group_entities": "🧩 Entités exposées"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1619,6 +1620,20 @@
           "group_stagger_delay": "Secondes entre les commandes successives des membres lors d'une scène. 0 = commander tous les membres à la fois.",
           "scene_opt_outs": "Les membres cochés ici sont ignorés pour la scène sélectionnée. « Toutes les scènes » ignore le membre pour chaque scène. Le verrouillage de groupe ignore les exclusions."
         }
+      },
+      "group_entities": {
+        "title": "Entités exposées",
+        "description": "Choisissez les entités agrégées que ce groupe crée. Les contrôles de scène et les commutateurs en masse sont toujours disponibles. [En savoir plus]({learn_more})",
+        "data": {
+          "group_enable_cover_entity": "Entité de store agrégée",
+          "group_enable_position_sensor": "Capteur de position du groupe",
+          "group_enable_state_sensor": "Capteur d'état du groupe",
+          "group_enable_climate_sensor": "Capteur de mode climatique du groupe",
+          "group_enable_who_won_sensor": "Capteur de membres pilotés par le groupe"
+        },
+        "data_description": {
+          "group_enable_cover_entity": "Une seule entité de store pour les tableaux de bord et les assistants vocaux. La faire glisser commande chaque membre comme une action utilisateur. Désactivée par défaut pour éviter l'encombrement."
+        }
       }
     },
     "abort": {
@@ -1698,6 +1713,15 @@
       },
       "group_who_won": {
         "name": "Membres dirigés par le groupe"
+      },
+      "group_climate_mode": {
+        "name": "Mode climatique du groupe",
+        "state": {
+          "summer_mode": "Été",
+          "winter_mode": "Hiver",
+          "intermediate": "Intermédiaire",
+          "mixed": "Mixte"
+        }
       }
     },
     "switch": {
@@ -1786,6 +1810,11 @@
           "privacy": "Confidentialité",
           "auto": "Auto"
         }
+      }
+    },
+    "cover": {
+      "group_cover": {
+        "name": "Store du groupe"
       }
     }
   },

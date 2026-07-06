@@ -40,12 +40,13 @@ def _group_entry(entry_id: str) -> MockConfigEntry:
 
 
 def test_group_platforms_contents() -> None:
-    """The group forwards exactly its own platform set — no cover/number/binary."""
+    """The group forwards exactly its own platform set — no number/binary."""
     assert [
         Platform.SENSOR,
         Platform.SWITCH,
         Platform.BUTTON,
         Platform.SELECT,
+        Platform.COVER,
     ] == GROUP_PLATFORMS
 
 

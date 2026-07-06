@@ -809,7 +809,8 @@
           "profile_overview": "🏢 Profil-Übersicht",
           "profile_overrides": "🧹 Lokale Übersteuerungen",
           "group_membership": "👥 Gruppenmitglieder",
-          "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung"
+          "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung",
+          "group_entities": "🧩 Verfügbar gemachte Entitäten"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1619,6 +1620,20 @@
           "group_stagger_delay": "Sekunden zwischen aufeinanderfolgenden Befehlen für Mitglieder während einer Szene. 0 = alle Mitglieder auf einmal befehlen.",
           "scene_opt_outs": "Überprüfte Mitglieder werden für die ausgewählte Szene übersprungen. 'Alle Szenen' überspringt das Mitglied für jede Szene. Die Gruppensperre ignoriert Ausnahmen."
         }
+      },
+      "group_entities": {
+        "title": "Verfügbar gemachte Entitäten",
+        "description": "Wählen Sie, welche aggregierten Entitäten diese Gruppe erstellt. Szenensteuerungen und Gruppenschalter sind immer verfügbar. [Weitere Informationen]({learn_more})",
+        "data": {
+          "group_enable_cover_entity": "Aggregierte Beschattungs-Entität",
+          "group_enable_position_sensor": "Gruppierungspositions-Sensor",
+          "group_enable_state_sensor": "Gruppen-Statussensor",
+          "group_enable_climate_sensor": "Gruppen-Klimamodus-Sensor",
+          "group_enable_who_won_sensor": "Sensor für Gruppenmitglieder"
+        },
+        "data_description": {
+          "group_enable_cover_entity": "Eine einzelne Beschattungs-Entität für Dashboards und Sprachassistenten. Das Ziehen befiehlt jedem Mitglied als Benutzeraktion. Standardmäßig deaktiviert, um Unordnung zu vermeiden."
+        }
       }
     },
     "abort": {
@@ -1698,6 +1713,15 @@
       },
       "group_who_won": {
         "name": "Gruppengesteuerte Mitglieder"
+      },
+      "group_climate_mode": {
+        "name": "Gruppen-Klimamodus",
+        "state": {
+          "summer_mode": "Sommer",
+          "winter_mode": "Winter",
+          "intermediate": "Zwischenmodus",
+          "mixed": "Gemischt"
+        }
       }
     },
     "switch": {
@@ -1786,6 +1810,11 @@
           "privacy": "Datenschutz",
           "auto": "Auto"
         }
+      }
+    },
+    "cover": {
+      "group_cover": {
+        "name": "Gruppenabdeckung"
       }
     }
   },

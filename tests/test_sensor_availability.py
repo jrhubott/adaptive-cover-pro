@@ -76,9 +76,11 @@ from custom_components.adaptive_cover_pro.cover import AdaptiveProxyCover
 from custom_components.adaptive_cover_pro.number import AdaptiveCoverMyPositionNumber
 from custom_components.adaptive_cover_pro.const import GroupScene
 from custom_components.adaptive_cover_pro.group_entities import (
+    AdaptiveGroupCover,
     GroupActiveSceneSensor,
     GroupAutomationSwitch,
     GroupClearOverridesButton,
+    GroupClimateSensor,
     GroupLockSwitch,
     GroupPositionSensor,
     GroupSceneButton,
@@ -318,6 +320,19 @@ ENTITY_FACTORIES: dict[type, object] = {
         _make_config_entry(),
         _make_coordinator(),
         "group_who_won",
+    ),
+    GroupClimateSensor: lambda: GroupClimateSensor(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+        "group_climate_mode",
+    ),
+    AdaptiveGroupCover: lambda: AdaptiveGroupCover(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
     ),
 }
 

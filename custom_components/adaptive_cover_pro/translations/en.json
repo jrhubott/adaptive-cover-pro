@@ -810,7 +810,8 @@
           "profile_overview": "🏢 Profile Overview",
           "profile_overrides": "🧹 Local Overrides",
           "group_membership": "👥 Group Members",
-          "group_arbitration": "⚖️ Arbitration & Timing"
+          "group_arbitration": "⚖️ Arbitration & Timing",
+          "group_entities": "🧩 Exposed Entities"
         }
       },
       "pipeline_priorities": {
@@ -1619,6 +1620,20 @@
           "group_stagger_delay": "Seconds between successive member commands during a scene. 0 = command all members at once.",
           "scene_opt_outs": "Members checked here are skipped for the selected scene. 'All scenes' skips the member for every scene. The group lock ignores opt-outs."
         }
+      },
+      "group_entities": {
+        "title": "Exposed Entities",
+        "description": "Choose which aggregate entities this group creates. Scene controls and bulk switches are always available. [Learn more]({learn_more})",
+        "data": {
+          "group_enable_cover_entity": "Aggregate cover entity",
+          "group_enable_position_sensor": "Group position sensor",
+          "group_enable_state_sensor": "Group state sensor",
+          "group_enable_climate_sensor": "Group climate mode sensor",
+          "group_enable_who_won_sensor": "Group-driven members sensor"
+        },
+        "data_description": {
+          "group_enable_cover_entity": "A single cover entity for dashboards and voice assistants. Dragging it commands every member as a user action. Off by default to avoid clutter."
+        }
       }
     },
     "abort": {
@@ -1698,6 +1713,15 @@
       },
       "group_who_won": {
         "name": "Group-Driven Members"
+      },
+      "group_climate_mode": {
+        "name": "Group Climate Mode",
+        "state": {
+          "summer_mode": "Summer",
+          "winter_mode": "Winter",
+          "intermediate": "Intermediate",
+          "mixed": "Mixed"
+        }
       }
     },
     "switch": {
@@ -1786,6 +1810,11 @@
           "all_closed": "All Closed",
           "privacy": "Privacy"
         }
+      }
+    },
+    "cover": {
+      "group_cover": {
+        "name": "Group Cover"
       }
     }
   },

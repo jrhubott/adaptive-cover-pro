@@ -541,3 +541,23 @@ def get_open_close_state(
         return 100
 
     return None
+
+
+def climate_mode_from_diagnostics(diagnostics: dict | None) -> str | None:
+    """Map a coordinator's diagnostics payload to its climate-mode string.
+
+    Single source for the ``summer_mode`` / ``winter_mode`` / ``intermediate``
+    vocabulary — shared by the per-cover Climate Status sensor and the
+    cover-group climate rollup (issue #790, Phase 3). ``None`` when climate
+    mode is off or the diagnostics have not been built yet.
+    """
+    if diagnostics is None:
+        return None
+    data = diagnostics.get("climate_conditions")
+    if data is None:
+        return None
+    if data.get("is_summer"):
+        return "summer_mode"
+    if data.get("is_winter"):
+        return "winter_mode"
+    return "intermediate"

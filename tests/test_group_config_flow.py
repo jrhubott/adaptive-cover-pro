@@ -169,6 +169,7 @@ async def test_group_options_flow_shows_group_menu(hass: HomeAssistant) -> None:
     assert result["menu_options"] == [
         "group_membership",
         "group_arbitration",
+        "group_entities",
         "summary",
         "done",
     ]
@@ -324,3 +325,45 @@ async def test_stagger_registered_in_option_ranges() -> None:
     )
 
     assert OPTION_RANGES[CONF_GROUP_STAGGER_DELAY] == _RANGE_GROUP_STAGGER
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — entity-exposure toggles
+# ---------------------------------------------------------------------------
+
+
+async def test_group_entities_step_saves_toggles(hass: HomeAssistant) -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_GROUP_ENABLE_CLIMATE_SENSOR,
+        CONF_GROUP_ENABLE_COVER_ENTITY,
+        CONF_GROUP_ENABLE_POSITION_SENSOR,
+        CONF_GROUP_ENABLE_STATE_SENSOR,
+        CONF_GROUP_ENABLE_WHO_WON_SENSOR,
+    )
+
+    group = _add_group(hass, "group_1")
+    flow = OptionsFlowHandler(group)
+    flow.hass = hass
+
+    result = await flow.async_step_group_entities()
+    assert result["type"] == "form"
+    assert _schema_keys(result["data_schema"]) == {
+        CONF_GROUP_ENABLE_COVER_ENTITY,
+        CONF_GROUP_ENABLE_POSITION_SENSOR,
+        CONF_GROUP_ENABLE_STATE_SENSOR,
+        CONF_GROUP_ENABLE_CLIMATE_SENSOR,
+        CONF_GROUP_ENABLE_WHO_WON_SENSOR,
+    }
+
+    result = await flow.async_step_group_entities(
+        {
+            CONF_GROUP_ENABLE_COVER_ENTITY: True,
+            CONF_GROUP_ENABLE_POSITION_SENSOR: True,
+            CONF_GROUP_ENABLE_STATE_SENSOR: False,
+            CONF_GROUP_ENABLE_CLIMATE_SENSOR: True,
+            CONF_GROUP_ENABLE_WHO_WON_SENSOR: False,
+        }
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_GROUP_ENABLE_COVER_ENTITY] is True
+    assert result["data"][CONF_GROUP_ENABLE_STATE_SENSOR] is False

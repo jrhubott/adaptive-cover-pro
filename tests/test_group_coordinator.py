@@ -458,3 +458,120 @@ async def test_unlock_repushes_active_scene(group_setup) -> None:
     ]
     assert pushed and pushed[-1].kind is GroupIntentKind.SCENE
     assert pushed[-1].scene is GroupScene.PRIVACY
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — climate rollup + cover fan-out
+# ---------------------------------------------------------------------------
+
+
+def _set_member_climate(coord: MagicMock, *, is_summer=False, is_winter=False) -> None:
+    coord.data.diagnostics = {
+        "climate_conditions": {"is_summer": is_summer, "is_winter": is_winter}
+    }
+
+
+async def test_member_climate_modes_maps_entities(group_setup) -> None:
+    """Each ACP member's cover entities map to its climate mode; generic
+    covers (no pipeline) are excluded; missing diagnostics → None.
+    """
+    coordinator, blind_coord, awning_coord = group_setup
+    _set_member_climate(blind_coord, is_summer=True)
+    awning_coord.data.diagnostics = None  # climate mode off / not yet built
+
+    modes = coordinator.member_climate_modes()
+
+    assert modes == {
+        BLIND_ENTITY: "summer_mode",
+        AWNING_ENTITY: None,
+    }
+
+
+async def test_member_climate_modes_winter_and_intermediate(group_setup) -> None:
+    coordinator, blind_coord, awning_coord = group_setup
+    _set_member_climate(blind_coord, is_winter=True)
+    _set_member_climate(awning_coord)  # neither flag → intermediate
+
+    modes = coordinator.member_climate_modes()
+
+    assert modes[BLIND_ENTITY] == "winter_mode"
+    assert modes[AWNING_ENTITY] == "intermediate"
+
+
+async def test_set_position_fans_out_user_positions(group_setup) -> None:
+    """A group cover drag is a user action: member user-position path +
+    adopt-mode command for generic covers.
+    """
+    coordinator, blind_coord, awning_coord = group_setup
+
+    await coordinator.async_set_position(60)
+
+    blind_coord.async_apply_user_position.assert_awaited_once_with(
+        BLIND_ENTITY, 60, trigger="group_cover"
+    )
+    awning_coord.async_apply_user_position.assert_awaited_once_with(
+        AWNING_ENTITY, 60, trigger="group_cover"
+    )
+    coordinator._cmd_svc.apply_position.assert_awaited_once()
+    args, kwargs = coordinator._cmd_svc.apply_position.await_args
+    assert args[0] == GENERIC_ENTITY
+    assert args[1] == 60
+
+
+async def test_set_position_staggers_commands(hass) -> None:
+    from custom_components.adaptive_cover_pro import group_coordinator as gc_module
+
+    coordinator, _, _ = _group_with_options(
+        hass, {CONF_GROUP_STAGGER_DELAY: 2.0}, entry_id="group_12"
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        sleeper = AsyncMock()
+        mp.setattr(gc_module.asyncio, "sleep", sleeper)
+        await coordinator.async_set_position(50)
+
+    assert sleeper.await_count == 2  # 3 commands → 2 gaps
+    sleeper.assert_awaited_with(2.0)
+
+
+async def test_set_tilt_fans_out_user_tilts(hass, group_setup) -> None:
+    """Tilt rides the dedicated tilt path (#684) for ACP members and the
+    tilt service for generic covers.
+    """
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    coordinator, blind_coord, awning_coord = group_setup
+    blind_coord.async_apply_user_tilt = AsyncMock()
+    awning_coord.async_apply_user_tilt = AsyncMock()
+    tilt_calls = async_mock_service(hass, "cover", "set_cover_tilt_position")
+
+    await coordinator.async_set_tilt(30)
+    await hass.async_block_till_done()
+
+    blind_coord.async_apply_user_tilt.assert_awaited_once_with(
+        BLIND_ENTITY, 30, trigger="group_cover_tilt"
+    )
+    awning_coord.async_apply_user_tilt.assert_awaited_once_with(
+        AWNING_ENTITY, 30, trigger="group_cover_tilt"
+    )
+    assert len(tilt_calls) == 1
+    assert tilt_calls[0].data == {
+        "entity_id": GENERIC_ENTITY,
+        "tilt_position": 30,
+    }
+
+
+async def test_stop_calls_stop_service_per_member_cover(hass, group_setup) -> None:
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    coordinator, _, _ = group_setup
+    stop_calls = async_mock_service(hass, "cover", "stop_cover")
+
+    await coordinator.async_stop()
+    await hass.async_block_till_done()
+
+    assert [call.data["entity_id"] for call in stop_calls] == [
+        BLIND_ENTITY,
+        AWNING_ENTITY,
+        GENERIC_ENTITY,
+    ]

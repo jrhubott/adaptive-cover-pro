@@ -26,7 +26,10 @@ from homeassistant.util import slugify
 from .const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
+    CONF_GROUP_ENABLE_COVER_ENTITY,
+    CONF_SENSOR_TYPE,
     DEFAULT_ENABLE_PROXY_COVER,
+    DEFAULT_GROUP_ENABLE_COVER_ENTITY,
     TRIGGER_PROXY_CLOSE,
     TRIGGER_PROXY_OPEN,
     TRIGGER_PROXY_POSITION,
@@ -57,6 +60,20 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up proxy cover entities for an ACP config entry."""
+    # Cover groups expose the opt-in aggregate cover, never a proxy.
+    from .cover_types import get_policy
+
+    if get_policy(entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
+        if entry.options.get(
+            CONF_GROUP_ENABLE_COVER_ENTITY, DEFAULT_GROUP_ENABLE_COVER_ENTITY
+        ):
+            from .group_entities import build_group_covers
+
+            async_add_entities(
+                build_group_covers(entry.entry_id, hass, entry, entry.runtime_data)
+            )
+        return
+
     if not entry.options.get(CONF_ENABLE_PROXY_COVER, DEFAULT_ENABLE_PROXY_COVER):
         return
 
