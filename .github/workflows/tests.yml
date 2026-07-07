@@ -55,11 +55,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Floor — the oldest HA hacs.json promises (2026.3.0). No pytest-hacc
+          # release pins 2026.3.0 exactly; 0.13.317 pins 2026.3.1, the earliest
+          # 2026.3.x and the closest satisfier of the >=2026.3.0 floor. FROZEN:
+          # Dependabot must not bump this (it's ignored in dependabot.yml), or the
+          # floor leg would drift up and stop testing the advertised minimum.
+          - python-version: "3.14"
+            ha-channel: min
+            ha-pin: "0.13.317"
+            experimental: false
+          # Latest stable — what most users run. Tracks HA transitively via the
+          # pytest-hacc pin in requirements-dev.txt, which Dependabot bumps weekly.
           - python-version: "3.14"
             ha-channel: stable
+            ha-pin: ""
             experimental: false
+          # Future — HA core dev tip. Non-blocking early warning for upcoming
+          # breakage; installs latest pytest-hacc + HA @dev on top.
           - python-version: "3.14"
             ha-channel: dev
+            ha-pin: ""
             experimental: true
 
     steps:
@@ -71,14 +86,35 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # Floor leg: override the requirements-dev.txt pin with the pytest-hacc
+      # release that pins the oldest supported HA. Runs before the dev-branch
+      # step; the two are mutually exclusive channels so they never collide.
+      - name: Pin HA to floor (min channel only)
+        if: matrix.ha-pin != ''
+        run: uv pip install --system "pytest-homeassistant-custom-component==${{ matrix.ha-pin }}"
+
       - name: Install HA dev branch (dev channel only)
         if: matrix.ha-channel == 'dev'
         run: |
           uv pip install --system --upgrade pytest-homeassistant-custom-component
           uv pip install --system --upgrade git+https://github.com/home-assistant/core.git@dev
 
-      - name: Show HA version
-        run: python -c "from homeassistant.const import __version__; print('HA version:', __version__)"
+      # Print the resolved HA version and hard-fail if it dropped below the floor
+      # advertised in hacs.json — the one invariant tying tested HA to what we
+      # promise HACS users. Every leg tests >= floor (min == floor, stable/dev above).
+      - name: Show HA version & assert >= hacs.json floor
+        run: |
+          python - <<'PY'
+          import json
+          from homeassistant.const import __version__ as ha
+          from packaging.version import Version
+
+          floor = json.load(open("hacs.json"))["homeassistant"]
+          print(f"HA version: {ha}  (hacs.json floor: {floor})")
+          assert Version(ha) >= Version(floor), (
+              f"Tested HA {ha} is below the hacs.json floor {floor}"
+          )
+          PY
 
       - name: Run tests with coverage
         run: |

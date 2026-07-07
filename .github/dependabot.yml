@@ -17,7 +17,14 @@ updates:
     schedule:
       interval: "weekly"
     ignore:
-      # Dependabot should not update Home Assistant as that should match the homeassistant key in hacs.json
+      # HA is never a direct dep here — it's pulled in transitively by
+      # pytest-homeassistant-custom-component, whose exact pin decides the tested
+      # HA version. Dependabot bumps that pin weekly (testing group), so the
+      # "stable" CI leg intentionally tracks latest HA ~one week behind release.
+      # The advertised FLOOR (hacs.json `homeassistant`) is tested separately by
+      # the frozen "min" matrix leg in tests.yml (pytest-hacc pinned to 2026.3.x)
+      # — that literal lives in workflow YAML, so Dependabot leaves it alone.
+      # This ignore is a belt-and-suspenders guard against a direct HA pin sneaking in.
       - dependency-name: "homeassistant"
     groups:
       testing:
