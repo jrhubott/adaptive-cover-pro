@@ -56,29 +56,26 @@ def test_set_position_has_target_block():
     assert svc["target"]["entity"]["integration"] == "adaptive_cover_pro"
 
 
-def test_entity_targeted_services_also_offer_device_target():
-    """Every entity-targeted service must also expose a device selector (#824).
+def test_no_service_target_has_a_device_filter():
+    """No service `target:` may carry a `device:` filter — hassfest rejects it.
 
-    ACP owns no `cover` entities (only sensor/switch/binary_sensor/button), so an
-    `entity: integration:` target picker can only list helper entities. Adding a
-    `device: integration:` selector lets the picker offer the ACP instance device
-    ("Patio Right TV Shade") — the intuitive target — without breaking the call
-    schema, which still accepts entity_id/device_id/area_id.
+    HA's service schema does not support a `device:` selector under `target:`
+    ("Services do not support device filters on target"), so hassfest CI fails
+    the whole integration if one is present. Device targeting still works from
+    automations via entity resolution, so the `entity: integration:` picker is
+    sufficient. This guard keeps the filter out permanently: it was removed once
+    already (the April `services.yaml` fix), silently re-added across every
+    service by #824, and had to be stripped again — this test is what stops the
+    next round-trip.
     """
-    offenders = []
-    for name, svc in _load().items():
-        target = (svc or {}).get("target")
-        if not isinstance(target, dict) or "entity" not in target:
-            continue  # global / config_entry-based services have no entity target
-        device = target.get("device")
-        if (
-            not isinstance(device, dict)
-            or device.get("integration") != "adaptive_cover_pro"
-        ):
-            offenders.append(name)
+    offenders = [
+        name
+        for name, svc in _load().items()
+        if isinstance((svc or {}).get("target"), dict) and "device" in svc["target"]
+    ]
     assert not offenders, (
-        "Entity-targeted services missing a `device: integration: adaptive_cover_pro` "
-        f"target selector (#824): {sorted(offenders)}"
+        "Service `target:` blocks must not contain a `device:` filter — hassfest "
+        f"rejects it (use entity targeting instead): {sorted(offenders)}"
     )
 
 

@@ -9,8 +9,6 @@ stop:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
 
 integration_enable:
   name: Enable integration
@@ -19,8 +17,6 @@ integration_enable:
     are; positioning resumes on the next natural update cycle.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
 
 integration_disable:
@@ -32,8 +28,6 @@ integration_disable:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
 
 emergency_stop:
   name: Emergency stop
@@ -44,8 +38,6 @@ emergency_stop:
     instances and all their covers.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
 
 export_config:
@@ -111,8 +103,6 @@ set_position:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     position:
       name: Position
@@ -146,8 +136,6 @@ set_tilt:
     skip manual-override engagement (matching set_position's force semantics).
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     tilt:
@@ -184,8 +172,6 @@ engage_manual_override:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     end_time:
       name: End time
@@ -216,8 +202,6 @@ set_position_limits:
     threshold, inverse state). Changes are persisted and take effect after reload.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     default_percentage:
@@ -293,8 +277,6 @@ set_sunset_sunrise:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     sunset_position:
       name: Sunset position
@@ -346,8 +328,6 @@ set_automation_timing:
     start_time and start_entity are mutually exclusive; same for end_time/end_entity.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     delta_position:
@@ -407,8 +387,6 @@ set_manual_override:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     manual_override_duration:
       name: Override duration
@@ -450,8 +428,6 @@ set_force_override:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     force_override_sensors:
       name: Force override sensors
@@ -485,8 +461,6 @@ set_custom_position:
     semantics: it acts outside the time window and bypasses delta gates.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     slot:
@@ -561,8 +535,6 @@ set_motion:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     motion_sensors:
       name: Motion sensors
@@ -593,8 +565,6 @@ set_light_cloud:
     cloud coverage threshold, and the cloud suppression toggle.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     weather_entity:
@@ -687,8 +657,6 @@ set_climate:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     climate_mode:
       name: Enable climate mode
@@ -771,8 +739,6 @@ set_weather_safety:
     priority-overrides automatic control to protect covers from damage.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     weather_bypass_auto_control:
@@ -877,8 +843,6 @@ set_sun_tracking:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     enable_sun_tracking:
       name: Enable sun tracking
@@ -968,8 +932,6 @@ set_blind_spot:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     blind_spot:
       name: Enable blind spot
@@ -1023,8 +985,6 @@ set_interpolation:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     interp:
       name: Enable interpolation
@@ -1070,8 +1030,6 @@ set_geometry:
     rejected with an error message.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     window_height:
@@ -1170,8 +1128,6 @@ set_venetian:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     venetian_mode:
       name: Venetian mode
@@ -1211,8 +1167,6 @@ set_option:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
   fields:
     option:
       name: Option key
@@ -1236,8 +1190,6 @@ get_diagnostics:
     card via hass.callService(..., { return_response: true }).
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
   fields:
     config_entry_id:
