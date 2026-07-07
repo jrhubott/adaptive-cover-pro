@@ -269,6 +269,10 @@ OSCILLATING_ARC_SCAN_SAMPLES = 1801
 CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-15.0)
 CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-15.0)
 CONF_TILT_MODE = "tilt_mode"  # tilt strategy identifier
+CONF_TILT_ANGLE_0 = "tilt_angle_0"  # raw slat angle at 0% tilt, degrees
+CONF_TILT_ANGLE_100 = "tilt_angle_100"  # raw slat angle at 100% tilt, degrees
+DEFAULT_TILT_ANGLE_0 = 0  # degrees — downward closed endpoint at 0% tilt
+DEFAULT_TILT_ANGLE_100 = 180  # degrees — upward closed endpoint at 100% tilt
 CONF_MAX_TILT = "max_tilt"  # cap on sun-derived tilt %, 0-100
 DEFAULT_MAX_TILT = 100  # default: no upper cap
 CONF_MIN_TILT = "min_tilt"  # floor on sun-derived tilt %, 0-100
@@ -1329,6 +1333,8 @@ DEFAULT_GLARE_ZONE_Z = 0.0  # default — protects a floor disk (current behavio
 # Geometry — awning.
 _RANGE_LENGTH_AWNING = (0.3, 6.0)  # CONF_LENGTH_AWNING, metres
 _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
+_RANGE_TILT_ANGLE_0 = (-180, 180)  # CONF_TILT_ANGLE_0, degrees
+_RANGE_TILT_ANGLE_100 = (0, 360)  # CONF_TILT_ANGLE_100, degrees
 
 # Geometry — oscillating (drop-arm) awning.
 _RANGE_ARM_LENGTH = (0.1, 6.0)  # CONF_ARM_LENGTH, metres
@@ -1656,6 +1662,7 @@ class TiltMode(StrEnum):
 
     MODE1 = "mode1"  # Single direction (0-90°)
     MODE2 = "mode2"  # Bi-directional (0-180°)
+    SPECIFY_ANGLES = "specify_angles"  # Explicit physical endpoint angles
 
     @property
     def max_degrees(self) -> int:

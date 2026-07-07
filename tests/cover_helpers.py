@@ -117,7 +117,16 @@ _VERT_CONFIG_FIELDS = {
 _HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle"}
 
 # TiltConfig field names
-_TILT_CONFIG_FIELDS = {"slat_distance", "depth", "mode", "safety_margin"}
+_TILT_CONFIG_FIELDS = {
+    "slat_distance",
+    "depth",
+    "mode",
+    "safety_margin",
+    "angle_0",
+    "angle_100",
+    "max_tilt",
+    "min_tilt",
+}
 
 
 def build_vertical_cover(**kwargs):

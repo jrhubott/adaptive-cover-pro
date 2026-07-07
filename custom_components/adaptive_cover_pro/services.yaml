@@ -1113,12 +1113,33 @@ set_geometry:
           unit_of_measurement: cm
     tilt_mode:
       name: Tilt mode
-      description: "Slat angle calculation mode (mode1 or mode2). Tilt only."
+      description: "Slat angle calculation mode. Tilt only."
       selector:
         select:
           options:
             - mode1
             - mode2
+            - specify_angles
+    tilt_angle_0:
+      name: Tilt angle at 0%
+      description: "Raw slat angle when the cover reports 0% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 1
+          mode: box
+          unit_of_measurement: "°"
+    tilt_angle_100:
+      name: Tilt angle at 100%
+      description: "Raw slat angle when the cover reports 100% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
+      selector:
+        number:
+          min: 0
+          max: 360
+          step: 1
+          mode: box
+          unit_of_measurement: "°"
 
 set_venetian:
   name: Set venetian options

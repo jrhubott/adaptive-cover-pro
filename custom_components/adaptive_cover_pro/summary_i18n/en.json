@@ -221,7 +221,9 @@
     "slat": {
       "depth": "slat depth {v}cm",
       "spacing": "spacing {v}cm",
-      "mode": "mode: {v}"
+      "mode": "mode: {v}",
+      "angle_0": "0% angle {v}°",
+      "angle_100": "100% angle {v}°"
     },
     "oscillating": {
       "arm": "{v}m arm",

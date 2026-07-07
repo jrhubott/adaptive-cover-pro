@@ -84,13 +84,48 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         beta = np.arctan(tan(rad(self.sol_elev)) / cos(rad(self.gamma)))
         return beta
 
-    def _max_degrees(self) -> int:
+    def _max_degrees(self) -> float:
         """Resolve max slat degrees for the configured mode (string or enum)."""
+        if self._is_specify_angles():
+            return float(TiltMode.MODE2.max_degrees)
         if isinstance(self.mode, TiltMode):
-            return self.mode.max_degrees
-        return TiltMode(self.mode).max_degrees
+            return float(self.mode.max_degrees)
+        return float(TiltMode(self.mode).max_degrees)
 
-    def _effective_max_degrees(self) -> int:
+    @property
+    def angle_0(self) -> float:
+        """Raw slat angle represented by 0% tilt."""
+        return float(self.tilt_config.angle_0)
+
+    @property
+    def angle_100(self) -> float:
+        """Raw slat angle represented by 100% tilt."""
+        return float(self.tilt_config.angle_100)
+
+    def _is_specify_angles(self) -> bool:
+        """Return True when endpoint-angle mapping is configured."""
+        return self.mode == TiltMode.SPECIFY_ANGLES or self.mode == (
+            TiltMode.SPECIFY_ANGLES.value
+        )
+
+    def _specified_target_angle(self, raw_angle: float) -> float:
+        """Return the useful raw target angle for explicit endpoint calibration."""
+        return max(0.0, min(180.0, float(raw_angle)))
+
+    def _percentage_from_specified_angles(self, raw_angle: float) -> float:
+        """Map a target raw slat angle to the configured tilt percentage.
+
+        The solver and the configured endpoints both use ACP's raw/card angle
+        convention: 0° closed downward, 90° horizontal, 180° closed upward.
+        """
+        travel = self.angle_100 - self.angle_0
+        if travel == 0:
+            return 0.0
+
+        target_angle = self._specified_target_angle(raw_angle)
+        return ((target_angle - self.angle_0) / travel) * 100.0
+
+    def _effective_max_degrees(self) -> float:
         """Ceiling + percentage denominator for the slat angle.
 
         Polymorphic hook. Base: the tilt mode's max (90 for MODE1, 180 for
@@ -117,7 +152,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         negative_discriminant: bool,
         slat_angle_raw_deg: float | None,
         nan_result: bool,
-        max_degrees: int,
+        max_degrees: float,
         result: float,
         safety_margin: float = 1.0,
     ) -> dict:
@@ -141,7 +176,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 None if slat_angle_raw_deg is None else float(slat_angle_raw_deg)
             ),
             "nan_result": bool(nan_result),
-            "max_degrees": int(max_degrees),
+            "max_degrees": float(max_degrees),
             "tilt_mode": str(mode_value),
             "safety_margin": float(safety_margin),
         }
@@ -262,8 +297,27 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             Position as percentage (0-100).
 
         """
-        # 0 degrees is closed, 90 degrees is open (mode1), 180 degrees is closed (mode2)
+        # Legacy modes use a fixed degree range. The custom mode uses explicit
+        # raw endpoint angles and interpolates the target angle into that
+        # calibrated range.
         position = self.calculate_position()
+
+        # The specify-angles mode maps the solved raw slat angle into a
+        # user-calibrated endpoint range via an affine transform — an offset
+        # (angle_0) plus a scale — which the pure ``max_degrees`` denominator
+        # below cannot express. Handle it here, before the polymorphic base
+        # path, and correct the trace's position percentage in place.
+        if self._is_specify_angles():
+            percentage = self._percentage_from_specified_angles(position)
+            if hasattr(self, "_last_calc_details"):
+                self._last_calc_details[TRACE_KEY_POSITION_PCT] = float(percentage)
+                self._last_calc_details["target_angle_deg"] = (
+                    self._specified_target_angle(position)
+                )
+                self._last_calc_details["tilt_angle_0_deg"] = self.angle_0
+                self._last_calc_details["tilt_angle_100_deg"] = self.angle_100
+            return max(0.0, min(100.0, percentage))
+
         # Same effective ceiling the position solve clamps to (the mode max for
         # tilt/venetian; a configurable physical max for the louvered roof).
         return PositionConverter.to_percentage(position, self._effective_max_degrees())

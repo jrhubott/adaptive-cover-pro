@@ -146,6 +146,8 @@ from .const import (
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
@@ -1690,7 +1692,19 @@ _GEOMETRY_SPECS = _spec(
         CONF_TILT_MODE,
         SECTION_GEOMETRY,
         ValidatorKind.SELECT,
-        select_options=("mode1", "mode2"),
+        select_options=("mode1", "mode2", "specify_angles"),
+    ),
+    FieldSpec(
+        CONF_TILT_ANGLE_0,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_ANGLE_0,
+    ),
+    FieldSpec(
+        CONF_TILT_ANGLE_100,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_ANGLE_100,
     ),
     FieldSpec(
         CONF_MAX_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MAX_TILT

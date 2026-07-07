@@ -221,7 +221,9 @@
     "slat": {
       "depth": "profondeur de lamelle {v}cm",
       "spacing": "espacement {v}cm",
-      "mode": "mode : {v}"
+      "mode": "mode : {v}",
+      "angle_0": "angle 0 % {v}°",
+      "angle_100": "angle 100 % {v}°"
     },
     "oscillating": {
       "arm": "bras {v}m",

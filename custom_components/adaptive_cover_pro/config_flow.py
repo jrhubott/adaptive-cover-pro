@@ -151,6 +151,8 @@ from .const import (
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
@@ -359,6 +361,15 @@ def _blind_spot_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
         if left is not None and right is not None and right <= left:
             errors[keys["right"]] = "Must be greater than 'Blind Spot Left Edge'"
     return errors
+
+
+def _tilt_angle_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
+    """Return errors for explicit tilt endpoint ordering."""
+    angle_0 = user_input.get(CONF_TILT_ANGLE_0)
+    angle_100 = user_input.get(CONF_TILT_ANGLE_100)
+    if angle_0 is None or angle_100 is None or angle_0 < angle_100:
+        return {}
+    return {CONF_TILT_ANGLE_100: "Must be greater than tilt_angle_0"}
 
 
 # Module-level constant for tests / imports. Identical to the legacy
@@ -2755,6 +2766,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TILT_DEPTH,
             CONF_TILT_DISTANCE,
             CONF_TILT_MODE,
+            CONF_TILT_ANGLE_0,
+            CONF_TILT_ANGLE_100,
             # Per-window aperture fields relocated from sun_tracking (#778). They
             # live on the geometry step and sync with the physical measurements.
             # CONF_AZIMUTH is intentionally NOT listed — it stays in
@@ -3524,6 +3537,17 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure cover geometry dimensions."""
         length_keys, slat_keys = _geometry_unit_keys(self.type_blind)
         if user_input is not None:
+            errors = _tilt_angle_step_errors(user_input)
+            if errors:
+                schema = _get_geometry_schema(self.type_blind, self.hass, self.config)
+                return self.async_show_form(
+                    step_id="geometry",
+                    data_schema=schema,
+                    errors=errors,
+                    description_placeholders={
+                        "geometry_wiki_link": _geometry_wiki_link(self.type_blind)
+                    },
+                )
             # Canonicalize first: the FOV-from-measurements button (#565/#778)
             # must derive from the width/depth the user just typed, so it reads
             # them from the canonicalized submit rather than the stored config.
@@ -4291,6 +4315,23 @@ class OptionsFlowHandler(OptionsFlow):
         """Adjust geometry parameters."""
         length_keys, slat_keys = _geometry_unit_keys(self.sensor_type)
         if user_input is not None:
+            errors = _tilt_angle_step_errors(user_input)
+            if errors:
+                schema = _get_geometry_schema(self.sensor_type, self.hass, self.options)
+                suggested = options_to_display(
+                    self.hass,
+                    user_input,
+                    length_keys=length_keys,
+                    slat_keys=slat_keys,
+                )
+                return self.async_show_form(
+                    step_id="geometry",
+                    data_schema=self.add_suggested_values_to_schema(schema, suggested),
+                    errors=errors,
+                    description_placeholders={
+                        "geometry_wiki_link": _geometry_wiki_link(self.sensor_type)
+                    },
+                )
             # Canonicalize first so the FOV-from-measurements button (#565/#778)
             # derives from the width/depth the user just typed, not stored values.
             canonical = user_input_to_canonical(

@@ -221,7 +221,9 @@
     "slat": {
       "depth": "Lamellentiefe {v}cm",
       "spacing": "Abstand {v}cm",
-      "mode": "Modus: {v}"
+      "mode": "Modus: {v}",
+      "angle_0": "0%-Winkel {v}°",
+      "angle_100": "100%-Winkel {v}°"
     },
     "oscillating": {
       "arm": "{v}m Arm",

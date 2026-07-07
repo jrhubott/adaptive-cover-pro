@@ -1866,7 +1866,8 @@
     "tilt_mode": {
       "options": {
         "mode1": "single direction (0% = closed / 100% = open)",
-        "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
+        "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)",
+        "specify_angles": "specify angles"
       }
     },
     "sliding_slide_direction": {
@@ -2464,7 +2465,15 @@
         },
         "tilt_mode": {
           "name": "Tilt mode",
-          "description": "Slat angle calculation mode (mode1 or mode2). Tilt only."
+          "description": "Slat angle calculation mode. Tilt only."
+        },
+        "tilt_angle_0": {
+          "name": "Tilt angle at 0%",
+          "description": "Raw slat angle when the cover reports 0% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
+        },
+        "tilt_angle_100": {
+          "name": "Tilt angle at 100%",
+          "description": "Raw slat angle when the cover reports 100% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
         },
         "venetian_tilt_skip_above": {
           "name": "Skip tilt above position (%)",

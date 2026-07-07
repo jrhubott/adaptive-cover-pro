@@ -64,6 +64,8 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.slat.depth": "slat depth {v}cm",
     "geometry.slat.spacing": "spacing {v}cm",
     "geometry.slat.mode": "mode: {v}",
+    "geometry.slat.angle_0": "0% angle {v}°",
+    "geometry.slat.angle_100": "100% angle {v}°",
     # Oscillating awning.
     "geometry.oscillating.arm": "{v}m arm",
     "geometry.oscillating.sweep": "sweep {lo}°–{hi}°",

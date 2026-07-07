@@ -485,6 +485,101 @@ class TestTiltNegativeDiscriminant:
         assert result >= 0.0
 
 
+class TestTiltSpecifyAngles:
+    """Explicit endpoint-angle mapping for calibrated tilt covers."""
+
+    @pytest.mark.unit
+    def test_specify_angles_converts_blocking_angle_to_tilt_percentage(
+        self, mock_sun_data, mock_logger
+    ):
+        """Calculated slat angle is interpolated between the configured endpoints."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        blocking_angle = cover.calculate_position()
+        expected = ((blocking_angle - 20.0) / (140.0 - 20.0)) * 100.0
+
+        assert cover._last_calc_details["max_degrees"] == pytest.approx(180.0)
+        assert cover.calculate_percentage() == pytest.approx(expected)
+        assert 0.0 <= cover.calculate_percentage() <= 100.0
+
+    @pytest.mark.unit
+    def test_specify_angles_uses_raw_horizontal_angle_directly(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """Raw 90° is horizontal and maps directly through the endpoint calibration."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 90.0)
+
+        assert cover._specified_target_angle(90.0) == pytest.approx(90.0)
+        assert cover.calculate_percentage() == pytest.approx(58.3333333)
+
+    @pytest.mark.unit
+    def test_specify_angles_low_sun_uses_raw_angle(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """A raw 61° target maps directly to the calibrated percentage."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 61.0)
+
+        assert cover._specified_target_angle(61.0) == pytest.approx(61.0)
+        assert cover.calculate_percentage() == pytest.approx(34.1666667)
+
+    @pytest.mark.unit
+    def test_specify_angles_clamps_percentage_outside_configured_endpoint_range(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """A target outside the calibrated endpoint range is clipped to 0..100%."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 180.0)
+
+        assert cover.calculate_percentage() == pytest.approx(100.0)
+
+    @pytest.mark.unit
+    def test_specify_angles_target_angle_is_limited_to_useful_blocking_range(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """Endpoint calibration may exceed 0..180°, but target slat angles do not."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=-20.0,
+            angle_100=220.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 220.0)
+
+        assert cover.calculate_percentage() == pytest.approx(83.3333333)
+        assert cover._specified_target_angle(220.0) == pytest.approx(180.0)
+
+
 # ===========================================================================
 # 6. Horizontal awning division-by-zero guard
 # ===========================================================================

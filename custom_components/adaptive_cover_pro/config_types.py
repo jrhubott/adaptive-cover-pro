@@ -456,6 +456,11 @@ class TiltConfig:
     slat_distance: float
     depth: float
     mode: TiltMode | str
+    # Endpoint calibration for the specify-angles mode. Defaults mirror
+    # const.DEFAULT_TILT_ANGLE_0/100 (0°..180°, the full raw slat range) so a
+    # TiltConfig built without explicit endpoints matches the config path.
+    angle_0: float = 0.0
+    angle_100: float = 180.0
     max_tilt: int = 100
     min_tilt: int = 0
     # When True, the corresponding tilt limit is only enforced during active sun

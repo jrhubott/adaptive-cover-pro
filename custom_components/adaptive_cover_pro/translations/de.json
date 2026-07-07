@@ -1866,7 +1866,8 @@
     "tilt_mode": {
       "options": {
         "mode1": "einzelne Richtung (0% = geschlossen / 100% = offen)",
-        "mode2": "bidirektional (0% = geschlossen / 50% = offen / 100% = geschlossen)"
+        "mode2": "bidirektional (0% = geschlossen / 50% = offen / 100% = geschlossen)",
+        "specify_angles": "Winkel angeben"
       }
     },
     "debug_categories": {
@@ -2146,8 +2147,16 @@
           "name": "Lamellen-Abstand"
         },
         "tilt_mode": {
-          "description": "Berechnungsmodus für Neigungswinkel (mode1 oder mode2). Nur Neigung.",
+          "description": "Berechnungsmodus für Neigungswinkel. Nur Neigung.",
           "name": "Neigungs-Modus"
+        },
+        "tilt_angle_0": {
+          "description": "Roher Lamellenwinkel, wenn die Abdeckung 0% Neigung meldet: 0° nach unten geschlossen, 90° horizontal, 180° nach oben geschlossen.",
+          "name": "Neigungswinkel bei 0%"
+        },
+        "tilt_angle_100": {
+          "description": "Roher Lamellenwinkel, wenn die Abdeckung 100% Neigung meldet: 0° nach unten geschlossen, 90° horizontal, 180° nach oben geschlossen.",
+          "name": "Neigungswinkel bei 100%"
         },
         "window_depth": {
           "description": "Fensterrahmen-Tiefe in Metern (0–5 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie.",

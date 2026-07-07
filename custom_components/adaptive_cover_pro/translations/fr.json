@@ -1866,7 +1866,8 @@
     "tilt_mode": {
       "options": {
         "mode1": "unidirectionnel (0 % = fermé / 100 % = ouvert)",
-        "mode2": "bidirectionnel (0 % = fermé / 50 % = ouvert / 100 % = fermé)"
+        "mode2": "bidirectionnel (0 % = fermé / 50 % = ouvert / 100 % = fermé)",
+        "specify_angles": "spécifier les angles"
       }
     },
     "debug_categories": {
@@ -2146,8 +2147,16 @@
           "name": "Distance entre les lamelles"
         },
         "tilt_mode": {
-          "description": "Mode de calcul de l'angle de la lamelle (mode1 ou mode2). Inclinaison uniquement.",
+          "description": "Mode de calcul de l'angle de la lamelle. Inclinaison uniquement.",
           "name": "Mode d'inclinaison"
+        },
+        "tilt_angle_0": {
+          "description": "Angle brut de la lamelle lorsque la protection indique 0 % d'inclinaison : 0° fermé vers le bas, 90° horizontal, 180° fermé vers le haut.",
+          "name": "Angle d'inclinaison à 0 %"
+        },
+        "tilt_angle_100": {
+          "description": "Angle brut de la lamelle lorsque la protection indique 100 % d'inclinaison : 0° fermé vers le bas, 90° horizontal, 180° fermé vers le haut.",
+          "name": "Angle d'inclinaison à 100 %"
         },
         "window_depth": {
           "description": "Profondeur du rejingot de fenêtre en mètres (0–5 m, métrique canonique, indépendamment de la locale HA). Store vertical uniquement.",

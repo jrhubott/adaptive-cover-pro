@@ -9,9 +9,13 @@ from homeassistant.helpers import selector
 
 from ..const import (
     CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    DEFAULT_TILT_ANGLE_0,
+    DEFAULT_TILT_ANGLE_100,
 )
 from ..engine.covers import AdaptiveTiltCover
 from ..const import TiltMode
@@ -55,7 +59,22 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             ): slat_selector(hass, min_cm=0.1, max_cm=15),
             vol.Required(CONF_TILT_MODE, default="mode2"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=["mode1", "mode2"], translation_key="tilt_mode"
+                    options=["mode1", "mode2", "specify_angles"],
+                    translation_key="tilt_mode",
+                )
+            ),
+            vol.Required(
+                CONF_TILT_ANGLE_0, default=DEFAULT_TILT_ANGLE_0
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-180, max=180, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
+                CONF_TILT_ANGLE_100, default=DEFAULT_TILT_ANGLE_100
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=360, step=1, mode=selector.NumberSelectorMode.BOX
                 )
             ),
         }
@@ -136,6 +155,11 @@ class TiltPolicy(CoverTypePolicy, register=True):
             parts.append(L["geometry.slat.spacing"].format(v=v))
         if (v := config.get(CONF_TILT_MODE)) is not None:
             parts.append(L["geometry.slat.mode"].format(v=v))
+        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
+            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
+                parts.append(L["geometry.slat.angle_0"].format(v=v))
+            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
+                parts.append(L["geometry.slat.angle_100"].format(v=v))
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

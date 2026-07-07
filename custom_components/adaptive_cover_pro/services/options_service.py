@@ -128,6 +128,8 @@ from ..const import (
     CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
     CONF_MIN_TILT_SUN_ONLY,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
@@ -341,7 +343,9 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — tilt/venetian
     CONF_TILT_DEPTH: _range(CONF_TILT_DEPTH),
     CONF_TILT_DISTANCE: _range(CONF_TILT_DISTANCE),
-    CONF_TILT_MODE: _select_v("mode1", "mode2"),
+    CONF_TILT_MODE: _select_v("mode1", "mode2", "specify_angles"),
+    CONF_TILT_ANGLE_0: _range(CONF_TILT_ANGLE_0),
+    CONF_TILT_ANGLE_100: _range(CONF_TILT_ANGLE_100),
     CONF_MAX_TILT: _range(CONF_MAX_TILT),
     CONF_MAX_TILT_SUN_ONLY: _bool_v(),
     CONF_MIN_TILT: _range(CONF_MIN_TILT),
@@ -703,7 +707,13 @@ _SECTION_GEOMETRY_AWNING = frozenset(
     {CONF_LENGTH_AWNING, CONF_AWNING_ANGLE, CONF_HEIGHT_WIN}
 )
 _SECTION_GEOMETRY_TILT = frozenset(
-    {CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE}
+    {
+        CONF_TILT_DEPTH,
+        CONF_TILT_DISTANCE,
+        CONF_TILT_MODE,
+        CONF_TILT_ANGLE_0,
+        CONF_TILT_ANGLE_100,
+    }
 )
 _SECTION_GEOMETRY_OSCILLATING = frozenset(
     {
@@ -862,6 +872,15 @@ def _cross_field_validate(
         if low is not None and high is not None and low >= high:
             raise ServiceValidationError(
                 f"temp_low ({low}) must be less than temp_high ({high})."
+            )
+
+    # Specify-angles endpoint ordering.
+    if CONF_TILT_ANGLE_0 in patch or CONF_TILT_ANGLE_100 in patch:
+        angle_0 = _as_number(merged_active.get(CONF_TILT_ANGLE_0))
+        angle_100 = _as_number(merged_active.get(CONF_TILT_ANGLE_100))
+        if angle_0 is not None and angle_100 is not None and angle_0 >= angle_100:
+            raise ServiceValidationError(
+                f"tilt_angle_0 ({angle_0}) must be less than tilt_angle_100 ({angle_100})."
             )
 
     # Custom position slot completeness: a slot needs a trigger (sensors,
