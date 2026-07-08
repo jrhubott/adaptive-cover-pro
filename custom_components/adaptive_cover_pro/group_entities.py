@@ -79,8 +79,6 @@ class GroupStateSensor(_GroupEntityBase, SensorEntity):
     """Aggregate open/closed/mixed classification of the member covers."""
 
     _attr_translation_key = "group_state"
-    # Text/status sensor: empty unit excludes it from the logbook.
-    _attr_native_unit_of_measurement = ""
     _attr_icon = "mdi:window-shutter-cog"
 
     @property
@@ -93,7 +91,6 @@ class GroupActiveSceneSensor(_GroupEntityBase, SensorEntity):
     """The last scene activated on this group, if any."""
 
     _attr_translation_key = "group_active_scene"
-    _attr_native_unit_of_measurement = ""
     _attr_icon = "mdi:palette-outline"
 
     @property
@@ -194,7 +191,6 @@ class GroupClimateSensor(_GroupEntityBase, SensorEntity):
     """
 
     _attr_translation_key = "group_climate_mode"
-    _attr_native_unit_of_measurement = ""
     _attr_icon = "mdi:sun-thermometer-outline"
 
     # Wire-stable disagreement state, file-private: produced only by this

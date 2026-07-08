@@ -92,6 +92,30 @@ async def test_group_sensor_values(hass, group_entry) -> None:
     assert entities["group_01_group_active_scene"].native_value == GroupScene.PRIVACY
 
 
+@pytest.mark.parametrize(
+    "unique_id",
+    [
+        "group_01_group_state",
+        "group_01_group_active_scene",
+        "group_01_group_climate_mode",
+    ],
+)
+async def test_group_text_sensors_have_no_unit(hass, group_entry, unique_id) -> None:
+    """Text/status group sensors must not set a unit of measurement (issue #843).
+
+    Home Assistant's ``SensorEntity`` raises ``ValueError`` for a non-numeric value
+    when ``native_unit_of_measurement is not None`` — and an empty string ``""`` is
+    not ``None``. That raise aborts the state write and HA marks the entity
+    ``unavailable`` the moment the sensor holds a string (observed live on
+    ``sensor.<group>_group_state``). These sensors return strings, so they carry
+    no unit.
+    """
+    entities = {
+        e.unique_id: e for e in await _added_entities(sensor, hass, group_entry)
+    }
+    assert entities[unique_id].native_unit_of_measurement is None
+
+
 async def test_switch_platform_builds_group_automation_switch(
     hass, group_entry
 ) -> None:
