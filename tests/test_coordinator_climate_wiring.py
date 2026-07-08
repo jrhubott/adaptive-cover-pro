@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
     CONF_DEVICE_ID,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
@@ -37,6 +38,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
 )
@@ -543,3 +545,32 @@ class TestCloudyPositionWiring:
         options = {CONF_CLOUD_SUPPRESSION: True, CONF_CLOUDY_POSITION: 0}
         result = coord._build_climate_options(options)
         assert result.cloudy_position == 0
+
+
+class TestExtremeHeatWiring:
+    """Guard that the extreme-heat options flow through into ClimateOptions (#766)."""
+
+    @pytest.mark.unit
+    def test_extreme_heat_threshold_and_position_forwarded(self):
+        """Both keys forward into ClimateOptions untouched."""
+        coord = _make_coordinator_with_toggles()
+        options = {CONF_TEMP_EXTREME_HEAT: 35, CONF_EXTREME_HEAT_POSITION: 40}
+        result = coord._build_climate_options(options)
+        assert result.temp_extreme_heat == 35
+        assert result.extreme_heat_position == 40
+
+    @pytest.mark.unit
+    def test_extreme_heat_none_when_absent(self):
+        """Both keys are None when unset — the feature-off default."""
+        coord = _make_coordinator_with_toggles()
+        result = coord._build_climate_options({})
+        assert result.temp_extreme_heat is None
+        assert result.extreme_heat_position is None
+
+    @pytest.mark.unit
+    def test_extreme_heat_position_zero_is_distinct_from_unset(self):
+        """extreme_heat_position=0 (fully closed) must survive as 0, not None."""
+        coord = _make_coordinator_with_toggles()
+        options = {CONF_TEMP_EXTREME_HEAT: 35, CONF_EXTREME_HEAT_POSITION: 0}
+        result = coord._build_climate_options(options)
+        assert result.extreme_heat_position == 0

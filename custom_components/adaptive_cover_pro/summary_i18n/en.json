@@ -113,7 +113,8 @@
     "presence": "presence: {entity}",
     "transparent": "transparent blind",
     "winter_close": "closes fully in winter for insulation",
-    "summer_full_close": "closes fully in summer heat"
+    "summer_full_close": "closes fully in summer heat",
+    "extreme_heat": "holds {pos}% all day above {thresh}°C outside"
   },
   "glare": {
     "zones": "zones: {names}",

@@ -65,6 +65,7 @@ from .const import (
     CONF_DRY_RUN,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_ENABLE_MY_POSITION_ENTITIES,
@@ -144,6 +145,7 @@ from .const import (
     CONF_SLIDING_SLIDE_DIRECTION,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TILT_ANGLE_0,
@@ -1489,6 +1491,25 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
         ValidatorKind.BOOL,
         default=False,
     ),
+    # Extreme-heat threshold (issue #766): templatable, clearable, NO default —
+    # absent = feature off. Reuses the shared temperature range so OPTION_RANGES
+    # auto-derives the (min, max) bound.
+    FieldSpec(
+        CONF_TEMP_EXTREME_HEAT,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TEMPERATURE,
+        clearable=True,
+    ),
+    # Extreme-heat hold position: clearable, NO default — absent falls back to
+    # DEFAULT_EXTREME_HEAT_POSITION at runtime; an explicit 0 is preserved.
+    FieldSpec(
+        CONF_EXTREME_HEAT_POSITION,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_EXTREME_HEAT_POSITION,
+        clearable=True,
+    ),
 )
 
 
@@ -1874,6 +1895,7 @@ TEMPLATABLE_KEYS: frozenset[str] = frozenset(
         CONF_CLOUD_COVERAGE_THRESHOLD,
         CONF_TEMP_LOW,
         CONF_TEMP_HIGH,
+        CONF_TEMP_EXTREME_HEAT,
         CONF_OUTSIDE_THRESHOLD,
         CONF_WEATHER_WIND_SPEED_THRESHOLD,
         CONF_WEATHER_RAIN_THRESHOLD,

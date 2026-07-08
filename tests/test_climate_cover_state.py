@@ -1790,3 +1790,175 @@ class TestIssue373Mode2SummerTiltHemisphere:
 
             assert result == 75, f"Expected 75 (positive hemisphere) but got {result}"
             assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
+
+
+class TestExtremeHeatRule:
+    """Extreme-heat force-hold at the TOP of every climate table (issue #766).
+
+    Crossing the outside-temp threshold holds a fixed position regardless of the
+    sun's FOV, presence, or season — pre-empting even winter heating.  Below the
+    threshold every existing rule resumes unchanged.
+    """
+
+    def _extreme(self, **overrides):
+        """Extreme-heat climate data: hot outside, threshold crossed, hold 30%."""
+        base = {
+            "inside_temperature": "22.0",  # intermediate — not summer, not winter
+            "outside_temperature": "40.0",  # well above the extreme threshold
+            "temp_extreme_heat": 35.0,
+            "extreme_heat_position": 30,
+            "is_presence": True,
+            "is_sunny": True,
+        }
+        base.update(overrides)
+        return _make_climate(**base)
+
+    @pytest.mark.unit
+    def test_holds_position_with_presence(self, vertical_cover_instance, mock_logger):
+        """normal_with_presence holds extreme_heat_position, strategy EXTREME_HEAT."""
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(is_presence=True),
+        )
+        result = sh.normal_with_presence()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_holds_position_without_presence(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """normal_without_presence also holds the extreme-heat position."""
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(is_presence=False),
+        )
+        result = sh.normal_without_presence()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_fires_regardless_of_fov(self, vertical_cover_instance, mock_logger):
+        """The hold fires even when the sun calc is invalid (cover out of FOV)."""
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = False
+            sh = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance, vertical_cover_instance.config.h_def
+                ),
+                self._extreme(),
+            )
+            result = sh.normal_with_presence()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_overrides_winter_heating_on_cold_flagged_morning(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """A cold inside (winter) but a heatwave outside → extreme heat pre-empts winter."""
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            sh = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance, vertical_cover_instance.config.h_def
+                ),
+                self._extreme(
+                    inside_temperature="18.0",  # below temp_low (20) → winter
+                    outside_temperature="40.0",  # heatwave → extreme heat
+                    is_sunny=True,
+                ),
+            )
+            result = sh.normal_with_presence()
+        # Winter heating would open to 100; extreme heat wins and holds 30.
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_below_threshold_resumes_normal_rules(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """Outside temp at/below the threshold → feature inert → winter rule resumes."""
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            sh = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance, vertical_cover_instance.config.h_def
+                ),
+                self._extreme(
+                    inside_temperature="18.0",  # winter
+                    outside_temperature="30.0",  # below extreme threshold (35)
+                    is_sunny=False,
+                ),
+            )
+            result = sh.normal_with_presence()
+        # Not extreme → winter heating opens fully.
+        assert result == 100
+        assert sh.climate_strategy == ClimateStrategy.WINTER_HEATING
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "router,tilt",
+        [
+            ("normal_with_presence", False),
+            ("normal_without_presence", False),
+            ("tilt_with_presence", True),
+            ("tilt_without_presence", True),
+        ],
+    )
+    def test_extreme_heat_label_across_all_four_tables(
+        self, router, tilt, vertical_cover_instance, tilt_cover_instance, mock_logger
+    ):
+        """Every one of the four routers claims EXTREME_HEAT when the flag is set."""
+        cover = tilt_cover_instance if tilt else vertical_cover_instance
+        policy = get_policy("cover_tilt") if tilt else get_policy("cover_blind")
+        is_presence = "without" not in router
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(cover, cover.config.h_def),
+            self._extreme(policy=policy, is_presence=is_presence),
+        )
+        result = getattr(sh, router)()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_default_position_when_unset_is_closed(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """extreme_heat_position unset (None) → holds POSITION_CLOSED (0)."""
+        from custom_components.adaptive_cover_pro.const import POSITION_CLOSED
+
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(extreme_heat_position=None),
+        )
+        result = sh.normal_with_presence()
+        assert result == POSITION_CLOSED
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_explicit_zero_position_holds_zero(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """An explicit extreme_heat_position=0 is honored (not treated as unset)."""
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(extreme_heat_position=0),
+        )
+        result = sh.normal_with_presence()
+        assert result == 0
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT

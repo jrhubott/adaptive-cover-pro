@@ -5,7 +5,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    ClimateStrategy,
+    ControlMethod,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateHandler,
@@ -44,6 +47,8 @@ def _make_options(
     transparent_blind=False,
     temp_summer_outside=None,
     winter_close_insulation=False,
+    temp_extreme_heat=None,
+    extreme_heat_position=None,
 ) -> ClimateOptions:
     return ClimateOptions(
         temp_low=temp_low,
@@ -53,6 +58,8 @@ def _make_options(
         temp_summer_outside=temp_summer_outside,
         cloud_suppression_enabled=False,
         winter_close_insulation=winter_close_insulation,
+        temp_extreme_heat=temp_extreme_heat,
+        extreme_heat_position=extreme_heat_position,
     )
 
 
@@ -162,6 +169,71 @@ class TestClimateHandlerSummerStrategy:
         assert result is not None
         assert result.climate_state is not None
         assert isinstance(result.climate_state, int)
+
+
+class TestClimateHandlerExtremeHeat:
+    """Extreme-heat force-hold: outside temp above the extreme threshold (#766)."""
+
+    handler = ClimateHandler()
+
+    def test_extreme_heat_uses_extreme_heat_control_method(self) -> None:
+        """Outside temp above threshold → EXTREME_HEAT method + configured hold."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            # Intermediate inside temp: neither summer nor winter would fire.
+            climate_readings=_make_readings(
+                inside_temperature=22.0, outside_temperature=40.0
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_extreme_heat=35.0,
+                extreme_heat_position=30,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.EXTREME_HEAT
+        assert result.position == 30
+        assert result.climate_strategy == ClimateStrategy.EXTREME_HEAT
+        assert "extreme heat" in result.reason.lower()
+
+    def test_extreme_heat_pre_empts_winter_label(self) -> None:
+        """A cold inside (winter) but hot outside labels EXTREME_HEAT, not WINTER."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=15.0, outside_temperature=40.0
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_extreme_heat=35.0,
+                extreme_heat_position=30,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.EXTREME_HEAT
+
+    def test_disabled_when_threshold_unset(self) -> None:
+        """No extreme threshold configured → normal winter label resumes."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=15.0, outside_temperature=40.0
+            ),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.WINTER
 
 
 class TestClimateHandlerWinterStrategy:

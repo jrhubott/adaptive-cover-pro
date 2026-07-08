@@ -676,7 +676,9 @@
           "winter_close_insulation": "Mode isolation hivernale",
           "presence_template": "Modèle de présence (optionnel)",
           "presence_template_mode": "Logique du modèle de présence",
-          "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale"
+          "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale",
+          "temp_extreme_heat": "Seuil de chaleur extrême (extérieur)",
+          "extreme_heat_position": "Position de maintien en chaleur extrême"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -691,7 +693,9 @@
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire).",
           "presence_template": "Modèle Jinja2 Home Assistant optionnel qui signale l'occupation. Lorsqu'il s'évalue à vrai (on/true/1), l'espace est considéré comme occupé ; lorsqu'il est faux, il est traité comme vide. La façon dont il se combine avec l'entité de présence ci-dessus (OU ou ET) est définie par la « logique du modèle de présence » ci-dessous ; il peut fonctionner seul sans entité. Utilisez-le pour l'occupation composite (par exemple, quelqu'un à la maison ET réveillé). Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, donc la logique de l'entité de présence décide. Laissez vide pour désactiver.",
           "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus.",
-          "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours."
+          "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours.",
+          "temp_extreme_heat": "Température extérieure au-dessus de laquelle la protection maintient une position fixe toute la journée — quelle que soit la position du soleil, la présence ou la saison — en ayant priorité même sur le chauffage hivernal. Laisser vide pour désactiver le mode chaleur extrême. **La valeur est interprétée dans l'unité du capteur extérieur, pas dans l'unité d'affichage de Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 de Home Assistant évalué en un nombre, réévalué à chaque cycle de mise à jour.",
+          "extreme_heat_position": "Position que la protection maintient en cas de chaleur extrême (0 % = complètement fermé/rétracté, la valeur par défaut si laissé vide). Sur les protections à lamelles, il s'agit du pourcentage d'angle des lamelles. Le maintien respecte toujours vos limites de position minimale/maximale configurées."
         }
       },
       "behavior": {
@@ -1500,7 +1504,9 @@
           "winter_close_insulation": "Mode isolation hivernale",
           "presence_template": "Modèle de présence (optionnel)",
           "presence_template_mode": "Logique du modèle de présence",
-          "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale"
+          "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale",
+          "temp_extreme_heat": "Seuil de chaleur extrême (extérieur)",
+          "extreme_heat_position": "Position de maintien en chaleur extrême"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -1515,7 +1521,9 @@
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire).",
           "presence_template": "Modèle Jinja2 Home Assistant optionnel qui signale l'occupation. Lorsqu'il s'évalue à vrai (on/true/1), l'espace est considéré comme occupé ; lorsqu'il est faux, il est traité comme vide. La façon dont il se combine avec l'entité de présence ci-dessus (OU ou ET) est définie par la « logique du modèle de présence » ci-dessous ; il peut fonctionner seul sans entité. Utilisez-le pour l'occupation composite (par exemple, quelqu'un à la maison ET réveillé). Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, donc la logique de l'entité de présence décide. Laissez vide pour désactiver.",
           "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus.",
-          "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours."
+          "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours.",
+          "temp_extreme_heat": "Température extérieure au-dessus de laquelle la protection maintient une position fixe toute la journée — quelle que soit la position du soleil, la présence ou la saison — en ayant priorité même sur le chauffage hivernal. Laisser vide pour désactiver le mode chaleur extrême. **La valeur est interprétée dans l'unité du capteur extérieur, pas dans l'unité d'affichage de Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 de Home Assistant évalué en un nombre, réévalué à chaque cycle de mise à jour.",
+          "extreme_heat_position": "Position que la protection maintient en cas de chaleur extrême (0 % = complètement fermé/rétracté, la valeur par défaut si laissé vide). Sur les protections à lamelles, il s'agit du pourcentage d'angle des lamelles. Le maintien respecte toujours vos limites de position minimale/maximale configurées."
         }
       },
       "behavior": {

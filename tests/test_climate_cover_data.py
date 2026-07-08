@@ -194,3 +194,80 @@ class TestClimateCoverData:
             temp_summer_outside=30.0,
         )
         assert climate_data.outside_high is True
+
+
+class TestExtremeHeat:
+    """Test the extreme-heat property (issue #766).
+
+    Extreme heat keys on the OUTSIDE temperature (mirroring ``outside_high``),
+    NOT ``get_current_temperature`` — so it never flips to the inside sensor via
+    ``temp_switch``.
+    """
+
+    @pytest.mark.unit
+    def test_is_extreme_heat_true_when_outside_above_threshold(self):
+        """Outside temp above the extreme-heat threshold → True."""
+        climate_data = _make_climate(
+            temp_extreme_heat=35.0,
+            outside_temperature="38.0",
+        )
+        assert climate_data.is_extreme_heat is True
+
+    @pytest.mark.unit
+    def test_is_extreme_heat_false_when_outside_at_or_below_threshold(self):
+        """Outside temp equal to the threshold is not extreme (strict >)."""
+        climate_data = _make_climate(
+            temp_extreme_heat=35.0,
+            outside_temperature="35.0",
+        )
+        assert climate_data.is_extreme_heat is False
+
+    @pytest.mark.unit
+    def test_is_extreme_heat_false_when_threshold_unset(self):
+        """No threshold configured (None) → feature off → False."""
+        climate_data = _make_climate(
+            temp_extreme_heat=None,
+            outside_temperature="45.0",
+        )
+        assert climate_data.is_extreme_heat is False
+
+    @pytest.mark.unit
+    def test_is_extreme_heat_false_when_outside_temp_none(self):
+        """Threshold set but outside sensor unavailable (None) → False."""
+        climate_data = _make_climate(
+            temp_extreme_heat=35.0,
+            outside_temperature=None,
+        )
+        assert climate_data.is_extreme_heat is False
+
+    @pytest.mark.unit
+    def test_is_extreme_heat_false_when_outside_temp_non_numeric(self):
+        """Non-numeric outside reading (e.g. 'unavailable') → False, not a crash."""
+        climate_data = _make_climate(
+            temp_extreme_heat=35.0,
+            outside_temperature="unavailable",
+        )
+        assert climate_data.is_extreme_heat is False
+
+    @pytest.mark.unit
+    def test_is_extreme_heat_ignores_temp_switch_inside(self):
+        """Even with temp_switch=False (inside source), extreme heat uses OUTSIDE.
+
+        A hot inside reading must NOT trip extreme heat when the outside sensor
+        is below the threshold; conversely a hot outside reading trips it even
+        though the season logic would consult the inside sensor.
+        """
+        climate_data = _make_climate(
+            temp_switch=False,  # season logic would use inside temp
+            temp_extreme_heat=35.0,
+            inside_temperature="40.0",  # hot inside — must be ignored
+            outside_temperature="20.0",  # cool outside
+        )
+        assert climate_data.is_extreme_heat is False
+
+    @pytest.mark.unit
+    def test_extreme_heat_fields_default_to_none(self):
+        """Both new fields default to None (feature absent) on the dataclass."""
+        climate_data = _make_climate()
+        assert climate_data.temp_extreme_heat is None
+        assert climate_data.extreme_heat_position is None

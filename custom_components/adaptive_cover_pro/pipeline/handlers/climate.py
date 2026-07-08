@@ -61,6 +61,9 @@ class ClimateCoverData:
     winter_close_insulation: bool
     summer_close_bypass_sun_floor: bool = False
     cloud_coverage_above_threshold: bool = False
+    # Extreme-heat mode (issue #766). ``temp_extreme_heat`` None = feature off.
+    temp_extreme_heat: float | None = None
+    extreme_heat_position: int | None = None
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -103,6 +106,23 @@ class ClimateCoverData:
         if self.temp_high is not None and self.get_current_temperature is not None:
             return self.get_current_temperature > self.temp_high and self.outside_high
         return False
+
+    @property
+    def is_extreme_heat(self) -> bool:
+        """True when the OUTSIDE temperature exceeds the extreme-heat threshold.
+
+        Keys on ``outside_temperature`` (mirroring ``outside_high``), NOT
+        ``get_current_temperature`` — extreme heat is about the outdoor load and
+        must never flip to the inside sensor via ``temp_switch`` (issue #766).
+        Returns False when the feature is off (threshold None), the outside
+        reading is unavailable (None), or either value is non-numeric.
+        """
+        if self.temp_extreme_heat is None or self.outside_temperature is None:
+            return False
+        try:
+            return float(self.outside_temperature) > float(self.temp_extreme_heat)
+        except (ValueError, TypeError):
+            return False
 
     @property
     def lux(self) -> bool:
@@ -391,6 +411,8 @@ class ClimateHandler(OverrideHandler):
             winter_close_insulation=opts.winter_close_insulation,
             summer_close_bypass_sun_floor=opts.summer_close_bypass_sun_floor,
             cloud_coverage_above_threshold=r.cloud_coverage_above_threshold,
+            temp_extreme_heat=opts.temp_extreme_heat,
+            extreme_heat_position=opts.extreme_heat_position,
         )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
@@ -407,7 +429,14 @@ class ClimateHandler(OverrideHandler):
 
         position = round(raw_position)
 
-        if climate_data.is_summer:
+        if climate_cover_state.climate_strategy == ClimateStrategy.EXTREME_HEAT:
+            # Checked FIRST: extreme heat is an all-day force-hold that pre-empts
+            # every season strategy (issue #766). The hold position already rode
+            # get_state()/apply_snapshot_limits above — this branch only sets the
+            # label + control method, never a short-circuit before get_state().
+            method = ControlMethod.EXTREME_HEAT
+            season = "extreme heat"
+        elif climate_data.is_summer:
             method = ControlMethod.SUMMER
             season = "summer"
         elif climate_data.is_winter:

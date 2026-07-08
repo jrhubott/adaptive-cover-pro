@@ -18,6 +18,7 @@ from typing import Any
 from ...const import (
     CLIMATE_DEFAULT_TILT_ANGLE,
     CLIMATE_SUMMER_TILT_ANGLE,
+    DEFAULT_EXTREME_HEAT_POSITION,
     POSITION_CLOSED,
     ClimateStrategy,
 )
@@ -76,6 +77,11 @@ class ClimateContext:
         """Whether the tilt cover runs in MODE2 (slat opens toward the sun)."""
         return bool(TiltPolicy.is_mode2(self.cover.mode))
 
+    @property
+    def is_extreme_heat(self) -> bool:
+        """Whether the outside temperature has crossed the extreme-heat threshold."""
+        return bool(self.data.is_extreme_heat)
+
 
 # ---------------------------------------------------------------------------
 # Position functions (what each matched rule returns)
@@ -93,6 +99,15 @@ def _closed(ctx: ClimateContext) -> int:  # noqa: ARG001
 
 def _solar(ctx: ClimateContext) -> int:
     return ctx.solar_position()
+
+
+def _extreme_heat(ctx: ClimateContext) -> int:
+    # The configured hold, or fully closed when unset. ``is not None`` keeps an
+    # explicit 0 % (fully closed) distinct from "unset" (issue #766). A raw int
+    # flows through apply_snapshot_limits + inverse-state exactly like _closed —
+    # no cover-type branching here; TiltPolicy interprets it as a slat angle.
+    pos = ctx.data.extreme_heat_position
+    return pos if pos is not None else DEFAULT_EXTREME_HEAT_POSITION
 
 
 def _defer(ctx: ClimateContext) -> None:  # noqa: ARG001
@@ -165,12 +180,34 @@ def evaluate_rules(
 _ALWAYS: Callable[[ClimateContext], bool] = lambda _ctx: True  # noqa: E731
 
 # ---------------------------------------------------------------------------
+# Shared, table-agnostic override band (issue #766)
+# ---------------------------------------------------------------------------
+# ``_TOP_OVERRIDES`` is prepended verbatim to the TOP of every rule table, so a
+# forced hold declared here pre-empts EVERY season strategy (including winter
+# heating) uniformly across all four routers. It is a plain
+# ``tuple[ClimateRule, ...]`` built from the same ``ClimateRule`` seam the
+# tables use — no new representation. When the extreme-heat predicate is False
+# (feature off / threshold not crossed) the member never matches and table
+# outcomes are byte-for-byte identical to the pre-#766 behavior.
+#
+# Future consumers (e.g. PR #548's season gate) add their own entry — the band
+# is the shared, table-agnostic insertion point.
+_TOP_OVERRIDES: tuple[ClimateRule, ...] = (
+    ClimateRule(
+        lambda c: c.is_extreme_heat,
+        ClimateStrategy.EXTREME_HEAT,
+        _extreme_heat,
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # The four rule tables — branch order matches the original routers verbatim
 # ---------------------------------------------------------------------------
 
 # normal_with_presence: winter-heating → winter-insulation → low-light →
 # summer-cooling → glare(defer/None).
 NORMAL_WITH_PRESENCE: tuple[ClimateRule, ...] = (
+    *_TOP_OVERRIDES,
     ClimateRule(
         lambda c: c.is_winter and c.cover_valid,
         ClimateStrategy.WINTER_HEATING,
@@ -198,6 +235,7 @@ NORMAL_WITH_PRESENCE: tuple[ClimateRule, ...] = (
 # then winter-insulation; else low-light(default). Each valid-block rule carries
 # the cover_valid guard so the flat order matches the nested original.
 NORMAL_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
+    *_TOP_OVERRIDES,
     ClimateRule(
         lambda c: c.cover_valid and c.is_low_light,
         ClimateStrategy.LOW_LIGHT,
@@ -226,6 +264,7 @@ NORMAL_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
 # summer; then winter-insulation; else glare(tilt default). Seasons are mutually
 # exclusive in practice; the not-both guards preserve the misconfig fall-through.
 TILT_WITH_PRESENCE: tuple[ClimateRule, ...] = (
+    *_TOP_OVERRIDES,
     ClimateRule(
         lambda c: c.cover_valid and c.is_winter and not c.is_summer,
         ClimateStrategy.WINTER_HEATING,
@@ -255,6 +294,7 @@ TILT_WITH_PRESENCE: tuple[ClimateRule, ...] = (
 # winter+mode2 → glare(tilt default, the valid-block catch-all); then
 # winter-insulation; else glare(solar).
 TILT_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
+    *_TOP_OVERRIDES,
     ClimateRule(
         lambda c: c.cover_valid and c.is_low_light,
         ClimateStrategy.LOW_LIGHT,

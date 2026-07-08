@@ -59,6 +59,7 @@ from .const import (
     CONF_END_TIME,
     CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_ENTITIES,
     CONF_GROUP_AREA,
     CONF_GROUP_ENABLE_CLIMATE_SENSOR,
@@ -83,6 +84,7 @@ from .const import (
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_ENABLE_PROXY_COVER,
     DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
+    DEFAULT_EXTREME_HEAT_POSITION,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
     CONF_FOV_COMPUTE,
@@ -151,6 +153,7 @@ from .const import (
     CONF_SUNSET_TILT,
     CONF_SYNC_SELECT_ALL,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TILT_ANGLE_0,
@@ -934,6 +937,10 @@ _TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
+    # Extreme-heat mode (issue #766): both have no schema default (blank = off),
+    # so they are cleared/stripped like the other optional keys.
+    CONF_TEMP_EXTREME_HEAT,
+    CONF_EXTREME_HEAT_POSITION,
 ]
 
 WEATHER_OPTIONS = vol.Schema(
@@ -1459,6 +1466,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "climate.transparent": "transparent blind",
     "climate.winter_close": "closes fully in winter for insulation",
     "climate.summer_full_close": "closes fully in summer heat",
+    "climate.extreme_heat": "holds {pos}% all day above {thresh}°C outside",
     # --- Glare (45) ---
     "rules.glare": (
         "🔆 Glare zones: lowers blind further to protect floor areas from "
@@ -2276,6 +2284,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             cl_parts.append(L["climate.winter_close"])
         if config.get(CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR):
             cl_parts.append(L["climate.summer_full_close"])
+        extreme_thresh = config.get(CONF_TEMP_EXTREME_HEAT)
+        if extreme_thresh is not None:
+            # Unset hold falls back to fully closed (DEFAULT_EXTREME_HEAT_POSITION).
+            hold = config.get(CONF_EXTREME_HEAT_POSITION)
+            hold_display = hold if hold is not None else DEFAULT_EXTREME_HEAT_POSITION
+            cl_parts.append(
+                L["climate.extreme_heat"].format(
+                    pos=hold_display,
+                    thresh=_thresh_display(extreme_thresh, placeholder=_ph),
+                )
+            )
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
         lines.append(
             L["rules.climate"].format(detail=cl_str) + _badge(_prio["climate"])
@@ -3004,6 +3023,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
             CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+            CONF_TEMP_EXTREME_HEAT,
+            CONF_EXTREME_HEAT_POSITION,
             CONF_PRESENCE_TEMPLATE_MODE,
         }
     ),
@@ -3031,6 +3052,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
             CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+            CONF_TEMP_EXTREME_HEAT,
+            CONF_EXTREME_HEAT_POSITION,
         }
     ),
     # Legacy alias for backward compat
@@ -3061,6 +3084,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
             CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+            CONF_TEMP_EXTREME_HEAT,
+            CONF_EXTREME_HEAT_POSITION,
         }
     ),
     "glare_zones": frozenset(

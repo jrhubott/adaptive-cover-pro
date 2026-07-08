@@ -706,7 +706,9 @@
           "presence_template_mode": "Presence template logic",
           "transparent_blind": "Transparent blind",
           "winter_close_insulation": "Winter insulation mode",
-          "summer_close_bypass_sun_floor": "Full close in summer heat"
+          "summer_close_bypass_sun_floor": "Full close in summer heat",
+          "temp_extreme_heat": "Extreme heat threshold (outside)",
+          "extreme_heat_position": "Extreme heat hold position"
         },
         "data_description": {
           "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
@@ -721,7 +723,9 @@
           "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Closes the blind fully in summer even when occupants are present. Without this, an opaque blind follows glare-control sun tracking in summer instead of closing. Enable it for sheer or translucent material — or for any blind you want fully closed for heat protection when people are home.",
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat).",
-          "summer_close_bypass_sun_floor": "When enabled, summer heat-blocking closes the cover all the way to the global minimum position, ignoring the higher 'minimum position when sun is in view' floor. Use this for full heat protection in summer even while the sun is directly on the window. Has no effect outside summer, and the maximum-position limit still applies."
+          "summer_close_bypass_sun_floor": "When enabled, summer heat-blocking closes the cover all the way to the global minimum position, ignoring the higher 'minimum position when sun is in view' floor. Use this for full heat protection in summer even while the sun is directly on the window. Has no effect outside summer, and the maximum-position limit still applies.",
+          "temp_extreme_heat": "Outdoor temperature above which the cover holds a fixed position all day — regardless of sun position, presence, or season — pre-empting even winter heating. Leave blank to disable extreme-heat mode. **Value is interpreted in the outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
+          "extreme_heat_position": "Position the cover holds during extreme heat (0% = fully closed/retracted, the default when left blank). On tilt covers this is the slat angle percentage. The hold still respects your configured minimum/maximum position limits."
         }
       },
       "create_building_profile": {
@@ -1552,7 +1556,9 @@
           "presence_template_mode": "Presence template logic",
           "transparent_blind": "Transparent blind",
           "winter_close_insulation": "Winter insulation mode",
-          "summer_close_bypass_sun_floor": "Full close in summer heat"
+          "summer_close_bypass_sun_floor": "Full close in summer heat",
+          "temp_extreme_heat": "Extreme heat threshold (outside)",
+          "extreme_heat_position": "Extreme heat hold position"
         },
         "data_description": {
           "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
@@ -1567,7 +1573,9 @@
           "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Closes the blind fully in summer even when occupants are present. Without this, an opaque blind follows glare-control sun tracking in summer instead of closing. Enable it for sheer or translucent material — or for any blind you want fully closed for heat protection when people are home.",
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat).",
-          "summer_close_bypass_sun_floor": "When enabled, summer heat-blocking closes the cover all the way to the global minimum position, ignoring the higher 'minimum position when sun is in view' floor. Use this for full heat protection in summer even while the sun is directly on the window. Has no effect outside summer, and the maximum-position limit still applies."
+          "summer_close_bypass_sun_floor": "When enabled, summer heat-blocking closes the cover all the way to the global minimum position, ignoring the higher 'minimum position when sun is in view' floor. Use this for full heat protection in summer even while the sun is directly on the window. Has no effect outside summer, and the maximum-position limit still applies.",
+          "temp_extreme_heat": "Outdoor temperature above which the cover holds a fixed position all day — regardless of sun position, presence, or season — pre-empting even winter heating. Leave blank to disable extreme-heat mode. **Value is interpreted in the outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
+          "extreme_heat_position": "Position the cover holds during extreme heat (0% = fully closed/retracted, the default when left blank). On tilt covers this is the slat angle percentage. The hold still respects your configured minimum/maximum position limits."
         }
       },
       "building_profile": {

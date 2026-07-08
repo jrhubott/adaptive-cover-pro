@@ -2527,6 +2527,40 @@ def test_summer_close_bypass_sun_floor_note_on_climate_line():
     assert "closes fully in summer heat" in climate_line
 
 
+def test_extreme_heat_note_on_climate_line():
+    """CONF_TEMP_EXTREME_HEAT adds an all-day hold note with position + threshold (#766)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_EXTREME_HEAT_POSITION,
+        CONF_TEMP_EXTREME_HEAT,
+    )
+
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_EXTREME_HEAT: 35,
+        CONF_EXTREME_HEAT_POSITION: 20,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    climate_line = next(ln for ln in summary.splitlines() if "Climate mode" in ln)
+    assert "holds 20% all day above 35°C outside" in climate_line
+
+
+def test_extreme_heat_note_defaults_hold_to_closed_when_position_unset():
+    """With only the threshold set, the note shows the fully-closed default hold (#766)."""
+    from custom_components.adaptive_cover_pro.const import CONF_TEMP_EXTREME_HEAT
+
+    cfg = {CONF_CLIMATE_MODE: True, CONF_TEMP_EXTREME_HEAT: 35}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    climate_line = next(ln for ln in summary.splitlines() if "Climate mode" in ln)
+    assert "holds 0% all day above 35°C outside" in climate_line
+
+
+def test_extreme_heat_absent_when_threshold_unset():
+    """No extreme-heat note appears when the threshold is not configured (#766)."""
+    cfg = {CONF_CLIMATE_MODE: True}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "all day above" not in summary
+
+
 def test_open_close_threshold_in_position_limits():
     """CONF_OPEN_CLOSE_THRESHOLD renders under Position Limits."""
     from custom_components.adaptive_cover_pro.const import CONF_OPEN_CLOSE_THRESHOLD

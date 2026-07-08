@@ -42,6 +42,7 @@ from .const import (
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_SUN_TRACKING,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_IRRADIANCE_ENTITY,
@@ -68,6 +69,7 @@ from .const import (
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRANSPARENT_BLIND,
@@ -549,6 +551,18 @@ def temperature_climate_schema(
         vol.Optional(
             CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, default=False
         ): selector.BooleanSelector(),
+        # Extreme-heat mode (issue #766): a number-or-template threshold with no
+        # default (blank = feature off) plus a clearable hold position.
+        vol.Optional(CONF_TEMP_EXTREME_HEAT): _threshold_selector(),
+        vol.Optional(CONF_EXTREME_HEAT_POSITION): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
     }
     return vol.Schema(schema)
 

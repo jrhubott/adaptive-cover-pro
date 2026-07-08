@@ -113,7 +113,8 @@
     "presence": "Anwesenheit: {entity}",
     "transparent": "durchsichtige Jalousie",
     "winter_close": "schließt sich vollständig im Winter für Isolation",
-    "summer_full_close": "schließt sich vollständig bei Sommerhitze"
+    "summer_full_close": "schließt sich vollständig bei Sommerhitze",
+    "extreme_heat": "hält den ganzen Tag {pos}% bei über {thresh}°C außen"
   },
   "glare": {
     "zones": "Zonen: {names}",

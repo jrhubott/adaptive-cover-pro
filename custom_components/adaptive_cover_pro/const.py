@@ -544,6 +544,17 @@ ISSUE_TEMP_SENSOR_UNAVAILABLE = "temp_sensor_unavailable"
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0
 
+# Extreme-heat mode (issue #766): an all-day, sun-independent force-hold that
+# pre-empts every other climate strategy (including winter heating) whenever the
+# OUTSIDE temperature exceeds this threshold. None/unset = feature off.
+CONF_TEMP_EXTREME_HEAT = "temp_extreme_heat"  # outside-temp threshold, sensor unit
+# Position the cover holds during extreme heat. None/unset defaults to
+# DEFAULT_EXTREME_HEAT_POSITION (fully closed); an explicit 0 is honored.
+CONF_EXTREME_HEAT_POSITION = "extreme_heat_position"
+# Fully closed by default — the whole point of extreme-heat mode is to block
+# heat. A literal default is a constant declaration, per coding guidelines.
+DEFAULT_EXTREME_HEAT_POSITION = POSITION_CLOSED
+
 STRATEGY_MODE_BASIC = "basic"  # geometry only, no climate inputs
 STRATEGY_MODE_CLIMATE = "climate"  # climate-aware (temps/presence/weather)
 STRATEGY_MODES = [
@@ -1427,6 +1438,7 @@ _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
 # 78°F warm threshold sits in this range).
 _RANGE_TEMPERATURE = (0, 150)  # temp_low / temp_high (sensor unit)
 _RANGE_OUTSIDE_THRESHOLD = (0, 150)  # CONF_OUTSIDE_THRESHOLD (sensor unit)
+_RANGE_EXTREME_HEAT_POSITION = (0, 100)  # CONF_EXTREME_HEAT_POSITION, percent
 
 # Weather safety.
 _RANGE_WEATHER_WIND_SPEED = (0, 200)  # wind-speed threshold (sensor unit)
@@ -1700,6 +1712,7 @@ class PresenceDomain(StrEnum):
 class ClimateStrategy(Enum):
     """Climate control strategies (winter/summer/glare/low-light branches)."""
 
+    EXTREME_HEAT = "extreme_heat"  # All-day force-hold above outside-temp threshold
     WINTER_HEATING = "winter_heating"  # Open for solar heating
     WINTER_INSULATION = "winter_insulation"  # Close for heat retention
     SUMMER_COOLING = "summer_cooling"  # Close for heat blocking
@@ -1722,6 +1735,10 @@ class ControlMethod(StrEnum):
 
     WINTER = "winter"
     """Climate mode: temperature below min threshold; cover opens for solar heat gain."""
+
+    EXTREME_HEAT = "extreme_heat"
+    """Climate mode: outside temperature exceeds the extreme-heat threshold; cover
+    force-holds a fixed position all day, pre-empting every other season strategy."""
 
     DEFAULT = "default"
     """Sun is outside FOV, elevation limits, blind spot, or sunset offset window."""

@@ -731,6 +731,21 @@ set_climate:
       description: "If true, summer climate-close ignores the sun-in-FOV minimum floor and reaches the global minimum position."
       selector:
         boolean:
+    temp_extreme_heat:
+      name: Extreme heat threshold (outside)
+      description: "Outdoor temperature (°) above which the cover holds a fixed position all day, pre-empting every season strategy. Accepts a number or a Jinja2 template. Omit to leave unchanged."
+      selector:
+        template:
+    extreme_heat_position:
+      name: Extreme heat hold position
+      description: "Position (0–100 %) held during extreme heat. 0 = fully closed/retracted. On tilt covers this is the slat angle."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
 
 set_weather_safety:
   name: Set weather safety settings

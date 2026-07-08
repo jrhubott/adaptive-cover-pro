@@ -163,6 +163,7 @@ class DiagnosticContext:
 # ---------------------------------------------------------------------------
 
 _CLIMATE_STRATEGY_LABELS: dict[ClimateStrategy, str] = {
+    ClimateStrategy.EXTREME_HEAT: "Extreme Heat",
     ClimateStrategy.WINTER_HEATING: "Winter Heating",
     ClimateStrategy.SUMMER_COOLING: "Summer Cooling",
     ClimateStrategy.LOW_LIGHT: "Low Light",
@@ -180,6 +181,7 @@ _METHOD_TO_STATUS: dict[ControlMethod, str] = {
     ControlMethod.MANUAL: ControlStatus.MANUAL_OVERRIDE,
     # All other methods → pipeline is running normally
     ControlMethod.CLOUD: ControlStatus.ACTIVE,
+    ControlMethod.EXTREME_HEAT: ControlStatus.ACTIVE,
     ControlMethod.SUMMER: ControlStatus.ACTIVE,
     ControlMethod.WINTER: ControlStatus.ACTIVE,
     ControlMethod.SOLAR: ControlStatus.ACTIVE,

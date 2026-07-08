@@ -13,6 +13,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate_modes import
     NORMAL_WITHOUT_PRESENCE,
     TILT_WITH_PRESENCE,
     TILT_WITHOUT_PRESENCE,
+    _TOP_OVERRIDES,
     ClimateContext,
     ClimateRule,
     evaluate_rules,
@@ -37,6 +38,7 @@ def _ctx(
     winter_close_insulation=False,
     transparent_blind=False,
     default_position=50,
+    is_extreme_heat=False,
 ):
     """Build a ClimateContext over a normal (non-tilt) cover with a mock policy."""
     policy = MagicMock()
@@ -52,6 +54,8 @@ def _ctx(
         winter_close_insulation=winter_close_insulation,
         transparent_blind=transparent_blind,
         policy=policy,
+        is_extreme_heat=is_extreme_heat,
+        extreme_heat_position=None,
     )
     cover = SimpleNamespace(valid=valid, mode=None)
     return ClimateContext(
@@ -99,6 +103,20 @@ def test_evaluate_rules_raises_without_catch_all():
 @pytest.mark.parametrize("table", ALL_TABLES)
 def test_every_table_ends_with_catch_all(table):
     assert table[-1].predicate(_ctx()) is True
+
+
+# --- shared top-override band (issue #766 seam) ---------------------------
+
+
+@pytest.mark.parametrize("table", ALL_TABLES)
+def test_every_table_prepends_top_overrides_band(table):
+    """Each table is assembled as ``(*_TOP_OVERRIDES, <body>)``.
+
+    The band is a single, table-agnostic tuple prepended verbatim to every
+    router.  Pinning the prefix here means a future override added to the band
+    lands uniformly across all four tables and can never silently drop from one.
+    """
+    assert table[: len(_TOP_OVERRIDES)] == _TOP_OVERRIDES
 
 
 # --- NORMAL_WITH_PRESENCE rows --------------------------------------------

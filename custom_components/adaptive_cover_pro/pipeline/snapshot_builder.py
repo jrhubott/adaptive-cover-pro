@@ -58,6 +58,7 @@ from ..const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
@@ -65,6 +66,7 @@ from ..const import (
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRANSPARENT_BLIND,
@@ -315,6 +317,8 @@ class PipelineSnapshotBuilder:
                 options.get(CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, False)
             ),
             cloudy_position=options.get(CONF_CLOUDY_POSITION),
+            temp_extreme_heat=options.get(CONF_TEMP_EXTREME_HEAT),
+            extreme_heat_position=options.get(CONF_EXTREME_HEAT_POSITION),
         )
 
     def build(

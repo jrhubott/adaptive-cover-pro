@@ -49,6 +49,11 @@ class ClimateOptions:
     winter_close_insulation: bool
     summer_close_bypass_sun_floor: bool = False
     cloudy_position: int | None = None
+    # Extreme-heat mode (issue #766). ``temp_extreme_heat`` None = feature off.
+    # ``extreme_heat_position`` None = use DEFAULT_EXTREME_HEAT_POSITION; an
+    # explicit 0 is honored (distinguished with ``is not None``).
+    temp_extreme_heat: float | None = None
+    extreme_heat_position: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
