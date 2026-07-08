@@ -271,3 +271,83 @@ class TestExtremeHeat:
         climate_data = _make_climate()
         assert climate_data.temp_extreme_heat is None
         assert climate_data.extreme_heat_position is None
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: forecast-max outdoor-temp source drives the season logic (#547)
+# ---------------------------------------------------------------------------
+
+
+class TestForecastMaxEndToEnd:
+    """Provider outdoor-temp source flows through into ClimateCoverData.
+
+    Reporter scenario: live 15 C, forecast daily-high 26 C, summer limit 23 C.
+    ``max_of_live_and_forecast`` must trip summer close; ``live`` must not yet.
+    The season properties are source-agnostic — they receive whatever single
+    number the provider produced — so this pins the wiring, not new logic.
+    """
+
+    def _provider(self):
+        from unittest.mock import MagicMock
+
+        from custom_components.adaptive_cover_pro.state.climate_provider import (
+            ClimateProvider,
+        )
+
+        hass = MagicMock()
+        live = MagicMock()
+        live.entity_id = "sensor.outside"
+        live.state = "15.0"
+        live.attributes = {}
+        hass.states.get.return_value = live
+        return ClimateProvider(hass=hass, logger=MagicMock())
+
+    @pytest.mark.unit
+    def test_combined_source_trips_summer(self):
+        provider = self._provider()
+        readings = provider.read(
+            outside_entity="sensor.outside",
+            outside_temp_source="max_of_live_and_forecast",
+            forecast_max_outside=26.0,
+        )
+        climate_data = _make_climate(
+            temp_switch=True,
+            temp_high=25.0,
+            temp_summer_outside=23.0,
+            outside_temperature=readings.outside_temperature,
+        )
+        assert climate_data.outside_high is True
+        assert climate_data.is_summer is True
+
+    @pytest.mark.unit
+    def test_live_source_does_not_trip_summer(self):
+        provider = self._provider()
+        readings = provider.read(
+            outside_entity="sensor.outside",
+            outside_temp_source="live",
+            forecast_max_outside=26.0,
+        )
+        climate_data = _make_climate(
+            temp_switch=True,
+            temp_high=25.0,
+            temp_summer_outside=23.0,
+            outside_temperature=readings.outside_temperature,
+        )
+        assert climate_data.outside_high is False
+        assert climate_data.is_summer is False
+
+    @pytest.mark.unit
+    def test_extreme_heat_picks_up_forecast_max(self):
+        """is_extreme_heat keys on outside_temperature, so forecast max feeds it."""
+        provider = self._provider()
+        readings = provider.read(
+            outside_entity="sensor.outside",
+            outside_temp_source="forecast_max",
+            forecast_max_outside=38.0,
+        )
+        climate_data = _make_climate(
+            temp_switch=False,  # extreme heat ignores temp_switch
+            temp_extreme_heat=35.0,
+            outside_temperature=readings.outside_temperature,
+        )
+        assert climate_data.is_extreme_heat is True

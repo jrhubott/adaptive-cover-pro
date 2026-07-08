@@ -36,6 +36,12 @@ class ClimateReadings:
     inside_temperature_entity_id: str | None = None
     inside_temperature_source: str = "none"
     inside_temperature_area_id: str | None = None
+    # Provenance of the outdoor temperature actually used (issue #547):
+    # "live" (sensor state / weather temp attr), "forecast_max" (pre-fetched
+    # daily high), "max_of_live_and_forecast" (true combine of both), or
+    # "live_fallback" (a forecast source was selected but no numeric forecast
+    # was available). Surfaced in diagnostics.
+    outside_temperature_source: str = "live"
 
 
 class ClimateProvider:
@@ -55,6 +61,8 @@ class ClimateProvider:
         auto_resolve_temp_from_area: bool = True,
         outside_entity: str | None = None,
         weather_entity: str | None = None,
+        outside_temp_source: str = "live",
+        forecast_max_outside: float | None = None,
         weather_condition: list[str] | None = None,
         presence_entity: str | None = None,
         presence_template: str | None = None,
@@ -78,10 +86,17 @@ class ClimateProvider:
             device_id=temp_device_id,
             auto_resolve=auto_resolve_temp_from_area,
         )
+        outside_temperature, outside_temperature_source = (
+            self._read_outside_temperature(
+                outside_entity,
+                weather_entity,
+                outside_temp_source,
+                forecast_max_outside,
+            )
+        )
         return ClimateReadings(
-            outside_temperature=self._read_outside_temperature(
-                outside_entity, weather_entity
-            ),
+            outside_temperature=outside_temperature,
+            outside_temperature_source=outside_temperature_source,
             inside_temperature=self._read_inside_temperature(resolved_temp.entity_id),
             inside_temperature_entity_id=resolved_temp.entity_id,
             inside_temperature_source=resolved_temp.source,
@@ -113,13 +128,67 @@ class ClimateProvider:
         self,
         outside_entity: str | None,
         weather_entity: str | None,
+        source: str = "live",
+        forecast_max_outside: float | None = None,
+    ) -> tuple[float | str | None, str]:
+        """Read outside temperature and its provenance (issue #547).
+
+        Returns a ``(value, source_label)`` tuple. ``source`` selects the
+        strategy; every forecast path degrades to the live read when no
+        numeric forecast is available so climate mode is never stranded:
+
+        - ``live`` → sensor state / weather temp attr, label ``live``.
+        - ``forecast_max`` → the pre-fetched daily high when numeric
+          (label ``forecast_max``), else the live read (label
+          ``live_fallback``).
+        - ``max_of_live_and_forecast`` → ``max(live, forecast)`` when both
+          are numeric (label ``max_of_live_and_forecast``); if only one is
+          available it is used with the matching single-source label.
+        """
+        live_value = self._read_live_outside(outside_entity, weather_entity)
+
+        if source == "live":
+            return live_value, "live"
+
+        forecast = self._coerce_float(forecast_max_outside)
+        live_num = self._coerce_float(live_value)
+
+        if source == "forecast_max":
+            if forecast is not None:
+                return forecast, "forecast_max"
+            return live_value, "live_fallback"
+
+        if source == "max_of_live_and_forecast":
+            if forecast is not None and live_num is not None:
+                return max(live_num, forecast), "max_of_live_and_forecast"
+            if forecast is not None:
+                return forecast, "forecast_max"
+            return live_value, "live_fallback"
+
+        # Unknown/absent source → safe live default.
+        return live_value, "live"
+
+    def _read_live_outside(
+        self,
+        outside_entity: str | None,
+        weather_entity: str | None,
     ) -> float | str | None:
-        """Read outside temperature from entity or weather fallback."""
+        """Live outdoor read: dedicated sensor, else weather temp attr."""
         if outside_entity:
             return get_safe_state(self._hass, outside_entity)
         if weather_entity:
             return state_attr(self._hass, weather_entity, "temperature")
         return None
+
+    @staticmethod
+    def _coerce_float(value: float | str | None) -> float | None:
+        """Coerce a reading to float, or None when non-numeric/unavailable."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
 
     def _read_inside_temperature(
         self,

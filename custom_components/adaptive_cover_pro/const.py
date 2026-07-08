@@ -519,6 +519,10 @@ CONF_TEMP_ENTITY = "temp_entity"  # indoor temp sensor entity_id
 CONF_TEMP_LOW = "temp_low"  # "cold" threshold, sensor unit (0-90)
 CONF_TEMP_HIGH = "temp_high"  # "hot" threshold, sensor unit (0-90)
 CONF_OUTSIDETEMP_ENTITY = "outside_temp"  # outdoor temp sensor entity_id
+# Which outdoor-temperature reading climate mode uses (issue #547): one of
+# OutsideTempSource — live (default), forecast_max, or max_of_live_and_forecast.
+# Reuses the configured CONF_WEATHER_ENTITY as the forecast source.
+CONF_OUTSIDE_TEMP_SOURCE = "outside_temp_source"
 # Outdoor temp threshold for summer/winter mode switch (range 0-100).
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_PRESENCE_ENTITY = "presence_entity"  # presence/occupancy sensor entity_id
@@ -1490,6 +1494,27 @@ class TemplateCombineMode(StrEnum):
 # custom-position slots, future consumers): additive OR (back-compat).
 DEFAULT_TEMPLATE_COMBINE_MODE = TemplateCombineMode.OR.value
 DEFAULT_MOTION_TEMPLATE_MODE = DEFAULT_TEMPLATE_COMBINE_MODE
+
+
+class OutsideTempSource(StrEnum):
+    """Which outdoor-temperature reading feeds climate mode (issue #547).
+
+    ``LIVE`` (default) preserves today's behaviour — the outdoor sensor state,
+    or the configured weather entity's ``temperature`` attribute (the *current*
+    temp). ``FORECAST_MAX`` uses today's forecast daily high fetched from the
+    configured weather entity via ``weather.get_forecasts`` (falling back to the
+    live read when no forecast is available). ``MAX_OF_LIVE_AND_FORECAST`` takes
+    the larger of the two so a cool morning that will heat up still trips summer
+    close. Wire-stable identifiers stored in the cover's options.
+    """
+
+    LIVE = "live"
+    FORECAST_MAX = "forecast_max"
+    MAX_OF_LIVE_AND_FORECAST = "max_of_live_and_forecast"
+
+
+# Default outdoor-temp source: LIVE, so upgrades are inert (issue #547).
+DEFAULT_OUTSIDE_TEMP_SOURCE = OutsideTempSource.LIVE.value
 
 
 # Defined here (above the ``config_fields`` import at the bottom of this module)

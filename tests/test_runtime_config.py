@@ -376,3 +376,40 @@ def test_daytime_gate_reads_provided_values() -> None:
     assert rc.time_window.gate_sensors == ["binary_sensor.bright"]
     assert rc.time_window.gate_template == "{{ is_state('sun.sun', 'above_horizon') }}"
     assert rc.time_window.gate_template_mode == "and"
+
+
+# ---------------------------------------------------------------------------
+# Outdoor temperature source (issue #547)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_outside_temp_source_enum_values() -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_OUTSIDE_TEMP_SOURCE,
+        OutsideTempSource,
+    )
+
+    assert {m.value for m in OutsideTempSource} == {
+        "live",
+        "forecast_max",
+        "max_of_live_and_forecast",
+    }
+    assert DEFAULT_OUTSIDE_TEMP_SOURCE == "live"
+    assert OutsideTempSource.LIVE.value == "live"
+
+
+@pytest.mark.unit
+def test_outside_temp_source_defaults_to_live() -> None:
+    rc = RuntimeConfig.from_options({})
+    assert rc.outside_temp_source == "live"
+
+
+@pytest.mark.unit
+def test_outside_temp_source_reads_set_value() -> None:
+    from custom_components.adaptive_cover_pro.const import CONF_OUTSIDE_TEMP_SOURCE
+
+    rc = RuntimeConfig.from_options(
+        {CONF_OUTSIDE_TEMP_SOURCE: "max_of_live_and_forecast"}
+    )
+    assert rc.outside_temp_source == "max_of_live_and_forecast"

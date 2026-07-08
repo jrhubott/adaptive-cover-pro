@@ -573,6 +573,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_options.setdefault(CONF_WEATHER_ENABLED, True)
         new_minor = 6
 
+    # v3.6 → v3.7: added the additive outside_temp_source option (issue #547).
+    # An absent key already reads as "live" (the default), so nothing needs
+    # seeding — this is a no-op minor bump kept only to advance entries sitting
+    # at minor 6 to 7 so they stop re-triggering migration every restart.
+    if new_version == 3 and new_minor < 7:
+        new_minor = 7
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

@@ -739,6 +739,23 @@ class TestClimateDiagnostics:
             "area_id": "area_bedroom",
         }
 
+    def test_temperature_details_include_outside_temp_source(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Outdoor-temp source provenance surfaces in temperature_details (#547)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                outside_temp_source="forecast_max",
+            )
+        )
+        assert diag["temperature_details"]["outside_temperature_source"] == (
+            "forecast_max"
+        )
+
     def test_temp_sensor_absent_when_source_none(self, builder: DiagnosticsBuilder):
         """No temp_sensor block when nothing resolved (source none)."""
         cd = self._make_climate_data()

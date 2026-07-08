@@ -545,6 +545,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._position_forecast: Forecast | None = None
         self._forecast_unsub: Callable[[], None] | None = None
 
+        # Issue #547: cached forecast daily-high (°) for the configured weather
+        # entity, refreshed on a slow wall-clock cadence by
+        # ``async_recompute_forecast_max`` and fed into the climate read so the
+        # outdoor-temp source switch can source it. ``None`` when the source is
+        # ``live``, no weather entity is configured, or the last fetch failed —
+        # in which case the provider degrades to the live read.
+        self._forecast_max_outside: float | None = None
+        self._forecast_max_unsub: Callable[[], None] | None = None
+
         # Issue #742: cancel handle for the single ``async_call_later`` wake that
         # flips the daytime gate from HOLDING its last-known verdict to the
         # astronomical fallback the moment the grace window expires (otherwise the
@@ -648,6 +657,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # forecast lands on a populated AdaptiveCoverData.  The compute itself
         # runs as a background task so setup never waits for it (issue #437).
         self._start_forecast_scheduler()
+        # Issue #547: outdoor forecast daily-high refresher (separate scheduler
+        # so the position-forecast timer stays a single-writer).
+        self._start_forecast_max_scheduler()
 
     def _start_forecast_scheduler(self) -> None:
         """Kick off the initial forecast compute + periodic recompute timer.
@@ -705,6 +717,44 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             second=0,
         )
 
+    def _start_forecast_max_scheduler(self) -> None:
+        """Kick off the initial outdoor forecast-max fetch + periodic refresh.
+
+        Issue #547: mirrors :meth:`_start_forecast_scheduler` but for the
+        outdoor forecast daily-high. The fetch is a single
+        ``weather.get_forecasts`` service call (cheap vs the position-forecast
+        astral walk) and no-ops on the coordinator side when the source is
+        ``live`` or no weather entity is configured. Idempotent: reuses the
+        existing unsubscribe handle if already scheduled.
+        """
+        from homeassistant.helpers.event import async_track_time_change
+
+        from .const import FORECAST_RECOMPUTE_INTERVAL_MIN
+
+        if self._forecast_max_unsub is not None:
+            return  # already scheduled
+
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self.async_recompute_forecast_max(),
+            name="acp_initial_forecast_max",
+        )
+
+        @callback
+        def _tick_forecast_max(_now: dt.datetime) -> None:
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self.async_recompute_forecast_max(),
+                name="acp_periodic_forecast_max",
+            )
+
+        self._forecast_max_unsub = async_track_time_change(
+            self.hass,
+            _tick_forecast_max,
+            minute=range(0, 60, FORECAST_RECOMPUTE_INTERVAL_MIN),
+            second=0,
+        )
+
     async def async_recompute_forecast(self) -> None:
         """Refresh ``coordinator.data.position_forecast`` via an executor job.
 
@@ -730,6 +780,50 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.data is not None:
             self.data = replace(self.data, position_forecast=forecast)
             self.async_update_listeners()
+
+    async def async_recompute_forecast_max(self) -> None:
+        """Refresh the cached outdoor forecast daily-high (issue #547).
+
+        Fetches today's forecast high from the configured weather entity via
+        ``weather.get_forecasts`` (type ``daily``) and caches it on
+        ``self._forecast_max_outside`` so the climate read's outdoor-temp
+        source switch can source it.
+
+        Runs only when the outdoor-temp source is not ``live`` AND a weather
+        entity is configured; otherwise the cache is cleared. Every failure
+        path — service error, missing/empty/non-numeric forecast — degrades to
+        ``None`` so the provider falls back to the live read. Hourly-only
+        weather integrations (no daily forecast) therefore degrade to live too.
+        """
+        from .const import (
+            CONF_OUTSIDE_TEMP_SOURCE,
+            CONF_WEATHER_ENTITY,
+            DEFAULT_OUTSIDE_TEMP_SOURCE,
+            OutsideTempSource,
+        )
+
+        options = self.config_entry.options
+        source = options.get(CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE)
+        weather_entity = options.get(CONF_WEATHER_ENTITY)
+        if source == OutsideTempSource.LIVE.value or not weather_entity:
+            self._forecast_max_outside = None
+            return
+
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"type": "daily"},
+                target={"entity_id": weather_entity},
+                blocking=True,
+                return_response=True,
+            )
+            forecasts = (response or {}).get(weather_entity, {}).get("forecast") or []
+            today_high = float(forecasts[0]["temperature"])
+        except Exception:  # noqa: BLE001 — any service/parse failure degrades to live
+            self._forecast_max_outside = None
+            return
+        self._forecast_max_outside = today_high
 
     async def async_check_entity_state_change(
         self, event: Event[EventStateChangedData]
@@ -1244,7 +1338,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Read all climate-related entities (temp, presence, weather, lux, irradiance, cloud).
         # The result is stored in self._weather_readings and passed to PipelineSnapshot
         # so ClimateHandler and CloudSuppressionHandler can self-evaluate.
-        self._weather_readings = self._snapshot_builder.read_climate(options)
+        self._weather_readings = self._snapshot_builder.read_climate(
+            options, forecast_max_outside=self._forecast_max_outside
+        )
 
         # Sensor-health Repair (issue #786): watch the effective indoor temp
         # entity only when climate mode is on (the sensor is otherwise unused,
@@ -2772,6 +2868,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 if _temp_readings is not None
                 else None
             ),
+            outside_temp_source=(
+                _temp_readings.outside_temperature_source
+                if _temp_readings is not None
+                else "live"
+            ),
             check_adaptive_time=self.check_adaptive_time,
             after_start_time=self.after_start_time,
             before_end_time=self.before_end_time,
@@ -3295,6 +3396,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._forecast_unsub is not None:
             self._forecast_unsub()
             self._forecast_unsub = None
+
+        # Cancel the outdoor forecast daily-high refresher (issue #547).
+        if self._forecast_max_unsub is not None:
+            self._forecast_max_unsub()
+            self._forecast_max_unsub = None
 
         # Cancel the daytime-gate fallback wake (issue #742).
         if self._gate_fallback_unsub is not None:

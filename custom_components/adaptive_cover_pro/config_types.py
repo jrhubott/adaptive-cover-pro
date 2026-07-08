@@ -634,6 +634,7 @@ class RuntimeConfig:
     entities: list[str]
     open_close_threshold: int
     event_buffer_size: int
+    outside_temp_source: str
     tracking: TrackingSlice
     manual_override: ManualOverrideSlice
     time_window: TimeWindowSlice
@@ -680,6 +681,7 @@ class RuntimeConfig:
             CONF_MOTION_TEMPLATE_MODE,
             CONF_MOTION_TIMEOUT,
             CONF_OPEN_CLOSE_THRESHOLD,
+            CONF_OUTSIDE_TEMP_SOURCE,
             CONF_POSITION_TOLERANCE,
             CONF_START_ENTITY,
             CONF_START_TIME,
@@ -714,6 +716,7 @@ class RuntimeConfig:
             DEFAULT_MAX_COVERAGE_STEPS,
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
+            DEFAULT_OUTSIDE_TEMP_SOURCE,
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
@@ -736,6 +739,9 @@ class RuntimeConfig:
             open_close_threshold=options.get(CONF_OPEN_CLOSE_THRESHOLD, 50),
             event_buffer_size=options.get(
                 CONF_DEBUG_EVENT_BUFFER_SIZE, DEFAULT_DEBUG_EVENT_BUFFER_SIZE
+            ),
+            outside_temp_source=options.get(
+                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
             ),
             tracking=TrackingSlice(
                 min_change=options.get(CONF_DELTA_POSITION) or 1,

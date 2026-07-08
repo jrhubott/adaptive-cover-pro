@@ -133,6 +133,7 @@ from .const import (
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
     CONF_OPEN_CLOSE_THRESHOLD,
+    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
@@ -3019,6 +3020,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
             CONF_TEMP_LOW,
             CONF_TEMP_HIGH,
+            CONF_OUTSIDE_TEMP_SOURCE,
             CONF_OUTSIDE_THRESHOLD,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
@@ -3045,6 +3047,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TEMP_LOW,
             CONF_TEMP_HIGH,
             CONF_OUTSIDETEMP_ENTITY,
+            CONF_OUTSIDE_TEMP_SOURCE,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
             CONF_PRESENCE_TEMPLATE,
@@ -3077,6 +3080,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TEMP_LOW,
             CONF_TEMP_HIGH,
             CONF_OUTSIDETEMP_ENTITY,
+            CONF_OUTSIDE_TEMP_SOURCE,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
             CONF_PRESENCE_TEMPLATE,
@@ -3387,8 +3391,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # reconcile/chase behavior; new installs default to off via the schema.
     # 3.3 (issue #563 trailing defect): copy legacy custom_position_sensor_N
     # into the new list key.
+    # 3.7 (issue #547): no-op bump for the additive outside_temp_source option
+    # (absent key reads as "live"); advances stale minor-6 entries.
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 6
+    MINOR_VERSION = 7
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

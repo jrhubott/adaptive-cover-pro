@@ -53,6 +53,7 @@ from ..const import (
     CONF_MINIMIZE_MOVEMENTS,
     CONF_MOTION_TIMEOUT_MODE,
     CONF_MY_POSITION_VALUE,
+    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
@@ -88,6 +89,7 @@ from ..const import (
     DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
 from ..helpers import (
@@ -152,7 +154,9 @@ class PipelineSnapshotBuilder:
 
     # ---- HA reads ---------------------------------------------------------
 
-    def read_climate(self, options: dict) -> ClimateReadings:
+    def read_climate(
+        self, options: dict, *, forecast_max_outside: float | None = None
+    ) -> ClimateReadings:
         """Read all climate-related entities into a fresh ``ClimateReadings``.
 
         Single call to :meth:`ClimateProvider.read` for each update cycle.
@@ -165,6 +169,11 @@ class PipelineSnapshotBuilder:
         lux/irradiance are read whenever cloud suppression is enabled and the
         corresponding entity is configured — even if the climate-mode toggles
         are off.
+
+        ``forecast_max_outside`` is the coordinator's pre-fetched forecast
+        daily-high (issue #547). It is threaded through to the provider so
+        the ``outside_temp_source`` switch can source it; the builder stays
+        stateless (the fetch itself lives on the coordinator).
         """
         cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
         lux_entity = options.get(CONF_LUX_ENTITY)
@@ -185,6 +194,10 @@ class PipelineSnapshotBuilder:
                 )
             ),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
+            outside_temp_source=options.get(
+                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
+            ),
+            forecast_max_outside=forecast_max_outside,
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
             presence_template=options.get(CONF_PRESENCE_TEMPLATE),
             presence_template_mode=options.get(CONF_PRESENCE_TEMPLATE_MODE)

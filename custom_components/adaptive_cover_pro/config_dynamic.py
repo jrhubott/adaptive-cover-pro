@@ -54,6 +54,7 @@ from .const import (
     CONF_LUX_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MIN_ELEVATION,
+    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
@@ -99,12 +100,14 @@ from .const import (
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
+    DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WINDOW_AZIMUTH,
+    OutsideTempSource,
     TemplateCombineMode,
 )
 from .unit_system import length_default, length_selector
@@ -535,6 +538,18 @@ def temperature_climate_schema(
         vol.Optional(
             CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
         ): numeric_selector(),
+        # Outdoor-temp source (issue #547): live (default), forecast daily-max,
+        # or the max of the two. The forecast is fetched from the configured
+        # weather entity — no separate picker.
+        vol.Optional(
+            CONF_OUTSIDE_TEMP_SOURCE, default=DEFAULT_OUTSIDE_TEMP_SOURCE
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[m.value for m in OutsideTempSource],
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="outside_temp_source",
+            )
+        ),
         vol.Optional(
             CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
         ): presence_like_selector(),

@@ -157,6 +157,13 @@ class DiagnosticContext:
     temp_sensor_source: str = "none"
     temp_sensor_area_id: str | None = None
 
+    # issue #547: provenance of the outdoor temperature actually used —
+    # "live", "forecast_max", "max_of_live_and_forecast", or "live_fallback".
+    # Threaded from the cycle's ClimateReadings; surfaced in temperature_details
+    # so a user can see whether climate mode reacted to the forecast or the
+    # live reading.
+    outside_temp_source: str = "live"
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -586,6 +593,7 @@ class DiagnosticsBuilder:
             diagnostics["temperature_details"] = {
                 "inside_temperature": _round_temp(climate_data.inside_temperature),
                 "outside_temperature": _round_temp(climate_data.outside_temperature),
+                "outside_temperature_source": ctx.outside_temp_source,
                 "temp_switch": climate_data.temp_switch,
             }
 

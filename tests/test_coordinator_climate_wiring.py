@@ -33,6 +33,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -104,8 +105,10 @@ def _make_coordinator():
             self._builder, self._climate_provider = _make_builder()
             self._weather_readings = None
 
-        def _read_climate_state(self, options):
-            self._weather_readings = self._builder.read_climate(options)
+        def _read_climate_state(self, options, forecast_max_outside=None):
+            self._weather_readings = self._builder.read_climate(
+                options, forecast_max_outside=forecast_max_outside
+            )
 
         @property
         def _toggles(self):
@@ -228,6 +231,32 @@ class TestClimateStateWiring:
         assert kwargs.get("use_cloud_coverage") is True
 
 
+class TestOutsideTempSourceWiring:
+    """Guard forecast-aware outdoor-temp source forwarding (issue #547)."""
+
+    @pytest.mark.unit
+    def test_outside_temp_source_and_forecast_max_forwarded(self):
+        """Source option + pre-fetched forecast max both reach read()."""
+        coord = _make_coordinator()
+        options = {
+            CONF_OUTSIDETEMP_ENTITY: "sensor.outside",
+            CONF_OUTSIDE_TEMP_SOURCE: "max_of_live_and_forecast",
+        }
+        coord._read_climate_state(options, forecast_max_outside=26.0)
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("outside_temp_source") == "max_of_live_and_forecast"
+        assert kwargs.get("forecast_max_outside") == 26.0
+
+    @pytest.mark.unit
+    def test_outside_temp_source_defaults_to_live(self):
+        """Absent option → live, and forecast_max defaults to None."""
+        coord = _make_coordinator()
+        coord._read_climate_state({})
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("outside_temp_source") == "live"
+        assert kwargs.get("forecast_max_outside") is None
+
+
 class TestClimateStateWiringDefaults:
     """Verify graceful fallback when options dict is empty."""
 
@@ -302,8 +331,14 @@ class TestClimateProviderApiCoverage:
     """
 
     # These parameters are intentionally excluded: they are derived by the
-    # coordinator from toggles/flags rather than coming directly from options.
-    _TOGGLE_DERIVED = {"use_lux", "use_irradiance", "use_cloud_coverage"}
+    # coordinator from toggles/flags or supplied as a pre-fetched value
+    # (forecast_max_outside, issue #547) rather than coming directly from options.
+    _TOGGLE_DERIVED = {
+        "use_lux",
+        "use_irradiance",
+        "use_cloud_coverage",
+        "forecast_max_outside",
+    }
 
     # These map from options key → read() kwarg name (non-obvious mappings).
     _OPTIONS_TO_READ_KWARG = {
@@ -311,6 +346,7 @@ class TestClimateProviderApiCoverage:
         CONF_DEVICE_ID: "temp_device_id",
         CONF_AUTO_RESOLVE_TEMP_FROM_AREA: "auto_resolve_temp_from_area",
         CONF_OUTSIDETEMP_ENTITY: "outside_entity",
+        CONF_OUTSIDE_TEMP_SOURCE: "outside_temp_source",
         CONF_PRESENCE_ENTITY: "presence_entity",
         CONF_WEATHER_ENTITY: "weather_entity",
         CONF_WEATHER_STATE: "weather_condition",
@@ -368,6 +404,7 @@ class TestClimateProviderApiCoverage:
             CONF_DEVICE_ID: "device_abc",
             CONF_AUTO_RESOLVE_TEMP_FROM_AREA: True,
             CONF_OUTSIDETEMP_ENTITY: "sensor.outside",
+            CONF_OUTSIDE_TEMP_SOURCE: "max_of_live_and_forecast",
             CONF_PRESENCE_ENTITY: "binary_sensor.pres",
             CONF_WEATHER_ENTITY: "weather.home",
             CONF_WEATHER_STATE: ["sunny"],

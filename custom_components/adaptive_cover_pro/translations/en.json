@@ -700,6 +700,7 @@
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
+          "outside_temp_source": "Outdoor temperature source",
           "outside_threshold": "Outside temperature threshold",
           "presence_entity": "Presence entity (optional)",
           "presence_template": "Presence template (optional)",
@@ -717,6 +718,7 @@
           "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "outside_temp_source": "Which outdoor temperature reading climate mode uses. 'Live reading' (default) keeps today's behavior — the outdoor sensor or the weather entity's current temperature. 'Forecast daily high' uses today's forecast maximum from the configured weather entity (falling back to the live reading when no forecast is available). 'Higher of live and forecast' takes whichever is warmer, so a cool morning that will heat up still triggers summer close. The forecast is fetched from the weather entity you already configured — no extra picker needed.",
           "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured. **Value is interpreted in that outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
           "presence_template": "Optional Home Assistant Jinja2 template that reports occupancy. When it renders truthy (on/true/1) the space counts as occupied; when falsy it is treated as empty. How it combines with the Presence entity above (OR or AND) is set by 'Presence template logic' below; it can stand alone with no entity. Use this for composite occupancy (e.g. anyone home AND awake). A template that is empty or fails to render gives no opinion, so the Presence entity logic decides. Leave empty to disable.",
@@ -1550,6 +1552,7 @@
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
+          "outside_temp_source": "Outdoor temperature source",
           "outside_threshold": "Outside temperature threshold",
           "presence_entity": "Presence entity (optional)",
           "presence_template": "Presence template (optional)",
@@ -1567,6 +1570,7 @@
           "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "outside_temp_source": "Which outdoor temperature reading climate mode uses. 'Live reading' (default) keeps today's behavior — the outdoor sensor or the weather entity's current temperature. 'Forecast daily high' uses today's forecast maximum from the configured weather entity (falling back to the live reading when no forecast is available). 'Higher of live and forecast' takes whichever is warmer, so a cool morning that will heat up still triggers summer close. The forecast is fetched from the weather entity you already configured — no extra picker needed.",
           "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured. **Value is interpreted in that outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
           "presence_template": "Optional Home Assistant Jinja2 template that reports occupancy. When it renders truthy (on/true/1) the space counts as occupied; when falsy it is treated as empty. How it combines with the Presence entity above (OR or AND) is set by 'Presence template logic' below; it can stand alone with no entity. Use this for composite occupancy (e.g. anyone home AND awake). A template that is empty or fails to render gives no opinion, so the Presence entity logic decides. Leave empty to disable.",
@@ -1621,6 +1625,7 @@
           "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. Leave empty to disable.",
           "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. Leave empty if you don't have this sensor.",
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading determines the current season for all linked covers.",
+          "outside_temp_source": "Which outdoor temperature reading climate mode uses for all linked covers. 'Live reading' (default) keeps today's behavior. 'Forecast daily high' uses today's forecast maximum from the configured weather entity (falling back to live when unavailable). 'Higher of live and forecast' takes whichever is warmer.",
           "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). Falls back to astral if unavailable.",
           "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). Falls back to astral if unavailable.",
           "weather_entity": "Optional weather integration used to detect cloud cover. Leave empty to ignore weather state.",
@@ -1899,6 +1904,13 @@
       "options": {
         "or": "OR — occupied if the template is true or a sensor is active (default)",
         "and": "AND — require the template to be true and a sensor active"
+      }
+    },
+    "outside_temp_source": {
+      "options": {
+        "live": "Live reading (default) — current outdoor sensor or weather temperature",
+        "forecast_max": "Forecast daily high — today's forecast maximum from the weather entity",
+        "max_of_live_and_forecast": "Higher of live and forecast — whichever is warmer right now"
       }
     },
     "blind_spot_elevation_mode": {
