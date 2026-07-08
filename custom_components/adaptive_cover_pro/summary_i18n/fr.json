@@ -114,7 +114,7 @@
     "transparent": "store transparent",
     "winter_close": "ferme complètement en hiver pour l'isolation",
     "summer_full_close": "ferme complètement en cas de chaleur estivale",
-    "extreme_heat": "maintient {pos}% toute la journée au-dessus de {thresh}°C à l'extérieur"
+    "extreme_heat": "maintient {pos} % toute la journée au-dessus de {thresh} °C extérieur"
   },
   "glare": {
     "zones": "zones : {names}",
