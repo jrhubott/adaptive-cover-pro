@@ -678,7 +678,8 @@
           "presence_template_mode": "Logique du modèle de présence",
           "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale",
           "temp_extreme_heat": "Seuil de chaleur extrême (extérieur)",
-          "extreme_heat_position": "Position de maintien en chaleur extrême"
+          "extreme_heat_position": "Position de maintien en chaleur extrême",
+          "outside_temp_source": "Source de température extérieure"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -695,7 +696,8 @@
           "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus.",
           "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours.",
           "temp_extreme_heat": "Température extérieure au-delà de laquelle la protection maintient une position fixe toute la journée — indépendamment de la position du soleil, de la présence ou de la saison — prenant le pas sur le chauffage hivernal. Laisser vide pour désactiver le mode chaleur extrême. **La valeur est interprétée dans l'unité du capteur extérieur, pas l'unité d'affichage de Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
-          "extreme_heat_position": "Position que la protection maintient en chaleur extrême (0 % = complètement fermée/rétractée, la valeur par défaut si laissée vide). Pour les protections avec inclinaison, il s'agit du pourcentage d'angle de lamelle. Le maintien respecte toujours vos limites de position minimale/maximale configurées."
+          "extreme_heat_position": "Position que la protection maintient en chaleur extrême (0 % = complètement fermée/rétractée, la valeur par défaut si laissée vide). Pour les protections avec inclinaison, il s'agit du pourcentage d'angle de lamelle. Le maintien respecte toujours vos limites de position minimale/maximale configurées.",
+          "outside_temp_source": "Quelle lecture de température extérieure le mode climatique utilise. « Lecture en temps réel » (défaut) conserve le comportement actuel — le capteur extérieur ou la température actuelle de l'entité météo. « Maximum de prévision journalière » utilise le maximum de prévision d'aujourd'hui à partir de l'entité météo configurée (revenant à la lecture en temps réel quand aucune prévision n'est disponible). « Maximum de lecture en temps réel et prévision » utilise la valeur la plus élevée, de sorte qu'une matinée fraîche qui se réchauffera déclenche toujours la fermeture estivale. La prévision est extraite de l'entité météo que vous avez déjà configurée — aucun sélecteur supplémentaire n'est nécessaire."
         }
       },
       "behavior": {
@@ -1506,7 +1508,8 @@
           "presence_template_mode": "Logique du modèle de présence",
           "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale",
           "temp_extreme_heat": "Seuil de chaleur extrême (extérieur)",
-          "extreme_heat_position": "Position de maintien en chaleur extrême"
+          "extreme_heat_position": "Position de maintien en chaleur extrême",
+          "outside_temp_source": "Source de température extérieure"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -1523,7 +1526,8 @@
           "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus.",
           "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours.",
           "temp_extreme_heat": "Température extérieure au-delà de laquelle la protection maintient une position fixe toute la journée — indépendamment de la position du soleil, de la présence ou de la saison — prenant le pas sur le chauffage hivernal. Laisser vide pour désactiver le mode chaleur extrême. **La valeur est interprétée dans l'unité du capteur extérieur, pas l'unité d'affichage de Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
-          "extreme_heat_position": "Position que la protection maintient en chaleur extrême (0 % = complètement fermée/rétractée, la valeur par défaut si laissée vide). Pour les protections avec inclinaison, il s'agit du pourcentage d'angle de lamelle. Le maintien respecte toujours vos limites de position minimale/maximale configurées."
+          "extreme_heat_position": "Position que la protection maintient en chaleur extrême (0 % = complètement fermée/rétractée, la valeur par défaut si laissée vide). Pour les protections avec inclinaison, il s'agit du pourcentage d'angle de lamelle. Le maintien respecte toujours vos limites de position minimale/maximale configurées.",
+          "outside_temp_source": "Quelle lecture de température extérieure le mode climatique utilise. « Lecture en temps réel » (défaut) conserve le comportement actuel — le capteur extérieur ou la température actuelle de l'entité météo. « Maximum de prévision journalière » utilise le maximum de prévision d'aujourd'hui à partir de l'entité météo configurée (revenant à la lecture en temps réel quand aucune prévision n'est disponible). « Maximum de lecture en temps réel et prévision » utilise la valeur la plus élevée, de sorte qu'une matinée fraîche qui se réchauffera déclenche toujours la fermeture estivale. La prévision est extraite de l'entité météo que vous avez déjà configurée — aucun sélecteur supplémentaire n'est nécessaire."
         }
       },
       "behavior": {
@@ -1631,7 +1635,8 @@
           "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
-          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent."
+          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent.",
+          "outside_temp_source": "Quelle lecture de température extérieure le mode climatique utilise pour toutes les protections liées. « Lecture en temps réel » (défaut) conserve le comportement actuel. « Maximum de prévision journalière » utilise le maximum de prévision d'aujourd'hui à partir de l'entité météo configurée (revenant à la lecture en temps réel quand indisponible). « Maximum de lecture en temps réel et prévision » utilise la valeur la plus élevée."
         }
       },
       "profile_overview": {
@@ -1949,6 +1954,13 @@
         "bi_part": "Ouverture centrale — deux pans se rejoignent au milieu",
         "left": "Un seul pan — ancré à gauche, se ferme vers la droite",
         "right": "Un seul pan — ancré à droite, se ferme vers la gauche"
+      }
+    },
+    "outside_temp_source": {
+      "options": {
+        "live": "Lecture en temps réel (défaut) — capteur extérieur courant ou température météo",
+        "forecast_max": "Maximum de prévision journalière — maximum de prévision d'aujourd'hui de l'entité météo",
+        "max_of_live_and_forecast": "Maximum de lecture en temps réel et prévision — la valeur la plus élevée en ce moment"
       }
     }
   },
