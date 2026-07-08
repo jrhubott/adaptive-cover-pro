@@ -3356,13 +3356,19 @@ def test_summary_group_shows_cover_entity_line_when_enabled():
     )
 
     base = {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []}
-    without = _build_config_summary(base, CoverType.GROUP)
+    without = _build_config_summary(
+        {**base, CONF_GROUP_ENABLE_COVER_ENTITY: False}, CoverType.GROUP
+    )
     assert "Aggregate cover entity" not in without
 
     with_cover = _build_config_summary(
         {**base, CONF_GROUP_ENABLE_COVER_ENTITY: True}, CoverType.GROUP
     )
     assert "Aggregate cover entity" in with_cover
+
+    # Default (key absent) now enables the cover, so the line appears.
+    by_default = _build_config_summary(base, CoverType.GROUP)
+    assert "Aggregate cover entity" in by_default
 
 
 def test_summary_group_shows_area_line_when_configured():

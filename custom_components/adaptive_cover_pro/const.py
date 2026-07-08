@@ -130,11 +130,13 @@ _RANGE_GROUP_STAGGER = (0.0, 30.0)
 GROUP_SCENE_SELECT_AUTO = "auto"
 
 # Entity-exposure toggles for a group entry (issue #790, Phase 3). The
-# aggregate cover entity defaults OFF (dashboard/voice clutter); the sensors
-# default ON. The active-scene sensor, scene controls, and bulk switches are
-# always created (primary control surface, no toggle).
+# aggregate cover entity defaults ON so a group is controllable as a single
+# cover out of the box; users opt out per-group to reduce dashboard/voice
+# clutter. The sensors also default ON. The active-scene sensor, scene
+# controls, and bulk switches are always created (primary control surface,
+# no toggle).
 CONF_GROUP_ENABLE_COVER_ENTITY = "group_enable_cover_entity"
-DEFAULT_GROUP_ENABLE_COVER_ENTITY = False
+DEFAULT_GROUP_ENABLE_COVER_ENTITY = True
 CONF_GROUP_ENABLE_POSITION_SENSOR = "group_enable_position_sensor"
 CONF_GROUP_ENABLE_STATE_SENSOR = "group_enable_state_sensor"
 CONF_GROUP_ENABLE_CLIMATE_SENSOR = "group_enable_climate_sensor"

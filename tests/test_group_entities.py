@@ -327,19 +327,36 @@ async def test_sensor_toggles_gate_creation(hass) -> None:
     assert entities == {"group_05_group_active_scene"}
 
 
-async def test_cover_platform_builds_group_cover_only_when_enabled(hass) -> None:
+async def test_cover_platform_builds_group_cover_per_toggle(hass) -> None:
     from custom_components.adaptive_cover_pro import cover
     from custom_components.adaptive_cover_pro.const import (
         CONF_GROUP_ENABLE_COVER_ENTITY,
     )
 
-    # Default: off — no group cover entity.
-    entry_off = MockConfigEntry(
+    # Default (key absent): on — the aggregate cover entity is built.
+    entry_default = MockConfigEntry(
         domain=DOMAIN,
         data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
         options={CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: ["cover.g1"]},
         entry_id="group_06",
         title="G",
+    )
+    entry_default.add_to_hass(hass)
+    entry_default.runtime_data = GroupCoordinator(hass, entry_default)
+    default_entities = await _added_entities(cover, hass, entry_default)
+    assert [e.unique_id for e in default_entities] == ["group_06_group_cover"]
+
+    # Explicitly disabled — no group cover entity.
+    entry_off = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G3", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [],
+            CONF_MEMBER_COVERS: ["cover.g1"],
+            CONF_GROUP_ENABLE_COVER_ENTITY: False,
+        },
+        entry_id="group_08",
+        title="G3",
     )
     entry_off.add_to_hass(hass)
     entry_off.runtime_data = GroupCoordinator(hass, entry_off)
