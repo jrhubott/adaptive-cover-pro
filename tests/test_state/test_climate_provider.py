@@ -108,6 +108,81 @@ class TestInsideTemperature:
 
 
 # ---------------------------------------------------------------------------
+# Resolved temperature source (issue #786)
+# ---------------------------------------------------------------------------
+
+
+def _patch_area(*, device_area_id=None, area_temp_entity=None):
+    """Patch the device + area registries the AreaSensorResolver reads."""
+    device = MagicMock()
+    device.area_id = device_area_id
+    device_reg = MagicMock()
+    device_reg.async_get.return_value = device if device_area_id is not None else None
+    area = MagicMock()
+    area.temperature_entity_id = area_temp_entity
+    area_reg = MagicMock()
+    area_reg.async_get_area.return_value = area if device_area_id is not None else None
+    mod = "custom_components.adaptive_cover_pro.state.area_resolver"
+    return (
+        patch(f"{mod}.dr.async_get", return_value=device_reg),
+        patch(f"{mod}.ar.async_get", return_value=area_reg),
+    )
+
+
+class TestResolvedTempSource:
+    """ClimateReadings carries the resolved temp entity_id + provenance."""
+
+    @pytest.mark.unit
+    def test_explicit_source(self, provider, mock_hass):
+        """Explicit temp entity → source 'explicit', entity surfaced."""
+        mock_hass.states.get.return_value = _mock_state("sensor.temp", "23.0")
+        readings = provider.read(temp_entity="sensor.temp", temp_device_id="dev1")
+        assert readings.inside_temperature == "23.0"
+        assert readings.inside_temperature_entity_id == "sensor.temp"
+        assert readings.inside_temperature_source == "explicit"
+
+    @pytest.mark.unit
+    def test_area_resolved_source(self, provider, mock_hass):
+        """No explicit entity → area's temp entity resolved and read."""
+        mock_hass.states.get.return_value = _mock_state("sensor.bedroom_temp", "19.5")
+        dev_patch, area_patch = _patch_area(
+            device_area_id="area_bedroom", area_temp_entity="sensor.bedroom_temp"
+        )
+        with dev_patch, area_patch:
+            readings = provider.read(temp_entity=None, temp_device_id="dev1")
+        assert readings.inside_temperature == "19.5"
+        assert readings.inside_temperature_entity_id == "sensor.bedroom_temp"
+        assert readings.inside_temperature_source == "area"
+
+    @pytest.mark.unit
+    def test_none_source_when_unresolved(self, provider):
+        """No explicit entity and no area temp → source 'none'."""
+        dev_patch, area_patch = _patch_area(device_area_id=None)
+        with dev_patch, area_patch:
+            readings = provider.read(temp_entity=None, temp_device_id="dev1")
+        assert readings.inside_temperature is None
+        assert readings.inside_temperature_entity_id is None
+        assert readings.inside_temperature_source == "none"
+
+    @pytest.mark.unit
+    def test_auto_resolve_disabled_skips_area(self, provider, mock_hass):
+        """auto_resolve off → area sensor ignored, source 'none'."""
+        mock_hass.states.get.return_value = _mock_state("sensor.bedroom_temp", "19.5")
+        dev_patch, area_patch = _patch_area(
+            device_area_id="area_bedroom", area_temp_entity="sensor.bedroom_temp"
+        )
+        with dev_patch, area_patch:
+            readings = provider.read(
+                temp_entity=None,
+                temp_device_id="dev1",
+                auto_resolve_temp_from_area=False,
+            )
+        assert readings.inside_temperature is None
+        assert readings.inside_temperature_entity_id is None
+        assert readings.inside_temperature_source == "none"
+
+
+# ---------------------------------------------------------------------------
 # Presence
 # ---------------------------------------------------------------------------
 

@@ -148,6 +148,15 @@ class DiagnosticContext:
     # default_position diagnostics block to disambiguate sunset-vs-eow.
     end_of_window_active: bool = False
 
+    # issue #786: the effective indoor temperature sensor and its provenance,
+    # threaded from the cycle's ClimateReadings. ``source`` is "explicit" /
+    # "area" / "none"; ``area_id`` is set only for the "area" source. Surfaced
+    # in the climate block so a user can see why a cover reacts to a sensor
+    # they never configured on it.
+    temp_sensor_entity_id: str | None = None
+    temp_sensor_source: str = "none"
+    temp_sensor_area_id: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -542,6 +551,18 @@ class DiagnosticsBuilder:
     def _build_climate(ctx: DiagnosticContext) -> dict:
         """Build climate mode diagnostics."""
         diagnostics: dict = {}
+
+        # Effective indoor temp sensor + provenance (issue #786). Surfaced
+        # whenever a sensor resolved (explicit or auto-resolved from the area)
+        # so a user can trace why a cover reacts to a sensor they never
+        # configured on it. Absent when nothing resolved (source "none").
+        if ctx.temp_sensor_source and ctx.temp_sensor_source != "none":
+            diagnostics["temp_sensor"] = {
+                "entity_id": ctx.temp_sensor_entity_id,
+                "source": ctx.temp_sensor_source,
+                "area_id": ctx.temp_sensor_area_id,
+            }
+
         result = ctx.pipeline_result
         if ctx.climate_mode and result is not None and result.climate_data is not None:
             climate_data = result.climate_data

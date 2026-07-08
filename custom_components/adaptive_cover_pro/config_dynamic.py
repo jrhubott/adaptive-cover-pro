@@ -29,6 +29,7 @@ from .const import (
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
+    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -93,6 +94,7 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
+    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
@@ -524,6 +526,10 @@ def temperature_climate_schema(
         vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
         ),
+        vol.Optional(
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
+            default=DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
         ): numeric_selector(),

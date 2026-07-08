@@ -83,6 +83,19 @@ class TestExtractSharedOptions:
         result = _extract_shared_options(entry)
         assert CONF_DEVICE_ID not in result
 
+    def test_duplicate_flow_drops_temp_entity(self):
+        """Duplicating a cover must not copy the per-room indoor temp sensor (#786).
+
+        The temp sensor is room-specific; a clone in another area should not
+        inherit the source cover's sensor. Area auto-resolution fills the gap.
+        """
+        entry = _make_entry(
+            {CONF_TEMP_ENTITY: "sensor.bedroom_temp", CONF_HEIGHT_WIN: 2.1}
+        )
+        result = _extract_shared_options(entry)
+        assert CONF_TEMP_ENTITY not in result
+        assert result[CONF_HEIGHT_WIN] == 2.1
+
     def test_includes_window_dimensions(self):
         """Verify window dimension options are included in the returned dict."""
         entry = _make_entry({CONF_HEIGHT_WIN: 2.1, CONF_AZIMUTH: 180})

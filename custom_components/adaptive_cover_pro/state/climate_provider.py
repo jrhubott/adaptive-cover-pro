@@ -10,6 +10,7 @@ from collections.abc import Callable
 from ..const import DEFAULT_TEMPLATE_COMBINE_MODE
 from ..helpers import get_domain, get_safe_state, is_entity_active, state_attr
 from ..templates import fold_condition_template
+from .area_resolver import AreaSensorResolver
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -28,6 +29,13 @@ class ClimateReadings:
     lux_below_threshold: bool
     irradiance_below_threshold: bool
     cloud_coverage_above_threshold: bool
+    # Effective indoor temperature entity actually read, and its provenance
+    # (issue #786): "explicit" (configured), "area" (auto-resolved from the
+    # cover's HA area), or "none". ``inside_temperature_area_id`` is set only
+    # for the "area" source. Surfaced in diagnostics + config summary.
+    inside_temperature_entity_id: str | None = None
+    inside_temperature_source: str = "none"
+    inside_temperature_area_id: str | None = None
 
 
 class ClimateProvider:
@@ -37,11 +45,14 @@ class ClimateProvider:
         """Initialize with HA instance and logger."""
         self._hass = hass
         self._logger = logger
+        self._area_resolver = AreaSensorResolver(hass)
 
     def read(
         self,
         *,
         temp_entity: str | None = None,
+        temp_device_id: str | None = None,
+        auto_resolve_temp_from_area: bool = True,
         outside_entity: str | None = None,
         weather_entity: str | None = None,
         weather_condition: list[str] | None = None,
@@ -62,11 +73,19 @@ class ClimateProvider:
         is_sunny_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
     ) -> ClimateReadings:
         """Read all climate entities and return a frozen snapshot."""
+        resolved_temp = self._area_resolver.resolve_temperature_entity(
+            explicit_entity=temp_entity,
+            device_id=temp_device_id,
+            auto_resolve=auto_resolve_temp_from_area,
+        )
         return ClimateReadings(
             outside_temperature=self._read_outside_temperature(
                 outside_entity, weather_entity
             ),
-            inside_temperature=self._read_inside_temperature(temp_entity),
+            inside_temperature=self._read_inside_temperature(resolved_temp.entity_id),
+            inside_temperature_entity_id=resolved_temp.entity_id,
+            inside_temperature_source=resolved_temp.source,
+            inside_temperature_area_id=resolved_temp.area_id,
             is_presence=self._read_presence(
                 presence_entity, presence_template, presence_template_mode
             ),

@@ -718,6 +718,40 @@ class TestClimateDiagnostics:
         assert "cloud_coverage_above_threshold" in conditions
         assert conditions["cloud_coverage_above_threshold"] is False
 
+    def test_climate_diagnostics_include_resolved_temp_sensor(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Area-resolved temp sensor + provenance surface in climate diagnostics (#786)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                temp_sensor_entity_id="sensor.bedroom_temp",
+                temp_sensor_source="area",
+                temp_sensor_area_id="area_bedroom",
+            )
+        )
+        assert diag["temp_sensor"] == {
+            "entity_id": "sensor.bedroom_temp",
+            "source": "area",
+            "area_id": "area_bedroom",
+        }
+
+    def test_temp_sensor_absent_when_source_none(self, builder: DiagnosticsBuilder):
+        """No temp_sensor block when nothing resolved (source none)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                temp_sensor_source="none",
+            )
+        )
+        assert "temp_sensor" not in diag
+
     def test_climate_conditions_cloud_coverage_true_when_active(
         self, builder: DiagnosticsBuilder
     ):

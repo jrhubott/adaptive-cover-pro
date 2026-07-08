@@ -87,6 +87,7 @@ from .const import (
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     DIAG_CACHE_KEY,
     DOMAIN,
+    ISSUE_TEMP_SENSOR_UNAVAILABLE,
     LOGGER,
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
@@ -106,6 +107,7 @@ from .managers.manual_override import (
     inverse_state,
 )
 from .managers.motion import MotionManager
+from .managers.sensor_health import SensorHealthManager
 from .managers.weather import WeatherManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
@@ -327,6 +329,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Weather override tracking
         self._weather_mgr = WeatherManager(
             hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+        )
+        # Sensor-health Repairs (issue #786): raise an informational Repair when
+        # the effective indoor temperature sensor stays unavailable past a
+        # generous debounce, and clear it on recovery. Entity-agnostic — this PR
+        # wires only the temp sensor.
+        self._sensor_health = SensorHealthManager(self.hass, self.logger, domain=DOMAIN)
+        self._temp_issue_key = (
+            f"{ISSUE_TEMP_SENSOR_UNAVAILABLE}_{self.config_entry.entry_id}"
         )
         # Override pipeline — custom position handlers are created per-slot so
         # each can carry an independent priority configured by the user.
@@ -1235,6 +1245,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # The result is stored in self._weather_readings and passed to PipelineSnapshot
         # so ClimateHandler and CloudSuppressionHandler can self-evaluate.
         self._weather_readings = self._snapshot_builder.read_climate(options)
+
+        # Sensor-health Repair (issue #786): watch the effective indoor temp
+        # entity only when climate mode is on (the sensor is otherwise unused,
+        # so an unavailable one is not worth nagging about). Watching the
+        # resolved effective entity covers both explicit and area-resolved
+        # cases. Fail-open: never let this raise into the update cycle.
+        try:
+            climate_on = bool(options.get(CONF_CLIMATE_MODE, False))
+            effective_temp = (
+                self._weather_readings.inside_temperature_entity_id
+                if climate_on
+                else None
+            )
+            self._sensor_health.update_watch(
+                self._temp_issue_key,
+                effective_temp,
+                translation_key=ISSUE_TEMP_SENSOR_UNAVAILABLE,
+                placeholders={
+                    "entity_id": effective_temp or "",
+                    "name": self.config_entry.data.get("name", "") or "",
+                },
+            )
+            self._sensor_health.evaluate()
+        except Exception:  # noqa: BLE001 — health check must never break the cycle
+            self.logger.debug("Sensor-health evaluation failed", exc_info=True)
 
         # Compute the effective default position from astronomical sunset/sunrise.
         # This is the single source of truth — all pipeline handlers use it via
@@ -2715,12 +2750,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         _last_success_time = self._last_update_success_time
         _last_exc = self.last_exception
 
+        _temp_readings = self._weather_readings
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
             cover=self._cover_data,
             position_forecast=self._position_forecast,
             pipeline_result=result,
             climate_mode=self._climate_mode,
+            temp_sensor_entity_id=(
+                _temp_readings.inside_temperature_entity_id
+                if _temp_readings is not None
+                else None
+            ),
+            temp_sensor_source=(
+                _temp_readings.inside_temperature_source
+                if _temp_readings is not None
+                else "none"
+            ),
+            temp_sensor_area_id=(
+                _temp_readings.inside_temperature_area_id
+                if _temp_readings is not None
+                else None
+            ),
             check_adaptive_time=self.check_adaptive_time,
             after_start_time=self.after_start_time,
             before_end_time=self.before_end_time,
@@ -3233,6 +3284,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Cancel weather clear-delay timeout task
         self._cancel_weather_timeout()
+
+        # Cancel any in-flight sensor-health debounce timers (issue #786).
+        self._sensor_health.shutdown()
 
         # Stop cover command service reconciliation timer
         self._cmd_svc.stop()

@@ -1,5 +1,11 @@
 {
   "title": "Adaptive Cover Pro",
+  "issues": {
+    "temp_sensor_unavailable": {
+      "title": "Innentemperatursensor nicht verfügbar",
+      "description": "Der vom Klimamodus auf **{name}** verwendete Innentemperatursensor `{entity_id}` ist seit einiger Zeit nicht verfügbar. Klimaentscheidungen laufen möglicherweise ohne aktuellen Innenmesswert. Prüfe, ob das Gerät des Sensors online ist, oder wähle einen anderen Sensor (oder deaktiviere die automatische Ermittlung aus dem Bereich) in den Temperatur- & Klimaoptionen der Abdeckung."
+    }
+  },
   "config": {
     "step": {
       "user": {
@@ -660,6 +666,7 @@
         "data": {
           "climate_mode": "Klimamodus aktivieren",
           "temp_entity": "Innere Temperaturentität",
+          "auto_resolve_temp_from_area": "Temperatursensor automatisch aus Bereich ermitteln",
           "temp_low": "Unterer Temperaturschwellwert",
           "temp_high": "Oberer Temperaturschwellwert",
           "outside_temp": "Außentemperatursensor (optional)",
@@ -674,6 +681,7 @@
         "data_description": {
           "climate_mode": "Aktivieren Sie diese Option, um alle klimagestützten Beschattungssteuerungen zu aktivieren. Wenn deaktiviert, werden alle Einstellungen auf diesem Bildschirm ignoriert und die Beschattung folgt der normalen Sonne/Blendungsverfolgung.",
           "temp_entity": "Ein Klima-Thermostat oder Temperatursensor, der die Innentemperatur misst und zur Bestimmung der aktuellen Jahreszeit (Winter/Sommer/Zwischensaison) verwendet wird. Erforderlich, wenn der Klimamodus aktiviert ist.",
+          "auto_resolve_temp_from_area": "Wenn oben keine innere Temperaturentität gesetzt ist, wird auf den Temperatursensor zurückgegriffen, der für den Home-Assistant-Bereich dieser Abdeckung konfiguriert ist. So lässt sich eine Abdeckung über mehrere Räume duplizieren, ohne für jeden einen Sensor auszuwählen. Die oben angegebene Entität hat immer Vorrang. Ausschalten, um den Sensor unbelegt zu lassen, wenn keiner gewählt ist.",
           "temp_low": "Innentemperatur (oder Außentemperatur, falls ein Außensensor konfiguriert ist), unter der die Jahreszeit als Winter behandelt wird. Im Winter öffnet sich die Beschattung vollständig, wenn die Sonne auf das Fenster scheint, um Sonnenwärme zu nutzen. **Der Wert wird in der Einheit des konfigurierten Temperatursensors interpretiert, nicht in der Anzeigeeinheit von Home Assistant.** Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "temp_high": "Innentemperatur (oder Außentemperatur, falls ein Außensensor konfiguriert ist), ab der die Jahreszeit als Sommer behandelt wird – vorausgesetzt, auch die Außenschwelle wird überschritten. Im Sommer schließt sich die Beschattung, um Wärmeeintrag zu blockieren. **Der Wert wird in der Einheit des konfigurierten Temperatursensors interpretiert, nicht in der Anzeigeeinheit von Home Assistant.** Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "outside_temp": "Optionaler Außentemperatursensor. Wenn bereitgestellt, bestimmt diese Messung (nicht der Innensensor) die aktuelle Jahreszeit, und die Außenschwellenwertschutz wird angewendet, um ein Sommerschluss-Verhalten an kalten Tagen zu verhindern.",
@@ -1482,6 +1490,7 @@
         "data": {
           "climate_mode": "Klimamodus aktivieren",
           "temp_entity": "Innere Temperaturentität",
+          "auto_resolve_temp_from_area": "Temperatursensor automatisch aus Bereich ermitteln",
           "temp_low": "Unterer Temperaturschwellwert",
           "temp_high": "Oberer Temperaturschwellwert",
           "outside_temp": "Außentemperatursensor (optional)",
@@ -1496,6 +1505,7 @@
         "data_description": {
           "climate_mode": "Aktivieren Sie diese Option, um alle klimagestützten Beschattungssteuerungen zu aktivieren. Wenn deaktiviert, werden alle Einstellungen auf diesem Bildschirm ignoriert und die Beschattung folgt der normalen Sonne/Blendungsverfolgung.",
           "temp_entity": "Ein Klima-Thermostat oder Temperatursensor, der die Innentemperatur misst und zur Bestimmung der aktuellen Jahreszeit (Winter/Sommer/Zwischensaison) verwendet wird. Erforderlich, wenn der Klimamodus aktiviert ist.",
+          "auto_resolve_temp_from_area": "Wenn oben keine innere Temperaturentität gesetzt ist, wird auf den Temperatursensor zurückgegriffen, der für den Home-Assistant-Bereich dieser Abdeckung konfiguriert ist. So lässt sich eine Abdeckung über mehrere Räume duplizieren, ohne für jeden einen Sensor auszuwählen. Die oben angegebene Entität hat immer Vorrang. Ausschalten, um den Sensor unbelegt zu lassen, wenn keiner gewählt ist.",
           "temp_low": "Innentemperatur (oder Außentemperatur, falls ein Außensensor konfiguriert ist), unter der die Jahreszeit als Winter behandelt wird. Im Winter öffnet sich die Beschattung vollständig, wenn die Sonne auf das Fenster scheint, um Sonnenwärme zu nutzen. **Der Wert wird in der Einheit des konfigurierten Temperatursensors interpretiert, nicht in der Anzeigeeinheit von Home Assistant.** Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "temp_high": "Innentemperatur (oder Außentemperatur, falls ein Außensensor konfiguriert ist), ab der die Jahreszeit als Sommer behandelt wird – vorausgesetzt, auch die Außenschwelle wird überschritten. Im Sommer schließt sich die Beschattung, um Wärmeeintrag zu blockieren. **Der Wert wird in der Einheit des konfigurierten Temperatursensors interpretiert, nicht in der Anzeigeeinheit von Home Assistant.** Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
           "outside_temp": "Optionaler Außentemperatursensor. Wenn bereitgestellt, bestimmt diese Messung (nicht der Innensensor) die aktuelle Jahreszeit, und die Außenschwellenwertschutz wird angewendet, um ein Sommerschluss-Verhalten an kalten Tagen zu verhindern.",

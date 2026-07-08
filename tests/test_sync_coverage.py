@@ -44,6 +44,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DRY_RUN,
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENTITIES,
+    CONF_TEMP_ENTITY,
 )
 
 # Options intentionally in the Duplicate flow (copy-all) but NOT in selective sync.
@@ -142,15 +143,23 @@ class TestSyncCoverage:
         )
 
     def test_shared_options_excluded_is_exact(self):
-        """_SHARED_OPTIONS_EXCLUDED must stay exactly {CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID}.
+        """_SHARED_OPTIONS_EXCLUDED must stay exactly the per-window key set.
 
         Catches an option accidentally added to the exclusion set, which would
         silently drop it from the Duplicate flow as well as selective sync.
         If you genuinely need a new per-window exclusion, update this assertion
         with an explanation comment.
+
+        CONF_TEMP_ENTITY (issue #786): the indoor temperature sensor is
+        per-room, so duplicating a cover must not copy it — area
+        auto-resolution fills it in for the clone instead. It is still
+        available via explicit selective sync (temperature_climate_sensors
+        category), so it also lives in SYNC_CATEGORIES; that intentional
+        dual-membership is exempted in
+        ``test_shared_options_excluded_not_in_sync_categories``.
         """
         assert (
-            frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
+            frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID, CONF_TEMP_ENTITY})
             == _SHARED_OPTIONS_EXCLUDED
         )
 
@@ -171,11 +180,21 @@ class TestSyncCoverage:
     def test_shared_options_excluded_not_in_sync_categories(self):
         """Per-window excluded keys must not appear in SYNC_CATEGORIES either.
 
-        These keys are intentionally skipped in both flows; putting them in
-        SYNC_CATEGORIES would be contradictory.
+        These keys are intentionally skipped in the blanket Duplicate flow;
+        putting them in SYNC_CATEGORIES would normally be contradictory.
+
+        CONF_TEMP_ENTITY (issue #786) is the one deliberate exception: it is
+        excluded from Duplicate (a clone should not inherit the source room's
+        indoor temperature sensor — area auto-resolution fills it in) yet stays
+        in the temperature_climate_sensors category so a user can still copy it
+        via explicit selective sync. Those are two distinct user actions, so
+        the dual-membership is intentional.
         """
         all_sync_keys = frozenset().union(*SYNC_CATEGORIES.values())
-        overlap = _SHARED_OPTIONS_EXCLUDED & all_sync_keys
+        _INTENTIONAL_DUAL_MEMBERSHIP = frozenset({CONF_TEMP_ENTITY})
+        overlap = (
+            _SHARED_OPTIONS_EXCLUDED & all_sync_keys
+        ) - _INTENTIONAL_DUAL_MEMBERSHIP
 
         assert not overlap, (
             f"Keys in _SHARED_OPTIONS_EXCLUDED are also in SYNC_CATEGORIES: {sorted(overlap)}.\n"

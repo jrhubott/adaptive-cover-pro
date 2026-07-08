@@ -25,9 +25,11 @@ from .const import (
     BLANK_TIME,
     BLIND_SPOT_ELEV_MODE_ABOVE,
     BLIND_SPOT_SLOTS,
+    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     LIGHT_CLOUD_SENSOR_KEYS,
     WEATHER_OVERRIDE_SENSOR_KEYS,
+    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BUILDING_PROFILE_ID,
@@ -1449,6 +1451,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "rules.climate": ("🌡️ Climate mode: adjusts strategy for heating/cooling{detail}"),
     "climate.comfort_range": "comfort range {lo}–{hi}°C",
     "climate.using": "using {entity}",
+    "climate.using_area": "using area temperature sensor",
     "climate.outside_thresh": "outside: {entity} > {thresh}°C",
     "climate.outside": "outside: {entity}",
     "climate.weather": "weather: {entity}",
@@ -2239,6 +2242,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
         if temp_entity:
             cl_parts.append(L["climate.using"].format(entity=temp_entity))
+        elif config.get(
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA, DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA
+        ):
+            # No explicit sensor but area auto-resolution is on (#786): the
+            # effective sensor comes from the cover's HA area at runtime.
+            cl_parts.append(L["climate.using_area"])
         outside = config.get(CONF_OUTSIDETEMP_ENTITY)
         if outside:
             out_thresh = config.get(CONF_OUTSIDE_THRESHOLD)
@@ -2750,7 +2759,9 @@ async def _get_device_name_for_entity(
     return device_entry.name_by_user or device_entry.name or None
 
 
-_SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
+_SHARED_OPTIONS_EXCLUDED = frozenset(
+    {CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID, CONF_TEMP_ENTITY}
+)
 
 # Maps each syncable category (matching options menu names) to its config keys.
 # Used by the sync flow to let users choose which setting groups to copy.
@@ -2986,6 +2997,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "temperature_climate_values": frozenset(
         {
             CONF_CLIMATE_MODE,
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
             CONF_TEMP_LOW,
             CONF_TEMP_HIGH,
             CONF_OUTSIDE_THRESHOLD,
@@ -3007,6 +3019,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "temperature_climate": frozenset(
         {
             CONF_CLIMATE_MODE,
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
             CONF_TEMP_ENTITY,
             CONF_TEMP_LOW,
             CONF_TEMP_HIGH,
@@ -3036,6 +3049,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IS_SUNNY_TEMPLATE,
             CONF_IS_SUNNY_TEMPLATE_MODE,
             CONF_CLIMATE_MODE,
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
             CONF_TEMP_ENTITY,
             CONF_TEMP_LOW,
             CONF_TEMP_HIGH,

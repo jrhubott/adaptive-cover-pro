@@ -532,6 +532,17 @@ CONF_WINTER_CLOSE_INSULATION = "winter_close_insulation"
 # True to let summer climate-close ignore the sun-in-FOV min floor
 # (min_position_sun_tracking) and reach the global min_position instead.
 CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR = "summer_close_bypass_sun_floor"
+# When no explicit CONF_TEMP_ENTITY is set, fall back to the cover's HA area
+# configured temperature entity (issue #786). Defaults True (opt-out).
+CONF_AUTO_RESOLVE_TEMP_FROM_AREA = "auto_resolve_temp_from_area"
+DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA = True
+
+# Repair issue id (issue_registry) raised when the effective indoor temperature
+# sensor stays unavailable/missing beyond the debounce window (issue #786).
+ISSUE_TEMP_SENSOR_UNAVAILABLE = "temp_sensor_unavailable"
+# Generous debounce so integration restarts / device re-adds don't nag before
+# a genuinely dead sensor is flagged.
+DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0
 
 STRATEGY_MODE_BASIC = "basic"  # geometry only, no climate inputs
 STRATEGY_MODE_CLIMATE = "climate"  # climate-aware (temps/presence/weather)

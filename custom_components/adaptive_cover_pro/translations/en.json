@@ -1,5 +1,11 @@
 {
   "title": "Adaptive Cover Pro",
+  "issues": {
+    "temp_sensor_unavailable": {
+      "title": "Indoor temperature sensor unavailable",
+      "description": "The indoor temperature sensor `{entity_id}` used by climate mode on **{name}** has been unavailable for a while. Climate decisions may be running without a current indoor reading. Check that the sensor's device is online, or set a different sensor (or turn off area auto-resolution) in the cover's Temperature & Climate options."
+    }
+  },
   "config": {
     "step": {
       "user": {
@@ -690,6 +696,7 @@
         "data": {
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
+          "auto_resolve_temp_from_area": "Auto-resolve temperature sensor from area",
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
@@ -704,6 +711,7 @@
         "data_description": {
           "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
           "temp_entity": "A climate thermostat or temperature sensor that measures the indoor temperature used to determine the current season (winter/summer/intermediate). Required when climate mode is enabled.",
+          "auto_resolve_temp_from_area": "When no inside temperature entity is set above, fall back to the temperature sensor configured on this cover's Home Assistant area. Lets you duplicate a cover across rooms without picking a sensor for each. The explicit entity above always wins. Turn off to leave the sensor unset when none is chosen.",
           "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
@@ -1534,6 +1542,7 @@
         "data": {
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
+          "auto_resolve_temp_from_area": "Auto-resolve temperature sensor from area",
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
@@ -1548,6 +1557,7 @@
         "data_description": {
           "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
           "temp_entity": "A climate thermostat or temperature sensor that measures the indoor temperature used to determine the current season (winter/summer/intermediate). Required when climate mode is enabled.",
+          "auto_resolve_temp_from_area": "When no inside temperature entity is set above, fall back to the temperature sensor configured on this cover's Home Assistant area. Lets you duplicate a cover across rooms without picking a sensor for each. The explicit entity above always wins. Turn off to leave the sensor unset when none is chosen.",
           "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain. **Value is interpreted in the configured temperature sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",

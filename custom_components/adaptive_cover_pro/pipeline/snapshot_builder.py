@@ -28,6 +28,7 @@ from collections.abc import Callable
 from homeassistant.const import ATTR_FRIENDLY_NAME
 
 from ..const import (
+    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
@@ -35,6 +36,7 @@ from ..const import (
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_TIME,
+    CONF_DEVICE_ID,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
@@ -73,6 +75,7 @@ from ..const import (
     CONF_WEATHER_STATE,
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
+    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
@@ -172,6 +175,13 @@ class PipelineSnapshotBuilder:
         )
         return self._climate_provider.read(
             temp_entity=options.get(CONF_TEMP_ENTITY),
+            temp_device_id=options.get(CONF_DEVICE_ID),
+            auto_resolve_temp_from_area=bool(
+                options.get(
+                    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
+                    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
+                )
+            ),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
             presence_template=options.get(CONF_PRESENCE_TEMPLATE),

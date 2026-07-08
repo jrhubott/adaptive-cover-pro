@@ -106,6 +106,7 @@
   "climate": {
     "comfort_range": "comfort range {lo}–{hi}°C",
     "using": "using {entity}",
+    "using_area": "using area temperature sensor",
     "outside_thresh": "outside: {entity} > {thresh}°C",
     "outside": "outside: {entity}",
     "weather": "weather: {entity}",

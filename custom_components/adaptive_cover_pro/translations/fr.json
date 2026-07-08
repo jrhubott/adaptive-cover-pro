@@ -1,5 +1,11 @@
 {
   "title": "Adaptive Cover Pro",
+  "issues": {
+    "temp_sensor_unavailable": {
+      "title": "Capteur de température intérieure indisponible",
+      "description": "Le capteur de température intérieure `{entity_id}` utilisé par le mode climatique sur **{name}** est indisponible depuis un moment. Les décisions climatiques s'exécutent peut-être sans relevé intérieur à jour. Vérifiez que l'appareil du capteur est en ligne, ou choisissez un autre capteur (ou désactivez la résolution automatique depuis la zone) dans les options Température et Climat de la couverture."
+    }
+  },
   "config": {
     "step": {
       "user": {
@@ -660,6 +666,7 @@
         "data": {
           "climate_mode": "Activer le mode climatique",
           "temp_entity": "Entité de température intérieure",
+          "auto_resolve_temp_from_area": "Résoudre automatiquement le capteur de température depuis la zone",
           "temp_low": "Seuil de température basse",
           "temp_high": "Seuil de température haute",
           "outside_temp": "Capteur de température extérieure (optionnel)",
@@ -674,6 +681,7 @@
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
           "temp_entity": "Un thermostat ou capteur de température mesurant la température intérieure utilisée pour déterminer la saison actuelle (hiver/été/intermédiaire). Requis quand le mode climatique est activé.",
+          "auto_resolve_temp_from_area": "Quand aucune entité de température intérieure n'est définie ci-dessus, utiliser en repli le capteur de température configuré sur la zone Home Assistant de cette couverture. Cela permet de dupliquer une couverture entre plusieurs pièces sans choisir un capteur pour chacune. L'entité ci-dessus est toujours prioritaire. Désactiver pour laisser le capteur non défini si aucun n'est choisi.",
           "temp_low": "Température intérieure (ou extérieure, si un capteur extérieur est configuré) en dessous de laquelle la saison est traitée comme l'hiver. En hiver, la protection s'ouvre complètement quand le soleil frappe la fenêtre pour capter la chaleur solaire. **La valeur est interprétée dans l'unité du capteur de température configuré, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "temp_high": "Température intérieure (ou extérieure, si un capteur extérieur est configuré) au-dessus de laquelle la saison est traitée comme l'été — pourvu que le seuil extérieur soit également dépassé. En été, la protection se ferme pour bloquer les gains de chaleur. **La valeur est interprétée dans l'unité du capteur de température configuré, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "outside_temp": "Capteur de température extérieure optionnel. Quand configuré, cette valeur (plutôt que le capteur intérieur) détermine la saison actuelle, et le seuil extérieur est appliqué pour éviter que le store se ferme comme en été lors d'une journée intérieure chaude mais extérieure froide.",
@@ -1482,6 +1490,7 @@
         "data": {
           "climate_mode": "Activer le mode climatique",
           "temp_entity": "Entité de température intérieure",
+          "auto_resolve_temp_from_area": "Résoudre automatiquement le capteur de température depuis la zone",
           "temp_low": "Seuil de température basse",
           "temp_high": "Seuil de température haute",
           "outside_temp": "Capteur de température extérieure (optionnel)",
@@ -1496,6 +1505,7 @@
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
           "temp_entity": "Un thermostat ou capteur de température mesurant la température intérieure utilisée pour déterminer la saison actuelle (hiver/été/intermédiaire). Requis quand le mode climatique est activé.",
+          "auto_resolve_temp_from_area": "Quand aucune entité de température intérieure n'est définie ci-dessus, utiliser en repli le capteur de température configuré sur la zone Home Assistant de cette couverture. Cela permet de dupliquer une couverture entre plusieurs pièces sans choisir un capteur pour chacune. L'entité ci-dessus est toujours prioritaire. Désactiver pour laisser le capteur non défini si aucun n'est choisi.",
           "temp_low": "Température intérieure (ou extérieure, si un capteur extérieur est configuré) en dessous de laquelle la saison est traitée comme l'hiver. En hiver, la protection s'ouvre complètement quand le soleil frappe la fenêtre pour capter la chaleur solaire. **La valeur est interprétée dans l'unité du capteur de température configuré, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "temp_high": "Température intérieure (ou extérieure, si un capteur extérieur est configuré) au-dessus de laquelle la saison est traitée comme l'été — pourvu que le seuil extérieur soit également dépassé. En été, la protection se ferme pour bloquer les gains de chaleur. **La valeur est interprétée dans l'unité du capteur de température configuré, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "outside_temp": "Capteur de température extérieure optionnel. Quand configuré, cette valeur (plutôt que le capteur intérieur) détermine la saison actuelle, et le seuil extérieur est appliqué pour éviter que le store se ferme comme en été lors d'une journée intérieure chaude mais extérieure froide.",

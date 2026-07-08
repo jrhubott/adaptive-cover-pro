@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_BLIND_SPOT_ELEVATION,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
+    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
@@ -955,6 +956,42 @@ def test_climate_mode_shown():
     assert "16" in summary
     assert "24" in summary
     assert "sensor.temp" in summary
+
+
+def test_climate_line_shows_area_resolved_sensor():
+    """With no explicit temp sensor and auto-resolve on, the climate line notes
+    the sensor is taken from the cover's area (issue #786).
+    """
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW: 16,
+        CONF_TEMP_HIGH: 24,
+        # No CONF_TEMP_ENTITY; auto-resolve defaults on.
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "area temperature sensor" in summary
+    assert "using sensor." not in summary
+
+
+def test_climate_line_area_resolve_suppressed_when_explicit_sensor():
+    """An explicit temp sensor takes precedence — no area note."""
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_ENTITY: "sensor.explicit",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "sensor.explicit" in summary
+    assert "area temperature sensor" not in summary
+
+
+def test_climate_line_no_area_note_when_auto_resolve_disabled():
+    """Auto-resolve off and no explicit sensor → no area note."""
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_AUTO_RESOLVE_TEMP_FROM_AREA: False,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "area temperature sensor" not in summary
 
 
 def test_climate_weather_entity_shown():

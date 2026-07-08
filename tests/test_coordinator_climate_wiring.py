@@ -19,10 +19,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_DEVICE_ID,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
@@ -304,6 +306,8 @@ class TestClimateProviderApiCoverage:
     # These map from options key → read() kwarg name (non-obvious mappings).
     _OPTIONS_TO_READ_KWARG = {
         CONF_TEMP_ENTITY: "temp_entity",
+        CONF_DEVICE_ID: "temp_device_id",
+        CONF_AUTO_RESOLVE_TEMP_FROM_AREA: "auto_resolve_temp_from_area",
         CONF_OUTSIDETEMP_ENTITY: "outside_entity",
         CONF_PRESENCE_ENTITY: "presence_entity",
         CONF_WEATHER_ENTITY: "weather_entity",
@@ -359,6 +363,8 @@ class TestClimateProviderApiCoverage:
         # Build options from the canonical options→kwarg map
         options = {
             CONF_TEMP_ENTITY: "sensor.temp",
+            CONF_DEVICE_ID: "device_abc",
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA: True,
             CONF_OUTSIDETEMP_ENTITY: "sensor.outside",
             CONF_PRESENCE_ENTITY: "binary_sensor.pres",
             CONF_WEATHER_ENTITY: "weather.home",

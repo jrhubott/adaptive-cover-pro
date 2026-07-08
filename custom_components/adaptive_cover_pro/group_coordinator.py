@@ -36,7 +36,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_STOP_COVER, Platform
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -71,6 +70,7 @@ from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
 from .pipeline.types import GroupIntent
+from .state.area_resolver import device_area_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -118,17 +118,19 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
     # ---- Roster resolution ------------------------------------------------ #
 
     def _entity_area_id(self, entity_id: str) -> str | None:
-        """Return the entity's area — its own, or inherited from its device."""
+        """Return the entity's area — its own, or inherited from its device.
+
+        The device→area hop delegates to the shared
+        :func:`state.area_resolver.device_area_id` helper so the registry
+        lookup lives in exactly one place (also used by the area-based temp
+        sensor resolver, issue #786).
+        """
         reg_entry = er.async_get(self.hass).async_get(entity_id)
         if reg_entry is None:
             return None
         if reg_entry.area_id:
             return reg_entry.area_id
-        if reg_entry.device_id:
-            device = dr.async_get(self.hass).async_get(reg_entry.device_id)
-            if device is not None:
-                return device.area_id
-        return None
+        return device_area_id(self.hass, reg_entry.device_id)
 
     def _cover_entities_in_area(self, area_id: str) -> list[str]:
         """Every ``cover.`` entity in the area (own or device-inherited)."""

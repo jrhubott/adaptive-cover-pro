@@ -106,6 +106,7 @@
   "climate": {
     "comfort_range": "plage de confort {lo}–{hi}°C",
     "using": "utilisant {entity}",
+    "using_area": "utilisant le capteur de température de la zone",
     "outside_thresh": "extérieur : {entity} > {thresh}°C",
     "outside": "extérieur : {entity}",
     "weather": "météo : {entity}",
