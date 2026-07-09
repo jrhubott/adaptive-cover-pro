@@ -447,6 +447,85 @@ class TestForecastToAttrs:
         ]
 
 
+class TestForecastSecondaryAxes:
+    """ForecastSample carries a generic secondary-axis map (issue #724).
+
+    The primary ``position`` scalar is unchanged; multi-axis covers (venetian)
+    project their non-primary axes into ``axes`` keyed by ``CoverAxis.name``.
+    ``to_attrs()`` spreads the map additively so single-axis covers emit a
+    byte-identical wire shape.
+    """
+
+    def test_sample_defaults_to_no_secondary_axes(self):
+        assert ForecastSample(t=_NOW, position=40, handler="default").axes == {}
+
+    def test_to_attrs_spreads_secondary_axes_additively(self):
+        f = Forecast(
+            samples=(
+                ForecastSample(t=_NOW, position=55, handler="solar", axes={"tilt": 30}),
+                ForecastSample(t=_NOW, position=40, handler="default"),
+            ),
+            events=(),
+        )
+        attrs = f.to_attrs()
+        # Non-empty axes → the secondary key is spread into the sample dict.
+        assert attrs["forecast"][0] == {
+            "t": _NOW.isoformat(),
+            "position": 55,
+            "handler": "solar",
+            "tilt": 30,
+        }
+        # Empty axes → no extra keys (byte-identical to the pre-#724 shape).
+        assert attrs["forecast"][1] == {
+            "t": _NOW.isoformat(),
+            "position": 40,
+            "handler": "default",
+        }
+
+    def test_solar_samples_get_secondary_axes_from_factory(self):
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
+            config=_make_config(),
+            policy=_make_policy(),
+            now=_NOW,
+            secondary_axis_factory=lambda pos, azi, ele, t: {"tilt": 30},
+        )
+        solar = [s for s in f.samples if s.handler == "solar"]
+        assert solar  # at least one solar sample was produced
+        assert all(s.axes == {"tilt": 30} for s in solar)
+
+    def test_default_samples_have_no_secondary_axes(self):
+        # A stub factory that would raise if the default branch ever calls it.
+        def _boom(pos, azi, ele, t):  # noqa: ARG001
+            raise AssertionError("factory must not run on default samples")
+
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(),
+            policy=_make_policy(),
+            now=_NOW,
+            secondary_axis_factory=_boom,
+        )
+        assert f.samples
+        assert all(s.axes == {} for s in f.samples)
+
+    def test_no_factory_yields_empty_axes(self):
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
+            config=_make_config(),
+            policy=_make_policy(),
+            now=_NOW,
+        )
+        assert f.samples
+        assert all(s.axes == {} for s in f.samples)
+
+
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
@@ -948,6 +1027,78 @@ class TestForecastShimEndOfWindow:
         _, kwargs = spy.call_args
         assert kwargs["end_of_window_pos"] is None
         assert kwargs["end_of_window_time"] is None
+
+
+class TestForecastShimSecondaryAxes:
+    """build_forecast_for_coord builds the secondary-axis factory from the policy hook (#724).
+
+    The shim never asks "is this venetian" — it wires ``policy.forecast_secondary_axes``
+    into a closure and passes it as ``secondary_axis_factory``. Single-axis
+    policies inherit the base no-op, so the same closure returns ``{}``.
+    """
+
+    def _stub_coord(self, *, policy):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+        coord.config_entry = MagicMock()
+        coord.config_entry.options = {}
+        coord.logger = MagicMock()
+        coord.hass = MagicMock()
+        coord.hass.config.time_zone = "UTC"
+        sun_data = _make_sun_data()
+        coord._sun_provider = MagicMock()
+        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
+        coord._config_service = MagicMock()
+        coord._config_service.get_common_data = MagicMock(return_value=_make_config())
+        coord._policy = policy
+        coord._snapshot = MagicMock()
+        coord._snapshot.cover_capabilities = {}
+        coord._time_mgr = MagicMock()
+        coord._time_mgr.end_time = None
+        return coord, sun_data
+
+    def _run(self, coord):
+        from custom_components.adaptive_cover_pro import forecast as fc_mod
+
+        spy = MagicMock(return_value=MagicMock(name="Forecast"))
+        with patch.object(fc_mod, "build_forecast", spy):
+            fc_mod.build_forecast_for_coord(coord)
+        return spy
+
+    def test_shim_passes_secondary_axis_factory_for_venetian(self):
+        policy = MagicMock()
+        policy.position_axis_supported = MagicMock(return_value=False)
+        policy.forecast_secondary_axes = MagicMock(return_value={"tilt": 30})
+        coord, sun_data = self._stub_coord(policy=policy)
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        factory = kwargs["secondary_axis_factory"]
+        assert factory is not None
+        # Calling the closure routes straight to policy.forecast_secondary_axes.
+        assert factory(55, 180.0, 45.0, _NOW) == {"tilt": 30}
+        policy.forecast_secondary_axes.assert_called_once()
+        call_kwargs = policy.forecast_secondary_axes.call_args.kwargs
+        assert call_kwargs["position"] == 55
+        assert call_kwargs["sol_azi"] == 180.0
+        assert call_kwargs["sol_elev"] == 45.0
+        assert call_kwargs["sun_data"] is sun_data
+        assert call_kwargs["config_service"] is coord._config_service
+        assert "minimize_movements" in call_kwargs
+        assert "max_coverage_steps" in call_kwargs
+
+    def test_shim_single_axis_policy_still_passes_factory_returning_empty(self):
+        policy = MagicMock()
+        policy.position_axis_supported = MagicMock(return_value=False)
+        policy.forecast_secondary_axes = MagicMock(return_value={})
+        coord, _ = self._stub_coord(policy=policy)
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        factory = kwargs["secondary_axis_factory"]
+        assert factory is not None
+        assert factory(40, 0.0, 0.0, _NOW) == {}
 
 
 # ---------------------------------------------------------------------------

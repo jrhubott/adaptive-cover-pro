@@ -1210,3 +1210,145 @@ class TestVenetianApplyUserTilt:
         ]
         assert len(tilt_calls) == 1, f"expected one tilt call, got {tilt_calls}"
         assert tilt_calls[0].args[2]["tilt_position"] == 90
+
+
+class TestVenetianForecastSecondaryAxes:
+    """VenetianPolicy.forecast_secondary_axes projects the tilt track (#724).
+
+    The forecast hook reuses the same ``_compose_tilt`` seam the live
+    ``post_pipeline_resolve`` runs, so the projected slat angle matches what
+    the cover is actually commanded to at runtime — no duplicated tilt math.
+    """
+
+    def _kwargs(self, **overrides):
+        from tests.cover_helpers import (
+            make_cover_config,
+            make_tilt_config,
+            make_vertical_config,
+        )
+
+        svc = MagicMock()
+        svc.get_vertical_data.return_value = make_vertical_config()
+        svc.get_tilt_data.return_value = make_tilt_config()
+        sun_data = MagicMock()
+        sun_data.timezone = "UTC"
+        kw = {
+            "position": 50,
+            "logger": MagicMock(),
+            "sol_azi": 180.0,
+            "sol_elev": 45.0,
+            "sun_data": sun_data,
+            "config": make_cover_config(),
+            "config_service": svc,
+            "options": {},
+            "minimize_movements": False,
+            "max_coverage_steps": 1,
+        }
+        kw.update(overrides)
+        return kw
+
+    def test_forecast_secondary_axes_returns_tilt_keyed_by_axis_name(self):
+        from custom_components.adaptive_cover_pro.engine.covers import (
+            VenetianCoverCalculation,
+        )
+
+        policy = VenetianPolicy()
+        kw = self._kwargs()
+        result = policy.forecast_secondary_axes(**kw)
+
+        # Keyed by the tilt axis's name (self.axes[1].name == "tilt"), not a
+        # hardcoded literal in the forecast layer.
+        assert set(result) == {policy.axes[1].name}
+        # Value equals the raw engine seam for the identical inputs (parity with
+        # VenetianCoverCalculation.tilt_for_position).
+        calc = VenetianCoverCalculation(
+            config=kw["config"],
+            vert_config=kw["config_service"].get_vertical_data(kw["options"]),
+            tilt_config=kw["config_service"].get_tilt_data(kw["options"]),
+            sun_data=kw["sun_data"],
+            sol_azi=kw["sol_azi"],
+            sol_elev=kw["sol_elev"],
+            logger=kw["logger"],
+        )
+        assert result[policy.axes[1].name] == calc.tilt_for_position(kw["position"])
+
+    def test_forecast_tilt_honors_minimize_movements_quantize(self, monkeypatch):
+        from custom_components.adaptive_cover_pro.engine.covers import (
+            VenetianCoverCalculation,
+        )
+
+        # Force a known intermediate slat angle so the quantize is observable.
+        monkeypatch.setattr(
+            VenetianCoverCalculation,
+            "tilt_for_position",
+            lambda self, position: 70,
+        )
+        policy = VenetianPolicy()
+        result = policy.forecast_secondary_axes(
+            **self._kwargs(minimize_movements=True, max_coverage_steps=1)
+        )
+        # N=1 with full-coverage-at-zero → slats fully closed (tilt 0).
+        assert result["tilt"] == 0
+
+    def test_compose_tilt_matches_post_pipeline_resolve(self):
+        """The forecast tilt equals what post_pipeline_resolve puts on result.tilt.
+
+        Proves both paths flow through the single ``_compose_tilt`` seam — the
+        projected track never diverges from the live decision.
+        """
+        from custom_components.adaptive_cover_pro.const import ControlMethod
+        from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+        policy = VenetianPolicy()
+        kw = self._kwargs(position=50)
+        forecast_tilt = policy.forecast_secondary_axes(**kw)[policy.axes[1].name]
+
+        cover = MagicMock()
+        cover.direct_sun_valid = True
+        live = policy.post_pipeline_resolve(
+            PipelineResult(
+                position=50, control_method=ControlMethod.SOLAR, reason="test"
+            ),
+            logger=kw["logger"],
+            sol_azi=kw["sol_azi"],
+            sol_elev=kw["sol_elev"],
+            sun_data=kw["sun_data"],
+            config=kw["config"],
+            config_service=kw["config_service"],
+            options=kw["options"],
+            cover=cover,
+        )
+        assert forecast_tilt == live.tilt
+
+    def test_compose_tilt_matches_post_pipeline_resolve_with_quantize(self):
+        """Parity must also hold under minimize-movements quantization."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_MAX_COVERAGE_STEPS,
+            CONF_MINIMIZE_MOVEMENTS,
+            ControlMethod,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+        policy = VenetianPolicy()
+        options = {CONF_MINIMIZE_MOVEMENTS: True, CONF_MAX_COVERAGE_STEPS: 2}
+        kw = self._kwargs(
+            position=50, minimize_movements=True, max_coverage_steps=2, options=options
+        )
+        forecast_tilt = policy.forecast_secondary_axes(**kw)[policy.axes[1].name]
+
+        cover = MagicMock()
+        cover.direct_sun_valid = True
+        live = policy.post_pipeline_resolve(
+            PipelineResult(
+                position=50, control_method=ControlMethod.SOLAR, reason="test"
+            ),
+            logger=kw["logger"],
+            sol_azi=kw["sol_azi"],
+            sol_elev=kw["sol_elev"],
+            sun_data=kw["sun_data"],
+            config=kw["config"],
+            config_service=kw["config_service"],
+            options=options,
+            cover=cover,
+        )
+        assert forecast_tilt == live.tilt

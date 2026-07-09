@@ -182,6 +182,36 @@ class TestPolicyAxesDeclarations:
         assert get_policy("cover_awning").axes[0].open_blocks_sun is True
 
 
+class TestForecastSecondaryAxesHook:
+    """The polymorphic forecast secondary-axis hook (issue #724).
+
+    Single-axis covers inherit the base no-op returning ``{}`` — the forecast
+    loop asks the hook rather than branching on the cover-type string.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "cover_type",
+        ["cover_blind", "cover_awning", "cover_tilt", "cover_louvered_roof"],
+    )
+    def test_single_axis_policy_returns_no_secondary_axes(self, cover_type):
+        from unittest.mock import MagicMock
+
+        result = get_policy(cover_type).forecast_secondary_axes(
+            position=50,
+            logger=MagicMock(),
+            sol_azi=180.0,
+            sol_elev=30.0,
+            sun_data=MagicMock(),
+            config=MagicMock(),
+            config_service=MagicMock(),
+            options={},
+            minimize_movements=False,
+            max_coverage_steps=1,
+        )
+        assert result == {}
+
+
 # ---------------------------------------------------------------------------
 # select_default_axis — parity with the legacy should_use_tilt routing rule
 # ---------------------------------------------------------------------------

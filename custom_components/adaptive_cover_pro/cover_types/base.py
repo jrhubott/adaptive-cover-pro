@@ -348,6 +348,32 @@ class CoverTypePolicy(ABC):
         """Enrich the pipeline result. Default: identity."""
         return result
 
+    def forecast_secondary_axes(
+        self,
+        *,
+        position: int,  # noqa: ARG002
+        logger,  # noqa: ARG002
+        sol_azi: float,  # noqa: ARG002
+        sol_elev: float,  # noqa: ARG002
+        sun_data,  # noqa: ARG002
+        config,  # noqa: ARG002
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,  # noqa: ARG002
+        minimize_movements: bool,  # noqa: ARG002
+        max_coverage_steps: int,  # noqa: ARG002
+    ) -> dict[str, int]:
+        """Project this cover's non-primary axes at one forecast step (#724).
+
+        The forecast loop calls this alongside the primary ``position`` on each
+        *solar* sample and carries the result in ``ForecastSample.axes`` (keyed
+        by ``CoverAxis.name``). Single-axis covers have no secondary axis to
+        project, so the Liskov-safe default returns an empty map — the forecast
+        asks this polymorphic hook rather than branching on the cover type.
+        Multi-axis policies (venetian) override it, reusing the same tilt math
+        the live path runs so the projected track matches runtime.
+        """
+        return {}
+
     def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
         """Extra kwargs for ``PositionContext``. Default: empty."""
         return {}

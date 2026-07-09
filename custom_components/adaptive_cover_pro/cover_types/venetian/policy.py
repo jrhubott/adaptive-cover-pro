@@ -538,6 +538,84 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return True
         return cover is None or not cover.direct_sun_valid
 
+    def _compose_tilt(
+        self,
+        position: int,
+        *,
+        logger,
+        sol_azi: float,
+        sol_elev: float,
+        sun_data,
+        config,
+        config_service: ConfigurationService,
+        options: dict,
+        minimize_movements: bool,
+        max_coverage_steps: int,
+    ) -> tuple[int, VenetianCoverCalculation]:
+        """Single source of truth for the engine slat angle + minimize quantize.
+
+        Builds the tilt engine, computes the slat angle for ``position``, and
+        applies the movement-minimization quantize (the tilt axis closes at 0%,
+        so full coverage is at zero). Returns ``(tilt, venetian_calc)`` so the
+        live ``post_pipeline_resolve`` can still merge the tilt engine's raw
+        trace (#682) and the forecast hook can take just the scalar. BOTH the
+        live path and the projected forecast flow through this one method, so
+        the tilt geometry never diverges between them (CODING_GUIDELINES.md
+        "No Code Duplication").
+        """
+        venetian_calc = VenetianCoverCalculation(
+            config=config,
+            vert_config=config_service.get_vertical_data(options),
+            tilt_config=config_service.get_tilt_data(options),
+            sun_data=sun_data,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            logger=logger,
+        )
+        tilt = venetian_calc.tilt_for_position(position)
+        if minimize_movements:
+            tilt = PositionConverter.quantize_to_coverage_steps(
+                tilt,
+                max_coverage_steps,
+                full_coverage_at_zero=not self.axes[1].open_blocks_sun,
+            )
+        return tilt, venetian_calc
+
+    def forecast_secondary_axes(
+        self,
+        *,
+        position: int,
+        logger,
+        sol_azi: float,
+        sol_elev: float,
+        sun_data,
+        config,
+        config_service: ConfigurationService,
+        options: dict,
+        minimize_movements: bool,
+        max_coverage_steps: int,
+    ) -> dict[str, int]:
+        """Project the slat tilt that pairs with ``position`` (#724).
+
+        Delegates to the shared :meth:`_compose_tilt` seam so the forecast
+        strip's tilt track matches the live cover exactly. Returns the tilt
+        keyed by the tilt axis's ``name`` (``self.axes[1].name`` — no hardcoded
+        ``"tilt"`` literal), which the forecast serializer spreads additively.
+        """
+        tilt, _ = self._compose_tilt(
+            position,
+            logger=logger,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            sun_data=sun_data,
+            config=config,
+            config_service=config_service,
+            options=options,
+            minimize_movements=minimize_movements,
+            max_coverage_steps=max_coverage_steps,
+        )
+        return {self.axes[1].name: tilt}
+
     def post_pipeline_resolve(
         self,
         result: PipelineResult,
@@ -604,16 +682,26 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             self._clear_last_tilt()
             return replace(result, tilt=None)
 
-        venetian_calc = VenetianCoverCalculation(
-            config=config,
-            vert_config=config_service.get_vertical_data(options),
-            tilt_config=config_service.get_tilt_data(options),
-            sun_data=sun_data,
+        # Compose the engine slat angle (+ movement-minimization quantize) via
+        # the shared seam the forecast hook also uses, so the projected tilt
+        # track and the live tilt never diverge. The returned ``venetian_calc``
+        # carries the transient tilt trace the live-only #682 merge needs.
+        tilt, venetian_calc = self._compose_tilt(
+            result.position,
+            logger=logger,
             sol_azi=sol_azi,
             sol_elev=sol_elev,
-            logger=logger,
+            sun_data=sun_data,
+            config=config,
+            config_service=config_service,
+            options=options,
+            minimize_movements=bool(
+                options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
+            ),
+            max_coverage_steps=int(
+                options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+            ),
         )
-        tilt = venetian_calc.tilt_for_position(result.position)
         # Issue #682: merge the (otherwise transient) tilt engine's raw trace into
         # the position engine's _last_calc_details under a `tilt` sub-key so the
         # live solar_calculation sensor and the diagnostics download surface BOTH
@@ -625,16 +713,6 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         cover_trace = getattr(cover, "_last_calc_details", None)
         if isinstance(cover_trace, dict) and tilt_trace is not None:
             cover_trace[TRACE_KEY_TILT] = tilt_trace
-        # Movement minimization: quantize the slat tilt into the same number of
-        # discrete coverage levels as the carriage position (which the solar
-        # branch already quantized). The tilt axis closes at 0%, so full coverage
-        # is at zero. N=1 → slats fully closed while the sun is in the FOV.
-        if options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS):
-            tilt = PositionConverter.quantize_to_coverage_steps(
-                tilt,
-                int(options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)),
-                full_coverage_at_zero=not self.axes[1].open_blocks_sun,
-            )
         position = result.position
         trace = list(result.decision_trace)
 

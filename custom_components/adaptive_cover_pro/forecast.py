@@ -16,7 +16,7 @@ and roughly where will the cover sit through the rest of the day?*
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from collections.abc import Callable
@@ -49,13 +49,29 @@ if TYPE_CHECKING:
     from .sun import SunData
 
 
+# Closure that projects a cover-type's non-primary axes at one forecast step.
+# Mirrors the ``cover_factory`` decoupling: the pure sample loop stays free of
+# ``config_service``/``options``/policy plumbing and is trivially stub-testable.
+#   (position, sol_azi, sol_elev, t) -> {axis_name: value}
+# ``t`` is passed for signature symmetry / future time-dependent axes even
+# though venetian tilt is a pure function of the sun geometry + position.
+SecondaryAxisFactory = Callable[[int, float, float, datetime], dict[str, int]]
+
+
 @dataclass(frozen=True, slots=True)
 class ForecastSample:
-    """One (time, position) pair on the forecast strip."""
+    """One (time, position [+ secondary axes]) point on the forecast strip.
+
+    ``position`` is the primary-axis target (the stable wire contract older
+    cards read). ``axes`` carries any non-primary axis projections for
+    multi-axis covers (venetian tilt today), keyed by ``CoverAxis.name`` —
+    empty for single-axis covers so the serialized shape is unchanged (#724).
+    """
 
     t: datetime
     position: int
     handler: str  # "solar" when direct sun is valid at t, else "default"
+    axes: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +98,14 @@ class Forecast:
         """
         return {
             "forecast": [
-                {"t": s.t.isoformat(), "position": s.position, "handler": s.handler}
+                {
+                    "t": s.t.isoformat(),
+                    "position": s.position,
+                    "handler": s.handler,
+                    # Spread the secondary-axis map additively (#724): empty for
+                    # single-axis covers → the pre-#724 keys only.
+                    **s.axes,
+                }
                 for s in self.samples
             ],
             "events": [
@@ -105,6 +128,7 @@ def build_forecast(
     floor_active: bool = True,
     end_of_window_pos: int | None = None,
     end_of_window_time: datetime | None = None,
+    secondary_axis_factory: SecondaryAxisFactory | None = None,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
@@ -136,6 +160,10 @@ def build_forecast(
     until astral sunset, then hand off to the astral sunset position — the same
     two-phase rule the live path uses (delegated to ``compute_effective_default``
     per sample). ``None``/``None`` (default) preserves today's behavior.
+
+    ``secondary_axis_factory`` (issue #724) projects a multi-axis cover's
+    non-primary axes (venetian tilt) alongside each *solar* sample. ``None``
+    (default) — or a single-axis cover — leaves every sample's ``axes`` empty.
     """
     samples = _build_samples(
         sun_data=sun_data,
@@ -148,6 +176,7 @@ def build_forecast(
         floor_active=floor_active,
         end_of_window_pos=end_of_window_pos,
         end_of_window_time=end_of_window_time,
+        secondary_axis_factory=secondary_axis_factory,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -167,6 +196,7 @@ def _build_samples(
     floor_active: bool = True,
     end_of_window_pos: int | None = None,
     end_of_window_time: datetime | None = None,
+    secondary_axis_factory: SecondaryAxisFactory | None = None,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -224,7 +254,15 @@ def _build_samples(
                 policy=policy,
                 floor_active=floor_active,
             )
-            samples.append(ForecastSample(t=t, position=pos, handler="solar"))
+            # Secondary-axis projection (#724) runs on solar samples only —
+            # mirroring the live path, where tilt is meaningful only when the
+            # solar engine drives the position with direct sun on the window.
+            axes: dict[str, int] = {}
+            if secondary_axis_factory is not None:
+                axes = secondary_axis_factory(pos, azi, ele, t)
+            samples.append(
+                ForecastSample(t=t, position=pos, handler="solar", axes=axes)
+            )
         else:
             # Sunset-aware effective default at this sample's projected time,
             # then the same limit treatment the live default branch applies.
@@ -423,6 +461,34 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
                 # No end time configured → the feature cannot fire.
                 eow_pos = None
 
+    # Read once so the value the primitives quantize with is the same one the
+    # secondary-axis closure hands the policy hook (no drift between axes).
+    minimize_movements = bool(
+        options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
+    )
+    max_coverage_steps = int(
+        options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+    )
+
+    # Secondary-axis projection (#724): build the closure from the polymorphic
+    # policy hook — the shim never branches on the cover type. Single-axis
+    # policies inherit the base no-op returning ``{}``; venetian projects tilt.
+    def make_secondary_axes(
+        position: int, azi: float, ele: float, t: datetime
+    ) -> dict[str, int]:
+        return coord._policy.forecast_secondary_axes(  # noqa: SLF001
+            position=position,
+            logger=coord.logger,
+            sol_azi=azi,
+            sol_elev=ele,
+            sun_data=sun_data,
+            config=config,
+            config_service=coord._config_service,  # noqa: SLF001
+            options=options,
+            minimize_movements=minimize_movements,
+            max_coverage_steps=max_coverage_steps,
+        )
+
     # The coverage direction the primitives need is read from the policy's
     # primary axis (single source of truth), so the shim passes the policy
     # straight through rather than precomputing full_coverage_at_zero.
@@ -432,13 +498,10 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         config=config,
         policy=coord._policy,  # noqa: SLF001
         now=dt_util.now(),
-        minimize_movements=bool(
-            options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
-        ),
-        max_coverage_steps=int(
-            options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
-        ),
+        minimize_movements=minimize_movements,
+        max_coverage_steps=max_coverage_steps,
         floor_active=not all_positionable,
         end_of_window_pos=eow_pos,
         end_of_window_time=eow_time,
+        secondary_axis_factory=make_secondary_axes,
     )
