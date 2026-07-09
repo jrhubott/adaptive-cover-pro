@@ -45,6 +45,12 @@ from .helpers import (
 )
 from .config_context_adapter import ConfigContextAdapter
 from .cover_types import CoverTypePolicy, get_policy
+from .cover_types.base import (
+    AXIS_NAME_POSITION,
+    AXIS_NAME_TILT,
+    CoverDescriptor,
+    caps_get,
+)
 from .services.configuration_service import ConfigurationService
 from .const import (
     _LOGGER,
@@ -2784,6 +2790,33 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entity_id, int(tilt), trigger=trigger, force=force
         )
 
+    async def async_apply_user_axis(
+        self,
+        entity_id: str,
+        axis_name: str,
+        value: int,
+        *,
+        trigger: str,
+        force: bool = False,
+    ) -> tuple[str, str]:
+        """Dispatch a user-initiated axis command to the matching setter (#725).
+
+        Single collapse point behind the ``set_position`` / ``set_tilt`` /
+        ``set_axes`` services: keyed on the ``AXIS_NAME_*`` constant (never a
+        cover-type string), it routes to the existing per-axis entry point so
+        each setter's force / manual-override / dispatch semantics stay
+        bit-identical. Raises ``ValueError`` for an axis name it can't route.
+        """
+        setters = {
+            AXIS_NAME_POSITION: self.async_apply_user_position,
+            AXIS_NAME_TILT: self.async_apply_user_tilt,
+        }
+        setter = setters.get(axis_name)
+        if setter is None:
+            msg = f"Unknown axis {axis_name!r} for {entity_id}"
+            raise ValueError(msg)
+        return await setter(entity_id, value, trigger=trigger, force=force)
+
     async def async_apply_user_stop(
         self,
         entity_id: str,
@@ -2799,6 +2832,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         self.manager.mark_user_command(entity_id, reason=trigger)
         return await self._cmd_svc.apply_user_stop(entity_id)
+
+    def build_axis_discovery(
+        self, labels: dict[str, str] | None = None
+    ) -> CoverDescriptor:
+        """Assemble the persistent axis/cover self-discovery descriptor (#725).
+
+        Reuses the diagnostics capability read (``read_all_capabilities`` — never
+        re-reads HA features) and rolls up per-axis ``supported`` across every
+        managed cover entity: an axis is supported if ANY member exposes it. The
+        per-axis metadata is delegated to ``policy.describe`` so the payload is
+        cover-type-agnostic — a ninth cover type needs no edit here.
+        """
+        entities = self.entities or []
+        caps_map = self._cover_provider.read_all_capabilities(entities)
+        rolled: dict[str, bool] = {}
+        for axis in self._policy.axes:
+            key = axis.capability_key
+            rolled[key] = (
+                any(caps_get(caps, key) for caps in caps_map.values())
+                if caps_map
+                else True
+            )
+        return self._policy.describe(caps=rolled, labels=labels)
 
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""

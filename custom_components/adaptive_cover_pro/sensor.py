@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import datetime as dt
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -505,6 +505,10 @@ def _control_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         "reason": diagnostics.get("control_state_reason"),
         "automatic_control_enabled": s.coordinator.automatic_control,
         "cover_type": s._cover_type,  # noqa: SLF001 — consumed by Lovelace card to flip cover-fill polarity for awnings
+        # Additive self-discovery descriptor (issue #725): full axis list +
+        # labels + ranges + per-axis supported flags. cover_type above is left
+        # untouched so older card versions are unaffected.
+        "cover_discovery": asdict(s.coordinator.build_axis_discovery()),
     }
 
     time_window = diagnostics.get("time_window", {})

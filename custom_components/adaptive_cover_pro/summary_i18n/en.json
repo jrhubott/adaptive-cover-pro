@@ -207,6 +207,10 @@
     "sliding_curtain": "Sliding Curtain",
     "louvered_roof": "Louvered Roof"
   },
+  "axes": {
+    "position": "Position",
+    "tilt": "Tilt"
+  },
   "geometry": {
     "window": {
       "tall": "{h}m tall window",

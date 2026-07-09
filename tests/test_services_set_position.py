@@ -102,6 +102,12 @@ def _make_coord(
     coord.async_apply_user_position = (
         AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
     )
+    # set_position now routes through the axis collapse point (issue #725); bind
+    # the real dispatcher so behavior tests exercise the same path production does.
+    coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
+    )
 
     return coord
 
@@ -160,6 +166,37 @@ async def test_set_tilt_service_removed_after_all_entries_unloaded(hass) -> None
 # ---------------------------------------------------------------------------
 # Wrapper coverage: thin _resolve_targets re-export
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_position_routes_through_axis_dispatch() -> None:
+    """The set_position handler dispatches on the POSITION axis constant (#725)."""
+    from custom_components.adaptive_cover_pro.cover_types.base import (
+        AXIS_NAME_POSITION,
+    )
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        async_handle_set_position,
+    )
+
+    coord = MagicMock()
+    coord.entities = ["cover.blind_a"]
+    coord.async_apply_user_axis = AsyncMock(return_value=("sent", "position"))
+    call = MagicMock()
+    call.data = {"position": 55}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_position_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_position(call)
+
+    coord.async_apply_user_axis.assert_awaited_once_with(
+        "cover.blind_a",
+        AXIS_NAME_POSITION,
+        55,
+        trigger="set_position",
+        force=False,
+    )
 
 
 def test_resolve_targets_wrapper_delegates_to_services_module() -> None:

@@ -2634,6 +2634,20 @@
           "description": "True pour activer l'automatisation des membres, false pour la désactiver."
         }
       }
+    },
+    "set_axes": {
+      "name": "Définir les axes",
+      "description": "Définit un ou plusieurs axes de contrôle (position et/ou inclinaison) sur la protection en un seul appel. Chaque axe demandé est transmis via le même chemin que set_position / set_tilt. La demande d'un axe non supporté par la protection génère une erreur. Par défaut, l'appel enclenche la dérogation manuelle ; définissez force=true pour ignorer l'engagement de la dérogation manuelle.",
+      "fields": {
+        "axes": {
+          "name": "Axes",
+          "description": "Carte des cibles d'axe — incluez uniquement les axes que vous voulez déplacer. Les clés sont « position » et/ou « tilt » ; chaque valeur est 0–100 %. Par exemple, définissez la position à 60 et l'inclinaison à 30."
+        },
+        "force": {
+          "name": "Forcer",
+          "description": "Quand vrai, ignorez l'engagement de la dérogation manuelle. Par défaut faux — les appels de service enclenchent la dérogation manuelle comme un curseur du tableau de bord."
+        }
+      }
     }
   }
 }

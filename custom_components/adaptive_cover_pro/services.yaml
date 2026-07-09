@@ -159,6 +159,38 @@ set_tilt:
       selector:
         boolean:
 
+set_axes:
+  name: Set axes
+  description: >-
+    Set one or more control axes (position and/or tilt) on the targeted covers
+    in a single call. Each requested axis is dispatched through the same path as
+    set_position / set_tilt. Requesting an axis the cover does not support raises
+    an error. By default the call engages manual override; set force=true to skip
+    manual-override engagement.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    axes:
+      name: Axes
+      description: >-
+        Map of axis targets — include only the axes you want to move. Keys are
+        "position" and/or "tilt"; each value is 0–100%. For example, set position
+        to 60 and tilt to 30.
+      required: true
+      example: '{"position": 60, "tilt": 30}'
+      selector:
+        object:
+    force:
+      name: Force
+      description: >-
+        When true, skip manual-override engagement. Default false — service calls
+        engage manual override like a dashboard slider.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 engage_manual_override:
   name: Engage manual override
   description: >-

@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_TILT_MODE,
 )
 from custom_components.adaptive_cover_pro.cover_types._summary_labels import (
+    AXIS_LABELS_EN,
     COVER_TYPE_LABELS_EN,
     GEOMETRY_LABELS_EN,
 )
@@ -139,4 +140,11 @@ def test_geometry_labels_match_en_json() -> None:
     """``summary_i18n/en.json['geometry']`` == ``GEOMETRY_LABELS_EN``."""
     en = _flatten(_en_config_summary().get("geometry", {}))
     expected = {k.removeprefix("geometry."): v for k, v in GEOMETRY_LABELS_EN.items()}
+    assert en == expected
+
+
+def test_axis_labels_match_en_json() -> None:
+    """``summary_i18n/en.json['axes']`` == ``AXIS_LABELS_EN`` (issue #725)."""
+    en = _flatten(_en_config_summary().get("axes", {}))
+    expected = {k.removeprefix("axes."): v for k, v in AXIS_LABELS_EN.items()}
     assert en == expected

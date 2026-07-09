@@ -18,7 +18,7 @@ is issue #293 and is verified in test_issue_293_force_true_auto_off.py.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -104,6 +104,12 @@ def _make_coord():
     )
     coord.async_apply_user_position = (
         AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    )
+    # set_position routes through the axis collapse point (issue #725) — bind the
+    # real dispatcher so the service still reaches async_apply_user_position.
+    coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
     )
     return coord
 

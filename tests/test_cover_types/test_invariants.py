@@ -26,7 +26,9 @@ from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
+    AxisDescriptor,
     CoverAxis,
+    CoverDescriptor,
     CoverTypePolicy,
 )
 
@@ -132,6 +134,59 @@ def test_select_default_axis_returns_cover_axis(policy: CoverTypePolicy) -> None
 def test_axes_tuple_non_empty(policy: CoverTypePolicy) -> None:
     """Every policy declares at least one axis — selecting one must be safe."""
     assert len(policy.axes) >= 1
+
+
+# ---- Discovery descriptors (issue #725) ---------------------------------- #
+
+
+@pytest.mark.unit
+def test_describe_returns_cover_descriptor(policy: CoverTypePolicy) -> None:
+    """``describe`` yields a ``CoverDescriptor`` for any conformant policy.
+
+    Base-class defaults must satisfy this for a stub fifth cover type — no
+    per-policy override required. One ``AxisDescriptor`` per declared axis,
+    each carrying the axis name as its id and ``supported=True`` under full caps.
+    """
+    caps = {CAP_HAS_SET_POSITION: True, CAP_HAS_SET_TILT_POSITION: True}
+    desc = policy.describe(caps=caps)
+    assert isinstance(desc, CoverDescriptor)
+    assert desc.cover_type == policy.cover_type
+    assert len(desc.axes) == len(policy.axes)
+    for axis_desc, axis in zip(desc.axes, policy.axes, strict=True):
+        assert isinstance(axis_desc, AxisDescriptor)
+        assert axis_desc.id == axis.name
+        assert axis_desc.supported is True
+
+
+@pytest.mark.unit
+def test_supported_axes_returns_subset(policy: CoverTypePolicy) -> None:
+    """``supported_axes`` returns a subset of declared axes; full caps → all."""
+    caps = {CAP_HAS_SET_POSITION: True, CAP_HAS_SET_TILT_POSITION: True}
+    supported = policy.supported_axes(caps)
+    assert set(supported) <= set(policy.axes)
+    assert len(supported) == len(policy.axes)
+
+
+@pytest.mark.unit
+def test_empty_axes_policy_describe_and_supported() -> None:
+    """A policy with zero axes still describes cleanly via base defaults.
+
+    Guards the Liskov contract that a hypothetical axis-less conformant policy
+    (like the virtual entry types) needs no discovery-builder edits: ``describe``
+    returns an empty axis tuple and ``supported_axes`` returns ``()``.
+    """
+
+    class _EmptyAxesPolicy(CoverTypePolicy):
+        cover_type = "cover_empty_stub"
+
+        def build_calc_engine(self, **kwargs):  # type: ignore[override]  # noqa: ARG002
+            return MagicMock()
+
+    policy = _EmptyAxesPolicy()
+    desc = policy.describe(caps={})
+    assert isinstance(desc, CoverDescriptor)
+    assert desc.axes == ()
+    assert policy.supported_axes({}) == ()
 
 
 # ---- Registry-level invariants ------------------------------------------- #

@@ -32,6 +32,7 @@ from ..const import (
     GroupScene,
 )
 from ..helpers import get_open_close_state, should_use_tilt, state_attr
+from ._summary_labels import AXIS_LABELS_EN
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
@@ -74,6 +75,13 @@ CAP_HAS_STOP = "has_stop"
 AXIS_NAME_POSITION = "position"
 AXIS_NAME_TILT = "tilt"
 
+# Numeric range + unit every controllable axis exposes today. HA cover
+# position/tilt are 0–100 %. Named here so the discovery surface (#725) and the
+# ``CoverAxis`` field defaults reference one constant instead of a bare literal.
+AXIS_VALUE_MIN = 0
+AXIS_VALUE_MAX = 100
+AXIS_VALUE_UNIT = "%"
+
 
 @dataclass(frozen=True, slots=True)
 class CoverAxis:
@@ -86,6 +94,12 @@ class CoverAxis:
     and the cover-type semantic of "what does fully-open mean". Passing a
     ``CoverAxis`` around eliminates ``cover_type == "cover_tilt"`` checks at
     call sites.
+
+    The trailing fields are self-discovery metadata (#725): ``label_key`` is
+    the i18n key for the axis's user-facing name, and ``value_min`` /
+    ``value_max`` / ``unit`` describe its numeric range. All four carry safe
+    defaults so existing ``CoverAxis`` construction sites (and Liskov-conformant
+    fifth-cover-type policies) keep working unchanged.
     """
 
     name: str
@@ -94,6 +108,10 @@ class CoverAxis:
     state_attr: str
     capability_key: str
     open_blocks_sun: bool
+    label_key: str = ""
+    value_min: int = AXIS_VALUE_MIN
+    value_max: int = AXIS_VALUE_MAX
+    unit: str = AXIS_VALUE_UNIT
 
 
 # Module-level singletons. Each policy declares ``axes`` referencing these so
@@ -109,6 +127,7 @@ POSITION_AXIS = CoverAxis(
     state_attr=STATE_ATTR_POSITION,
     capability_key=CAP_HAS_SET_POSITION,
     open_blocks_sun=False,
+    label_key="axes.position",
 )
 
 POSITION_AXIS_OPEN_BLOCKS_SUN = CoverAxis(
@@ -118,6 +137,7 @@ POSITION_AXIS_OPEN_BLOCKS_SUN = CoverAxis(
     state_attr=STATE_ATTR_POSITION,
     capability_key=CAP_HAS_SET_POSITION,
     open_blocks_sun=True,
+    label_key="axes.position",
 )
 
 TILT_AXIS = CoverAxis(
@@ -127,7 +147,41 @@ TILT_AXIS = CoverAxis(
     state_attr=STATE_ATTR_TILT_POSITION,
     capability_key=CAP_HAS_SET_TILT_POSITION,
     open_blocks_sun=False,
+    label_key="axes.tilt",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class AxisDescriptor:
+    """Self-discovery view of one axis on a specific install (issue #725).
+
+    A flattened, serialisable projection of a ``CoverAxis`` — everything a
+    consumer (the ``cover_discovery`` sensor attribute, the ``set_axes``
+    service, the companion Lovelace card) needs to render and drive an axis
+    without knowing the cover type — plus ``supported``, the per-install
+    rollup of whether the bound cover(s) actually expose the axis.
+    """
+
+    id: str
+    label: str
+    label_key: str
+    min: int
+    max: int
+    unit: str
+    capability_key: str
+    state_attr: str
+    service_attr: str
+    open_blocks_sun: bool
+    supported: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CoverDescriptor:
+    """Self-discovery view of a cover type + its axes (issue #725)."""
+
+    cover_type: str
+    cover_label: str
+    axes: tuple[AxisDescriptor, ...]
 
 
 def caps_get(caps: Any, key: str, default: bool = False) -> bool:
@@ -464,6 +518,62 @@ class CoverTypePolicy(ABC):
         if should_use_tilt(is_tilt_default, caps if caps is not None else {}):
             return TILT_AXIS
         return primary
+
+    def supported_axes(self, caps: Any) -> tuple[CoverAxis, ...]:
+        """Return the declared axes this entity's capabilities actually expose.
+
+        Single source of truth (issue #725) for both the ``set_axes`` service's
+        unsupported-axis rejection and the discovery descriptor's ``supported``
+        flag. Filters ``self.axes`` by each axis's capability flag through
+        ``caps_get`` so no hardcoded ``caps.get("has_X")`` literal leaks out.
+        """
+        return tuple(a for a in self.axes if caps_get(caps, a.capability_key))
+
+    def describe_axis(
+        self,
+        axis: CoverAxis,
+        caps: Any = None,
+        labels: dict[str, str] | None = None,
+    ) -> AxisDescriptor:
+        """Project one ``CoverAxis`` to a serialisable ``AxisDescriptor``.
+
+        ``labels`` overlays translated ``axes.*`` strings on the English base;
+        ``None`` keeps English (back-compat). ``supported`` reflects whether
+        *caps* expose the axis.
+        """
+        label = {**AXIS_LABELS_EN, **(labels or {})}.get(axis.label_key, axis.label_key)
+        return AxisDescriptor(
+            id=axis.name,
+            label=label,
+            label_key=axis.label_key,
+            min=axis.value_min,
+            max=axis.value_max,
+            unit=axis.unit,
+            capability_key=axis.capability_key,
+            state_attr=axis.state_attr,
+            service_attr=axis.service_attr,
+            open_blocks_sun=axis.open_blocks_sun,
+            supported=caps_get(caps, axis.capability_key),
+        )
+
+    def describe(
+        self,
+        caps: Any = None,
+        labels: dict[str, str] | None = None,
+    ) -> CoverDescriptor:
+        """Assemble the self-discovery descriptor for this cover type (#725).
+
+        Cover-type id + localized label + one ``AxisDescriptor`` per declared
+        axis. Every axis appears (so a consumer sees the full axis set); the
+        per-axis ``supported`` flag carries whether *caps* expose it. A ninth
+        cover type inherits this unchanged — the discovery builder never
+        branches on the cover-type string.
+        """
+        return CoverDescriptor(
+            cover_type=self.cover_type,
+            cover_label=self.display_label(labels),
+            axes=tuple(self.describe_axis(a, caps, labels) for a in self.axes),
+        )
 
     def position_axis_supported(self, caps: Any) -> bool:
         """Whether *this entity* exposes the policy's primary (position) axis.

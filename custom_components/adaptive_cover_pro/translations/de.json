@@ -2634,6 +2634,20 @@
           "description": "true zum Aktivieren der Mitgliedersautomatisierung, false zum Deaktivieren."
         }
       }
+    },
+    "set_axes": {
+      "name": "Achsen festlegen",
+      "description": "Legt eine oder mehrere Steuerachsen (Position und/oder Neigung) auf der Beschattung in einem einzigen Aufruf fest. Jede angeforderte Achse wird über denselben Pfad wie set_position / set_tilt versandt. Das Anfordern einer nicht unterstützten Achse verursacht einen Fehler. Standardmäßig aktiviert der Aufruf die manuelle Übersteuerung; setzen Sie force=true, um die Aktivierung der manuellen Übersteuerung zu überspringen.",
+      "fields": {
+        "axes": {
+          "name": "Achsen",
+          "description": "Zuordnung von Achsenzielen — nur die Achsen einschließen, die Sie verschieben möchten. Schlüssel sind \"position\" und/oder \"tilt\"; jeder Wert beträgt 0–100%. Zum Beispiel Position auf 60 und Neigung auf 30 einstellen."
+        },
+        "force": {
+          "name": "Erzwingen",
+          "description": "Wenn wahr, manuelle Übersteuerungsaktivierung überspringen. Vorgabe: falsch — Service-Aufrufe aktivieren die manuelle Übersteuerung wie ein Dashboard-Regler."
+        }
+      }
     }
   }
 }

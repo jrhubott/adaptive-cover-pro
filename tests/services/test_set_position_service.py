@@ -55,6 +55,12 @@ def _make_coord(custom_states):
     coord.async_apply_user_position = (
         AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
     )
+    # set_position routes through the axis collapse point (issue #725) — bind the
+    # real dispatcher so the service reaches async_apply_user_position as before.
+    coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
+    )
     return coord, ctx
 
 

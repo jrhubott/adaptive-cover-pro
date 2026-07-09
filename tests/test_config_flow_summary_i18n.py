@@ -31,6 +31,7 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
 )
 from custom_components.adaptive_cover_pro.cover_types._summary_labels import (
+    AXIS_LABELS_EN,
     COVER_TYPE_LABELS_EN,
     GEOMETRY_LABELS_EN,
 )
@@ -186,7 +187,12 @@ def test_summary_i18n_en_matches_code_defaults() -> None:
     dicts; the bundle exists as the translation source + drift guard.
     """
     en = _config_summary_flat(_load_json("en.json"))
-    assert en == {**_SUMMARY_LABELS_EN, **COVER_TYPE_LABELS_EN, **GEOMETRY_LABELS_EN}
+    assert en == {
+        **_SUMMARY_LABELS_EN,
+        **COVER_TYPE_LABELS_EN,
+        **GEOMETRY_LABELS_EN,
+        **AXIS_LABELS_EN,
+    }
 
 
 def test_config_summary_placeholder_parity_de_fr() -> None:

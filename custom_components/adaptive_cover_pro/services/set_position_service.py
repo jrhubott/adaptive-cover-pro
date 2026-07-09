@@ -13,6 +13,8 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 from voluptuous.validators import Coerce, Range
 
+from ..cover_types.base import AXIS_NAME_POSITION
+
 if TYPE_CHECKING:
     from homeassistant.core import ServiceCall
 
@@ -38,8 +40,9 @@ async def async_handle_set_position(call: ServiceCall) -> None:
 
     Resolves the target block to one or more coordinators (each with an
     optional entity filter), then delegates each command to
-    ``coord.async_apply_user_position`` — the single source of truth for
-    floor clamping, pipeline preemption, and dispatch.
+    ``coord.async_apply_user_axis`` on the position axis — the shared collapse
+    point that routes to ``async_apply_user_position``, the single source of
+    truth for floor clamping, pipeline preemption, and dispatch.
 
     ``force`` (default ``False``) propagates through: when ``False`` the
     service respects force_override / weather and engages manual override
@@ -56,6 +59,10 @@ async def async_handle_set_position(call: ServiceCall) -> None:
             list(entity_filter) if entity_filter is not None else list(coord.entities)
         )
         for entity_id in entity_ids:
-            await coord.async_apply_user_position(
-                entity_id, requested, trigger="set_position", force=force
+            await coord.async_apply_user_axis(
+                entity_id,
+                AXIS_NAME_POSITION,
+                requested,
+                trigger="set_position",
+                force=force,
             )

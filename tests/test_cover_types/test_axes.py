@@ -85,6 +85,10 @@ class TestCoverAxis:
             state_attr=POSITION_AXIS.state_attr,
             capability_key=POSITION_AXIS.capability_key,
             open_blocks_sun=False,
+            label_key=POSITION_AXIS.label_key,
+            value_min=POSITION_AXIS.value_min,
+            value_max=POSITION_AXIS.value_max,
+            unit=POSITION_AXIS.unit,
         )
         assert twin == POSITION_AXIS
 
@@ -112,6 +116,24 @@ class TestAxisSingletons:
         assert TILT_AXIS.state_attr == STATE_ATTR_TILT_POSITION
         assert TILT_AXIS.capability_key == CAP_HAS_SET_TILT_POSITION
         assert TILT_AXIS.open_blocks_sun is False
+
+    @pytest.mark.unit
+    def test_position_axis_descriptor_fields(self):
+        # Discovery-surface metadata (issue #725): each axis carries a label
+        # i18n key, a numeric range, and a display unit so the self-discovery
+        # payload can be assembled without re-deriving cover-type knowledge.
+        assert POSITION_AXIS.label_key == "axes.position"
+        assert POSITION_AXIS.value_min == 0
+        assert POSITION_AXIS.value_max == 100
+        assert POSITION_AXIS.unit == "%"
+        assert POSITION_AXIS_OPEN_BLOCKS_SUN.label_key == "axes.position"
+
+    @pytest.mark.unit
+    def test_tilt_axis_descriptor_fields(self):
+        assert TILT_AXIS.label_key == "axes.tilt"
+        assert TILT_AXIS.value_min == 0
+        assert TILT_AXIS.value_max == 100
+        assert TILT_AXIS.unit == "%"
 
     @pytest.mark.unit
     def test_awning_position_axis_flips_sun_semantic(self):

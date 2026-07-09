@@ -79,6 +79,20 @@ def test_no_service_target_has_a_device_filter():
     )
 
 
+def test_set_axes_service_exists_in_yaml():
+    svc = _load()
+    assert (
+        "set_axes" in svc
+    ), "set_axes service is registered in Python but has no entry in services.yaml"
+
+
+def test_set_axes_has_target_block_and_axes_field():
+    svc = _load()["set_axes"]
+    assert "target" in svc
+    assert svc["target"]["entity"]["integration"] == "adaptive_cover_pro"
+    assert "axes" in svc["fields"]
+
+
 def test_set_position_has_position_field_with_correct_range():
     fields = _load()["set_position"]["fields"]
     assert "position" in fields
@@ -100,6 +114,7 @@ REGISTERED_SERVICES = {
     "emergency_stop",
     "set_position",
     "set_tilt",
+    "set_axes",
     "engage_manual_override",
     # Options services (registered via register_options_services / OPTIONS_SERVICE_NAMES)
     "set_position_limits",

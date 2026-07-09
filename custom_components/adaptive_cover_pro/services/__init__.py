@@ -31,6 +31,7 @@ from .export_service import (
 )
 from .import_service import IMPORT_CONFIG_SCHEMA, async_handle_import_config
 from .options_service import OPTIONS_SERVICE_NAMES, register_options_services
+from .set_axes_service import SET_AXES_SCHEMA, async_handle_set_axes
 from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
 from .set_tilt_service import SET_TILT_SCHEMA, async_handle_set_tilt
 from .stop_service import async_handle_stop
@@ -259,6 +260,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, "set_tilt", async_handle_set_tilt, schema=SET_TILT_SCHEMA
     )
+    hass.services.async_register(
+        DOMAIN, "set_axes", async_handle_set_axes, schema=SET_AXES_SCHEMA
+    )
     hass.services.async_register(DOMAIN, "stop", async_handle_stop)
     hass.services.async_register(
         DOMAIN,
@@ -288,6 +292,7 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, "emergency_stop")
     hass.services.async_remove(DOMAIN, "set_position")
     hass.services.async_remove(DOMAIN, "set_tilt")
+    hass.services.async_remove(DOMAIN, "set_axes")
     hass.services.async_remove(DOMAIN, "stop")
     hass.services.async_remove(DOMAIN, "engage_manual_override")
     for name in GROUP_SERVICE_NAMES:

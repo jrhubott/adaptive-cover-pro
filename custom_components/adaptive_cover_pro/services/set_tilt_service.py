@@ -15,6 +15,8 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 from voluptuous.validators import Coerce, Range
 
+from ..cover_types.base import AXIS_NAME_TILT
+
 if TYPE_CHECKING:
     from homeassistant.core import ServiceCall
 
@@ -40,8 +42,9 @@ async def async_handle_set_tilt(call: ServiceCall) -> None:
 
     Resolves the target block to one or more coordinators (each with an
     optional entity filter), then delegates each command to
-    ``coord.async_apply_user_tilt`` — the single source of truth for tilt-axis
-    dispatch (venetian slats, ``cover_tilt`` position fall-back).
+    ``coord.async_apply_user_axis`` on the tilt axis — the shared collapse point
+    that routes to ``async_apply_user_tilt``, the single source of truth for
+    tilt-axis dispatch (venetian slats, ``cover_tilt`` position fall-back).
 
     ``force`` (default ``False``) propagates through: when ``False`` the service
     engages manual override like a dashboard slider; when ``True`` it skips
@@ -57,6 +60,6 @@ async def async_handle_set_tilt(call: ServiceCall) -> None:
             list(entity_filter) if entity_filter is not None else list(coord.entities)
         )
         for entity_id in entity_ids:
-            await coord.async_apply_user_tilt(
-                entity_id, requested, trigger="set_tilt", force=force
+            await coord.async_apply_user_axis(
+                entity_id, AXIS_NAME_TILT, requested, trigger="set_tilt", force=force
             )

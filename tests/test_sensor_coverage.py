@@ -27,13 +27,23 @@ def _make_config_entry(sensor_type=CoverType.BLIND):
     return entry
 
 
-def _make_coordinator(diagnostics: dict | None = None):
+def _make_coordinator(diagnostics: dict | None = None, cover_type=CoverType.BLIND):
     coord = MagicMock()
     coord.logger = MagicMock()
     data = MagicMock()
     data.diagnostics = diagnostics
     data.states = {}
     coord.data = data
+    # The control-status sensor now surfaces a cover_discovery descriptor built
+    # from the coordinator (issue #725). Provide a real descriptor so
+    # dataclasses.asdict works on the MagicMock coordinator.
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord.build_axis_discovery = MagicMock(
+        side_effect=lambda labels=None: get_policy(cover_type).describe(
+            caps={"has_set_position": True, "has_set_tilt_position": True}
+        )
+    )
     return coord
 
 
@@ -410,6 +420,71 @@ def test_control_status_attrs_expose_cover_type(sensor_type):
     attrs = sensor.extra_state_attributes
     assert attrs is not None
     assert attrs.get("cover_type") == sensor_type
+
+
+# ---------------------------------------------------------------------------
+# AdaptiveCoverControlStatusSensor.extra_state_attributes — cover_discovery
+# ---------------------------------------------------------------------------
+# Issue #725: an additive self-discovery descriptor sits alongside the existing
+# cover_type key. Old card versions still read cover_type; new ones read
+# cover_discovery for the full axis list + labels + ranges + supported flags.
+
+
+@pytest.mark.unit
+def test_control_status_attrs_expose_cover_discovery_blind():
+    """A blind exposes cover_discovery with a single position axis; cover_type
+    stays present and unchanged (additive).
+    """
+    coord = _make_coordinator(
+        diagnostics={"control_status": "active"}, cover_type=CoverType.BLIND
+    )
+    entry = _make_config_entry(sensor_type=CoverType.BLIND)
+    sensor = AdaptiveCoverControlStatusSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    # Additive: cover_type still present.
+    assert attrs.get("cover_type") == CoverType.BLIND
+    discovery = attrs.get("cover_discovery")
+    assert discovery is not None
+    assert discovery["cover_type"] == "cover_blind"
+    assert [a["id"] for a in discovery["axes"]] == ["position"]
+    axis = discovery["axes"][0]
+    assert axis["label"] == "Position"
+    assert axis["min"] == 0
+    assert axis["max"] == 100
+    assert axis["unit"] == "%"
+    assert axis["supported"] is True
+
+
+@pytest.mark.unit
+def test_control_status_attrs_expose_cover_discovery_venetian():
+    """A venetian exposes cover_discovery with position + tilt axes."""
+    coord = _make_coordinator(
+        diagnostics={"control_status": "active"}, cover_type=CoverType.VENETIAN
+    )
+    entry = _make_config_entry(sensor_type=CoverType.VENETIAN)
+    sensor = AdaptiveCoverControlStatusSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    discovery = attrs.get("cover_discovery")
+    assert discovery is not None
+    assert discovery["cover_type"] == "cover_venetian"
+    ids = [a["id"] for a in discovery["axes"]]
+    assert ids == ["position", "tilt"]
+    labels = {a["id"]: a["label"] for a in discovery["axes"]}
+    assert labels == {"position": "Position", "tilt": "Tilt"}
 
 
 # ---------------------------------------------------------------------------

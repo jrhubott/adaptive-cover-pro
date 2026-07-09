@@ -31,6 +31,19 @@ these exact keys/values (prefix-stripped). A drift test in
 
 from __future__ import annotations
 
+# --- Axis labels (namespace config_summary.axes.*) --------------------------
+#
+# User-facing names for the controllable axes surfaced by the self-discovery
+# payload (issue #725). Keyed by ``CoverAxis.label_key``. Resolved the same way
+# as the cover-type labels: English base overlaid by whatever translated
+# ``labels`` dict the policy receives. ``summary_i18n/{en,de,fr}.json["axes"]``
+# mirror these keys (prefix-stripped); the drift guard in
+# ``tests/test_policy_summary_i18n.py`` keeps them in lockstep.
+AXIS_LABELS_EN: dict[str, str] = {
+    "axes.position": "Position",
+    "axes.tilt": "Tilt",
+}
+
 # --- Cover-type labels (namespace config_summary.cover_types.*) -------------
 COVER_TYPE_LABELS_EN: dict[str, str] = {
     "cover_types.blind": "Vertical Blind",

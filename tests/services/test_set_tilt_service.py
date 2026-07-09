@@ -15,9 +15,20 @@ import voluptuous as vol
 
 
 def _make_coord(*, entities: list[str] | None = None):
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
     coord = MagicMock()
     coord.entities = entities or ["cover.venetian"]
     coord.async_apply_user_tilt = AsyncMock(return_value=("sent", ""))
+    coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
+    # set_tilt now routes through the axis collapse point (issue #725); bind the
+    # real dispatcher so it forwards to the mocked async_apply_user_tilt, keeping
+    # these delegation assertions a true parity guard for the tilt path.
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
+    )
     return coord
 
 

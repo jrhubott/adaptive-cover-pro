@@ -275,5 +275,9 @@
     "stagger": "Mitglieder mit {stagger}s Abstand befohlen",
     "cover_entity": "Aggregierte Beschattungs-Entität verfügbar — das Ziehen befiehlt jedem Mitglied",
     "area": "Mitgliedschaft verfolgt Bereich „{area}\" – Beschattungen dort treten automatisch bei"
+  },
+  "axes": {
+    "position": "Position",
+    "tilt": "Neigung"
   }
 }

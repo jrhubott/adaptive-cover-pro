@@ -275,5 +275,9 @@
     "stagger": "Membres commandés à {stagger}s d'intervalle",
     "cover_entity": "Entité de store agrégée exposée — la faire glisser commande chaque membre",
     "area": "L'adhésion suit la zone « {area} » — les stores de cette zone rejoignent automatiquement"
+  },
+  "axes": {
+    "position": "Position",
+    "tilt": "Inclinaison"
   }
 }
