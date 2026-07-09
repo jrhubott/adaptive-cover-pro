@@ -32,6 +32,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     WEATHER_OPTIONS,
     WEATHER_OVERRIDE_SCHEMA,
     _SHARED_OPTIONS_EXCLUDED,
+    _build_custom_position_schema_dict,
     _build_glare_zones_schema,
 )
 from custom_components.adaptive_cover_pro.const import (
@@ -101,6 +102,13 @@ def _all_option_schema_keys() -> frozenset[str]:
 
     # Glare zone slot keys — dynamic schema, must call the builder to enumerate
     keys |= _keys(_build_glare_zones_schema())
+
+    # Venetian custom-position variant adds per-slot tilt/tilt_only plus global
+    # default_tilt/sunset_tilt (include_tilt=True). The module-level
+    # CUSTOM_POSITION_SCHEMA is the include_tilt=False form, so enumerate the
+    # venetian variant explicitly — otherwise the tilt keys can silently fall
+    # out of every sync category again (issue #862 fold-in).
+    keys |= _keys(vol.Schema(_build_custom_position_schema_dict("cover_venetian")))
 
     # Keys that only appear in inline schemas (not importable module-level constants).
     # Update this set if you add a new option directly inside an async_step_* method.

@@ -2592,8 +2592,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MIN_ELEVATION,
             CONF_MAX_ELEVATION,
             CONF_ENABLE_BLIND_SPOT,
-            CONF_MINIMIZE_MOVEMENTS,
-            CONF_MAX_COVERAGE_STEPS,
         }
     ),
     "blind_spot": frozenset(
@@ -2643,6 +2641,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         {
             CONF_DELTA_POSITION,
             CONF_DELTA_TIME,
+            CONF_MINIMIZE_MOVEMENTS,
+            CONF_MAX_COVERAGE_STEPS,
             CONF_START_TIME,
             CONF_START_ENTITY,
             CONF_END_TIME,
@@ -2684,8 +2684,17 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "custom_position_values": frozenset(
         keys[k]
         for keys in CUSTOM_POSITION_SLOTS.values()
-        for k in ("position", "priority", "min_mode", "use_my", "template_mode")
-    ),
+        for k in (
+            "position",
+            "priority",
+            "min_mode",
+            "use_my",
+            "template_mode",
+            "tilt",
+            "tilt_only",
+        )
+    )
+    | {CONF_DEFAULT_TILT, CONF_SUNSET_TILT},
     "custom_position_sensors": frozenset(
         keys[k]
         for keys in CUSTOM_POSITION_SLOTS.values()
