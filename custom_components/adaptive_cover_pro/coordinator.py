@@ -2158,13 +2158,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._pipeline_result is not None
             and self._pipeline_result.floor_clamp_applied
         )
+        # target_changed alone must not defeat the user's delta_position/
+        # delta_time throttle for routine solar/climate tracking (issue #853)
+        # — only force the bypass when the resolved target already carries
+        # override/safety semantics, matching the same delta-gate invariant
+        # documented on _pipeline_bypasses_auto_control (issue #290).
+        target_changed_override = target_changed and (
+            is_safety or self._pipeline_bypasses_auto_control
+        )
         use_force = (
             is_safety
             or safety_release
             or custom_position_sensor_triggered
             or custom_position_released
             or floor_clamp
-            or target_changed
+            or target_changed_override
         )
         if custom_position_released or safety_release:
             reason = "custom_position_released"
