@@ -168,6 +168,34 @@ class TestStateChangeWithSolarTracking:
         )
 
     @pytest.mark.asyncio
+    async def test_solar_target_changed_does_not_force_bypass(self):
+        """A plain SOLAR result with target_changed=True must still call
+        _build_position_context with force=False (issue #853) — routine solar
+        tracking must stay subject to delta_position/delta_time, only
+        override/safety results may bypass on a resolved-target change.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=55, control_method=ControlMethod.SOLAR, bypass_auto_control=False
+        )
+        coordinator = _make_coordinator(entities=["cover.test"], pipeline_result=result)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=55, options={}, target_changed=True
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.test",
+            {},
+            force=False,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
     async def test_state_change_flag_cleared_after_handling(self):
         """state_change flag must be cleared after async_handle_state_change."""
         from custom_components.adaptive_cover_pro.coordinator import (
