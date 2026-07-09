@@ -2815,8 +2815,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MIN_ELEVATION,
             CONF_MAX_ELEVATION,
             CONF_ENABLE_BLIND_SPOT,
-            CONF_MINIMIZE_MOVEMENTS,
-            CONF_MAX_COVERAGE_STEPS,
         }
     ),
     "blind_spot": frozenset(
@@ -2870,6 +2868,10 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_START_ENTITY,
             CONF_END_TIME,
             CONF_END_ENTITY,
+            # Movement throttle — lives on the automation UI step alongside
+            # delta_position/delta_time, so it syncs with that category (#862).
+            CONF_MINIMIZE_MOVEMENTS,
+            CONF_MAX_COVERAGE_STEPS,
         }
     ),
     "manual_override": frozenset(
