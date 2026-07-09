@@ -3728,11 +3728,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             if chosen != _PROFILE_NONE_SENTINEL:
                 profile = self.hass.config_entries.async_get_entry(chosen)
                 if profile is not None:
-                    # Store only the link ID here. The sensor-value merge is
-                    # applied at entry-creation time (async_step_update) so that
-                    # profile values survive subsequent form steps that call
-                    # optional_entities() and overwrite absent keys with None.
                     self.config[CONF_BUILDING_PROFILE_ID] = profile.entry_id
+                    # Eagerly merge the profile's non-empty shared-sensor keys
+                    # so the later create steps render them as suggested defaults
+                    # (issue #851). The unconditional async_step_update merge
+                    # stays the safety net — optional_entities() nulls absent
+                    # keys mid-wizard, and that merge re-fills them at create.
+                    merge_profile_into_config(profile, self.config)
             return await self._route_after_window_config()
 
         profiles = _building_profile_entries(self.hass)
@@ -3791,7 +3793,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_weather_override()
         return self.async_show_form(
             step_id="behavior",
-            data_schema=_behavior_schema(self.config),
+            data_schema=self.add_suggested_values_to_schema(
+                _behavior_schema(self.config), self.config
+            ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
                 "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
@@ -3932,11 +3936,14 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             # L3 priority 90 → 80 (manual override).
             return await self.async_step_manual_override()
+        suggested = _stringify_templatable(self.config)
         return self.async_show_form(
             step_id="weather_override",
-            data_schema=weather_override_schema(self.hass, self.config),
+            data_schema=self.add_suggested_values_to_schema(
+                weather_override_schema(self.hass, suggested), suggested
+            ),
             description_placeholders=_weather_override_placeholders(
-                self.hass, self.config
+                self.hass, suggested
             ),
         )
 
@@ -3946,9 +3953,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.optional_entities(_LIGHT_CLOUD_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             return await self.async_step_temperature_climate()
+        suggested = _stringify_templatable(self.config)
         return self.async_show_form(
             step_id="light_cloud",
-            data_schema=light_cloud_schema(self.hass, self.config),
+            data_schema=self.add_suggested_values_to_schema(
+                light_cloud_schema(self.hass, suggested), suggested
+            ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
             },
@@ -3963,9 +3973,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
                 CONF_TEMP_ENTITY
             ):
+                suggested = _stringify_templatable(user_input)
                 return self.async_show_form(
                     step_id="temperature_climate",
-                    data_schema=temperature_climate_schema(self.hass, user_input),
+                    data_schema=self.add_suggested_values_to_schema(
+                        temperature_climate_schema(self.hass, suggested), suggested
+                    ),
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
                     description_placeholders={
                         "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
@@ -3978,9 +3991,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             ):
                 return await self.async_step_glare_zones()
             return await self.async_step_automation()
+        suggested = _stringify_templatable(self.config)
         return self.async_show_form(
             step_id="temperature_climate",
-            data_schema=temperature_climate_schema(self.hass, self.config),
+            data_schema=self.add_suggested_values_to_schema(
+                temperature_climate_schema(self.hass, suggested), suggested
+            ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
             },

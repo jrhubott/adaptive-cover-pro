@@ -10,6 +10,8 @@ Two surfaces:
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -22,12 +24,26 @@ from custom_components.adaptive_cover_pro.const import (
     BUILDING_PROFILE_SENSOR_KEYS,
     CONF_BUILDING_PROFILE_ID,
     CONF_LUX_ENTITY,
+    CONF_OUTSIDETEMP_ENTITY,
     CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
     DOMAIN,
     CoverType,
 )
+from custom_components.adaptive_cover_pro.profile_link import (
+    merge_profile_into_config,
+)
+
+
+def _suggested_values(schema):
+    """Map each schema key to its ``suggested_value`` (as options-flow prefill)."""
+    return {
+        str(m.schema): m.description.get("suggested_value")
+        for m in schema.schema
+        if hasattr(m, "description") and isinstance(m.description, dict)
+    }
 
 
 def _schema_keys(schema):
@@ -455,3 +471,91 @@ async def test_user_menu_hides_duplicate_when_only_building_profile(
 
     assert result["type"] == "menu"
     assert "duplicate_existing" not in result["menu_options"]
+
+
+# ---------------------------------------------------------------------------
+# Create-wizard profile prefill — issue #851
+# ---------------------------------------------------------------------------
+
+
+def _profile_with_three_categories(hass: HomeAssistant) -> MockConfigEntry:
+    """Profile carrying one sensor key from each of the three step categories."""
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={
+            CONF_OUTSIDETEMP_ENTITY: "sensor.p_temp",
+            CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.p_wind",
+            CONF_LUX_ENTITY: "sensor.p_lux",
+        },
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+    return profile
+
+
+@pytest.mark.integration
+async def test_create_building_profile_eager_copies_sensor_keys(
+    hass: HomeAssistant,
+) -> None:
+    """Selecting a profile in the create wizard eagerly merges its sensor keys.
+
+    Regression for issue #851: later create steps render from ``self.config``,
+    so the profile's values must land there at select time (not only at the
+    finalize safety-net merge), or the pickers render blank.
+    """
+    profile = _profile_with_three_categories(hass)
+
+    flow = ConfigFlowHandler()
+    flow.hass = hass
+    flow.type_blind = CoverType.BLIND
+    flow.setup_mode = "full_setup"
+    flow.config = {}
+    # Isolate the copy: don't route through downstream form steps.
+    flow._route_after_window_config = AsyncMock(return_value={"type": "form"})
+
+    await flow.async_step_building_profile({CONF_BUILDING_PROFILE_ID: profile.entry_id})
+
+    assert flow.config[CONF_BUILDING_PROFILE_ID] == profile.entry_id
+    assert flow.config[CONF_OUTSIDETEMP_ENTITY] == "sensor.p_temp"
+    assert flow.config[CONF_WEATHER_WIND_SPEED_SENSOR] == "sensor.p_wind"
+    assert flow.config[CONF_LUX_ENTITY] == "sensor.p_lux"
+
+
+@pytest.mark.integration
+async def test_create_wizard_prefills_profile_sensor_pickers(
+    hass: HomeAssistant,
+) -> None:
+    """Create-flow sensor steps expose profile values as suggested defaults.
+
+    Regression for issue #851: the create steps must wrap their schema with
+    ``add_suggested_values_to_schema`` (mirroring the options flow), or the
+    pickers render blank even when ``self.config`` holds the value.
+    """
+    profile = _profile_with_three_categories(hass)
+
+    flow = ConfigFlowHandler()
+    flow.hass = hass
+    flow.type_blind = CoverType.BLIND
+    flow.setup_mode = "full_setup"
+    flow.config = {}
+    # Seed the render half only: eager-copy the profile's sensor keys in.
+    merge_profile_into_config(profile, flow.config)
+
+    weather = await flow.async_step_weather_override()
+    assert (
+        _suggested_values(weather["data_schema"]).get(CONF_WEATHER_WIND_SPEED_SENSOR)
+        == "sensor.p_wind"
+    )
+
+    light = await flow.async_step_light_cloud()
+    assert (
+        _suggested_values(light["data_schema"]).get(CONF_LUX_ENTITY) == "sensor.p_lux"
+    )
+
+    temp = await flow.async_step_temperature_climate()
+    assert (
+        _suggested_values(temp["data_schema"]).get(CONF_OUTSIDETEMP_ENTITY)
+        == "sensor.p_temp"
+    )
