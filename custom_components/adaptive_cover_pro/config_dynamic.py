@@ -273,19 +273,69 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     )
 
 
+def blind_spot_edges(options: dict | None = None) -> int:
+    """Return the blind-spot azimuth span: ``fov_left + fov_right``.
+
+    Each side defaults to 90 when absent, matching the legacy in-step
+    construction (a cover created before the FOV fields are saved). This is
+    the single source for the formula: ``blind_spot_schema`` derives its
+    slider bounds from it, and ``clamp_blind_spots_to_fov`` (issue #852) uses
+    the identical value to re-clamp stored slots when the FOV narrows — the
+    two must never drift apart on this arithmetic.
+    """
+    opts = options or {}
+    return int(opts.get(CONF_FOV_LEFT, 90)) + int(opts.get(CONF_FOV_RIGHT, 90))
+
+
+def clamp_blind_spots_to_fov(options: dict) -> dict:
+    """Re-clamp stored blind-spot slot offsets to the current FOV span.
+
+    Blind-spot left/right are azimuth offsets *within* the FOV span
+    (``blind_spot_edges``), consumed raw at runtime. Nothing re-clamps them
+    when ``fov_left``/``fov_right`` narrow on the geometry step, so a slot
+    saved under a wider FOV can be left exceeding the new span — silently
+    disagreeing with the options-flow slider (max = the new edges) and
+    mis-shaping the wedge at runtime (issue #852).
+
+    Call this right after any options/config update that changes
+    ``CONF_FOV_LEFT``/``CONF_FOV_RIGHT`` (the geometry-step save sites in
+    ``config_flow.py``, plus the geometry sync-merge). Bounds mirror
+    ``blind_spot_schema`` exactly (``0 <= left <= edges-1``,
+    ``1 <= right <= edges``), sourced from the same ``blind_spot_edges`` call
+    so schema and clamp can never disagree.
+
+    Mutates *options* in place (and returns it) for every slot in
+    ``BLIND_SPOT_SLOTS``. A slot key that is absent or explicitly ``None`` is
+    left untouched — an unconfigured slot must stay inactive, never coerced
+    into existence by the clamp.
+    """
+    edges = blind_spot_edges(options)
+    left_max = edges - 1
+    right_max = edges
+    for keys in BLIND_SPOT_SLOTS.values():
+        left = options.get(keys["left"])
+        if left is not None:
+            options[keys["left"]] = min(int(left), left_max)
+        right = options.get(keys["right"])
+        if right is not None:
+            options[keys["right"]] = min(int(right), right_max)
+    return options
+
+
 def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     """Blind-spot wedge schema for up to 3 slots (issue #701).
 
     ``edges = fov_left + fov_right`` (defaulting to 90+90) sets the maximum
-    left/right azimuth offset, matching the legacy in-step construction.
+    left/right azimuth offset, matching the legacy in-step construction. The
+    formula is single-sourced in ``blind_spot_edges`` — ``clamp_blind_spots_to_fov``
+    (issue #852) derives its clamp bounds from the same call.
 
     Slot 1 reuses the legacy unsuffixed keys and keeps its ``Required``
     defaults (0/1) so its form is byte-for-byte unchanged. Slots 2/3 are
     ``Optional`` sliders with no default, so an unconfigured slot stays absent
     (``None``-preserving) and therefore inactive.
     """
-    opts = options or {}
-    edges = int(opts.get(CONF_FOV_LEFT, 90)) + int(opts.get(CONF_FOV_RIGHT, 90))
+    edges = blind_spot_edges(options)
 
     def _slider(min_v: int, max_v: int, *, step: int | None = None):
         cfg: dict = {

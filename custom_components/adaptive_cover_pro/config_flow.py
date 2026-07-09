@@ -299,6 +299,7 @@ from .config_dynamic import (  # noqa: E402
     behavior_schema as _behavior_schema,
     blind_spot_schema,
     building_profile_sensors_schema,
+    clamp_blind_spots_to_fov,
     glare_zones_schema as _glare_zones_schema,
     light_cloud_schema,
     sun_tracking_schema,
@@ -3602,6 +3603,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             if _resolve_fov_compute_submit(self.type_blind, canonical, canonical):
                 return self._show_geometry_form(canonical)
             self.config.update(canonical)
+            # Defensive parity with the options-flow save (issue #852): blind
+            # spots aren't configured yet this early in the create flow, so
+            # this is normally a no-op, but keeps both save sites identical.
+            clamp_blind_spots_to_fov(self.config)
             return await self.async_step_sun_tracking()
 
         return self._show_geometry_form(self.config)
@@ -4385,6 +4390,9 @@ class OptionsFlowHandler(OptionsFlow):
             if _resolve_fov_compute_submit(self.sensor_type, canonical, canonical):
                 return self._show_geometry_form(canonical)
             self.options.update(canonical)
+            # A narrower FOV can strand stale blind-spot slots past the new
+            # span (issue #852); re-clamp right after the FOV lands.
+            clamp_blind_spots_to_fov(self.options)
             return await self.async_step_init()
 
         return self._show_geometry_form(self.options)
@@ -5041,9 +5049,12 @@ class OptionsFlowHandler(OptionsFlow):
                 for entry_id in self.selected_sync_targets:
                     target = self.hass.config_entries.async_get_entry(entry_id)
                     if target:
+                        merged_options = clamp_blind_spots_to_fov(
+                            {**target.options, **shared_options}
+                        )
                         self.hass.config_entries.async_update_entry(
                             target,
-                            options={**target.options, **shared_options},
+                            options=merged_options,
                         )
             return await self.async_step_init()
 
