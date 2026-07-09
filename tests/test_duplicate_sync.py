@@ -20,6 +20,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CUSTOM_POSITION_MIN_MODE_1,
     CONF_CUSTOM_POSITION_PRIORITY_1,
     CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
     CONF_DEVICE_ID,
     CONF_DISTANCE,
@@ -35,13 +36,16 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IRRADIANCE_THRESHOLD,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_MAX_COVERAGE_STEPS,
     CONF_MIN_POSITION,
+    CONF_MINIMIZE_MOVEMENTS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_SENSOR_TYPE,
+    CONF_SUNSET_TILT,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
@@ -52,6 +56,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_STATE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CUSTOM_POSITION_SLOTS,
     CoverType,
 )
 
@@ -485,6 +490,95 @@ class TestSunTrackingToGeometrySyncMove:
         assert result[CONF_FOV_LEFT] == 30
         assert result[CONF_FOV_RIGHT] == 40
         assert result[CONF_DISTANCE] == 1.2
+
+
+class TestMinimizeMovementsAutomationSyncMove:
+    """#862: minimize_movements + max_coverage_steps move to the automation category.
+
+    These fields were relocated to the AUTOMATION_SCHEMA ("Movement & Schedule")
+    step back in the #613 4-layer-pipeline restructure, but SYNC_CATEGORIES was
+    never updated to follow — they were still sitting in sun_tracking.
+    """
+
+    @pytest.mark.parametrize(
+        "key", [CONF_MINIMIZE_MOVEMENTS, CONF_MAX_COVERAGE_STEPS]
+    )
+    def test_minimize_movements_and_max_coverage_steps_in_automation_category(
+        self, key
+    ):
+        assert key in SYNC_CATEGORIES["automation"]
+
+    @pytest.mark.parametrize(
+        "key", [CONF_MINIMIZE_MOVEMENTS, CONF_MAX_COVERAGE_STEPS]
+    )
+    def test_minimize_movements_and_max_coverage_steps_not_in_sun_tracking_category(
+        self, key
+    ):
+        assert key not in SYNC_CATEGORIES["sun_tracking"]
+
+    def test_syncing_only_sun_tracking_no_longer_copies_minimize_or_coverage_steps(
+        self,
+    ):
+        entry = _make_entry(
+            {
+                CONF_MINIMIZE_MOVEMENTS: True,
+                CONF_MAX_COVERAGE_STEPS: 4,
+                CONF_ENABLE_BLIND_SPOT: True,
+            }
+        )
+        result = _extract_shared_options(entry, ["sun_tracking"])
+        assert CONF_MINIMIZE_MOVEMENTS not in result
+        assert CONF_MAX_COVERAGE_STEPS not in result
+        # Behavioural sun-tracking settings still copy.
+        assert result[CONF_ENABLE_BLIND_SPOT] is True
+
+    def test_syncing_automation_copies_minimize_movements_and_max_coverage_steps(self):
+        entry = _make_entry(
+            {CONF_MINIMIZE_MOVEMENTS: True, CONF_MAX_COVERAGE_STEPS: 4}
+        )
+        result = _extract_shared_options(entry, ["automation"])
+        assert result[CONF_MINIMIZE_MOVEMENTS] is True
+        assert result[CONF_MAX_COVERAGE_STEPS] == 4
+
+
+class TestVenetianCustomPositionTiltSync:
+    """#862 fold-in: venetian per-slot tilt/tilt_only + global default/sunset tilt.
+
+    None of the 22 tilt keys appeared in any user-reachable SYNC_CATEGORIES
+    bucket, so selecting "Custom Positions" in the sync UI never copied tilt
+    settings for a venetian cover.
+    """
+
+    _tilt_keys = frozenset(
+        {
+            keys[k]
+            for keys in CUSTOM_POSITION_SLOTS.values()
+            for k in ("tilt", "tilt_only")
+        }
+        | {CONF_DEFAULT_TILT, CONF_SUNSET_TILT}
+    )
+
+    def test_tilt_keys_count_is_22(self):
+        assert len(self._tilt_keys) == 22
+
+    @pytest.mark.parametrize("key", sorted(_tilt_keys))
+    def test_tilt_key_in_custom_position_values_category(self, key):
+        assert key in SYNC_CATEGORIES["custom_position_values"]
+
+    def test_syncing_custom_position_values_copies_venetian_tilt_fields(self):
+        entry = _make_entry(
+            {
+                CUSTOM_POSITION_SLOTS[1]["tilt"]: 45,
+                CUSTOM_POSITION_SLOTS[1]["tilt_only"]: True,
+                CONF_DEFAULT_TILT: 30,
+                CONF_SUNSET_TILT: 10,
+            }
+        )
+        result = _extract_shared_options(entry, ["custom_position_values"])
+        assert result[CUSTOM_POSITION_SLOTS[1]["tilt"]] == 45
+        assert result[CUSTOM_POSITION_SLOTS[1]["tilt_only"]] is True
+        assert result[CONF_DEFAULT_TILT] == 30
+        assert result[CONF_SUNSET_TILT] == 10
 
 
 class TestEnsureUniqueName:
