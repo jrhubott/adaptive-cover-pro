@@ -60,6 +60,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SYNC_SELECT_ALL,
     CONF_INVERSE_STATE,
     CONF_IS_SUNNY_SENSOR,
+    CONF_LUX_ENTITY,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     CUSTOM_POSITION_SLOTS,
@@ -538,7 +540,11 @@ async def test_full_setup_includes_building_profile_step_when_profile_exists(
     profile = MockConfigEntry(
         domain=DOMAIN,
         data={"name": "My Building", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
-        options={CONF_OUTSIDETEMP_ENTITY: "sensor.outside_temp"},
+        options={
+            CONF_OUTSIDETEMP_ENTITY: "sensor.outside_temp",
+            CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.p_wind",
+            CONF_LUX_ENTITY: "sensor.p_lux",
+        },
         entry_id="test_profile_693",
         title="My Building",
     )
@@ -612,7 +618,11 @@ async def test_full_setup_includes_building_profile_step_when_profile_exists(
 
     opts = result["result"].options
     assert opts.get(CONF_BUILDING_PROFILE_ID) == "test_profile_693"
+    # All three profile-key categories persist through the create-link (issue
+    # #851 / @FredM67's report): outsidetemp, weather-override, and light/cloud.
     assert opts.get(CONF_OUTSIDETEMP_ENTITY) == "sensor.outside_temp"
+    assert opts.get(CONF_WEATHER_WIND_SPEED_SENSOR) == "sensor.p_wind"
+    assert opts.get(CONF_LUX_ENTITY) == "sensor.p_lux"
 
 
 @pytest.mark.integration
