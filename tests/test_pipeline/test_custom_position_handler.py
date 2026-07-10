@@ -65,6 +65,7 @@ def _make_state(
     use_my: bool,
     *,
     slot: int = 1,
+    custom_name: str | None = None,
 ) -> CustomPositionSensorState:
     """Compact constructor for test sensor states."""
     return CustomPositionSensorState(
@@ -76,6 +77,7 @@ def _make_state(
         use_my=use_my,
         slot=slot,
         active_entity_ids=(entity_id,) if is_on else (),
+        custom_name=custom_name,
     )
 
 
@@ -884,3 +886,88 @@ class TestCustomPositionActiveSlotName:
             position=50, control_method=ControlMethod.SOLAR, reason="solar"
         )
         assert result.custom_position_active_slot_name is None
+
+
+# ---------------------------------------------------------------------------
+# Per-slot custom name (issue #867) — overrides the label everywhere.
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPositionCustomName:
+    """An optional per-slot ``name`` overrides the reason/label, else falls
+    back to today's exact behavior (byte-identical when unset).
+    """
+
+    def test_reason_uses_custom_name_when_set(self) -> None:
+        """A named slot's reason starts with '<name> active' and still shows the position."""
+        state = _make_state(
+            "binary_sensor.movie",
+            True,
+            40,
+            _DEFAULT_PRIORITY,
+            False,
+            False,
+            slot=3,
+            custom_name="Movie night",
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(slot=3, position=40).evaluate(snapshot)
+        assert result is not None
+        assert result.reason.startswith("Movie night active")
+        assert "40%" in result.reason
+        assert result.custom_position_active_slot_name == "Movie night"
+
+    def test_reason_falls_back_when_name_absent(self) -> None:
+        """An unnamed slot keeps today's '#N (entity) — position X%' reason exactly."""
+        snapshot = _snapshot_with(
+            "binary_sensor.morning", is_on=True, position=70, slot=2
+        )
+        result = _handler(slot=2, position=70).evaluate(snapshot)
+        assert result is not None
+        assert "#2" in result.reason
+        assert "binary_sensor.morning" in result.reason
+        assert "70%" in result.reason
+        assert result.custom_position_active_slot_name is None
+
+    def test_template_only_named_slot_surfaces_name_on_attribute(self) -> None:
+        """A named template-only slot surfaces its name as the active-slot-name
+        attribute — today (unnamed) that attribute would be None.
+        """
+        state = CustomPositionSensorState(
+            entity_ids=(),
+            is_on=True,
+            position=40,
+            priority=_DEFAULT_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            slot=1,
+            active_entity_ids=(),
+            template_active=True,
+            custom_name="Away mode",
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(position=40).evaluate(snapshot)
+        assert result is not None
+        assert result.custom_position_active_slot_name == "Away mode"
+        assert result.reason.startswith("Away mode active")
+
+    def test_named_use_my_path_uses_name_in_reason(self) -> None:
+        """A named slot on the use-My path also uses '<name> active' in the reason."""
+        state = _make_state(
+            _ENTITY,
+            True,
+            50,
+            _DEFAULT_PRIORITY,
+            False,
+            True,
+            custom_name="Nap time",
+        )
+        snapshot = make_snapshot(
+            custom_position_sensors=[state],
+            my_position_value=30,
+        )
+        result = _handler(position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.reason.startswith("Nap time active")
+        assert result.custom_position_active_slot_name == "Nap time"

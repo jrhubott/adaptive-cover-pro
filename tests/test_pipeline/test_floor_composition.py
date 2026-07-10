@@ -762,6 +762,32 @@ def test_floor_label_falls_back_to_entity_id_then_template() -> None:
     assert floors[1].label == "template"
 
 
+def test_floor_label_uses_custom_name_when_set() -> None:
+    """A configured custom_name wins over sensor_name for the floor label (issue #867)."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            CustomPositionSensorState(
+                entity_ids=("binary_sensor.cp1",),
+                is_on=True,
+                position=60,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                min_mode=True,
+                use_my=False,
+                sensor_name="Table extension",
+                slot=1,
+                active_entity_ids=("binary_sensor.cp1",),
+                custom_name="Movie night floor",
+            ),
+        ]
+    )
+    floors = gather_active_floors(snap)
+    assert floors[0].label == "Movie night floor"
+
+
 def test_decision_trace_does_not_mislabel_winner() -> None:
     """Only the underlying handler is marked as the non-clamp winner (no double-winner)."""
     cover = _climate_cover(direct_sun_valid=False)

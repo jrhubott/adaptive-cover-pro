@@ -46,6 +46,7 @@ def _cp_state(
     priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
     slot: int = 1,
     sensor_name: str | None = None,
+    custom_name: str | None = None,
 ) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_ids=(entity_id,),
@@ -59,6 +60,7 @@ def _cp_state(
         sensor_name=sensor_name,
         slot=slot,
         active_entity_ids=(entity_id,) if is_on else (),
+        custom_name=custom_name,
     )
 
 
@@ -176,6 +178,70 @@ class TestHandlerDefersInTiltOnly:
 
 
 # ---------------------------------------------------------------------------
+# gather_tilt_only_contributions — the sibling collector helper
+# ---------------------------------------------------------------------------
+
+
+class TestGatherTiltOnlyContributions:
+    """``gather_tilt_only_contributions`` lists every active tilt-only slot."""
+
+    def test_collects_active_tilt_only_slots(self) -> None:
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            gather_tilt_only_contributions,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state("binary_sensor.a", is_on=True, tilt=42, tilt_only=True),
+                _cp_state(
+                    "binary_sensor.b",
+                    is_on=False,
+                    tilt=10,
+                    tilt_only=True,
+                    slot=2,
+                ),
+            ]
+        )
+        contributions = gather_tilt_only_contributions(snap)
+        assert [c.source for c in contributions] == ["custom_position_1"]
+        assert contributions[0].tilt == 42
+
+    def test_label_uses_custom_name_when_set(self) -> None:
+        """A configured custom_name wins over sensor_name (issue #867)."""
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            gather_tilt_only_contributions,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.a",
+                    is_on=True,
+                    tilt=42,
+                    tilt_only=True,
+                    sensor_name="Glare slot",
+                    custom_name="Evening tilt",
+                )
+            ]
+        )
+        (contribution,) = gather_tilt_only_contributions(snap)
+        assert contribution.label == "Evening tilt"
+
+    def test_label_falls_back_to_entity_id_when_unnamed(self) -> None:
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            gather_tilt_only_contributions,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state("binary_sensor.unnamed", is_on=True, tilt=30, tilt_only=True)
+            ]
+        )
+        (contribution,) = gather_tilt_only_contributions(snap)
+        assert contribution.label == "binary_sensor.unnamed"
+
+
+# ---------------------------------------------------------------------------
 # Step 3 — pure tilt-axis resolution module
 # ---------------------------------------------------------------------------
 
@@ -290,6 +356,29 @@ class TestResolveTiltAxis:
         info = resolve_tilt_axis(snap)
         assert info is not None
         assert info.label == "binary_sensor.unnamed"
+
+    def test_label_uses_custom_name_when_set(self) -> None:
+        """A configured custom_name wins over sensor_name for the tilt-axis label (issue #867)."""
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            resolve_tilt_axis,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.a",
+                    is_on=True,
+                    tilt=42,
+                    tilt_only=True,
+                    slot=2,
+                    sensor_name="Glare slot",
+                    custom_name="Evening tilt",
+                )
+            ]
+        )
+        info = resolve_tilt_axis(snap)
+        assert info is not None
+        assert info.label == "Evening tilt"
 
 
 # ---------------------------------------------------------------------------

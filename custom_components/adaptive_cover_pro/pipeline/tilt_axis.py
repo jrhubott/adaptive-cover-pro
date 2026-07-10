@@ -59,13 +59,10 @@ def gather_tilt_only_contributions(
     contributions: list[TiltAxisContribution] = []
     for state in snapshot.custom_position_sensors:
         if state.is_on and state.tilt_only and state.tilt is not None:
-            label = state.sensor_name or (
-                state.entity_ids[0] if state.entity_ids else "template"
-            )
             contributions.append(
                 TiltAxisContribution(
                     source=custom_position_handler_name(state.slot),
-                    label=label,
+                    label=state.display_label,
                     tilt=state.tilt,
                     slot=state.slot,
                 )
@@ -89,12 +86,9 @@ def resolve_tilt_axis(snapshot: PipelineSnapshot) -> TiltAxisContribution | None
             winner_state = state
     if winner_state is None:
         return None
-    label = winner_state.sensor_name or (
-        winner_state.entity_ids[0] if winner_state.entity_ids else "template"
-    )
     return TiltAxisContribution(
         source=custom_position_handler_name(winner_state.slot),
-        label=label,
+        label=winner_state.display_label,
         tilt=winner_state.tilt,
         slot=winner_state.slot,
     )

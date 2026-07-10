@@ -329,7 +329,17 @@
           "custom_position_min_mode_10": "Minimummodus für Slot 10",
           "custom_position_use_my_10": "Slot 10: Meine Position verwenden",
           "custom_position_tilt_10": "Neigung für Slot 10",
-          "custom_position_tilt_only_10": "Slot 10: nur Neigung"
+          "custom_position_tilt_only_10": "Slot 10: nur Neigung",
+          "custom_position_name_1": "Name für Slot 1",
+          "custom_position_name_2": "Name für Slot 2",
+          "custom_position_name_3": "Name für Slot 3",
+          "custom_position_name_4": "Name für Slot 4",
+          "custom_position_name_5": "Name für Slot 5",
+          "custom_position_name_6": "Name für Slot 6",
+          "custom_position_name_7": "Name für Slot 7",
+          "custom_position_name_8": "Name für Slot 8",
+          "custom_position_name_9": "Name für Slot 9",
+          "custom_position_name_10": "Name für Slot 10"
         },
         "data_description": {
           "custom_position_sensors_1": "Binärsensoren, die bei aktivem Status die Beschattung auf ihre konfigurierte Position bewegen (ODER-Logik). Leer lassen, um nur ein Template zu verwenden – oder um diesen Slot zu überspringen.",
@@ -1147,7 +1157,17 @@
           "custom_position_min_mode_10": "Minimummodus für Slot 10",
           "custom_position_use_my_10": "Slot 10: Meine Position verwenden",
           "custom_position_tilt_10": "Neigung für Slot 10",
-          "custom_position_tilt_only_10": "Slot 10: nur Neigung"
+          "custom_position_tilt_only_10": "Slot 10: nur Neigung",
+          "custom_position_name_1": "Name für Slot 1",
+          "custom_position_name_2": "Name für Slot 2",
+          "custom_position_name_3": "Name für Slot 3",
+          "custom_position_name_4": "Name für Slot 4",
+          "custom_position_name_5": "Name für Slot 5",
+          "custom_position_name_6": "Name für Slot 6",
+          "custom_position_name_7": "Name für Slot 7",
+          "custom_position_name_8": "Name für Slot 8",
+          "custom_position_name_9": "Name für Slot 9",
+          "custom_position_name_10": "Name für Slot 10"
         },
         "data_description": {
           "custom_position_sensors_1": "Binärsensoren, die bei aktivem Status die Beschattung auf ihre konfigurierte Position bewegen (ODER-Logik). Leer lassen, um nur ein Template zu verwenden – oder um diesen Slot zu überspringen.",

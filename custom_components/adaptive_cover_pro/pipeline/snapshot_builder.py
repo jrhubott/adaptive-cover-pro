@@ -274,6 +274,9 @@ class PipelineSnapshotBuilder:
             sensor_name = (
                 name_source.attributes.get(ATTR_FRIENDLY_NAME) if name_source else None
             )
+            # Optional user-configured label (issue #867); empty string (a
+            # cleared text box) normalizes to None, same as an absent key.
+            custom_name = options.get(slot_keys["name"]) or None
 
             priority = int(
                 options.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
@@ -308,6 +311,7 @@ class PipelineSnapshotBuilder:
                     slot=slot,
                     active_entity_ids=active,
                     template_active=template_active,
+                    custom_name=custom_name,
                 )
             )
         return result

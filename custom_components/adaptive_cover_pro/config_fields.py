@@ -1021,6 +1021,18 @@ def _custom_position_base_specs() -> list[FieldSpec]:
     """Per-slot base custom-position fields (no tilt)."""
     specs: list[FieldSpec] = []
     for slot in CUSTOM_POSITION_SLOTS.values():
+        # Optional per-slot label (issue #867): overrides the reason string,
+        # decision_trace attribute, and card label everywhere when set.
+        # Free-form text — no numeric range, cleared like `template`.
+        specs.append(
+            FieldSpec(
+                slot["name"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.NONE,
+                clearable=True,
+                make_selector=_const(selector.TextSelector),
+            )
+        )
         # Legacy single-sensor key: still settable (rollback mirror target) but
         # superseded by the `sensors` list in the config-flow schema.
         specs.append(
@@ -1162,6 +1174,7 @@ def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     """
     schema: dict = {}
     for slot in CUSTOM_POSITION_SLOTS.values():
+        schema[vol.Optional(slot["name"])] = selector.TextSelector()
         schema[vol.Optional(slot["sensors"], default=[])] = binary_on_selector(
             multiple=True
         )

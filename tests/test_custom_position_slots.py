@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 # Full set of sub-keys that every slot dict must carry.
 _REQUIRED_KEYS = frozenset(
     {
+        "name",
         "sensor",
         "sensors",
         "template",

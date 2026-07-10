@@ -56,13 +56,10 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
     floors: list[FloorClampInfo] = []
     for state in snapshot.custom_position_sensors:
         if state.is_on and state.min_mode and not state.use_my:
-            label = state.sensor_name or (
-                state.entity_ids[0] if state.entity_ids else "template"
-            )
             floors.append(
                 FloorClampInfo(
                     source=custom_position_handler_name(state.slot),
-                    label=label,
+                    label=state.display_label,
                     position=state.position,
                 )
             )

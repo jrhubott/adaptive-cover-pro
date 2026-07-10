@@ -329,7 +329,17 @@
           "custom_position_min_mode_10": "Mode de minimum pour le slot 10",
           "custom_position_use_my_10": "Slot 10 : utiliser la position Mes présélections",
           "custom_position_tilt_10": "Slot 10 : inclinaison",
-          "custom_position_tilt_only_10": "Slot 10 : inclinaison uniquement"
+          "custom_position_tilt_only_10": "Slot 10 : inclinaison uniquement",
+          "custom_position_name_1": "Nom pour le slot 1",
+          "custom_position_name_2": "Nom pour le slot 2",
+          "custom_position_name_3": "Nom pour le slot 3",
+          "custom_position_name_4": "Nom pour le slot 4",
+          "custom_position_name_5": "Nom pour le slot 5",
+          "custom_position_name_6": "Nom pour le slot 6",
+          "custom_position_name_7": "Nom pour le slot 7",
+          "custom_position_name_8": "Nom pour le slot 8",
+          "custom_position_name_9": "Nom pour le slot 9",
+          "custom_position_name_10": "Nom pour le slot 10"
         },
         "data_description": {
           "custom_position_sensors_1": "Capteurs binaires qui, lorsque l'un est 'on', déplacent le store à sa position configurée (logique OR). Laisser vide pour utiliser uniquement un template — ou pour ignorer ce slot.",
@@ -1147,7 +1157,17 @@
           "custom_position_min_mode_10": "Mode de minimum pour le slot 10",
           "custom_position_use_my_10": "Slot 10 : utiliser la position Mes présélections",
           "custom_position_tilt_10": "Slot 10 : inclinaison",
-          "custom_position_tilt_only_10": "Slot 10 : inclinaison uniquement"
+          "custom_position_tilt_only_10": "Slot 10 : inclinaison uniquement",
+          "custom_position_name_1": "Nom pour le slot 1",
+          "custom_position_name_2": "Nom pour le slot 2",
+          "custom_position_name_3": "Nom pour le slot 3",
+          "custom_position_name_4": "Nom pour le slot 4",
+          "custom_position_name_5": "Nom pour le slot 5",
+          "custom_position_name_6": "Nom pour le slot 6",
+          "custom_position_name_7": "Nom pour le slot 7",
+          "custom_position_name_8": "Nom pour le slot 8",
+          "custom_position_name_9": "Nom pour le slot 9",
+          "custom_position_name_10": "Nom pour le slot 10"
         },
         "data_description": {
           "custom_position_sensors_1": "Capteurs binaires qui, lorsque l'un est 'on', déplacent le store à sa position configurée (logique OR). Laisser vide pour utiliser uniquement un template — ou pour ignorer ce slot.",

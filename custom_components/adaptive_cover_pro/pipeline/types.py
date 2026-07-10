@@ -97,6 +97,32 @@ class CustomPositionSensorState:
     active_entity_ids: tuple[str, ...] = ()
     # Rendered condition-template result. None = no template configured.
     template_active: bool | None = None
+    # Optional user-configured label for this slot (issue #867). When set,
+    # overrides sensor_name everywhere the slot's label is surfaced (reason
+    # string, decision_trace attribute, floor/tilt-axis traces, card
+    # snapshot). None = no name configured (default; byte-identical to
+    # pre-#867 behavior).
+    custom_name: str | None = None
+
+    @property
+    def slot_name(self) -> str | None:
+        """Label for the card/decision-trace attribute — None-able.
+
+        The configured ``custom_name`` wins when set; otherwise falls back to
+        ``sensor_name`` (today's behavior — None for an unnamed template-only
+        slot, preserving the exact pre-#867 attribute value).
+        """
+        return self.custom_name or self.sensor_name
+
+    @property
+    def display_label(self) -> str:
+        """Always-a-string label for trace lines (floors.py / tilt_axis.py).
+
+        Falls back to the first bound entity_id, then the literal
+        ``"template"`` when no sensor is bound — the single source of truth
+        for the label expression previously duplicated across call sites.
+        """
+        return self.slot_name or (self.entity_ids[0] if self.entity_ids else "template")
 
 
 @dataclass(frozen=True)

@@ -290,6 +290,13 @@ def _entity_v():
     return vol.Any(None, str)
 
 
+# Free-form text field — None or any string, no format constraint. Shares
+# _entity_v's implementation (both are "None or str") but is aliased under
+# its own name so call sites read as "text", not "entity reference" — see
+# custom_position_name_N (issue #867).
+_text_v = _entity_v
+
+
 def _entities_v():
     return vol.Any(None, [str])
 
@@ -434,8 +441,9 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_FORCE_OVERRIDE_SENSORS: _entities_v(),
     CONF_FORCE_OVERRIDE_POSITION: _range(CONF_FORCE_OVERRIDE_POSITION),
     CONF_FORCE_OVERRIDE_MIN_MODE: _bool_v(),
-    # Custom positions 1–5 — sensor(s)/template/min_mode/use_my are non-numeric;
-    # position/priority pull their range from OPTION_RANGES.
+    # Custom positions 1–10 — sensor(s)/template/name/min_mode/use_my are
+    # non-numeric; position/priority pull their range from OPTION_RANGES.
+    **{slot_keys["name"]: _text_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     **{
         slot_keys["sensor"]: _entity_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },

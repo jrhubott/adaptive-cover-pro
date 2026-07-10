@@ -314,6 +314,47 @@ def test_sunset_tilt_absent_in_blind_schema() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Per-slot custom name (issue #867) — optional label overriding the reason/
+# decision_trace/card label everywhere. Cover-type-agnostic (no tilt gating).
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_name_key_in_schema_for_every_slot() -> None:
+    """custom_position_name_N must be present in the custom-position schema
+    for every configured slot, regardless of cover type.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        CoverType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert slot_keys["name"] in keys, f"{slot_keys['name']} missing from schema"
+
+
+def test_custom_position_name_1_in_all_slots_schema() -> None:
+    """Slot 1's name key is present verbatim (spot-check the literal key)."""
+    from custom_components.adaptive_cover_pro.const import CoverType
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
+    keys = {str(k) for k in schema}
+    assert "custom_position_name_1" in keys
+
+
+def test_custom_position_name_in_optional_keys_round_trips_absent() -> None:
+    """custom_position_name_N has no schema default, so a cleared text box
+    must round-trip to absent — it must be listed in
+    _CUSTOM_POSITION_OPTIONAL_KEYS the same way "template" is.
+    """
+    from custom_components.adaptive_cover_pro.const import CUSTOM_POSITION_SLOTS
+
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert slot_keys["name"] in cf._CUSTOM_POSITION_OPTIONAL_KEYS
+
+
+# ---------------------------------------------------------------------------
 # Daytime gate (issue #632) — lives on the L2b BEHAVIOR step beside the
 # sunset-timing options it overrides (relocated from positions in the #613 split).
 # ---------------------------------------------------------------------------

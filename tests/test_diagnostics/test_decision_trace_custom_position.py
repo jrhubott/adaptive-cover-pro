@@ -240,3 +240,34 @@ def test_custom_position_slots_snapshot_unconfigured_slot_is_inactive() -> None:
         assert s["position"] is None
         assert s["sensor"] is None
         assert s["sensor_name"] is None
+
+
+def test_custom_position_slots_snapshot_exposes_configured_name() -> None:
+    """A slot with a configured name (issue #867) exposes it as custom_name."""
+    bound = MagicMock()
+    bound.attributes = {"friendly_name": "Table extension"}
+    options = {
+        "custom_position_sensor_1": "binary_sensor.table",
+        "custom_position_1": 60,
+        "custom_position_name_1": "Movie night",
+    }
+    sensor = _make_sensor_with_options(options, states={"binary_sensor.table": bound})
+    attrs = sensor.extra_state_attributes or {}
+
+    slot1 = next(s for s in attrs["custom_position_slots"] if s["slot"] == 1)
+    assert slot1["custom_name"] == "Movie night"
+    # sensor_name stays the raw friendly_name — custom_name is additive.
+    assert slot1["sensor_name"] == "Table extension"
+
+
+def test_custom_position_slots_snapshot_custom_name_none_when_unset() -> None:
+    """A slot with no configured name reads custom_name=None."""
+    options = {
+        "custom_position_sensor_2": "binary_sensor.x",
+        "custom_position_2": 40,
+    }
+    sensor = _make_sensor_with_options(options)
+    attrs = sensor.extra_state_attributes or {}
+
+    slot2 = next(s for s in attrs["custom_position_slots"] if s["slot"] == 2)
+    assert slot2["custom_name"] is None

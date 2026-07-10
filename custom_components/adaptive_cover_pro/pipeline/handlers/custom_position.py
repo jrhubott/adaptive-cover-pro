@@ -83,6 +83,17 @@ class CustomPositionHandler(OverrideHandler):
             parts.append("template")
         return ", ".join(parts) if parts else "trigger"
 
+    def _reason_head(self, state: CustomPositionSensorState) -> str:
+        """Return the leading clause of the reason string (issue #867).
+
+        A configured slot name reads ``"<name> active"``; otherwise falls
+        back to today's exact ``"custom position #N active (trigger)"`` form.
+        Single source of truth for both PipelineResult reason branches below.
+        """
+        if state.custom_name:
+            return f"{state.custom_name} active"
+        return f"custom position #{self._slot} active ({self._trigger_label(state)})"
+
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's trigger is active.
 
@@ -105,7 +116,7 @@ class CustomPositionHandler(OverrideHandler):
                     if state.min_mode and not state.use_my:
                         return None
                     raw = compute_raw_calculated_position(snapshot)
-                    trigger = self._trigger_label(state)
+                    reason_head = self._reason_head(state)
                     # Issue #767: only the priority-100 safety slot bypasses the
                     # Automatic-Control-OFF gate. Ordinary slots respect the switch.
                     bypass_auto_control = self._is_safety
@@ -125,14 +136,12 @@ class CustomPositionHandler(OverrideHandler):
                             is_safety=self._is_safety,
                             control_method=ControlMethod.CUSTOM_POSITION,
                             reason=(
-                                f"custom position #{self._slot} active ({trigger})"
-                                f" — use My position ({pos}%)"
-                                f"{bypass_note}"
+                                f"{reason_head} — use My position ({pos}%){bypass_note}"
                             ),
                             raw_calculated_position=raw,
                             custom_position_active_slot=self._slot,
                             custom_position_minimum_mode=None,
-                            custom_position_active_slot_name=state.sensor_name,
+                            custom_position_active_slot_name=state.slot_name,
                         )
                     # Exact-position branch (state.min_mode is False here —
                     # floor mode defers above).
@@ -143,15 +152,11 @@ class CustomPositionHandler(OverrideHandler):
                         bypass_auto_control=bypass_auto_control,
                         is_safety=self._is_safety,
                         control_method=ControlMethod.CUSTOM_POSITION,
-                        reason=(
-                            f"custom position #{self._slot} active ({trigger})"
-                            f" — position {pos}%"
-                            f"{bypass_note}"
-                        ),
+                        reason=f"{reason_head} — position {pos}%{bypass_note}",
                         raw_calculated_position=raw,
                         custom_position_active_slot=self._slot,
                         custom_position_minimum_mode=None,
-                        custom_position_active_slot_name=state.sensor_name,
+                        custom_position_active_slot_name=state.slot_name,
                     )
                 # Slot found but not active — pass through
                 return None

@@ -656,6 +656,12 @@ GROUP_SCENE_PRIORITY = 85
 def _custom_position_slot_keys(n: int) -> dict[str, str]:
     """Return the wire-format option keys for slot *n*."""
     return {
+        # Optional user-configured label (issue #867). When set, overrides the
+        # slot's label everywhere it's surfaced (reason string, decision_trace
+        # attribute, floor/tilt-axis traces, card snapshot). Absent = no name
+        # (fully backward-compatible; the sensor's friendly_name is used as
+        # before).
+        "name": f"custom_position_name_{n}",
         # Legacy single-sensor key. Still read as a fallback when the `sensors`
         # list key is absent, and mirrored (first list element) on every save
         # so a rollback to the previous integration version keeps working.

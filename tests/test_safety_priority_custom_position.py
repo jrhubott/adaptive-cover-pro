@@ -296,6 +296,52 @@ def test_legacy_single_sensor_key_fallback(mock_hass):
 
 
 # ---------------------------------------------------------------------------
+# Snapshot builder: custom name (issue #867)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_custom_name_read_from_options(mock_hass):
+    """A configured custom_position_name_N option is read into custom_name."""
+    _set_sensor_states(
+        mock_hass, {"binary_sensor.rain": "on", "binary_sensor.wind": "off"}
+    )
+    builder = _make_builder(mock_hass)
+    options = {**_SAFETY_OPTIONS, f"custom_position_name_{_SLOT}": "Deck shade"}
+
+    (state,) = builder.read_custom_position_sensors(options)
+
+    assert state.custom_name == "Deck shade"
+
+
+@pytest.mark.unit
+def test_custom_name_absent_defaults_to_none(mock_hass):
+    """No custom_position_name_N option configured → custom_name is None."""
+    _set_sensor_states(
+        mock_hass, {"binary_sensor.rain": "on", "binary_sensor.wind": "off"}
+    )
+    builder = _make_builder(mock_hass)
+
+    (state,) = builder.read_custom_position_sensors(_SAFETY_OPTIONS)
+
+    assert state.custom_name is None
+
+
+@pytest.mark.unit
+def test_custom_name_empty_string_normalizes_to_none(mock_hass):
+    """An empty-string custom_position_name_N (cleared in the UI) reads as None."""
+    _set_sensor_states(
+        mock_hass, {"binary_sensor.rain": "on", "binary_sensor.wind": "off"}
+    )
+    builder = _make_builder(mock_hass)
+    options = {**_SAFETY_OPTIONS, f"custom_position_name_{_SLOT}": ""}
+
+    (state,) = builder.read_custom_position_sensors(options)
+
+    assert state.custom_name is None
+
+
+# ---------------------------------------------------------------------------
 # Pipeline precedence (old FORCE_OVERRIDE_ACTIVE precedence scenarios)
 # ---------------------------------------------------------------------------
 
