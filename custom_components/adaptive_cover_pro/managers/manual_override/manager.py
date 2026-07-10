@@ -519,6 +519,10 @@ class AdaptiveCoverManager:
         entity_id: str,
         my_position_value: int,
         is_waiting,
+        *,
+        context_user_id: str | None = None,
+        context_id: str | None = None,
+        context_parent_id: str | None = None,
     ) -> None:
         """Mark manual override when a user-initiated cover.stop_cover is detected.
 
@@ -532,6 +536,10 @@ class AdaptiveCoverManager:
             my_position_value: The position (0–100) the My preset represents.
             is_waiting:       Callable(entity_id) -> bool from
                               CoverCommandService.
+            context_user_id:  user_id of the stop_cover call's originating HA
+                              Context, if any (issue #875 diagnostic capture).
+            context_id:       id of the stop_cover call's originating HA Context.
+            context_parent_id: parent_id of the originating HA Context, if any.
 
         """
         if entity_id not in self.covers:
@@ -541,6 +549,9 @@ class AdaptiveCoverManager:
                 entity_id=entity_id,
                 my_position_value=my_position_value,
                 is_waiting=is_waiting,
+                context_user_id=context_user_id,
+                context_id=context_id,
+                context_parent_id=context_parent_id,
             )
         )
         if decision is None:

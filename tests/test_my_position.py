@@ -657,11 +657,15 @@ class TestCoverServiceCallHandler:
     fires → manual override is set (or not) based on context id and config.
     """
 
-    def _make_event(self, entity_id, context_id=None):
+    def _make_event(self, entity_id, context_id=None, user_id=None):
         """Build a mock EVENT_CALL_SERVICE event for cover.stop_cover."""
         from homeassistant.core import Context
 
-        ctx = Context(id=context_id) if context_id else Context()
+        ctx = (
+            Context(id=context_id, user_id=user_id)
+            if context_id or user_id
+            else Context()
+        )
         event = MagicMock()
         event.data = {
             "domain": "cover",
@@ -706,6 +710,62 @@ class TestCoverServiceCallHandler:
 
         assert mgr.manual_control.get("cover.somfy") is True
         coord._cmd_svc.set_target.assert_called_with("cover.somfy", 50)
+
+    @pytest.mark.asyncio
+    async def test_user_stop_records_originating_context(self, mock_hass):
+        """Issue #875: a genuine external stop_cover records the originating
+        HA context (user_id / context id) on the manual_override_set event,
+        so a later report can distinguish a legitimate external stop from a
+        spurious/descendant call.
+        """
+        from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+            EventBuffer,
+        )
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            AdaptiveCoverManager,
+        )
+
+        event_buffer = EventBuffer(maxlen=50)
+        mgr = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+            event_buffer=event_buffer,
+        )
+        mgr.add_covers(["cover.somfy"])
+
+        coord = MagicMock()
+        coord.manual_toggle = True
+        coord.automatic_control = True
+        coord.manual_ignore_external = False
+        coord.entities = ["cover.somfy"]
+        coord.manager = mgr
+        coord.config_entry.options = {"my_position_value": 50}
+        coord._cmd_svc.was_acp_stop_context = MagicMock(return_value=False)
+        coord.logger = MagicMock()
+        coord._cmd_svc.is_waiting_for_target = MagicMock(return_value=False)
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        # A genuine external stop while ACP is idle — non-ACP context with a
+        # real HA user_id, mirroring Incident A in issue #875 (cover idle,
+        # stop arrives on the service-call channel).
+        event = self._make_event("cover.somfy", context_id="ctx-abc", user_id="u1")
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        assert mgr.manual_control.get("cover.somfy") is True
+        events = event_buffer.snapshot()
+        assert len(events) == 1
+        assert events[0]["event"] == "manual_override_set"
+        reason = events[0]["reason"]
+        assert (
+            "u1" in reason
+        ), f"expected originating context user_id 'u1' in recorded reason, got: {reason!r}"
+        assert (
+            "ctx-abc" in reason
+        ), f"expected originating context id 'ctx-abc' in recorded reason, got: {reason!r}"
 
     @pytest.mark.asyncio
     async def test_acp_originated_stop_does_not_set_override(self, mock_hass):

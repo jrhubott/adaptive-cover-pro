@@ -87,11 +87,23 @@ class UserContextChange:
 
 @dataclass(frozen=True, slots=True)
 class StopToMy:
-    """Input for the stop-service channel (user stop_cover to the 'My' preset)."""
+    """Input for the stop-service channel (user stop_cover to the 'My' preset).
+
+    ``context_user_id``/``context_id``/``context_parent_id`` carry the
+    originating HA ``Context`` of the ``cover.stop_cover`` call (issue #875)
+    so the recorded ``manual_override_set`` event is self-attributing —
+    distinguishing a legitimate external stop from a spurious/descendant one
+    without needing the HA logbook. All default to ``None`` for callers that
+    don't have a context (e.g. existing unit tests constructing ``StopToMy``
+    directly).
+    """
 
     entity_id: str
     my_position_value: int
     is_waiting: Callable[[str], bool]
+    context_user_id: str | None = None
+    context_id: str | None = None
+    context_parent_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +122,24 @@ class DetectorConfig:
     ignore_external: bool
 
 
+def _format_context_suffix(
+    context_user_id: str | None,
+    context_id: str | None,
+    context_parent_id: str | None = None,
+) -> str:
+    """Render the '(context user_id=..., id=...)' suffix.
+
+    Shared by every override reason that records its originating HA context
+    (issue #875). ``context_parent_id`` is appended only when the caller has
+    one to report, so :func:`default_user_context_decision` (which doesn't
+    track it) keeps its existing reason text unchanged.
+    """
+    parts = [f"user_id={context_user_id}", f"id={context_id}"]
+    if context_parent_id is not None:
+        parts.append(f"parent_id={context_parent_id}")
+    return f"(context {', '.join(parts)})"
+
+
 def default_user_context_decision(change: UserContextChange) -> OverrideDecision:
     """Today's behaviour: a confirmed user-context change marks manual override."""
     return OverrideDecision(
@@ -119,8 +149,8 @@ def default_user_context_decision(change: UserContextChange) -> OverrideDecision
             "our_state": None,
             "new_position": None,
             "reason": (
-                f"user-initiated state change "
-                f"(context user_id={change.context_user_id}, id={change.context_id})"
+                "user-initiated state change "
+                + _format_context_suffix(change.context_user_id, change.context_id)
             ),
         },
     )
@@ -130,7 +160,9 @@ def default_stop_to_my_decision(stop: StopToMy) -> OverrideDecision | None:
     """Today's behaviour: stop_cover to 'My' marks manual unless mid-command.
 
     Returns ``None`` when the cover is still moving toward a commanded target
-    (the stop is the cover reaching that target, not a user touch).
+    (the stop is the cover reaching that target, not a user touch). The
+    recorded reason embeds the originating HA context (issue #875) so this
+    class of report is self-attributing without needing the HA logbook.
     """
     if stop.is_waiting(stop.entity_id):
         return None
@@ -140,7 +172,12 @@ def default_stop_to_my_decision(stop: StopToMy) -> OverrideDecision | None:
         event_kwargs={
             "our_state": stop.my_position_value,
             "new_position": stop.my_position_value,
-            "reason": "user stop_cover to My position",
+            "reason": (
+                "user stop_cover to My position "
+                + _format_context_suffix(
+                    stop.context_user_id, stop.context_id, stop.context_parent_id
+                )
+            ),
         },
     )
 
