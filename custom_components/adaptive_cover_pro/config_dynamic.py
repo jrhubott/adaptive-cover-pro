@@ -331,9 +331,16 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     (issue #852) derives its clamp bounds from the same call.
 
     Slot 1 reuses the legacy unsuffixed keys and keeps its ``Required``
-    defaults (0/1) so its form is byte-for-byte unchanged. Slots 2/3 are
-    ``Optional`` sliders with no default, so an unconfigured slot stays absent
-    (``None``-preserving) and therefore inactive.
+    defaults (0/1) so its form is byte-for-byte unchanged. Slots 2/3's left
+    marker also gets ``default=0`` (mirroring slot 1) — HA validates
+    submitted form data against this schema before the step handler runs,
+    and a frontend slider resting at its minimum value (0) may never appear
+    in the raw payload; without a default, ``vol.Optional`` drops an absent
+    key entirely instead of backfilling it, silently losing a brand-new
+    slot's left edge (issue #868). Slot 2/3's right marker stays a
+    default-less ``Optional`` so an unconfigured slot's right edge remains
+    genuinely absent — ``_make_blind_spot``'s "both edges present" gate still
+    keeps a truly untouched slot inactive.
     """
     edges = blind_spot_edges(options)
 
@@ -355,7 +362,7 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
             left_marker = vol.Required(keys["left"], default=0)
             right_marker = vol.Required(keys["right"], default=1)
         else:
-            left_marker = vol.Optional(keys["left"])
+            left_marker = vol.Optional(keys["left"], default=0)
             right_marker = vol.Optional(keys["right"])
         schema[left_marker] = _slider(0, edges - 1)
         schema[right_marker] = _slider(1, edges)

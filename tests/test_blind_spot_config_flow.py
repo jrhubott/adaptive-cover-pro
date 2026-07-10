@@ -30,6 +30,35 @@ def test_schema_renders_all_slot_keys():
     assert "blind_spot_right_3" in keys
 
 
+def test_slot_2_left_survives_omission_when_right_is_configured():
+    """A submission that configures slot 2's right edge but never touches
+    its left slider (at rest = 0) must not silently drop the slot's left
+    edge. Regression for issue #868 — HA's data_entry_flow validates
+    user_input against data_schema before the step handler runs, and
+    vol.Optional(key) with no default leaves an absent key absent.
+    """
+    schema = blind_spot_schema({"fov_left": 45, "fov_right": 45})
+    validated = schema(
+        {"blind_spot_left": 0, "blind_spot_right": 10, "blind_spot_right_2": 90}
+    )
+    assert validated.get("blind_spot_left_2") == 0
+
+
+def test_slot_2_stays_inactive_when_completely_untouched():
+    """The new left default must not spuriously activate an unconfigured
+    slot 2/3 — right stays absent, so _make_blind_spot's guard still wins.
+    """
+    schema = blind_spot_schema({"fov_left": 45, "fov_right": 45})
+    validated = schema({"blind_spot_left": 0, "blind_spot_right": 10})
+    assert validated.get("blind_spot_left_2") == 0  # new default present
+    assert "blind_spot_right_2" not in validated  # still genuinely absent
+
+    from custom_components.adaptive_cover_pro.config_types import CoverConfig
+
+    config = CoverConfig.from_options({"blind_spot": True, **validated})
+    assert len(config.blind_spots) == 1  # slot 2 did NOT activate
+
+
 def test_per_slot_left_right_errors():
     from custom_components.adaptive_cover_pro.config_flow import (
         _blind_spot_step_errors,
