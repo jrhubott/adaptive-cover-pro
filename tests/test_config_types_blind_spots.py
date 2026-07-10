@@ -63,3 +63,20 @@ def test_incomplete_slot_skipped():
         }
     )
     assert len(config.blind_spots) == 1
+
+
+def test_slot_left_zero_is_not_treated_as_missing():
+    """left=0 is a valid edge value, not an 'unset' sentinel (issue #868)."""
+    config = CoverConfig.from_options(
+        {
+            "blind_spot": True,
+            "blind_spot_left": 0,
+            "blind_spot_right": 30,
+            "blind_spot_left_2": 0,
+            "blind_spot_right_2": 60,
+            "blind_spot_elevation_2": 5,
+        }
+    )
+    assert len(config.blind_spots) == 2
+    assert config.blind_spots[1].left == 0
+    assert config.blind_spots[1].right == 60
