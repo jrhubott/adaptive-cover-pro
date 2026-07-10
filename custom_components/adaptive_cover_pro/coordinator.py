@@ -961,6 +961,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             return
 
+        # Capture the stop_cover call's originating HA context (issue #875) so
+        # the recorded manual_override_set event is self-attributing —
+        # distinguishing a legitimate external stop from a spurious/descendant
+        # one without needing the HA logbook.
         for entity_id in tracked:
             # On the not-manual→manual edge the manager fires on_engaged →
             # discard_target (issue #215/#216); see set_transition_callbacks.
@@ -968,6 +972,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 entity_id,
                 int(my_position_value),
                 self._cmd_svc.is_waiting_for_target,
+                context_user_id=event.context.user_id if event.context else None,
+                context_id=event.context.id if event.context else None,
+                context_parent_id=event.context.parent_id if event.context else None,
             )
             # Update target so the next reconciliation compares against
             # My rather than the stale calculated state.
