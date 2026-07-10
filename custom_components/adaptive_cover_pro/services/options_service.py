@@ -157,6 +157,8 @@ from ..const import (
     VENETIAN_TILT_SKIP_MODES,
     TemplateCombineMode,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_TRACKING_SEASONS,
+    TrackingSeason,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
@@ -536,6 +538,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR: _bool_v(),
     CONF_TEMP_EXTREME_HEAT: _templatable_num(CONF_TEMP_EXTREME_HEAT),
     CONF_EXTREME_HEAT_POSITION: _range(CONF_EXTREME_HEAT_POSITION),
+    CONF_TRACKING_SEASONS: vol.Any(None, [vol.In([s.value for s in TrackingSeason])]),
     # Weather safety
     CONF_WEATHER_BYPASS_AUTO_CONTROL: _bool_v(),
     CONF_WEATHER_WIND_SPEED_SENSOR: _entity_v(),

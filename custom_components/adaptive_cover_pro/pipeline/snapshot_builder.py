@@ -79,10 +79,12 @@ from ..const import (
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_STATE,
+    CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_CUSTOM_POSITION_ENABLED,
+    DEFAULT_TRACKING_SEASONS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
     DEFAULT_MAX_COVERAGE_STEPS,
@@ -344,6 +346,15 @@ class PipelineSnapshotBuilder:
             cloudy_position=options.get(CONF_CLOUDY_POSITION),
             temp_extreme_heat=options.get(CONF_TEMP_EXTREME_HEAT),
             extreme_heat_position=options.get(CONF_EXTREME_HEAT_POSITION),
+            # Absent / None falls back to all-seasons (unchanged behaviour for
+            # installs that never saw this option). An explicit list is honoured
+            # literally — including the empty list, which means "never track"
+            # (glare tracking is suppressed in every season).
+            tracking_seasons=(
+                frozenset(DEFAULT_TRACKING_SEASONS)
+                if options.get(CONF_TRACKING_SEASONS) is None
+                else frozenset(options[CONF_TRACKING_SEASONS])
+            ),
         )
 
     def build(

@@ -19,8 +19,10 @@ from ...const import (
     CLIMATE_DEFAULT_TILT_ANGLE,
     CLIMATE_SUMMER_TILT_ANGLE,
     DEFAULT_EXTREME_HEAT_POSITION,
+    DEFAULT_TRACKING_SEASONS,
     POSITION_CLOSED,
     ClimateStrategy,
+    TrackingSeason,
 )
 from ...cover_types import TiltPolicy
 
@@ -37,6 +39,8 @@ class ClimateContext:
     ``solar_position`` is the bound ``ClimateCoverState._solar_position``.
     ``gamma_deg``/``beta_deg`` are precomputed tilt geometry (0.0 for non-tilt
     covers, which never consult the tilt position fns).
+    ``tracking_seasons`` mirrors the per-instance season-scope option: the set
+    of seasons in which glare tracking is permitted (defaults to all).
     """
 
     data: Any
@@ -45,12 +49,39 @@ class ClimateContext:
     solar_position: Callable[[], int]
     gamma_deg: float = 0.0
     beta_deg: float = 0.0
+    tracking_seasons: frozenset[str] = frozenset(DEFAULT_TRACKING_SEASONS)
 
     # --- shared season predicates (single source of truth) ---
     @property
     def cover_valid(self) -> bool:
         """Whether the cover's geometry/sun calc is currently valid."""
         return bool(self.cover.valid)
+
+    @property
+    def current_season(self) -> TrackingSeason:
+        """The active season for the season-scope gate.
+
+        Summer takes precedence over winter (mirrors ``ClimateHandler.evaluate``);
+        in practice the two are mutually exclusive.  Anything that is neither is
+        ``INTERMEDIATE``.
+        """
+        if self.is_summer:
+            return TrackingSeason.SUMMER
+        if self.is_winter:
+            return TrackingSeason.WINTER
+        return TrackingSeason.INTERMEDIATE
+
+    @property
+    def is_tracking_season_blocked(self) -> bool:
+        """True when glare tracking is not permitted in the current season.
+
+        This is the single season-scope predicate consulted by every rule
+        table.  When it fires, the glare fall-through is replaced by the cover's
+        default position.  It only gates the glare-tracking branch — the
+        dedicated winter (heating/insulation) and summer (cooling) strategies
+        are evaluated first and run regardless of the selected seasons.
+        """
+        return self.current_season.value not in self.tracking_seasons
 
     @property
     def is_winter(self) -> bool:
@@ -179,6 +210,27 @@ def evaluate_rules(
 
 _ALWAYS: Callable[[ClimateContext], bool] = lambda _ctx: True  # noqa: E731
 
+# Season-scope gate: when the current season is not in the permitted set the
+# glare fall-through is replaced by the default position. Inserted immediately
+# before each table's glare-tracking branch so the dedicated winter/summer
+# climate strategies (evaluated earlier) always win regardless of the selected
+# seasons. NORMAL_WITHOUT_PRESENCE never reaches glare tracking, so it carries
+# no gate (see its comment). The predicate lives on ClimateContext so all
+# tables share one source of truth.
+_SEASON_GATE = ClimateRule(
+    lambda c: c.is_tracking_season_blocked,
+    ClimateStrategy.TRACKING_SEASON_GATE,
+    _default,
+)
+# TILT_WITHOUT_PRESENCE places winter-insulation and an invalid-cover solar
+# fall-through *after* its glare branch, so its gate must keep the cover_valid
+# guard to avoid pre-empting them when the cover geometry is invalid.
+_SEASON_GATE_VALID = ClimateRule(
+    lambda c: c.cover_valid and c.is_tracking_season_blocked,
+    ClimateStrategy.TRACKING_SEASON_GATE,
+    _default,
+)
+
 # ---------------------------------------------------------------------------
 # Shared, table-agnostic override band (issue #766)
 # ---------------------------------------------------------------------------
@@ -205,7 +257,10 @@ _TOP_OVERRIDES: tuple[ClimateRule, ...] = (
 # ---------------------------------------------------------------------------
 
 # normal_with_presence: winter-heating → winter-insulation → low-light →
-# summer-cooling → glare(defer/None).
+# summer-cooling → season-gate → glare(defer/None). The gate sits just before
+# the glare fall-through: low-light / summer-cooling are honest climate
+# strategies that should label as themselves, so only the would-be glare
+# tracking is gated by season.
 NORMAL_WITH_PRESENCE: tuple[ClimateRule, ...] = (
     *_TOP_OVERRIDES,
     ClimateRule(
@@ -228,12 +283,16 @@ NORMAL_WITH_PRESENCE: tuple[ClimateRule, ...] = (
         ClimateStrategy.SUMMER_COOLING,
         _intent_block_sun,
     ),
+    _SEASON_GATE,
     ClimateRule(_ALWAYS, ClimateStrategy.GLARE_CONTROL, _defer),
 )
 
 # normal_without_presence: inside cover.valid → low-light → summer → winter;
 # then winter-insulation; else low-light(default). Each valid-block rule carries
 # the cover_valid guard so the flat order matches the nested original.
+# No season gate: this table never defers to glare tracking — its catch-all
+# already returns the default position — so there is nothing for the gate to
+# suppress (it would only relabel an honest LOW_LIGHT default).
 NORMAL_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
     *_TOP_OVERRIDES,
     ClimateRule(
@@ -261,8 +320,11 @@ NORMAL_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
 
 # tilt_with_presence: inside cover.valid (and only when NOT both-seasons, the
 # original's defensive `if is_summer and is_winter: pass`) → winter → low-light →
-# summer; then winter-insulation; else glare(tilt default). Seasons are mutually
-# exclusive in practice; the not-both guards preserve the misconfig fall-through.
+# summer; then winter-insulation; season-gate; else glare(tilt default). Seasons
+# are mutually exclusive in practice; the not-both guards preserve the misconfig
+# fall-through. The gate sits just before the glare(tilt default) catch-all so a
+# deselected season returns the cover's default position instead of the
+# sun-aware default tilt angle.
 TILT_WITH_PRESENCE: tuple[ClimateRule, ...] = (
     *_TOP_OVERRIDES,
     ClimateRule(
@@ -271,9 +333,9 @@ TILT_WITH_PRESENCE: tuple[ClimateRule, ...] = (
         _solar,
     ),
     ClimateRule(
-        lambda c: c.cover_valid
-        and not (c.is_summer and c.is_winter)
-        and c.is_low_light,
+        lambda c: (
+            c.cover_valid and not (c.is_summer and c.is_winter) and c.is_low_light
+        ),
         ClimateStrategy.LOW_LIGHT,
         _solar,
     ),
@@ -287,12 +349,16 @@ TILT_WITH_PRESENCE: tuple[ClimateRule, ...] = (
         ClimateStrategy.WINTER_INSULATION,
         _closed,
     ),
+    _SEASON_GATE,
     ClimateRule(_ALWAYS, ClimateStrategy.GLARE_CONTROL, _tilt_default),
 )
 
 # tilt_without_presence: inside cover.valid → low-light → summer(closed) →
-# winter+mode2 → glare(tilt default, the valid-block catch-all); then
-# winter-insulation; else glare(solar).
+# winter+mode2 → season-gate(valid) → glare(tilt default, the valid-block
+# catch-all); then winter-insulation; else glare(solar). The gate carries the
+# cover_valid guard (the _SEASON_GATE_VALID variant) because winter-insulation
+# and the invalid-cover solar fall-through sit *after* the glare branch — an
+# unguarded gate would pre-empt them for invalid covers.
 TILT_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
     *_TOP_OVERRIDES,
     ClimateRule(
@@ -310,6 +376,7 @@ TILT_WITHOUT_PRESENCE: tuple[ClimateRule, ...] = (
         ClimateStrategy.WINTER_HEATING,
         _tilt_winter_mode2,
     ),
+    _SEASON_GATE_VALID,
     ClimateRule(
         lambda c: c.cover_valid,
         ClimateStrategy.GLARE_CONTROL,

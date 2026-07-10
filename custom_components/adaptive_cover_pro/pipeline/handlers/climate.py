@@ -15,7 +15,12 @@ import numpy as np
 from ...cover_types import get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
 from ...engine.covers import AdaptiveTiltCover
-from ...const import ClimateInactiveReason, ClimateStrategy, ControlMethod
+from ...const import (
+    DEFAULT_TRACKING_SEASONS,
+    ClimateInactiveReason,
+    ClimateStrategy,
+    ControlMethod,
+)
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
@@ -64,6 +69,9 @@ class ClimateCoverData:
     # Extreme-heat mode (issue #766). ``temp_extreme_heat`` None = feature off.
     temp_extreme_heat: float | None = None
     extreme_heat_position: int | None = None
+    tracking_seasons: frozenset[str] = field(
+        default_factory=lambda: frozenset(DEFAULT_TRACKING_SEASONS)
+    )
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -227,6 +235,7 @@ class ClimateCoverState:
             solar_position=self._solar_position,
             gamma_deg=gamma_deg,
             beta_deg=beta_deg,
+            tracking_seasons=self.climate_data.tracking_seasons,
         )
 
     def _run(self, rules: tuple[ClimateRule, ...], *, tilt: bool) -> int | None:
@@ -413,6 +422,7 @@ class ClimateHandler(OverrideHandler):
             cloud_coverage_above_threshold=r.cloud_coverage_above_threshold,
             temp_extreme_heat=opts.temp_extreme_heat,
             extreme_heat_position=opts.extreme_heat_position,
+            tracking_seasons=opts.tracking_seasons,
         )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
@@ -436,6 +446,15 @@ class ClimateHandler(OverrideHandler):
             # label + control method, never a short-circuit before get_state().
             method = ControlMethod.EXTREME_HEAT
             season = "extreme heat"
+        elif (
+            climate_cover_state.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
+        ):
+            # Season-scope gate fired: glare tracking is not permitted in the
+            # current season, so the cover holds its default position. Checked
+            # before is_summer/is_winter because the gate can fire in any season
+            # the user deselected, and DEFAULT is the honest control method.
+            method = ControlMethod.DEFAULT
+            season = "default: tracking off this season"
         elif climate_data.is_summer:
             method = ControlMethod.SUMMER
             season = "summer"

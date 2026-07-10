@@ -561,6 +561,14 @@ CONF_EXTREME_HEAT_POSITION = "extreme_heat_position"
 # heat. A literal default is a constant declaration, per coding guidelines.
 DEFAULT_EXTREME_HEAT_POSITION = POSITION_CLOSED
 
+# Season-scope control for glare tracking. Glare tracking (Priority 4) is only
+# reachable when the current season is one of the selected seasons; in any
+# deselected season the cover returns to its default position instead of
+# tracking the sun. See the ``TrackingSeason`` enum and DEFAULT_TRACKING_SEASONS
+# (defined with the other enums below) for the season values and the
+# all-seasons default that preserves existing behaviour.
+CONF_TRACKING_SEASONS = "tracking_seasons"
+
 STRATEGY_MODE_BASIC = "basic"  # geometry only, no climate inputs
 STRATEGY_MODE_CLIMATE = "climate"  # climate-aware (temps/presence/weather)
 STRATEGY_MODES = [
@@ -1759,6 +1767,26 @@ class PresenceDomain(StrEnum):
     INPUT_BOOLEAN = "input_boolean"
 
 
+class TrackingSeason(StrEnum):
+    """Seasons in which glare tracking may run (season-scope control).
+
+    Derived from the climate temperatures: ``SUMMER`` when above the high
+    threshold (and outside high), ``WINTER`` when below the low threshold,
+    ``INTERMEDIATE`` otherwise. Stored as a list of these string values under
+    ``CONF_TRACKING_SEASONS``; the all-seasons default preserves the original
+    always-track behaviour.
+    """
+
+    WINTER = "winter"
+    INTERMEDIATE = "intermediate"
+    SUMMER = "summer"
+
+
+# Ordered all-seasons default (member order). Selecting every season is the
+# backward-compatible "track in every season" behaviour.
+DEFAULT_TRACKING_SEASONS: list[str] = [s.value for s in TrackingSeason]
+
+
 class ClimateStrategy(Enum):
     """Climate control strategies (winter/summer/glare/low-light branches)."""
 
@@ -1768,6 +1796,9 @@ class ClimateStrategy(Enum):
     SUMMER_COOLING = "summer_cooling"  # Close for heat blocking
     LOW_LIGHT = "low_light"  # Use default position
     GLARE_CONTROL = "glare_control"  # Use calculated position
+    TRACKING_SEASON_GATE = (
+        "tracking_season_gate"  # season-scope gate suppressed tracking
+    )
 
 
 class ControlMethod(StrEnum):

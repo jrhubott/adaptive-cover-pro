@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 
 from custom_components.adaptive_cover_pro.const import (
+    DEFAULT_TRACKING_SEASONS,
     ClimateStrategy,
     ControlMethod,
 )
@@ -49,6 +50,7 @@ def _make_options(
     winter_close_insulation=False,
     temp_extreme_heat=None,
     extreme_heat_position=None,
+    tracking_seasons=frozenset(DEFAULT_TRACKING_SEASONS),
 ) -> ClimateOptions:
     return ClimateOptions(
         temp_low=temp_low,
@@ -60,6 +62,7 @@ def _make_options(
         winter_close_insulation=winter_close_insulation,
         temp_extreme_heat=temp_extreme_heat,
         extreme_heat_position=extreme_heat_position,
+        tracking_seasons=tracking_seasons,
     )
 
 
@@ -297,6 +300,30 @@ class TestClimateHandlerGlareControl:
         )
         result = self.handler.evaluate(snap)
         assert result is not None
+
+    def test_tracking_season_gate_uses_default_control_method(self) -> None:
+        """Intermediate sunny branch blocked by season gate reports DEFAULT."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            default_position=42,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0),
+            climate_options=_make_options(
+                temp_low=18.0,
+                temp_high=26.0,
+                tracking_seasons=frozenset({"summer"}),
+            ),
+        )
+        result = self.handler.evaluate(snap)
+
+        assert result is not None
+        assert result.control_method == ControlMethod.DEFAULT
+        assert result.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
+        assert (
+            result.reason
+            == "climate mode active (default: tracking off this season) — position 42%"
+        )
 
     def test_describe_skip_defer_reason(self) -> None:
         """describe_skip returns defer message when climate mode is on and deferred."""

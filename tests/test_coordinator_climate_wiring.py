@@ -14,6 +14,7 @@ tests now drive the builder directly via its public surface.  The wiring contrac
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -43,8 +44,15 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
+    CONF_TRACKING_SEASONS,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
+    ClimateStrategy,
+    TrackingSeason,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateCoverState,
+    ClimateHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
     PipelineSnapshotBuilder,
@@ -810,3 +818,102 @@ class TestExtremeHeatWiring:
         options = {CONF_TEMP_EXTREME_HEAT: 35, CONF_EXTREME_HEAT_POSITION: 0}
         result = coord._build_climate_options(options)
         assert result.extreme_heat_position == 0
+
+
+# ---------------------------------------------------------------------------
+# tracking_seasons end-to-end wiring (Issue: season-scope glare tracking)
+# ---------------------------------------------------------------------------
+
+
+class TestTrackingSeasonsWiring:
+    """End-to-end: a ``tracking_seasons`` option reaches the climate rule tables.
+
+    The unit tests in ``test_tracking_seasons.py`` exercise the rule tables with
+    a hand-built ``ClimateContext``.  This case verifies the wiring those tests
+    take for granted — the chain the option value rides through, using the real
+    production code at every hop:
+
+        option dict
+          → build_climate_options       → ClimateOptions.tracking_seasons
+          → ClimateHandler._build_climate_data → ClimateCoverData.tracking_seasons
+          → ClimateCoverState._build_context   → ClimateContext.tracking_seasons
+          → evaluate_rules
+
+    A refactor that drops the field at any one of those forwards (the parts most
+    likely to break silently, since they are thin field copies) fails here.
+    """
+
+    _SUMMER_ONLY = frozenset({TrackingSeason.SUMMER.value})
+
+    @staticmethod
+    def _readings():
+        """Intermediate-season, sunny, occupied, well-lit readings.
+
+        No temp thresholds are configured, so the cover is neither winter nor
+        summer (intermediate); with presence + sun + ample light this reaches
+        the NORMAL_WITH_PRESENCE glare branch — exactly the branch the season
+        gate governs.
+        """
+        return ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+
+    def _snapshot(self, climate_options):
+        """Build a minimal snapshot carrying the climate options through the handler."""
+        return SimpleNamespace(
+            in_time_window=True,
+            climate_mode_enabled=True,
+            climate_readings=self._readings(),
+            climate_options=climate_options,
+            policy=MagicMock(),
+            cover_type="cover_blind",
+            cover=MagicMock(),
+            default_position=42,
+        )
+
+    @pytest.mark.unit
+    def test_summer_only_option_gates_glare_tracking_end_to_end(self):
+        """summer-only option → intermediate season is out of scope → gate → default."""
+        builder, _ = _make_builder()
+
+        # 1. option dict → ClimateOptions (real frozenset conversion).
+        opts = builder.build_climate_options(
+            {CONF_TRACKING_SEASONS: [TrackingSeason.SUMMER.value]}
+        )
+        assert opts.tracking_seasons == self._SUMMER_ONLY
+
+        # 2. ClimateOptions → ClimateCoverData (real _build_climate_data forward).
+        snapshot = self._snapshot(opts)
+        data = ClimateHandler()._build_climate_data(snapshot)
+        assert data is not None
+        assert data.tracking_seasons == self._SUMMER_ONLY
+
+        # 3. ClimateCoverData → ClimateContext (real _build_context forward).
+        state = ClimateCoverState(snapshot, data)
+        ctx = state._build_context(tilt=False)
+        assert ctx.tracking_seasons == self._SUMMER_ONLY
+
+        # 4. Rule eval: glare tracking is gated to the cover default in the
+        #    intermediate season because only summer is in scope.
+        position = state.normal_with_presence()
+        assert state.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
+        assert position == 42
+
+    @pytest.mark.unit
+    def test_default_all_seasons_defers_to_glare_end_to_end(self):
+        """No option set → all-seasons default → glare branch is never gated."""
+        builder, _ = _make_builder()
+        opts = builder.build_climate_options({})
+        snapshot = self._snapshot(opts)
+        data = ClimateHandler()._build_climate_data(snapshot)
+        state = ClimateCoverState(snapshot, data)
+
+        position = state.normal_with_presence()
+        assert state.climate_strategy == ClimateStrategy.GLARE_CONTROL
+        assert position is None

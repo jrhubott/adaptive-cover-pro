@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ..const import ClimateStrategy, ControlMethod, GroupIntentKind, GroupScene
+from ..const import (
+    DEFAULT_TRACKING_SEASONS,
+    ClimateStrategy,
+    ControlMethod,
+    GroupIntentKind,
+    GroupScene,
+)
 
 if TYPE_CHECKING:
     from ..config_types import CoverConfig, GlareZonesConfig
@@ -54,6 +60,11 @@ class ClimateOptions:
     # explicit 0 is honored (distinguished with ``is not None``).
     temp_extreme_heat: float | None = None
     extreme_heat_position: int | None = None
+    # Seasons in which glare tracking is permitted; defaults to all seasons
+    # (unchanged behaviour). See ``ClimateContext.is_tracking_season_blocked``.
+    tracking_seasons: frozenset[str] = field(
+        default_factory=lambda: frozenset(DEFAULT_TRACKING_SEASONS)
+    )
 
 
 @dataclass(frozen=True, slots=True)

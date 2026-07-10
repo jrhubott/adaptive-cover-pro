@@ -500,17 +500,13 @@ class TestMinimizeMovementsAutomationSyncMove:
     never updated to follow — they were still sitting in sun_tracking.
     """
 
-    @pytest.mark.parametrize(
-        "key", [CONF_MINIMIZE_MOVEMENTS, CONF_MAX_COVERAGE_STEPS]
-    )
+    @pytest.mark.parametrize("key", [CONF_MINIMIZE_MOVEMENTS, CONF_MAX_COVERAGE_STEPS])
     def test_minimize_movements_and_max_coverage_steps_in_automation_category(
         self, key
     ):
         assert key in SYNC_CATEGORIES["automation"]
 
-    @pytest.mark.parametrize(
-        "key", [CONF_MINIMIZE_MOVEMENTS, CONF_MAX_COVERAGE_STEPS]
-    )
+    @pytest.mark.parametrize("key", [CONF_MINIMIZE_MOVEMENTS, CONF_MAX_COVERAGE_STEPS])
     def test_minimize_movements_and_max_coverage_steps_not_in_sun_tracking_category(
         self, key
     ):
@@ -533,9 +529,7 @@ class TestMinimizeMovementsAutomationSyncMove:
         assert result[CONF_ENABLE_BLIND_SPOT] is True
 
     def test_syncing_automation_copies_minimize_movements_and_max_coverage_steps(self):
-        entry = _make_entry(
-            {CONF_MINIMIZE_MOVEMENTS: True, CONF_MAX_COVERAGE_STEPS: 4}
-        )
+        entry = _make_entry({CONF_MINIMIZE_MOVEMENTS: True, CONF_MAX_COVERAGE_STEPS: 4})
         result = _extract_shared_options(entry, ["automation"])
         assert result[CONF_MINIMIZE_MOVEMENTS] is True
         assert result[CONF_MAX_COVERAGE_STEPS] == 4

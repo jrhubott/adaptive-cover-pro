@@ -778,6 +778,17 @@ set_climate:
           step: 1
           mode: slider
           unit_of_measurement: "%"
+    tracking_seasons:
+      name: Glare tracking seasons
+      description: "Seasons in which glare-control tracking is allowed to run. In any deselected season the cover returns to its default position instead of tracking the sun. Winter/summer climate actions (heating, insulation, cooling) are unaffected. Defaults to all seasons."
+      selector:
+        select:
+          multiple: true
+          translation_key: tracking_seasons
+          options:
+            - winter
+            - intermediate
+            - summer
 
 set_weather_safety:
   name: Set weather safety settings

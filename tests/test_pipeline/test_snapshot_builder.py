@@ -24,12 +24,15 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
+    CONF_TRACKING_SEASONS,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_TRACKING_SEASONS,
+    TrackingSeason,
 )
 from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
     PipelineSnapshotBuilder,
@@ -224,6 +227,7 @@ def test_build_climate_options_full_mapping():
         CONF_WINTER_CLOSE_INSULATION: True,
         CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR: True,
         CONF_CLOUDY_POSITION: 30,
+        CONF_TRACKING_SEASONS: [TrackingSeason.SUMMER.value],
     }
     out = builder.build_climate_options(opts)
     assert isinstance(out, ClimateOptions)
@@ -236,6 +240,8 @@ def test_build_climate_options_full_mapping():
     assert out.winter_close_insulation is True
     assert out.summer_close_bypass_sun_floor is True
     assert out.cloudy_position == 30
+    # A populated list is honoured literally.
+    assert out.tracking_seasons == frozenset({TrackingSeason.SUMMER.value})
 
 
 @pytest.mark.unit
@@ -287,6 +293,24 @@ def test_build_climate_options_minimal_defaults_to_none_or_false():
     assert out.winter_close_insulation is False
     assert out.summer_close_bypass_sun_floor is False
     assert out.cloudy_position is None
+    # Absent key → all seasons (backward-compatible "track always").
+    assert out.tracking_seasons == frozenset(DEFAULT_TRACKING_SEASONS)
+
+
+@pytest.mark.unit
+def test_build_climate_options_tracking_seasons_none_defaults_to_all():
+    """An explicit None (e.g. a cleared option) is treated like an absent key."""
+    builder, _, _ = _make_builder()
+    out = builder.build_climate_options({CONF_TRACKING_SEASONS: None})
+    assert out.tracking_seasons == frozenset(DEFAULT_TRACKING_SEASONS)
+
+
+@pytest.mark.unit
+def test_build_climate_options_tracking_seasons_empty_means_never_track():
+    """An explicit empty list is honoured literally: glare tracking never runs."""
+    builder, _, _ = _make_builder()
+    out = builder.build_climate_options({CONF_TRACKING_SEASONS: []})
+    assert out.tracking_seasons == frozenset()
 
 
 @pytest.mark.unit

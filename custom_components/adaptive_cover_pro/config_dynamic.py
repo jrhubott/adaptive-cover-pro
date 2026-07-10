@@ -98,6 +98,7 @@ from .const import (
     CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
@@ -106,6 +107,7 @@ from .const import (
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
     DEFAULT_OUTSIDE_TEMP_SOURCE,
+    DEFAULT_TRACKING_SEASONS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -114,6 +116,7 @@ from .const import (
     DEFAULT_WINDOW_AZIMUTH,
     OutsideTempSource,
     TemplateCombineMode,
+    TrackingSeason,
 )
 from .unit_system import length_default, length_selector
 
@@ -657,6 +660,16 @@ def temperature_climate_schema(
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_TRACKING_SEASONS, default=DEFAULT_TRACKING_SEASONS
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[s.value for s in TrackingSeason],
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="tracking_seasons",
             )
         ),
     }

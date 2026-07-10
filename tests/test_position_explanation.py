@@ -11,16 +11,16 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
 from custom_components.adaptive_cover_pro.cover_types import get_policy
-from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
-    ClimateCoverData,
-    ClimateCoverState,
-)
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
-from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateCoverData,
+    ClimateCoverState,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
@@ -695,6 +695,21 @@ class TestBuildPositionExplanation:
         )
         assert "default position" in result.lower()
         assert "100%" in result
+
+    def test_tracking_season_gate_control_state_reason(self, builder):
+        """Season gate reports a specific default-position tracker reason."""
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            climate_strategy=ClimateStrategy.TRACKING_SEASON_GATE,
+        )
+        result = DiagnosticsBuilder._get_control_state_reason(
+            _base_ctx(
+                cover=_make_cover(control_state_reason="Sun in FOV"),
+                pipeline_result=pr,
+            )
+        )
+
+        assert result == "Default: Tracking Off This Season"
 
     def test_sun_tracking_no_limits(self, builder):
         """Sun tracking, no limits → reason from solar handler."""

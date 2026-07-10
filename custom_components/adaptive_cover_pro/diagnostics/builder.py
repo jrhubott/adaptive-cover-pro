@@ -266,6 +266,11 @@ class DiagnosticsBuilder:
             reason = "Motion Timeout"
         elif result is not None and result.control_method == ControlMethod.MANUAL:
             reason = "Manual Override"
+        elif (
+            result is not None
+            and result.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
+        ):
+            reason = "Default: Tracking Off This Season"
         elif ctx.cover:
             reason = ctx.cover.control_state_reason
         else:
@@ -608,6 +613,7 @@ class DiagnosticsBuilder:
                 "lux_below_threshold": climate_data.lux_below_threshold,
                 "irradiance_below_threshold": climate_data.irradiance_below_threshold,
                 "cloud_coverage_above_threshold": climate_data.cloud_coverage_above_threshold,
+                "tracking_seasons": sorted(climate_data.tracking_seasons),
             }
 
         return diagnostics
