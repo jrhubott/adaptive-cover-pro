@@ -1645,7 +1645,6 @@
           "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. Leave empty to disable.",
           "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. Leave empty if you don't have this sensor.",
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading determines the current season for all linked covers.",
-          "outside_temp_source": "Which outdoor temperature reading climate mode uses for all linked covers. 'Live reading' (default) keeps today's behavior. 'Forecast daily high' uses today's forecast maximum from the configured weather entity (falling back to live when unavailable). 'Higher of live and forecast' takes whichever is warmer.",
           "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). Falls back to astral if unavailable.",
           "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). Falls back to astral if unavailable.",
           "weather_entity": "Optional weather integration used to detect cloud cover. Leave empty to ignore weather state.",

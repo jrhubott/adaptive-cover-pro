@@ -1655,8 +1655,7 @@
           "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
-          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent.",
-          "outside_temp_source": "Quelle lecture de température extérieure le mode climatique utilise pour toutes les protections liées. « Lecture en temps réel » (défaut) conserve le comportement actuel. « Maximum de prévision journalière » utilise le maximum de prévision d'aujourd'hui à partir de l'entité météo configurée (revenant à la lecture en temps réel quand indisponible). « Maximum de lecture en temps réel et prévision » utilise la valeur la plus élevée."
+          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent."
         }
       },
       "profile_overview": {

@@ -1655,8 +1655,7 @@
           "weather_rain_sensor": "Numerischer Sensor, der Niederschlagsrate meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
           "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
-          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
-          "outside_temp_source": "Welche Außentemperatur der Klimamodus für alle verknüpften Beschattungen verwendet. „Live-Lesung\" (Standard) behält das heutige Verhalten bei. „Vorhersage Tagesmaximum\" nutzt das heutige Vorhersage-Maximum der konfigurierten Wetter-Entität (fällt auf Live-Lesung zurück, wenn nicht verfügbar). „Höher von Live und Vorhersage\" nimmt den wärmeren Wert."
+          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren."
         }
       },
       "profile_overview": {
