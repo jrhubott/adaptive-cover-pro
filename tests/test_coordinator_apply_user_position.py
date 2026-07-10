@@ -111,6 +111,9 @@ def _make_coord(
     coord._cover_data = MagicMock(name="cover_data")
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
+    # Cloud-suppression manager (issue #864): the ad-hoc build reads its
+    # resolved bool as a pure property. Preset so the spec'd mock doesn't raise.
+    coord._cloud_mgr = MagicMock()
     ctx = MagicMock(name="position_context")
     coord._build_position_context.return_value = ctx
     coord._cmd_svc = MagicMock()

@@ -682,6 +682,10 @@
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Enable cloud suppression (master switch)",
           "cloudy_position": "Cloudy position (optional)",
+          "lux_release_threshold": "Lux release threshold (optional)",
+          "irradiance_release_threshold": "Irradiance release threshold (optional)",
+          "cloud_coverage_release_threshold": "Cloud coverage release threshold (optional)",
+          "cloud_suppression_hold_time": "Smoothing hold time",
           "weather_state": "Weather Conditions"
         },
         "data_description": {
@@ -697,7 +701,11 @@
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "cloud_suppression": "Master on/off for this entire screen. When **off** (default), every sensor below is ignored and glare control runs as usual. When **on**, any configured sensor (weather state, lux, irradiance, or cloud coverage) that indicates the sun is absent will stop sun-tracking and move the cover to the **Cloudy position** above (or the default position if that is blank). Works on its own — climate mode does not need to be enabled.",
-          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position."
+          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position.",
+          "lux_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until lux rises to at least this value — instead of releasing the moment lux climbs back above the Lux threshold. Set it comfortably higher than the Lux threshold to stop the cover flapping when the reading hovers around a single crossing point. Leave blank to disable hysteresis (release at the Lux threshold). Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "irradiance_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until irradiance rises to at least this value — instead of releasing the moment it climbs back above the Irradiance threshold. Set it higher than the Irradiance threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "cloud_coverage_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until cloud coverage falls to this value or below — instead of releasing the moment it drops below the Cloud coverage threshold. Set it lower than the Cloud coverage threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "cloud_suppression_hold_time": "Seconds that a change in the suppression decision must persist before it takes effect. This debounces brief clouds and momentary sun breaks so the cover does not move on every passing cloud. 0 (default) applies changes immediately. The same delay applies in both directions — starting and ending suppression."
         }
       },
       "temperature_climate": {
@@ -1544,6 +1552,10 @@
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Enable cloud suppression (master switch)",
           "cloudy_position": "Cloudy position (optional)",
+          "lux_release_threshold": "Lux release threshold (optional)",
+          "irradiance_release_threshold": "Irradiance release threshold (optional)",
+          "cloud_coverage_release_threshold": "Cloud coverage release threshold (optional)",
+          "cloud_suppression_hold_time": "Smoothing hold time",
           "weather_state": "Weather Conditions"
         },
         "data_description": {
@@ -1559,7 +1571,11 @@
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "cloud_suppression": "Master on/off for this entire screen. When **off** (default), every sensor below is ignored and glare control runs as usual. When **on**, any configured sensor (weather state, lux, irradiance, or cloud coverage) that indicates the sun is absent will stop sun-tracking and move the cover to the **Cloudy position** above (or the default position if that is blank). Works on its own — climate mode does not need to be enabled.",
-          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position."
+          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position.",
+          "lux_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until lux rises to at least this value — instead of releasing the moment lux climbs back above the Lux threshold. Set it comfortably higher than the Lux threshold to stop the cover flapping when the reading hovers around a single crossing point. Leave blank to disable hysteresis (release at the Lux threshold). Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "irradiance_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until irradiance rises to at least this value — instead of releasing the moment it climbs back above the Irradiance threshold. Set it higher than the Irradiance threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "cloud_coverage_release_threshold": "Optional hysteresis edge. Once suppression is active, keep it active until cloud coverage falls to this value or below — instead of releasing the moment it drops below the Cloud coverage threshold. Set it lower than the Cloud coverage threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "cloud_suppression_hold_time": "Seconds that a change in the suppression decision must persist before it takes effect. This debounces brief clouds and momentary sun breaks so the cover does not move on every passing cloud. 0 (default) applies changes immediately. The same delay applies in both directions — starting and ending suppression."
         }
       },
       "temperature_climate": {

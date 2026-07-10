@@ -30,6 +30,7 @@ from homeassistant.const import ATTR_FRIENDLY_NAME
 from ..const import (
     CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
@@ -39,11 +40,13 @@ from ..const import (
     CONF_DEVICE_ID,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_TILT,
@@ -207,12 +210,17 @@ class PipelineSnapshotBuilder:
             use_lux=use_lux,
             lux_entity=lux_entity,
             lux_threshold=options.get(CONF_LUX_THRESHOLD),
+            lux_release_threshold=options.get(CONF_LUX_RELEASE_THRESHOLD),
             use_irradiance=use_irradiance,
             irradiance_entity=irradiance_entity,
             irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
+            irradiance_release_threshold=options.get(CONF_IRRADIANCE_RELEASE_THRESHOLD),
             use_cloud_coverage=cloud_suppression_enabled,
             cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
             cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
+            cloud_coverage_release_threshold=options.get(
+                CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD
+            ),
             is_sunny_sensor=options.get(CONF_IS_SUNNY_SENSOR),
             is_sunny_template=options.get(CONF_IS_SUNNY_TEMPLATE),
             is_sunny_template_mode=options.get(CONF_IS_SUNNY_TEMPLATE_MODE)
@@ -351,6 +359,7 @@ class PipelineSnapshotBuilder:
         in_time_window: bool,
         current_cover_position: int | None,
         is_glare_zone_enabled: Callable[[int], bool],
+        cloud_suppression_active: bool = False,
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
         cover_capabilities: dict | None = None,
@@ -465,4 +474,5 @@ class PipelineSnapshotBuilder:
             ),
             solar_floor_active=solar_floor_active,
             time_threshold_minutes=_delta_time_minutes(options.get(CONF_DELTA_TIME)),
+            cloud_suppression_active=cloud_suppression_active,
         )

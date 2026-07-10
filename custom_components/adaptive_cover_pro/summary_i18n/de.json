@@ -95,7 +95,12 @@
     "weather_in": "Wetter in {{{states}}}",
     "when": " wenn {parts}",
     "fallback_cloudy": "bewölkte Position {pos}%",
-    "fallback_default": "Standard ({default_pos}%)"
+    "fallback_default": "Standard ({default_pos}%)",
+    "hold_time": " · Glättungs-Haltezeit {secs}s",
+    "release": " · Freigabe wenn {parts}",
+    "lux_release": "Lux ≥ {release} lx",
+    "irradiance_release": "Bestrahlungsstärke ≥ {release} W/m²",
+    "coverage_release": "Bewölkung ≤ {release}%"
   },
   "info": {
     "light_sensors_off": "📊 Lichtsensoren konfiguriert ({names}), aber Wolkenunterdrückung ist aus.",

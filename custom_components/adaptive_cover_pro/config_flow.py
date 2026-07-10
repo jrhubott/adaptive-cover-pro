@@ -36,6 +36,7 @@ from .const import (
     CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
@@ -98,14 +99,17 @@ from .const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
@@ -917,6 +921,11 @@ _LIGHT_CLOUD_OPTIONAL_KEYS: list[str] = [
     CONF_LUX_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_CLOUD_COVERAGE_ENTITY,
+    # Hysteresis release thresholds (issue #864): blank = feature off, so a
+    # cleared value must be stripped from options like the other optional keys.
+    CONF_LUX_RELEASE_THRESHOLD,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
 ]
 
 # --- Temperature Climate Mode ---
@@ -1446,6 +1455,11 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "cloud.when": " when {parts}",
     "cloud.fallback_cloudy": "cloudy position {pos}%",
     "cloud.fallback_default": "default ({default_pos}%)",
+    "cloud.hold_time": " · smoothing hold {secs}s",
+    "cloud.release": " · release when {parts}",
+    "cloud.lux_release": "lux ≥ {release} lx",
+    "cloud.irradiance_release": "irradiance ≥ {release} W/m²",
+    "cloud.coverage_release": "cloud ≤ {release}%",
     "info.light_sensors_off": (
         "📊 Light sensors configured ({names}) but cloud suppression is off."
     ),
@@ -2208,10 +2222,34 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             fallback_label = L["cloud.fallback_cloudy"].format(pos=cloudy_pos)
         else:
             fallback_label = L["cloud.fallback_default"].format(default_pos=default_pos)
-        lines.append(
-            L["rules.cloud"].format(cloud=cloud_str, fallback=fallback_label)
-            + _badge(_prio["cloud_suppression"])
-        )
+        cloud_line = L["rules.cloud"].format(cloud=cloud_str, fallback=fallback_label)
+        # Smoothing suffixes (issue #864): a non-zero hold-time and any
+        # configured per-trigger hysteresis release edges.
+        hold_time = config.get(CONF_CLOUD_SUPPRESSION_HOLD_TIME)
+        if hold_time:
+            cloud_line += L["cloud.hold_time"].format(secs=hold_time)
+        release_parts = []
+        if (rl := config.get(CONF_LUX_RELEASE_THRESHOLD)) is not None:
+            release_parts.append(
+                L["cloud.lux_release"].format(
+                    release=_thresh_display(rl, placeholder=_ph)
+                )
+            )
+        if (ri := config.get(CONF_IRRADIANCE_RELEASE_THRESHOLD)) is not None:
+            release_parts.append(
+                L["cloud.irradiance_release"].format(
+                    release=_thresh_display(ri, placeholder=_ph)
+                )
+            )
+        if (rc := config.get(CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD)) is not None:
+            release_parts.append(
+                L["cloud.coverage_release"].format(
+                    release=_thresh_display(rc, placeholder=_ph)
+                )
+            )
+        if release_parts:
+            cloud_line += L["cloud.release"].format(parts=", ".join(release_parts))
+        lines.append(cloud_line + _badge(_prio["cloud_suppression"]))
     elif any(
         [
             config.get(CONF_LUX_ENTITY),
@@ -2999,6 +3037,10 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_THRESHOLD,
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            CONF_LUX_RELEASE_THRESHOLD,
+            CONF_IRRADIANCE_RELEASE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_TEMPLATE_MODE,
         }
@@ -3018,6 +3060,10 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_ENTITY,
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            CONF_LUX_RELEASE_THRESHOLD,
+            CONF_IRRADIANCE_RELEASE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
             CONF_IS_SUNNY_TEMPLATE,

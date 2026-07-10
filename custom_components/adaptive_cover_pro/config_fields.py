@@ -51,8 +51,10 @@ from .const import (
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
@@ -88,12 +90,14 @@ from .const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
@@ -189,6 +193,7 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DEBUG_CATEGORIES_ALL,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
+    DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_MAX_COVERAGE_STEPS,
@@ -1433,6 +1438,35 @@ _LIGHT_CLOUD_SPECS = _spec(
         ValidatorKind.NONE,
         default=DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     ),
+    # Smoothing controls (issue #864). Hold-time is a bounded numeric
+    # (RANGE → auto-registers in OPTION_RANGES + FIELD_VALIDATORS). The three
+    # release thresholds mirror the activate thresholds above: number-or-template
+    # (NONE, template-capable), clearable, blank = hysteresis off.
+    FieldSpec(
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_CLOUD_SUPPRESSION_HOLD_TIME,
+        default=DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+    ),
+    FieldSpec(
+        CONF_LUX_RELEASE_THRESHOLD,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_IRRADIANCE_RELEASE_THRESHOLD,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
 )
 
 _TEMPERATURE_CLIMATE_SPECS = _spec(
@@ -1906,6 +1940,9 @@ TEMPLATABLE_KEYS: frozenset[str] = frozenset(
         CONF_LUX_THRESHOLD,
         CONF_IRRADIANCE_THRESHOLD,
         CONF_CLOUD_COVERAGE_THRESHOLD,
+        CONF_LUX_RELEASE_THRESHOLD,
+        CONF_IRRADIANCE_RELEASE_THRESHOLD,
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
         CONF_TEMP_LOW,
         CONF_TEMP_HIGH,
         CONF_TEMP_EXTREME_HEAT,

@@ -606,7 +606,21 @@ CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
 CONF_CLOUD_SUPPRESSION = "cloud_suppression"  # master enable
 CONF_CLOUDY_POSITION = "cloudy_position"  # position while suppressed (0-100)
 
+# Smoothing controls (issue #864). All default to today's instantaneous,
+# single-crossing behaviour so an absent key changes nothing on upgrade/rollback.
+# Aggregate hold-time (seconds): a changed suppression state must persist this
+# long before it takes effect. 0 = flip immediately (no debounce).
+CONF_CLOUD_SUPPRESSION_HOLD_TIME = "cloud_suppression_hold_time"
+# Per-trigger hysteresis release edges (number-or-template, blank = off). When
+# set they widen each numeric trigger into a Schmitt band: suppression activates
+# at the existing threshold and only clears once the value passes the release
+# edge (lux/irradiance must rise above it; cloud coverage must fall below it).
+CONF_LUX_RELEASE_THRESHOLD = "lux_release_threshold"
+CONF_IRRADIANCE_RELEASE_THRESHOLD = "irradiance_release_threshold"
+CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD = "cloud_coverage_release_threshold"
+
 DEFAULT_CLOUD_COVERAGE_THRESHOLD = 75  # default: 75% cover = overcast
+DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME = 0  # seconds; 0 = instantaneous (back-compat)
 
 
 # =============================================================================
@@ -1458,6 +1472,9 @@ _RANGE_WEATHER_WIND_DIRECTION_TOLERANCE = (5, 180)  # wind-direction tol, deg
 _RANGE_WEATHER_RAIN = (0, 100)  # rain threshold (sensor unit)
 _RANGE_WEATHER_OVERRIDE_POSITION = (0, 100)  # weather-override pos, percent
 _RANGE_WEATHER_TIMEOUT = (0, 3600)  # weather-resume timeout, seconds
+
+# Cloud-suppression smoothing (issue #864).
+_RANGE_CLOUD_SUPPRESSION_HOLD_TIME = (0, 3600)  # hold-time, seconds
 
 # Venetian sequencing.
 _RANGE_VENETIAN_POST_SETTLE_HOLD = (0.0, 10.0)  # post-settle hold, seconds

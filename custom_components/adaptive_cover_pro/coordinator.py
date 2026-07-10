@@ -112,6 +112,7 @@ from .managers.manual_override import (
     get_detector,
     inverse_state,
 )
+from .managers.cloud_suppression import CloudSuppressionManager
 from .managers.motion import MotionManager
 from .managers.sensor_health import SensorHealthManager
 from .managers.weather import WeatherManager
@@ -335,6 +336,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Weather override tracking
         self._weather_mgr = WeatherManager(
             hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+        )
+        # Cloud-suppression smoothing — hysteresis latch + hold-time debounce
+        # (issue #864). Consumes provider booleans; never reads HA directly.
+        self._cloud_mgr = CloudSuppressionManager(
+            logger=self.logger, event_buffer=self._event_buffer
         )
         # Sensor-health Repairs (issue #786): raise an informational Repair when
         # the effective indoor temperature sensor stays unavailable past a
@@ -1318,6 +1324,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             self._weather_mgr.record_conditions_active()
 
+    def _start_cloud_hold_timeout(self) -> None:
+        """Start the cloud-suppression hold-time debounce timer (issue #864)."""
+
+        async def _refresh_with_state_change() -> None:
+            self.state_change = True
+            await self.async_refresh()
+
+        self._cloud_mgr.start_hold_timeout(refresh_callback=_refresh_with_state_change)
+
+    def _reconcile_cloud_suppression(self, readings) -> None:
+        """Fold this cycle's readings into the cloud-suppression manager.
+
+        The manager applies hysteresis + the hold-time debounce and resolves a
+        single bool. When a transition is pending (hold-time non-zero), it asks
+        us to start the hold-timer — the coordinator owns timer creation because
+        it holds the refresh callback the manager intentionally does not.
+        """
+        if self._cloud_mgr.evaluate(readings) == "should_start_timeout":
+            self._start_cloud_hold_timeout()
+
     def _reconcile_weather_override(self) -> None:
         """Self-heal a stuck weather override flag.
 
@@ -1347,6 +1373,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._weather_readings = self._snapshot_builder.read_climate(
             options, forecast_max_outside=self._forecast_max_outside
         )
+
+        # Fold the fresh readings into the cloud-suppression manager (issue
+        # #864): it applies hysteresis + the hold-time debounce and resolves the
+        # single bool threaded into the snapshot below. Runs before build() so
+        # the snapshot sees this cycle's resolved value.
+        self._reconcile_cloud_suppression(self._weather_readings)
 
         # Sensor-health Repair (issue #786): watch the effective indoor temp
         # entity only when climate mode is on (the sensor is otherwise unused,
@@ -1402,6 +1434,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             manual_override_active=self.manager.binary_cover_manual,
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
+            cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             in_time_window=self.check_adaptive_time,
             current_cover_position=self._compute_mean_cover_position(),
             is_glare_zone_enabled=self._is_glare_zone_enabled,
@@ -2534,6 +2567,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             timeout_seconds=rc.weather.timeout_seconds,
             enabled=rc.weather.enabled,
         )
+        self._cloud_mgr.update_config(
+            enabled=rc.cloud_suppression.enabled,
+            hold_time_seconds=rc.cloud_suppression.hold_time_seconds,
+        )
 
         event_buffer = getattr(self, "_event_buffer", None)
         if event_buffer is not None and rc.event_buffer_size != event_buffer.maxlen:
@@ -2691,6 +2728,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             manual_override_active=False,
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
+            # Pure property read — the ad-hoc/preemption build must NOT
+            # re-evaluate the manager (that would advance latches off-cycle).
+            cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             in_time_window=self.check_adaptive_time,
             current_cover_position=self._compute_mean_cover_position(),
             is_glare_zone_enabled=self._is_glare_zone_enabled,

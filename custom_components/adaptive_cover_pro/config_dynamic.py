@@ -33,8 +33,10 @@ from .const import (
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
@@ -46,11 +48,13 @@ from .const import (
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MIN_ELEVATION,
@@ -97,6 +101,7 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
+    DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
@@ -521,6 +526,25 @@ def light_cloud_schema(
             CONF_CLOUD_COVERAGE_THRESHOLD,
             default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
         ): _threshold_selector(),
+        # Smoothing controls (issue #864). Optional per-trigger hysteresis
+        # release edges (blank = off) accept a number or template like the
+        # activate thresholds above; the symmetric hold-time debounces the
+        # aggregate decision.
+        vol.Optional(CONF_LUX_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_IRRADIANCE_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            default=DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=3600,
+                step=30,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="s",
+            )
+        ),
     }
     return vol.Schema(schema)
 

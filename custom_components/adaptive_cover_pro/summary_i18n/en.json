@@ -95,7 +95,12 @@
     "weather_in": "weather in {{{states}}}",
     "when": " when {parts}",
     "fallback_cloudy": "cloudy position {pos}%",
-    "fallback_default": "default ({default_pos}%)"
+    "fallback_default": "default ({default_pos}%)",
+    "hold_time": " · smoothing hold {secs}s",
+    "release": " · release when {parts}",
+    "lux_release": "lux ≥ {release} lx",
+    "irradiance_release": "irradiance ≥ {release} W/m²",
+    "coverage_release": "cloud ≤ {release}%"
   },
   "info": {
     "light_sensors_off": "📊 Light sensors configured ({names}) but cloud suppression is off.",

@@ -398,3 +398,74 @@ class TestCloudHandlerFOVGate:
         assert (
             "fov" in reason.lower()
         ), f"Expected 'fov' in describe_skip reason but got: {reason!r}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #864 — handler gates on the resolved cloud_suppression_active bool
+# ---------------------------------------------------------------------------
+
+
+class TestCloudHandlerResolvedBoolGate:
+    """The handler consumes the manager's resolved bool, not the raw readings."""
+
+    handler = CloudSuppressionHandler()
+
+    def test_returns_none_when_bool_false_despite_raw_triggers(self) -> None:
+        """A raw trigger is not enough: the resolved latch bool gates firing.
+
+        The manager may be mid-hold (a brief cloud that hasn't persisted long
+        enough) — the handler must defer even though ``is_sunny`` is False.
+        """
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=False,
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_fires_on_smoothing_hold_with_no_raw_trigger(self) -> None:
+        """Latch held (hysteresis / hold-time) with no raw trigger still fires.
+
+        The manager keeps suppression asserted across the release band; the raw
+        readings momentarily show no trigger, so the reason falls back to a
+        smoothing-hold label.
+        """
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=True),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=True,
+            default_position=40,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.CLOUD
+        assert result.position == 40
+        assert "smoothing hold" in result.reason
+
+    def test_latch_active_but_fov_invalid_returns_none(self) -> None:
+        """#417 lock: resolved bool True must NOT fire when sun is outside FOV.
+
+        The FOV guard runs ahead of the resolved-bool gate, so the manager can
+        never keep suppression asserted across an FOV exit.
+        """
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=True,
+            default_position=80,
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_latch_active_but_outside_time_window_returns_none(self) -> None:
+        """Resolved bool True must NOT fire outside the operational time window."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=True,
+            in_time_window=False,
+        )
+        assert self.handler.evaluate(snap) is None

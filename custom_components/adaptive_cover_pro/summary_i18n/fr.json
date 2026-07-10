@@ -95,7 +95,12 @@
     "weather_in": "météo dans {{{states}}}",
     "when": " quand {parts}",
     "fallback_cloudy": "position nuageux {pos}%",
-    "fallback_default": "défaut ({default_pos}%)"
+    "fallback_default": "défaut ({default_pos}%)",
+    "hold_time": " · maintien de lissage {secs}s",
+    "release": " · libération quand {parts}",
+    "lux_release": "lux ≥ {release} lx",
+    "irradiance_release": "rayonnement ≥ {release} W/m²",
+    "coverage_release": "couverture nuageuse ≤ {release}%"
   },
   "info": {
     "light_sensors_off": "📊 Détecteurs de lumière configurés ({names}) mais suppression de nuages est désactivée.",

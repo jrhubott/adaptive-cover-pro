@@ -1027,6 +1027,61 @@ def test_climate_cloud_coverage_shown():
     assert "Cloud suppression" in summary
 
 
+def test_cloud_suppression_hold_time_shown_when_positive():
+    """A non-zero hold-time renders a smoothing-hold suffix (issue #864)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+    )
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 500,
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME: 120,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "smoothing hold 120s" in summary
+
+
+def test_cloud_suppression_hold_time_hidden_when_zero():
+    """A zero hold-time (default) renders no smoothing-hold suffix (issue #864)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+    )
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 500,
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "smoothing hold" not in summary
+
+
+def test_cloud_suppression_release_band_shown_when_set():
+    """Configured release thresholds render a hysteresis release detail (#864)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+        CONF_LUX_RELEASE_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 500,
+        CONF_LUX_RELEASE_THRESHOLD: 8000,
+        CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
+        CONF_CLOUD_COVERAGE_THRESHOLD: 75,
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD: 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "8000" in summary
+    assert "50" in summary
+    # The release detail is labelled as a release/hysteresis clause.
+    assert "release" in summary.lower()
+
+
 def test_light_sensors_without_suppression_noted():
     """Light sensors configured but suppression off shows informational note."""
     cfg = {CONF_LUX_ENTITY: "sensor.lux", CONF_CLOUD_SUPPRESSION: False}

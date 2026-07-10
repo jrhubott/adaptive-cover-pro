@@ -155,8 +155,27 @@ def _build_pipeline_snapshot(
     weather_override_active: bool = False,
     weather_override_position: int = 0,
     cover_type: str = "cover_blind",
+    cloud_suppression_active: bool | None = None,
 ) -> PipelineSnapshot:
-    """Build a PipelineSnapshot from a real cover instance."""
+    """Build a PipelineSnapshot from a real cover instance.
+
+    ``cloud_suppression_active`` defaults to the instantaneous OR of the climate
+    readings (the CloudSuppressionManager with hold-time 0 / blank release), so
+    cloud-suppression end-to-end tests keep exercising the handler without
+    threading the resolved bool by hand (issue #864).
+    """
+    if cloud_suppression_active is None:
+        cloud_suppression_active = bool(
+            climate_options is not None
+            and getattr(climate_options, "cloud_suppression_enabled", False)
+            and climate_readings is not None
+            and (
+                not climate_readings.is_sunny
+                or climate_readings.lux_below_threshold
+                or climate_readings.irradiance_below_threshold
+                or climate_readings.cloud_coverage_above_threshold
+            )
+        )
     return PipelineSnapshot(
         cover=cover,
         config=cover.config,
@@ -173,6 +192,7 @@ def _build_pipeline_snapshot(
         weather_override_position=weather_override_position,
         glare_zones=None,
         active_zone_names=set(),
+        cloud_suppression_active=cloud_suppression_active,
     )
 
 

@@ -828,3 +828,135 @@ class TestCloudCoverage:
             cloud_coverage_threshold=75,
         )
         assert readings.cloud_coverage_above_threshold is False
+
+
+# ---------------------------------------------------------------------------
+# Hysteresis release-cleared fields (issue #864)
+# ---------------------------------------------------------------------------
+
+
+class TestReleaseClearedHysteresis:
+    """Release-cleared edges the manager latch consumes (issue #864).
+
+    The provider stays pure: it reports whether a trigger's *activate* edge is
+    met and whether the value has cleared its *release* edge in the SAME read.
+    A blank release threshold collapses the band to zero width, so
+    ``release_cleared == (not activate_met)`` — exact back-compat.
+    """
+
+    @pytest.mark.unit
+    def test_readings_expose_release_cleared_fields(self):
+        """ClimateReadings carries the three release-cleared booleans."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        # Defaulted fields exist and default to "cleared" (no latch held).
+        assert readings.lux_release_cleared is True
+        assert readings.irradiance_release_cleared is True
+        assert readings.cloud_coverage_release_cleared is True
+
+    @pytest.mark.unit
+    def test_lux_blank_release_mirrors_not_activate_dark(self, provider, mock_hass):
+        """Dark (below activate) + blank release → not cleared (latch would hold)."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "4000")
+        readings = provider.read(
+            use_lux=True, lux_entity="sensor.lux", lux_threshold=5000
+        )
+        assert readings.lux_below_threshold is True
+        assert readings.lux_release_cleared == (not readings.lux_below_threshold)
+        assert readings.lux_release_cleared is False
+
+    @pytest.mark.unit
+    def test_lux_blank_release_mirrors_not_activate_bright(self, provider, mock_hass):
+        """Bright (above activate) + blank release → cleared."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "6000")
+        readings = provider.read(
+            use_lux=True, lux_entity="sensor.lux", lux_threshold=5000
+        )
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared == (not readings.lux_below_threshold)
+        assert readings.lux_release_cleared is True
+
+    @pytest.mark.unit
+    def test_lux_value_in_band_holds_latch(self, provider, mock_hass):
+        """Value between activate and release → neither activate nor cleared."""
+        # activate 5000, release 8000 → band (5000, 8000). value 6500 is inside.
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "6500")
+        readings = provider.read(
+            use_lux=True,
+            lux_entity="sensor.lux",
+            lux_threshold=5000,
+            lux_release_threshold=8000,
+        )
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared is False
+
+    @pytest.mark.unit
+    def test_lux_value_above_release_clears(self, provider, mock_hass):
+        """Value at/above release edge → cleared."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "8000")
+        readings = provider.read(
+            use_lux=True,
+            lux_entity="sensor.lux",
+            lux_threshold=5000,
+            lux_release_threshold=8000,
+        )
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared is True
+
+    @pytest.mark.unit
+    def test_irradiance_value_in_band_holds_latch(self, provider, mock_hass):
+        """Irradiance between activate and release → latch would hold."""
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "400")
+        readings = provider.read(
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+            irradiance_release_threshold=500,
+        )
+        assert readings.irradiance_below_threshold is False
+        assert readings.irradiance_release_cleared is False
+
+    @pytest.mark.unit
+    def test_cloud_value_in_band_holds_latch(self, provider, mock_hass):
+        """Cloud coverage between release and activate → latch would hold.
+
+        Cloud activate is "at or above" (overcast), so the band is inverted:
+        release < activate. A value between them is neither overcast nor clear.
+        """
+        # activate 75 (overcast), release 50 (clear). value 60 is inside band.
+        mock_hass.states.get.return_value = _mock_state("sensor.cloud", "60")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+            cloud_coverage_release_threshold=50,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+        assert readings.cloud_coverage_release_cleared is False
+
+    @pytest.mark.unit
+    def test_cloud_value_below_release_clears(self, provider, mock_hass):
+        """Cloud coverage at/below release edge → cleared."""
+        mock_hass.states.get.return_value = _mock_state("sensor.cloud", "50")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+            cloud_coverage_release_threshold=50,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+        assert readings.cloud_coverage_release_cleared is True
+
+    @pytest.mark.unit
+    def test_disabled_trigger_is_cleared(self, provider):
+        """A disabled trigger reports cleared so no latch can hold."""
+        readings = provider.read(use_lux=False, use_irradiance=False)
+        assert readings.lux_release_cleared is True
+        assert readings.irradiance_release_cleared is True

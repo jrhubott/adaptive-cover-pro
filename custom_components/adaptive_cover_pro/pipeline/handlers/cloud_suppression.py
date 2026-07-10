@@ -27,7 +27,15 @@ class CloudSuppressionHandler(OverrideHandler):
     priority = 60
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
-        """Return default position when no direct sun is detected."""
+        """Return default position when no direct sun is detected.
+
+        The activate/deactivate decision now lives in ``CloudSuppressionManager``
+        (issue #864): it owns the hysteresis latches + hold-time debounce and
+        hands us a single resolved bool. This handler keeps only the FOV +
+        time-window guards and the cloudy/default/sunset position selection. The
+        guards run AHEAD of the resolved-bool gate so suppression can never fire
+        while the sun is outside the window FOV (#417).
+        """
         if not snapshot.in_time_window:
             return None
         if snapshot.climate_readings is None:
@@ -37,6 +45,8 @@ class CloudSuppressionHandler(OverrideHandler):
         if not snapshot.climate_options.cloud_suppression_enabled:
             return None
         if not snapshot.cover.direct_sun_valid:
+            return None
+        if not snapshot.cloud_suppression_active:
             return None
 
         r = snapshot.climate_readings
@@ -49,9 +59,10 @@ class CloudSuppressionHandler(OverrideHandler):
             triggers.append("irradiance below threshold")
         if r.cloud_coverage_above_threshold:
             triggers.append("cloud coverage above threshold")
-
+        # The latch may be held by hysteresis / hold-time with no raw trigger
+        # momentarily met — label that as a smoothing hold (issue #864).
         if not triggers:
-            return None
+            triggers.append("smoothing hold")
 
         cloudy = snapshot.climate_options.cloudy_position
         if snapshot.is_sunset_active:

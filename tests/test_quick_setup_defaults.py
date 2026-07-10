@@ -425,6 +425,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)
@@ -450,6 +451,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)
@@ -475,6 +477,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)
@@ -497,6 +500,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
         coord.manager = MagicMock()
 
         coord._update_options({**self._POISONED_OPTIONS, CONF_POSITION_TOLERANCE: 12})
@@ -515,6 +519,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)

@@ -292,6 +292,15 @@ class PipelineSnapshot:
     # set it behave exactly as before.
     time_threshold_minutes: int = 0
 
+    # Resolved cloud-suppression decision from CloudSuppressionManager (issue
+    # #864). Mirrors ``weather_override_active``: the manager owns the hysteresis
+    # latch + hold-time debounce and hands the pure handler a single bool. The
+    # CloudSuppressionHandler gates on this AFTER its FOV / time-window guards,
+    # so the manager never keeps suppression asserted once the sun leaves the
+    # window FOV (#417). Defaults False so snapshots that don't set it (and older
+    # installs with the smoothing feature absent) behave exactly as before.
+    cloud_suppression_active: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Output types

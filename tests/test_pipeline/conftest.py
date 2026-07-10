@@ -90,15 +90,35 @@ def make_snapshot(
     max_tilt_sun_only: bool = False,
     solar_floor_active: bool = True,
     group_intent=None,
+    cloud_suppression_active: bool | None = None,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
 ) -> PipelineSnapshot:
-    """Build a PipelineSnapshot with sensible defaults for testing."""
+    """Build a PipelineSnapshot with sensible defaults for testing.
+
+    ``cloud_suppression_active`` defaults to the *instantaneous* OR of the
+    climate readings (mirroring the CloudSuppressionManager with hold-time 0 and
+    blank release thresholds) so existing cloud-suppression tests that only set
+    readings + enabled keep exercising the handler. Pass an explicit bool to
+    decouple the resolved latch from the raw readings (issue #864).
+    """
     if cover is None:
         cover = _make_mock_cover(
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
+        )
+    if cloud_suppression_active is None:
+        cloud_suppression_active = bool(
+            climate_options is not None
+            and getattr(climate_options, "cloud_suppression_enabled", False)
+            and climate_readings is not None
+            and (
+                not climate_readings.is_sunny
+                or climate_readings.lux_below_threshold
+                or climate_readings.irradiance_below_threshold
+                or climate_readings.cloud_coverage_above_threshold
+            )
         )
     return PipelineSnapshot(
         cover=cover,
@@ -139,4 +159,5 @@ def make_snapshot(
         max_tilt_sun_only=max_tilt_sun_only,
         solar_floor_active=solar_floor_active,
         group_intent=group_intent,
+        cloud_suppression_active=cloud_suppression_active,
     )

@@ -580,6 +580,14 @@ class WeatherSlice:
 
 
 @dataclass(frozen=True, slots=True)
+class CloudSuppressionSlice:
+    """Inputs for ``CloudSuppressionManager.update_config`` (issue #864)."""
+
+    enabled: bool
+    hold_time_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
 class TrackingSlice:
     """Coordinator-side per-cycle thresholds and interpolation series."""
 
@@ -641,6 +649,7 @@ class RuntimeConfig:
     motion: MotionSlice
     weather: WeatherSlice
     venetian: VenetianSlice
+    cloud_suppression: CloudSuppressionSlice
 
     @classmethod
     def from_options(cls, options: dict) -> RuntimeConfig:
@@ -652,6 +661,8 @@ class RuntimeConfig:
         """
         from .const import (
             CONF_AZIMUTH,
+            CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
             CONF_DAYTIME_GATE_SENSORS,
             CONF_DAYTIME_GATE_TEMPLATE,
             CONF_DAYTIME_GATE_TEMPLATE_MODE,
@@ -709,6 +720,7 @@ class RuntimeConfig:
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
             DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
             DEFAULT_ENABLE_POSITION_MATCHING,
             DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
@@ -871,6 +883,15 @@ class RuntimeConfig:
                 backrotate_publish_lag_seconds=options.get(
                     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
                     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+                ),
+            ),
+            cloud_suppression=CloudSuppressionSlice(
+                enabled=bool(options.get(CONF_CLOUD_SUPPRESSION, False)),
+                hold_time_seconds=int(
+                    options.get(
+                        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+                        DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+                    )
                 ),
             ),
         )

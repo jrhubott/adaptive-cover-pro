@@ -269,6 +269,50 @@ class TestFieldValidators:
         with pytest.raises(Exception):
             FIELD_VALIDATORS[CONF_START_TIME]("8:00")
 
+    def test_cloud_suppression_hold_time_in_option_ranges(self):
+        """Issue #864: hold-time range is single-sourced (0, 3600)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            OPTION_RANGES,
+        )
+
+        assert OPTION_RANGES[CONF_CLOUD_SUPPRESSION_HOLD_TIME] == (0, 3600)
+
+    def test_cloud_suppression_hold_time_validator(self):
+        """Issue #864: hold-time accepts 0/3600/None, rejects out-of-range."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+        )
+
+        FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](None)
+        FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](0)
+        FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](3600)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](-5)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](9999)
+
+    def test_cloud_release_thresholds_accept_number_or_template(self):
+        """Issue #864: release thresholds are number-or-template (no range)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+            CONF_IRRADIANCE_RELEASE_THRESHOLD,
+            CONF_LUX_RELEASE_THRESHOLD,
+            OPTION_RANGES,
+        )
+
+        for key in (
+            CONF_LUX_RELEASE_THRESHOLD,
+            CONF_IRRADIANCE_RELEASE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+        ):
+            # Template fields are NOT range-bounded.
+            assert key not in OPTION_RANGES
+            # None (cleared), a plain number, and a Jinja template all pass.
+            FIELD_VALIDATORS[key](None)
+            FIELD_VALIDATORS[key](5000)
+            FIELD_VALIDATORS[key]("{{ states('sensor.x') | float }}")
+
     def test_tilt_mode_select(self):
         FIELD_VALIDATORS["tilt_mode"]("mode1")
         FIELD_VALIDATORS["tilt_mode"]("mode2")
