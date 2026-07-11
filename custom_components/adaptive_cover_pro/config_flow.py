@@ -3281,7 +3281,11 @@ def _get_geometry_schema(
     # derives from. Routed through the policy so no cover-type string branch
     # leaks in.
     base = policy.geometry_schema(hass, options)
-    base = base.extend(window_facing_schema(hass).schema)
+    base = base.extend(
+        window_facing_schema(
+            hass, include_distance=policy.includes_shaded_distance()
+        ).schema
+    )
     return policy.fov_compute_schema(base)
 
 
@@ -3293,16 +3297,21 @@ def _geometry_unit_keys(
     ``length_keys`` are option keys stored in canonical metres,
     ``slat_keys`` in canonical centimetres. Empty tuples for unknown types.
 
-    ``CONF_DISTANCE`` (shaded area) is appended centrally for every cover type —
-    it moved from the sun-tracking step to the geometry step (#778) and is stored
-    in canonical metres like the other window lengths.
+    ``CONF_DISTANCE`` (shaded area) is appended for every cover type whose policy
+    includes the shaded-distance field — it moved from the sun-tracking step to
+    the geometry step (#778) and is stored in canonical metres like the other
+    window lengths. Types that hide it (the tilt-only louvered roof, #830) omit
+    it here too so the unit-conversion keys stay in step with the rendered form.
     """
     cls = POLICY_REGISTRY.get(sensor_type) if sensor_type is not None else None
     if cls is None:
         return ((), ())
     policy = get_policy(sensor_type)
+    length_keys = policy.geometry_length_keys()
+    if policy.includes_shaded_distance():
+        length_keys = (*length_keys, CONF_DISTANCE)
     return (
-        (*policy.geometry_length_keys(), CONF_DISTANCE),
+        length_keys,
         policy.geometry_slat_keys(),
     )
 

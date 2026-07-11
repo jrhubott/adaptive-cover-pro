@@ -804,7 +804,11 @@ class CoverTypePolicy(ABC):
             # button is NOT added here — it is a transient toggle layered on in
             # ``config_flow._get_geometry_schema`` only, never a persisted key.
             base = self.geometry_schema(hass, opts)
-            base = base.extend(cd.window_facing_schema(hass).schema)
+            base = base.extend(
+                cd.window_facing_schema(
+                    hass, include_distance=self.includes_shaded_distance()
+                ).schema
+            )
         elif name == cf.SECTION_SUN_TRACKING:
             base = cd.sun_tracking_schema(hass)
         elif name == cf.SECTION_BLIND_SPOT:
@@ -936,6 +940,18 @@ class CoverTypePolicy(ABC):
         ignores both — passing them is backward-compatible.
         """
         return vol.Schema({})
+
+    def includes_shaded_distance(self) -> bool:
+        """Whether the shared ``CONF_DISTANCE`` (shaded distance) field applies.
+
+        The per-window shaded-distance field composes onto every geometry
+        schema through ``window_facing_schema``. Cover types whose engine
+        never reads it (the tilt-only louvered roof) override this to
+        ``False`` so the inert marker is omitted from the form and from
+        ``live_option_keys`` / the geometry unit-key set. Default ``True`` —
+        every other type keeps the field.
+        """
+        return True
 
     def geometry_length_keys(self) -> tuple[str, ...]:
         """Return option keys stored as canonical metres.

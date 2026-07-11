@@ -136,6 +136,15 @@ class LouveredRoofPolicy(CoverTypePolicy, register=True):
             return GEOMETRY_LOUVERED_ROOF_SCHEMA
         return geometry_louvered_roof_schema(hass)
 
+    def includes_shaded_distance(self) -> bool:
+        """Hide the shared shaded-distance field (#830).
+
+        The tilt-only louvered engine derives its slat angle from sun geometry
+        and slat depth/spacing alone — ``CONF_DISTANCE`` is inert — so the field
+        is omitted from the geometry form and its unit/length key set.
+        """
+        return False
+
     def geometry_slat_keys(self) -> tuple[str, ...]:
         """Louvered roofs store slat depth and spacing in canonical centimetres."""
         return TILT_SLAT_KEYS

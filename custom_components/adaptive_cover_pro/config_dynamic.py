@@ -188,7 +188,9 @@ def _condition_template_schema(template_key: str, mode_key: str) -> dict:
     }
 
 
-def window_facing_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+def window_facing_schema(
+    hass: HomeAssistant | None = None, *, include_distance: bool = True
+) -> vol.Schema:
     """Per-window facing fields: azimuth + FOV left/right + shaded distance.
 
     Single definition of the four fields relocated from the sun-tracking step to
@@ -196,47 +198,51 @@ def window_facing_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     they sit beside the window width/depth the FOV button derives from. Only
     ``CONF_DISTANCE`` is unit-dependent; azimuth and FOV are angles. ``min_m=0.0``
     keeps a flush shaded distance of 0 valid (#427).
+
+    ``include_distance=False`` omits the ``CONF_DISTANCE`` marker for cover types
+    whose engine never reads it (the tilt-only louvered roof, #830); the default
+    keeps it so every existing caller is unchanged.
     """
-    return vol.Schema(
-        {
-            vol.Required(
-                CONF_AZIMUTH, default=DEFAULT_WINDOW_AZIMUTH
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=359,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
-            vol.Required(CONF_FOV_LEFT, default=90): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=180,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
-            vol.Required(CONF_FOV_RIGHT, default=90): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=180,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
-            vol.Required(
-                CONF_DISTANCE, default=length_default(0.5, hass)
-            ): length_selector(
+    fields: dict = {
+        vol.Required(
+            CONF_AZIMUTH, default=DEFAULT_WINDOW_AZIMUTH
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=359,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Required(CONF_FOV_LEFT, default=90): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=180,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Required(CONF_FOV_RIGHT, default=90): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=180,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+    }
+    if include_distance:
+        fields[vol.Required(CONF_DISTANCE, default=length_default(0.5, hass))] = (
+            length_selector(
                 hass,
                 min_m=0.0,
                 max_m=50,
                 metric_step=0.1,
-            ),
-        }
-    )
+            )
+        )
+    return vol.Schema(fields)
 
 
 def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:

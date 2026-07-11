@@ -240,6 +240,35 @@ class TestLouveredRoofPolicy:
         assert DEFAULT_LOUVERED_SLAT_DEPTH_CM == 17.0
         assert DEFAULT_LOUVERED_SLAT_DISTANCE_CM == 15.0
 
+    def test_includes_shaded_distance_false(self) -> None:
+        # The tilt-only louvered engine never reads the shaded-distance field,
+        # so the policy hides it (#830 follow-up). A vertical blind still shows it.
+        assert get_policy(COVER_TYPE).includes_shaded_distance() is False
+        assert get_policy("cover_blind").includes_shaded_distance() is True
+
+    def test_composed_geometry_schema_omits_shaded_distance(self) -> None:
+        # The shared window-facing bundle is composed onto every geometry schema
+        # via _get_geometry_schema; for louvered the shaded-distance marker must
+        # be dropped, while every other type keeps it.
+        from custom_components.adaptive_cover_pro import config_flow as cf
+        from custom_components.adaptive_cover_pro.const import CONF_DISTANCE
+
+        louvered_keys = _schema_keys(cf._get_geometry_schema(COVER_TYPE))
+        assert CONF_DISTANCE not in louvered_keys
+
+        blind_keys = _schema_keys(cf._get_geometry_schema("cover_blind"))
+        assert CONF_DISTANCE in blind_keys
+
+    def test_geometry_unit_keys_omit_shaded_distance(self) -> None:
+        from custom_components.adaptive_cover_pro import config_flow as cf
+        from custom_components.adaptive_cover_pro.const import CONF_DISTANCE
+
+        louvered_length_keys, _ = cf._geometry_unit_keys(COVER_TYPE)
+        assert CONF_DISTANCE not in louvered_length_keys
+
+        blind_length_keys, _ = cf._geometry_unit_keys("cover_blind")
+        assert CONF_DISTANCE in blind_length_keys
+
     def test_build_calc_engine_returns_louvered_engine(self) -> None:
         from unittest.mock import MagicMock
 
