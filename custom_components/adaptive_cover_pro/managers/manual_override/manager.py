@@ -128,6 +128,11 @@ class AdaptiveCoverManager:
         # ACP-origin predicate over a context id; the coordinator wires the
         # real one. Default treats nothing as ACP-originated.
         self._is_acp_context_fn: Callable[[str | None], bool] = lambda _cid: False
+        # Display-only assumed-position invalidator (issue #888). The coordinator
+        # wires this to ``CoverCommandService.clear_assumed_position`` so the
+        # stashed My/assumed value is dropped the moment the override resets or a
+        # real numeric position read arrives. Default is a no-op.
+        self._invalidate_assumed: Callable[[str], None] = lambda _eid: None
 
     # --- wiring -----------------------------------------------------------
 
@@ -144,6 +149,10 @@ class AdaptiveCoverManager:
     def set_acp_context_predicate(self, fn: Callable[[str | None], bool]) -> None:
         """Register the predicate that recognises ACP-originated context ids."""
         self._is_acp_context_fn = fn
+
+    def set_assumed_invalidator(self, fn: Callable[[str], None]) -> None:
+        """Register the callback that drops a cover's assumed display position (#888)."""
+        self._invalidate_assumed = fn
 
     def update_config(self, config: DetectorConfig) -> None:
         """Apply an options change at runtime (no reload).
@@ -416,6 +425,11 @@ class AdaptiveCoverManager:
         new_position = policy.read_axis_value(
             self.hass, entity_id, caps, state_obj=new_state
         )
+        # Issue #888: a genuine numeric position read supersedes any display-only
+        # assumed value, so drop it. Reads that resolve to None (the Somfy-RTS
+        # unknown state that made the assumed value necessary) leave it intact.
+        if new_position is not None:
+            self._invalidate_assumed(entity_id)
         old_state_obj = getattr(event, "old_state", None)
         old_position = (
             policy.read_axis_value(self.hass, entity_id, caps, state_obj=old_state_obj)
@@ -523,7 +537,7 @@ class AdaptiveCoverManager:
         context_user_id: str | None = None,
         context_id: str | None = None,
         context_parent_id: str | None = None,
-    ) -> None:
+    ) -> bool:
         """Mark manual override when a user-initiated cover.stop_cover is detected.
 
         Delegates to the active detector's ``on_stop_to_my`` hook (default: mark
@@ -541,9 +555,15 @@ class AdaptiveCoverManager:
             context_id:       id of the stop_cover call's originating HA Context.
             context_parent_id: parent_id of the originating HA Context, if any.
 
+        Returns:
+            True when the stop engaged the manual override (the cover is taken to
+            be at My), False when it was ignored (untracked, or the #875
+            wait-for-target gate declined). The coordinator uses this to decide
+            whether to record the display-only assumed My position (#888).
+
         """
         if entity_id not in self.covers:
-            return
+            return False
         decision = self._detector.on_stop_to_my(
             StopToMy(
                 entity_id=entity_id,
@@ -559,7 +579,7 @@ class AdaptiveCoverManager:
                 "handle_stop_service_call: ignoring stop for %s — wait_for_target active",
                 entity_id,
             )
-            return
+            return False
         self.logger.debug(
             "Manual override via user stop_cover for %s (My position = %d%%)",
             entity_id,
@@ -572,6 +592,7 @@ class AdaptiveCoverManager:
                 entity_id, dt.datetime.now(dt.UTC)
             ),
         )
+        return True
 
     def set_last_updated(self, entity_id, new_state, allow_reset):
         """Set last updated time for manual control.
@@ -811,6 +832,9 @@ class AdaptiveCoverManager:
         """
         self.manual_control[entity_id] = False
         self.manual_control_time.pop(entity_id, None)
+        # Issue #888: the assumed My/display position was a stand-in while the
+        # override held the cover; clearing the override retires it too.
+        self._invalidate_assumed(entity_id)
         self.logger.debug("Reset manual override for %s", entity_id)
         self._record_event(
             entity_id,

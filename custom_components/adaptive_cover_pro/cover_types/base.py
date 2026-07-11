@@ -709,6 +709,7 @@ class CoverTypePolicy(ABC):
         caps: Any,
         *,
         state_obj: State | None = None,
+        assumed: int | None = None,
     ) -> int | None:
         """Read the current value on the axis this policy targets by default.
 
@@ -717,13 +718,23 @@ class CoverTypePolicy(ABC):
         ``CoverCommandService._read_position_with_capabilities``,
         ``CoverProvider.read_positions``, manual_override state-change
         handling, and the position-capability check inside ``_prepare_service_call``.
+
+        ``assumed`` (issue #888) is a display-only fallback surfaced ONLY on the
+        open/close-only branch, and ONLY after the live open/close read yields
+        ``None``. A real numeric/open/closed read always wins and is never
+        masked; a position-capable cover never reaches the fallback. Callers on
+        the command-dispatch read path leave ``assumed=None`` so the gates stay
+        raw (§3b) — only the reported-position surfaces pass it.
         """
         axis = self.select_default_axis(caps)
         if _caps_get(caps, axis.capability_key, default=True):
             if state_obj is not None:
                 return state_obj.attributes.get(axis.state_attr)
             return state_attr(hass, entity, axis.state_attr)
-        return get_open_close_state(hass, entity, state_obj=state_obj)
+        live = get_open_close_state(hass, entity, state_obj=state_obj)
+        if live is None and assumed is not None:
+            return assumed
+        return live
 
     # ---- Declarative section configuration ----------------------------- #
 

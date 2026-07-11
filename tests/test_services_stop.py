@@ -196,6 +196,156 @@ async def test_acp_stop_service_bypasses_manual_ignore_external_gate() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #888: external stop→My records the display-only assumed position,
+# gated by a configured My value + the #875 wait-for-target guard.
+# ---------------------------------------------------------------------------
+
+
+def _make_coord_for_assumed(
+    *,
+    my_position: int | None,
+    manual_ignore_external: bool = False,
+    engaged: bool = True,
+):
+    """Coordinator mock with a real CoverCommandService for assumed-position tests."""
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        CoverCommandService,
+    )
+
+    coord = MagicMock()
+    coord.manual_toggle = True
+    coord.automatic_control = True
+    coord.manual_ignore_external = manual_ignore_external
+    coord.entities = ["cover.test_blind"]
+    coord.logger = MagicMock()
+    coord._manual_gate_closed_log = MagicMock()
+
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    cmd_svc = CoverCommandService(
+        hass=hass,
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=MagicMock(),
+        open_close_threshold=50,
+        check_interval_minutes=1,
+        position_tolerance=3,
+        max_retries=3,
+    )
+    coord._cmd_svc = cmd_svc
+
+    coord.manager = MagicMock()
+    coord.manager.handle_stop_service_call = MagicMock(return_value=engaged)
+
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = (
+        {} if my_position is None else {"my_position_value": my_position}
+    )
+    return coord
+
+
+def _stop_event(entity_id: str = "cover.test_blind"):
+    from homeassistant.core import Context, Event
+
+    ctx = Context()
+    return Event(
+        "call_service",
+        {
+            "domain": "cover",
+            "service": "stop_cover",
+            "service_data": {"entity_id": entity_id},
+            "context": ctx,
+        },
+        context=ctx,
+    )
+
+
+_OPEN_CLOSE_ONLY = {
+    "has_set_position": False,
+    "has_set_tilt_position": False,
+    "has_open": True,
+    "has_close": True,
+    "has_stop": True,
+}
+
+
+@pytest.mark.asyncio
+async def test_external_stop_records_assumed_when_my_configured() -> None:
+    """A real external stop→My on an open/close-only cover records assumed=My."""
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = _make_coord_for_assumed(my_position=50, engaged=True)
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _stop_event()
+        )
+
+    assert coord._cmd_svc.get_assumed_position("cover.test_blind") == 50
+
+
+@pytest.mark.asyncio
+async def test_external_stop_no_assumed_when_my_unset() -> None:
+    """No My configured → the whole path early-returns, no assumed recorded."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = _make_coord_for_assumed(my_position=None, engaged=True)
+    await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+        coord, _stop_event()
+    )
+
+    assert coord._cmd_svc.get_assumed_position("cover.test_blind") is None
+    coord.manager.handle_stop_service_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_external_stop_no_assumed_when_waiting() -> None:
+    """A mid-move stop (override declined) records no assumed position."""
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = _make_coord_for_assumed(my_position=50, engaged=False)
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _stop_event()
+        )
+
+    assert coord._cmd_svc.get_assumed_position("cover.test_blind") is None
+
+
+@pytest.mark.asyncio
+async def test_external_stop_no_assumed_when_ignore_external() -> None:
+    """manual_ignore_external → external stop ignored, no assumed recorded."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = _make_coord_for_assumed(
+        my_position=50, manual_ignore_external=True, engaged=True
+    )
+    await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+        coord, _stop_event()
+    )
+
+    assert coord._cmd_svc.get_assumed_position("cover.test_blind") is None
+    coord.manager.handle_stop_service_call.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Step 10: services.yaml documents the stop service
 # ---------------------------------------------------------------------------
 

@@ -412,6 +412,32 @@ class TestReadAxisValue:
         result = get_policy("cover_blind").read_axis_value(hass, "cover.blind", caps)
         assert result == 25
 
+    @pytest.mark.unit
+    def test_read_axis_value_assumed_fallback_open_close_only(self):
+        # Issue #888: an open/close-only cover whose live state is unknown falls
+        # back to the assumed display value — but a real open/closed read always
+        # wins over the assumed value.
+        caps = {"has_set_position": False, "has_set_tilt_position": False}
+        policy = get_policy("cover_blind")
+
+        unknown = _hass_with_state({}, state="unknown")
+        assert policy.read_axis_value(unknown, "cover.somfy", caps, assumed=50) == 50
+
+        live_open = _hass_with_state({}, state="open")
+        assert policy.read_axis_value(live_open, "cover.somfy", caps, assumed=50) == 100
+
+    @pytest.mark.unit
+    def test_read_axis_value_assumed_ignored_for_position_capable(self):
+        # A position-capable cover never returns the assumed value: its live read
+        # (here None because the attribute is absent) is authoritative and must
+        # not be masked by an assumed fallback.
+        hass = _hass_with_state({}, state="unknown")
+        caps = {"has_set_position": True, "has_set_tilt_position": False}
+        result = get_policy("cover_blind").read_axis_value(
+            hass, "cover.blind", caps, assumed=50
+        )
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # position_axis_supported — does this entity expose the policy's primary axis?

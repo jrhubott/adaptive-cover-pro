@@ -491,6 +491,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # ACP-issued context ids from genuine user actions.
         self.manager.set_transition_callbacks(on_engaged=self._cmd_svc.discard_target)
         self.manager.set_acp_context_predicate(self._cmd_svc.was_acp_position_context)
+        # Issue #888: drop the display-only assumed position when the override
+        # resets or a real numeric position read arrives.
+        self.manager.set_assumed_invalidator(self._cmd_svc.clear_assumed_position)
 
         # Late-bind cover-type policy dependencies (e.g. VenetianPolicy
         # constructs its DualAxisSequencer here once cmd_svc + grace_mgr are
@@ -968,7 +971,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         for entity_id in tracked:
             # On the not-manual→manual edge the manager fires on_engaged →
             # discard_target (issue #215/#216); see set_transition_callbacks.
-            self.manager.handle_stop_service_call(
+            engaged = self.manager.handle_stop_service_call(
                 entity_id,
                 int(my_position_value),
                 self._cmd_svc.is_waiting_for_target,
@@ -979,6 +982,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Update target so the next reconciliation compares against
             # My rather than the stale calculated state.
             self._cmd_svc.set_target(entity_id, int(my_position_value))
+            # Issue #888: when the stop actually engaged the #875 override (not a
+            # mid-move stop), record My as the display-only assumed position so
+            # the card shows My. Confined to covers with no native position axis
+            # by the shared helper's caps predicate; the my_position_value gate
+            # above already restricts this to configured-My instances.
+            if engaged:
+                self._cmd_svc._record_assumed_if_blind(
+                    entity_id, int(my_position_value)
+                )
 
     async def async_check_weather_state_change(
         self, event: Event[EventStateChangedData]
@@ -1564,7 +1576,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             climate=None,  # Populated later when climate mode data is read
             cover_positions=self._cover_provider.read_positions(
-                self.entities, self._policy
+                self.entities,
+                self._policy,
+                assumed=self._cmd_svc.get_assumed_position,
             ),
             cover_capabilities=self._cover_provider.read_all_capabilities(
                 self.entities
@@ -2925,7 +2939,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Live cover positions and capabilities
         cover_entities = self.entities or []
-        _positions = self._cover_provider.read_positions(cover_entities, self._policy)
+        _positions = self._cover_provider.read_positions(
+            cover_entities, self._policy, assumed=self._cmd_svc.get_assumed_position
+        )
         _caps = self._cover_provider.read_all_capabilities(cover_entities)
         _covers = {
             eid: {

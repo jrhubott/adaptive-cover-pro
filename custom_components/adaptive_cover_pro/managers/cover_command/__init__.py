@@ -356,6 +356,61 @@ class CoverCommandService:
             s.is_safety = False
 
     # ------------------------------------------------------------------ #
+    # Assumed display position (issue #888) — display-only fallback for
+    # open/close-only covers with no native position feedback.
+    # ------------------------------------------------------------------ #
+
+    def get_assumed_position(self, entity_id: str) -> int | None:
+        """Return the assumed display position for ``entity_id``, or None.
+
+        Display-only (issue #888): the reported-position surfaces
+        (``CoverProvider.read_positions``) fall back to this ONLY when the live
+        HA read is None. NEVER consulted by the command-dispatch read path
+        (``_read_position_with_capabilities`` / ``get_current_position``) — see
+        §3b — so the delta / same-position / endpoint gates stay raw.
+        """
+        s = self._state.get(entity_id)
+        return None if s is None else s.assumed_position
+
+    def record_assumed_position(self, entity_id: str, value: int) -> None:
+        """Store an assumed display position for ``entity_id``."""
+        self.state(entity_id).assumed_position = value
+
+    def clear_assumed_position(self, entity_id: str) -> None:
+        """Drop any stored assumed display position for ``entity_id``."""
+        s = self._state.get(entity_id)
+        if s is not None:
+            s.assumed_position = None
+
+    def _record_assumed_if_blind(
+        self, entity_id: str, routed_target: int | None, caps: Any | None = None
+    ) -> None:
+        """Record (or clear) the assumed display position after ACP drives a cover.
+
+        Single shared write for both My paths (``send_my_position`` and the
+        command-sent tail of ``apply_position``) and the coordinator's external
+        stop→My path. Gated on ``not policy.position_axis_supported(caps)`` so
+        the assumed value is confined to open/close-only covers that report no
+        native position:
+
+        - open/close-only cover → stash ``routed_target`` as the assumed value
+          (the routed My target, or the routed open/close endpoint).
+        - position-capable cover → clear any stale assumed value so a real read
+          can never be masked (dedupes the clear-on-native-command path).
+
+        Never touches the command-dispatch read path (§3b); recording happens
+        only after the command has already dispatched, so this cycle's gates —
+        which read raw HA state — are unaffected.
+        """
+        if caps is None:
+            caps = self.get_cover_capabilities(entity_id)
+        if self._policy.position_axis_supported(caps):
+            self.clear_assumed_position(entity_id)
+            return
+        if routed_target is not None:
+            self.record_assumed_position(entity_id, routed_target)
+
+    # ------------------------------------------------------------------ #
     # Properties
     # ------------------------------------------------------------------ #
 
@@ -742,6 +797,11 @@ class CoverCommandService:
         s.last_progress_at = None
         s.retry_count = 0
         s.gave_up = False
+        # Issue #888: on covers with no native position axis, stash the My value
+        # as the display-only assumed position so the card shows My rather than
+        # ``—``. Caps was already fetched above; the helper gates on the policy
+        # predicate (no-op for position-capable covers).
+        self._record_assumed_if_blind(entity_id, target, caps)
         self._logger.debug(
             "send_my_position: stop_cover sent to %s (My = %d%%)", entity_id, target
         )
@@ -1802,6 +1862,16 @@ class CoverCommandService:
         now = dt.datetime.now(dt.UTC)
         s = self.state(entity)
         s.target = plan.routed_target
+        # Issue #888: this is the single chokepoint every dispatched command
+        # (apply_position + reconciliation) flows through, so refresh the
+        # display-only assumed position here. Open/close-only covers with no
+        # native feedback (Somfy RTS) stash the routed target so the card shows
+        # where ACP drove them; position-capable covers clear any stale assumed
+        # value (dedupes clear-on-native-command). It only writes/clears the
+        # assumed store — never read by the gates, which already ran — so §3b
+        # holds. Runs before the dry-run early return so a dry-run cycle keeps
+        # the display honest too.
+        self._record_assumed_if_blind(entity, plan.routed_target, caps)
         s.waiting = True
         s.sent_at = now
         s.last_progress_at = None

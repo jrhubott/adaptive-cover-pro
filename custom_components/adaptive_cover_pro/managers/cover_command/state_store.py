@@ -44,6 +44,12 @@ class PerEntityState:
     gave_up: bool = False
     is_safety: bool = False
     last_reconcile_at: dt.datetime | None = None
+    # Display-only assumed position (issue #888). Set on covers with no native
+    # position axis (Somfy-RTS-style open/close-only) when ACP drives them — an
+    # ACP My move or an external stop that engaged the #875 override. A pure
+    # fallback the reported-position surfaces return ONLY when the live HA read
+    # is None; NEVER consulted by the command-dispatch gates (§3b).
+    assumed_position: int | None = None
 
 
 @dataclasses.dataclass
