@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    FORECAST_STEP_MINUTES,
     ControlStatus,
 )
 from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
@@ -1434,7 +1435,7 @@ class TestForecast:
         ctx = _base_ctx(position_forecast=self._make_forecast())
         diag, _ = builder.build(ctx)
         section = diag["position_forecast"]
-        assert section["step_minutes"] == 15
+        assert section["step_minutes"] == FORECAST_STEP_MINUTES
         assert section["forecast"][0] == {
             "t": "2026-06-14T12:00:00+00:00",
             "position": 40,

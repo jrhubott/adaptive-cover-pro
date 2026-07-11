@@ -122,7 +122,7 @@ class TestBuildForecastSamples:
             config=_make_config(h_def=10),
             now=_NOW,
         )
-        # Full calendar day (00:00 → 24:00) at 15-minute steps inclusive = 24 * 60 / 15 + 1 = 97.
+        # Full calendar day (00:00 → 24:00) at 10-minute steps inclusive = 24 * 60 / 10 + 1 = 145.
         expected = (24 * 60 // FORECAST_STEP_MINUTES) + 1
         assert len(f.samples) == expected
         # All samples carry the configured default since solar isn't valid.
@@ -327,7 +327,7 @@ class TestBuildForecastEvents:
     def test_handler_switch_emits_fov_enter_and_exit(self):
         """Cover-factory swings direct_sun_valid mid-window → enter + exit events."""
         sd = _make_sun_data()
-        # solar valid during minutes 30-90 (i.e. samples 2-6 at 15-min step).
+        # solar valid during minutes 20-60 (i.e. samples 2-6 at 10-min step).
         valid_window_start = _NOW + timedelta(minutes=30)
         valid_window_end = _NOW + timedelta(minutes=90)
 
@@ -371,9 +371,10 @@ class TestBuildForecastEvents:
         """FOV-enter event lands on the true crossing time, not the first solar sample.
 
         Pre-fix the event was placed at the first sample where handler='solar',
-        which lags the real FOV crossing by up to one full sample step (15 min).
-        Post-fix the event time is the SunData grid point where
-        ``direct_sun_valid`` actually flips True — accurate to the 5-min grid.
+        which can lag the real FOV crossing by up to one full sample step
+        (``FORECAST_STEP_MINUTES``, 10 min by default). Post-fix the event time
+        is the SunData grid point where ``direct_sun_valid`` actually flips
+        True — accurate to the 5-min grid.
         """
         # Full calendar day at 5-min step = 289 samples (00:00 → 24:00).
         n_samples = 24 * 60 // 5 + 1
@@ -381,9 +382,11 @@ class TestBuildForecastEvents:
         # Encode "time" into azimuth so a factory ignoring ele can decide by azi.
         sd.solar_azimuth = [float(i) for i in range(n_samples)]
 
-        # Crossing index 20 = 100 min from _DAY_START (00:00); 15-min samples bracket
-        # it at 90 min (azi 18) and 105 min (azi 21) — so a naive enter event
-        # would land at 105 min, but the true crossing is at 100 min.
+        # Crossing index 20 = 100 min from _DAY_START (00:00). At a coarser
+        # forecast cadence a naive enter event (first sample where
+        # handler='solar') can lag the true crossing; refinement rescans the
+        # 5-min grid between the bracketing samples to recover the exact
+        # crossing time regardless of the configured cadence.
         crossing_idx = 20
         crossing_time = _DAY_START + timedelta(minutes=crossing_idx * 5)
 
@@ -718,7 +721,7 @@ class TestForecastEndOfWindowPosition:
         # Before window-end → daytime default.
         assert pos_at[_DAY_START + timedelta(hours=12)] == 80
         # After window-end but before astral sunset → end-of-window (phase 1).
-        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 0
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=40)] == 0
         # After astral sunset → astral sunset position (phase 2 handoff).
         assert pos_at[_DAY_START + timedelta(hours=22)] == 20
 
@@ -737,7 +740,7 @@ class TestForecastEndOfWindowPosition:
         )
         pos_at = {s.t: s.position for s in f.samples}
         assert pos_at[_DAY_START + timedelta(hours=12)] == 80
-        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 0
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=40)] == 0
         assert pos_at[_DAY_START + timedelta(hours=22)] == 0
 
     def test_omitting_eow_kwargs_is_no_regression(self):
@@ -752,7 +755,7 @@ class TestForecastEndOfWindowPosition:
         )
         pos_at = {s.t: s.position for s in f.samples}
         # Without the feature: daytime default before sunset, sunset pos after.
-        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 80
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=40)] == 80
         assert pos_at[_DAY_START + timedelta(hours=22)] == 20
 
 

@@ -302,7 +302,7 @@ def _build_events(
     """Sunrise/sunset come from SunData; FOV transitions come from the samples.
 
     FOV-enter/exit timestamps are refined from the coarse forecast cadence
-    (default 15 min) down to SunData's native 5-min grid by scanning the
+    (default 10 min) down to SunData's native 5-min grid by scanning the
     grid points between the two samples that bracket the handler change —
     otherwise the marker can lag the visible cover-position drop by up to
     one full sample step.
@@ -363,8 +363,8 @@ def _refine_fov_crossing(
 ) -> datetime | None:
     """First grid time in [t_before, t_after] where direct_sun_valid matches target_valid.
 
-    Used to refine FOV-enter/exit event timestamps from the 15-min sample
-    cadence down to SunData's native 5-min grid; returns None when no
+    Used to refine FOV-enter/exit event timestamps from the default 10-min
+    sample cadence down to SunData's native 5-min grid; returns None when no
     match is found.
     """
     times = list(sun_data.times)

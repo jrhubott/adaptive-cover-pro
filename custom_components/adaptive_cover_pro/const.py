@@ -410,11 +410,11 @@ CONF_SUNSET_TILT = (
 # 8a. Forecast Timeline
 # =============================================================================
 # Sampling cadence and boundary-event vocabulary for the dashboard forecast
-# strip built by ``forecast.build_forecast``. 15-minute steps over the full
+# strip built by ``forecast.build_forecast``. 10-minute steps over the full
 # local calendar day (00:00 → 24:00) are dense enough to read smoothly and
 # cheap enough to compute in well under a second on a Pi 4.
 
-FORECAST_STEP_MINUTES = 15  # cadence between forecast samples, minutes
+FORECAST_STEP_MINUTES = 10  # cadence between forecast samples, minutes
 
 EVENT_SUNRISE = "sunrise"  # boundary event: sun rises above horizon
 EVENT_SUNSET = "sunset"  # boundary event: sun sets below horizon
