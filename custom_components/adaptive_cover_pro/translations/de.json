@@ -2352,7 +2352,7 @@
       "name": "Einstellungen für manuelle Übersteuerung festlegen"
     },
     "set_motion": {
-      "description": "Aktualisieren Sie Belegungssensoren und Belegungs-Timeout.",
+      "description": "Veraltet – stattdessen set_occupancy verwenden. Aktualisieren Sie Belegungssensoren und Belegungs-Timeout.",
       "fields": {
         "motion_sensors": {
           "description": "Binärsensoren, die Belegung anzeigen. Leere Liste = Belegungserkennung deaktivieren.",
@@ -2363,7 +2363,7 @@
           "name": "Belegungs-Timeout"
         }
       },
-      "name": "Belegungseinstellungen festlegen"
+      "name": "Belegungseinstellungen festlegen (veraltet)"
     },
     "set_option": {
       "description": "Generischer Ausweg — aktualisiert jede unterstützte Option nach Schlüsselnamen. Identitätsschlüssel werden abgelehnt.",
@@ -2692,6 +2692,24 @@
         "force": {
           "name": "Erzwingen",
           "description": "Wenn wahr, manuelle Übersteuerungsaktivierung überspringen. Vorgabe: falsch — Service-Aufrufe aktivieren die manuelle Übersteuerung wie ein Dashboard-Regler."
+        }
+      }
+    },
+    "set_occupancy": {
+      "name": "Belegungseinstellungen festlegen",
+      "description": "Aktualisieren Sie die Belegungssensoren, Belegungs-Medienplayer und das Timeout, die die Belegungserkennung antreiben. Ersetzt den veralteten set_motion-Service.",
+      "fields": {
+        "occupancy_sensors": {
+          "name": "Belegungssensoren",
+          "description": "Binärsensoren, die Belegung anzeigen. Leere Liste = Belegungserkennung deaktivieren."
+        },
+        "occupancy_media_players": {
+          "name": "Belegungs-Medienplayer",
+          "description": "Medienplayer, die als Belegung behandelt werden – jeder Player, der nicht ausgeschaltet ist, wird als besetzt gezählt. Leere Liste = deaktivieren."
+        },
+        "occupancy_timeout": {
+          "name": "Belegungs-Timeout",
+          "description": "Sekunden zum Warten, nachdem die Belegung endet, bevor die Belegungs-Timeout-Position angewendet wird (30–3600)."
         }
       }
     }

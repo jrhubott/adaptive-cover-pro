@@ -562,8 +562,11 @@ set_custom_position:
         boolean:
 
 set_motion:
-  name: Set occupancy settings
-  description: Update occupancy sensors and occupancy timeout. Pass an empty list to disable occupancy detection.
+  name: Set occupancy settings (deprecated)
+  description: >-
+    Deprecated — use set_occupancy instead. Update occupancy sensors and
+    occupancy timeout. Pass an empty list to disable occupancy detection. This
+    service keeps working but will be removed in a future major release.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -580,6 +583,45 @@ set_motion:
             - presence
           multiple: true
     motion_timeout:
+      name: Occupancy timeout
+      description: "Seconds to wait after occupancy clears before applying the occupancy-timeout position (30–3600)."
+      selector:
+        number:
+          min: 30
+          max: 3600
+          step: 30
+          mode: slider
+          unit_of_measurement: seconds
+
+set_occupancy:
+  name: Set occupancy settings
+  description: >-
+    Update the occupancy sensors, media players, and timeout that drive
+    occupancy detection. Pass an empty list to disable a source. Replaces the
+    deprecated set_motion service.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    occupancy_sensors:
+      name: Occupancy sensors
+      description: "Binary sensors (motion/occupancy/presence device classes) that indicate occupancy. Empty list = disable."
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class:
+            - motion
+            - occupancy
+            - presence
+          multiple: true
+    occupancy_media_players:
+      name: Occupancy media players
+      description: "Media players treated as occupancy — any player that is not off counts as occupied. Empty list = disable."
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    occupancy_timeout:
       name: Occupancy timeout
       description: "Seconds to wait after occupancy clears before applying the occupancy-timeout position (30–3600)."
       selector:

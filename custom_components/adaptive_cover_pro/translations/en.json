@@ -2246,14 +2246,32 @@
       }
     },
     "set_motion": {
-      "name": "Set occupancy settings",
-      "description": "Update occupancy sensors and occupancy timeout.",
+      "name": "Set occupancy settings (deprecated)",
+      "description": "Deprecated — use set_occupancy instead. Update occupancy sensors and occupancy timeout.",
       "fields": {
         "motion_sensors": {
           "name": "Occupancy sensors",
           "description": "Binary sensors indicating occupancy. Empty list = disable occupancy detection."
         },
         "motion_timeout": {
+          "name": "Occupancy timeout",
+          "description": "Seconds to wait after occupancy clears before applying occupancy-timeout position (30–3600)."
+        }
+      }
+    },
+    "set_occupancy": {
+      "name": "Set occupancy settings",
+      "description": "Update the occupancy sensors, media players, and timeout that drive occupancy detection. Replaces the deprecated set_motion service.",
+      "fields": {
+        "occupancy_sensors": {
+          "name": "Occupancy sensors",
+          "description": "Binary sensors indicating occupancy. Empty list = disable occupancy detection."
+        },
+        "occupancy_media_players": {
+          "name": "Occupancy media players",
+          "description": "Media players treated as occupancy — any player that is not off counts as occupied. Empty list = disable."
+        },
+        "occupancy_timeout": {
           "name": "Occupancy timeout",
           "description": "Seconds to wait after occupancy clears before applying occupancy-timeout position (30–3600)."
         }

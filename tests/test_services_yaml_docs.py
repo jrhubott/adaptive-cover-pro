@@ -124,6 +124,7 @@ REGISTERED_SERVICES = {
     "set_force_override",
     "set_custom_position",
     "set_motion",
+    "set_occupancy",
     "set_light_cloud",
     "set_climate",
     "set_weather_safety",
@@ -142,6 +143,18 @@ def test_all_registered_services_have_yaml_entry():
     assert (
         not missing
     ), f"Service(s) registered in Python but missing from services.yaml: {sorted(missing)}"
+
+
+def test_set_occupancy_fields_are_occupancy_prefixed():
+    """Issue #723: set_occupancy exposes occupancy_* wire fields (aliased to the
+    frozen CONF_MOTION_* option keys). The yaml must NOT expose motion_* keys —
+    set_motion keeps those; set_occupancy is the renamed API.
+    """
+    fields = _load()["set_occupancy"]["fields"]
+    assert "occupancy_sensors" in fields
+    assert "occupancy_timeout" in fields
+    assert "occupancy_media_players" in fields
+    assert not any(k.startswith("motion_") for k in fields)
 
 
 def test_set_position_limits_field_is_default_percentage_not_default_height():

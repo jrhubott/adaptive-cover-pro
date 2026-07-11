@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -45,6 +46,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MAX_POSITION,
     CONF_MIN_POSITION,
+    CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_DISTANCE,
     CONF_HEIGHT_WIN,
@@ -83,6 +85,7 @@ from custom_components.adaptive_cover_pro.services.options_service import (
     IDENTITY_KEYS,
     OPTIONS_SERVICE_NAMES,
     _SECTION_CLIMATE,
+    _SECTION_MOTION,
     _SECTION_POSITION_LIMITS,
     _SECTION_SUNSET_SUNRISE,
     _SERVICE_FIELD_ALIASES,
@@ -703,6 +706,7 @@ class TestServiceRegistration:
             "set_force_override",
             "set_custom_position",
             "set_motion",
+            "set_occupancy",
             "set_light_cloud",
             "set_climate",
             "set_weather_safety",
@@ -741,6 +745,31 @@ class TestBuildPatchAliasing:
 
     def test_default_height_alias_is_registered(self):
         assert _SERVICE_FIELD_ALIASES["default_height"] == CONF_DEFAULT_HEIGHT
+
+    def test_occupancy_timeout_alias_resolves(self):
+        # issue #723: set_occupancy's occupancy_timeout maps to CONF_MOTION_TIMEOUT.
+        patch_ = _build_patch({"occupancy_timeout": 600}, _SECTION_MOTION)
+        assert patch_ == {CONF_MOTION_TIMEOUT: 600}
+
+    def test_occupancy_sensors_alias_resolves(self):
+        patch_ = _build_patch(
+            {"occupancy_sensors": ["binary_sensor.a"]}, _SECTION_MOTION
+        )
+        assert patch_ == {CONF_MOTION_SENSORS: ["binary_sensor.a"]}
+
+    def test_occupancy_media_players_alias_resolves(self):
+        patch_ = _build_patch(
+            {"occupancy_media_players": ["media_player.tv"]}, _SECTION_MOTION
+        )
+        assert patch_ == {CONF_MOTION_MEDIA_PLAYERS: ["media_player.tv"]}
+
+    def test_occupancy_aliases_are_registered(self):
+        assert _SERVICE_FIELD_ALIASES["occupancy_sensors"] == CONF_MOTION_SENSORS
+        assert _SERVICE_FIELD_ALIASES["occupancy_timeout"] == CONF_MOTION_TIMEOUT
+        assert (
+            _SERVICE_FIELD_ALIASES["occupancy_media_players"]
+            == CONF_MOTION_MEDIA_PLAYERS
+        )
 
 
 class TestSetPositionLimits:
@@ -1204,6 +1233,97 @@ class TestSetMotion:
         await _setup(hass, entry_id="mot_err_01")
         with pytest.raises((ServiceValidationError, Exception)):
             await _call(hass, "set_motion", {CONF_MOTION_TIMEOUT: 10})  # below 30
+
+    async def test_emits_deprecation_warning(
+        self, hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+    ):
+        # issue #723: set_motion still works but logs a deprecation warning
+        # steering users to set_occupancy.
+        await _setup(hass, entry_id="mot_dep_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry"),
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+            caplog.at_level(logging.WARNING),
+        ):
+            await _call(hass, "set_motion", {CONF_MOTION_TIMEOUT: 600})
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any(
+            "set_motion is deprecated" in r.message and "set_occupancy" in r.message
+            for r in warnings
+        ), f"expected set_motion deprecation warning, got: {[r.message for r in warnings]}"
+
+
+class TestSetOccupancy:
+    """Integration tests for the set_occupancy service (issue #723).
+
+    set_occupancy is the renamed API for the occupancy-detection feature; it
+    delegates to the same section handler as set_motion via field-name aliases,
+    writing the same CONF_MOTION_* option keys.
+    """
+
+    async def test_updates_timeout(self, hass: HomeAssistant):
+        await _setup(hass, entry_id="occ_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_occupancy", {"occupancy_timeout": 600})
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_MOTION_TIMEOUT] == 600
+
+    async def test_sensors_replace_semantics(self, hass: HomeAssistant):
+        opts = {**VERTICAL_OPTIONS, CONF_MOTION_SENSORS: ["binary_sensor.a"]}
+        await _setup(hass, entry_id="occ_list_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_occupancy",
+                {"occupancy_sensors": ["binary_sensor.b", "binary_sensor.c"]},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_MOTION_SENSORS] == ["binary_sensor.b", "binary_sensor.c"]
+
+    async def test_updates_media_players(self, hass: HomeAssistant):
+        await _setup(hass, entry_id="occ_mp_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_occupancy",
+                {"occupancy_media_players": ["media_player.tv"]},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_MOTION_MEDIA_PLAYERS] == ["media_player.tv"]
+
+    async def test_invalid_timeout_rejected(self, hass: HomeAssistant):
+        await _setup(hass, entry_id="occ_err_01")
+        with pytest.raises((ServiceValidationError, Exception)):
+            await _call(hass, "set_occupancy", {"occupancy_timeout": 10})  # below 30
+
+    async def test_no_deprecation_warning(
+        self, hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+    ):
+        # set_occupancy is the current API — it must NOT log a deprecation warning.
+        await _setup(hass, entry_id="occ_nodep_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry"),
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+            caplog.at_level(logging.WARNING),
+        ):
+            await _call(hass, "set_occupancy", {"occupancy_timeout": 600})
+
+        assert not any(
+            "deprecated" in r.message for r in caplog.records
+        ), "set_occupancy must not emit a deprecation warning"
 
 
 class TestSetLightCloud:

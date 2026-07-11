@@ -2352,7 +2352,7 @@
       "name": "Définir les paramètres de la dérogation manuelle"
     },
     "set_motion": {
-      "description": "Définir manuellement l'état de la détection d'occupation",
+      "description": "Obsolète — utilisez plutôt set_occupancy. Mettre à jour les capteurs d'occupation et le délai d'occupation.",
       "fields": {
         "motion_sensors": {
           "description": "Capteurs d'occupation à définir",
@@ -2363,7 +2363,7 @@
           "name": "Délai d'occupation"
         }
       },
-      "name": "Définir la détection d'occupation"
+      "name": "Paramètres d'occupation (obsolète)"
     },
     "set_option": {
       "description": "Échappatoire générique — mettre à jour n'importe quelle option unique supportée par clé de nom. Les clés d'identité sont rejetées.",
@@ -2692,6 +2692,24 @@
         "force": {
           "name": "Forcer",
           "description": "Quand vrai, ignorez l'engagement de la dérogation manuelle. Par défaut faux — les appels de service enclenchent la dérogation manuelle comme un curseur du tableau de bord."
+        }
+      }
+    },
+    "set_occupancy": {
+      "name": "Paramètres d'occupation",
+      "description": "Mettez à jour les capteurs d'occupation, les lecteurs multimédias et le délai qui pilotent la détection d'occupation. Remplace le service set_motion obsolète.",
+      "fields": {
+        "occupancy_sensors": {
+          "name": "Capteurs d'occupation",
+          "description": "Capteurs binaires indiquant l'occupation. Liste vide = désactiver la détection d'occupation."
+        },
+        "occupancy_media_players": {
+          "name": "Lecteurs multimédias (occupation)",
+          "description": "Lecteurs multimédias traités comme occupation — tout lecteur qui n'est pas arrêté compte comme occupé. Liste vide = désactiver."
+        },
+        "occupancy_timeout": {
+          "name": "Délai d'occupation",
+          "description": "Secondes à attendre après que l'occupation disparaisse avant d'appliquer la position du délai d'occupation (30–3600)."
         }
       }
     }

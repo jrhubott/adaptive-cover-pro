@@ -838,6 +838,13 @@ _CUSTOM_SLOT_KEYS = CUSTOM_POSITION_SLOTS
 # existing automations keep working (issue #792).
 _SERVICE_FIELD_ALIASES: dict[str, str] = {
     "default_height": CONF_DEFAULT_HEIGHT,
+    # issue #723: set_occupancy is the renamed API for the occupancy-detection
+    # feature. Its occupancy_* wire fields resolve to the frozen CONF_MOTION_*
+    # option keys so the new service shares set_motion's handler with no
+    # duplication; set_motion keeps working via its own field names.
+    "occupancy_sensors": CONF_MOTION_SENSORS,
+    "occupancy_media_players": CONF_MOTION_MEDIA_PLAYERS,
+    "occupancy_timeout": CONF_MOTION_TIMEOUT,
 }
 
 
@@ -1254,9 +1261,24 @@ def register_options_services(hass: HomeAssistant) -> None:
     # DEPRECATED (issue #563): kept one release so existing automations don't
     # hit service-not-found; routes onto custom-position slot 5.
     hass.services.async_register(DOMAIN, "set_force_override", _force_override_shim)
-    hass.services.async_register(
-        DOMAIN, "set_motion", _section_handler(_SECTION_MOTION)
-    )
+
+    # issue #723: set_occupancy is the current name for the occupancy-detection
+    # service; set_motion is deprecated but kept working. Both delegate to the
+    # SAME section handler — set_occupancy's occupancy_* fields resolve to the
+    # CONF_MOTION_* option keys via _SERVICE_FIELD_ALIASES. set_motion only adds
+    # a deprecation-warning side effect.
+    _motion_handler = _section_handler(_SECTION_MOTION)
+
+    async def _set_motion_deprecated(call: ServiceCall) -> None:
+        _LOGGER.warning(
+            "adaptive_cover_pro.set_motion is deprecated (issue #723); use "
+            "set_occupancy with occupancy_sensors / occupancy_timeout / "
+            "occupancy_media_players instead. set_motion keeps working for now."
+        )
+        await _motion_handler(call)
+
+    hass.services.async_register(DOMAIN, "set_motion", _set_motion_deprecated)
+    hass.services.async_register(DOMAIN, "set_occupancy", _motion_handler)
     hass.services.async_register(
         DOMAIN, "set_light_cloud", _section_handler(_SECTION_LIGHT_CLOUD)
     )
@@ -1302,6 +1324,7 @@ OPTIONS_SERVICE_NAMES: tuple[str, ...] = (
     "set_force_override",
     "set_custom_position",
     "set_motion",
+    "set_occupancy",
     "set_light_cloud",
     "set_climate",
     "set_weather_safety",
