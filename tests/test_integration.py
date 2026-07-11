@@ -613,8 +613,11 @@ class TestEndToEndIntegration:
             diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
+            # control_status is the frozen machine slug (card localizes it); the
+            # human-readable explanation uses occupancy wording (issue #723).
             assert diag_dict["control_status"] == "motion_timeout"
-            assert "motion" in explanation.lower()
+            assert "occupancy" in explanation.lower()
+            assert "motion" not in explanation.lower()
 
     def test_horizontal_awning_sun_tracking(self):
         """Horizontal awning with sun in FOV → SolarHandler wins."""

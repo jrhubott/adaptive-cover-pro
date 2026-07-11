@@ -380,6 +380,10 @@ class TestMotionTimeoutHandler:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.MOTION
+        # issue #723: the decision-trace reason is user-facing and must use
+        # occupancy wording, not "motion".
+        assert result.reason.startswith("occupancy timeout active")
+        assert "motion" not in result.reason.lower()
 
     def test_returns_none_when_inactive(self) -> None:
         """Return None when motion timeout is not active."""
@@ -412,15 +416,17 @@ class TestMotionTimeoutHandler:
         assert result.control_method == ControlMethod.MOTION
 
     def test_describe_skip_motion_control_disabled(self) -> None:
-        """describe_skip returns 'motion control disabled' when switch is off."""
+        """describe_skip returns 'occupancy detection disabled' when switch is off."""
         snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=False)
-        assert self.handler.describe_skip(snap) == "motion control disabled"
+        assert self.handler.describe_skip(snap) == "occupancy detection disabled"
 
     def test_describe_skip_timeout_not_active(self) -> None:
         """describe_skip returns timeout-not-active message when enabled but no timeout."""
         snap = make_snapshot(motion_timeout_active=False, motion_control_enabled=True)
         reason = self.handler.describe_skip(snap)
-        assert "motion" in reason.lower()
+        # issue #723: user-facing reason uses occupancy wording, not "motion".
+        assert "occupancy" in reason.lower()
+        assert "motion" not in reason.lower()
         assert "disabled" not in reason.lower()
 
     def test_priority_is_75(self) -> None:
@@ -453,6 +459,9 @@ class TestMotionTimeoutHandlerHoldMode:
         assert result.position == 42
         assert result.control_method == ControlMethod.MOTION
         assert "hold" in result.reason.lower()
+        # issue #723: hold-mode reason is user-facing → occupancy wording.
+        assert result.reason.startswith("occupancy timeout")
+        assert "motion" not in result.reason.lower()
 
     def test_hold_exits_when_sun_not_valid(self) -> None:
         """hold_position + direct_sun_valid=False → fall through to default position."""

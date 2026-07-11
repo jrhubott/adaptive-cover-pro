@@ -319,11 +319,11 @@ class TestPositionExplanation:
         """Motion timeout produces correct explanation."""
         pr = _make_pr(
             control_method=ControlMethod.MOTION,
-            reason="motion timeout active — default position 30%",
+            reason="occupancy timeout active — default position 30%",
             position=30,
         )
         _, explanation = builder.build(_base_ctx(pipeline_result=pr))
-        assert "motion" in explanation.lower()
+        assert "occupancy" in explanation.lower()
         assert "30%" in explanation
 
     def test_manual_override_explanation(self, builder: DiagnosticsBuilder):

@@ -811,13 +811,13 @@ class TestMotionHoldDiagnostics:
         hold_pr = PipelineResult(
             position=42,
             control_method=ControlMethod.MOTION,
-            reason="motion timeout — holding position 42% (sun in FOV)",
+            reason="occupancy timeout — holding position 42% (sun in FOV)",
             skip_command=True,
             decision_trace=[
                 DecisionStep(
                     handler="motion_timeout",
                     matched=True,
-                    reason="motion timeout — holding position 42% (sun in FOV)",
+                    reason="occupancy timeout — holding position 42% (sun in FOV)",
                     position=42,
                 )
             ],

@@ -626,14 +626,14 @@ class TestBuildPositionExplanation:
         """Motion timeout active → explains default position."""
         pr = _make_pr(
             control_method=ControlMethod.MOTION,
-            reason="motion timeout active — default position 30%",
+            reason="occupancy timeout active — default position 30%",
             position=30,
             default_position=30,
         )
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(pipeline_result=pr)
         )
-        assert "motion" in result.lower()
+        assert "occupancy" in result.lower()
         assert "30%" in result
 
     def test_manual_override(self, builder):

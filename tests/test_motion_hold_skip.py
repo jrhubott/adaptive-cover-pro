@@ -23,7 +23,7 @@ def _make_coordinator_with_skip_command(*, skip_command: bool, position: int = 4
     coord._pipeline_result = PipelineResult(
         position=position,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout — holding position 42% (sun in FOV)",
+        reason="occupancy timeout — holding position 42% (sun in FOV)",
         skip_command=skip_command,
     )
 

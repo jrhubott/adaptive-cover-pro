@@ -538,7 +538,7 @@ def test_determine_control_status_motion_timeout():
     pipeline_result = PipelineResult(
         position=60,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active",
+        reason="occupancy timeout active",
     )
 
     ctx = DiagnosticContext(
@@ -618,7 +618,7 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     coordinator._pipeline_result = PipelineResult(
         position=10,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active — default position 10%",
+        reason="occupancy timeout active — default position 10%",
     )
 
     result = AdaptiveDataUpdateCoordinator.state.fget(coordinator)

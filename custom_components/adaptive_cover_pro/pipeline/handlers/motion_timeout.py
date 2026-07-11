@@ -40,7 +40,7 @@ class MotionTimeoutHandler(OverrideHandler):
             return PipelineResult(
                 position=held,
                 control_method=ControlMethod.MOTION,
-                reason=f"motion timeout — holding position {held}% (sun in FOV)",
+                reason=f"occupancy timeout — holding position {held}% (sun in FOV)",
                 skip_command=True,
                 raw_calculated_position=compute_raw_calculated_position(snapshot),
             )
@@ -52,12 +52,12 @@ class MotionTimeoutHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MOTION,
-            reason=f"motion timeout active — {pos_label} {position}%",
+            reason=f"occupancy timeout active — {pos_label} {position}%",
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:
-        """Reason when motion timeout is not active."""
+        """Reason when occupancy timeout is not active."""
         if not snapshot.motion_control_enabled:
-            return "motion control disabled"
-        return "motion timeout not active"
+            return "occupancy detection disabled"
+        return "occupancy timeout not active"

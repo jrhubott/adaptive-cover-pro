@@ -786,7 +786,7 @@ class DiagnosticsBuilder:
                 "description": (
                     "Solar-tracking-only projection for the rest of today. "
                     "Holds window geometry constant and walks the sun forward; "
-                    "does NOT model manual override, motion, weather safety, "
+                    "does NOT model manual override, occupancy, weather safety, "
                     "climate, or custom-position handlers. Use it to validate "
                     "sun/FOV geometry and timing, not to explain a specific "
                     "command — see decision_trace for that."
