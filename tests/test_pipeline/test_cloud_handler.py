@@ -386,8 +386,8 @@ class TestCloudHandlerFOVGate:
         assert result is not None
         assert result.control_method == ControlMethod.CLOUD
 
-    def test_describe_skip_mentions_fov_when_sun_outside_fov(self) -> None:
-        """describe_skip() must mention FOV when sun is outside the window FOV."""
+    def test_describe_skip_mentions_acceptance_angle_when_sun_outside(self) -> None:
+        """describe_skip() must mention the acceptance angle when sun is outside it."""
         snap = make_snapshot(
             direct_sun_valid=False,
             climate_readings=_make_readings(is_sunny=False),
@@ -396,8 +396,8 @@ class TestCloudHandlerFOVGate:
         )
         reason = self.handler.describe_skip(snap)
         assert (
-            "fov" in reason.lower()
-        ), f"Expected 'fov' in describe_skip reason but got: {reason!r}"
+            "acceptance angle" in reason.lower()
+        ), f"Expected 'acceptance angle' in describe_skip reason but got: {reason!r}"
 
 
 # ---------------------------------------------------------------------------

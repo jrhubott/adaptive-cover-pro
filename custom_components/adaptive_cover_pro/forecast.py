@@ -3,7 +3,7 @@
 Walks the per-coordinator solar position table that ``SunData`` already
 computes for the current day and emits a coarse-grained series of
 (timestamp, position) samples plus the boundary events the dashboard
-needs (sunrise, sunset, FOV entry, FOV exit).
+needs (sunrise, sunset, acceptance-angle entry, acceptance-angle exit).
 
 Only solar tracking is projected forward — the other handlers in the
 pipeline (manual override, motion, weather safety, custom positions)
@@ -342,11 +342,15 @@ def _build_events(
         t_event = crossing if crossing is not None else sample.t
         if target_valid:
             events.append(
-                ForecastEvent(t=t_event, kind=EVENT_FOV_ENTER, label="Sun enters FOV")
+                ForecastEvent(
+                    t=t_event, kind=EVENT_FOV_ENTER, label="Sun enters acceptance angle"
+                )
             )
         else:
             events.append(
-                ForecastEvent(t=t_event, kind=EVENT_FOV_EXIT, label="Sun exits FOV")
+                ForecastEvent(
+                    t=t_event, kind=EVENT_FOV_EXIT, label="Sun exits acceptance angle"
+                )
             )
         prev_sample = sample
 

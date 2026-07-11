@@ -73,9 +73,9 @@
           "roof_height_above": "Dachabstand über Fenster",
           "venetian_tilt_skip_mode": "Skip-Neigungsmodus",
           "set_azimuth": "Fenster-Azimut",
-          "fov_left": "Sichtfeld links",
-          "fov_right": "Sichtfeld rechts",
-          "fov_compute": "Sichtfeld aus Messungen generieren",
+          "fov_left": "Sonnen-Akzeptanzwinkel — links",
+          "fov_right": "Sonnen-Akzeptanzwinkel — rechts",
+          "fov_compute": "Sonnen-Akzeptanzwinkel aus Messungen generieren",
           "venetian_tilt_safety_margin": "Neigungssicherheitsmarge",
           "venetian_post_settle_mode": "Wartemodus nach Absetzen",
           "max_tilt_sun_only": "Maximale Neigung nur bei Sonnenverfolgung anwenden",
@@ -117,13 +117,13 @@
           "roof_height_above": "Entfernung entlang der Dachschräge von der Oberkante des Fensters zum Dachfirst (0–10 m). Bei Wert > 0 kann das Dach über dem Fenster die Sonne verbergen, wenn diese über den First hinaus wandert und tiefer sinkt (das First-Okklusions-Gate). Auf 0 (Standard) setzen, um das Gate zu deaktivieren — z. B. ein Fenster direkt am First ohne Dach darüber. Wird in der von Home Assistant konfigurierten Einheit angezeigt.",
           "venetian_tilt_skip_mode": "Was mit dem Neigungsbefehl passiert, wenn die Jalousie über die Skip-Schwelle gefahren wird. **Neutral** (Standard): sendet eine neutrale, vollständig offene Neigung, um die im Aktor gespeicherte Neigung zu überschreiben — notwendig für KNX/Shelly-Motoren, die sonst den vorherigen Lamellenwinkel bei einer angehobenen Jalousie erneut durchsetzen. **Suppress**: sendet keinen Neigungsbefehl ab. Wählen Sie Suppress für mechanisch gekoppelte Außenjalousien (z. B. Somfy auf Shelly), bei denen jeder Neigungsbefehl in der Endlage (vollständig offen) den Behang aus seiner Ruheposition zieht.",
           "set_azimuth": "Richtung, in die Ihr Fenster zeigt (0-359°). Nord=0°, Ost=90°, Süd=180°, West=270°. Beispiel: Ein nach Süden ausgerichtetes Fenster = 180°. Verwenden Sie eine Kompass-App oder überprüfen Sie mittags die Sonne, um dies zu bestimmen. Dies teilt der Integration mit, wohin Ihr Fenster zeigt, damit sie die Sonnenwinkel genau berechnen kann.",
-          "fov_left": "Wie breit der Sonnenverfolgungsbereich auf der LINKEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster oder Glastüren: 60-75°, schmale Fenster: 30°. Denken Sie daran, dass dies das periphere Sehen ist - wie weit nach links sollten wir die Sonne verfolgen? Kombiniert mit fov_right definiert dies die horizontale Verfolgungszone.",
-          "fov_right": "Wie breit der Sonnenverfolgungsbereich auf der RECHTEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster oder Glastüren: 60-75°, schmale Fenster: 30°. Denken Sie daran, dass dies das periphere Sehen ist - wie weit nach rechts sollten wir die Sonne verfolgen? Kombiniert mit fov_left definiert dies die horizontale Verfolgungszone.",
-          "fov_compute": "**{computed_fov}**\n\nBerechnet das linke/rechte Sichtfeld aus der Fensterbreite und Laibungstiefe — die Laibungstiefe wird von der äußeren Wandoberfläche gemessen, wo sich die Beschattung befindet. Legen Sie oben die Fensterbreite und Laibungstiefe fest, aktivieren Sie dies dann und senden Sie ab, um die Berechnung anzuwenden. Die Schieberegler bleiben bearbeitbar, sodass Sie danach jeden Winkel anpassen können.",
+          "fov_left": "Wie breit der Sonnen-Tracking-Bereich auf der LINKEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung); breite Fenster bis zu 60° (120° Gesamtabdeckung).",
+          "fov_right": "Wie breit der Sonnen-Tracking-Bereich auf der RECHTEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung); breite Fenster bis zu 60° (120° Gesamtabdeckung).",
+          "fov_compute": "**{computed_fov}**\n\nFüllt den linken/rechten Sonnen-Akzeptanzwinkel aus der Fensterbreite und der Laibungstiefe — die Laibungstiefe ist der Abstand von der Fensterglas-Oberfläche zur äußeren Fensterrahmen-Oberfläche (Fensterrahmen oder Hauswand). Berechnung: Winkel = arctan (Fensterbreite/2 / Laibungstiefe).",
           "venetian_tilt_safety_margin": "Zusätzliche Schließmarge für Randsonne (nur Jalousien), 0.0–1.0. Skaliert die automatische winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, jedoch in der Schließrichtung. Standard 0.0 behält den exakten Grenzwinkel bei (heutiges Verhalten); erhöhen Sie auf 1.0, um die Lamellen bei extremem Sonnenwinkel etwas weiter zu schließen, sodass kein direktes Sonnenlicht eindringt. Verwenden Sie dies lieber, statt die Maximale Lamellenneigung zu senken, was eine pauschale globale Begrenzung ist.",
           "venetian_post_settle_mode": "Wie die Integration zwischen dem Absetzen des Schlittens und dem Senden des Neigungsbefehls wartet. **Feste Verzögerung** (Standard): Wartet immer auf die konfigurierte Nach-Absetzen-Haltezeit, bevor die Neigung gesendet wird — sicher für alle Aktoren. **Entity-Status**: Stattdessen den Status der Beschattung abfragen und den Neigungsbefehl sofort senden, sobald der Status nicht mehr 'opening'/'closing' ist, für Aktoren (z. B. Shelly 2PM) mit zuverlässigen Bewegungsstatus. Greift auf die feste Haltezeit zurück, wenn der Status nicht verfügbar ist oder der Schlitten sich noch bewegt, nachdem die Haltezeit abgelaufen ist.",
-          "max_tilt_sun_only": "Wenn aus (Standard), wird die maximale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Obergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
-          "min_tilt_sun_only": "Wenn aus (Standard), wird die minimale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Untergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
+          "max_tilt_sun_only": "Wenn deaktiviert (Standard), wird die maximale Neigungsbegrenzung zu allen Zeiten durchgesetzt, auch bei der Standardneigung, die verwendet wird, wenn die Sonne unter dem Horizont ist.",
+          "min_tilt_sun_only": "Wenn deaktiviert (Standard), wird die minimale Neigungsgrenze zu allen Zeiten durchgesetzt, auch bei der Standardneigung, die verwendet wird, wenn die Sonne unter dem Horizont ist.",
           "sliding_enable_shade_area": "Wenn aktiviert, schließt sich der Vorhang nur so weit wie nötig, um einen Beschattungsbereich auf dem Boden vor direkter Sonne zu schützen und bietet damit durchgehende Abdeckung statt des Standard-Vollöffnens/Schließens. Definieren Sie die zwei Beschattungspunkte unten. Wenn deaktiviert, wird der Vorhang vollständig über die Öffnung gezogen, wenn direkte Sonne das Fenster erreicht, und zieht sich ansonsten zurück.",
           "sliding_slide_direction": "Wie der Stoff über die Öffnung gezogen wird. **Mittig öffnend** (Standard): zwei Flügel trennen sich in der Mitte. **Einflügelig (links)**: ein Flügel am linken Rand befestigt, schließt nach rechts. **Einflügelig (rechts)**: ein Flügel am rechten Rand befestigt, schließt nach links. Bestimmt, wie die abgedeckte Bodenfläche auf einen Öffnungsprozentsatz abgebildet wird.",
           "sliding_point1_x": "Position des Beschattungspunkts 1 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
@@ -134,7 +134,7 @@
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Wählen Sie, ob die Beschattung der Sonne folgt, und legen Sie die Höhengrenzen für die Nachverfolgung fest. Die Integration hält die Beschattung in ihrer Standardposition, wenn die Sonne außerhalb des verfolgten Bereichs liegt.\n\n**Höhengrenzen** filtern sehr niedrige Winkel (Blendung bei Sonnenaufgang) oder sehr hohe Winkel (Zenit) aus, wo Abschattung möglicherweise nicht erforderlich ist. Die Ausrichtung des Fensters und das Sichtfeld sind auf der Seite \"Beschattungsgeometrie\" eingestellt.\n\n[Mehr erfahren]({learn_more})",
+        "description": "Wählen Sie, ob der Behang der Sonne folgt, und stellen Sie die Höhengrenzen für das Tracking ein. Die Integration hält den Behang in seiner Standardposition, wenn die Sonne außerhalb des verfolgten Bereichs liegt.\n\n**Höhengrenzen** filtern sehr flache Winkel (Aufgangblendung) oder sehr hohe Winkel (Zenit) heraus, wo Blockade möglicherweise nicht erforderlich ist. Die Fensterorientierung und der Sonnen-Akzeptanzwinkel werden auf der Seite \"Fenstergeometrie\" eingestellt.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "enable_sun_tracking": "Sonnenverfolgung aktivieren",
           "min_elevation": "Minimale Sonnenhöhe",
@@ -143,7 +143,7 @@
           "enable_glare_zones": "Blendungszonen aktivieren"
         },
         "data_description": {
-          "enable_sun_tracking": "Wenn aktiviert, verfolgen Beschattungen die Sonne innerhalb der konfigurierten FOV- und Höhenlimits (Sonnenpositionierung). Deaktivieren Sie, um die entfernungsbasierte Sonnenpositionierung zu überspringen, während Sie Blendungszonen (gesteuert durch ihren eigenen Schalter), Klima, Bewegung, manuelle Übersteuerung, benutzerdefinierte Positionen und andere Übersteuerungen aktiv halten. Standard: aktiviert.",
+          "enable_sun_tracking": "Bei Aktivierung folgen Behänge der Sonne innerhalb des konfigurierten Sonnen-Akzeptanzwinkels und der Höhengrenzen (Solarpositionierung). Bei Deaktivierung werden Behänge nur durch Wetter, Wettervorhersage und Zeitfenster (z. B. \"nur während der Arbeit\") gesteuert.",
           "min_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe ÜBER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt über Kopf. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 15° einstellen, um die niedrige Morgen-/Abendsonne zu ignorieren. Lassen Sie leer, um die Sonne auf allen Höhen zu verfolgen.",
           "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt über Kopf. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° einstellen, um die hohe Mittagssonne zu ignorieren. Lassen Sie leer, um die Sonne auf allen Höhen zu verfolgen.",
           "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die die Sonne in einem Teil des Verfolgungsbereichs blockieren (Bäume, nahegelegene Gebäude, Dachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem Sonne blockiert ist. Die Beschattung ignoriert die Sonnenposition, wenn sie sich in diesem 'Blindfleck' befindet. Lassen Sie deaktiviert, wenn Sie den ganzen Tag über freie Sicht zur Sonne haben.",
@@ -176,7 +176,7 @@
           "enable_max_position": "Steuert, WANN die Maximalpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Maximalposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Maximalposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung über den Max-Wert ansteigen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Obergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
           "min_position": "Minimalposition für Beschattung (0–99%). 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen). Nutzen Sie dies, um: zu verhindern, dass sich die Beschattung vollständig schließt (auf 20 % setzen), etwas Licht zu bewahren (30–40 % setzen), Beschädigungen unten zu vermeiden (auf 5 % setzen). ACP beschränkt jede BERECHNETE Position auf mindestens diesen Wert (Sonnen-Tracking, Standard/Ruhe, Klima, Wolkensuppression, Belegungs-Timeout, Blendungszone, Wiederherstellung nach manueller Übersteuerung). Explizit konfigurierte feste Ziele werden wie angegeben gesendet und NICHT auf diese Untergrenze beschränkt: die Sonnenuntergangsposition (absichtlich ausgenommen, damit sich die Beschattung nachts vollständig schließen kann), Custom-Position-Slots (exakter Modus), die Wetter-Übersteuerungsposition und die Meine-Voreinstellung – stellen Sie diese auf oder über diesen Wert (oder verwenden Sie deren 'Minimalposition-Modus') für eine harte Untergrenze überall. Bei venezianischen Jalousien beschränkt dies nur die Schiene (vertikale) Achse. Funktioniert mit dem Umschalter 'Min-Position nur während Sonnen-Tracking anwenden' darunter.",
           "enable_min_position": "Steuert, WANN die Mindestpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Mindestposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Mindestposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung unter den Min-Wert fallen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Untergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
-          "min_position_sun_tracking": "Optionale separate Minimalposition-Grenze, die nur während der Sonnennachführung gilt. Wenn gesetzt, ersetzt sie die 'Minimale Position' bei Sonnennachführungs-Berechnungen. Leer lassen, um 'Minimale Position' für Sonnennachführung und andere Modi zu verwenden. Nutzen Sie dies, wenn Ihre Beschattung eine mechanische Totzone am unteren Ende des Fahrtwegs hat (z. B. Rollläden, deren Lamellen vor dem Hochfahren klaffen) und Sie möchten, dass die Sonnennachführung diese Totzone überspringt, während die Beschattung bei Sonnenuntergang noch vollständig geschlossen werden kann. 0% = geschlossen (Jalousie unten), 100% = geöffnet (Jalousie oben).",
+          "min_position_sun_tracking": "Die Mindestposition während der Sonnen-Verfolgung, um zu vermeiden, dass der Behang zu 100% geschlossen wird. Dies ist besonders nützlich bei Behängen mit Lamellen (Jalousien), um etwas Tageslicht durchzulassen. Die tatsächliche Position wird nach oben angepasst, wenn Wetter oder Glendungszone dies erfordern.",
           "sunset_position": "Beschattungsposition nach Sonnenuntergang. Schieberegler löschen (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangsverhalten. 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Häufige Anwendungen: Datenschutz (0 %), offen für Nachtluft (100 %), teilweiser Datenschutz (30-50 %). Wenn eingestellt, überschreibt diese die Standardposition nach Sonnenuntergang.",
           "enable_my_position_entities": "Erstellt die Schaltfläche Verwaltete Meine Position und die Zahlen-Entität Verwalteter Mein-Positionswert. Standardmäßig deaktiviert – aktivieren Sie diese Option, wenn Sie die Somfy-typische Mein-Voreinstellung verwenden und den Wert über ein Dashboard abrufen oder bearbeiten möchten.",
           "my_position_value": "Die Position (1–99 %), die Sie auf der Motorenfernbedienung programmiert haben (Mein/Lieblingsvoreinstellung). Lassen Sie leer, um die Auslösung der Meine-Position für diese Beschattung zu deaktivieren.",
@@ -208,7 +208,7 @@
           "start_entity": "Entity, die den Startzeitstatus darstellt und die oben festgelegte feste Startzeit außer Kraft setzt. Nützlich zur Automatisierung der Startzeit mit einer Entity (z. B. Sensor, der die Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
           "end_time": "Beenden Sie die automatische Steuerung nach dieser Zeit (24-Stunden-Format). Verwenden Sie diese Option, um den Datenschutz am Abend aufrechtzuerhalten (auf 18:00 oder 19:00 einstellen), zur Standardeinstellung vor dem Schlafengehen zurückkehren oder leer lassen, um bis Sonnenuntergang fortzufahren. Beispiel: '20:00' bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Die manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
           "end_entity": "Entity, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entity (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
-          "max_coverage_steps": "Wie viele verschiedene Positionen die Beschattung bei vollständiger Abdeckung mit aktivierter Option „Bewegungen minimieren\" nutzen darf (1–10). 1 = direkt zu vollständiger Abdeckung springen, sobald die Sonne in das Sichtfeld eintritt, und dort halten bis sie es verlässt (fewest Bewegungen). Höhere Werte verfolgen die Sonne allmählicher in so vielen Schritten. Standard: 1.",
+          "max_coverage_steps": "Die maximale Anzahl der zu berücksichtigenden Schritte (z. B. 5 Schritte = 20% je Schritt). Mehr Schritte bedeuten glattere Bewegungen, aber häufigere Befehle und möglicherweise langsamere Reaktionen. Weniger Schritte reduzieren die Motorverschleiß, aber die Bewegung erscheint weniger flüssig.",
           "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus."
         }
       },
@@ -450,7 +450,7 @@
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenpositionierung basierend auf Belegung aktivieren/deaktivieren. Wenn EINER der Sensoren Belegung erkennt, verwenden Beschattungen die automatische Sonnen-basierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Belegung zeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
           "motion_timeout": "Dauer (in Sekunden), die nach Wegfall der Belegung gewartet werden soll, bevor die Beschattung zur Standardposition zurückkehrt. Verhindert schnelle Positionswechsel, wenn Belegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
-          "motion_timeout_mode": "Was zu tun ist, wenn Belegung für die Timeout-Dauer abwesend ist. 'Zur Standardposition zurückkehren' verschiebt die Beschattung zur Standardposition. 'Position halten' lässt die Beschattung dort, wo sie ist, während die Sonne im Sichtfeld ist (damit ein zurückkehrender Benutzer sie so findet, wie er sie verlassen hat); Beschattung kehrt immer noch zur Standardposition zurück, sobald die Sonne das Sichtfeld verlässt oder das Zeitfenster schließt.",
+          "motion_timeout_mode": "Bestimmt, wie Motion-Timeouts funktionieren. **Bewegungspause** — Zurückzählen wird pausiert, während Bewegung erkannt wird (empfohlen); **zuletzt erkannt** — Timer setzt sich zurück, wenn Bewegung erkannt wird.",
           "motion_media_players": "Medienplayer als Belegung behandelt. JEDER Player, dessen Status etwas anderes als aus ist (lädt, pausiert, untätig, an, …), zählt als belegt und hält die automatische Sonnen-Positionierung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Kombiniert mit den oben genannten Belegungssensoren unter der gleichen ODER-Logik. Leer lassen zum Deaktivieren.",
           "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahr ergibt (on/true/1) zählt der Raum als anwesend; wie das mit den obigen Sensoren und Medienplayern kombiniert wird (ODER oder UND) wird durch 'Logik für Anwesenheitsvorlage' unten gesetzt. Wenn sie falsch ergibt, startet das Timeout wie bei jeder anderen Quelle. Sie wird jedes Mal neu bewertet, wenn sich eine referenzierte Entität ändert — kein Polling — daher wird sie so sofort ausgelöst wie ein Sensor und kann allein ohne konfigurierte Sensoren funktionieren. Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist. Leer lassen zum Deaktivieren.",
           "motion_template_mode": "Wie die Belegungsvorlage mit den oben genannten Belegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten – belegt, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate – belegt nur, wenn die Vorlage wahr ist und gleichzeitig mindestens ein Sensor oder Player aktiv ist, also muss die Vorlage gelten, damit Belegung registriert wird. Ohne konfigurierte Sensoren oder Player entscheidet nur die Vorlage in beiden Modi. Hat nur dann einen Effekt, wenn eine Belegungsvorlage oben gesetzt ist."
@@ -512,35 +512,35 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Blindfleck linke Kante (von FOV-Links)",
-          "blind_spot_right": "Blindfleck rechte Kante (von FOV-Links)",
+          "blind_spot_left": "Blindfleck linke Akzeptanzkante",
+          "blind_spot_right": "Blindfleck rechte Akzeptanzkante",
           "blind_spot_elevation": "Blindfleck-Höhe",
-          "blind_spot_left_2": "Blindfleck 2 linke Kante (von FOV-Links)",
-          "blind_spot_right_2": "Blindfleck 2 rechte Kante (von FOV-Links)",
+          "blind_spot_left_2": "Blindfleck linke Akzeptanzkante (Slot 2)",
+          "blind_spot_right_2": "Blindfleck rechte Akzeptanzkante (Slot 2)",
           "blind_spot_elevation_2": "Blindfleck 2 Höhe",
-          "blind_spot_left_3": "Blindfleck 3 linke Kante (von FOV-Links)",
-          "blind_spot_right_3": "Blindfleck 3 rechte Kante (von FOV-Links)",
+          "blind_spot_left_3": "Blindfleck linke Akzeptanzkante (Slot 3)",
+          "blind_spot_right_3": "Blindfleck rechte Akzeptanzkante (Slot 3)",
           "blind_spot_elevation_3": "Blindfleck 3 Höhe",
           "blind_spot_elevation_mode": "Blindfleck-Höhenmodus",
           "blind_spot_elevation_mode_2": "Blindfleck 2 Höhenmodus",
           "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus"
         },
         "data_description": {
-          "blind_spot_left": "Linke Kante der Blindfleckenzone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze). Wobei 0 = an der äußersten FOV-linken Kante. Beispiel: Wenn Ihr FOV-Links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 10. Dies markiert, wo die Verdeckung horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert wird, um diesen Wert zu finden.",
-          "blind_spot_right": "Rechte Kante der Blindfleckenzone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze, muss > linke Kante sein). Beispiel: Wenn Ihr FOV-Links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 20. Dies markiert, wo die Verdeckung horizontal endet. Erstellt eine Zone 'Hier nicht der Sonne folgen' zwischen linken und rechten Kanten.",
+          "blind_spot_left": "Linke Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante). Wobei 0 = an der äußersten linken Akzeptanzkante liegt. Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu ermitteln.",
+          "blind_spot_right": "Rechte Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante, muss > linke Kante sein). Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 20. Dies markiert, wo die Obstruktion horizontal endet. Erstellt eine „Sonne hier nicht verfolgen\"-Zone zwischen linker und rechter Kante.",
           "blind_spot_elevation": "Sonnenhöhe (Grad über dem Horizont) Schwellenwert, wo der Blindfleck gilt. Pairing mit dem Höhenmodus: Im Modus 'darunter' blockiert der Fleck die Sonne unter oder unter diesem Winkel (z. B. ein Dachüberstand, der nur tiefe Sonne blockiert - auf 30 einstellen); im Modus 'darüber' blockiert er die Sonne unter oder über diesem Winkel (z. B. ein Balkon darüber - auf 50 einstellen). Sonnenhöhe: 0°=Horizont, 45°=halber Weg, 90°=direkt über Kopf.",
-          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 2 zu deaktivieren.",
-          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 2 sein).",
+          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 2 zu deaktivieren.",
+          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 2 sein).",
           "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
-          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 3 zu deaktivieren.",
-          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 3 sein).",
+          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 3 zu deaktivieren.",
+          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 3 sein).",
           "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
           "blind_spot_elevation_mode": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt. „Unterhalb\" (Standard) blockiert TIEFE Sonne (ein Baum oder Dachüberhang); „Oberhalb\" blockiert HOHE Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische). Ist nur relevant, wenn eine Höhe gesetzt ist.",
           "blind_spot_elevation_mode_2": "Welche Seite des Höhenschwellenwerts von Slot 2 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 2 Höhe gesetzt ist.",
           "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist."
         },
         "title": "Blindfleck",
-        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
+        "description": "Konfigurieren Sie bis zu 3 Blindfleck-Slots (Achsen, wo die Sonne blockiert ist). Geben Sie die Offset-Grad nach innen von jeder Akzeptanzkante an — z. B. 15° bedeutet: ignoriere die Sonne 15° nach innen von links/rechts."
       },
       "glare_zones": {
         "title": "Blendungszonen",
@@ -884,7 +884,7 @@
           "start_entity": "Entity, die den Startzeitstatus darstellt und die oben festgelegte feste Startzeit außer Kraft setzt. Nützlich zur Automatisierung der Startzeit mit einer Entity (z. B. Sensor, der die Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
           "end_time": "Beenden Sie die automatische Steuerung nach dieser Zeit (24-Stunden-Format). Verwenden Sie diese Option, um den Datenschutz am Abend aufrechtzuerhalten (auf 18:00 oder 19:00 einstellen), zur Standardeinstellung vor dem Schlafengehen zurückkehren oder leer lassen, um bis Sonnenuntergang fortzufahren. Beispiel: '20:00' bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Die manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
           "end_entity": "Entity, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entity (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
-          "max_coverage_steps": "Wie viele verschiedene Positionen die Beschattung bei vollständiger Abdeckung mit aktivierter Option „Bewegungen minimieren\" nutzen darf (1–10). 1 = direkt zu vollständiger Abdeckung springen, sobald die Sonne in das Sichtfeld eintritt, und dort halten bis sie es verlässt (fewest Bewegungen). Höhere Werte verfolgen die Sonne allmählicher in so vielen Schritten. Standard: 1.",
+          "max_coverage_steps": "Die maximale Anzahl der zu berücksichtigenden Schritte (z. B. 5 Schritte = 20% je Schritt). Mehr Schritte bedeuten glattere Bewegungen, aber häufigere Befehle und möglicherweise langsamere Reaktionen. Weniger Schritte reduzieren die Motorverschleiß, aber die Bewegung erscheint weniger flüssig.",
           "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus."
         }
       },
@@ -935,9 +935,9 @@
           "roof_height_above": "Dachabstand über Fenster",
           "venetian_tilt_skip_mode": "Skip-Neigungsmodus",
           "set_azimuth": "Fenster-Azimut",
-          "fov_left": "Sichtfeld links",
-          "fov_right": "Sichtfeld rechts",
-          "fov_compute": "Sichtfeld aus Messungen generieren",
+          "fov_left": "Sonnen-Akzeptanzwinkel — links",
+          "fov_right": "Sonnen-Akzeptanzwinkel — rechts",
+          "fov_compute": "Sonnen-Akzeptanzwinkel aus Messungen generieren",
           "venetian_tilt_safety_margin": "Neigungssicherheitsmarge",
           "venetian_post_settle_mode": "Wartemodus nach Absetzen",
           "max_tilt_sun_only": "Maximale Neigung nur bei Sonnenverfolgung anwenden",
@@ -979,13 +979,13 @@
           "roof_height_above": "Entfernung entlang der Dachschräge von der Oberkante des Fensters zum Dachfirst (0–10 m). Bei Wert > 0 kann das Dach über dem Fenster die Sonne verbergen, wenn diese über den First hinaus wandert und tiefer sinkt (das First-Okklusions-Gate). Auf 0 (Standard) setzen, um das Gate zu deaktivieren — z. B. ein Fenster direkt am First ohne Dach darüber. Wird in der von Home Assistant konfigurierten Einheit angezeigt.",
           "venetian_tilt_skip_mode": "Was mit dem Neigungsbefehl passiert, wenn die Jalousie über die Skip-Schwelle gefahren wird. **Neutral** (Standard): sendet eine neutrale, vollständig offene Neigung, um die im Aktor gespeicherte Neigung zu überschreiben — notwendig für KNX/Shelly-Motoren, die sonst den vorherigen Lamellenwinkel bei einer angehobenen Jalousie erneut durchsetzen. **Suppress**: sendet keinen Neigungsbefehl ab. Wählen Sie Suppress für mechanisch gekoppelte Außenjalousien (z. B. Somfy auf Shelly), bei denen jeder Neigungsbefehl in der Endlage (vollständig offen) den Behang aus seiner Ruheposition zieht.",
           "set_azimuth": "Richtung, in die Ihr Fenster zeigt (0-359°). Nord=0°, Ost=90°, Süd=180°, West=270°. Beispiel: Ein nach Süden ausgerichtetes Fenster = 180°. Verwenden Sie eine Kompass-App oder überprüfen Sie mittags die Sonne, um dies zu bestimmen. Dies teilt der Integration mit, wohin Ihr Fenster zeigt, damit sie die Sonnenwinkel genau berechnen kann.",
-          "fov_left": "Wie breit der Sonnenverfolgungsbereich auf der LINKEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster oder Glastüren: 60-75°, schmale Fenster: 30°. Denken Sie daran, dass dies das periphere Sehen ist - wie weit nach links sollten wir die Sonne verfolgen? Kombiniert mit fov_right definiert dies die horizontale Verfolgungszone.",
-          "fov_right": "Wie breit der Sonnenverfolgungsbereich auf der RECHTEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster oder Glastüren: 60-75°, schmale Fenster: 30°. Denken Sie daran, dass dies das periphere Sehen ist - wie weit nach rechts sollten wir die Sonne verfolgen? Kombiniert mit fov_left definiert dies die horizontale Verfolgungszone.",
-          "fov_compute": "**{computed_fov}**\n\nBerechnet das linke/rechte Sichtfeld aus der Fensterbreite und Laibungstiefe — die Laibungstiefe wird von der äußeren Wandoberfläche gemessen, wo sich die Beschattung befindet. Legen Sie oben die Fensterbreite und Laibungstiefe fest, aktivieren Sie dies dann und senden Sie ab, um die Berechnung anzuwenden. Die Schieberegler bleiben bearbeitbar, sodass Sie danach jeden Winkel anpassen können.",
+          "fov_left": "Wie breit der Sonnen-Tracking-Bereich auf der LINKEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung); breite Fenster bis zu 60° (120° Gesamtabdeckung).",
+          "fov_right": "Wie breit der Sonnen-Tracking-Bereich auf der RECHTEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung); breite Fenster bis zu 60° (120° Gesamtabdeckung).",
+          "fov_compute": "**{computed_fov}**\n\nFüllt den linken/rechten Sonnen-Akzeptanzwinkel aus der Fensterbreite und der Laibungstiefe — die Laibungstiefe ist der Abstand von der Fensterglas-Oberfläche zur äußeren Fensterrahmen-Oberfläche (Fensterrahmen oder Hauswand). Berechnung: Winkel = arctan (Fensterbreite/2 / Laibungstiefe).",
           "venetian_tilt_safety_margin": "Zusätzliche Schließmarge für Randsonne (nur Jalousien), 0.0–1.0. Skaliert die automatische winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, jedoch in der Schließrichtung. Standard 0.0 behält den exakten Grenzwinkel bei (heutiges Verhalten); erhöhen Sie auf 1.0, um die Lamellen bei extremem Sonnenwinkel etwas weiter zu schließen, sodass kein direktes Sonnenlicht eindringt. Verwenden Sie dies lieber, statt die Maximale Lamellenneigung zu senken, was eine pauschale globale Begrenzung ist.",
           "venetian_post_settle_mode": "Wie die Integration zwischen dem Absetzen des Schlittens und dem Senden des Neigungsbefehls wartet. **Feste Verzögerung** (Standard): Wartet immer auf die konfigurierte Nach-Absetzen-Haltezeit, bevor die Neigung gesendet wird — sicher für alle Aktoren. **Entity-Status**: Stattdessen den Status der Beschattung abfragen und den Neigungsbefehl sofort senden, sobald der Status nicht mehr 'opening'/'closing' ist, für Aktoren (z. B. Shelly 2PM) mit zuverlässigen Bewegungsstatus. Greift auf die feste Haltezeit zurück, wenn der Status nicht verfügbar ist oder der Schlitten sich noch bewegt, nachdem die Haltezeit abgelaufen ist.",
-          "max_tilt_sun_only": "Wenn aus (Standard), wird die maximale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Obergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
-          "min_tilt_sun_only": "Wenn aus (Standard), wird die minimale Neigung zu allen Zeiten erzwungen, auch bei der Standardneigung, wenn die Sonne außerhalb des Sichtfelds liegt. Wenn an, wird die Untergrenze nur während der aktiven Sonnenverfolgung angewendet. Sonnenuntergangsneigung und benutzerdefinierte Positionsneigungen sind in beiden Fällen nicht betroffen.",
+          "max_tilt_sun_only": "Wenn deaktiviert (Standard), wird die maximale Neigungsbegrenzung zu allen Zeiten durchgesetzt, auch bei der Standardneigung, die verwendet wird, wenn die Sonne unter dem Horizont ist.",
+          "min_tilt_sun_only": "Wenn deaktiviert (Standard), wird die minimale Neigungsgrenze zu allen Zeiten durchgesetzt, auch bei der Standardneigung, die verwendet wird, wenn die Sonne unter dem Horizont ist.",
           "sliding_enable_shade_area": "Wenn aktiviert, schließt sich der Vorhang nur so weit wie nötig, um einen Beschattungsbereich auf dem Boden vor direkter Sonne zu schützen und bietet damit durchgehende Abdeckung statt des Standard-Vollöffnens/Schließens. Definieren Sie die zwei Beschattungspunkte unten. Wenn deaktiviert, wird der Vorhang vollständig über die Öffnung gezogen, wenn direkte Sonne das Fenster erreicht, und zieht sich ansonsten zurück.",
           "sliding_slide_direction": "Wie der Stoff über die Öffnung gezogen wird. **Mittig öffnend** (Standard): zwei Flügel trennen sich in der Mitte. **Einflügelig (links)**: ein Flügel am linken Rand befestigt, schließt nach rechts. **Einflügelig (rechts)**: ein Flügel am rechten Rand befestigt, schließt nach links. Bestimmt, wie die abgedeckte Bodenfläche auf einen Öffnungsprozentsatz abgebildet wird.",
           "sliding_point1_x": "Position des Beschattungspunkts 1 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
@@ -996,7 +996,7 @@
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Wählen Sie, ob die Beschattung der Sonne folgt, und legen Sie die Höhengrenzen für die Nachverfolgung fest. Die Integration hält die Beschattung in ihrer Standardposition, wenn die Sonne außerhalb des verfolgten Bereichs liegt.\n\n**Höhengrenzen** filtern sehr niedrige Winkel (Blendung bei Sonnenaufgang) oder sehr hohe Winkel (Zenit) aus, wo Abschattung möglicherweise nicht erforderlich ist. Die Ausrichtung des Fensters und das Sichtfeld sind auf der Seite \"Beschattungsgeometrie\" eingestellt.\n\n[Mehr erfahren]({learn_more})",
+        "description": "Wählen Sie, ob der Behang der Sonne folgt, und stellen Sie die Höhengrenzen für das Tracking ein. Die Integration hält den Behang in seiner Standardposition, wenn die Sonne außerhalb des verfolgten Bereichs liegt.\n\n**Höhengrenzen** filtern sehr flache Winkel (Aufgangblendung) oder sehr hohe Winkel (Zenit) heraus, wo Blockade möglicherweise nicht erforderlich ist. Die Fensterorientierung und der Sonnen-Akzeptanzwinkel werden auf der Seite \"Fenstergeometrie\" eingestellt.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "enable_sun_tracking": "Sonnenverfolgung aktivieren",
           "min_elevation": "Minimale Sonnenhöhe",
@@ -1005,7 +1005,7 @@
           "enable_glare_zones": "Blendungszonen aktivieren"
         },
         "data_description": {
-          "enable_sun_tracking": "Wenn aktiviert, verfolgen Beschattungen die Sonne innerhalb der konfigurierten FOV- und Höhenlimits (Sonnenpositionierung). Deaktivieren Sie, um die entfernungsbasierte Sonnenpositionierung zu überspringen, während Sie Blendungszonen (gesteuert durch ihren eigenen Schalter), Klima, Bewegung, manuelle Übersteuerung, benutzerdefinierte Positionen und andere Übersteuerungen aktiv halten. Standard: aktiviert.",
+          "enable_sun_tracking": "Bei Aktivierung folgen Behänge der Sonne innerhalb des konfigurierten Sonnen-Akzeptanzwinkels und der Höhengrenzen (Solarpositionierung). Bei Deaktivierung werden Behänge nur durch Wetter, Wettervorhersage und Zeitfenster (z. B. \"nur während der Arbeit\") gesteuert.",
           "min_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe ÜBER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt über Kopf. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 15° einstellen, um die niedrige Morgen-/Abendsonne zu ignorieren. Lassen Sie leer, um die Sonne auf allen Höhen zu verfolgen.",
           "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt über Kopf. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° einstellen, um die hohe Mittagssonne zu ignorieren. Lassen Sie leer, um die Sonne auf allen Höhen zu verfolgen.",
           "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die die Sonne in einem Teil des Verfolgungsbereichs blockieren (Bäume, nahegelegene Gebäude, Dachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem Sonne blockiert ist. Die Beschattung ignoriert die Sonnenposition, wenn sie sich in diesem 'Blindfleck' befindet. Lassen Sie deaktiviert, wenn Sie den ganzen Tag über freie Sicht zur Sonne haben.",
@@ -1038,7 +1038,7 @@
           "enable_max_position": "Steuert, WANN die Maximalpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Maximalposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Maximalposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung über den Max-Wert ansteigen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Obergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
           "min_position": "Minimalposition für Beschattung (0–99%). 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen). Nutzen Sie dies, um: zu verhindern, dass sich die Beschattung vollständig schließt (auf 20 % setzen), etwas Licht zu bewahren (30–40 % setzen), Beschädigungen unten zu vermeiden (auf 5 % setzen). ACP beschränkt jede BERECHNETE Position auf mindestens diesen Wert (Sonnen-Tracking, Standard/Ruhe, Klima, Wolkensuppression, Belegungs-Timeout, Blendungszone, Wiederherstellung nach manueller Übersteuerung). Explizit konfigurierte feste Ziele werden wie angegeben gesendet und NICHT auf diese Untergrenze beschränkt: die Sonnenuntergangsposition (absichtlich ausgenommen, damit sich die Beschattung nachts vollständig schließen kann), Custom-Position-Slots (exakter Modus), die Wetter-Übersteuerungsposition und die Meine-Voreinstellung – stellen Sie diese auf oder über diesen Wert (oder verwenden Sie deren 'Minimalposition-Modus') für eine harte Untergrenze überall. Bei venezianischen Jalousien beschränkt dies nur die Schiene (vertikale) Achse. Funktioniert mit dem Umschalter 'Min-Position nur während Sonnen-Tracking anwenden' darunter.",
           "enable_min_position": "Steuert, WANN die Mindestpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Mindestposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Mindestposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung unter den Min-Wert fallen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Untergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
-          "min_position_sun_tracking": "Optionale separate Minimalposition-Grenze, die nur während der Sonnennachführung gilt. Wenn gesetzt, ersetzt sie die 'Minimale Position' bei Sonnennachführungs-Berechnungen. Leer lassen, um 'Minimale Position' für Sonnennachführung und andere Modi zu verwenden. Nutzen Sie dies, wenn Ihre Beschattung eine mechanische Totzone am unteren Ende des Fahrtwegs hat (z. B. Rollläden, deren Lamellen vor dem Hochfahren klaffen) und Sie möchten, dass die Sonnennachführung diese Totzone überspringt, während die Beschattung bei Sonnenuntergang noch vollständig geschlossen werden kann. 0% = geschlossen (Jalousie unten), 100% = geöffnet (Jalousie oben).",
+          "min_position_sun_tracking": "Die Mindestposition während der Sonnen-Verfolgung, um zu vermeiden, dass der Behang zu 100% geschlossen wird. Dies ist besonders nützlich bei Behängen mit Lamellen (Jalousien), um etwas Tageslicht durchzulassen. Die tatsächliche Position wird nach oben angepasst, wenn Wetter oder Glendungszone dies erfordern.",
           "sunset_position": "Beschattungsposition nach Sonnenuntergang. Schieberegler löschen (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangsverhalten. 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Häufige Anwendungen: Datenschutz (0 %), offen für Nachtluft (100 %), teilweiser Datenschutz (30-50 %). Wenn eingestellt, überschreibt diese die Standardposition nach Sonnenuntergang.",
           "enable_my_position_entities": "Erstellt die Schaltfläche Verwaltete Meine Position und die Zahlen-Entität Verwalteter Mein-Positionswert. Standardmäßig deaktiviert – aktivieren Sie diese Option, wenn Sie die Somfy-typische Mein-Voreinstellung verwenden und den Wert über ein Dashboard abrufen oder bearbeiten möchten.",
           "my_position_value": "Die Position (1–99 %), die Sie auf der Motorenfernbedienung programmiert haben (Mein/Lieblingsvoreinstellung). Lassen Sie leer, um die Auslösung der Meine-Position für diese Beschattung zu deaktivieren.",
@@ -1288,7 +1288,7 @@
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenpositionierung basierend auf Belegung aktivieren/deaktivieren. Wenn EINER der Sensoren Belegung erkennt, verwenden Beschattungen die automatische Sonnen-basierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Belegung zeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
           "motion_timeout": "Dauer (in Sekunden), die nach Wegfall der Belegung gewartet werden soll, bevor die Beschattung zur Standardposition zurückkehrt. Verhindert schnelle Positionswechsel, wenn Belegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
-          "motion_timeout_mode": "Was zu tun ist, wenn Belegung für die Timeout-Dauer abwesend ist. 'Zur Standardposition zurückkehren' verschiebt die Beschattung zur Standardposition. 'Position halten' lässt die Beschattung dort, wo sie ist, während die Sonne im Sichtfeld ist (damit ein zurückkehrender Benutzer sie so findet, wie er sie verlassen hat); Beschattung kehrt immer noch zur Standardposition zurück, sobald die Sonne das Sichtfeld verlässt oder das Zeitfenster schließt.",
+          "motion_timeout_mode": "Bestimmt, wie Motion-Timeouts funktionieren. **Bewegungspause** — Zurückzählen wird pausiert, während Bewegung erkannt wird (empfohlen); **zuletzt erkannt** — Timer setzt sich zurück, wenn Bewegung erkannt wird.",
           "motion_media_players": "Medienplayer als Belegung behandelt. JEDER Player, dessen Status etwas anderes als aus ist (lädt, pausiert, untätig, an, …), zählt als belegt und hält die automatische Sonnen-Positionierung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Kombiniert mit den oben genannten Belegungssensoren unter der gleichen ODER-Logik. Leer lassen zum Deaktivieren.",
           "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahr ergibt (on/true/1) zählt der Raum als anwesend; wie das mit den obigen Sensoren und Medienplayern kombiniert wird (ODER oder UND) wird durch 'Logik für Anwesenheitsvorlage' unten gesetzt. Wenn sie falsch ergibt, startet das Timeout wie bei jeder anderen Quelle. Sie wird jedes Mal neu bewertet, wenn sich eine referenzierte Entität ändert — kein Polling — daher wird sie so sofort ausgelöst wie ein Sensor und kann allein ohne konfigurierte Sensoren funktionieren. Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist. Leer lassen zum Deaktivieren.",
           "motion_template_mode": "Wie die Belegungsvorlage mit den oben genannten Belegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten – belegt, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate – belegt nur, wenn die Vorlage wahr ist und gleichzeitig mindestens ein Sensor oder Player aktiv ist, also muss die Vorlage gelten, damit Belegung registriert wird. Ohne konfigurierte Sensoren oder Player entscheidet nur die Vorlage in beiden Modi. Hat nur dann einen Effekt, wenn eine Belegungsvorlage oben gesetzt ist."
@@ -1350,35 +1350,35 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Blindfleck linke Kante (von FOV-Links)",
-          "blind_spot_right": "Blindfleck rechte Kante (von FOV-Links)",
+          "blind_spot_left": "Blindfleck linke Akzeptanzkante",
+          "blind_spot_right": "Blindfleck rechte Akzeptanzkante",
           "blind_spot_elevation": "Blindfleck-Höhe",
-          "blind_spot_left_2": "Blindfleck 2 linke Kante (von FOV-Links)",
-          "blind_spot_right_2": "Blindfleck 2 rechte Kante (von FOV-Links)",
+          "blind_spot_left_2": "Blindfleck linke Akzeptanzkante (Slot 2)",
+          "blind_spot_right_2": "Blindfleck rechte Akzeptanzkante (Slot 2)",
           "blind_spot_elevation_2": "Blindfleck 2 Höhe",
-          "blind_spot_left_3": "Blindfleck 3 linke Kante (von FOV-Links)",
-          "blind_spot_right_3": "Blindfleck 3 rechte Kante (von FOV-Links)",
+          "blind_spot_left_3": "Blindfleck linke Akzeptanzkante (Slot 3)",
+          "blind_spot_right_3": "Blindfleck rechte Akzeptanzkante (Slot 3)",
           "blind_spot_elevation_3": "Blindfleck 3 Höhe",
           "blind_spot_elevation_mode": "Blindfleck-Höhenmodus",
           "blind_spot_elevation_mode_2": "Blindfleck 2 Höhenmodus",
           "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus"
         },
         "data_description": {
-          "blind_spot_left": "Linke Kante der Blindfleckenzone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze). Wobei 0 = an der äußersten FOV-linken Kante. Beispiel: Wenn Ihr FOV-Links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 10. Dies markiert, wo die Verdeckung horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert wird, um diesen Wert zu finden.",
-          "blind_spot_right": "Rechte Kante der Blindfleckenzone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze, muss > linke Kante sein). Beispiel: Wenn Ihr FOV-Links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 20. Dies markiert, wo die Verdeckung horizontal endet. Erstellt eine Zone 'Hier nicht der Sonne folgen' zwischen linken und rechten Kanten.",
+          "blind_spot_left": "Linke Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante). Wobei 0 = an der äußersten linken Akzeptanzkante liegt. Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu ermitteln.",
+          "blind_spot_right": "Rechte Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante, muss > linke Kante sein). Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 20. Dies markiert, wo die Obstruktion horizontal endet. Erstellt eine „Sonne hier nicht verfolgen\"-Zone zwischen linker und rechter Kante.",
           "blind_spot_elevation": "Sonnenhöhe (Grad über dem Horizont) Schwellenwert, wo der Blindfleck gilt. Pairing mit dem Höhenmodus: Im Modus 'darunter' blockiert der Fleck die Sonne unter oder unter diesem Winkel (z. B. ein Dachüberstand, der nur tiefe Sonne blockiert - auf 30 einstellen); im Modus 'darüber' blockiert er die Sonne unter oder über diesem Winkel (z. B. ein Balkon darüber - auf 50 einstellen). Sonnenhöhe: 0°=Horizont, 45°=halber Weg, 90°=direkt über Kopf.",
-          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 2 zu deaktivieren.",
-          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 2 sein).",
+          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 2 zu deaktivieren.",
+          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 2 sein).",
           "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
-          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 3 zu deaktivieren.",
-          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 3 sein).",
+          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 3 zu deaktivieren.",
+          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 3 sein).",
           "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
           "blind_spot_elevation_mode": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt. „Unterhalb\" (Standard) blockiert TIEFE Sonne (ein Baum oder Dachüberhang); „Oberhalb\" blockiert HOHE Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische). Ist nur relevant, wenn eine Höhe gesetzt ist.",
           "blind_spot_elevation_mode_2": "Welche Seite des Höhenschwellenwerts von Slot 2 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 2 Höhe gesetzt ist.",
           "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist."
         },
         "title": "Blindfleck",
-        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
+        "description": "Konfigurieren Sie bis zu 3 Blindfleck-Slots (Achsen, wo die Sonne blockiert ist). Geben Sie die Offset-Grad nach innen von jeder Akzeptanzkante an — z. B. 15° bedeutet: ignoriere die Sonne 15° nach innen von links/rechts."
       },
       "interp": {
         "data": {
@@ -1943,7 +1943,7 @@
     "sync_categories": {
       "options": {
         "geometry": "Behang-Geometrie (Abmessungen, Tiefe, Brüstungshöhe)",
-        "sun_tracking": "Sonnenverfolgung (Sichtweite, Höhenlimits)",
+        "sun_tracking": "Sonnen-Verfolgung",
         "blind_spot": "Totwinkelpunkt-Konfiguration",
         "position": "Positionseinstellungen (Defaults, Sonnenuntergang, Offsets)",
         "interp": "Positionskalibrierung",
@@ -2079,12 +2079,12 @@
           "name": "Höhenlimit"
         },
         "blind_spot_left": {
-          "description": "Linke Kante der Blendungszone in Grad nach innen von der linken FOV-Grenze (0 = an der FOV-Kante, Bereich 0–359°).",
-          "name": "Linke Kante (von FOV-Links)"
+          "description": "Offset in Grad nach innen von der linken Akzeptanzkante (ignoriert die Sonne).",
+          "name": "Blindfleck linke Akzeptanzkante"
         },
         "blind_spot_right": {
-          "description": "Rechte Kante der Blendungszone in Grad nach innen von der linken FOV-Grenze. Muss größer als linke Kante sein (Bereich 1–360°).",
-          "name": "Rechte Kante (von FOV-Links)"
+          "description": "Offset in Grad nach innen von der rechten Akzeptanzkante (ignoriert die Sonne).",
+          "name": "Blindfleck rechte Akzeptanzkante"
         },
         "blind_spot_elevation_mode": {
           "name": "Höhenmodus",
@@ -2134,7 +2134,7 @@
         },
         "summer_close_bypass_sun_floor": {
           "name": "Vollständiges Schließen bei Sommerhitze",
-          "description": "Falls aktiviert, ignoriert die Sommer-Klimaschließung die Sichtfeld-Minimalpositionsgrenze und erreicht die globale Minimalposition."
+          "description": "Bypass-Schwelle (Höhe in Grad) zur Aktivierung des Summer Close im direkten Modus. Wenn die Sonnenerhebung unter dieser Höhe liegt, wird der Bypass aktiviert — der Behang bleibt offen, auch wenn die Temperatur die Schließschwelle übersteigt. Dies vermeidet zu aggressives Schließen bei tiefen Sonnenwinkeln oder in den frühen Morgenstunden (wenn die Sonne zwar warm ist, aber tief steht)."
         }
       },
       "name": "Klimaeinstellungen festlegen"
@@ -2418,7 +2418,7 @@
       "name": "Positionslimits einstellen"
     },
     "set_sun_tracking": {
-      "description": "Aktualisiert Azimut, Sichtfeld, Höhenlimits und Sonnenverfolgungsschalter.",
+      "description": "Stellt den Sonnen-Tracking-Modus, die Sonnen-Akzeptanzwinkel (links/rechts) und Höhengrenzen (Sonnenaufgang/Sonnenuntergang) ein. Dies entspricht der Konfiguration im `geometry`-Schritt mit erweiterten Optionen.",
       "fields": {
         "distance_shaded_area": {
           "description": "Entfernung vom Fenster zur Kante des Schattenbereichs in Metern (0,1–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema).",
@@ -2430,11 +2430,11 @@
         },
         "fov_left": {
           "description": "Grad links vom Azimut innerhalb derer die Sonne diese Beschattung beeinflußt (0–180°).",
-          "name": "Sichtfeld links"
+          "name": "Sonnen-Akzeptanzwinkel — links"
         },
         "fov_right": {
           "description": "Grad rechts vom Azimut innerhalb derer die Sonne diese Beschattung beeinflußt (0–180°).",
-          "name": "Sichtfeld rechts"
+          "name": "Sonnen-Akzeptanzwinkel — rechts"
         },
         "max_elevation": {
           "description": "Sonnenhöhe (°) oberhalb derer die Beschattung vollständig geöffnet wird. Null = kein Maximum.",

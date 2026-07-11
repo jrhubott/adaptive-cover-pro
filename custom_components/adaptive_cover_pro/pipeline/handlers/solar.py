@@ -28,7 +28,7 @@ class SolarHandler(OverrideHandler):
             return None
 
         position = anticipated_solar_position(snapshot)
-        reason = f"sun in FOV — position {position}%"
+        reason = f"sun within acceptance angle — position {position}%"
         if getattr(snapshot, "minimize_movements", False):
             steps = getattr(snapshot, "max_coverage_steps", 1)
             reason += f" (coverage step, max {steps})"
@@ -43,4 +43,4 @@ class SolarHandler(OverrideHandler):
         """Reason when solar handler does not match."""
         if not snapshot.in_time_window:
             return "outside time window"
-        return "sun not in FOV or outside elevation limits"
+        return "sun outside acceptance angle or elevation limits"

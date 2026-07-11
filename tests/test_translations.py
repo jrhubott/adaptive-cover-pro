@@ -202,21 +202,64 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Issue #211 Option 2 — blind_spot labels are FOV-relative, not azimuth-relative
+# Issue #211 Option 2 — blind_spot labels are acceptance-edge-relative, not
+# azimuth-relative. Issue #604 renamed the "FOV" frame to "acceptance edge".
 # ---------------------------------------------------------------------------
 
 
-def test_en_blind_spot_labels_name_fov_frame() -> None:
-    """EN labels for blind_spot_left/right must name the FOV reference frame."""
+def test_en_blind_spot_labels_name_acceptance_frame() -> None:
+    """EN labels for blind_spot_left/right must name the acceptance-edge frame (#604)."""
     en = _load(TRANSLATIONS_DIR / "en.json")
     for step_key in ("options", "config"):
         bs = en[step_key]["step"]["blind_spot"]["data"]
+        assert "acceptance" in bs["blind_spot_left"].lower(), (
+            f"{step_key}.blind_spot.data.blind_spot_left label must name the "
+            "acceptance-edge frame"
+        )
+        assert "acceptance" in bs["blind_spot_right"].lower(), (
+            f"{step_key}.blind_spot.data.blind_spot_right label must name the "
+            "acceptance-edge frame"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue #604 — "Field of View" renamed to "Sun acceptance angle" (SAA).
+# Display strings only; option keys (fov_left/fov_right) are unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_en_sun_acceptance_angle_labels() -> None:
+    """The fov_left/fov_right/fov_compute labels use 'Sun acceptance angle' (#604)."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    for step_key in ("options", "config"):
+        data = en[step_key]["step"]["geometry"]["data"]
         assert (
-            "FOV" in bs["blind_spot_left"]
-        ), f"{step_key}.blind_spot.data.blind_spot_left label must mention 'FOV'"
+            data["fov_left"] == "Sun acceptance angle — left"
+        ), f"{step_key}.sun.data.fov_left must read 'Sun acceptance angle — left'"
         assert (
-            "FOV" in bs["blind_spot_right"]
-        ), f"{step_key}.blind_spot.data.blind_spot_right label must mention 'FOV'"
+            data["fov_right"] == "Sun acceptance angle — right"
+        ), f"{step_key}.sun.data.fov_right must read 'Sun acceptance angle — right'"
+        assert (
+            "sun acceptance angle" in data["fov_compute"].lower()
+        ), f"{step_key}.sun.data.fov_compute must name the sun acceptance angle"
+
+
+def test_en_has_no_field_of_view_wording() -> None:
+    """No user-facing en.json value may still say 'field of view' or the bare 'FOV' badge (#604)."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    offenders = [
+        v
+        for v in _all_leaf_values(en)
+        if "field of view" in v.lower()
+        or "field-of-view" in v.lower()
+        or "FOV" in v
+        or "fov_left" in v
+        or "fov_right" in v
+    ]
+    assert not offenders, (
+        "en.json still contains 'Field of View' / 'FOV' wording after the #604 "
+        "rename:\n" + "\n".join(f"  - {o}" for o in offenders)
+    )
 
 
 def test_enforce_delta_at_endpoints_strings_present() -> None:

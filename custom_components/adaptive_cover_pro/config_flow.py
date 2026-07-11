@@ -1021,7 +1021,7 @@ INTERPOLATION_OPTIONS = vol.Schema(
 
 
 def _get_azimuth_edges(data) -> int:
-    """Return the total azimuth field-of-view span (fov_left + fov_right)."""
+    """Return the total azimuth sun-acceptance-angle span (fov_left + fov_right)."""
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
@@ -1434,7 +1434,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     "motion.template_source": "occupancy template",
     "motion.action_hold": (
-        "covers hold current position (return to default when sun leaves FOV)"
+        "covers hold current position (return to default when sun leaves the sun acceptance angle)"
     ),
     "motion.action_return": "covers return to default ({default_pos}%)",
     "warnings.motion_hold_no_sensors": (
@@ -1502,7 +1502,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "override, custom positions, and other overrides remain active"
     ),
     "solar.azimuth": "azimuth {azimuth}°",
-    "solar.fov": "±{fov_l}°/{fov_r}° field of view",
+    "solar.fov": "±{fov_l}°/{fov_r}° sun acceptance angle",
     "solar.elev_above": "above {elev}°",
     "solar.elev_below": "below {elev}°",
     "solar.elevation": "elevation {parts}",
@@ -1561,7 +1561,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     # --- Blind spot ---
     "blind_spot.line": (
-        "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree "
+        "🟥 Blind spot: ignores sun at {bs} inward from the left acceptance edge (e.g. tree "
         "or roof overhang)."
     ),
     "blind_spot.range": "{left}°–{right}°",

@@ -40,7 +40,7 @@ class MotionTimeoutHandler(OverrideHandler):
             return PipelineResult(
                 position=held,
                 control_method=ControlMethod.MOTION,
-                reason=f"occupancy timeout — holding position {held}% (sun in FOV)",
+                reason=f"occupancy timeout — holding position {held}% (sun within acceptance angle)",
                 skip_command=True,
                 raw_calculated_position=compute_raw_calculated_position(snapshot),
             )

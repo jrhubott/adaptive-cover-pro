@@ -738,7 +738,7 @@ class TestGlareZoneDescribeSkip:
         )
         assert (
             self.handler.describe_skip(snap)
-            == "no active glare zones or sun not in FOV"
+            == "no active glare zones or sun outside acceptance angle"
         )
 
     def test_describe_skip_sun_not_valid(self) -> None:
@@ -756,7 +756,7 @@ class TestGlareZoneDescribeSkip:
         )
         assert (
             self.handler.describe_skip(snap)
-            == "no active glare zones or sun not in FOV"
+            == "no active glare zones or sun outside acceptance angle"
         )
 
 

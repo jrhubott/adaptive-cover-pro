@@ -239,7 +239,7 @@ class AdaptiveGeneralCover(ABC):
         if not self.valid:
             if not self.valid_elevation:
                 return "Default: Elevation Limit"
-            return "Default: FOV Exit"
+            return "Default: Acceptance Angle Exit"
         if self.is_sun_in_blind_spot:
             return "Default: Blind Spot"
         return "Default"

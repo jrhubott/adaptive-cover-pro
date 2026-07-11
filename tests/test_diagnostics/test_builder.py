@@ -1422,7 +1422,11 @@ class TestForecast:
                     t=t0 + dt.timedelta(minutes=15), position=0, handler="default"
                 ),
             ),
-            events=(ForecastEvent(t=t0, kind="fov_exit", label="Sun leaves FOV"),),
+            events=(
+                ForecastEvent(
+                    t=t0, kind="fov_exit", label="Sun exits acceptance angle"
+                ),
+            ),
         )
 
     def test_omitted_when_no_forecast(self, builder: DiagnosticsBuilder):
@@ -1626,14 +1630,14 @@ class TestCalculationDetailsFallback:
             calc_details=None,
             valid=False,
             direct_sun_valid=False,
-            control_state_reason="Default: FOV Exit",
+            control_state_reason="Default: Acceptance Angle Exit",
             sol_elev=-3.21,
             gamma=41.04,
         )
         diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
         details = diag["calculation_details"]
         assert details["position_pct"] is None
-        assert details["status"] == "Default: FOV Exit"
+        assert details["status"] == "Default: Acceptance Angle Exit"
         assert details["cover_type"] == "cover_blind"
 
     def test_fallback_sun_inputs_rounded(self, builder: DiagnosticsBuilder):

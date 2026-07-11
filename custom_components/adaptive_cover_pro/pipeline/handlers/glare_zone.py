@@ -146,4 +146,4 @@ class GlareZoneHandler(OverrideHandler):
         """Reason when glare zone handler does not match."""
         if not snapshot.in_time_window:
             return "outside time window"
-        return "no active glare zones or sun not in FOV"
+        return "no active glare zones or sun outside acceptance angle"

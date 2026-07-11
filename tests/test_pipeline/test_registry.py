@@ -211,7 +211,7 @@ def test_decision_trace_non_matching_handlers_record_skip_reason() -> None:
     # SolarHandler doesn't match — reason comes from describe_skip().
     assert result.decision_trace[0].handler == "solar"
     assert result.decision_trace[0].matched is False
-    assert "not" in result.decision_trace[0].reason.lower()
+    assert "outside acceptance angle" in result.decision_trace[0].reason.lower()
     # Default matches.
     assert result.decision_trace[1].handler == "default"
     assert result.decision_trace[1].matched is True

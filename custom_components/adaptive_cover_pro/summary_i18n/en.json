@@ -81,7 +81,7 @@
   },
   "motion": {
     "template_source": "occupancy template",
-    "action_hold": "covers hold current position (return to default when sun leaves FOV)",
+    "action_hold": "covers hold current position (return to default when sun leaves the sun acceptance angle)",
     "action_return": "covers return to default ({default_pos}%)"
   },
   "cloud": {
@@ -129,7 +129,7 @@
   },
   "solar": {
     "azimuth": "azimuth {azimuth}°",
-    "fov": "±{fov_l}°/{fov_r}° field of view",
+    "fov": "±{fov_l}°/{fov_r}° sun acceptance angle",
     "elev_above": "above {elev}°",
     "elev_below": "below {elev}°",
     "elevation": "elevation {parts}",
@@ -167,7 +167,7 @@
     "gate_offset_ignored": "{indent}⚠️ Sunset/Sunrise Offset is ignored while a daytime gate is set — the gate, not the clock, decides the boundary."
   },
   "blind_spot": {
-    "line": "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree or roof overhang).",
+    "line": "🟥 Blind spot: ignores sun at {bs} inward from the left acceptance edge (e.g. tree or roof overhang).",
     "range": "{left}°–{right}°",
     "elevation": "up to {elev}° elevation",
     "elevation_above": "above {elev}° elevation"
@@ -271,7 +271,7 @@
       "drift_reset_scope_solar": "sun-tracking commands only"
     },
     "fov": {
-      "computed": "Computed FOV ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"
+      "computed": "Computed acceptance angle ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"
     }
   },
   "group": {

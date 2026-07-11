@@ -310,7 +310,7 @@ class TestControlStateReasonAllBranches:
 
     @pytest.mark.unit
     def test_reason_fov_exit(self, mock_sun_data, mock_logger):
-        """Returns 'Default: FOV Exit' when sun is outside azimuth FOV (elevation valid)."""
+        """Returns 'Default: Acceptance Angle Exit' when sun is outside azimuth FOV (elevation valid)."""
         cover = build_vertical_cover(
             **_common_kwargs(mock_sun_data, mock_logger),
             h_win=2.0,
@@ -342,7 +342,7 @@ class TestControlStateReasonAllBranches:
                 return_value=True,
             ),
         ):
-            assert cover.control_state_reason == "Default: FOV Exit"
+            assert cover.control_state_reason == "Default: Acceptance Angle Exit"
 
     @pytest.mark.unit
     def test_reason_elevation_limit(self, mock_sun_data, mock_logger):

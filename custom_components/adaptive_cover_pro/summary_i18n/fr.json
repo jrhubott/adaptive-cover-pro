@@ -80,7 +80,7 @@
     "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien."
   },
   "motion": {
-    "action_hold": "stores maintiennent la position actuelle (reviennent au défaut quand le soleil quitte le FOV)",
+    "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'acceptance solaire)",
     "action_return": "stores reviennent au défaut ({default_pos}%)",
     "template_source": "modèle de présence"
   },
@@ -129,7 +129,7 @@
   },
   "solar": {
     "azimuth": "azimut {azimuth}°",
-    "fov": "±{fov_l}°/{fov_r}° champ de vision",
+    "fov": "±{fov_l}°/{fov_r}° angle d'acceptance solaire",
     "elev_above": "au-dessus {elev}°",
     "elev_below": "au-dessous {elev}°",
     "elevation": "élévation {parts}",
@@ -167,7 +167,7 @@
     "gate_offset_ignored": "{indent}⚠️ Le décalage de coucher/lever de soleil est ignoré lorsqu'un filtre de jour est défini — le filtre, et non l'horloge, décide la limite."
   },
   "blind_spot": {
-    "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur depuis la gauche FOV (par ex. arbre ou avant-toit).",
+    "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur à partir du bord d'acceptance gauche (par ex. arbre ou surplomb de toit).",
     "range": "{left}°–{right}°",
     "elevation": "jusqu'à {elev}° élévation",
     "elevation_above": "au-dessus de {elev}° élévation"
@@ -253,7 +253,7 @@
       "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%"
     },
     "fov": {
-      "computed": "FOV calculé ≈ {deg}°/{deg}° (largeur {w}m, profondeur tableau {d}m)"
+      "computed": "Angle d'acceptance calculé ≈ {deg}°/{deg}° ({w} m de largeur, {d} m de profondeur de niche)"
     },
     "roof": {
       "pitch": "pente de toit {v}° depuis l'horizontale",

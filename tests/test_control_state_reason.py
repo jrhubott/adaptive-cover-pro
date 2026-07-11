@@ -73,10 +73,10 @@ class TestControlStateReasonDirectSun:
 
 
 class TestControlStateReasonFOVExit:
-    """Tests for 'Default: FOV Exit' reason."""
+    """Tests for 'Default: Acceptance Angle Exit' reason."""
 
     def test_fov_exit_sun_behind_window(self, mock_sun_data, mock_logger):
-        """Sun behind the window (180° away) → Default: FOV Exit."""
+        """Sun behind the window (180° away) → Default: Acceptance Angle Exit."""
         cover = make_cover(
             mock_sun_data,
             mock_logger,
@@ -87,10 +87,10 @@ class TestControlStateReasonFOVExit:
             type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
         ):
             reason = cover.control_state_reason
-            assert reason == "Default: FOV Exit"
+            assert reason == "Default: Acceptance Angle Exit"
 
     def test_fov_exit_sun_outside_fov_left(self, mock_sun_data, mock_logger):
-        """Sun outside left FOV boundary → Default: FOV Exit."""
+        """Sun outside left FOV boundary → Default: Acceptance Angle Exit."""
         # fov_left=45, win_azi=180: left edge at azimuth 135. sun at 90 is outside.
         cover = make_cover(
             mock_sun_data,
@@ -104,7 +104,7 @@ class TestControlStateReasonFOVExit:
             type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
         ):
             reason = cover.control_state_reason
-            assert reason == "Default: FOV Exit"
+            assert reason == "Default: Acceptance Angle Exit"
 
 
 class TestControlStateReasonElevationLimit:
@@ -308,4 +308,4 @@ class TestControlStateReasonPriority:
             type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
         ):
             reason = cover.control_state_reason
-            assert reason == "Default: FOV Exit"
+            assert reason == "Default: Acceptance Angle Exit"

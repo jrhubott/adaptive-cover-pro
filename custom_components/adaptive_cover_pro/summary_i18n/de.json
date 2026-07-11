@@ -80,7 +80,7 @@
     "group_empty": "⚠️ Diese Gruppe hat keine Mitglieder – sie wird nichts steuern."
   },
   "motion": {
-    "action_hold": "Beschattungen halten aktuelle Position (zurück auf Standard, wenn Sonne FOV verlässt)",
+    "action_hold": "Behänge halten aktuelle Position (zurück zum Standard, wenn Sonne den Sonnen-Akzeptanzwinkel verlässt)",
     "action_return": "Beschattungen zurück auf Standard ({default_pos}%)",
     "template_source": "Anwesenheits-Vorlage"
   },
@@ -129,7 +129,7 @@
   },
   "solar": {
     "azimuth": "Azimut {azimuth}°",
-    "fov": "±{fov_l}°/{fov_r}° Sichtfeld",
+    "fov": "±{fov_l}°/{fov_r}° Sonnen-Akzeptanzwinkel",
     "elev_above": "über {elev}°",
     "elev_below": "unter {elev}°",
     "elevation": "Höhe {parts}",
@@ -167,7 +167,7 @@
     "gate_offset_ignored": "{indent}⚠️ Sonnenuntergangs-/Sonnenaufgangsversatz wird ignoriert, während ein Tageslicht-Gate gesetzt ist – das Gate, nicht die Uhr, entscheidet über die Grenze."
   },
   "blind_spot": {
-    "line": "🟥 Blinder Fleck: ignoriert Sonne bei {bs} innen von FOV links (z.B. Baum oder Dachüberhang).",
+    "line": "🟥 Blindfleck: ignoriert Sonne bei {bs}° nach innen von der linken Akzeptanzkante (z. B. Baum oder Dachüberhang).",
     "range": "{left}°–{right}°",
     "elevation": "bis {elev}° Höhe",
     "elevation_above": "ab {elev}° Höhe"
@@ -253,7 +253,7 @@
       "tilt_safety_margin": "neigungssicherheitsmarge {pct}%"
     },
     "fov": {
-      "computed": "Berechnetes Sichtfeld ≈ {deg}°/{deg}° ({w}m Breite, {d}m Laibungstiefe)"
+      "computed": "Berechneter Akzeptanzwinkel ≈ {deg}°/{deg}° ({w} m Breite, {d} m Laibungstiefe)"
     },
     "roof": {
       "pitch": "Dachneigung {v}° von Horizontal",

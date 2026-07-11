@@ -88,7 +88,7 @@ def computed_fov_line(
     depth_m: float | None,
     labels: dict[str, str] | None = None,
 ) -> str:
-    """Read-only "Computed FOV ≈ 50°/50° (…)" line for Measurements mode (#565).
+    """Read-only "Computed acceptance angle ≈ 50°/50° (…)" line for Measurements mode (#565).
 
     The single formatter shared by the sun-tracking page placeholder and the
     config-flow summary. Delegates the angle to :func:`fov_from_reveal` so the
@@ -332,7 +332,7 @@ class SunGeometry:
         """Determine why the cover is tracking the sun or using the default position.
 
         Returns:
-            Reason string: "Direct Sun", "Default: FOV Exit", "Default: Elevation Limit",
+            Reason string: "Direct Sun", "Default: Acceptance Angle Exit", "Default: Elevation Limit",
             "Default: Sunset Offset", or "Default: Blind Spot".
 
         """
@@ -343,7 +343,7 @@ class SunGeometry:
         if not self.valid:
             if not self.valid_elevation:
                 return "Default: Elevation Limit"
-            return "Default: FOV Exit"
+            return "Default: Acceptance Angle Exit"
         if self.is_sun_in_blind_spot:
             return "Default: Blind Spot"
         return "Default"

@@ -269,13 +269,13 @@ class TestControlStateReason:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_fov_exit(self, mock_dt):
-        """Sun outside FOV returns Default: FOV Exit."""
+        """Sun outside FOV returns Default: Acceptance Angle Exit."""
         mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
         sg = SunGeometry(10.0, 45.0, sun_data, _make_config(), _make_logger())
-        assert sg.control_state_reason == "Default: FOV Exit"
+        assert sg.control_state_reason == "Default: Acceptance Angle Exit"
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_sunset_offset(self, mock_dt):

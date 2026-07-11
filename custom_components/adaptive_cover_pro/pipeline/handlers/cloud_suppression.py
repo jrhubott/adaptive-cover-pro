@@ -88,5 +88,5 @@ class CloudSuppressionHandler(OverrideHandler):
         if not snapshot.in_time_window:
             return "outside time window"
         if not snapshot.cover.direct_sun_valid:
-            return "cloud suppression skipped (sun outside window FOV)"
+            return "cloud suppression skipped (sun outside acceptance angle)"
         return "cloud suppression inactive (direct sun present or feature disabled)"
