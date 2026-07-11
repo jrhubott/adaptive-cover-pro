@@ -101,3 +101,48 @@ def test_supported_axes_position_only_blind() -> None:
     caps = {"has_set_position": True, "has_set_tilt_position": False}
     supported = policy.supported_axes(caps)
     assert tuple(a.name for a in supported) == ("position",)
+
+
+def test_supported_axes_open_close_only_blind_keeps_position() -> None:
+    """A blind with no ``set_position`` but open+close still exposes position.
+
+    Regression for #886: the open/close fallback drives the position axis, so
+    ``supported_axes`` (and the descriptor's ``supported`` flag) must include it.
+    """
+    policy = get_policy("cover_blind")
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    supported = policy.supported_axes(caps)
+    assert tuple(a.name for a in supported) == ("position",)
+
+    by_id = {a.id: a for a in policy.describe(caps=caps).axes}
+    assert by_id["position"].supported is True
+
+
+def test_supported_axes_excludes_position_when_undrivable() -> None:
+    """Neither native position nor open+close → position is not drivable (#886)."""
+    policy = get_policy("cover_blind")
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": False,
+        "has_close": True,
+    }
+    assert policy.supported_axes(caps) == ()
+
+
+def test_tilt_axis_has_no_open_close_fallback() -> None:
+    """Tilt is drivable only with native tilt — open/close does not reach it."""
+    policy = get_policy("cover_venetian")
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    supported = policy.supported_axes(caps)
+    assert tuple(a.name for a in supported) == ("position",)

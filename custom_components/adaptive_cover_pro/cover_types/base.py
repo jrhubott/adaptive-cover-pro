@@ -100,6 +100,17 @@ class CoverAxis:
     ``value_max`` / ``unit`` describe its numeric range. All four carry safe
     defaults so existing ``CoverAxis`` construction sites (and Liskov-conformant
     fifth-cover-type policies) keep working unchanged.
+
+    ``drive_fallbacks`` records the alternative capability sets that let the
+    integration drive this axis even when the native ``capability_key`` is
+    absent. It is an OR-of-ANDs: the axis is drivable if *any* inner group has
+    *all* its capability flags set. The position axis declares
+    ``((CAP_HAS_OPEN, CAP_HAS_CLOSE),)`` because a cover with no
+    ``set_cover_position`` is still moved to its endpoints via
+    ``open_cover`` / ``close_cover`` (see ``routing.route_service_call``); the
+    tilt axis has no fallback, so it stays drivable only with native tilt. This
+    keeps the axis model — not a cover-type string check — the single source of
+    truth for "can this axis be driven" (#886).
     """
 
     name: str
@@ -112,6 +123,23 @@ class CoverAxis:
     value_min: int = AXIS_VALUE_MIN
     value_max: int = AXIS_VALUE_MAX
     unit: str = AXIS_VALUE_UNIT
+    drive_fallbacks: tuple[tuple[str, ...], ...] = ()
+
+    def is_drivable(self, caps: Any) -> bool:
+        """Whether the integration can drive this axis on an entity with *caps*.
+
+        True when the native capability flag is set, or when any
+        ``drive_fallbacks`` group is fully satisfied (e.g. position via
+        ``open_cover`` / ``close_cover`` on a cover lacking
+        ``set_cover_position``). Mirrors ``routing.route_service_call``'s reach,
+        so the ``set_axes`` service and the discovery ``supported`` flag agree
+        with what actually dispatches.
+        """
+        if caps_get(caps, self.capability_key):
+            return True
+        return any(
+            all(caps_get(caps, cap) for cap in group) for group in self.drive_fallbacks
+        )
 
 
 # Module-level singletons. Each policy declares ``axes`` referencing these so
@@ -128,6 +156,7 @@ POSITION_AXIS = CoverAxis(
     capability_key=CAP_HAS_SET_POSITION,
     open_blocks_sun=False,
     label_key="axes.position",
+    drive_fallbacks=((CAP_HAS_OPEN, CAP_HAS_CLOSE),),
 )
 
 POSITION_AXIS_OPEN_BLOCKS_SUN = CoverAxis(
@@ -138,6 +167,7 @@ POSITION_AXIS_OPEN_BLOCKS_SUN = CoverAxis(
     capability_key=CAP_HAS_SET_POSITION,
     open_blocks_sun=True,
     label_key="axes.position",
+    drive_fallbacks=((CAP_HAS_OPEN, CAP_HAS_CLOSE),),
 )
 
 TILT_AXIS = CoverAxis(
@@ -550,10 +580,12 @@ class CoverTypePolicy(ABC):
 
         Single source of truth (issue #725) for both the ``set_axes`` service's
         unsupported-axis rejection and the discovery descriptor's ``supported``
-        flag. Filters ``self.axes`` by each axis's capability flag through
-        ``caps_get`` so no hardcoded ``caps.get("has_X")`` literal leaks out.
+        flag. Filters ``self.axes`` by each axis's ``is_drivable`` check, which
+        honours the open/close fallback so a position-only cover reached via
+        ``open_cover`` / ``close_cover`` is not falsely rejected (#886) — no
+        hardcoded ``caps.get("has_X")`` literal leaks out.
         """
-        return tuple(a for a in self.axes if caps_get(caps, a.capability_key))
+        return tuple(a for a in self.axes if a.is_drivable(caps))
 
     def describe_axis(
         self,
@@ -579,7 +611,7 @@ class CoverTypePolicy(ABC):
             state_attr=axis.state_attr,
             service_attr=axis.service_attr,
             open_blocks_sun=axis.open_blocks_sun,
-            supported=caps_get(caps, axis.capability_key),
+            supported=axis.is_drivable(caps),
         )
 
     def describe(

@@ -2901,14 +2901,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         entities = self.entities or []
         caps_map = self._cover_provider.read_all_capabilities(entities)
-        rolled: dict[str, bool] = {}
+        # Roll up every capability key each axis's drivability consults — its
+        # native flag plus any open/close fallback keys (#886) — so the merged
+        # caps view fed to ``describe`` lets ``is_drivable`` see the fallback.
+        keys: set[str] = set()
         for axis in self._policy.axes:
-            key = axis.capability_key
-            rolled[key] = (
+            keys.add(axis.capability_key)
+            for group in axis.drive_fallbacks:
+                keys.update(group)
+        rolled: dict[str, bool] = {
+            key: (
                 any(caps_get(caps, key) for caps in caps_map.values())
                 if caps_map
                 else True
             )
+            for key in keys
+        }
         return self._policy.describe(caps=rolled, labels=labels)
 
     def build_diagnostic_data(self) -> dict:

@@ -89,6 +89,7 @@ class TestCoverAxis:
             value_min=POSITION_AXIS.value_min,
             value_max=POSITION_AXIS.value_max,
             unit=POSITION_AXIS.unit,
+            drive_fallbacks=POSITION_AXIS.drive_fallbacks,
         )
         assert twin == POSITION_AXIS
 

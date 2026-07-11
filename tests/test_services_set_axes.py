@@ -54,6 +54,21 @@ _POSITION_ONLY_CAPS = CoverCapabilities(
     has_open=True,
     has_close=True,
 )
+# Open/close-only cover: no native set_cover_position, but the integration
+# drives the position axis via open_cover/close_cover (#886).
+_OPEN_CLOSE_ONLY_CAPS = CoverCapabilities(
+    has_set_position=False,
+    has_set_tilt_position=False,
+    has_open=True,
+    has_close=True,
+)
+# A cover the integration cannot drive on any axis at all.
+_NO_DRIVE_CAPS = CoverCapabilities(
+    has_set_position=False,
+    has_set_tilt_position=False,
+    has_open=False,
+    has_close=False,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +168,67 @@ async def test_unsupported_axis_raises() -> None:
             return_value={coord: None},
         ),
         pytest.raises(ServiceValidationError, match="tilt"),
+    ):
+        await async_handle_set_axes(call)
+
+    coord.async_apply_user_axis.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_position_axis_on_open_close_only_blind_dispatches() -> None:
+    """Position on an open/close-only blind dispatches — it is not rejected.
+
+    Regression for #886: the companion card's ``set_axes`` call failed with
+    "does not support the 'position' axis" for a vertical blind lacking native
+    ``set_cover_position``, even though the integration drives it via
+    ``open_cover`` / ``close_cover``.
+    """
+    from custom_components.adaptive_cover_pro.services.set_axes_service import (
+        async_handle_set_axes,
+    )
+
+    coord = _make_coord(
+        cover_type="cover_blind",
+        caps=_OPEN_CLOSE_ONLY_CAPS,
+        entities=["cover.deck_front_shade"],
+    )
+    call = MagicMock()
+    call.data = {"axes": {"position": 100}}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_axes_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_axes(call)
+
+    coord.async_apply_user_axis.assert_awaited_once_with(
+        "cover.deck_front_shade",
+        AXIS_NAME_POSITION,
+        100,
+        trigger="set_axes",
+        force=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_position_axis_on_undrivable_cover_raises() -> None:
+    """Position on a cover with neither set_position nor open+close still errors."""
+    from custom_components.adaptive_cover_pro.services.set_axes_service import (
+        async_handle_set_axes,
+    )
+
+    coord = _make_coord(
+        cover_type="cover_blind", caps=_NO_DRIVE_CAPS, entities=["cover.blind"]
+    )
+    call = MagicMock()
+    call.data = {"axes": {"position": 50}}
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.services.set_axes_service._resolve_targets",
+            return_value={coord: None},
+        ),
+        pytest.raises(ServiceValidationError, match="position"),
     ):
         await async_handle_set_axes(call)
 
