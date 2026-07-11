@@ -263,7 +263,7 @@ class DiagnosticsBuilder:
         """Get the current control state reason from pipeline result or cover geometry."""
         result = ctx.pipeline_result
         if result is not None and result.control_method == ControlMethod.MOTION:
-            reason = "Motion Timeout"
+            reason = "Occupancy Timeout"
         elif result is not None and result.control_method == ControlMethod.MANUAL:
             reason = "Manual Override"
         elif (

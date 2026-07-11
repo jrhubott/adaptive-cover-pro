@@ -1321,7 +1321,7 @@ def test_motion_sensors_count_shown():
         CONF_DEFAULT_HEIGHT: 60,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Motion-based" in summary
+    assert "🚶 Occupancy" in summary
     assert "300s" in summary
     assert "60%" in summary
 
@@ -1330,7 +1330,7 @@ def test_motion_section_hidden_when_no_sensors():
     """Motion bullet absent when no motion sensors configured."""
     cfg = {CONF_MOTION_SENSORS: []}
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Motion-based" not in summary
+    assert "🚶 Occupancy" not in summary
 
 
 # ---------------------------------------------------------------------------
@@ -1780,7 +1780,7 @@ def test_full_vertical_config_smoke():
     # Manual override
     assert "120 min" in summary
     # Motion
-    assert "Motion-based" in summary
+    assert "🚶 Occupancy" in summary
     assert "300s" in summary
     # Weather
     assert "Weather safety" in summary
@@ -2890,7 +2890,7 @@ def test_motion_summary_default_mode_says_return_to_default():
         CONF_DEFAULT_HEIGHT: 45,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
     assert "return to default" in motion_line.lower()
 
 
@@ -2902,7 +2902,7 @@ def test_motion_summary_template_only():
         CONF_DEFAULT_HEIGHT: 45,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
     assert "occupancy template" in motion_line
 
 
@@ -2915,7 +2915,7 @@ def test_motion_summary_sensors_plus_template():
         CONF_DEFAULT_HEIGHT: 45,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
     assert "1 source" in motion_line
     assert "occupancy template" in motion_line
 
@@ -2931,7 +2931,7 @@ def test_motion_summary_hold_mode_says_hold_position():
         CONF_MOTION_TIMEOUT_MODE: "hold_position",
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
     assert "hold" in motion_line.lower()
 
 

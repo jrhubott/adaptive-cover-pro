@@ -1210,7 +1210,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="motion_status",
-        display_name="Motion Status",
+        display_name="Occupancy Status",
         icon="mdi:motion-sensor",
         translation_key="motion_status",
         device_class=SensorDeviceClass.ENUM,

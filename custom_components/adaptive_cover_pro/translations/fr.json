@@ -172,9 +172,9 @@
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
-          "max_position": "Limite de position maximale du store (0-100%). 100% = ouvert (stores levés / store banne étendu). Utilisez ceci pour : empêcher le store de s'ouvrir complètement (réglez à 80%), conserver une certaine ombre tout le temps (réglez à 60-70%), prévenir le coincement en haut (réglez à 95%). ACP bloque chaque position CALCULÉE à au maximum cette valeur (suivi du soleil, défaut/repos, mode climatique, suppression des nuages, délai de mouvement, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS bloquées par ce plafond : la Position au coucher du soleil (exemptée par conception), les slots Position personnalisée (mode exact), la position Dérogation météo, et le préréglage « My ». Sur les stores vénitiens, ceci limite uniquement l'axe du tablier (vertical) — l'inclinaison des lamelles est calculée à partir de la géométrie solaire et n'est pas plafonnée ici.",
+          "max_position": "Position maximale des stores (0-100 %). 100 % = ouvert (stores levés / store banne déplié). Utilisez ceci pour : empêcher le store de s'ouvrir complètement (défini à 80 %), maintenir une ombre en permanence (défini à 60-70 %), protéger contre le coincement en haut (défini à 95 %). ACP limite toute position CALCULÉE à au maximum cette valeur (suivi du soleil, position par défaut/repos, climatique, suppression des nuages, délai d'occupation, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS limitées à ce plafond : la position coucher de soleil (exempte par conception), les emplacements de position personnalisée (mode exact), la position de dérogation météo et le préréglage Mes. Sur les stores vénitiens, ceci limite l'axe du chariot (vertical) uniquement — l'inclinaison des lamelles est calculée à partir de la géométrie du soleil et n'est pas plafonnée ici.",
           "enable_max_position": "Contrôle QUAND la limite de position maximale s'applique aux positions CALCULÉES. NON COCHÉ (par défaut, recommandé) : la position maximale s'applique tout le temps - suivi du soleil, position par défaut, modes climatiques, etc. COCHÉ (avancé) : la position maximale s'applique uniquement lorsque le soleil est directement devant la fenêtre ; pendant les états par défaut/secours, le store peut monter au-dessus de la valeur max. Dans les deux cas, les cibles fixes explicitement configurées (Position au coucher du soleil, Positions personnalisées, Dérogation météo, préréglage « My ») sont envoyées comme vous les définissez et ne sont pas plafonnées par ce plafond. La plupart des utilisateurs devraient laisser ceci NON COCHÉ pour une protection cohérente.",
-          "min_position": "Limite de position minimale du store (0-99%). 0% = fermé (stores baissés / store banne rétracté). Utilisez ceci pour : empêcher le store de se fermer complètement (réglez à 20%), maintenir une certaine lumière (réglez à 30-40%), prévenir le coincement en bas (réglez à 5%). ACP bloque chaque position CALCULÉE à au minimum cette valeur (suivi du soleil, défaut/repos, mode climatique, suppression des nuages, délai de mouvement, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS bloquées par ce plancher : la Position au coucher du soleil (exemptée par conception pour que les stores puissent se fermer complètement la nuit), les slots Position personnalisée (mode exact), la position Dérogation météo, et le préréglage « My » — réglez ceux-ci à ou au-dessus de cette valeur (ou utilisez leur « mode position minimale ») pour un plancher absolu partout. Sur les stores vénitiens, ceci limite uniquement l'axe du tablier (vertical). Fonctionne avec le bouton bascule 'Appliquer le min uniquement lors du suivi du soleil' ci-dessous.",
+          "min_position": "Position minimale des stores (0-99 %). 0 % = fermé (stores baissés / store banne rétracté). Utilisez ceci pour : empêcher le store de se fermer complètement (défini à 20 %), maintenir une lumière (défini à 30-40 %), protéger contre le coincement en bas (défini à 5 %). ACP limite toute position CALCULÉE à au moins cette valeur (suivi du soleil, position par défaut/repos, climatique, suppression des nuages, délai d'occupation, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS limitées à ce plancher : la position coucher de soleil (exempte par conception pour que les stores puissent se fermer complètement la nuit), les emplacements de position personnalisée (mode exact), la position de dérogation météo et le préréglage Mes — définissez-les à ou au-dessus de cette valeur (ou utilisez leur mode « position minimale ») pour un plancher en dur partout. Sur les stores vénitiens, ceci limite l'axe du chariot (vertical) uniquement. Fonctionne avec le curseur « Appliquer le minimum uniquement pendant le suivi du soleil » ci-dessous.",
           "enable_min_position": "Contrôle QUAND la limite de position minimale s'applique aux positions CALCULÉES. NON COCHÉ (par défaut, recommandé) : la position minimale s'applique tout le temps - suivi du soleil, position par défaut, modes climatiques, etc. COCHÉ (avancé) : la position minimale s'applique uniquement lorsque le soleil est directement devant la fenêtre ; pendant les états par défaut/secours, le store peut descendre sous la valeur min. Dans les deux cas, les cibles fixes explicitement configurées (Position au coucher du soleil, Positions personnalisées, Dérogation météo, préréglage « My ») sont envoyées comme vous les définissez et ne sont pas plafonnées par ce plancher. La plupart des utilisateurs devraient laisser ceci NON COCHÉ pour une protection cohérente.",
           "min_position_sun_tracking": "Limite de position minimale facultative qui s'applique uniquement pendant que le soleil est dans le champ de vision. Lorsqu'elle est définie, elle remplace « Position minimale » lors des calculs de suivi solaire. Laissez vide pour utiliser « Position minimale » pour le suivi solaire et les autres modes. Utilisez cette option si votre store a une zone morte mécanique en bas du parcours (par exemple, les volets roulants dont les lames s'écartent avant le bas se soulève) et que vous souhaitez que le suivi solaire ignore cette zone morte tout en permettant au store de se fermer complètement au coucher du soleil. 0% = fermé (stores baissés), 100% = ouvert (stores levés).",
           "sunset_position": "Position du store à définir après le coucher du soleil. Effacez le curseur (laissez vide) pour utiliser la position par défaut à la place — pas de comportement spécial au coucher du soleil. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Utilisations courantes : confidentialité (0%), ouvert pour la brise nocturne (100%), confidentialité partielle (30-50%). Si défini, cela remplace la position par défaut après le coucher du soleil.",
@@ -346,7 +346,7 @@
           "custom_position_template_1": "Template Jinja2 optionnel ; lorsqu'il s'évalue à vrai, il active le slot. Combiné avec les capteurs selon le mode de combinaison ci-dessous.",
           "custom_position_template_mode_1": "Comment le template se combine avec les capteurs : 'or' (défaut) — le template OU n'importe quel capteur active le slot ; 'and' — le template doit être vrai ET un capteur on.",
           "custom_position_1": "Position (0-100%) vers laquelle déplacer les stores lorsque le slot 1 est actif. 0% = fermé, 100% = ouvert.",
-          "custom_position_priority_1": "Priorité de pipeline (1-100). Supérieur = évalué avant les gestionnaires de priorité inférieure. La valeur par défaut 77 se situe entre la Dérogation Manuelle (80) et le Délai de Mouvement (75). Définir au-dessus de 80 pour remplacer les mouvements manuels ; définir en dessous de 40 pour s'appliquer uniquement quand le suivi du soleil est inactif. 100 = sécurité : l'emplacement contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin — il peut déplacer le store même quand le contrôle automatique est DÉSACTIVÉ — et contourne également les seuils delta (le comportement de l'ancienne Dérogation Forcée).",
+          "custom_position_priority_1": "Priorité du pipeline (1-100). Plus haut = évalué avant les gestionnaires de priorité inférieure. La valeur par défaut 77 se situe entre Dérogation manuelle (80) et Délai d'occupation (75). Définissez à plus de 80 pour remplacer les mouvements manuels ; définissez à moins de 40 pour s'appliquer uniquement lorsque le suivi du soleil est inactif. 100 = sécurité : l'emplacement contourne le curseur de contrôle automatique, la dérogation manuelle et la fenêtre temporelle de début/fin — il peut déplacer le store même lorsque le contrôle automatique est DÉSACTIVÉ — et contourne également les portes delta (ancien comportement Force Override).",
           "custom_position_min_mode_1": "Lorsqu'activé, la position agit comme un plancher minimum — les positions plus élevées du suivi du soleil ou d'autres calculs peuvent passer. Lorsque désactivé (défaut), le store est toujours défini à la position exacte configurée.",
           "custom_position_use_my_1": "Lorsque le déclencheur du slot 1 est actif, déclenchez la présélection Mes du store au lieu de la position numérique du slot. Nécessite que la valeur de position Mes soit définie.",
           "custom_position_tilt_1": "Angle d'inclinaison (0-100%) à définir lorsque le capteur du slot 1 est actif. Stores vénitiens uniquement — ignoré pour les autres types de stores. Laisser non défini pour laisser le moteur calculer l'inclinaison automatiquement.",
@@ -437,23 +437,23 @@
         }
       },
       "motion_override": {
-        "title": "Dérogation mouvement",
-        "description": "Activez le contrôle basé sur la présence. Quand toutes les sources configurées ne signalent aucun mouvement, l'intégration arrête le suivi du soleil et déplace les protections vers leur position par défaut après l'expiration du délai d'attente. Quand une source détecte une présence, le positionnement automatique reprend.\n\nVous pouvez combiner des détecteurs de mouvement, détecteurs de présence ou capteurs binaires de présence avec des lecteurs multimédias (un lecteur allumé indique une occupation). La logique est OU — toute source active unique indique une occupation. Ceci est utile dans les pièces où vous ne souhaitez pas que les protections se règlent quand personne n'est présent.\n\n[En savoir plus]({learn_more})",
+        "title": "Détection d'occupation",
+        "description": "Activer le contrôle basé sur l'occupation. Lorsque toutes les sources configurées ne signalent aucune occupation, l'intégration arrête le suivi du soleil et déplace les stores à leur position par défaut après l'expiration du délai. Lorsqu'une source détecte une occupation, le positionnement automatique reprend.\n\nN'importe quel mélange de capteurs de mouvement, d'occupation ou de présence binaire peut être utilisé, plus les lecteurs multimédias (un lecteur activé compte comme occupé). La logique est OU — toute source active unique compte comme occupée. Ceci est utile pour les pièces où vous ne voulez pas que les stores s'ajustent quand personne n'est présent.\n\n[En savoir plus]({learn_more})",
         "data": {
-          "motion_sensors": "Capteurs de mouvement/occupation pour le contrôle basé sur l'occupation",
-          "motion_timeout": "Durée du délai d'inactivité du mouvement",
-          "motion_timeout_mode": "Lors de l'expiration du délai de mouvement",
-          "motion_media_players": "Lecteurs multimédias pour le contrôle basé sur la présence",
+          "motion_sensors": "Capteurs d'occupation",
+          "motion_timeout": "Délai d'occupation (secondes)",
+          "motion_timeout_mode": "Mode du délai d'occupation",
+          "motion_media_players": "Lecteurs multimédias (source d'occupation)",
           "motion_template": "Modèle de présence (optionnel)",
           "motion_template_mode": "Logique du modèle de présence"
         },
         "data_description": {
-          "motion_sensors": "Capteurs binaires qui activent/désactivent le positionnement solaire automatique en fonction de l'occupation. Quand N'IMPORTE QUEL capteur détecte le mouvement, les stores utilisent le positionnement automatique basé sur le soleil. Quand TOUS les capteurs n'indiquent aucun mouvement pendant la durée du délai, les stores retournent à la position par défaut. Laissez vide pour désactiver cette fonction.",
-          "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes).",
-          "motion_timeout_mode": "Action à effectuer lorsqu'aucun mouvement n'a été détecté pendant la durée du délai. « Retourner à la position par défaut » déplace les stores à la position par défaut. « Maintenir la position » laisse les stores où ils sont tandis que le soleil est dans le champ de vision (de sorte qu'un occupant qui revient les trouve comme il les a laissés) ; les stores retournent néanmoins à la position par défaut une fois que le soleil quitte le champ de vision ou que la fenêtre de temps se ferme.",
-          "motion_media_players": "Lecteurs multimédias traités comme présence. TOUT lecteur dont l'état est différent de éteint (en lecture, en pause, inactif, allumé, ...) est considéré comme occupé et maintient le positionnement automatique actif. Les lecteurs éteints, indisponibles ou inconnus ne comptent pas. Combiné avec les détecteurs de mouvement ci-dessus sous la même logique OU. Laissez vide pour désactiver.",
+          "motion_sensors": "Sélectionnez les capteurs d'occupation (par ex. détecteur de mouvement, capteur de présence). Laissez vide pour désactiver la détection d'occupation.",
+          "motion_timeout": "Durée d'inactivité avant expiration du délai d'occupation (en secondes)",
+          "motion_timeout_mode": "Mode du délai d'occupation : arrêter les stores ou les ramener à la position par défaut",
+          "motion_media_players": "Sélectionnez les lecteurs multimédias pour considérer comme présents. Laissez vide pour désactiver.",
           "motion_template": "Modèle Home Assistant Jinja2 facultatif qui agit comme une source de présence supplémentaire. Lorsqu'il s'évalue à vrai (on/true/1), la pièce est considérée comme occupée ; comment cela se combine avec les détecteurs et lecteurs ci-dessus (OU ou ET) est défini par 'Logique du modèle de présence' ci-dessous. Lorsqu'il s'évalue à faux, le délai d'expiration démarre comme pour toute autre source d'effacement. Il est réévalué dès qu'une entité référencée change — sans interrogation — il se déclenche donc aussi rapidement qu'un détecteur et peut fonctionner seul sans aucun détecteur configuré. Par exemple, un modèle qui retourne vrai si un assistant input_boolean est activé. Laissez vide pour désactiver.",
-          "motion_template_mode": "Comment le modèle de présence se combine avec les détecteurs de mouvement et lecteurs multimédias ci-dessus. 'OU' (par défaut) conserve le comportement original — la pièce est considérée comme occupée si le modèle est vrai ou si un détecteur ou un lecteur est actif. 'ET' fait du modèle une condition préalable — la pièce n'est occupée que si le modèle est vrai ET qu'au moins un détecteur ou un lecteur est actif, de sorte que le modèle doit être vrai pour que la présence soit enregistrée. Sans aucun détecteur ni lecteur configuré, le modèle seul décide dans les deux modes. N'a d'effet que si un modèle de présence est défini ci-dessus."
+          "motion_template_mode": "Utiliser un modèle pour la détection d'occupation"
         }
       },
       "weather_override": {
@@ -845,7 +845,7 @@
           "weather": "Conditions météorologiques",
           "manual_override": "✋ Dérogation manuelle",
           "custom_position": "🎯 Positions personnalisées",
-          "motion_override": "🚶 Dérogation mouvement",
+          "motion_override": "🚶 Détection d'occupation",
           "weather_override": "🌧️ Dérogation météo",
           "summary": "📋 Résumé de la configuration",
           "sync": "🔄 Copier vers d'autres stores",
@@ -1034,9 +1034,9 @@
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
-          "max_position": "Limite de position maximale du store (0-100%). 100% = ouvert (stores levés / store banne étendu). Utilisez ceci pour : empêcher le store de s'ouvrir complètement (réglez à 80%), conserver une certaine ombre tout le temps (réglez à 60-70%), prévenir le coincement en haut (réglez à 95%). ACP bloque chaque position CALCULÉE à au maximum cette valeur (suivi du soleil, défaut/repos, mode climatique, suppression des nuages, délai de mouvement, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS bloquées par ce plafond : la Position au coucher du soleil (exemptée par conception), les slots Position personnalisée (mode exact), la position Dérogation météo, et le préréglage « My ». Sur les stores vénitiens, ceci limite uniquement l'axe du tablier (vertical) — l'inclinaison des lamelles est calculée à partir de la géométrie solaire et n'est pas plafonnée ici.",
+          "max_position": "Position maximale des stores (0-100 %). 100 % = ouvert (stores levés / store banne déplié). Utilisez ceci pour : empêcher le store de s'ouvrir complètement (défini à 80 %), maintenir une ombre en permanence (défini à 60-70 %), protéger contre le coincement en haut (défini à 95 %). ACP limite toute position CALCULÉE à au maximum cette valeur (suivi du soleil, position par défaut/repos, climatique, suppression des nuages, délai d'occupation, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS limitées à ce plafond : la position coucher de soleil (exempte par conception), les emplacements de position personnalisée (mode exact), la position de dérogation météo et le préréglage Mes. Sur les stores vénitiens, ceci limite l'axe du chariot (vertical) uniquement — l'inclinaison des lamelles est calculée à partir de la géométrie du soleil et n'est pas plafonnée ici.",
           "enable_max_position": "Contrôle QUAND la limite de position maximale s'applique aux positions CALCULÉES. NON COCHÉ (par défaut, recommandé) : la position maximale s'applique tout le temps - suivi du soleil, position par défaut, modes climatiques, etc. COCHÉ (avancé) : la position maximale s'applique uniquement lorsque le soleil est directement devant la fenêtre ; pendant les états par défaut/secours, le store peut monter au-dessus de la valeur max. Dans les deux cas, les cibles fixes explicitement configurées (Position au coucher du soleil, Positions personnalisées, Dérogation météo, préréglage « My ») sont envoyées comme vous les définissez et ne sont pas plafonnées par ce plafond. La plupart des utilisateurs devraient laisser ceci NON COCHÉ pour une protection cohérente.",
-          "min_position": "Limite de position minimale du store (0-99%). 0% = fermé (stores baissés / store banne rétracté). Utilisez ceci pour : empêcher le store de se fermer complètement (réglez à 20%), maintenir une certaine lumière (réglez à 30-40%), prévenir le coincement en bas (réglez à 5%). ACP bloque chaque position CALCULÉE à au minimum cette valeur (suivi du soleil, défaut/repos, mode climatique, suppression des nuages, délai de mouvement, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS bloquées par ce plancher : la Position au coucher du soleil (exemptée par conception pour que les stores puissent se fermer complètement la nuit), les slots Position personnalisée (mode exact), la position Dérogation météo, et le préréglage « My » — réglez ceux-ci à ou au-dessus de cette valeur (ou utilisez leur « mode position minimale ») pour un plancher absolu partout. Sur les stores vénitiens, ceci limite uniquement l'axe du tablier (vertical). Fonctionne avec le bouton bascule 'Appliquer le min uniquement lors du suivi du soleil' ci-dessous.",
+          "min_position": "Position minimale des stores (0-99 %). 0 % = fermé (stores baissés / store banne rétracté). Utilisez ceci pour : empêcher le store de se fermer complètement (défini à 20 %), maintenir une lumière (défini à 30-40 %), protéger contre le coincement en bas (défini à 5 %). ACP limite toute position CALCULÉE à au moins cette valeur (suivi du soleil, position par défaut/repos, climatique, suppression des nuages, délai d'occupation, éblouissement, récupération de dérogation manuelle). Les cibles fixes explicitement configurées sont envoyées comme vous les définissez et ne sont PAS limitées à ce plancher : la position coucher de soleil (exempte par conception pour que les stores puissent se fermer complètement la nuit), les emplacements de position personnalisée (mode exact), la position de dérogation météo et le préréglage Mes — définissez-les à ou au-dessus de cette valeur (ou utilisez leur mode « position minimale ») pour un plancher en dur partout. Sur les stores vénitiens, ceci limite l'axe du chariot (vertical) uniquement. Fonctionne avec le curseur « Appliquer le minimum uniquement pendant le suivi du soleil » ci-dessous.",
           "enable_min_position": "Contrôle QUAND la limite de position minimale s'applique aux positions CALCULÉES. NON COCHÉ (par défaut, recommandé) : la position minimale s'applique tout le temps - suivi du soleil, position par défaut, modes climatiques, etc. COCHÉ (avancé) : la position minimale s'applique uniquement lorsque le soleil est directement devant la fenêtre ; pendant les états par défaut/secours, le store peut descendre sous la valeur min. Dans les deux cas, les cibles fixes explicitement configurées (Position au coucher du soleil, Positions personnalisées, Dérogation météo, préréglage « My ») sont envoyées comme vous les définissez et ne sont pas plafonnées par ce plancher. La plupart des utilisateurs devraient laisser ceci NON COCHÉ pour une protection cohérente.",
           "min_position_sun_tracking": "Limite de position minimale facultative qui s'applique uniquement pendant que le soleil est dans le champ de vision. Lorsqu'elle est définie, elle remplace « Position minimale » lors des calculs de suivi solaire. Laissez vide pour utiliser « Position minimale » pour le suivi solaire et les autres modes. Utilisez cette option si votre store a une zone morte mécanique en bas du parcours (par exemple, les volets roulants dont les lames s'écartent avant le bas se soulève) et que vous souhaitez que le suivi solaire ignore cette zone morte tout en permettant au store de se fermer complètement au coucher du soleil. 0% = fermé (stores baissés), 100% = ouvert (stores levés).",
           "sunset_position": "Position du store à définir après le coucher du soleil. Effacez le curseur (laissez vide) pour utiliser la position par défaut à la place — pas de comportement spécial au coucher du soleil. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Utilisations courantes : confidentialité (0%), ouvert pour la brise nocturne (100%), confidentialité partielle (30-50%). Si défini, cela remplace la position par défaut après le coucher du soleil.",
@@ -1184,7 +1184,7 @@
           "custom_position_template_1": "Template Jinja2 optionnel ; lorsqu'il s'évalue à vrai, il active le slot. Combiné avec les capteurs selon le mode de combinaison ci-dessous.",
           "custom_position_template_mode_1": "Comment le template se combine avec les capteurs : 'or' (défaut) — le template OU n'importe quel capteur active le slot ; 'and' — le template doit être vrai ET un capteur on.",
           "custom_position_1": "Position (0-100%) vers laquelle déplacer les stores lorsque le slot 1 est actif. 0% = fermé, 100% = ouvert.",
-          "custom_position_priority_1": "Priorité de pipeline (1-100). Supérieur = évalué avant les gestionnaires de priorité inférieure. La valeur par défaut 77 se situe entre la Dérogation Manuelle (80) et le Délai de Mouvement (75). Définir au-dessus de 80 pour remplacer les mouvements manuels ; définir en dessous de 40 pour s'appliquer uniquement quand le suivi du soleil est inactif. 100 = sécurité : l'emplacement contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin — il peut déplacer le store même quand le contrôle automatique est DÉSACTIVÉ — et contourne également les seuils delta (le comportement de l'ancienne Dérogation Forcée).",
+          "custom_position_priority_1": "Priorité du pipeline (1-100). Plus haut = évalué avant les gestionnaires de priorité inférieure. La valeur par défaut 77 se situe entre Dérogation manuelle (80) et Délai d'occupation (75). Définissez à plus de 80 pour remplacer les mouvements manuels ; définissez à moins de 40 pour s'appliquer uniquement lorsque le suivi du soleil est inactif. 100 = sécurité : l'emplacement contourne le curseur de contrôle automatique, la dérogation manuelle et la fenêtre temporelle de début/fin — il peut déplacer le store même lorsque le contrôle automatique est DÉSACTIVÉ — et contourne également les portes delta (ancien comportement Force Override).",
           "custom_position_min_mode_1": "Lorsqu'activé, la position agit comme un plancher minimum — les positions plus élevées du suivi du soleil ou d'autres calculs peuvent passer. Lorsque désactivé (défaut), le store est toujours défini à la position exacte configurée.",
           "custom_position_use_my_1": "Lorsque le déclencheur du slot 1 est actif, déclenchez la présélection Mes du store au lieu de la position numérique du slot. Nécessite que la valeur de position Mes soit définie.",
           "custom_position_tilt_1": "Angle d'inclinaison (0-100%) à définir lorsque le capteur du slot 1 est actif. Stores vénitiens uniquement — ignoré pour les autres types de stores. Laisser non défini pour laisser le moteur calculer l'inclinaison automatiquement.",
@@ -1275,23 +1275,23 @@
         }
       },
       "motion_override": {
-        "title": "Dérogation mouvement",
-        "description": "Activez le contrôle basé sur la présence. Quand toutes les sources configurées ne signalent aucun mouvement, l'intégration arrête le suivi du soleil et déplace les protections vers leur position par défaut après l'expiration du délai d'attente. Quand une source détecte une présence, le positionnement automatique reprend.\n\nVous pouvez combiner des détecteurs de mouvement, détecteurs de présence ou capteurs binaires de présence avec des lecteurs multimédias (un lecteur allumé indique une occupation). La logique est OU — toute source active unique indique une occupation. Ceci est utile dans les pièces où vous ne souhaitez pas que les protections se règlent quand personne n'est présent.\n\n[En savoir plus]({learn_more})",
+        "title": "Détection d'occupation",
+        "description": "Activer le contrôle basé sur l'occupation. Lorsque toutes les sources configurées ne signalent aucune occupation, l'intégration arrête le suivi du soleil et déplace les stores à leur position par défaut après l'expiration du délai. Lorsqu'une source détecte une occupation, le positionnement automatique reprend.\n\nN'importe quel mélange de capteurs de mouvement, d'occupation ou de présence binaire peut être utilisé, plus les lecteurs multimédias (un lecteur activé compte comme occupé). La logique est OU — toute source active unique compte comme occupée. Ceci est utile pour les pièces où vous ne voulez pas que les stores s'ajustent quand personne n'est présent.\n\n[En savoir plus]({learn_more})",
         "data": {
-          "motion_sensors": "Capteurs de mouvement/occupation pour le contrôle basé sur l'occupation",
-          "motion_timeout": "Durée du délai d'inactivité du mouvement",
-          "motion_timeout_mode": "Lors de l'expiration du délai de mouvement",
-          "motion_media_players": "Lecteurs multimédias pour le contrôle basé sur la présence",
+          "motion_sensors": "Capteurs d'occupation",
+          "motion_timeout": "Délai d'occupation (secondes)",
+          "motion_timeout_mode": "Mode du délai d'occupation",
+          "motion_media_players": "Lecteurs multimédias (source d'occupation)",
           "motion_template": "Modèle de présence (optionnel)",
           "motion_template_mode": "Logique du modèle de présence"
         },
         "data_description": {
-          "motion_sensors": "Capteurs binaires qui activent/désactivent le positionnement solaire automatique en fonction de l'occupation. Quand N'IMPORTE QUEL capteur détecte le mouvement, les stores utilisent le positionnement automatique basé sur le soleil. Quand TOUS les capteurs n'indiquent aucun mouvement pendant la durée du délai, les stores retournent à la position par défaut. Laissez vide pour désactiver cette fonction.",
-          "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes).",
-          "motion_timeout_mode": "Action à effectuer lorsqu'aucun mouvement n'a été détecté pendant la durée du délai. « Retourner à la position par défaut » déplace les stores à la position par défaut. « Maintenir la position » laisse les stores où ils sont tandis que le soleil est dans le champ de vision (de sorte qu'un occupant qui revient les trouve comme il les a laissés) ; les stores retournent néanmoins à la position par défaut une fois que le soleil quitte le champ de vision ou que la fenêtre de temps se ferme.",
-          "motion_media_players": "Lecteurs multimédias traités comme présence. TOUT lecteur dont l'état est différent de éteint (en lecture, en pause, inactif, allumé, ...) est considéré comme occupé et maintient le positionnement automatique actif. Les lecteurs éteints, indisponibles ou inconnus ne comptent pas. Combiné avec les détecteurs de mouvement ci-dessus sous la même logique OU. Laissez vide pour désactiver.",
+          "motion_sensors": "Sélectionnez les capteurs d'occupation (par ex. détecteur de mouvement, capteur de présence). Laissez vide pour désactiver la détection d'occupation.",
+          "motion_timeout": "Durée d'inactivité avant expiration du délai d'occupation (en secondes)",
+          "motion_timeout_mode": "Mode du délai d'occupation : arrêter les stores ou les ramener à la position par défaut",
+          "motion_media_players": "Sélectionnez les lecteurs multimédias pour considérer comme présents. Laissez vide pour désactiver.",
           "motion_template": "Modèle Home Assistant Jinja2 facultatif qui agit comme une source de présence supplémentaire. Lorsqu'il s'évalue à vrai (on/true/1), la pièce est considérée comme occupée ; comment cela se combine avec les détecteurs et lecteurs ci-dessus (OU ou ET) est défini par 'Logique du modèle de présence' ci-dessous. Lorsqu'il s'évalue à faux, le délai d'expiration démarre comme pour toute autre source d'effacement. Il est réévalué dès qu'une entité référencée change — sans interrogation — il se déclenche donc aussi rapidement qu'un détecteur et peut fonctionner seul sans aucun détecteur configuré. Par exemple, un modèle qui retourne vrai si un assistant input_boolean est activé. Laissez vide pour désactiver.",
-          "motion_template_mode": "Comment le modèle de présence se combine avec les détecteurs de mouvement et lecteurs multimédias ci-dessus. 'OU' (par défaut) conserve le comportement original — la pièce est considérée comme occupée si le modèle est vrai ou si un détecteur ou un lecteur est actif. 'ET' fait du modèle une condition préalable — la pièce n'est occupée que si le modèle est vrai ET qu'au moins un détecteur ou un lecteur est actif, de sorte que le modèle doit être vrai pour que la présence soit enregistrée. Sans aucun détecteur ni lecteur configuré, le modèle seul décide dans les deux modes. N'a d'effet que si un modèle de présence est défini ci-dessus."
+          "motion_template_mode": "Utiliser un modèle pour la détection d'occupation"
         }
       },
       "weather_override": {
@@ -1606,7 +1606,7 @@
         "data": {
           "weather_priority": "Priorité de dérogation météo",
           "manual_override_priority": "Priorité de dérogation manuelle",
-          "motion_timeout_priority": "Priorité du délai de mouvement",
+          "motion_timeout_priority": "Priorité du délai d'occupation",
           "cloud_suppression_priority": "Priorité de suppression des nuages",
           "climate_priority": "Priorité du mode climatique",
           "glare_zone_priority": "Priorité de la zone d'éblouissement",
@@ -1743,15 +1743,15 @@
       "control_status": {
         "state": {
           "force_override_active": "Dérogation forcée active",
-          "motion_timeout": "Aucun mouvement — position par défaut utilisée"
+          "motion_timeout": "Délai d'occupation"
         }
       },
       "motion_status": {
         "state": {
           "not_configured": "Non configuré",
-          "motion_detected": "Mouvement détecté",
+          "motion_detected": "Occupation détectée",
           "timeout_pending": "Délai en cours",
-          "no_motion": "Aucun mouvement",
+          "no_motion": "Aucune occupation",
           "waiting_for_data": "En attente de données",
           "holding": "Maintien de la position"
         }
@@ -1765,7 +1765,7 @@
           "winter": "Hiver",
           "default": "Par défaut",
           "manual_override": "Dérogation manuelle",
-          "motion_timeout": "Délai d'inactivité du mouvement",
+          "motion_timeout": "Délai d'occupation",
           "force_override": "Dérogation forcée",
           "custom_position": "Position personnalisée",
           "weather_override": "Dérogation météo",
@@ -1853,7 +1853,7 @@
         }
       },
       "motion_control": {
-        "name": "Contrôle du mouvement",
+        "name": "Contrôle d'occupation",
         "state": {
           "on": "On",
           "off": "Off"
@@ -1951,8 +1951,8 @@
         "manual_override": "Dérogation manuelle",
         "custom_position_values": "Positions personnalisées — Valeurs et priorités",
         "custom_position_sensors": "Positions personnalisées — Capteurs de déclenchement",
-        "motion_override_values": "Dérogation mouvement — Délai d'inactivité",
-        "motion_override_sensors": "Dérogation mouvement — Capteurs",
+        "motion_override_values": "Valeurs de détection d'occupation",
+        "motion_override_sensors": "Capteurs d'occupation",
         "weather_override_values": "Dérogation météo — Seuils et position",
         "weather_override_sensors": "Dérogation météo — Capteurs",
         "light_cloud_values": "Lumière et nuages — Seuils",
@@ -1966,7 +1966,7 @@
         "temperature_climate": "Température et mode climatique",
         "force_override": "Dérogation forcée",
         "custom_position": "Positions personnalisées",
-        "motion_override": "Dérogation mouvement",
+        "motion_override": "Détection d'occupation",
         "weather_override": "Dérogation météo"
       }
     },
@@ -2352,18 +2352,18 @@
       "name": "Définir les paramètres de la dérogation manuelle"
     },
     "set_motion": {
-      "description": "Mettre à jour les capteurs de mouvement et le délai d'inactivité.",
+      "description": "Définir manuellement l'état de la détection d'occupation",
       "fields": {
         "motion_sensors": {
-          "description": "Capteurs binaires indiquant l'occupation. Liste vide = désactiver le contrôle de mouvement.",
-          "name": "Capteurs de mouvement"
+          "description": "Capteurs d'occupation à définir",
+          "name": "Capteurs d'occupation"
         },
         "motion_timeout": {
-          "description": "Secondes à attendre après le dernier mouvement avant d'appliquer la position de timeout de mouvement (30–3600).",
-          "name": "Délai d'inactivité"
+          "description": "Délai d'occupation en secondes",
+          "name": "Délai d'occupation"
         }
       },
-      "name": "Définir les paramètres de mouvement"
+      "name": "Définir la détection d'occupation"
     },
     "set_option": {
       "description": "Échappatoire générique — mettre à jour n'importe quelle option unique supportée par clé de nom. Les clés d'identité sont rejetées.",

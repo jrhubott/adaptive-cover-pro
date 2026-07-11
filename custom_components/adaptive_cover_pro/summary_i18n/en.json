@@ -31,7 +31,7 @@
     "manual": "✋ Manual override: pauses automatic control when you move the cover{detail}",
     "custom_tilt_only": "🎯 Custom #{slot}: if {trigger} is on → tilt only (slat fixed at {slat}%; position driven by sun tracking)",
     "custom": "🎯 Custom #{slot}: if {trigger} is on → {target}{cp_min}{tilt_note} — bypasses delta gates and auto-control{safety}",
-    "motion": "🚶 Motion-based: if no occupancy for {motion_timeout}s ({sources}) → {action}",
+    "motion": "🚶 Occupancy: if no occupancy for {motion_timeout}s ({sources}) → {action}",
     "cloud": "☁️ Cloud suppression: skips sun tracking{cloud} → {fallback}",
     "climate": "🌡️ Climate mode: adjusts strategy for heating/cooling{detail}",
     "glare": "🔆 Glare zones: lowers blind further to protect floor areas from glare{detail}",
@@ -69,7 +69,7 @@
   },
   "warnings": {
     "custom_tilt_only_conflict": "⚠️ Custom #{slot}: tilt only is on — Use as minimum / Use My position are ignored for this slot.",
-    "motion_hold_no_sensors": "⚠️ hold_position mode is set but no motion sensors or media players are configured — the setting has no effect until a motion source is added",
+    "motion_hold_no_sensors": "⚠️ hold_position mode is set but no occupancy sources are configured — the setting has no effect until an occupancy source is added",
     "cloudy_pos_ignored": "⚠️ Cloudy position ({pos}%) configured but cloud suppression is disabled — value will be ignored.",
     "sun_track_min_below_floor": "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — always-on floor dominates; sun-tracking floor will be raised to {min_pos}%.",
     "mode2_min_position": "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open (horizontal) slat angle IS 50%, so any min position ≥ 50 collapses every climate/glare-control decision to the floor and the cover stops blocking heat.",

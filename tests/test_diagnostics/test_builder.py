@@ -274,7 +274,7 @@ class TestControlStateReason:
         """Motion timeout reason string."""
         pr = _make_pr(control_method=ControlMethod.MOTION)
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
-        assert diag["control_state_reason"] == "Motion Timeout"
+        assert diag["control_state_reason"] == "Occupancy Timeout"
 
     def test_manual_override(self, builder: DiagnosticsBuilder):
         """Manual override reason string."""

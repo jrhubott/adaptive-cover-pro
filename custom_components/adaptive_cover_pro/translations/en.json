@@ -172,9 +172,9 @@
         },
         "data_description": {
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = closed (blinds lowered / awning retracted), 50% = half open (balanced light and privacy), 100% = open (blinds raised / awning extended). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
-          "max_position": "Maximum cover position limit (0-100%). 100% = open (blinds raised / awning extended). Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). ACP clamps every CALCULATED position to at most this value (sun tracking, default/rest, climate, cloud suppression, motion timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this ceiling: the Sunset Position (exempt by design), Custom Position slots (exact mode), the Weather Override position, and the My preset. On venetian blinds this constrains the carriage (vertical) axis only — slat tilt is computed from sun geometry and is not capped here.",
+          "max_position": "Maximum cover position limit (0-100%). 100% = open (blinds raised / awning extended). Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). ACP clamps every CALCULATED position to at most this value (sun tracking, default/rest, climate, cloud suppression, occupancy timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this ceiling: the Sunset Position (exempt by design), Custom Position slots (exact mode), the Weather Override position, and the My preset. On venetian blinds this constrains the carriage (vertical) axis only — slat tilt is computed from sun geometry and is not capped here.",
           "enable_max_position": "Controls WHEN the maximum position limit applies to CALCULATED positions. UNCHECKED (default, recommended): Maximum Position applies all the time - sun tracking, default position, climate modes, etc. CHECKED (advanced): Maximum Position only applies when the sun is directly in front of the window; during default/fallback states the cover can go above the max value. Either way, explicitly-configured fixed targets (Sunset Position, Custom Positions, Weather Override, My preset) are sent as you set them and are not capped by this ceiling. Most users should leave this UNCHECKED for consistent protection.",
-          "min_position": "Minimum cover position limit (0-99%). 0% = closed (blinds lowered / awning retracted). Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). ACP clamps every CALCULATED position to at least this value (sun tracking, default/rest, climate, cloud suppression, motion timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this floor: the Sunset Position (exempt by design so covers can fully close at night), Custom Position slots (exact mode), the Weather Override position, and the My preset — set those at or above this value (or use their 'minimum position mode') for a hard floor everywhere. On venetian blinds this constrains the carriage (vertical) axis only. Works with 'Apply min only during sun tracking' toggle below.",
+          "min_position": "Minimum cover position limit (0-99%). 0% = closed (blinds lowered / awning retracted). Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). ACP clamps every CALCULATED position to at least this value (sun tracking, default/rest, climate, cloud suppression, occupancy timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this floor: the Sunset Position (exempt by design so covers can fully close at night), Custom Position slots (exact mode), the Weather Override position, and the My preset — set those at or above this value (or use their 'minimum position mode') for a hard floor everywhere. On venetian blinds this constrains the carriage (vertical) axis only. Works with 'Apply min only during sun tracking' toggle below.",
           "enable_min_position": "Controls WHEN the minimum position limit applies to CALCULATED positions. UNCHECKED (default, recommended): Minimum Position applies all the time - sun tracking, default position, climate modes, etc. CHECKED (advanced): Minimum Position only applies when the sun is directly in front of the window; during default/fallback states the cover can go below the min value. Either way, explicitly-configured fixed targets (Sunset Position, Custom Positions, Weather Override, My preset) are sent as you set them and are not capped by this floor. Most users should leave this UNCHECKED for consistent protection.",
           "enforce_delta_at_endpoints": "Controls whether the minimum-change position delta is respected even for the fully-open (100%) and fully-closed (0%) targets. UNCHECKED (default): commands to 0% and 100% always send, bypassing the delta gate — a full close or open is never silently skipped. CHECKED: the delta gate applies to the 0% and 100% endpoints too, so a move toward a full endpoint smaller than the configured delta is suppressed. Enable this on mechanically coupled covers where commanding a full endpoint disturbs the slat tilt (e.g. a venetian whose carriage and slats share one motor), to stop the cover from repeatedly chasing an unreachable endpoint. Most users should leave this UNCHECKED.",
           "endpoint_use_open_close": "Controls which Home Assistant service is sent when the cover should go to a full endpoint. CHECKED (default): a final position of 100% sends cover.open_cover and a final position of 0% sends cover.close_cover, instead of cover.set_cover_position(100/0). Targets between 1% and 99% always use set_cover_position. Many motors run a more reliable full traverse from the dedicated open/close command than from a set-position to the very end. If the cover does not expose open/close, the integration falls back to set_cover_position automatically. This setting has no effect on tilt-only covers (the slat axis is never sent open/close). UNCHECKED: always use set_cover_position, including at 0% and 100%.",
@@ -376,7 +376,7 @@
           "custom_position_template_1": "Optional Jinja2 template; when it renders truthy it activates the slot. Combined with the sensors per the combine mode below.",
           "custom_position_template_mode_1": "How the template combines with the sensors: 'or' (default) — the template OR any sensor activates the slot; 'and' — the template must be truthy AND a sensor on.",
           "custom_position_1": "Position (0-100%) to move covers to when Slot 1 is active. 0% = closed, 100% = open.",
-          "custom_position_priority_1": "Pipeline priority (1-100). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive. 100 = safety: the slot bypasses the automatic-control toggle, manual override, and the start/end time window — it can move the cover even when automatic control is OFF — and also bypasses the delta gates (the former Force Override behavior).",
+          "custom_position_priority_1": "Pipeline priority (1-100). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Occupancy Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive. 100 = safety: the slot bypasses the automatic-control toggle, manual override, and the start/end time window — it can move the cover even when automatic control is OFF — and also bypasses the delta gates (the former Force Override behavior).",
           "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_1": "When slot 1's trigger is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
           "custom_position_tilt_1": "Tilt angle (0-100%) to set when Slot 1's sensor is active. Venetian covers only — ignored for other cover types. Leave unset to let the engine calculate tilt automatically.",
@@ -467,23 +467,23 @@
         }
       },
       "motion_override": {
-        "title": "Motion Override",
-        "description": "Enable occupancy-based control. When all configured sources report no motion, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any source detects occupancy, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used, plus media players (a player that is on counts as occupancy). The logic is OR — any single active source counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
+        "title": "Occupancy Detection",
+        "description": "Enable occupancy-based control. When all configured sources report no occupancy, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any source detects occupancy, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used, plus media players (a player that is on counts as occupancy). The logic is OR — any single active source counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
         "data": {
-          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
-          "motion_media_players": "Media players for occupancy-based control",
+          "motion_sensors": "Occupancy sensors",
+          "motion_media_players": "Media players (occupancy source)",
           "motion_template": "Occupancy template (optional)",
           "motion_template_mode": "Occupancy template logic",
-          "motion_timeout": "Motion timeout duration",
-          "motion_timeout_mode": "When motion times out"
+          "motion_timeout": "Occupancy timeout duration",
+          "motion_timeout_mode": "When occupancy clears"
         },
         "data_description": {
-          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
-          "motion_media_players": "Media players treated as occupancy. ANY player whose state is something other than off (playing, paused, idle, on, …) counts as occupied and keeps automatic sun positioning active. Players that are off, unavailable, or unknown do not count. Combined with the motion sensors above under the same OR logic. Leave empty to disable.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects occupancy, covers use automatic sun-based positioning. When ALL sensors show no occupancy for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_media_players": "Media players treated as occupancy. ANY player whose state is something other than off (playing, paused, idle, on, …) counts as occupied and keeps automatic sun positioning active. Players that are off, unavailable, or unknown do not count. Combined with the occupancy sensors above under the same OR logic. Leave empty to disable.",
           "motion_template": "Optional Home Assistant Jinja2 template that acts as an extra occupancy source. When it renders truthy (on/true/1) the room counts as occupied; how that combines with the sensors and media players above (OR or AND) is set by 'Occupancy template logic' below. When it renders falsy the timeout starts like any other source clearing. It is re-evaluated the instant a referenced entity changes — no polling — so it triggers as immediately as a sensor, and can stand alone with no sensors configured. For example, a template that returns true while an input_boolean helper is on. Leave empty to disable.",
-          "motion_template_mode": "How the occupancy template combines with the motion sensors and media players above. 'OR' (default) keeps the original behaviour — occupied when the template is truthy or any sensor or player is active. 'AND' makes the template a gate — occupied only when the template is truthy and at least one sensor or player is also active, so the template must hold for occupancy to register. With no sensors or players configured, the template alone decides in either mode. Only has an effect when an occupancy template is set above.",
-          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
-          "motion_timeout_mode": "What to do when motion has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
+          "motion_template_mode": "How the occupancy template combines with the occupancy sensors and media players above. 'OR' (default) keeps the original behaviour — occupied when the template is truthy or any sensor or player is active. 'AND' makes the template a gate — occupied only when the template is truthy and at least one sensor or player is also active, so the template must hold for occupancy to register. With no sensors or players configured, the template alone decides in either mode. Only has an effect when an occupancy template is set above.",
+          "motion_timeout": "Duration (in seconds) to wait after occupancy clears before returning covers to default position. Prevents rapid position changes when occupancy sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
+          "motion_timeout_mode": "What to do when occupancy has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
         }
       },
       "weather_override": {
@@ -846,7 +846,7 @@
           "weather": "Weather Conditions",
           "manual_override": "✋ Manual Override",
           "custom_position": "🎯 Custom Positions",
-          "motion_override": "🚶 Motion Override",
+          "motion_override": "🚶 Occupancy Detection",
           "weather_override": "🌧️ Weather Override",
           "pipeline_priorities": "🔀 Handler Priorities",
           "summary": "📋 Configuration Summary",
@@ -870,7 +870,7 @@
         "data": {
           "weather_priority": "Weather Override priority",
           "manual_override_priority": "Manual Override priority",
-          "motion_timeout_priority": "Motion Timeout priority",
+          "motion_timeout_priority": "Occupancy Timeout priority",
           "cloud_suppression_priority": "Cloud Suppression priority",
           "climate_priority": "Climate priority",
           "glare_zone_priority": "Glare Zone priority",
@@ -1056,9 +1056,9 @@
         },
         "data_description": {
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = closed (blinds lowered / awning retracted), 50% = half open (balanced light and privacy), 100% = open (blinds raised / awning extended). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
-          "max_position": "Maximum cover position limit (0-100%). 100% = open (blinds raised / awning extended). Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). ACP clamps every CALCULATED position to at most this value (sun tracking, default/rest, climate, cloud suppression, motion timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this ceiling: the Sunset Position (exempt by design), Custom Position slots (exact mode), the Weather Override position, and the My preset. On venetian blinds this constrains the carriage (vertical) axis only — slat tilt is computed from sun geometry and is not capped here.",
+          "max_position": "Maximum cover position limit (0-100%). 100% = open (blinds raised / awning extended). Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). ACP clamps every CALCULATED position to at most this value (sun tracking, default/rest, climate, cloud suppression, occupancy timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this ceiling: the Sunset Position (exempt by design), Custom Position slots (exact mode), the Weather Override position, and the My preset. On venetian blinds this constrains the carriage (vertical) axis only — slat tilt is computed from sun geometry and is not capped here.",
           "enable_max_position": "Controls WHEN the maximum position limit applies to CALCULATED positions. UNCHECKED (default, recommended): Maximum Position applies all the time - sun tracking, default position, climate modes, etc. CHECKED (advanced): Maximum Position only applies when the sun is directly in front of the window; during default/fallback states the cover can go above the max value. Either way, explicitly-configured fixed targets (Sunset Position, Custom Positions, Weather Override, My preset) are sent as you set them and are not capped by this ceiling. Most users should leave this UNCHECKED for consistent protection.",
-          "min_position": "Minimum cover position limit (0-99%). 0% = closed (blinds lowered / awning retracted). Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). ACP clamps every CALCULATED position to at least this value (sun tracking, default/rest, climate, cloud suppression, motion timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this floor: the Sunset Position (exempt by design so covers can fully close at night), Custom Position slots (exact mode), the Weather Override position, and the My preset — set those at or above this value (or use their 'minimum position mode') for a hard floor everywhere. On venetian blinds this constrains the carriage (vertical) axis only. Works with 'Apply min only during sun tracking' toggle below.",
+          "min_position": "Minimum cover position limit (0-99%). 0% = closed (blinds lowered / awning retracted). Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). ACP clamps every CALCULATED position to at least this value (sun tracking, default/rest, climate, cloud suppression, occupancy timeout, glare, manual-override recovery). Explicitly-configured fixed targets are sent as you set them and are NOT clamped to this floor: the Sunset Position (exempt by design so covers can fully close at night), Custom Position slots (exact mode), the Weather Override position, and the My preset — set those at or above this value (or use their 'minimum position mode') for a hard floor everywhere. On venetian blinds this constrains the carriage (vertical) axis only. Works with 'Apply min only during sun tracking' toggle below.",
           "enable_min_position": "Controls WHEN the minimum position limit applies to CALCULATED positions. UNCHECKED (default, recommended): Minimum Position applies all the time - sun tracking, default position, climate modes, etc. CHECKED (advanced): Minimum Position only applies when the sun is directly in front of the window; during default/fallback states the cover can go below the min value. Either way, explicitly-configured fixed targets (Sunset Position, Custom Positions, Weather Override, My preset) are sent as you set them and are not capped by this floor. Most users should leave this UNCHECKED for consistent protection.",
           "enforce_delta_at_endpoints": "Controls whether the minimum-change position delta is respected even for the fully-open (100%) and fully-closed (0%) targets. UNCHECKED (default): commands to 0% and 100% always send, bypassing the delta gate — a full close or open is never silently skipped. CHECKED: the delta gate applies to the 0% and 100% endpoints too, so a move toward a full endpoint smaller than the configured delta is suppressed. Enable this on mechanically coupled covers where commanding a full endpoint disturbs the slat tilt (e.g. a venetian whose carriage and slats share one motor), to stop the cover from repeatedly chasing an unreachable endpoint. Most users should leave this UNCHECKED.",
           "endpoint_use_open_close": "Controls which Home Assistant service is sent when the cover should go to a full endpoint. CHECKED (default): a final position of 100% sends cover.open_cover and a final position of 0% sends cover.close_cover, instead of cover.set_cover_position(100/0). Targets between 1% and 99% always use set_cover_position. Many motors run a more reliable full traverse from the dedicated open/close command than from a set-position to the very end. If the cover does not expose open/close, the integration falls back to set_cover_position automatically. This setting has no effect on tilt-only covers (the slat axis is never sent open/close). UNCHECKED: always use set_cover_position, including at 0% and 100%.",
@@ -1236,7 +1236,7 @@
           "custom_position_template_1": "Optional Jinja2 template; when it renders truthy it activates the slot. Combined with the sensors per the combine mode below.",
           "custom_position_template_mode_1": "How the template combines with the sensors: 'or' (default) — the template OR any sensor activates the slot; 'and' — the template must be truthy AND a sensor on.",
           "custom_position_1": "Position (0-100%) to move covers to when Slot 1 is active. 0% = closed, 100% = open.",
-          "custom_position_priority_1": "Pipeline priority (1-100). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive. 100 = safety: the slot bypasses the automatic-control toggle, manual override, and the start/end time window — it can move the cover even when automatic control is OFF — and also bypasses the delta gates (the former Force Override behavior).",
+          "custom_position_priority_1": "Pipeline priority (1-100). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Occupancy Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive. 100 = safety: the slot bypasses the automatic-control toggle, manual override, and the start/end time window — it can move the cover even when automatic control is OFF — and also bypasses the delta gates (the former Force Override behavior).",
           "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_1": "When slot 1's trigger is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
           "custom_position_tilt_1": "Tilt angle (0-100%) to set when Slot 1's sensor is active. Venetian covers only — ignored for other cover types. Leave unset to let the engine calculate tilt automatically.",
@@ -1327,23 +1327,23 @@
         }
       },
       "motion_override": {
-        "title": "Motion Override",
-        "description": "Enable occupancy-based control. When all configured sources report no motion, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any source detects occupancy, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used, plus media players (a player that is on counts as occupancy). The logic is OR — any single active source counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
+        "title": "Occupancy Detection",
+        "description": "Enable occupancy-based control. When all configured sources report no occupancy, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any source detects occupancy, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used, plus media players (a player that is on counts as occupancy). The logic is OR — any single active source counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
         "data": {
-          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
-          "motion_media_players": "Media players for occupancy-based control",
+          "motion_sensors": "Occupancy sensors",
+          "motion_media_players": "Media players (occupancy source)",
           "motion_template": "Occupancy template (optional)",
           "motion_template_mode": "Occupancy template logic",
-          "motion_timeout": "Motion timeout duration",
-          "motion_timeout_mode": "When motion times out"
+          "motion_timeout": "Occupancy timeout duration",
+          "motion_timeout_mode": "When occupancy clears"
         },
         "data_description": {
-          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
-          "motion_media_players": "Media players treated as occupancy. ANY player whose state is something other than off (playing, paused, idle, on, …) counts as occupied and keeps automatic sun positioning active. Players that are off, unavailable, or unknown do not count. Combined with the motion sensors above under the same OR logic. Leave empty to disable.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects occupancy, covers use automatic sun-based positioning. When ALL sensors show no occupancy for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_media_players": "Media players treated as occupancy. ANY player whose state is something other than off (playing, paused, idle, on, …) counts as occupied and keeps automatic sun positioning active. Players that are off, unavailable, or unknown do not count. Combined with the occupancy sensors above under the same OR logic. Leave empty to disable.",
           "motion_template": "Optional Home Assistant Jinja2 template that acts as an extra occupancy source. When it renders truthy (on/true/1) the room counts as occupied; how that combines with the sensors and media players above (OR or AND) is set by 'Occupancy template logic' below. When it renders falsy the timeout starts like any other source clearing. It is re-evaluated the instant a referenced entity changes — no polling — so it triggers as immediately as a sensor, and can stand alone with no sensors configured. For example, a template that returns true while an input_boolean helper is on. Leave empty to disable.",
-          "motion_template_mode": "How the occupancy template combines with the motion sensors and media players above. 'OR' (default) keeps the original behaviour — occupied when the template is truthy or any sensor or player is active. 'AND' makes the template a gate — occupied only when the template is truthy and at least one sensor or player is also active, so the template must hold for occupancy to register. With no sensors or players configured, the template alone decides in either mode. Only has an effect when an occupancy template is set above.",
-          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
-          "motion_timeout_mode": "What to do when motion has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
+          "motion_template_mode": "How the occupancy template combines with the occupancy sensors and media players above. 'OR' (default) keeps the original behaviour — occupied when the template is truthy or any sensor or player is active. 'AND' makes the template a gate — occupied only when the template is truthy and at least one sensor or player is also active, so the template must hold for occupancy to register. With no sensors or players configured, the template alone decides in either mode. Only has an effect when an occupancy template is set above.",
+          "motion_timeout": "Duration (in seconds) to wait after occupancy clears before returning covers to default position. Prevents rapid position changes when occupancy sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
+          "motion_timeout_mode": "What to do when occupancy has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
         }
       },
       "weather_override": {
@@ -1746,15 +1746,15 @@
       "control_status": {
         "state": {
           "force_override_active": "Force override active",
-          "motion_timeout": "No motion - using default position"
+          "motion_timeout": "No occupancy - using default position"
         }
       },
       "motion_status": {
         "state": {
           "not_configured": "Not Configured",
-          "motion_detected": "Motion Detected",
+          "motion_detected": "Occupancy Detected",
           "timeout_pending": "Timeout Pending",
-          "no_motion": "No Motion",
+          "no_motion": "No Occupancy",
           "holding": "Holding Position",
           "waiting_for_data": "Waiting for Data"
         }
@@ -1775,7 +1775,7 @@
           "winter": "Winter",
           "default": "Default",
           "manual_override": "Manual Override",
-          "motion_timeout": "Motion Timeout",
+          "motion_timeout": "Occupancy Timeout",
           "force_override": "Force Override",
           "custom_position": "Custom Position",
           "weather_override": "Weather Override",
@@ -1853,7 +1853,7 @@
         }
       },
       "motion_control": {
-        "name": "Motion Control",
+        "name": "Occupancy Control",
         "state": {
           "on": "On",
           "off": "Off"
@@ -1977,8 +1977,8 @@
         "manual_override": "Manual Override",
         "custom_position_values": "Custom Positions — Values & Priorities",
         "custom_position_sensors": "Custom Positions — Trigger Sensors",
-        "motion_override_values": "Motion Override — Timeout",
-        "motion_override_sensors": "Motion Override — Sensors",
+        "motion_override_values": "Occupancy Detection — Timeout",
+        "motion_override_sensors": "Occupancy Detection — Sensors",
         "weather_override_values": "Weather Override — Thresholds & Position",
         "weather_override_sensors": "Weather Override — Sensors",
         "light_cloud_values": "Light & Cloud — Thresholds",
@@ -1992,7 +1992,7 @@
         "temperature_climate": "Temperature & Climate Mode",
         "force_override": "Force Override",
         "custom_position": "Custom Positions",
-        "motion_override": "Motion Override",
+        "motion_override": "Occupancy Detection",
         "weather_override": "Weather Override"
       }
     },
@@ -2246,16 +2246,16 @@
       }
     },
     "set_motion": {
-      "name": "Set motion settings",
-      "description": "Update motion sensors and no-motion timeout.",
+      "name": "Set occupancy settings",
+      "description": "Update occupancy sensors and occupancy timeout.",
       "fields": {
         "motion_sensors": {
-          "name": "Motion sensors",
-          "description": "Binary sensors indicating occupancy. Empty list = disable motion control."
+          "name": "Occupancy sensors",
+          "description": "Binary sensors indicating occupancy. Empty list = disable occupancy detection."
         },
         "motion_timeout": {
-          "name": "No-motion timeout",
-          "description": "Seconds to wait after last motion before applying motion-timeout position (30–3600)."
+          "name": "Occupancy timeout",
+          "description": "Seconds to wait after occupancy clears before applying occupancy-timeout position (30–3600)."
         }
       }
     },

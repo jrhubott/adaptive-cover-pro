@@ -562,15 +562,15 @@ set_custom_position:
         boolean:
 
 set_motion:
-  name: Set motion settings
-  description: Update motion sensors and no-motion timeout. Pass an empty list to disable motion control.
+  name: Set occupancy settings
+  description: Update occupancy sensors and occupancy timeout. Pass an empty list to disable occupancy detection.
   target:
     entity:
       integration: adaptive_cover_pro
   fields:
     motion_sensors:
-      name: Motion sensors
-      description: "Binary sensors (motion/occupancy/presence) that indicate occupancy. Empty list = disable."
+      name: Occupancy sensors
+      description: "Binary sensors (motion/occupancy/presence device classes) that indicate occupancy. Empty list = disable."
       selector:
         entity:
           domain: binary_sensor
@@ -580,8 +580,8 @@ set_motion:
             - presence
           multiple: true
     motion_timeout:
-      name: No-motion timeout
-      description: "Seconds to wait after last motion before applying the motion-timeout position (30–3600)."
+      name: Occupancy timeout
+      description: "Seconds to wait after occupancy clears before applying the occupancy-timeout position (30–3600)."
       selector:
         number:
           min: 30

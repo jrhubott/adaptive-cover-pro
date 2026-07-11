@@ -1430,8 +1430,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     # --- Motion (75) ---
     "rules.motion": (
-        "🚶 Motion-based: if no occupancy for {motion_timeout}s "
-        "({sources}) → {action}"
+        "🚶 Occupancy: if no occupancy for {motion_timeout}s ({sources}) → {action}"
     ),
     "motion.template_source": "occupancy template",
     "motion.action_hold": (
@@ -1439,9 +1438,9 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     "motion.action_return": "covers return to default ({default_pos}%)",
     "warnings.motion_hold_no_sensors": (
-        "⚠️ hold_position mode is set but no motion sensors or media "
-        "players are configured — the setting has no effect until a "
-        "motion source is added"
+        "⚠️ hold_position mode is set but no occupancy sources are "
+        "configured — the setting has no effect until an occupancy "
+        "source is added"
     ),
     # --- Cloud suppression (60) ---
     "rules.cloud": ("☁️ Cloud suppression: skips sun tracking{cloud} → {fallback}"),
@@ -5151,8 +5150,8 @@ class OptionsFlowHandler(OptionsFlow):
             "manual_override": "Manual Override",
             "custom_position_values": "Custom Positions — Values & Priorities",
             "custom_position_sensors": "Custom Positions — Trigger Sensors",
-            "motion_override_values": "Motion Override — Timeout",
-            "motion_override_sensors": "Motion Override — Sensors",
+            "motion_override_values": "Occupancy Detection — Timeout",
+            "motion_override_sensors": "Occupancy Detection — Sensors",
             "weather_override_values": "Weather Override — Thresholds & Position",
             "weather_override_sensors": "Weather Override — Sensors",
             "light_cloud_values": "Light & Cloud — Thresholds",
@@ -5163,7 +5162,7 @@ class OptionsFlowHandler(OptionsFlow):
             # Legacy aliases (kept for back-compat; not shown in UI)
             "force_override": "Force Override",
             "custom_position": "Custom Positions",
-            "motion_override": "Motion Override",
+            "motion_override": "Occupancy Detection",
             "weather_override": "Weather Override",
             "light_cloud": "Light Sensors & Cloud Suppression",
             "temperature_climate": "Temperature & Climate Mode",

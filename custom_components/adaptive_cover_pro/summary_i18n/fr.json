@@ -31,7 +31,7 @@
     "manual": "✋ Dérogation manuelle : pause le contrôle automatique quand vous bougez le store{detail}",
     "custom_tilt_only": "🎯 Personnalisé #{slot} : si {trigger} est activé → inclinaison seulement (lamelle fixée à {slat}% ; position pilotée par le suivi solaire)",
     "custom": "🎯 Personnalisé #{slot} : si {trigger} est activé → {target}{cp_min}{tilt_note} — contourne les portes delta et le contrôle automatique{safety}",
-    "motion": "🚶 Basé sur le mouvement : si pas de présence pendant {motion_timeout}s ({sources}) → {action}",
+    "motion": "**Occupation** (🚶 {motion_timeout}s)\n\nLorsque l'occupation est détectée dans les capteurs sélectionnés:\n- {sources} (alimentation détectée)\n- {action}",
     "cloud": "☁️ Suppression de nuages : ignore le suivi solaire{cloud} → {fallback}",
     "climate": "🌡️ Mode climatique : ajuste la stratégie pour le chauffage/refroidissement{detail}",
     "glare": "🔆 Zones d'éblouissement : baisse davantage le store pour protéger les zones du sol contre l'éblouissement{detail}",
@@ -69,7 +69,7 @@
   },
   "warnings": {
     "custom_tilt_only_conflict": "⚠️ Personnalisé #{slot} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
-    "motion_hold_no_sensors": "⚠️ mode retenue est défini mais aucun détecteur de mouvement ou lecteur multimédia n'est configuré — le paramètre n'a aucun effet tant qu'une source de mouvement n'est pas ajoutée",
+    "motion_hold_no_sensors": "Aucun capteur d'occupation configuré. La détection d'occupation est désactivée.",
     "cloudy_pos_ignored": "⚠️ Position nuageux ({pos}%) configurée mais suppression de nuages est désactivée — la valeur sera ignorée.",
     "sun_track_min_below_floor": "⚠️ Min suivi solaire {sun_min}% < position min {min_pos}% — le plancher toujours actif domine ; le plancher suivi solaire sera relevé à {min_pos}%.",
     "mode2_min_position": "⚠️ Inclinaison MODE2 + position min {min_pos}% — en MODE2 l'angle de lamelle ouvert (horizontal) EST 50%, donc toute position min ≥ 50 réduit à néant chaque décision de contrôle climatique/éblouissement au plancher et le store cesse de bloquer la chaleur.",

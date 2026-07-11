@@ -172,9 +172,9 @@
         },
         "data_description": {
           "default_percentage": "Beschattungsposition, wenn die Sonne nicht vor dem Fenster steht (0-100 %). 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 50 % = halb offen (ausgewogenes Licht und Datenschutz), 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Dies ist die 'Ruheposition', die verwendet wird, wenn die Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, durch Hindernisse blockiert oder außerhalb der Verfolgungszeiten).",
-          "max_position": "Maximalpositionslimit für Abdeckung (0-100%). 100 % = offen (Jalousien hochgefahren / Markise ausgezogen). Verwendung: Verhindern Sie, dass die Abdeckung vollständig geöffnet wird (auf 80% setzen), behalten Sie immer etwas Schatten (auf 60-70% setzen), schützen Sie vor Klemmen oben (auf 95% setzen). ACP begrenzt jede BERECHNETE Position auf höchstens diesen Wert (Sonnenverfolgung, Standard/Ruhe, Klima, Wolkenunterdrückung, Bewegungszeitüberschreitung, Blendung, manuelle Übersteuerungswiederherstellung). Explizit konfigurierte feste Ziele werden wie von Ihnen festgelegt gesendet und sind NICHT auf diese Obergrenze begrenzt: die Sonnenuntergangsposition (absichtlich ausgenommen), Benutzerdefinierte Positionen-Slots (genauer Modus), die Wetter-Übersteuerungsposition und die Meine Voreinstellung. Bei venezianischen Jalousien begrenzt dies nur die Behang-Achse (vertikal) — die Lamellenneigung wird aus der Sonnengeometrie berechnet und ist hier nicht begrenzt.",
+          "max_position": "Maximalposition für Beschattung (0-100%). 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Nutzen Sie dies, um: zu verhindern, dass sich die Beschattung vollständig öffnet (auf 80 % setzen), ständig etwas Schatten zu bewahren (60–70 % setzen), Beschädigungen oben zu vermeiden (auf 95 % setzen). ACP beschränkt jede BERECHNETE Position auf mindestens diesen Wert (Sonnen-Tracking, Standard/Ruhe, Klima, Wolkensuppression, Belegungs-Timeout, Blendungszone, Wiederherstellung nach manueller Übersteuerung). Explizit konfigurierte feste Ziele werden wie angegeben gesendet und NICHT auf diese Obergrenze beschränkt: die Sonnenuntergangsposition (absichtlich ausgenommen), Custom-Position-Slots (exakter Modus), die Wetter-Übersteuerungsposition und die Meine-Voreinstellung. Bei venezianischen Jalousien beschränkt dies nur die Schiene (vertikale) Achse – die Lamellenkippung wird aus der Sonnengeometrie berechnet und ist hier nicht begrenzt.",
           "enable_max_position": "Steuert, WANN die Maximalpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Maximalposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Maximalposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung über den Max-Wert ansteigen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Obergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
-          "min_position": "Mindestpositionslimit für Abdeckung (0-99%). 0 % = geschlossen (Jalousien heruntergefahren / Markise eingezogen). Verwendung: Verhindern Sie, dass die Abdeckung vollständig geschlossen wird (auf 20% setzen), erhalten Sie etwas Licht (auf 30-40% setzen), schützen Sie vor Klemmen unten (auf 5% setzen). ACP begrenzt jede BERECHNETE Position auf mindestens diesen Wert (Sonnenverfolgung, Standard/Ruhe, Klima, Wolkenunterdrückung, Bewegungszeitüberschreitung, Blendung, manuelle Übersteuerungswiederherstellung). Explizit konfigurierte feste Ziele werden wie von Ihnen festgelegt gesendet und sind NICHT auf diese Untergrenze begrenzt: die Sonnenuntergangsposition (absichtlich ausgenommen, damit Abdeckungen nachts vollständig geschlossen werden können), Benutzerdefinierte Positionen-Slots (genauer Modus), die Wetter-Übersteuerungsposition und die Meine Voreinstellung — setzen Sie diese auf oder über diesen Wert (oder verwenden Sie deren \"Minimalpositionsmodus\") für eine harte Untergrenze überall. Bei venezianischen Jalousien begrenzt dies nur die Behang-Achse (vertikal). Funktioniert mit der Umschaltfläche \"Min nur während Sonnenverfolgung anwenden\" unten.",
+          "min_position": "Minimalposition für Beschattung (0–99%). 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen). Nutzen Sie dies, um: zu verhindern, dass sich die Beschattung vollständig schließt (auf 20 % setzen), etwas Licht zu bewahren (30–40 % setzen), Beschädigungen unten zu vermeiden (auf 5 % setzen). ACP beschränkt jede BERECHNETE Position auf mindestens diesen Wert (Sonnen-Tracking, Standard/Ruhe, Klima, Wolkensuppression, Belegungs-Timeout, Blendungszone, Wiederherstellung nach manueller Übersteuerung). Explizit konfigurierte feste Ziele werden wie angegeben gesendet und NICHT auf diese Untergrenze beschränkt: die Sonnenuntergangsposition (absichtlich ausgenommen, damit sich die Beschattung nachts vollständig schließen kann), Custom-Position-Slots (exakter Modus), die Wetter-Übersteuerungsposition und die Meine-Voreinstellung – stellen Sie diese auf oder über diesen Wert (oder verwenden Sie deren 'Minimalposition-Modus') für eine harte Untergrenze überall. Bei venezianischen Jalousien beschränkt dies nur die Schiene (vertikale) Achse. Funktioniert mit dem Umschalter 'Min-Position nur während Sonnen-Tracking anwenden' darunter.",
           "enable_min_position": "Steuert, WANN die Mindestpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Mindestposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Mindestposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung unter den Min-Wert fallen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Untergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
           "min_position_sun_tracking": "Optionale separate Minimalposition-Grenze, die nur während der Sonnennachführung gilt. Wenn gesetzt, ersetzt sie die 'Minimale Position' bei Sonnennachführungs-Berechnungen. Leer lassen, um 'Minimale Position' für Sonnennachführung und andere Modi zu verwenden. Nutzen Sie dies, wenn Ihre Beschattung eine mechanische Totzone am unteren Ende des Fahrtwegs hat (z. B. Rollläden, deren Lamellen vor dem Hochfahren klaffen) und Sie möchten, dass die Sonnennachführung diese Totzone überspringt, während die Beschattung bei Sonnenuntergang noch vollständig geschlossen werden kann. 0% = geschlossen (Jalousie unten), 100% = geöffnet (Jalousie oben).",
           "sunset_position": "Beschattungsposition nach Sonnenuntergang. Schieberegler löschen (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangsverhalten. 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Häufige Anwendungen: Datenschutz (0 %), offen für Nachtluft (100 %), teilweiser Datenschutz (30-50 %). Wenn eingestellt, überschreibt diese die Standardposition nach Sonnenuntergang.",
@@ -346,7 +346,7 @@
           "custom_position_template_1": "Optionales Jinja2-Template; wenn es als wahr ausgewertet wird, aktiviert es den Slot. Kombiniert mit den Sensoren gemäß dem Kombinationsmodus unten.",
           "custom_position_template_mode_1": "Wie das Template mit den Sensoren kombiniert wird: „or\" (Standard) – das Template ODER ein beliebiger Sensor aktiviert den Slot; „and\" – das Template muss wahr sein UND ein Sensor an.",
           "custom_position_1": "Position (0–100%), auf die die Beschattung bewegt wird, wenn Slot 1 aktiv ist. 0% = geschlossen, 100% = offen.",
-          "custom_position_priority_1": "Pipeline-Priorität (1–100). Höher = wird vor Handlern mit niedrigerer Priorität ausgewertet. Standard 77 liegt zwischen Manuelle Übersteuerung (80) und Motion Timeout (75). Setzen Sie über 80, um manuelle Bewegungen zu übersteuern; setzen Sie unter 40, um nur anzuwenden, wenn die Sonnenverfolgung inaktiv ist. 100 = Sicherheit: Der Slot umgeht den Schalter für die automatische Steuerung, die manuelle Übersteuerung und das Start-/Endzeitfenster – er kann die Beschattung auch dann bewegen, wenn die automatische Steuerung AUS ist – und umgeht auch die Delta-Schranken (das frühere Force-Override-Verhalten).",
+          "custom_position_priority_1": "Pipeline-Priorität (1–100). Höher = wird vor niedrigeren Prioritäten ausgewertet. Standard 77 sitzt zwischen Manuelle Übersteuerung (80) und Belegungs-Timeout (75). Über 80 setzen, um manuelle Verschiebungen zu überschreiben; unter 40 setzen, um nur anzuwenden, wenn Sonnen-Tracking inaktiv ist. 100 = Sicherheit: der Slot umgeht den Umschalter für automatische Steuerung, manuelle Übersteuerung und das Start-/Endzeitfenster – er kann die Beschattung auch verschieben, wenn die automatische Steuerung AUSGESCHALTET ist – und umgeht auch die Delta-Gates (das frühere Verhalten der Zwangsübersteuerung).",
           "custom_position_min_mode_1": "Wenn aktiviert, wirkt die Position als Minimumschwelle – höhere Positionen aus Sonnenverfolgung oder anderen Berechnungen können passieren. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakte konfigurierte Position gesetzt.",
           "custom_position_use_my_1": "Wenn Slot 1s Auslöser aktiv ist, triggern Sie stattdessen die Meine-Position-Voreinstellung der Beschattung. Erfordert, dass Meine-Position-Wert gesetzt ist.",
           "custom_position_tilt_1": "Neigungswinkel (0–100%), der gesetzt wird, wenn Slot 1s Sensor aktiv ist. Nur Jalousien – wird für andere Beschattungstypen ignoriert. Leer lassen, damit die Engine die Neigung automatisch berechnet.",
@@ -437,23 +437,23 @@
         }
       },
       "motion_override": {
-        "title": "Bewegungsübersteuerung",
-        "description": "Aktivieren Sie die Anwesenheitskontrolle. Wenn alle konfigurierten Quellen keine Bewegung melden, stoppt die Integration die Sonnennachverfolgung und bewegt die Beschattung nach Ablauf des Timeouts auf ihre Standardposition. Wenn eine Quelle Anwesenheit erkennt, wird die automatische Positionierung fortgesetzt.\n\nEine beliebige Mischung aus Bewegungsmeldern, Anwesenheits- oder Binärpräsenzsensoren kann verwendet werden, plus Medienplayer (ein aktiver Player zählt als Anwesenheit). Die Logik ist ODER – jede einzelne aktive Quelle zählt als besetzt. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich die Beschattung bewegt, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
+        "title": "Belegungserkennung",
+        "description": "Aktivieren Sie die belegungsbasierte Steuerung. Wenn alle konfigurierten Quellen keine Belegung melden, stoppt die Integration das Sonnen-Tracking und verschiebt die Beschattung nach Ablauf des Timeouts zur Standardposition. Wenn eine Quelle Belegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nEs können Bewegungs-, Belegungs- oder Binärpräsenzsensoren beliebig kombiniert werden, sowie Medienplayer (ein aktiver Player zählt als Belegung). Die Logik ist ODER – jede einzelne aktive Quelle gilt als belegt. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich die Beschattung anpasst, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
-          "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
-          "motion_timeout": "Bewegungs-Timeout-Dauer",
-          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft",
-          "motion_media_players": "Medienplayer für Anwesenheitskontrolle",
+          "motion_sensors": "Belegungssensoren",
+          "motion_timeout": "Dauer des Belegungs-Timeouts",
+          "motion_timeout_mode": "Wenn Belegung deaktiviert wird",
+          "motion_media_players": "Medienplayer (Belegungsquelle)",
           "motion_template": "Anwesenheits-Vorlage (optional)",
           "motion_template_mode": "Logik für Anwesenheitsvorlage"
         },
         "data_description": {
-          "motion_sensors": "Binärsensoren, die die automatische Sonnenpositionierung basierend auf Belegung aktivieren/deaktivieren. Wenn JEDER Sensor eine Bewegung erkennt, verwenden Beschattungen die automatische sonnenbasierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung zeigen, kehren Beschattungen zur Standardposition zurück. Lassen Sie leer, um diese Funktion zu deaktivieren.",
-          "motion_timeout": "Dauer (in Sekunden) zum Warten nach der letzten Bewegung, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standard: 300 Sekunden (5 Minuten).",
-          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet.",
-          "motion_media_players": "Medienplayer als Anwesenheit behandelt. JEDER Player, dessen Status etwas anderes ist als aus (wird wiedergegeben, unterbrochen, untätig, an, …), zählt als besetzt und hält die automatische Sonnennachverfolgung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Mit den Bewegungsmeldern oben unter der gleichen ODER-Logik kombiniert. Zum Deaktivieren leer lassen.",
+          "motion_sensors": "Binärsensoren, die die automatische Sonnenpositionierung basierend auf Belegung aktivieren/deaktivieren. Wenn EINER der Sensoren Belegung erkennt, verwenden Beschattungen die automatische Sonnen-basierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Belegung zeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
+          "motion_timeout": "Dauer (in Sekunden), die nach Wegfall der Belegung gewartet werden soll, bevor die Beschattung zur Standardposition zurückkehrt. Verhindert schnelle Positionswechsel, wenn Belegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
+          "motion_timeout_mode": "Was zu tun ist, wenn Belegung für die Timeout-Dauer abwesend ist. 'Zur Standardposition zurückkehren' verschiebt die Beschattung zur Standardposition. 'Position halten' lässt die Beschattung dort, wo sie ist, während die Sonne im Sichtfeld ist (damit ein zurückkehrender Benutzer sie so findet, wie er sie verlassen hat); Beschattung kehrt immer noch zur Standardposition zurück, sobald die Sonne das Sichtfeld verlässt oder das Zeitfenster schließt.",
+          "motion_media_players": "Medienplayer als Belegung behandelt. JEDER Player, dessen Status etwas anderes als aus ist (lädt, pausiert, untätig, an, …), zählt als belegt und hält die automatische Sonnen-Positionierung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Kombiniert mit den oben genannten Belegungssensoren unter der gleichen ODER-Logik. Leer lassen zum Deaktivieren.",
           "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahr ergibt (on/true/1) zählt der Raum als anwesend; wie das mit den obigen Sensoren und Medienplayern kombiniert wird (ODER oder UND) wird durch 'Logik für Anwesenheitsvorlage' unten gesetzt. Wenn sie falsch ergibt, startet das Timeout wie bei jeder anderen Quelle. Sie wird jedes Mal neu bewertet, wenn sich eine referenzierte Entität ändert — kein Polling — daher wird sie so sofort ausgelöst wie ein Sensor und kann allein ohne konfigurierte Sensoren funktionieren. Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist. Leer lassen zum Deaktivieren.",
-          "motion_template_mode": "Wie die Anwesenheitsvorlage mit den obigen Bewegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten bei — anwesend, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate — anwesend nur, wenn die Vorlage wahr ist und mindestens ein Sensor oder Player auch aktiv ist, so dass die Vorlage für die Anwesenheitserkennung erforderlich ist. Ohne konfigurierte Sensoren oder Player entscheidet die Vorlage allein in beiden Modi. Hat nur eine Auswirkung, wenn oben eine Anwesenheitsvorlage gesetzt ist."
+          "motion_template_mode": "Wie die Belegungsvorlage mit den oben genannten Belegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten – belegt, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate – belegt nur, wenn die Vorlage wahr ist und gleichzeitig mindestens ein Sensor oder Player aktiv ist, also muss die Vorlage gelten, damit Belegung registriert wird. Ohne konfigurierte Sensoren oder Player entscheidet nur die Vorlage in beiden Modi. Hat nur dann einen Effekt, wenn eine Belegungsvorlage oben gesetzt ist."
         }
       },
       "weather_override": {
@@ -845,7 +845,7 @@
           "weather": "Wetterbedingungen",
           "manual_override": "✋ Manuelle Übersteuerung",
           "custom_position": "🎯 Benutzerdefinierte Positionen",
-          "motion_override": "🚶 Bewegungsübersteuerung",
+          "motion_override": "🚶 Belegungserkennung",
           "weather_override": "🌧️ Wetter-Übersteuerung",
           "summary": "📋 Konfigurationszusammenfassung",
           "sync": "🔄 In andere Beschattungen kopieren",
@@ -1034,9 +1034,9 @@
         },
         "data_description": {
           "default_percentage": "Beschattungsposition, wenn die Sonne nicht vor dem Fenster steht (0-100 %). 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 50 % = halb offen (ausgewogenes Licht und Datenschutz), 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Dies ist die 'Ruheposition', die verwendet wird, wenn die Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, durch Hindernisse blockiert oder außerhalb der Verfolgungszeiten).",
-          "max_position": "Maximalpositionslimit für Abdeckung (0-100%). 100 % = offen (Jalousien hochgefahren / Markise ausgezogen). Verwendung: Verhindern Sie, dass die Abdeckung vollständig geöffnet wird (auf 80% setzen), behalten Sie immer etwas Schatten (auf 60-70% setzen), schützen Sie vor Klemmen oben (auf 95% setzen). ACP begrenzt jede BERECHNETE Position auf höchstens diesen Wert (Sonnenverfolgung, Standard/Ruhe, Klima, Wolkenunterdrückung, Bewegungszeitüberschreitung, Blendung, manuelle Übersteuerungswiederherstellung). Explizit konfigurierte feste Ziele werden wie von Ihnen festgelegt gesendet und sind NICHT auf diese Obergrenze begrenzt: die Sonnenuntergangsposition (absichtlich ausgenommen), Benutzerdefinierte Positionen-Slots (genauer Modus), die Wetter-Übersteuerungsposition und die Meine Voreinstellung. Bei venezianischen Jalousien begrenzt dies nur die Behang-Achse (vertikal) — die Lamellenneigung wird aus der Sonnengeometrie berechnet und ist hier nicht begrenzt.",
+          "max_position": "Maximalposition für Beschattung (0-100%). 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Nutzen Sie dies, um: zu verhindern, dass sich die Beschattung vollständig öffnet (auf 80 % setzen), ständig etwas Schatten zu bewahren (60–70 % setzen), Beschädigungen oben zu vermeiden (auf 95 % setzen). ACP beschränkt jede BERECHNETE Position auf mindestens diesen Wert (Sonnen-Tracking, Standard/Ruhe, Klima, Wolkensuppression, Belegungs-Timeout, Blendungszone, Wiederherstellung nach manueller Übersteuerung). Explizit konfigurierte feste Ziele werden wie angegeben gesendet und NICHT auf diese Obergrenze beschränkt: die Sonnenuntergangsposition (absichtlich ausgenommen), Custom-Position-Slots (exakter Modus), die Wetter-Übersteuerungsposition und die Meine-Voreinstellung. Bei venezianischen Jalousien beschränkt dies nur die Schiene (vertikale) Achse – die Lamellenkippung wird aus der Sonnengeometrie berechnet und ist hier nicht begrenzt.",
           "enable_max_position": "Steuert, WANN die Maximalpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Maximalposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Maximalposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung über den Max-Wert ansteigen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Obergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
-          "min_position": "Mindestpositionslimit für Abdeckung (0-99%). 0 % = geschlossen (Jalousien heruntergefahren / Markise eingezogen). Verwendung: Verhindern Sie, dass die Abdeckung vollständig geschlossen wird (auf 20% setzen), erhalten Sie etwas Licht (auf 30-40% setzen), schützen Sie vor Klemmen unten (auf 5% setzen). ACP begrenzt jede BERECHNETE Position auf mindestens diesen Wert (Sonnenverfolgung, Standard/Ruhe, Klima, Wolkenunterdrückung, Bewegungszeitüberschreitung, Blendung, manuelle Übersteuerungswiederherstellung). Explizit konfigurierte feste Ziele werden wie von Ihnen festgelegt gesendet und sind NICHT auf diese Untergrenze begrenzt: die Sonnenuntergangsposition (absichtlich ausgenommen, damit Abdeckungen nachts vollständig geschlossen werden können), Benutzerdefinierte Positionen-Slots (genauer Modus), die Wetter-Übersteuerungsposition und die Meine Voreinstellung — setzen Sie diese auf oder über diesen Wert (oder verwenden Sie deren \"Minimalpositionsmodus\") für eine harte Untergrenze überall. Bei venezianischen Jalousien begrenzt dies nur die Behang-Achse (vertikal). Funktioniert mit der Umschaltfläche \"Min nur während Sonnenverfolgung anwenden\" unten.",
+          "min_position": "Minimalposition für Beschattung (0–99%). 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen). Nutzen Sie dies, um: zu verhindern, dass sich die Beschattung vollständig schließt (auf 20 % setzen), etwas Licht zu bewahren (30–40 % setzen), Beschädigungen unten zu vermeiden (auf 5 % setzen). ACP beschränkt jede BERECHNETE Position auf mindestens diesen Wert (Sonnen-Tracking, Standard/Ruhe, Klima, Wolkensuppression, Belegungs-Timeout, Blendungszone, Wiederherstellung nach manueller Übersteuerung). Explizit konfigurierte feste Ziele werden wie angegeben gesendet und NICHT auf diese Untergrenze beschränkt: die Sonnenuntergangsposition (absichtlich ausgenommen, damit sich die Beschattung nachts vollständig schließen kann), Custom-Position-Slots (exakter Modus), die Wetter-Übersteuerungsposition und die Meine-Voreinstellung – stellen Sie diese auf oder über diesen Wert (oder verwenden Sie deren 'Minimalposition-Modus') für eine harte Untergrenze überall. Bei venezianischen Jalousien beschränkt dies nur die Schiene (vertikale) Achse. Funktioniert mit dem Umschalter 'Min-Position nur während Sonnen-Tracking anwenden' darunter.",
           "enable_min_position": "Steuert, WANN die Mindestpositionslimit auf BERECHNETE Positionen angewendet wird. DEAKTIVIERT (Standard, empfohlen): Mindestposition wird immer angewendet - Sonnenverfolgung, Standardposition, Klimamodi usw. AKTIVIERT (erweitert): Mindestposition wird nur angewendet, wenn die Sonne direkt vor dem Fenster steht; während Standard-/Fallback-Zuständen kann die Abdeckung unter den Min-Wert fallen. Explizit konfigurierte feste Ziele (Sonnenuntergangsposition, Benutzerdefinierte Positionen, Wetter-Übersteuerung, Meine Voreinstellung) werden wie von Ihnen festgelegt gesendet und sind nicht durch diese Untergrenze begrenzt. Die meisten Benutzer sollten dies DEAKTIVIERT lassen, um konsistenten Schutz zu gewährleisten.",
           "min_position_sun_tracking": "Optionale separate Minimalposition-Grenze, die nur während der Sonnennachführung gilt. Wenn gesetzt, ersetzt sie die 'Minimale Position' bei Sonnennachführungs-Berechnungen. Leer lassen, um 'Minimale Position' für Sonnennachführung und andere Modi zu verwenden. Nutzen Sie dies, wenn Ihre Beschattung eine mechanische Totzone am unteren Ende des Fahrtwegs hat (z. B. Rollläden, deren Lamellen vor dem Hochfahren klaffen) und Sie möchten, dass die Sonnennachführung diese Totzone überspringt, während die Beschattung bei Sonnenuntergang noch vollständig geschlossen werden kann. 0% = geschlossen (Jalousie unten), 100% = geöffnet (Jalousie oben).",
           "sunset_position": "Beschattungsposition nach Sonnenuntergang. Schieberegler löschen (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangsverhalten. 0 % = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100 % = offen (Jalousien hochgezogen / Markise ausgefahren). Häufige Anwendungen: Datenschutz (0 %), offen für Nachtluft (100 %), teilweiser Datenschutz (30-50 %). Wenn eingestellt, überschreibt diese die Standardposition nach Sonnenuntergang.",
@@ -1184,7 +1184,7 @@
           "custom_position_template_1": "Optionales Jinja2-Template; wenn es als wahr ausgewertet wird, aktiviert es den Slot. Kombiniert mit den Sensoren gemäß dem Kombinationsmodus unten.",
           "custom_position_template_mode_1": "Wie das Template mit den Sensoren kombiniert wird: „or\" (Standard) – das Template ODER ein beliebiger Sensor aktiviert den Slot; „and\" – das Template muss wahr sein UND ein Sensor an.",
           "custom_position_1": "Position (0–100%), auf die die Beschattung bewegt wird, wenn Slot 1 aktiv ist. 0% = geschlossen, 100% = offen.",
-          "custom_position_priority_1": "Pipeline-Priorität (1–100). Höher = wird vor Handlern mit niedrigerer Priorität ausgewertet. Standard 77 liegt zwischen Manuelle Übersteuerung (80) und Motion Timeout (75). Setzen Sie über 80, um manuelle Bewegungen zu übersteuern; setzen Sie unter 40, um nur anzuwenden, wenn die Sonnenverfolgung inaktiv ist. 100 = Sicherheit: Der Slot umgeht den Schalter für die automatische Steuerung, die manuelle Übersteuerung und das Start-/Endzeitfenster – er kann die Beschattung auch dann bewegen, wenn die automatische Steuerung AUS ist – und umgeht auch die Delta-Schranken (das frühere Force-Override-Verhalten).",
+          "custom_position_priority_1": "Pipeline-Priorität (1–100). Höher = wird vor niedrigeren Prioritäten ausgewertet. Standard 77 sitzt zwischen Manuelle Übersteuerung (80) und Belegungs-Timeout (75). Über 80 setzen, um manuelle Verschiebungen zu überschreiben; unter 40 setzen, um nur anzuwenden, wenn Sonnen-Tracking inaktiv ist. 100 = Sicherheit: der Slot umgeht den Umschalter für automatische Steuerung, manuelle Übersteuerung und das Start-/Endzeitfenster – er kann die Beschattung auch verschieben, wenn die automatische Steuerung AUSGESCHALTET ist – und umgeht auch die Delta-Gates (das frühere Verhalten der Zwangsübersteuerung).",
           "custom_position_min_mode_1": "Wenn aktiviert, wirkt die Position als Minimumschwelle – höhere Positionen aus Sonnenverfolgung oder anderen Berechnungen können passieren. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakte konfigurierte Position gesetzt.",
           "custom_position_use_my_1": "Wenn Slot 1s Auslöser aktiv ist, triggern Sie stattdessen die Meine-Position-Voreinstellung der Beschattung. Erfordert, dass Meine-Position-Wert gesetzt ist.",
           "custom_position_tilt_1": "Neigungswinkel (0–100%), der gesetzt wird, wenn Slot 1s Sensor aktiv ist. Nur Jalousien – wird für andere Beschattungstypen ignoriert. Leer lassen, damit die Engine die Neigung automatisch berechnet.",
@@ -1275,23 +1275,23 @@
         }
       },
       "motion_override": {
-        "title": "Bewegungsübersteuerung",
-        "description": "Aktivieren Sie die Anwesenheitskontrolle. Wenn alle konfigurierten Quellen keine Bewegung melden, stoppt die Integration die Sonnennachverfolgung und bewegt die Beschattung nach Ablauf des Timeouts auf ihre Standardposition. Wenn eine Quelle Anwesenheit erkennt, wird die automatische Positionierung fortgesetzt.\n\nEine beliebige Mischung aus Bewegungsmeldern, Anwesenheits- oder Binärpräsenzsensoren kann verwendet werden, plus Medienplayer (ein aktiver Player zählt als Anwesenheit). Die Logik ist ODER – jede einzelne aktive Quelle zählt als besetzt. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich die Beschattung bewegt, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
+        "title": "Belegungserkennung",
+        "description": "Aktivieren Sie die belegungsbasierte Steuerung. Wenn alle konfigurierten Quellen keine Belegung melden, stoppt die Integration das Sonnen-Tracking und verschiebt die Beschattung nach Ablauf des Timeouts zur Standardposition. Wenn eine Quelle Belegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nEs können Bewegungs-, Belegungs- oder Binärpräsenzsensoren beliebig kombiniert werden, sowie Medienplayer (ein aktiver Player zählt als Belegung). Die Logik ist ODER – jede einzelne aktive Quelle gilt als belegt. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich die Beschattung anpasst, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
-          "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
-          "motion_timeout": "Bewegungs-Timeout-Dauer",
-          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft",
-          "motion_media_players": "Medienplayer für Anwesenheitskontrolle",
+          "motion_sensors": "Belegungssensoren",
+          "motion_timeout": "Dauer des Belegungs-Timeouts",
+          "motion_timeout_mode": "Wenn Belegung deaktiviert wird",
+          "motion_media_players": "Medienplayer (Belegungsquelle)",
           "motion_template": "Anwesenheits-Vorlage (optional)",
           "motion_template_mode": "Logik für Anwesenheitsvorlage"
         },
         "data_description": {
-          "motion_sensors": "Binärsensoren, die die automatische Sonnenpositionierung basierend auf Belegung aktivieren/deaktivieren. Wenn JEDER Sensor eine Bewegung erkennt, verwenden Beschattungen die automatische sonnenbasierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung zeigen, kehren Beschattungen zur Standardposition zurück. Lassen Sie leer, um diese Funktion zu deaktivieren.",
-          "motion_timeout": "Dauer (in Sekunden) zum Warten nach der letzten Bewegung, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standard: 300 Sekunden (5 Minuten).",
-          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet.",
-          "motion_media_players": "Medienplayer als Anwesenheit behandelt. JEDER Player, dessen Status etwas anderes ist als aus (wird wiedergegeben, unterbrochen, untätig, an, …), zählt als besetzt und hält die automatische Sonnennachverfolgung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Mit den Bewegungsmeldern oben unter der gleichen ODER-Logik kombiniert. Zum Deaktivieren leer lassen.",
+          "motion_sensors": "Binärsensoren, die die automatische Sonnenpositionierung basierend auf Belegung aktivieren/deaktivieren. Wenn EINER der Sensoren Belegung erkennt, verwenden Beschattungen die automatische Sonnen-basierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Belegung zeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
+          "motion_timeout": "Dauer (in Sekunden), die nach Wegfall der Belegung gewartet werden soll, bevor die Beschattung zur Standardposition zurückkehrt. Verhindert schnelle Positionswechsel, wenn Belegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
+          "motion_timeout_mode": "Was zu tun ist, wenn Belegung für die Timeout-Dauer abwesend ist. 'Zur Standardposition zurückkehren' verschiebt die Beschattung zur Standardposition. 'Position halten' lässt die Beschattung dort, wo sie ist, während die Sonne im Sichtfeld ist (damit ein zurückkehrender Benutzer sie so findet, wie er sie verlassen hat); Beschattung kehrt immer noch zur Standardposition zurück, sobald die Sonne das Sichtfeld verlässt oder das Zeitfenster schließt.",
+          "motion_media_players": "Medienplayer als Belegung behandelt. JEDER Player, dessen Status etwas anderes als aus ist (lädt, pausiert, untätig, an, …), zählt als belegt und hält die automatische Sonnen-Positionierung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Kombiniert mit den oben genannten Belegungssensoren unter der gleichen ODER-Logik. Leer lassen zum Deaktivieren.",
           "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahr ergibt (on/true/1) zählt der Raum als anwesend; wie das mit den obigen Sensoren und Medienplayern kombiniert wird (ODER oder UND) wird durch 'Logik für Anwesenheitsvorlage' unten gesetzt. Wenn sie falsch ergibt, startet das Timeout wie bei jeder anderen Quelle. Sie wird jedes Mal neu bewertet, wenn sich eine referenzierte Entität ändert — kein Polling — daher wird sie so sofort ausgelöst wie ein Sensor und kann allein ohne konfigurierte Sensoren funktionieren. Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist. Leer lassen zum Deaktivieren.",
-          "motion_template_mode": "Wie die Anwesenheitsvorlage mit den obigen Bewegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten bei — anwesend, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate — anwesend nur, wenn die Vorlage wahr ist und mindestens ein Sensor oder Player auch aktiv ist, so dass die Vorlage für die Anwesenheitserkennung erforderlich ist. Ohne konfigurierte Sensoren oder Player entscheidet die Vorlage allein in beiden Modi. Hat nur eine Auswirkung, wenn oben eine Anwesenheitsvorlage gesetzt ist."
+          "motion_template_mode": "Wie die Belegungsvorlage mit den oben genannten Belegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten – belegt, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate – belegt nur, wenn die Vorlage wahr ist und gleichzeitig mindestens ein Sensor oder Player aktiv ist, also muss die Vorlage gelten, damit Belegung registriert wird. Ohne konfigurierte Sensoren oder Player entscheidet nur die Vorlage in beiden Modi. Hat nur dann einen Effekt, wenn eine Belegungsvorlage oben gesetzt ist."
         }
       },
       "weather_override": {
@@ -1606,7 +1606,7 @@
         "data": {
           "weather_priority": "Wetter-Übersteuerungspriorität",
           "manual_override_priority": "Priorität der Manuellen Übersteuerung",
-          "motion_timeout_priority": "Bewegungs-Timeout-Priorität",
+          "motion_timeout_priority": "Priorität des Belegungs-Timeouts",
           "cloud_suppression_priority": "Wolkenunterdrückungspriorität",
           "climate_priority": "Klimamodus-Priorität",
           "glare_zone_priority": "Blendungszonenprirorität",
@@ -1743,15 +1743,15 @@
       "control_status": {
         "state": {
           "force_override_active": "Zwangsübersteuerung aktiv",
-          "motion_timeout": "Keine Bewegung – verwende Standardposition"
+          "motion_timeout": "Keine Belegung – Standardposition wird verwendet"
         }
       },
       "motion_status": {
         "state": {
           "not_configured": "Nicht konfiguriert",
-          "motion_detected": "Bewegung erkannt",
+          "motion_detected": "Belegung erkannt",
           "timeout_pending": "Timeout ausstehend",
-          "no_motion": "Keine Bewegung",
+          "no_motion": "Keine Belegung",
           "waiting_for_data": "Warten auf Daten",
           "holding": "Position wird gehalten"
         }
@@ -1765,7 +1765,7 @@
           "winter": "Winter",
           "default": "Standard",
           "manual_override": "Manuelle Übersteuerung",
-          "motion_timeout": "Bewegungs-Timeout",
+          "motion_timeout": "Belegungs-Timeout",
           "force_override": "Zwangsübersteuerung",
           "custom_position": "Benutzerdefinierte Position",
           "weather_override": "Wetter-Übersteuerung",
@@ -1853,7 +1853,7 @@
         }
       },
       "motion_control": {
-        "name": "Bewegungssteuerung",
+        "name": "Belegungssteuerung",
         "state": {
           "on": "On",
           "off": "Off"
@@ -1951,8 +1951,8 @@
         "manual_override": "Manuelle Übersteuerung",
         "custom_position_values": "Benutzerdefinierte Positionen – Werte & Prioritäten",
         "custom_position_sensors": "Benutzerdefinierte Positionen – Auslösersensoren",
-        "motion_override_values": "Bewegungsübersteuerung – Timeout",
-        "motion_override_sensors": "Bewegungsübersteuerung – Sensoren",
+        "motion_override_values": "Belegungserkennung — Timeout",
+        "motion_override_sensors": "Belegungserkennung — Sensoren",
         "weather_override_values": "Wetter-Übersteuerung – Schwellwerte & Position",
         "weather_override_sensors": "Wetter-Übersteuerung – Sensoren",
         "light_cloud_values": "Licht & Wolken – Schwellwerte",
@@ -1966,7 +1966,7 @@
         "temperature_climate": "Temperatur und Klimamodus",
         "force_override": "Zwangsübersteuerung",
         "custom_position": "Benutzerdefinierte Positionen",
-        "motion_override": "Bewegungsübersteuerung",
+        "motion_override": "Belegungserkennung",
         "weather_override": "Wetter-Übersteuerung"
       }
     },
@@ -2352,18 +2352,18 @@
       "name": "Einstellungen für manuelle Übersteuerung festlegen"
     },
     "set_motion": {
-      "description": "Aktualisiert Bewegungssensoren und Keine-Bewegungs-Timeout.",
+      "description": "Aktualisieren Sie Belegungssensoren und Belegungs-Timeout.",
       "fields": {
         "motion_sensors": {
-          "description": "Binärsensoren zeigen Anwesenheit an. Leere Liste = Bewegungssteuerung deaktivieren.",
-          "name": "Bewegungssensoren"
+          "description": "Binärsensoren, die Belegung anzeigen. Leere Liste = Belegungserkennung deaktivieren.",
+          "name": "Belegungssensoren"
         },
         "motion_timeout": {
-          "description": "Sekunden zu warten nach letzter Bewegung vor Anwendung der Keine-Bewegungs-Position (30–3600).",
-          "name": "Keine-Bewegungs-Timeout"
+          "description": "Sekunden, die nach Wegfall der Belegung gewartet werden sollen, bevor die Belegungs-Timeout-Position angewendet wird (30–3600).",
+          "name": "Belegungs-Timeout"
         }
       },
-      "name": "Bewegungseinstellungen festlegen"
+      "name": "Belegungseinstellungen festlegen"
     },
     "set_option": {
       "description": "Generischer Ausweg — aktualisiert jede unterstützte Option nach Schlüsselnamen. Identitätsschlüssel werden abgelehnt.",

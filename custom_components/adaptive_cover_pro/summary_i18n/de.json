@@ -31,7 +31,7 @@
     "manual": "✋ Manuelle Übersteuerung: pausiert automatische Steuerung, wenn du die Beschattung bewegst{detail}",
     "custom_tilt_only": "🎯 Benutzerdefiniert #{slot}: wenn {trigger} aktiv ist → nur Neigung (Lamelle fest bei {slat}%; Position gesteuert durch Sonnenverfolgung)",
     "custom": "🎯 Benutzerdefiniert #{slot}: wenn {trigger} aktiv ist → {target}{cp_min}{tilt_note} — umgeht Delta-Gatter und automatische Steuerung{safety}",
-    "motion": "🚶 Bewegungsbasiert: wenn keine Anwesenheit für {motion_timeout}s ({sources}) → {action}",
+    "motion": "🚶 Belegung: Falls keine Belegung für {motion_timeout}s ({sources}) → {action}",
     "cloud": "☁️ Wolkenunterdrückung: überspringt Sonnenverfolgung{cloud} → {fallback}",
     "climate": "🌡️ Klimamodus: passt Strategie für Heizung/Kühlung an{detail}",
     "glare": "🔆 Blendungszonen: senkt Jalousie weiter, um Bodenbereich vor Blendung zu schützen{detail}",
@@ -69,7 +69,7 @@
   },
   "warnings": {
     "custom_tilt_only_conflict": "⚠️ Benutzerdefiniert #{slot}: Nur Neigung ist aktiviert — Als Minimum verwenden / Meine Position verwenden werden für diesen Slot ignoriert.",
-    "motion_hold_no_sensors": "⚠️ Hold-Position-Modus ist aktiviert, aber keine Bewegungssensoren oder Media-Player sind konfiguriert — die Einstellung hat keine Auswirkung, bis eine Bewegungsquelle hinzugefügt wird",
+    "motion_hold_no_sensors": "⚠️ Der Modus Position halten ist eingestellt, aber es sind keine Belegungsquellen konfiguriert – die Einstellung hat keine Auswirkungen, bis eine Belegungsquelle hinzugefügt wird",
     "cloudy_pos_ignored": "⚠️ Bewölkte Position ({pos}%) konfiguriert, aber Wolkenunterdrückung ist deaktiviert — Wert wird ignoriert.",
     "sun_track_min_below_floor": "⚠️ Sonnenverfolgung Min {sun_min}% < Min Position {min_pos}% — Immer-aktiver Boden dominiert; Sonnenverfolgungsboden wird auf {min_pos}% erhöht.",
     "mode2_min_position": "⚠️ Neigung MODE2 + Min Position {min_pos}% — im MODE2 ist der offene (horizontale) Lamellenwinkel 50%, also jede Min Position ≥ 50 kollabiert jede Klimamodus/Blendungszone-Entscheidung zum Boden und die Beschattung stoppt, Wärme zu blockieren.",
