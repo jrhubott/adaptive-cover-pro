@@ -2931,6 +2931,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._cmd_svc.begin_transit(
                 entity_id, self._cmd_svc.get_transit_direction(entity_id)
             )
+        # A user stop engages an override and (for a My cover) records the new
+        # target + assumed position + transit window. None of that reaches the
+        # sensors until a coordinator cycle rebuilds them, so without an explicit
+        # refresh the card shows nothing until the next scheduled update — long
+        # enough that the ~45s transit window opens and closes unseen. Request a
+        # refresh now (debounced, so a blanket stop coalesces to one cycle).
+        await self.async_request_refresh()
         return result
 
     def build_axis_discovery(

@@ -96,6 +96,7 @@ async def test_async_apply_user_stop_calls_mark_user_command_and_stop() -> None:
     coord.manager = MagicMock()
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.apply_user_stop = AsyncMock(return_value=("sent", "stop_cover"))
+    coord.async_request_refresh = AsyncMock()
 
     # Bind the real method
     coord.async_apply_user_stop = (
@@ -108,6 +109,34 @@ async def test_async_apply_user_stop_calls_mark_user_command_and_stop() -> None:
         "cover.test_blind", reason="stop"
     )
     coord._cmd_svc.apply_user_stop.assert_awaited_once_with("cover.test_blind")
+
+
+@pytest.mark.asyncio
+async def test_async_apply_user_stop_requests_immediate_refresh() -> None:
+    """A user stop requests a coordinator refresh so the card updates promptly.
+
+    Without it the sensors (and the ~45s transit window) only rebuild on the
+    next scheduled cycle, which can be well over a minute — long enough that the
+    transit indicator opens and closes before the card ever sees it.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = MagicMock()
+    coord.manager = MagicMock()
+    coord._cmd_svc = MagicMock()
+    coord._cmd_svc.apply_user_stop = AsyncMock(return_value=("sent", "stop_cover"))
+    coord._cmd_svc.is_waiting_for_target.return_value = True  # skip the My block
+    coord.async_request_refresh = AsyncMock()
+
+    coord.async_apply_user_stop = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_stop.__get__(coord)
+    )
+
+    await coord.async_apply_user_stop("cover.test_blind", trigger="stop")
+
+    coord.async_request_refresh.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +270,7 @@ def _make_coord_for_assumed(
     coord.config_entry.options = (
         {} if my_position is None else {"my_position_value": my_position}
     )
+    coord.async_request_refresh = AsyncMock()
     return coord
 
 
