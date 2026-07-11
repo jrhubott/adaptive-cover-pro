@@ -342,6 +342,15 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
             # cover_position sensor — map it back so the card stays byte-identical.
             attrs["effective_distance"] = calc_details.get("effective_distance_m")
 
+    # Synthetic opening/closing indicator for no-feedback covers. Present only
+    # while a cover is mid-transit (gated on ``waiting`` inside transit_states),
+    # so the companion card can render "Opening…/Closing…" on covers that report
+    # neither position nor an opening/closing state. Emitted only when non-empty
+    # to keep the attribute set lean.
+    transit = s.coordinator._cmd_svc.transit_states()  # noqa: SLF001
+    if transit:
+        attrs["transit_states"] = transit
+
     snapshot = s.coordinator._snapshot  # noqa: SLF001
     if snapshot and snapshot.cover_positions:
         actual_positions = dict(snapshot.cover_positions)

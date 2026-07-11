@@ -338,8 +338,27 @@ class CoverCommandService:
         return bool(s and s.waiting)
 
     def set_waiting(self, entity_id: str, value: bool) -> None:
-        """Mark an entity as waiting (or no-longer-waiting) for its target."""
-        self.state(entity_id).waiting = value
+        """Mark an entity as waiting (or no-longer-waiting) for its target.
+
+        Clearing ``waiting`` also drops the synthetic transit direction so the
+        opening/closing indicator disappears the moment the transit window
+        closes (the ``transit_states()`` surface is gated on ``waiting``).
+        """
+        s = self.state(entity_id)
+        if value:
+            s.waiting = True
+        else:
+            self._clear_waiting(s)
+
+    def _clear_waiting(self, s: PerEntityState) -> None:
+        """Clear the waiting flag and its synthetic transit direction together.
+
+        Single funnel for every "no longer in transit" site so the
+        opening/closing indicator (``transit_direction``) never outlives the
+        ``waiting`` window it is gated on.
+        """
+        s.waiting = False
+        s.transit_direction = None
 
     def waiting_entities(self) -> list[str]:
         """Return all entities currently in ``waiting=True``."""
@@ -409,6 +428,84 @@ class CoverCommandService:
             return
         if routed_target is not None:
             self.record_assumed_position(entity_id, routed_target)
+
+    # ------------------------------------------------------------------ #
+    # Transit direction (opening/closing indicator) — display-only, for
+    # no-feedback open/close-only covers that report no position and no
+    # opening/closing state. Surfaced only during the transit-timeout window
+    # (gated on ``waiting``) so the companion card can show motion.
+    # ------------------------------------------------------------------ #
+
+    def get_transit_direction(self, entity_id: str) -> str | None:
+        """Return the synthetic travel direction for ``entity_id``, or None.
+
+        ``"opening"`` / ``"closing"`` while ACP believes an open/close-only
+        cover is mid-transit; ``None`` otherwise.
+        """
+        s = self._state.get(entity_id)
+        return None if s is None else s.transit_direction
+
+    def clear_transit_direction(self, entity_id: str) -> None:
+        """Drop any stored synthetic travel direction for ``entity_id``."""
+        s = self._state.get(entity_id)
+        if s is not None:
+            s.transit_direction = None
+
+    def transit_states(self) -> dict[str, str]:
+        """Return ``{entity_id: direction}`` for every cover mid-transit.
+
+        Gated on ``waiting`` so an entry clears exactly when the transit-timeout
+        window closes — a direction recorded on a settled cover is not surfaced.
+        """
+        return {
+            eid: s.transit_direction
+            for eid, s in self._state.items()
+            if s.waiting and s.transit_direction
+        }
+
+    def _set_transit_direction_if_blind(
+        self,
+        entity_id: str,
+        routed_target: int | None,
+        prior_position: int | None,
+        caps: Any | None = None,
+    ) -> None:
+        """Record (or clear) the synthetic travel direction after ACP drives a cover.
+
+        Confined to open/close-only covers (no native position axis): a
+        position-reporting cover animates via % and never gets a synthetic
+        direction, so its stale value is cleared. The direction falls out of a
+        raw target-vs-prior comparison in the same non-inverted display frame as
+        ``cover_positions`` (100=open, 0=closed) — higher target than prior is
+        "opening". Inverse state is NOT applied here.
+        """
+        if caps is None:
+            caps = self.get_cover_capabilities(entity_id)
+        if self._policy.position_axis_supported(caps):
+            self.clear_transit_direction(entity_id)
+            return
+        if routed_target is None or prior_position is None:
+            self.clear_transit_direction(entity_id)
+            return
+        if routed_target > prior_position:
+            self.state(entity_id).transit_direction = "opening"
+        elif routed_target < prior_position:
+            self.state(entity_id).transit_direction = "closing"
+        else:
+            self.clear_transit_direction(entity_id)
+
+    def begin_transit(self, entity_id: str, direction: str | None) -> None:
+        """Open a transit-timeout window with a pre-computed direction.
+
+        Used by the coordinator's user-stop→My path: the My move never flows
+        through ``_prepare_service_call`` (it's a bare ``stop_cover``), so this
+        marks the entity ``waiting`` and stamps ``sent_at`` + ``transit_direction``
+        so the ~45s reconciliation timer runs and the card shows motion.
+        """
+        s = self.state(entity_id)
+        s.waiting = True
+        s.sent_at = dt.datetime.now(dt.UTC)
+        s.transit_direction = direction
 
     # ------------------------------------------------------------------ #
     # Properties
@@ -572,7 +669,7 @@ class CoverCommandService:
         for eid in stale:
             s = self._state[eid]
             s.target = None
-            s.waiting = False
+            self._clear_waiting(s)
             s.retry_count = 0
             s.gave_up = False
         if stale:
@@ -722,7 +819,7 @@ class CoverCommandService:
             # entity is no longer in flight from ACP's perspective — clear
             # the waiting flag so the next reconciliation cycle does not
             # think a fresh command is still travelling.
-            s.waiting = False
+            self._clear_waiting(s)
             s.sent_at = None
             if sent:
                 stopped.append(eid)
@@ -790,6 +887,10 @@ class CoverCommandService:
         else:
             await self._stop_tracker.call_stop_cover(entity_id)
         now = dt.datetime.now(dt.UTC)
+        # Synthetic travel direction: read the raw prior position BEFORE the
+        # target is overwritten so the open/close-only card can show motion
+        # toward My during the transit window.
+        prior_position = self._get_current_position(entity_id)
         s = self.state(entity_id)
         s.target = target
         s.waiting = True
@@ -802,6 +903,7 @@ class CoverCommandService:
         # ``—``. Caps was already fetched above; the helper gates on the policy
         # predicate (no-op for position-capable covers).
         self._record_assumed_if_blind(entity_id, target, caps)
+        self._set_transit_direction_if_blind(entity_id, target, prior_position, caps)
         self._logger.debug(
             "send_my_position: stop_cover sent to %s (My = %d%%)", entity_id, target
         )
@@ -1398,7 +1500,7 @@ class CoverCommandService:
 
         target = s.target
         if self._at_target(reported_position, target):
-            s.waiting = False
+            self._clear_waiting(s)
             s.retry_count = 0
             self._logger.debug(
                 "Target reached for %s (reported=%s target=%s)",
@@ -1466,7 +1568,7 @@ class CoverCommandService:
                             elapsed,
                             self._wait_for_target_timeout_seconds,
                         )
-                        s.waiting = False
+                        self._clear_waiting(s)
                     else:
                         # Cover still expected to be moving
                         continue
@@ -1860,8 +1962,16 @@ class CoverCommandService:
         # override detection, and the grace-period manager all see the same
         # target/timestamp.
         now = dt.datetime.now(dt.UTC)
+        # Synthetic travel direction (open/close-only covers): compute BEFORE the
+        # target is overwritten, from the cover's current raw position vs the
+        # routed target. Uses the command-gate read (no assumed fallback) so the
+        # comparison stays in the raw display frame.
+        prior_position = self._read_position_with_capabilities(entity, caps)
         s = self.state(entity)
         s.target = plan.routed_target
+        self._set_transit_direction_if_blind(
+            entity, plan.routed_target, prior_position, caps
+        )
         # Issue #888: this is the single chokepoint every dispatched command
         # (apply_position + reconciliation) flows through, so refresh the
         # display-only assumed position here. Open/close-only covers with no

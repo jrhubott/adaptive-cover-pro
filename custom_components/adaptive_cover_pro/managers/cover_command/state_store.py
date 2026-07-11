@@ -50,6 +50,15 @@ class PerEntityState:
     # fallback the reported-position surfaces return ONLY when the live HA read
     # is None; NEVER consulted by the command-dispatch gates (§3b).
     assumed_position: int | None = None
+    # Synthetic travel direction for no-feedback covers. Set alongside
+    # ``waiting`` on open/close-only covers (Somfy-RTS-style: no position, no
+    # opening/closing state) so the companion card can render "Opening…" /
+    # "Closing…" during ACP's transit-timeout window. Values: ``"opening"``,
+    # ``"closing"``, or ``None``. Computed in the non-inverted display frame
+    # (100=open, 0=closed) and cleared whenever ``waiting`` clears — the
+    # ``transit_states()`` surface is gated on ``waiting`` so it disappears
+    # exactly when the transit window closes.
+    transit_direction: str | None = None
 
 
 @dataclasses.dataclass
