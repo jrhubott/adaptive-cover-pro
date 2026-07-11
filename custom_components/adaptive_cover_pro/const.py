@@ -199,6 +199,12 @@ DEFAULT_LOUVERED_ROOF_PITCH = 0  # degrees from horizontal — 0 = flat roof
 # max. When set it becomes BOTH the clamp ceiling AND the tilt%→angle denominator.
 CONF_MAX_SLAT_ANGLE = "max_slat_angle"  # degrees; 0 = use tilt-mode max
 DEFAULT_MAX_SLAT_ANGLE = 0  # 0 sentinel → tilt mode's 90/180
+# Louvered-roof slat geometry defaults (#830 follow-up). Pergola lamellae are
+# far larger than interior venetian slats (whose defaults stay 3.0/2.0 cm), so
+# the louvered schema overrides these two markers only. Values are the #830
+# reference rig (17 cm deep, 15 cm apart → 0.88 spacing ratio), in canonical cm.
+DEFAULT_LOUVERED_SLAT_DEPTH_CM = 17.0  # CONF_TILT_DEPTH default for louvered roofs
+DEFAULT_LOUVERED_SLAT_DISTANCE_CM = 15.0  # CONF_TILT_DISTANCE default, louvered roofs
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -268,8 +274,8 @@ OSCILLATING_ARC_SCAN_SAMPLES = 1801
 # =============================================================================
 # Slat dimensions used to compute tilt angle, plus min/max tilt clamps.
 
-CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-15.0)
-CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-15.0)
+CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-30.0)
+CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-30.0)
 CONF_TILT_MODE = "tilt_mode"  # tilt strategy identifier
 CONF_TILT_ANGLE_0 = "tilt_angle_0"  # raw slat angle at 0% tilt, degrees
 CONF_TILT_ANGLE_100 = "tilt_angle_100"  # raw slat angle at 100% tilt, degrees
@@ -1405,8 +1411,8 @@ _RANGE_ROOF_HEIGHT_ABOVE = (0.0, 10.0)  # CONF_ROOF_HEIGHT_ABOVE, metres
 _RANGE_MAX_SLAT_ANGLE = (0, 180)  # CONF_MAX_SLAT_ANGLE, degrees (0 = use tilt mode)
 
 # Geometry — tilt / venetian slats.
-_RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm
-_RANGE_TILT_DISTANCE = (0.1, 15.0)  # CONF_TILT_DISTANCE, cm
+_RANGE_TILT_DEPTH = (0.1, 30.0)  # CONF_TILT_DEPTH, cm (raised to 300 mm for #830)
+_RANGE_TILT_DISTANCE = (0.1, 30.0)  # CONF_TILT_DISTANCE, cm (raised to 300 mm, #830)
 _RANGE_MAX_TILT = (0, 100)  # CONF_MAX_TILT, percent
 _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
 _RANGE_VENETIAN_TILT_SAFETY_MARGIN = (

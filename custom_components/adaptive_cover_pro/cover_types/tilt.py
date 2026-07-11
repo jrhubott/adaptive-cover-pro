@@ -52,11 +52,11 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
         {
             vol.Required(
                 CONF_TILT_DEPTH, default=slat_default(_DEFAULT_TILT_DEPTH_CM, hass)
-            ): slat_selector(hass, min_cm=0.1, max_cm=15),
+            ): slat_selector(hass, min_cm=0.1, max_cm=30),
             vol.Required(
                 CONF_TILT_DISTANCE,
                 default=slat_default(_DEFAULT_TILT_DISTANCE_CM, hass),
-            ): slat_selector(hass, min_cm=0.1, max_cm=15),
+            ): slat_selector(hass, min_cm=0.1, max_cm=30),
             vol.Required(CONF_TILT_MODE, default="mode2"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=["mode1", "mode2", "specify_angles"],

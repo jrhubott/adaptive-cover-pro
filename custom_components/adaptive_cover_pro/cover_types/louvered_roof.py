@@ -24,11 +24,16 @@ from ..config_types import LouveredRoofConfig
 from ..const import (
     CONF_MAX_SLAT_ANGLE,
     CONF_ROOF_PITCH,
+    CONF_TILT_DEPTH,
+    CONF_TILT_DISTANCE,
     DEFAULT_LOUVERED_ROOF_PITCH,
+    DEFAULT_LOUVERED_SLAT_DEPTH_CM,
+    DEFAULT_LOUVERED_SLAT_DISTANCE_CM,
     DEFAULT_MAX_SLAT_ANGLE,
     OPTION_RANGES,
 )
 from ..engine.covers import AdaptiveLouveredRoofCover
+from ..unit_system import slat_default
 from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
@@ -69,6 +74,19 @@ def _max_slat_angle_selector() -> selector.NumberSelector:
 def geometry_louvered_roof_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Slat geometry (shared with tilt) plus the roof-plane pitch. ``hass=None`` → metric."""
     fields = dict(geometry_tilt_schema(hass).schema)
+    # Override the shared slat defaults with pergola-scale dimensions. The tilt
+    # schema stores interior venetian defaults (3.0/2.0 cm); a louvered roof's
+    # lamellae are much larger, so swap the two slat markers for the #830 rig
+    # (17/15 cm). Re-key the markers (a dict assignment keeps the original key
+    # object, so pop the old marker before inserting the new default).
+    for slat_key, default_cm in (
+        (CONF_TILT_DEPTH, DEFAULT_LOUVERED_SLAT_DEPTH_CM),
+        (CONF_TILT_DISTANCE, DEFAULT_LOUVERED_SLAT_DISTANCE_CM),
+    ):
+        slat_selector = fields.pop(vol.Required(slat_key))
+        fields[vol.Required(slat_key, default=slat_default(default_cm, hass))] = (
+            slat_selector
+        )
     fields[vol.Required(CONF_ROOF_PITCH, default=DEFAULT_LOUVERED_ROOF_PITCH)] = (
         _roof_pitch_selector()
     )
