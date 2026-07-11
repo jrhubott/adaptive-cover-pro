@@ -36,6 +36,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ...config_types import LouveredRoofConfig
+from ...const import TILT_HORIZONTAL_DEG
 from .roof_window import (
     TRACE_KEY_COS_AOI,
     TRACE_KEY_ROOF_PITCH_DEG,
@@ -100,10 +101,27 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
         return bool(float(np.cos(np.radians(self.gamma))) < 0)
 
     def _resolve_slat_angle(self, cutoff_angle: float) -> float:
-        """Realize the far-side cut-off as the flipped face past the 90° turnover."""
+        """Realize the MAX-OPENING slat angle (closest to vertical) that blocks.
+
+        Unlike the interior venetian — which drives to the steepest cut-off to
+        maximize shading — the bioclimatic roof wants the slats as OPEN as
+        possible (closest to vertical/90°) while the direct beam is still
+        blocked. The geometric max-opening inclination from vertical is the
+        closed-form ``i = max(0, 90° − cutoff)`` (derived from the roof-fin
+        shadow-overlap condition); the physical slat angle is ``90° + i`` on the
+        facing side and ``90° − i`` on the far side. Once the slats self-block
+        (``cutoff ≥ 90°``) ``i`` is 0 and the angle clamps to fully open (90°).
+
+        The ``roof_pitch = 90°`` vertical reduction returns the raw cut-off
+        unchanged so the venetian anchor stays byte-for-byte (the far side never
+        fires there — lit sun always satisfies ``cos(gamma) > 0``).
+        """
+        if self.roof_pitch == VERTICAL_GLASS_PITCH_DEG:
+            return cutoff_angle
+        inclination = max(0.0, TILT_HORIZONTAL_DEG - cutoff_angle)
         if self._is_far_side():
-            return 180.0 - cutoff_angle
-        return cutoff_angle
+            return TILT_HORIZONTAL_DEG - inclination
+        return TILT_HORIZONTAL_DEG + inclination
 
     def _effective_max_degrees(self) -> int:
         """Honour a configured physical ``max_slat_angle`` over the tilt-mode max.

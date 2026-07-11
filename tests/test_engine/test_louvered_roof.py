@@ -245,6 +245,10 @@ class TestCalculatePositionFlatRoof:
     """A full solve on a flat roof matches a hand-computed 2-D cut-off angle."""
 
     def test_flat_roof_slat_angle(self) -> None:
+        # Max-opening objective: a low near-side sun whose raw MDPI cut-off runs
+        # PAST vertical (≥ 90°) means the slats already self-block, so the roof
+        # drives to fully OPEN (90°) — not the steep 130.5° interior-venetian
+        # cut-off the old objective produced.
         sol_elev = 30.0
         slat_distance, depth, mode = 0.02, 0.03, "mode2"
         cover = _louvered(
@@ -255,16 +259,17 @@ class TestCalculatePositionFlatRoof:
             depth=depth,
             mode=mode,
         )
-        # Hand path: flat-roof beta = 90 - elev = 60°, then the MDPI cut-off.
+        # Hand path: flat-roof beta = 90 - elev = 60°; the MDPI cut-off is > 90.
         beta = math.radians(90.0 - sol_elev)
         ratio = slat_distance / depth
         disc = math.tan(beta) ** 2 - ratio**2 + 1
-        expected = math.degrees(
+        cutoff = math.degrees(
             2 * math.atan((math.tan(beta) + math.sqrt(disc)) / (1 + ratio))
         )
+        assert cutoff > 90.0  # precondition: raw cut-off past vertical
         result = cover.calculate_position()
         assert not np.isnan(result)
-        assert result == pytest.approx(expected)
+        assert result == pytest.approx(90.0)  # max-opening clamp, not the cut-off
         # Sanity: mode2 caps at 180.
         assert 0 <= result <= 180
 
@@ -303,17 +308,20 @@ class TestFarSideFlip:
         near_angle = near.calculate_position()
         far_angle = far.calculate_position()
 
-        # The two physical slat angles mirror across the 90° turnover.
+        # The two physical slat angles still mirror across the 90° turnover.
         assert near_angle + far_angle == pytest.approx(180.0)
 
-        # Near side is the unchanged raw MDPI cut-off (the pre-fix behaviour).
+        # Max-opening objective: the raw cut-off is < 90 here, so the facing side
+        # opens PAST vertical to 180 − cut-off while the far side rests at the
+        # cut-off itself — the near/far roles invert vs the old steep objective.
         beta = math.atan(abs(roof_slope_ratio(60.0, elev, 0)))
         raw, _, _ = slat_cutoff_angle(beta, near.slat_distance, near.depth)
-        assert near_angle == pytest.approx(raw)
-        assert far_angle == pytest.approx(180.0 - raw)
+        assert raw < 90.0
+        assert near_angle == pytest.approx(180.0 - raw)
+        assert far_angle == pytest.approx(raw)
         # Pin the concrete numbers so a formula drift is caught.
-        assert near_angle == pytest.approx(85.9, abs=0.1)
-        assert far_angle == pytest.approx(94.1, abs=0.1)
+        assert near_angle == pytest.approx(94.1, abs=0.1)
+        assert far_angle == pytest.approx(85.9, abs=0.1)
 
     def test_no_flip_at_pitch_90_near_side(self) -> None:
         # At vertical pitch the lit sun is always near side (cos_aoi needs
@@ -324,11 +332,14 @@ class TestFarSideFlip:
         assert louvered.calculate_position() == pytest.approx(tilt.calculate_position())
         assert louvered._last_calc_details["louvered_far_side_branch"] is False
 
-    def test_mode1_far_side_clamps_to_open(self) -> None:
-        # Mode1 caps at 90°; a far-side angle (> 90) clamps to fully open (90).
-        far = _louvered(sol_azi=60, sol_elev=40, roof_pitch=0, mode="mode1")
-        assert far.gamma == pytest.approx(120.0)
-        assert far.calculate_position() == pytest.approx(90.0)
+    def test_mode1_near_side_clamps_to_open(self) -> None:
+        # Mode1 caps at 90°. Under the max-opening objective the NEAR (facing)
+        # side opens PAST vertical (> 90) whenever the raw cut-off is < 90, so it
+        # clamps to fully open (90). (The far side now rests at/below 90 instead,
+        # inverting the old behaviour where the far side was the one clamping.)
+        near = _louvered(sol_azi=120, sol_elev=40, roof_pitch=0, mode="mode1")
+        assert near.gamma == pytest.approx(60.0)
+        assert near.calculate_position() == pytest.approx(90.0)
 
     def test_trace_far_side_branch_flag(self) -> None:
         near = _louvered(sol_azi=120, sol_elev=40, roof_pitch=0)
@@ -343,25 +354,27 @@ class TestMaxSlatAngle:
     """``max_slat_angle`` overrides the mode's 90/180 as clamp + %-denominator."""
 
     def test_ceiling_above_raw_scales_percentage(self) -> None:
-        # gamma=0 (near side, no flip), elev=30 → raw ~130.5° on a flat roof.
-        base = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        # gamma=0 (near side, no flip), elev=65 → raw cut-off 77.8° < 90, so the
+        # max-opening angle is 180 − 77.8 = 102.2° (past vertical). This exercises
+        # the max_slat_angle scaling on a near-side angle above the horizontal.
+        base = _louvered(sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2")
         raw = base.calculate_position()
-        assert raw == pytest.approx(130.5, abs=0.2)
+        assert raw == pytest.approx(102.2, abs=0.2)
 
         denom = int(raw) + 10  # ceiling above the raw angle: position unchanged
         wide = _louvered(
-            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=denom
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=denom
         )
         assert wide.calculate_position() == pytest.approx(raw)
         assert wide.calculate_percentage() == round(raw / denom * 100)
 
     def test_ceiling_below_raw_clamps_and_saturates(self) -> None:
-        base = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        base = _louvered(sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2")
         raw = base.calculate_position()
 
         ceil = int(raw) - 20  # ceiling below the raw angle: clamp + 100%
         low = _louvered(
-            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=ceil
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=ceil
         )
         assert low.calculate_position() == pytest.approx(float(ceil))
         assert low.calculate_percentage() == 100
@@ -372,18 +385,60 @@ class TestMaxSlatAngle:
 
     def test_default_zero_matches_mode(self) -> None:
         m = _louvered(
-            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=0
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=0
         )
-        ref = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        ref = _louvered(sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2")
         assert m.calculate_position() == pytest.approx(ref.calculate_position())
         assert m.calculate_percentage() == ref.calculate_percentage()
 
     def test_trace_max_degrees_reflects_effective_ceiling(self) -> None:
         cover = _louvered(
-            sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2", max_slat_angle=160
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=160
         )
         cover.calculate_position()
         assert cover._last_calc_details["max_degrees"] == 160
+
+
+class TestMaxOpeningObjective:
+    """The louvered slat objective is MAX OPENING (closest to vertical/90°).
+
+    Unlike the interior venetian, the bioclimatic roof wants the slats as OPEN
+    as possible while still blocking the direct beam. The physical inclination
+    from vertical is ``i = max(0, 90 − cutoff)`` and the slat angle is ``90 + i``
+    on the facing side / ``90 − i`` on the far side — i.e. ``max(90, 180 − cutoff)``
+    facing and ``min(90, cutoff)`` far. Once the slats self-block (``cutoff ≥ 90``)
+    the angle clamps to fully open (90°), NOT the steep venetian cut-off.
+    """
+
+    def test_full_open_when_cutoff_ge_90(self) -> None:
+        # Flat roof, low near-side sun (elev=30) → raw cut-off 130.5° ≥ 90 →
+        # inclination 0 → fully OPEN (90°), not the steep 130.5° the interior
+        # venetian objective would drive to.
+        cover = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
+        beta = math.radians(90.0 - 30.0)  # flat-roof complement, gamma=0
+        raw, _, _ = slat_cutoff_angle(beta, cover.slat_distance, cover.depth)
+        assert raw > 90.0  # precondition: old objective drove past vertical
+        assert cover.calculate_position() == pytest.approx(90.0)
+
+    def test_near_side_tracks_toward_vertical(self) -> None:
+        # Flat roof, high near-side sun (elev=65) → raw cut-off 77.8° < 90 →
+        # max-opening angle is 180 − cut-off = 102.2° (just past vertical), NOT
+        # the 77.8° venetian cut-off.
+        cover = _louvered(sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2")
+        beta = math.radians(90.0 - 65.0)
+        raw, _, _ = slat_cutoff_angle(beta, cover.slat_distance, cover.depth)
+        assert raw < 90.0
+        result = cover.calculate_position()
+        assert result == pytest.approx(180.0 - raw)
+        assert result > 90.0
+
+    def test_far_side_full_open_low_sun(self) -> None:
+        # Far-side (gamma=120) low sun (elev=20) → raw cut-off ≥ 90 → inclination
+        # 0 → fully OPEN (90°) == min(90, cut-off). The OLD far-side mirror drove
+        # this to a near-closed 59.2° instead.
+        cover = _louvered(sol_azi=60, sol_elev=20, roof_pitch=0, mode="mode2")
+        assert cover._is_far_side() is True
+        assert cover.calculate_position() == pytest.approx(90.0)
 
 
 class TestFovAngle:
