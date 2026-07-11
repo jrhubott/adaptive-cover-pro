@@ -86,6 +86,41 @@ async def test_actual_positions_shows_my_after_acp_move(hass: HomeAssistant) -> 
     assert coordinator._snapshot.cover_positions["cover.test_blind"] == 50
 
 
+@pytest.mark.asyncio
+async def test_actual_positions_shows_my_after_user_stop(
+    hass: HomeAssistant,
+) -> None:
+    """Issue #888 follow-up: the card's stop service surfaces My on the display.
+
+    An assumed-state open/close-only cover reporting "open" — after the ACP
+    `stop` service (``async_apply_user_stop``) lands it on its hardware My
+    preset — must show ``my_position_value`` on both display surfaces, exactly
+    like the external stop→My path.
+    """
+    coordinator = await _setup_open_close_cover(hass, my_position=50)
+
+    # The cover reports "open" with assumed_state=True (last-command direction).
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": _OPEN_CLOSE_STOP, "assumed_state": True},
+    )
+
+    # The card stop button routes here. dry_run keeps the (unregistered)
+    # cover.stop_cover service from firing while still recording state.
+    coordinator._cmd_svc._dry_run = True
+    await coordinator.async_apply_user_stop("cover.test_blind", trigger="stop")
+    coordinator._cmd_svc._dry_run = False
+
+    # Diagnostics surface (build_diagnostic_data → read_positions).
+    diag = coordinator.build_diagnostic_data()
+    assert diag["covers"]["cover.test_blind"]["current_position"] == 50
+
+    # Sensor surface: snapshot.cover_positions, rebuilt on the next update cycle.
+    await coordinator.async_refresh()
+    assert coordinator._snapshot.cover_positions["cover.test_blind"] == 50
+
+
 # ---------------------------------------------------------------------------
 # Step 7 — invalidation
 # ---------------------------------------------------------------------------

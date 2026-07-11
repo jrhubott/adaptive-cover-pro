@@ -2898,9 +2898,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         counter-command the cover) then dispatches an ACP-context-stamped
         ``cover.stop_cover`` via :meth:`CoverCommandService.apply_user_stop`.
         Stop is unconditional — no pipeline preemption check.
+
+        Issue #888 follow-up: the ACP ``stop`` service (the card's stop button)
+        lands a My-configured open/close-only cover on its hardware My preset,
+        just like an external ``cover.stop_cover`` — but the external-stop
+        detector (:meth:`async_check_cover_service_call`) ignores ACP-originated
+        stops (``was_acp_stop_context``), so record My here instead. Mirrors the
+        external path's ``is_waiting_for_target`` guard: a stop mid ACP-move is a
+        halt, not a My landing.
         """
+        # Capture waiting BEFORE mark_user_command, which discards the in-flight
+        # target. was_waiting means ACP was mid its-own-move.
+        was_waiting = self._cmd_svc.is_waiting_for_target(entity_id)
         self.manager.mark_user_command(entity_id, reason=trigger)
-        return await self._cmd_svc.apply_user_stop(entity_id)
+        result = await self._cmd_svc.apply_user_stop(entity_id)
+        # set_target so reconciliation/hold compares against My; the assumed
+        # write is caps-confined to open/close-only covers by the shared helper.
+        my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
+        if my_position_value is not None and not was_waiting:
+            self._cmd_svc.set_target(entity_id, int(my_position_value))
+            self._cmd_svc._record_assumed_if_blind(entity_id, int(my_position_value))
+        return result
 
     def build_axis_discovery(
         self, labels: dict[str, str] | None = None

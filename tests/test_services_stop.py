@@ -346,6 +346,104 @@ async def test_external_stop_no_assumed_when_ignore_external() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #888 follow-up: the ACP `stop` service (card stop button) records My
+# for open/close-only covers, mirroring the external stop→My path above.
+# ---------------------------------------------------------------------------
+
+
+_POSITION_CAPABLE = {
+    "has_set_position": True,
+    "has_set_tilt_position": False,
+    "has_open": True,
+    "has_close": True,
+    "has_stop": True,
+}
+
+
+def _bind_user_stop(coord):
+    """Bind the real async_apply_user_stop onto a coord with a real cmd_svc."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord.async_apply_user_stop = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_stop.__get__(coord)
+    )
+    return coord
+
+
+@pytest.mark.asyncio
+async def test_user_stop_records_my_when_idle() -> None:
+    """ACP stop on an idle open/close-only cover records assumed=My and target=My."""
+    from unittest.mock import patch
+
+    coord = _bind_user_stop(_make_coord_for_assumed(my_position=50))
+    entity_id = "cover.test_blind"
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await coord.async_apply_user_stop(entity_id, trigger="stop")
+
+    assert coord._cmd_svc.get_assumed_position(entity_id) == 50
+    assert coord._cmd_svc.get_target(entity_id) == 50
+
+
+@pytest.mark.asyncio
+async def test_user_stop_no_my_when_waiting() -> None:
+    """A stop mid ACP-move (waiting) is a halt, not a My landing — no assumed."""
+    from unittest.mock import patch
+
+    coord = _bind_user_stop(_make_coord_for_assumed(my_position=50))
+    entity_id = "cover.test_blind"
+    coord._cmd_svc.set_waiting(entity_id, True)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await coord.async_apply_user_stop(entity_id, trigger="stop")
+
+    assert coord._cmd_svc.get_assumed_position(entity_id) is None
+
+
+@pytest.mark.asyncio
+async def test_user_stop_no_my_when_unconfigured() -> None:
+    """No My configured → the stop records no assumed position."""
+    from unittest.mock import patch
+
+    coord = _bind_user_stop(_make_coord_for_assumed(my_position=None))
+    entity_id = "cover.test_blind"
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_OPEN_CLOSE_ONLY,
+    ):
+        await coord.async_apply_user_stop(entity_id, trigger="stop")
+
+    assert coord._cmd_svc.get_assumed_position(entity_id) is None
+
+
+@pytest.mark.asyncio
+async def test_user_stop_position_capable_clears_assumed() -> None:
+    """A position-capable cover clears any stale assumed value (caps helper)."""
+    from unittest.mock import patch
+
+    coord = _bind_user_stop(_make_coord_for_assumed(my_position=50))
+    entity_id = "cover.test_blind"
+    coord._cmd_svc.record_assumed_position(entity_id, 50)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=_POSITION_CAPABLE,
+    ):
+        await coord.async_apply_user_stop(entity_id, trigger="stop")
+
+    assert coord._cmd_svc.get_assumed_position(entity_id) is None
+
+
+# ---------------------------------------------------------------------------
 # Step 10: services.yaml documents the stop service
 # ---------------------------------------------------------------------------
 
