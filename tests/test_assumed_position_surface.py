@@ -139,6 +139,107 @@ async def test_assumed_cleared_on_real_state_change(hass: HomeAssistant) -> None
 
 
 @pytest.mark.asyncio
+async def test_assumed_survives_same_state_re_report(hass: HomeAssistant) -> None:
+    """A same-value re-report ("open"→"open") must NOT wipe the assumed value.
+
+    Issue #888 follow-up: an assumed-state Somfy-RTS cover reports HA state
+    "open" (the last-command direction). Any incidental state re-report of the
+    same value must leave the display-only assumed My value intact — otherwise
+    the card snaps back off My.
+    """
+    coordinator = await _setup_open_close_cover(hass, my_position=50)
+    coordinator.manager.add_covers(["cover.test_blind"])
+    coordinator._cmd_svc.record_assumed_position("cover.test_blind", 50)
+
+    old_state = MagicMock()
+    old_state.state = "open"
+    old_state.attributes = {"assumed_state": True}
+    new_state = MagicMock()
+    new_state.state = "open"
+    new_state.attributes = {"assumed_state": True}
+    new_state.context = None
+    new_state.last_updated = None
+    event = MagicMock()
+    event.entity_id = "cover.test_blind"
+    event.new_state = new_state
+    event.old_state = old_state
+
+    # our_state matches the raw open read (100) so no manual override engages.
+    coordinator.manager.handle_state_change(
+        event,
+        100,
+        coordinator._policy,
+        False,
+        lambda _e: False,
+        5,
+    )
+
+    assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") == 50
+
+
+@pytest.mark.asyncio
+async def test_assumed_cleared_on_open_close_transition(hass: HomeAssistant) -> None:
+    """A genuine endpoint transition ("open"→"closed") still clears the assumed value."""
+    coordinator = await _setup_open_close_cover(hass, my_position=50)
+    coordinator.manager.add_covers(["cover.test_blind"])
+    coordinator._cmd_svc.record_assumed_position("cover.test_blind", 50)
+
+    old_state = MagicMock()
+    old_state.state = "open"
+    old_state.attributes = {"assumed_state": True}
+    new_state = MagicMock()
+    new_state.state = "closed"
+    new_state.attributes = {"assumed_state": True}
+    new_state.context = None
+    new_state.last_updated = None
+    event = MagicMock()
+    event.entity_id = "cover.test_blind"
+    event.new_state = new_state
+    event.old_state = old_state
+
+    coordinator.manager.handle_state_change(
+        event,
+        0,
+        coordinator._policy,
+        False,
+        lambda _e: False,
+        5,
+    )
+
+    assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") is None
+
+
+@pytest.mark.asyncio
+async def test_actual_positions_shows_my_for_assumed_state_cover_reporting_open(
+    hass: HomeAssistant,
+) -> None:
+    """The live Deck scenario: an assumed-state cover reporting "open" shows My.
+
+    The most common assumed-state cover (Somfy RTS) reports HA state "open"
+    (assumed_state=True) after a stop→My, which get_open_close_state would map
+    to 100. With a recorded assumed My value, both display surfaces must show
+    50, not the open-derived 100.
+    """
+    coordinator = await _setup_open_close_cover(hass, my_position=50)
+
+    # The cover reports "open" with assumed_state=True (last-command direction).
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": _OPEN_CLOSE_STOP, "assumed_state": True},
+    )
+    coordinator._cmd_svc.record_assumed_position("cover.test_blind", 50)
+
+    # Diagnostics surface (build_diagnostic_data → read_positions).
+    diag = coordinator.build_diagnostic_data()
+    assert diag["covers"]["cover.test_blind"]["current_position"] == 50
+
+    # Sensor surface: snapshot.cover_positions, rebuilt on the next update cycle.
+    await coordinator.async_refresh()
+    assert coordinator._snapshot.cover_positions["cover.test_blind"] == 50
+
+
+@pytest.mark.asyncio
 async def test_assumed_cleared_on_native_position_command(
     hass: HomeAssistant,
 ) -> None:

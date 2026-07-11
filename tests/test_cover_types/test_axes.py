@@ -427,6 +427,20 @@ class TestReadAxisValue:
         assert policy.read_axis_value(live_open, "cover.somfy", caps, assumed=50) == 100
 
     @pytest.mark.unit
+    def test_read_axis_value_assumed_wins_for_assumed_state_open(self):
+        # Issue #888 follow-up: a Somfy-RTS assumed-state cover reports HA state
+        # "open" (the last-command direction), which get_open_close_state maps to
+        # 100 — but that is NOT a real position. A recorded assumed My value (50)
+        # is more specific and must win over the open/close mapping.
+        caps = {"has_set_position": False, "has_set_tilt_position": False}
+        policy = get_policy("cover_blind")
+
+        assumed_open = _hass_with_state({"assumed_state": True}, state="open")
+        assert (
+            policy.read_axis_value(assumed_open, "cover.somfy", caps, assumed=50) == 50
+        )
+
+    @pytest.mark.unit
     def test_read_axis_value_assumed_ignored_for_position_capable(self):
         # A position-capable cover never returns the assumed value: its live read
         # (here None because the attribute is absent) is authoritative and must

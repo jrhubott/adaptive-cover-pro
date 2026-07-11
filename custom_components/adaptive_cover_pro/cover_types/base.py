@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import voluptuous as vol
 from homeassistant.const import (
+    ATTR_ASSUMED_STATE,
     SERVICE_SET_COVER_POSITION,
     SERVICE_SET_COVER_TILT_POSITION,
 )
@@ -720,11 +721,14 @@ class CoverTypePolicy(ABC):
         handling, and the position-capability check inside ``_prepare_service_call``.
 
         ``assumed`` (issue #888) is a display-only fallback surfaced ONLY on the
-        open/close-only branch, and ONLY after the live open/close read yields
-        ``None``. A real numeric/open/closed read always wins and is never
-        masked; a position-capable cover never reaches the fallback. Callers on
-        the command-dispatch read path leave ``assumed=None`` so the gates stay
-        raw (§3b) — only the reported-position surfaces pass it.
+        open/close-only branch. It wins in two cases: after the live open/close
+        read yields ``None``, and — for an ``assumed_state`` cover (issue #888
+        follow-up) — over the open/close mapping itself, because for such covers
+        ``open``/``closed`` is the last-command direction, not a real position.
+        On a non-assumed open/close cover a real open/closed read still wins and
+        is never masked; a position-capable cover never reaches the fallback.
+        Callers on the command-dispatch read path leave ``assumed=None`` so the
+        gates stay raw (§3b) — only the reported-position surfaces pass it.
         """
         axis = self.select_default_axis(caps)
         if _caps_get(caps, axis.capability_key, default=True):
@@ -732,6 +736,15 @@ class CoverTypePolicy(ABC):
                 return state_obj.attributes.get(axis.state_attr)
             return state_attr(hass, entity, axis.state_attr)
         live = get_open_close_state(hass, entity, state_obj=state_obj)
+        if assumed is not None:
+            st = state_obj if state_obj is not None else hass.states.get(entity)
+            if st is not None and st.attributes.get(ATTR_ASSUMED_STATE):
+                # Issue #888 follow-up: for an assumed-state cover, open/closed is
+                # the last-command direction, not a real position. A recorded
+                # high-confidence assumed value (a My arrival) is more specific, so
+                # surface it over the open/close mapping. Invalidation (manual-override
+                # transition + per-command refresh) keeps it from going stale.
+                return assumed
         if live is None and assumed is not None:
             return assumed
         return live

@@ -425,17 +425,21 @@ class AdaptiveCoverManager:
         new_position = policy.read_axis_value(
             self.hass, entity_id, caps, state_obj=new_state
         )
-        # Issue #888: a genuine numeric position read supersedes any display-only
-        # assumed value, so drop it. Reads that resolve to None (the Somfy-RTS
-        # unknown state that made the assumed value necessary) leave it intact.
-        if new_position is not None:
-            self._invalidate_assumed(entity_id)
         old_state_obj = getattr(event, "old_state", None)
         old_position = (
             policy.read_axis_value(self.hass, entity_id, caps, state_obj=old_state_obj)
             if old_state_obj is not None
             else None
         )
+        # Issue #888 follow-up: drop the display-only assumed value only on a
+        # GENUINE position transition. For assumed-state open/close covers (Somfy
+        # RTS) "open"/"closed" is the last-command signal; a same-value re-report
+        # ("open"→"open") must NOT wipe the assumed My value, or the card snaps
+        # back off My. A real move to a different endpoint (or a differing numeric
+        # read) still supersedes it. Both reads above pass no ``assumed`` so they
+        # compare raw open/close values (§3b), never the assumed fallback.
+        if new_position is not None and new_position != old_position:
+            self._invalidate_assumed(entity_id)
 
         now = dt.datetime.now(dt.UTC)
         ctx_obj = getattr(new_state, "context", None)
