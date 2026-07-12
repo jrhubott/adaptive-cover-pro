@@ -8,11 +8,12 @@ the transition and dispatch the sunset position.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS
+from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS, ControlMethod
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
@@ -31,14 +32,24 @@ def _make_coord(
     sunset_pos: int | None = 0,
     inverse_state: bool = False,
     n_entities: int = 1,
+    pipeline_control_method: ControlMethod | None = None,
 ) -> AdaptiveDataUpdateCoordinator:
-    """Minimal coordinator fixture for _check_sunset_window_transition tests."""
+    """Minimal coordinator fixture for _check_sunset_window_transition tests.
+
+    ``pipeline_control_method``, when given, seeds ``coord._pipeline_result``
+    with that control method (issue #895 — a higher-priority handler, e.g.
+    CUSTOM_POSITION, currently winning the pipeline must suppress the sunset
+    dispatch). Left unset by default so existing callers keep exercising the
+    startup/no-pipeline-result-yet case exactly as before.
+    """
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._toggles = ToggleManager()
     coord.automatic_control = automatic_control
     coord._track_end_time = track_end_time
     coord._inverse_state = inverse_state
+    if pipeline_control_method is not None:
+        coord._pipeline_result = SimpleNamespace(control_method=pipeline_control_method)
 
     entities = [MagicMock() for _ in range(n_entities)]
     coord.entities = entities
@@ -269,3 +280,48 @@ async def test_end_time_after_sunset_does_not_double_dispatch():
     await coord._check_sunset_window_transition()
 
     coord._cmd_svc.apply_position.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Issue #895: priority inversion — sunset dispatch must not override a
+# currently-active higher-priority pipeline handler (e.g. CUSTOM_POSITION).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_skips_dispatch_when_custom_position_currently_active():
+    """No dispatch when a higher-priority handler currently owns the pipeline.
+
+    Regression for issue #895: the astronomical-sunset dispatch bypassed the
+    pipeline entirely and force-sent the raw sunset position even when a
+    higher-priority CustomPositionHandler slot (e.g. a user's sleep-mode
+    floor) was the pipeline's current winner. That overwrote the custom
+    position until the next refresh cycle silently corrected it back — a
+    spurious double-move.
+    """
+    coord = _make_coord(
+        sunset_pos=0, pipeline_control_method=ControlMethod.CUSTOM_POSITION
+    )
+    _seed_sunset_state(coord, prev=False, current_is_sunset=True)
+
+    await coord._check_sunset_window_transition()
+
+    coord._cmd_svc.apply_position.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_dispatch_still_occurs_when_pipeline_control_method_is_default():
+    """Happy path: an explicit DEFAULT control_method does not suppress dispatch.
+
+    Locks in that the issue #895 override guard only blocks *non-DEFAULT*
+    control methods — when the pipeline's own winner is the DEFAULT handler
+    (which sunset itself is a variant of), the sunset dispatch still fires.
+    """
+    coord = _make_coord(sunset_pos=0, pipeline_control_method=ControlMethod.DEFAULT)
+    _seed_sunset_state(coord, prev=False, current_is_sunset=True)
+
+    await coord._check_sunset_window_transition()
+
+    coord._cmd_svc.apply_position.assert_called_once()

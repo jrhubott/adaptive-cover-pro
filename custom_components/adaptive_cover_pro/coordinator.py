@@ -3280,6 +3280,35 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return bool(self._pipeline_result and self._pipeline_result.is_safety)
 
+    def _pipeline_has_active_override(self) -> bool:
+        """Return True when a non-DEFAULT handler currently owns the pipeline result.
+
+        Consulted by both fast-dispatch paths that bypass the pipeline
+        registry entirely — ``_on_window_closed`` (end-of-window default) and
+        ``WindowTransitionTracker.check_sunset_window`` (astronomical-sunset
+        transition) — so neither force-sends the raw sunset/default position
+        over a higher-priority handler's already-winning result (e.g. a
+        CUSTOM_POSITION slot holding a user's sleep-mode floor). Without this
+        guard the sunset transition overwrites the custom position and only
+        the next refresh cycle corrects it back — a spurious double-move
+        (issue #895).
+
+        MANUAL is intentionally NOT special-cased here: it is already handled
+        per-cover-entity via ``is_cover_manual`` in the sunset dispatch loop,
+        whereas ``control_method`` is a single coordinator-wide decision — the
+        two checks are complementary, not redundant.
+
+        Uses ``getattr`` because some minimal test doubles construct the
+        coordinator via ``object.__new__`` without running ``__init__`` (which
+        is where ``_pipeline_result`` is first set to ``None``); treating a
+        missing attribute the same as ``None`` mirrors real startup, where the
+        pipeline hasn't evaluated yet.
+        """
+        result = getattr(self, "_pipeline_result", None)
+        if result is None:
+            return False
+        return result.control_method is not ControlMethod.DEFAULT
+
     def _is_custom_position_sensor_trigger(self) -> bool:
         """Return True when this refresh was edge-triggered by a custom-position slot's own trigger.
 
@@ -3374,6 +3403,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             (issue #215/#216).  The necessary guards (return_sunset toggle,
             automatic_control) are already applied above; there is no reason
             to bypass the command-service delta/manual-override gates here.
+
+            Also skips when a higher-priority handler (e.g. CUSTOM_POSITION)
+            is currently the pipeline's winner — see
+            ``_pipeline_has_active_override`` (issue #895).
             """
             # Always clear stale daytime targets when the window closes so
             # reconciliation cannot resend them overnight.
@@ -3384,6 +3417,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.logger.debug(
                     "End time reached but automatic control is OFF — "
                     "skipping return-to-default reposition"
+                )
+                return
+            if self._pipeline_has_active_override():
+                self.logger.debug(
+                    "End time reached but a higher-priority handler (%s) is "
+                    "active — skipping return-to-default reposition (issue #895)",
+                    self._pipeline_result.control_method,
                 )
                 return
             options = self.config_entry.options
@@ -3544,7 +3584,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Delegate astronomical-sunset-window transition handling to the tracker.
 
         See :meth:`WindowTransitionTracker.check_sunset_window` for the
-        full contract (issue #266).
+        full contract (issue #266) including the override-precedence guard
+        (issue #895).
         """
         options = self.config_entry.options
         await self._window_tracker.check_sunset_window(
@@ -3555,6 +3596,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             inverse_state_enabled=self._inverse_state,
             entities=self.entities,
             is_cover_manual=self.manager.is_cover_manual,
+            has_active_override=self._pipeline_has_active_override(),
             build_position_context=lambda c, o: self._build_position_context(
                 c, o, force=False
             ),

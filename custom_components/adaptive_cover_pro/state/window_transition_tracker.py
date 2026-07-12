@@ -132,6 +132,7 @@ class WindowTransitionTracker:
         inverse_state_enabled: bool,
         entities: list[str],
         is_cover_manual: IsCoverManualFn,
+        has_active_override: bool = False,
         build_position_context: BuildContextFn,
         apply_position: ApplyPositionFn,
         refresh: RefreshFn,
@@ -142,7 +143,13 @@ class WindowTransitionTracker:
         the cover uses inverse state) to every non-manual cover.  No-ops
         when the user has not opted in to ``return_sunset`` tracking, when
         automatic control is disabled, when no sunset position is
-        configured, or on the seeding call.
+        configured, on the seeding call, or when ``has_active_override`` is
+        True — a higher-priority pipeline handler (e.g. a CUSTOM_POSITION
+        slot) is currently winning and must not be overwritten by the raw
+        sunset position (issue #895). In that last case the internal
+        False→True edge is deliberately left unresolved so the dispatch fires
+        on the first subsequent call where the override is no longer active,
+        rather than being lost.
         """
         if not track_end_time:
             return
@@ -152,6 +159,12 @@ class WindowTransitionTracker:
             )
             return
         if sunset_pos_cfg is None:
+            return
+        if has_active_override:
+            self._logger.debug(
+                "Sunset window transition detected but a higher-priority "
+                "handler is currently active — skipping reposition (issue #895)"
+            )
             return
 
         _effective_pos, is_sunset = self._effective_default_fn(options)
