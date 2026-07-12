@@ -32,12 +32,19 @@ class FloorClampInfo:
                 the weather override.
         position: The floor position (0–100) in pre-inversion canonical
                 space (0 = closed, 100 = open).
+        priority: The contributing override's pipeline priority — the custom
+                slot's configured priority, or the weather handler's declared
+                priority for the weather floor. The user-move clamp gates on
+                this so a floor only clamps a manual command when it outranks
+                manual override (issue #472); the pipeline-winner clamp ignores
+                it (auto-rule composition stays unconditional, issue #463).
 
     """
 
     source: str
     label: str
     position: int
+    priority: int
 
 
 def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
@@ -53,6 +60,12 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
     ``min_mode`` is True. ``use_my`` floors are excluded — the "Use My"
     path is hardware-pinned and never participates in floor semantics.
     """
+    # Local import: ``pipeline.handlers`` pulls in cover-type policies, so a
+    # module-level import here would form a circular import chain. The class is
+    # still the single source of truth for the weather priority (guideline
+    # §180-186 — never inline the magic number).
+    from .handlers.weather import WeatherOverrideHandler
+
     floors: list[FloorClampInfo] = []
     for state in snapshot.custom_position_sensors:
         if state.is_on and state.min_mode and not state.use_my:
@@ -61,6 +74,7 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
                     source=custom_position_handler_name(state.slot),
                     label=state.display_label,
                     position=state.position,
+                    priority=state.priority,
                 )
             )
     if snapshot.weather_override_active and snapshot.weather_override_min_mode:
@@ -69,6 +83,7 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
                 source="weather",
                 label="weather override",
                 position=snapshot.weather_override_position,
+                priority=WeatherOverrideHandler.priority,
             )
         )
     return floors

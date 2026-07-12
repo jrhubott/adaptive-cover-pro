@@ -816,3 +816,102 @@ def test_decision_trace_does_not_mislabel_winner() -> None:
     ]
     assert len(non_clamp_matched) == 1
     assert non_clamp_matched[0].handler == "climate"
+
+
+# ---------------------------------------------------------------------------
+# Issue #472: FloorClampInfo carries the contributing floor's priority so the
+# user-move clamp can gate on it (floor must outrank manual override to clamp).
+# ---------------------------------------------------------------------------
+
+
+def test_floor_clamp_info_carries_priority() -> None:
+    """FloorClampInfo exposes a ``priority`` field."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import FloorClampInfo
+
+    info = FloorClampInfo(
+        source="custom_position_1", label="Table", position=60, priority=82
+    )
+    assert info.priority == 82
+
+
+def test_gather_active_floors_populates_custom_slot_priority() -> None:
+    """gather_active_floors copies each custom slot's priority onto the floor."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                priority=82,
+                slot=1,
+            ),
+            _cp_state(
+                "binary_sensor.cp2",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                priority=77,
+                slot=2,
+            ),
+        ]
+    )
+    floors = gather_active_floors(snap)
+    assert [(f.source, f.priority) for f in floors] == [
+        ("custom_position_1", 82),
+        ("custom_position_2", 77),
+    ]
+
+
+def test_gather_active_floors_weather_uses_handler_priority() -> None:
+    """The weather floor takes WeatherOverrideHandler's declared priority (90)."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        weather_override_active=True,
+        weather_override_position=60,
+        weather_override_min_mode=True,
+    )
+    floors = gather_active_floors(snap)
+    assert len(floors) == 1
+    assert floors[0].source == "weather"
+    assert floors[0].priority == WeatherOverrideHandler.priority
+
+
+def test_effective_floor_returns_winning_floor_priority() -> None:
+    """effective_floor returns the highest floor's FloorClampInfo with its priority."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        effective_floor,
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                priority=77,
+                slot=1,
+            ),
+            _cp_state(
+                "binary_sensor.cp2",
+                is_on=True,
+                position=65,
+                min_mode=True,
+                priority=82,
+                slot=2,
+            ),
+        ]
+    )
+    pos, info = effective_floor(gather_active_floors(snap))
+    assert pos == 65
+    assert info is not None
+    assert info.priority == 82

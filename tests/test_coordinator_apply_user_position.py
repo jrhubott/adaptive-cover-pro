@@ -31,12 +31,18 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 )
 
 
-def _slot(pos: int, *, is_on: bool, min_mode: bool) -> CustomPositionSensorState:
+def _slot(
+    pos: int,
+    *,
+    is_on: bool,
+    min_mode: bool,
+    priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
+) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_ids=(f"binary_sensor.slot_{pos}",),
         is_on=is_on,
         position=pos,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=priority,
         min_mode=min_mode,
         use_my=False,
     )
@@ -150,7 +156,9 @@ def _make_coord(
 @pytest.mark.asyncio
 async def test_async_apply_user_position_clamps_to_min_mode_floor() -> None:
     """Requested < highest active min-mode floor → clamped up to floor."""
-    coord, ctx = _make_coord([_slot(40, is_on=True, min_mode=True)])
+    # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
+    # to clamp a user move.
+    coord, ctx = _make_coord([_slot(40, is_on=True, min_mode=True, priority=82)])
 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 

@@ -18,12 +18,18 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 )
 
 
-def _slot(position: int, *, is_on: bool, min_mode: bool) -> CustomPositionSensorState:
+def _slot(
+    position: int,
+    *,
+    is_on: bool,
+    min_mode: bool,
+    priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
+) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_ids=(f"binary_sensor.slot_p{position}",),
         is_on=is_on,
         position=position,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=priority,
         min_mode=min_mode,
         use_my=False,
     )
@@ -77,7 +83,9 @@ async def test_set_position_clamps_requested_below_min_mode_floor() -> None:
         async_handle_set_position,
     )
 
-    slot1 = _slot(30, is_on=True, min_mode=True)
+    # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
+    # to clamp a user move.
+    slot1 = _slot(30, is_on=True, min_mode=True, priority=82)
     slot2 = _slot(80, is_on=False, min_mode=False)
 
     # Case 1: below floor → clamps to 30

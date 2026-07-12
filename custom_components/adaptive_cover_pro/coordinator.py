@@ -2769,8 +2769,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             group_intent=self.effective_group_intent,
         )
         floors = gather_active_floors(snapshot)
-        effective_floor_pos, _ = effective_floor(floors)
-        clamped = max(int(requested), effective_floor_pos)
+        effective_floor_pos, floor_info = effective_floor(floors)
+        # Priority-aware user-move clamp (issue #472): a floor only clamps a
+        # manual/user command when it strictly outranks manual override — the
+        # same predicate the preemption check below uses. A default-priority
+        # (77) floor yields to the manual move; a floor above 80 clamps it up
+        # *before* dispatch. The pipeline-winner clamp (registry.py) stays
+        # unconditional so auto-rule composition is unaffected (issue #463).
+        floor_applies = (
+            floor_info is not None
+            and floor_info.priority > ManualOverrideHandler.priority
+        )
+        clamped = (
+            max(int(requested), effective_floor_pos)
+            if floor_applies
+            else int(requested)
+        )
         if clamped != requested:
             _LOGGER.info(
                 "%s: requested %d clamped to %d (active min-mode floor)",
