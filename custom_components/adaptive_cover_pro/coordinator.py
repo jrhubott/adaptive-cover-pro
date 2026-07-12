@@ -1756,6 +1756,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         bypass_auto_control: bool = False,
         sun_just_appeared: bool = False,
         use_my_position: bool = False,
+        user_command: bool = False,
     ) -> PositionContext:
         """Build a PositionContext for the given cover entity.
 
@@ -1789,6 +1790,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 non-position-capable covers through ``stop_cover`` instead of
                 open/close.  Caller-supplied value is ORed with the pipeline
                 result's ``use_my_position`` so either source can enable it.
+            user_command: If True, this is an explicit user-initiated command
+                (card Open/Close/Set, set_position / set_axes service, My
+                button) and must dispatch even when ACP's raw view already
+                matches the target — the same-position gate is bypassed
+                (issue #900). Distinct from ``force``: recurring resends set
+                ``force`` too but stay deduped to avoid relay clicks (#290).
 
         """
         return PositionContext(
@@ -1802,6 +1809,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force=force,
             is_safety=is_safety,
             bypass_auto_control=bypass_auto_control,
+            user_command=user_command,
             use_my_position=(
                 use_my_position
                 or (
@@ -2817,6 +2825,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force=True,
             bypass_auto_control=True,
             use_my_position=use_my_position,
+            # Explicit user action — must dispatch even when ACP's raw view of a
+            # no-feedback cover already matches the target (issue #900). Distinct
+            # from force=True alone, which recurring resends also set and which
+            # must stay deduped by the same-position gate (issue #290).
+            user_command=True,
         )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
 

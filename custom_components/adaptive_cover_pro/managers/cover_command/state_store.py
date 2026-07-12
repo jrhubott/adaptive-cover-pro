@@ -95,6 +95,16 @@ class PositionContext:
     bypass_auto_control: bool = (
         False  # Sanctioned one-shot bypass of auto_control gate (e.g. switch return-to-default)
     )
+    user_command: bool = (
+        # An explicit user-initiated command (card Open/Close/Set, set_position /
+        # set_axes service, My button). Unlike the generic ``force`` flag — which
+        # recurring resends (custom_position, override-clear) also set and which
+        # MUST stay deduped by the same-position gate to avoid relay clicks
+        # (issue #290) — a user command must ALWAYS dispatch, even when ACP's raw
+        # view already matches the target. On a no-feedback cover ACP cannot know
+        # the true position, so it must trust the user (issue #900).
+        False
+    )
     use_my_position: bool = (
         False  # Route through send_my_position() on non-position-capable covers
     )

@@ -42,7 +42,7 @@ def svc(hass):
     return s
 
 
-def _ctx(*, force=False, is_safety=False, auto_control=True):
+def _ctx(*, force=False, is_safety=False, auto_control=True, user_command=False):
     return PositionContext(
         auto_control=auto_control,
         manual_override=False,
@@ -52,6 +52,7 @@ def _ctx(*, force=False, is_safety=False, auto_control=True):
         special_positions=[0, 100],
         force=force,
         is_safety=is_safety,
+        user_command=user_command,
     )
 
 
@@ -167,6 +168,79 @@ class TestSamePositionBypassesForceGate:
                 60,
                 "custom_position",
                 _ctx(force=True, is_safety=False, auto_control=True),
+            )
+
+        assert outcome == "skipped"
+        assert detail == "same_position"
+        hass.services.async_call.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Issue #900: an explicit USER command must bypass the same-position gate
+# ---------------------------------------------------------------------------
+
+
+class TestUserCommandBypassesSamePosition:
+    """A user pressing Open/Close/Set from the card must always dispatch (#900).
+
+    On a no-feedback (assumed_state) cover the display shows the assumed My value
+    (e.g. 50) while the gate reads the raw HA open/closed state (``open`` -> 100).
+    Pressing Open (target 100) was dropped as ``same_position`` because the gate
+    ignored ``context.user_command``. A user command sets force=True too, but it
+    must NOT be deduped like the recurring force=True resends of issue #290 — so
+    the split is on ``user_command``, not ``force``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_user_command_same_position_is_sent(self, svc, hass):
+        """user_command=True + cover already at target must SEND, not skip."""
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=100),
+        ):
+            outcome, _detail = await svc.apply_position(
+                "cover.test",
+                100,
+                "set_axes",
+                _ctx(force=True, user_command=True, auto_control=True),
+            )
+
+        assert outcome == "sent"
+        hass.services.async_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_user_command_no_feedback_same_target_is_sent(self, svc, hass):
+        """No-feedback cover (_current is None, target-fallback matches) still sends for a user command."""
+        with (
+            _patch_caps(has_set_position=False),
+            patch.object(svc, "_get_current_position", return_value=None),
+            patch.object(svc, "_same_position_via_target_fallback", return_value=True),
+        ):
+            outcome, _detail = await svc.apply_position(
+                "cover.test",
+                100,
+                "set_axes",
+                _ctx(force=True, user_command=True, auto_control=True),
+            )
+
+        assert outcome == "sent"
+        hass.services.async_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_non_user_force_still_deduped_on_no_feedback(self, svc, hass):
+        """Regression guard for #779/#290: a recurring force resend (not a user command)
+        on a no-feedback cover still skips as same_position so it can't relay-click.
+        """
+        with (
+            _patch_caps(has_set_position=False),
+            patch.object(svc, "_get_current_position", return_value=None),
+            patch.object(svc, "_same_position_via_target_fallback", return_value=True),
+        ):
+            outcome, detail = await svc.apply_position(
+                "cover.test",
+                100,
+                "reconciliation",
+                _ctx(force=True, user_command=False, auto_control=True),
             )
 
         assert outcome == "skipped"

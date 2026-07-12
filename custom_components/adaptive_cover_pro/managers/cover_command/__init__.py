@@ -1267,9 +1267,18 @@ class CoverCommandService:
         # covers are all handled by the one routing source of truth. Delta/time
         # gates and reconciliation deliberately keep reading the real (unknown)
         # _current — this fallback is scoped to the same-position gate only.
+        # An explicit user command (context.user_command) must ALWAYS dispatch —
+        # a user pressing Open/Close/Set from the card is never "already there"
+        # as far as ACP is entitled to decide, especially on a no-feedback cover
+        # whose raw HA state (open->100) diverges from the assumed display value
+        # (My=50). This is distinct from the generic force=True flag, which the
+        # recurring resends (custom_position, override-clear) also set and which
+        # MUST stay deduped here to avoid relay clicks (issue #290/#779). So the
+        # bypass keys on user_command, not force (issue #900).
         if (
             not context.sun_just_appeared
             and not force_endpoint
+            and not context.user_command
             and (
                 (
                     _current is not None
