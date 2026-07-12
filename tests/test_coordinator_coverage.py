@@ -558,6 +558,93 @@ async def test_window_close_sends_reposition_when_auto_control_on():
     assert cmd_svc.apply_position.call_args[0][2] == "end_time_default"
 
 
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_window_close_skips_reposition_when_custom_position_active():
+    """_on_window_closed must not send positions when a higher-priority handler wins.
+
+    Regression for issue #895: mirrors
+    test_window_close_sends_reposition_when_auto_control_on, but with the
+    pipeline's current control_method set to CUSTOM_POSITION (a user's
+    sleep-mode floor, priority 77). The raw end-of-window default must not
+    force-overwrite that higher-priority slot's position.
+    """
+    import datetime as dt
+    from types import SimpleNamespace
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        ControlMethod,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = [MagicMock()]
+    coord.hass = MagicMock()
+    coord._pipeline_result = SimpleNamespace(
+        control_method=ControlMethod.CUSTOM_POSITION
+    )
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+    coord.async_refresh = AsyncMock()
+
+    options = {CONF_DEFAULT_HEIGHT: 0}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=True))
+    coord.manager = MagicMock()
+
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        effective_default_fn=lambda _opts: (0, False),
+    )
+    tracker._prev_sunset_active = True
+    coord._window_tracker = tracker
+
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+        return_value=(0, False),
+    ):
+        time_mgr = MagicMock()
+
+        async def _invoke(track_end_time, refresh_callback, on_window_open=None):
+            await refresh_callback()
+
+        time_mgr.check_transition = _invoke
+        coord._time_mgr = time_mgr
+
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    # Stale-target cleanup must still run regardless of override state
+    cmd_svc.clear_non_safety_targets.assert_called_once()
+    cmd_svc.apply_position.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # _build_pipeline: tilt threaded from options to CustomPositionHandler
 # ---------------------------------------------------------------------------
