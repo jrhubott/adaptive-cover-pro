@@ -121,6 +121,50 @@ async def test_actual_positions_shows_my_after_user_stop(
     assert coordinator._snapshot.cover_positions["cover.test_blind"] == 50
 
 
+@pytest.mark.asyncio
+async def test_actual_positions_shows_my_after_user_stop_while_waiting(
+    hass: HomeAssistant,
+) -> None:
+    """Issue #888 follow-up: a user stop mid ACP-move must still surface My.
+
+    Live Deck scenario: ACP was solar-tracking and had just sent ``close_cover``,
+    leaving ``waiting=True`` with the stale endpoint (0) stashed as the assumed
+    value. Pressing the card's stop button engages the override unconditionally,
+    but the My assumed record used to be gated behind ``not was_waiting`` — so
+    every reported surface kept showing the stale 0 instead of My. A Somfy-RTS
+    stop physically lands on My even mid-move, so the display must show My.
+    """
+    coordinator = await _setup_open_close_cover(hass, my_position=50)
+
+    # The cover reports "closed" with assumed_state=True (last close command).
+    hass.states.async_set(
+        "cover.test_blind",
+        "closed",
+        {"supported_features": _OPEN_CLOSE_STOP, "assumed_state": True},
+    )
+
+    # Simulate ACP mid its-own close move: waiting + the stale close endpoint (0)
+    # already recorded as the assumed value, exactly as a routine close_cover left it.
+    coordinator._cmd_svc.set_waiting("cover.test_blind", True)
+    coordinator._cmd_svc.record_assumed_position("cover.test_blind", 0)
+
+    # The card stop button routes here while ACP is still mid-move.
+    coordinator._cmd_svc._dry_run = True
+    await coordinator.async_apply_user_stop("cover.test_blind", trigger="stop")
+    coordinator._cmd_svc._dry_run = False
+
+    # The assumed store must now hold My, not the stale 0.
+    assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") == 50
+
+    # Diagnostics surface (build_diagnostic_data → read_positions).
+    diag = coordinator.build_diagnostic_data()
+    assert diag["covers"]["cover.test_blind"]["current_position"] == 50
+
+    # Sensor surface: snapshot.cover_positions, rebuilt on the next update cycle.
+    await coordinator.async_refresh()
+    assert coordinator._snapshot.cover_positions["cover.test_blind"] == 50
+
+
 # ---------------------------------------------------------------------------
 # Step 7 — invalidation
 # ---------------------------------------------------------------------------

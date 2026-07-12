@@ -421,8 +421,15 @@ async def test_user_stop_records_my_when_idle() -> None:
 
 
 @pytest.mark.asyncio
-async def test_user_stop_no_my_when_waiting() -> None:
-    """A stop mid ACP-move (waiting) is a halt, not a My landing — no assumed."""
+async def test_user_stop_records_my_when_waiting() -> None:
+    """A stop mid ACP-move still records assumed=My on an open/close-only cover.
+
+    #888 follow-up: a no-feedback cover (Somfy RTS) physically lands on My when
+    stopped even mid its-own-move, so the display-only assumed value must reflect
+    My regardless of ``was_waiting``. The fresh target / transit window stays
+    gated on ``not was_waiting`` — a mid-halt cover is already in a transit
+    window — so ``target`` is left untouched here.
+    """
     from unittest.mock import patch
 
     coord = _bind_user_stop(_make_coord_for_assumed(my_position=50))
@@ -435,7 +442,10 @@ async def test_user_stop_no_my_when_waiting() -> None:
     ):
         await coord.async_apply_user_stop(entity_id, trigger="stop")
 
-    assert coord._cmd_svc.get_assumed_position(entity_id) is None
+    # Display-only assumed My is recorded unconditionally (caps-confined).
+    assert coord._cmd_svc.get_assumed_position(entity_id) == 50
+    # But the target/transit block stays gated: no fresh My target while waiting.
+    assert coord._cmd_svc.get_target(entity_id) != 50
 
 
 @pytest.mark.asyncio

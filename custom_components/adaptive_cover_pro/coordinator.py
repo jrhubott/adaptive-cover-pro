@@ -2912,25 +2912,35 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         was_waiting = self._cmd_svc.is_waiting_for_target(entity_id)
         self.manager.mark_user_command(entity_id, reason=trigger)
         result = await self._cmd_svc.apply_user_stop(entity_id)
-        # set_target so reconciliation/hold compares against My; the assumed
-        # write is caps-confined to open/close-only covers by the shared helper.
         my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
-        if my_position_value is not None and not was_waiting:
-            # Capture the raw prior position BEFORE set_target overwrites it so
-            # the synthetic direction reflects the move toward My.
-            prior_position = self._cmd_svc.get_current_position(entity_id)
-            self._cmd_svc.set_target(entity_id, int(my_position_value))
+        if my_position_value is not None:
+            # The override engaged unconditionally (mark_user_command above), so
+            # the display-only assumed My must be recorded unconditionally too — a
+            # no-feedback open/close-only cover (Somfy RTS) physically lands on My
+            # when stopped, even mid its-own-move. Caps-confined to open/close-only
+            # covers by the shared helper (it clears any stale assumed value on
+            # position-capable covers), so this is safe for every cover type.
+            # Without it, a stop while ACP is mid-move (was_waiting) leaves the stale
+            # close/open endpoint assumed value and every reported surface shows it (#888).
             self._cmd_svc._record_assumed_if_blind(entity_id, int(my_position_value))
-            # Give the My move a ~45s transit window (open/close-only covers) so
-            # the card renders "Opening…/Closing…". The direction is caps-gated
-            # by the shared helper; begin_transit stamps waiting + sent_at so the
-            # reconciliation timer clears it when the window closes.
-            self._cmd_svc._set_transit_direction_if_blind(
-                entity_id, int(my_position_value), prior_position
-            )
-            self._cmd_svc.begin_transit(
-                entity_id, self._cmd_svc.get_transit_direction(entity_id)
-            )
+            if not was_waiting:
+                # Fresh target + transit window only when ACP was NOT already
+                # mid-move: a mid-halt cover is already inside its transit window,
+                # and set_target(My) on a position-capable halt would be wrong.
+                # Capture the raw prior position BEFORE set_target overwrites it so
+                # the synthetic direction reflects the move toward My.
+                prior_position = self._cmd_svc.get_current_position(entity_id)
+                self._cmd_svc.set_target(entity_id, int(my_position_value))
+                # Give the My move a ~45s transit window (open/close-only covers) so
+                # the card renders "Opening…/Closing…". The direction is caps-gated
+                # by the shared helper; begin_transit stamps waiting + sent_at so the
+                # reconciliation timer clears it when the window closes.
+                self._cmd_svc._set_transit_direction_if_blind(
+                    entity_id, int(my_position_value), prior_position
+                )
+                self._cmd_svc.begin_transit(
+                    entity_id, self._cmd_svc.get_transit_direction(entity_id)
+                )
         # A user stop engages an override and (for a My cover) records the new
         # target + assumed position + transit window. None of that reaches the
         # sensors until a coordinator cycle rebuilds them, so without an explicit
