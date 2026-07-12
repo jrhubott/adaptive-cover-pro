@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from ..engine.covers import AdaptiveGeneralCover
+    from ..pipeline.types import PipelineResult
     from ..services.configuration_service import ConfigurationService
 
 
@@ -230,6 +231,18 @@ class TiltPolicy(CoverTypePolicy, register=True):
         else:
             effective_angle = max_degrees - angle_deg if gamma_deg >= 0 else angle_deg
         return round((effective_angle / max_degrees) * 100)
+
+    def targets_full_mechanical_endpoint(
+        self,
+        result: PipelineResult,  # noqa: ARG002
+    ) -> bool:
+        """Tilt-only covers have no position axis, so never route open/close.
+
+        ``route_service_call`` only substitutes close_cover/open_cover on the
+        position axis; a slat-only cover has none, so it can never target a
+        full *mechanical* endpoint in the sense the manager forces (issue #897).
+        """
+        return False
 
     def build_calc_engine(
         self,

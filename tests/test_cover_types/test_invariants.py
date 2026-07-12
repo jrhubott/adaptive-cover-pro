@@ -108,6 +108,16 @@ def test_is_in_tilt_suppression_returns_bool(policy: CoverTypePolicy) -> None:
 
 
 @pytest.mark.unit
+def test_targets_full_mechanical_endpoint_returns_bool(policy: CoverTypePolicy) -> None:
+    """Every policy answers the endpoint predicate with a real bool (issue #897)."""
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+    result = PipelineResult(position=0, control_method=ControlMethod.SOLAR, reason="t")
+    assert isinstance(policy.targets_full_mechanical_endpoint(result), bool)
+
+
+@pytest.mark.unit
 def test_position_for_intent_returns_open_or_closed(policy: CoverTypePolicy) -> None:
     """``position_for_intent`` returns 0 or 100, and the two intents differ."""
     pos_through = policy.position_for_intent(sun_through=True)

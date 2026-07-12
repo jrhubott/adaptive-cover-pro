@@ -746,22 +746,36 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._last_tilt = tilt
         return replace(result, position=position, tilt=tilt, decision_trace=trace)
 
+    def targets_full_mechanical_endpoint(self, result: PipelineResult) -> bool:
+        """Report a full mechanical endpoint only when BOTH axes reach it.
+
+        Narrows the base single-axis predicate (issue #897): a venetian is at a
+        true 0/0 or 100/100 stop only when carriage and slats target the same
+        endpoint. Position 0 with tilt 100 (a legitimate solar state) is NOT a
+        mechanical stop. Only the venetian policy knows the paired tilt, so this
+        dual-axis decision stays here (issue #755).
+        """
+        return (
+            result is not None
+            and result.tilt is not None
+            and result.position is not None
+            and result.position == result.tilt
+            and result.position in (POSITION_CLOSED, POSITION_OPEN)
+        )
+
     def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
         """Thread the resolved tilt into ``PositionContext.tilt``.
 
         When BOTH axes target the same full mechanical endpoint (0/0 or
         100/100) also set the cover-type-agnostic ``full_endpoint_target`` flag
-        so the command manager forces close_cover/open_cover instead of dropping
-        the move as same_position (issue #755). Only the venetian policy knows
-        the paired tilt, so this decision lives here.
+        (via :meth:`targets_full_mechanical_endpoint`) so the command manager
+        forces close_cover/open_cover instead of dropping the move as
+        same_position (issue #755).
         """
         if result is None or result.tilt is None:
             return {}
         overrides: dict[str, Any] = {"tilt": result.tilt}
-        if result.position == result.tilt and result.position in (
-            POSITION_CLOSED,
-            POSITION_OPEN,
-        ):
+        if self.targets_full_mechanical_endpoint(result):
             overrides["full_endpoint_target"] = True
         return overrides
 

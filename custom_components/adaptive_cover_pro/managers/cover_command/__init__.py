@@ -1169,18 +1169,27 @@ class CoverCommandService:
 
         _current = self._get_current_position(entity_id)
 
-        # Full mechanical endpoint forcing (issue #755). When the owning
-        # cover-type policy (venetian) flagged this update as a paired full
-        # endpoint (0/0 or 100/100), the endpoint_use_open_close feature is on,
-        # and the cover is not actually parked at the mechanical stop (HA state
-        # not closed/open — NOT a position tolerance), bypass the same-position
-        # band and the delta/time gates so route_service_call can emit
-        # close_cover/open_cover (#697). This is cover-type-agnostic: the flag
-        # carries the decision, the manager never inspects cover type.
+        # Full mechanical endpoint forcing (issue #755, generalized to any
+        # position-capable cover by #897). When the owning cover-type policy
+        # flagged this update as a full endpoint (single-axis 0/100, or a
+        # venetian's paired 0/0 or 100/100), the endpoint_use_open_close feature
+        # is on, and the cover is not actually parked at the mechanical stop (HA
+        # state not closed/open — NOT a position tolerance), bypass the
+        # same-position band and the delta/time gates so route_service_call can
+        # emit close_cover/open_cover (#697). This is cover-type-agnostic: the
+        # flag carries the decision, the manager never inspects cover type.
+        #
+        # forced_endpoint is the anti-relay latch (#897/#507): a cover that
+        # settles a step short and never reports the mechanical state (state
+        # stays "open" at 2%) would otherwise re-force every cycle. We read the
+        # latch here (old value) and write it only after a successful send, so
+        # the endpoint is forced exactly once per transition. != position lets a
+        # flip to the other endpoint re-fire.
         force_endpoint = (
             context.full_endpoint_target
             and self._endpoint_use_open_close
             and not self._is_at_mechanical_stop(state_obj, position)
+            and self._get(entity_id).forced_endpoint != position
         )
 
         # Hard kill switch — blocks ALL commands, including safety overrides and
@@ -1237,12 +1246,15 @@ class CoverCommandService:
         # validity is a sentinel that we must re-confirm the cover position even
         # if it hasn't changed numerically.
         #
-        # force_endpoint is the other exception (issue #755): a venetian whose
-        # desired final state is a full mechanical endpoint (0/0 or 100/100) must
-        # NOT be swallowed by this _position_tolerance carve-out — it falls
-        # through to routing so close_cover/open_cover fires. Idempotency for
-        # that case is owned by the HA-state mechanical-stop check above, not by
-        # tolerance, so the gap can't be reintroduced here.
+        # force_endpoint is the other exception (issue #755, generalized to any
+        # position-capable cover by #897): a cover whose desired final state is a
+        # full mechanical endpoint (single-axis 0/100, or a venetian's paired
+        # 0/0 or 100/100) must NOT be swallowed by this _position_tolerance
+        # carve-out — it falls through to routing so close_cover/open_cover
+        # fires. Idempotency is owned by the HA-state mechanical-stop check plus
+        # the forced_endpoint latch above (covers that never report the
+        # mechanical state), not by tolerance, so the gap can't be reintroduced
+        # here nor can it relay-click every cycle.
         #
         # _current is None is its own exception (issue #779): Somfy RTS covers
         # (and any open/close-only cover without genuine position feedback) sit
@@ -1426,6 +1438,15 @@ class CoverCommandService:
         self._track_action(
             entity_id, service, position, supports_position, context.inverse_state
         )
+
+        # Anti-relay latch bookkeeping (#897/#507). Arm the latch to the forced
+        # endpoint so a cover that never reports the mechanical state (state
+        # stays "open" a step short of 0) isn't re-forced next cycle. Clear it on
+        # any non-endpoint move so a later endpoint command re-fires exactly once.
+        if force_endpoint:
+            self.state(entity_id).forced_endpoint = position
+        elif position not in (POSITION_CLOSED, POSITION_OPEN):
+            self.state(entity_id).forced_endpoint = None
 
         # Cover-type policy hook: dual-axis covers (venetian) run their
         # settle+tilt sequence here. Default policies are no-ops, so vertical /

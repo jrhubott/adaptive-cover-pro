@@ -405,9 +405,31 @@ class CoverTypePolicy(ABC):
         """
         return {}
 
+    def targets_full_mechanical_endpoint(self, result: PipelineResult) -> bool:
+        """Whether this update drives the position axis to a full mechanical stop.
+
+        Single source of truth for the ``full_endpoint_target`` flag (issue #897,
+        generalizing #755). When True and ``endpoint_use_open_close`` is on, the
+        command manager forces close_cover/open_cover instead of dropping the
+        final approach to 0/100 as ``same_position`` — so a cover that settles a
+        step short of its true stop still seats there. The base default covers
+        every single-axis position cover (blind, awning, sliding_curtain, …):
+        the target is a full endpoint iff it is 0 or 100. VenetianPolicy narrows
+        this to the paired dual-axis endpoint; TiltPolicy (no position axis)
+        widens it to never.
+        """
+        if result is None or result.position is None:
+            return False
+        return result.position in (POSITION_CLOSED, POSITION_OPEN)
+
     def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
-        """Extra kwargs for ``PositionContext``. Default: empty."""
-        return {}
+        """Extra kwargs for ``PositionContext``.
+
+        Carries the cover-type-agnostic ``full_endpoint_target`` flag derived
+        from :meth:`targets_full_mechanical_endpoint` so the command manager can
+        force open_cover/close_cover at the mechanical stops (issue #897).
+        """
+        return {"full_endpoint_target": self.targets_full_mechanical_endpoint(result)}
 
     def secondary_axis_check(self, result: PipelineResult, cmd_svc) -> Any | None:
         """Return a manual-override secondary-axis check, or ``None``."""

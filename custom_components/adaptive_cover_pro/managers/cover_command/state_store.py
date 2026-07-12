@@ -59,6 +59,15 @@ class PerEntityState:
     # ``transit_states()`` surface is gated on ``waiting`` so it disappears
     # exactly when the transit window closes.
     transit_direction: str | None = None
+    # Anti-relay latch for full-mechanical-endpoint forcing (issue #897). Holds
+    # the endpoint (0 or 100) that ``apply_position`` last force-routed via
+    # close_cover/open_cover. Read BEFORE computing force_endpoint and written
+    # only after a successful send, so a cover that never reports the mechanical
+    # state (state stays "open" at 2%) is forced exactly once instead of
+    # relay-clicking every cycle (#507 preserved). Cleared when a non-endpoint
+    # move fires; a flip to the other endpoint re-fires because the latched
+    # value differs from the new target.
+    forced_endpoint: int | None = None
 
 
 @dataclasses.dataclass
