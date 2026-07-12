@@ -1413,25 +1413,41 @@ async def test_options_menu_every_entry_has_a_label(
 
 
 def test_config_flow_does_not_use_system_language() -> None:
-    """config_flow must not read the system language (issue #227).
+    """config_flow must not read the system language outside one sanctioned spot
+    (issue #227).
 
     The #227 bug was server-side translation fetching keyed on
     ``self.hass.config.language`` (the system language) instead of the per-user
-    flow language. The config-summary i18n (issue #258) legitimately imports
-    ``async_get_translations``, but must select the language via
+    flow language. Menu/step labels must always select the language via
     ``self.context.get("language", ...)`` — never ``hass.config.language``.
 
-    Guard the source text directly so any reintroduction of the system-language
-    read fails here.
+    Issue #905: HA never actually populates ``context["language"]`` for
+    config/options flows, so the server-rendered config-summary block (issue
+    #258's ``summary_i18n/`` bundle, narrative text that cannot be
+    client-translated the way menu/step labels are) needs a best-effort
+    fallback to the HA instance language. That fallback is deliberately
+    isolated in the single ``_resolve_summary_language`` helper. Guard the
+    rest of the module's source text so any *other* reintroduction of the
+    system-language read — e.g. in menu or step label selection, the actual
+    #227 failure mode — fails here.
     """
     import inspect
 
     import custom_components.adaptive_cover_pro.config_flow as cf_module
 
     source = inspect.getsource(cf_module)
-    assert "config.language" not in source, (
-        "config_flow must not read hass.config.language (system language) — "
-        "the flow user's language comes from self.context['language'] (issue #227)"
+    sanctioned_source = inspect.getsource(cf_module._resolve_summary_language)
+    assert "config.language" in sanctioned_source, (
+        "expected the sanctioned system-language fallback to live inside "
+        "_resolve_summary_language (issue #905) — the guard below assumes it "
+        "does"
+    )
+    source_outside_helper = source.replace(sanctioned_source, "")
+    assert "config.language" not in source_outside_helper, (
+        "config_flow must not read hass.config.language (system language) "
+        "outside _resolve_summary_language — the flow user's language comes "
+        "from self.context['language'] (issue #227); the one documented "
+        "exception is the config-summary fallback (issue #905)"
     )
 
 

@@ -1699,14 +1699,38 @@ async def _load_summary_labels(hass: HomeAssistant, language: str) -> dict[str, 
     The labels live in the integration's ``summary_i18n/`` bundle (a custom
     ``config_summary`` category cannot live under ``translations/`` — hassfest
     rejects it). This overlays the language bundle onto the English defaults so
-    any missing key falls back to English. ``language`` is the per-user flow
-    language (``self.context.get("language", "en")``) — never the system
-    language. File I/O is offloaded to the executor.
+    any missing key falls back to English. ``language`` is pre-resolved by the
+    caller via ``_resolve_summary_language`` (issue #905) — this helper just
+    loads whatever language string it's handed. File I/O is offloaded to the
+    executor.
 
     Both ``ConfigFlow.async_step_summary`` and ``OptionsFlow.async_step_summary``
     call this single helper (no duplication).
     """
     return await hass.async_add_executor_job(_load_summary_labels_sync, language)
+
+
+def _resolve_summary_language(hass: HomeAssistant, context: dict[str, Any]) -> str:
+    """Resolve the language for the config-summary labels (issue #905).
+
+    Prefers the per-user flow language (``context["language"]``) when HA
+    supplies one. HA does not currently populate this for config/options
+    flows — no HA-core code path sets it, so it's always absent in
+    practice — leaving the summary permanently stuck in English even though
+    the ``summary_i18n/{de,fr}.json`` bundles exist (issue #258 built the
+    bundle; #905 is that the language was never actually selected). Falls
+    back to the HA instance language (``hass.config.language``) as a
+    best-effort proxy, and finally to English.
+
+    This is intentionally scoped to the server-rendered summary block only.
+    Per-user language is not available server-side in a flow, but reading
+    the system language for the rest of the flow's UI (menu/step labels) was
+    exactly the #227 bug — see
+    ``tests/test_config_flow_integration.py::test_config_flow_does_not_use_system_language``,
+    which guards against ``hass.config.language`` appearing anywhere else in
+    this module.
+    """
+    return context.get("language") or hass.config.language or "en"
 
 
 def _build_group_summary(
@@ -4088,7 +4112,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_update()
         sun_times = await _compute_todays_sun_times(self.hass, self.config)
         labels = await _load_summary_labels(
-            self.hass, self.context.get("language", "en")
+            self.hass, _resolve_summary_language(self.hass, self.context)
         )
         summary_text = _build_config_summary(
             self.config, self.type_blind, self.hass, sun_times, labels=labels
@@ -5327,7 +5351,7 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_init()
         sun_times = await _compute_todays_sun_times(self.hass, self.options)
         labels = await _load_summary_labels(
-            self.hass, self.context.get("language", "en")
+            self.hass, _resolve_summary_language(self.hass, self.context)
         )
         summary_text = _build_config_summary(
             self.options, self.sensor_type, self.hass, sun_times, labels=labels

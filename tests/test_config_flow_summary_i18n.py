@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     _build_config_summary,
     _load_summary_labels,
     _load_summary_labels_sync,
+    _resolve_summary_language,
 )
 from custom_components.adaptive_cover_pro.const import (
     CoverType,
@@ -128,6 +129,52 @@ async def test_load_summary_labels_async_uses_passed_language() -> None:
     assert hass.calls == [("fr",)]
     # The result is the French bundle overlaid on English.
     assert labels == _load_summary_labels_sync("fr")
+
+
+# ---------------------------------------------------------------------------
+# _resolve_summary_language — issue #905: HA never populates
+# context["language"] for config/options flows, so the summary always
+# rendered in English regardless of the HA instance language. These tests
+# cover the helper's three-way fallback: context -> hass.config.language ->
+# "en".
+# ---------------------------------------------------------------------------
+
+
+class _FakeHassConfig:
+    def __init__(self, language: str | None) -> None:
+        self.language = language
+
+
+class _FakeHassWithConfig:
+    def __init__(self, language: str | None) -> None:
+        self.config = _FakeHassConfig(language)
+
+
+def test_resolve_summary_language_prefers_context_language() -> None:
+    """When ``context`` carries a language, it wins over ``hass.config.language``."""
+    hass = _FakeHassWithConfig("de")
+    assert _resolve_summary_language(hass, {"language": "fr"}) == "fr"
+
+
+def test_resolve_summary_language_falls_back_to_hass_config_language_when_context_has_none() -> (
+    None
+):
+    """An empty context (HA's actual behavior for config/options flows) falls
+    back to the HA instance language — this is the issue #905 bug-fix
+    assertion.
+    """
+    hass = _FakeHassWithConfig("fr")
+    assert _resolve_summary_language(hass, {}) == "fr"
+
+
+def test_resolve_summary_language_falls_back_to_english_when_nothing_available() -> (
+    None
+):
+    """When both context and ``hass.config.language`` are empty/falsy, the
+    English default wins.
+    """
+    hass = _FakeHassWithConfig(None)
+    assert _resolve_summary_language(hass, {}) == "en"
 
 
 # ---------------------------------------------------------------------------
