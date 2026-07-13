@@ -159,8 +159,16 @@ class AdaptiveGeneralCover(ABC):
 
     @property
     def is_sun_in_blind_spot(self) -> bool:
-        """Delegate to SunGeometry.is_sun_in_blind_spot."""
-        return self.solar.is_sun_in_blind_spot
+        """Whether the sun is in a blind spot, in the acceptance frame (#913).
+
+        Evaluates the blind-spot wedge in the SAME frame the FOV gate accepts —
+        the polymorphic ``fov_angle`` — so an obstruction the glass physically
+        responds to is reachable. For vertical / awning / tilt / venetian covers
+        ``fov_angle == gamma``, so this is bit-for-bit identical to the raw
+        ``SunGeometry.is_sun_in_blind_spot``; for a pitched roof window it uses
+        the tilted-plane effective gamma.
+        """
+        return self.solar.is_sun_in_blind_spot_at(self.fov_angle)
 
     @property
     def fov_angle(self) -> float:

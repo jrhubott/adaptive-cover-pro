@@ -507,6 +507,24 @@ class TestBlindSpot:
             assert high.is_sun_in_blind_spot is False  # 45 > 30 → not blocked
             assert low.is_sun_in_blind_spot is True  # 20 <= 30 → blocked
 
+    def test_is_sun_in_blind_spot_at_uses_injected_frame(self):
+        """The wedge is evaluated against an injected frame angle, not raw gamma.
+
+        The blind-spot evaluation frame must equal the caller's acceptance frame
+        (issue #913). ``is_sun_in_blind_spot`` (raw ``gamma``) and
+        ``is_sun_in_blind_spot_at(frame_angle)`` (injected) can therefore disagree
+        when the two frames diverge: here raw gamma=0 is outside the FOV-relative
+        wedge [15, 35] while an injected frame angle of 20 lands inside it.
+        """
+        config = _make_config(
+            blind_spot_left=10, blind_spot_right=30, blind_spot_on=True, fov_left=45
+        )
+        # gamma = 180 - 180 = 0 (outside wedge [15, 35]).
+        sg = SunGeometry(180.0, 45.0, _make_sun_data(), config, _make_logger())
+        assert sg.is_sun_in_blind_spot is False
+        # Inject a frame angle of 20 → inside wedge [15, 35].
+        assert sg.is_sun_in_blind_spot_at(20.0) is True
+
 
 # ------------------------------------------------------------------
 # in_fov
