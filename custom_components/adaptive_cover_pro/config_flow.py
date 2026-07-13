@@ -34,6 +34,7 @@ from .const import (
     CONF_BUILDING_PROFILE_ID,
     CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_CLIMATE_MODE,
+    CONF_CLIMATE_TEMP_HOLD_TIME,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
@@ -138,6 +139,7 @@ from .const import (
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
@@ -158,8 +160,11 @@ from .const import (
     CONF_SYNC_SELECT_ALL,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TILT_ANGLE_0,
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
@@ -954,6 +959,12 @@ _TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
     # so they are cleared/stripped like the other optional keys.
     CONF_TEMP_EXTREME_HEAT,
     CONF_EXTREME_HEAT_POSITION,
+    # Temperature smoothing release edges (issue #917): no schema default
+    # (blank = hysteresis off), so they are cleared/stripped like the above.
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
 ]
 
 WEATHER_OPTIONS = vol.Schema(
@@ -1484,6 +1495,12 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "climate.winter_close": "closes fully in winter for insulation",
     "climate.summer_full_close": "closes fully in summer heat",
     "climate.extreme_heat": "holds {pos}% all day above {thresh}°C outside",
+    "climate.hold_time": " · smoothing hold {secs}s",
+    "climate.release": " · release when {parts}",
+    "climate.temp_low_release": "winter ≥ {release}°",
+    "climate.temp_high_release": "summer ≤ {release}°",
+    "climate.outside_release": "outside ≤ {release}°",
+    "climate.extreme_heat_release": "extreme ≤ {release}°",
     # --- Glare (45) ---
     "rules.glare": (
         "🔆 Glare zones: lowers blind further to protect floor areas from "
@@ -2358,9 +2375,43 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 )
             )
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
-        lines.append(
-            L["rules.climate"].format(detail=cl_str) + _badge(_prio["climate"])
-        )
+        climate_line = L["rules.climate"].format(detail=cl_str)
+        # Temperature smoothing suffixes (issue #917): a non-zero hold-time and
+        # any configured per-crossing hysteresis release edges. Mirrors the cloud
+        # smoothing suffixes above.
+        climate_hold = config.get(CONF_CLIMATE_TEMP_HOLD_TIME)
+        if climate_hold:
+            climate_line += L["climate.hold_time"].format(secs=climate_hold)
+        climate_release_parts = []
+        if (rl := config.get(CONF_TEMP_LOW_RELEASE_THRESHOLD)) is not None:
+            climate_release_parts.append(
+                L["climate.temp_low_release"].format(
+                    release=_thresh_display(rl, placeholder=_ph)
+                )
+            )
+        if (rh := config.get(CONF_TEMP_HIGH_RELEASE_THRESHOLD)) is not None:
+            climate_release_parts.append(
+                L["climate.temp_high_release"].format(
+                    release=_thresh_display(rh, placeholder=_ph)
+                )
+            )
+        if (ro := config.get(CONF_OUTSIDE_THRESHOLD_RELEASE)) is not None:
+            climate_release_parts.append(
+                L["climate.outside_release"].format(
+                    release=_thresh_display(ro, placeholder=_ph)
+                )
+            )
+        if (rx := config.get(CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD)) is not None:
+            climate_release_parts.append(
+                L["climate.extreme_heat_release"].format(
+                    release=_thresh_display(rx, placeholder=_ph)
+                )
+            )
+        if climate_release_parts:
+            climate_line += L["climate.release"].format(
+                parts=", ".join(climate_release_parts)
+            )
+        lines.append(climate_line + _badge(_prio["climate"]))
 
     # Glare zones — vertical only (45, below climate)
     if has_glare:
@@ -3113,6 +3164,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_EXTREME_HEAT_POSITION,
             CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRACKING_SEASONS,
+            # Temperature smoothing (issue #917).
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+            CONF_TEMP_LOW_RELEASE_THRESHOLD,
+            CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+            CONF_OUTSIDE_THRESHOLD_RELEASE,
+            CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
         }
     ),
     "temperature_climate_sensors": frozenset(
@@ -3143,6 +3200,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TEMP_EXTREME_HEAT,
             CONF_EXTREME_HEAT_POSITION,
             CONF_TRACKING_SEASONS,
+            # Temperature smoothing (issue #917).
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+            CONF_TEMP_LOW_RELEASE_THRESHOLD,
+            CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+            CONF_OUTSIDE_THRESHOLD_RELEASE,
+            CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
         }
     ),
     # Legacy alias for backward compat

@@ -112,6 +112,7 @@ from .managers.manual_override import (
     get_detector,
     inverse_state,
 )
+from .managers.climate_smoothing import ClimateSmoothingManager
 from .managers.cloud_suppression import CloudSuppressionManager
 from .managers.motion import MotionManager
 from .managers.sensor_health import SensorHealthManager
@@ -340,6 +341,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cloud-suppression smoothing — hysteresis latch + hold-time debounce
         # (issue #864). Consumes provider booleans; never reads HA directly.
         self._cloud_mgr = CloudSuppressionManager(
+            logger=self.logger, event_buffer=self._event_buffer
+        )
+        # Climate-mode temperature smoothing — four Schmitt latches + a hold-time
+        # debounce over the season crossings (issue #917). Same shape as the
+        # cloud manager; consumes provider booleans only, never reads HA.
+        self._climate_smoothing_mgr = ClimateSmoothingManager(
             logger=self.logger, event_buffer=self._event_buffer
         )
         # Sensor-health Repairs (issue #786): raise an informational Repair when
@@ -1369,6 +1376,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._cloud_mgr.evaluate(readings) == "should_start_timeout":
             self._start_cloud_hold_timeout()
 
+    def _start_climate_temp_hold_timeout(self) -> None:
+        """Start the climate-temp season hold-time debounce timer (issue #917)."""
+
+        async def _refresh_with_state_change() -> None:
+            self.state_change = True
+            await self.async_refresh()
+
+        self._climate_smoothing_mgr.start_hold_timeout(
+            refresh_callback=_refresh_with_state_change
+        )
+
+    def _reconcile_climate_smoothing(self, readings) -> None:
+        """Fold this cycle's readings into the climate-smoothing manager.
+
+        Twin of :meth:`_reconcile_cloud_suppression` — the manager applies the
+        four Schmitt latches + the hold-time debounce and resolves the season
+        flags threaded into the snapshot. When a transition is pending (hold-time
+        non-zero) it asks us to start the hold-timer.
+        """
+        if self._climate_smoothing_mgr.evaluate(readings) == "should_start_timeout":
+            self._start_climate_temp_hold_timeout()
+
     def _reconcile_weather_override(self) -> None:
         """Self-heal a stuck weather override flag.
 
@@ -1404,6 +1433,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # single bool threaded into the snapshot below. Runs before build() so
         # the snapshot sees this cycle's resolved value.
         self._reconcile_cloud_suppression(self._weather_readings)
+
+        # Fold the same fresh readings into the climate-smoothing manager (issue
+        # #917): four Schmitt latches + a hold-time debounce resolve the season
+        # flags threaded into the snapshot below. Runs before build() so the
+        # snapshot sees this cycle's resolved flags.
+        self._reconcile_climate_smoothing(self._weather_readings)
 
         # Sensor-health Repair (issue #786): watch the effective indoor temp
         # entity only when climate mode is on (the sensor is otherwise unused,
@@ -1460,6 +1495,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
+            climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
             current_cover_position=self._compute_mean_cover_position(),
             is_glare_zone_enabled=self._is_glare_zone_enabled,
@@ -2606,6 +2642,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             enabled=rc.cloud_suppression.enabled,
             hold_time_seconds=rc.cloud_suppression.hold_time_seconds,
         )
+        self._climate_smoothing_mgr.update_config(
+            enabled=rc.climate_smoothing.enabled,
+            hold_time_seconds=rc.climate_smoothing.hold_time_seconds,
+        )
 
         event_buffer = getattr(self, "_event_buffer", None)
         if event_buffer is not None and rc.event_buffer_size != event_buffer.maxlen:
@@ -2764,8 +2804,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             # Pure property read — the ad-hoc/preemption build must NOT
-            # re-evaluate the manager (that would advance latches off-cycle).
+            # re-evaluate the managers (that would advance latches off-cycle).
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
+            climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
             current_cover_position=self._compute_mean_cover_position(),
             is_glare_zone_enabled=self._is_glare_zone_enabled,

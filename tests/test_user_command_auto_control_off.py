@@ -56,6 +56,8 @@ def _make_coord():
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
     coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
 
     # Solar winner (priority 40) — below ManualOverrideHandler, so a force=False
     # user move is not preempted.

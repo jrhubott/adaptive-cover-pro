@@ -8,6 +8,13 @@ from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from ..const import DEFAULT_TEMPLATE_COMBINE_MODE
+from ..engine.climate_crossings import (
+    extreme_heat_crossing,
+    outside_high_crossing,
+    resolve_current_temperature,
+    summer_warm_crossing,
+    winter_crossing,
+)
 from ..helpers import get_domain, get_safe_state, is_entity_active, state_attr
 from ..templates import fold_condition_template
 from .area_resolver import AreaSensorResolver
@@ -39,6 +46,22 @@ class ClimateReadings:
     lux_release_cleared: bool = True
     irradiance_release_cleared: bool = True
     cloud_coverage_release_cleared: bool = True
+    # Temperature-season crossings consumed by ClimateSmoothingManager's Schmitt
+    # latches (issue #917). Each ``*_release_cleared`` is True once the value has
+    # passed the release edge so the latch may drop; with a blank release edge it
+    # equals ``not <activate>`` (instantaneous). The defaults reproduce each
+    # legacy ``ClimateCoverData`` property's unavailability value EXACTLY so a
+    # snapshot built without these fields never changes behaviour:
+    # winter/summer-warm/extreme fail to (inactive, cleared) = no latch; the
+    # outside-high crossing FAILS OPEN to (active, held) = latch stays engaged.
+    temp_below_low_threshold: bool = False
+    temp_low_release_cleared: bool = True
+    temp_above_high_threshold: bool = False
+    temp_high_release_cleared: bool = True
+    outside_above_threshold: bool = True
+    outside_release_cleared: bool = False
+    outside_above_extreme_heat: bool = False
+    extreme_heat_release_cleared: bool = True
     # Effective indoor temperature entity actually read, and its provenance
     # (issue #786): "explicit" (configured), "area" (auto-resolved from the
     # cover's HA area), or "none". ``inside_temperature_area_id`` is set only
@@ -92,6 +115,15 @@ class ClimateProvider:
         is_sunny_sensor: str | None = None,
         is_sunny_template: str | None = None,
         is_sunny_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
+        temp_switch: bool = False,
+        temp_low: float | None = None,
+        temp_high: float | None = None,
+        outside_threshold: float | None = None,
+        temp_extreme_heat: float | None = None,
+        temp_low_release_threshold: float | None = None,
+        temp_high_release_threshold: float | None = None,
+        outside_threshold_release: float | None = None,
+        temp_extreme_heat_release_threshold: float | None = None,
     ) -> ClimateReadings:
         """Read all climate entities and return a frozen snapshot."""
         resolved_temp = self._area_resolver.resolve_temperature_entity(
@@ -107,10 +139,11 @@ class ClimateProvider:
                 forecast_max_outside,
             )
         )
+        inside_temperature = self._read_inside_temperature(resolved_temp.entity_id)
         return ClimateReadings(
             outside_temperature=outside_temperature,
             outside_temperature_source=outside_temperature_source,
-            inside_temperature=self._read_inside_temperature(resolved_temp.entity_id),
+            inside_temperature=inside_temperature,
             inside_temperature_entity_id=resolved_temp.entity_id,
             inside_temperature_source=resolved_temp.source,
             inside_temperature_area_id=resolved_temp.area_id,
@@ -137,7 +170,72 @@ class ClimateProvider:
                 cloud_coverage_threshold,
                 cloud_coverage_release_threshold,
             ),
+            **self._read_temperature_crossings(
+                outside_temperature=outside_temperature,
+                inside_temperature=inside_temperature,
+                temp_switch=temp_switch,
+                temp_low=temp_low,
+                temp_high=temp_high,
+                outside_threshold=outside_threshold,
+                temp_extreme_heat=temp_extreme_heat,
+                temp_low_release_threshold=temp_low_release_threshold,
+                temp_high_release_threshold=temp_high_release_threshold,
+                outside_threshold_release=outside_threshold_release,
+                temp_extreme_heat_release_threshold=(
+                    temp_extreme_heat_release_threshold
+                ),
+            ),
         )
+
+    def _read_temperature_crossings(
+        self,
+        *,
+        outside_temperature: float | str | None,
+        inside_temperature: float | str | None,
+        temp_switch: bool,
+        temp_low: float | None,
+        temp_high: float | None,
+        outside_threshold: float | None,
+        temp_extreme_heat: float | None,
+        temp_low_release_threshold: float | None,
+        temp_high_release_threshold: float | None,
+        outside_threshold_release: float | None,
+        temp_extreme_heat_release_threshold: float | None,
+    ) -> dict[str, bool]:
+        """Compute the four temperature crossings (issue #917).
+
+        Resolves the season-driving current temperature FIRST (same
+        outside/inside/temp_switch logic as ``ClimateCoverData``), then delegates
+        each crossing to the pure ``engine.climate_crossings`` helpers so the
+        provider and the handler's raw fallback share one computation site.
+        """
+        current_temp = resolve_current_temperature(
+            outside_temperature, inside_temperature, temp_switch=temp_switch
+        )
+        below_low, low_cleared = winter_crossing(
+            current_temp, temp_low, temp_low_release_threshold
+        )
+        above_high, high_cleared = summer_warm_crossing(
+            current_temp, temp_high, temp_high_release_threshold
+        )
+        outside_high, outside_cleared = outside_high_crossing(
+            outside_temperature, outside_threshold, outside_threshold_release
+        )
+        extreme, extreme_cleared = extreme_heat_crossing(
+            outside_temperature,
+            temp_extreme_heat,
+            temp_extreme_heat_release_threshold,
+        )
+        return {
+            "temp_below_low_threshold": below_low,
+            "temp_low_release_cleared": low_cleared,
+            "temp_above_high_threshold": above_high,
+            "temp_high_release_cleared": high_cleared,
+            "outside_above_threshold": outside_high,
+            "outside_release_cleared": outside_cleared,
+            "outside_above_extreme_heat": extreme,
+            "extreme_heat_release_cleared": extreme_cleared,
+        }
 
     # ------------------------------------------------------------------
     # Private readers

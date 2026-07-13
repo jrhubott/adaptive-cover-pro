@@ -119,7 +119,13 @@
     "transparent": "transparent blind",
     "winter_close": "closes fully in winter for insulation",
     "summer_full_close": "closes fully in summer heat",
-    "extreme_heat": "holds {pos}% all day above {thresh}°C outside"
+    "extreme_heat": "holds {pos}% all day above {thresh}°C outside",
+    "hold_time": " · smoothing hold {secs}s",
+    "release": " · release when {parts}",
+    "temp_low_release": "winter ≥ {release}°",
+    "temp_high_release": "summer ≤ {release}°",
+    "outside_release": "outside ≤ {release}°",
+    "extreme_heat_release": "extreme ≤ {release}°"
   },
   "glare": {
     "zones": "zones: {names}",

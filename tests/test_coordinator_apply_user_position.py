@@ -120,6 +120,8 @@ def _make_coord(
     # Cloud-suppression manager (issue #864): the ad-hoc build reads its
     # resolved bool as a pure property. Preset so the spec'd mock doesn't raise.
     coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
     ctx = MagicMock(name="position_context")
     coord._build_position_context.return_value = ctx
     coord._cmd_svc = MagicMock()

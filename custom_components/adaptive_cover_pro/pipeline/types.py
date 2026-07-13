@@ -69,6 +69,24 @@ class ClimateOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class ClimateTempFlags:
+    """Smoothed temperature-season crossings from ClimateSmoothingManager (#917).
+
+    Mirrors ``cloud_suppression_active`` but carries the FOUR resolved crossings
+    climate mode needs (a single OR-bool cannot represent a multi-way season
+    classifier). Threaded onto the snapshot and consumed by ``ClimateCoverData``,
+    whose season properties prefer these flags over the raw single-crossing when
+    present. ``is_summer`` is composed downstream from ``summer_warm`` AND
+    ``outside_high`` — the manager smooths crossings, not seasons.
+    """
+
+    winter: bool
+    summer_warm: bool
+    outside_high: bool
+    extreme_heat: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CustomPositionSensorState:
     """Per-slot trigger reading carried in the pipeline snapshot.
 
@@ -312,6 +330,13 @@ class PipelineSnapshot:
     # window FOV (#417). Defaults False so snapshots that don't set it (and older
     # installs with the smoothing feature absent) behave exactly as before.
     cloud_suppression_active: bool = False
+
+    # Smoothed temperature-season crossings from ClimateSmoothingManager (issue
+    # #917). None = smoothing off / not threaded → ClimateCoverData falls back to
+    # the raw single-crossing, so pre-#917 installs and every direct-constructor
+    # test are byte-identical. When present, each flag wins over the raw
+    # comparison for its crossing.
+    climate_temp_flags: ClimateTempFlags | None = None
 
 
 # ---------------------------------------------------------------------------

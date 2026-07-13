@@ -14,6 +14,13 @@ import numpy as np
 
 from ...cover_types import get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
+from ...engine.climate_crossings import (
+    extreme_heat_crossing,
+    outside_high_crossing,
+    resolve_current_temperature,
+    summer_warm_crossing,
+    winter_crossing,
+)
 from ...engine.covers import AdaptiveTiltCover
 from ...const import (
     DEFAULT_TRACKING_SEASONS,
@@ -74,48 +81,65 @@ class ClimateCoverData:
     tracking_seasons: frozenset[str] = field(
         default_factory=lambda: frozenset(DEFAULT_TRACKING_SEASONS)
     )
+    # Smoothed season-crossing flags (issue #917). None = smoothing off / not
+    # threaded → the season properties fall back to the raw single-crossing so
+    # every pre-#917 install and every direct-constructor test is byte-identical.
+    # When the coordinator's ClimateSmoothingManager resolves a flag, it is
+    # threaded in here and wins over the raw comparison.
+    winter_active: bool | None = None
+    summer_warm_active: bool | None = None
+    outside_high_active: bool | None = None
+    extreme_heat_active: bool | None = None
 
     @property
     def get_current_temperature(self) -> float | None:
         """Get temperature based on configured source (outside/inside)."""
-        if self.temp_switch and self.outside_temperature is not None:
-            try:
-                return float(self.outside_temperature)
-            except (ValueError, TypeError):
-                return None
-        if self.inside_temperature is not None:
-            try:
-                return float(self.inside_temperature)
-            except (ValueError, TypeError):
-                return None
-        return None
+        return resolve_current_temperature(
+            self.outside_temperature,
+            self.inside_temperature,
+            temp_switch=self.temp_switch,
+        )
 
     @property
     def is_winter(self) -> bool:
-        """True when current temperature is below temp_low."""
-        if self.temp_low is not None and self.get_current_temperature is not None:
-            return self.get_current_temperature < self.temp_low
-        return False
+        """True when current temperature is below temp_low.
+
+        Returns the smoothed flag (``winter_active``) when the coordinator has
+        resolved one; otherwise falls back to the raw single-crossing (via
+        ``engine.climate_crossings``) so pure-data tests and hold=0 / blank-release
+        installs behave byte-identically to before smoothing existed.
+        """
+        if self.winter_active is not None:
+            return self.winter_active
+        return winter_crossing(self.get_current_temperature, self.temp_low, None)[0]
 
     @property
     def outside_high(self) -> bool:
-        """True when outdoor temperature exceeds temp_summer_outside."""
-        if (
-            self.temp_summer_outside is not None
-            and self.outside_temperature is not None
-        ):
-            try:
-                return float(self.outside_temperature) > self.temp_summer_outside
-            except (ValueError, TypeError):
-                return True
-        return True
+        """True when outdoor temperature exceeds temp_summer_outside.
+
+        Smoothed flag wins when present; else the raw fail-open-to-True crossing.
+        """
+        if self.outside_high_active is not None:
+            return self.outside_high_active
+        return outside_high_crossing(
+            self.outside_temperature, self.temp_summer_outside, None
+        )[0]
 
     @property
     def is_summer(self) -> bool:
-        """True when current temperature is above temp_high AND outside_high."""
-        if self.temp_high is not None and self.get_current_temperature is not None:
-            return self.get_current_temperature > self.temp_high and self.outside_high
-        return False
+        """True when current temperature is above temp_high AND outside_high.
+
+        The composite ANDs the (possibly smoothed) summer-warm edge with the
+        (possibly smoothed) outside-high edge — the manager smooths crossings,
+        not seasons, so composition stays here.
+        """
+        if self.summer_warm_active is not None:
+            warm = self.summer_warm_active
+        else:
+            warm = summer_warm_crossing(
+                self.get_current_temperature, self.temp_high, None
+            )[0]
+        return warm and self.outside_high
 
     @property
     def is_extreme_heat(self) -> bool:
@@ -124,15 +148,15 @@ class ClimateCoverData:
         Keys on ``outside_temperature`` (mirroring ``outside_high``), NOT
         ``get_current_temperature`` — extreme heat is about the outdoor load and
         must never flip to the inside sensor via ``temp_switch`` (issue #766).
-        Returns False when the feature is off (threshold None), the outside
-        reading is unavailable (None), or either value is non-numeric.
+        Returns the smoothed flag when present; else the raw crossing, which is
+        False when the feature is off (threshold None), the outside reading is
+        unavailable (None), or either value is non-numeric.
         """
-        if self.temp_extreme_heat is None or self.outside_temperature is None:
-            return False
-        try:
-            return float(self.outside_temperature) > float(self.temp_extreme_heat)
-        except (ValueError, TypeError):
-            return False
+        if self.extreme_heat_active is not None:
+            return self.extreme_heat_active
+        return extreme_heat_crossing(
+            self.outside_temperature, self.temp_extreme_heat, None
+        )[0]
 
     @property
     def lux(self) -> bool:
@@ -437,6 +461,9 @@ class ClimateHandler(OverrideHandler):
 
         opts = snapshot.climate_options
         r = snapshot.climate_readings
+        # Smoothed season-crossing flags (issue #917). None → each season
+        # property falls back to its raw single-crossing (pre-#917 behaviour).
+        flags = snapshot.climate_temp_flags
         return ClimateCoverData(
             temp_low=opts.temp_low,
             temp_high=opts.temp_high,
@@ -456,6 +483,10 @@ class ClimateHandler(OverrideHandler):
             temp_extreme_heat=opts.temp_extreme_heat,
             extreme_heat_position=opts.extreme_heat_position,
             tracking_seasons=opts.tracking_seasons,
+            winter_active=flags.winter if flags is not None else None,
+            summer_warm_active=flags.summer_warm if flags is not None else None,
+            outside_high_active=flags.outside_high if flags is not None else None,
+            extreme_heat_active=flags.extreme_heat if flags is not None else None,
         )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:

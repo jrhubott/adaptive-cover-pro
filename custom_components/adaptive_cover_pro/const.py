@@ -575,6 +575,25 @@ DEFAULT_EXTREME_HEAT_POSITION = POSITION_CLOSED
 # all-seasons default that preserves existing behaviour.
 CONF_TRACKING_SEASONS = "tracking_seasons"
 
+# Climate-mode temperature smoothing (issue #917) — the temperature analogue of
+# the cloud-suppression smoothing (issue #864). All default to today's
+# instantaneous, single-crossing behaviour so an absent key changes nothing on
+# upgrade/rollback (additive-only, no migration).
+# Aggregate hold-time (seconds): a changed season-flag must persist this long
+# before it takes effect. 0 = flip immediately (no debounce).
+CONF_CLIMATE_TEMP_HOLD_TIME = "climate_temp_hold_time"
+# Per-crossing hysteresis release edges (number-or-template, blank = off). When
+# set they widen each temperature crossing into a Schmitt band: the season flag
+# engages at the existing threshold and only clears once the value passes the
+# release edge. temp_low/temp_high release edges compare the current temperature;
+# the outside/extreme-heat edges compare the outdoor temperature.
+CONF_TEMP_LOW_RELEASE_THRESHOLD = "temp_low_release_threshold"
+CONF_TEMP_HIGH_RELEASE_THRESHOLD = "temp_high_release_threshold"
+CONF_OUTSIDE_THRESHOLD_RELEASE = "outside_threshold_release"
+CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD = "temp_extreme_heat_release_threshold"
+
+DEFAULT_CLIMATE_TEMP_HOLD_TIME = 0  # seconds; 0 = instantaneous (back-compat)
+
 STRATEGY_MODE_BASIC = "basic"  # geometry only, no climate inputs
 STRATEGY_MODE_CLIMATE = "climate"  # climate-aware (temps/presence/weather)
 STRATEGY_MODES = [
@@ -1613,6 +1632,9 @@ _RANGE_WEATHER_TIMEOUT = (0, 3600)  # weather-resume timeout, seconds
 
 # Cloud-suppression smoothing (issue #864).
 _RANGE_CLOUD_SUPPRESSION_HOLD_TIME = (0, 3600)  # hold-time, seconds
+
+# Climate-mode temperature smoothing (issue #917).
+_RANGE_CLIMATE_TEMP_HOLD_TIME = (0, 3600)  # hold-time, seconds
 
 # Venetian sequencing.
 _RANGE_VENETIAN_POST_SETTLE_HOLD = (0.0, 10.0)  # post-settle hold, seconds

@@ -29,6 +29,62 @@ def _make_climate(**overrides):
     return ClimateCoverData(**defaults)
 
 
+class TestSmoothedFlagPrecedence:
+    """Smoothed flags win over the raw crossing when not None (issue #917)."""
+
+    @pytest.mark.unit
+    def test_winter_flag_wins_over_raw(self):
+        # Raw temps would NOT be winter (current 30 > temp_low 20), but the
+        # smoothed flag forces winter.
+        d = _make_climate(
+            temp_switch=True,
+            outside_temperature="30.0",
+            winter_active=True,
+        )
+        assert d.is_winter is True
+
+    @pytest.mark.unit
+    def test_winter_flag_false_overrides_raw_true(self):
+        d = _make_climate(
+            temp_switch=True,
+            outside_temperature="10.0",  # raw would be winter
+            winter_active=False,
+        )
+        assert d.is_winter is False
+
+    @pytest.mark.unit
+    def test_outside_high_flag_wins(self):
+        d = _make_climate(outside_temperature="10.0", outside_high_active=True)
+        assert d.outside_high is True
+
+    @pytest.mark.unit
+    def test_is_summer_composes_smoothed_warm_and_outside(self):
+        # summer_warm smoothed True + outside_high smoothed True ⇒ summer.
+        d = _make_climate(
+            summer_warm_active=True,
+            outside_high_active=True,
+        )
+        assert d.is_summer is True
+        # outside_high smoothed False breaks the composite even if warm True.
+        d2 = _make_climate(summer_warm_active=True, outside_high_active=False)
+        assert d2.is_summer is False
+
+    @pytest.mark.unit
+    def test_extreme_heat_flag_wins(self):
+        d = _make_climate(
+            outside_temperature="10.0",
+            temp_extreme_heat=40.0,
+            extreme_heat_active=True,
+        )
+        assert d.is_extreme_heat is True
+
+    @pytest.mark.unit
+    def test_none_flags_fall_back_to_raw(self):
+        # All flags None (default) → raw crossings, byte-identical to pre-#917.
+        d = _make_climate(temp_switch=True, outside_temperature="10.0")
+        assert d.is_winter is True  # raw: 10 < temp_low 20
+
+
 class TestClimateCoverData:
     """Test ClimateCoverData properties."""
 

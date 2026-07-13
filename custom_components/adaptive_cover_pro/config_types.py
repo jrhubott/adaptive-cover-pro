@@ -588,6 +588,18 @@ class CloudSuppressionSlice:
 
 
 @dataclass(frozen=True, slots=True)
+class ClimateSmoothingSlice:
+    """Inputs for ``ClimateSmoothingManager.update_config`` (issue #917).
+
+    ``enabled`` tracks climate mode being on — the manager only smooths when
+    climate mode drives the season decision.
+    """
+
+    enabled: bool
+    hold_time_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
 class TrackingSlice:
     """Coordinator-side per-cycle thresholds and interpolation series."""
 
@@ -650,6 +662,7 @@ class RuntimeConfig:
     weather: WeatherSlice
     venetian: VenetianSlice
     cloud_suppression: CloudSuppressionSlice
+    climate_smoothing: ClimateSmoothingSlice
 
     @classmethod
     def from_options(cls, options: dict) -> RuntimeConfig:
@@ -661,6 +674,8 @@ class RuntimeConfig:
         """
         from .const import (
             CONF_AZIMUTH,
+            CONF_CLIMATE_MODE,
+            CONF_CLIMATE_TEMP_HOLD_TIME,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUD_SUPPRESSION_HOLD_TIME,
             CONF_DAYTIME_GATE_SENSORS,
@@ -720,6 +735,7 @@ class RuntimeConfig:
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            DEFAULT_CLIMATE_TEMP_HOLD_TIME,
             DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
             DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
             DEFAULT_ENABLE_POSITION_MATCHING,
@@ -891,6 +907,15 @@ class RuntimeConfig:
                     options.get(
                         CONF_CLOUD_SUPPRESSION_HOLD_TIME,
                         DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+                    )
+                ),
+            ),
+            climate_smoothing=ClimateSmoothingSlice(
+                enabled=bool(options.get(CONF_CLIMATE_MODE, False)),
+                hold_time_seconds=int(
+                    options.get(
+                        CONF_CLIMATE_TEMP_HOLD_TIME,
+                        DEFAULT_CLIMATE_TEMP_HOLD_TIME,
                     )
                 ),
             ),

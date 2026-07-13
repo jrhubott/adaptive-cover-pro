@@ -39,6 +39,7 @@ from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
 )
 from custom_components.adaptive_cover_pro.pipeline.types import (
     ClimateOptions,
+    ClimateTempFlags,
     CustomPositionSensorState,
 )
 from custom_components.adaptive_cover_pro.state.climate_provider import (
@@ -518,6 +519,58 @@ def test_build_recomputes_effective_default_when_omitted():
     )
     assert snapshot.default_position == 55
     assert snapshot.is_sunset_active is False
+
+
+@pytest.mark.unit
+def test_build_threads_climate_temp_flags():
+    """build() threads climate_temp_flags onto the snapshot (issue #917)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    flags = ClimateTempFlags(
+        winter=True, summer_warm=False, outside_high=True, extreme_heat=False
+    )
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+        climate_temp_flags=flags,
+    )
+    assert snapshot.climate_temp_flags is flags
+
+
+@pytest.mark.unit
+def test_build_climate_temp_flags_default_none():
+    """Omitting climate_temp_flags leaves the snapshot field None (back-compat)."""
+    builder, _, _ = _make_builder()
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    snapshot = builder.build(
+        {CONF_DEFAULT_HEIGHT: 0},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+        effective_default=0,
+        is_sunset_active=False,
+    )
+    assert snapshot.climate_temp_flags is None
 
 
 @pytest.mark.unit

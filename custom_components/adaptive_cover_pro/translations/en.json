@@ -728,7 +728,12 @@
           "summer_close_bypass_sun_floor": "Full close in summer heat",
           "temp_extreme_heat": "Extreme heat threshold (outside)",
           "extreme_heat_position": "Extreme heat hold position",
-          "tracking_seasons": "Glare tracking seasons"
+          "tracking_seasons": "Glare tracking seasons",
+          "climate_temp_hold_time": "Smoothing hold time",
+          "temp_low_release_threshold": "Low temperature release threshold (optional)",
+          "temp_high_release_threshold": "High temperature release threshold (optional)",
+          "outside_threshold_release": "Outside temperature release threshold (optional)",
+          "temp_extreme_heat_release_threshold": "Extreme heat release threshold (optional)"
         },
         "data_description": {
           "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
@@ -747,7 +752,12 @@
           "summer_close_bypass_sun_floor": "When enabled, summer heat-blocking closes the cover all the way to the global minimum position, ignoring the higher 'minimum position when sun is in view' floor. Use this for full heat protection in summer even while the sun is directly on the window. Has no effect outside summer, and the maximum-position limit still applies.",
           "temp_extreme_heat": "Outdoor temperature above which the cover holds a fixed position all day — regardless of sun position, presence, or season — pre-empting even winter heating. Leave blank to disable extreme-heat mode. **Value is interpreted in the outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "extreme_heat_position": "Position the cover holds during extreme heat (0% = fully closed/retracted, the default when left blank). On tilt covers this is the slat angle percentage. The hold still respects your configured minimum/maximum position limits.",
-          "tracking_seasons": "Seasons in which glare-control tracking is allowed to run. In any deselected season the cover returns to its default position instead of tracking the sun. Winter and summer climate actions (heating, insulation, cooling) are unaffected. Default: all seasons."
+          "tracking_seasons": "Seasons in which glare-control tracking is allowed to run. In any deselected season the cover returns to its default position instead of tracking the sun. Winter and summer climate actions (heating, insulation, cooling) are unaffected. Default: all seasons.",
+          "climate_temp_hold_time": "Seconds that a change in the calculated season must persist before it takes effect. This debounces a temperature reading that dithers across a threshold so the cover does not move every cycle. 0 (default) applies changes immediately. The same delay applies in both directions — entering and leaving a season.",
+          "temp_low_release_threshold": "Optional hysteresis edge for the winter threshold. Once winter is active, keep it active until the current temperature rises to at least this value — instead of releasing the moment it climbs back above the Low temperature threshold. Set it ABOVE the Low temperature threshold to stop the cover flapping when the reading hovers around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "temp_high_release_threshold": "Optional hysteresis edge for the summer-warm threshold. Once the warm condition is active, keep it active until the current temperature falls to this value or below — instead of releasing the moment it drops back below the High temperature threshold. Set it BELOW the High temperature threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "outside_threshold_release": "Optional hysteresis edge for the outside-temperature summer guard. Once the outside guard is satisfied, keep it satisfied until the outdoor temperature falls to this value or below — instead of releasing the moment it drops back below the Outside temperature threshold. Set it BELOW the Outside temperature threshold to stop the cover flapping when the outdoor reading hovers around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "temp_extreme_heat_release_threshold": "Optional hysteresis edge for the extreme-heat threshold. Once extreme-heat mode is active, keep it active until the outdoor temperature falls to this value or below — instead of releasing the moment it drops back below the Extreme heat threshold. Set it BELOW the Extreme heat threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template."
         }
       },
       "create_building_profile": {
@@ -1600,7 +1610,12 @@
           "summer_close_bypass_sun_floor": "Full close in summer heat",
           "temp_extreme_heat": "Extreme heat threshold (outside)",
           "extreme_heat_position": "Extreme heat hold position",
-          "tracking_seasons": "Glare tracking seasons"
+          "tracking_seasons": "Glare tracking seasons",
+          "climate_temp_hold_time": "Smoothing hold time",
+          "temp_low_release_threshold": "Low temperature release threshold (optional)",
+          "temp_high_release_threshold": "High temperature release threshold (optional)",
+          "outside_threshold_release": "Outside temperature release threshold (optional)",
+          "temp_extreme_heat_release_threshold": "Extreme heat release threshold (optional)"
         },
         "data_description": {
           "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
@@ -1619,7 +1634,12 @@
           "summer_close_bypass_sun_floor": "When enabled, summer heat-blocking closes the cover all the way to the global minimum position, ignoring the higher 'minimum position when sun is in view' floor. Use this for full heat protection in summer even while the sun is directly on the window. Has no effect outside summer, and the maximum-position limit still applies.",
           "temp_extreme_heat": "Outdoor temperature above which the cover holds a fixed position all day — regardless of sun position, presence, or season — pre-empting even winter heating. Leave blank to disable extreme-heat mode. **Value is interpreted in the outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "extreme_heat_position": "Position the cover holds during extreme heat (0% = fully closed/retracted, the default when left blank). On tilt covers this is the slat angle percentage. The hold still respects your configured minimum/maximum position limits.",
-          "tracking_seasons": "Seasons in which glare-control tracking is allowed to run. In any deselected season the cover returns to its default position instead of tracking the sun. Winter and summer climate actions (heating, insulation, cooling) are unaffected. Default: all seasons."
+          "tracking_seasons": "Seasons in which glare-control tracking is allowed to run. In any deselected season the cover returns to its default position instead of tracking the sun. Winter and summer climate actions (heating, insulation, cooling) are unaffected. Default: all seasons.",
+          "climate_temp_hold_time": "Seconds that a change in the calculated season must persist before it takes effect. This debounces a temperature reading that dithers across a threshold so the cover does not move every cycle. 0 (default) applies changes immediately. The same delay applies in both directions — entering and leaving a season.",
+          "temp_low_release_threshold": "Optional hysteresis edge for the winter threshold. Once winter is active, keep it active until the current temperature rises to at least this value — instead of releasing the moment it climbs back above the Low temperature threshold. Set it ABOVE the Low temperature threshold to stop the cover flapping when the reading hovers around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "temp_high_release_threshold": "Optional hysteresis edge for the summer-warm threshold. Once the warm condition is active, keep it active until the current temperature falls to this value or below — instead of releasing the moment it drops back below the High temperature threshold. Set it BELOW the High temperature threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "outside_threshold_release": "Optional hysteresis edge for the outside-temperature summer guard. Once the outside guard is satisfied, keep it satisfied until the outdoor temperature falls to this value or below — instead of releasing the moment it drops back below the Outside temperature threshold. Set it BELOW the Outside temperature threshold to stop the cover flapping when the outdoor reading hovers around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template.",
+          "temp_extreme_heat_release_threshold": "Optional hysteresis edge for the extreme-heat threshold. Once extreme-heat mode is active, keep it active until the outdoor temperature falls to this value or below — instead of releasing the moment it drops back below the Extreme heat threshold. Set it BELOW the Extreme heat threshold to prevent flapping around a single crossing point. Leave blank to disable hysteresis. Accepts a fixed number or a Home Assistant Jinja2 template."
         }
       },
       "building_profile": {

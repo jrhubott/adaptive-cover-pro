@@ -14,7 +14,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateHandler,
 )
-from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
+    ClimateTempFlags,
+)
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -127,6 +130,64 @@ class TestClimateHandlerGating:
             climate_options=None,
         )
         assert self.handler.evaluate(snap) is None
+
+
+class TestClimateHandlerSmoothedFlags:
+    """_build_climate_data threads snapshot.climate_temp_flags (issue #917)."""
+
+    handler = ClimateHandler()
+
+    def test_smoothed_flags_win_over_raw_temps(self) -> None:
+        """Raw temps read cold (winter) but smoothed flags force summer."""
+        cover = _make_blind_cover()
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            # Raw inside 10 < temp_low 18 → raw is_winter. temp_high 26.
+            climate_readings=_make_readings(inside_temperature=10.0),
+            climate_options=_make_options(
+                temp_low=18.0, temp_high=26.0, transparent_blind=True
+            ),
+            climate_temp_flags=ClimateTempFlags(
+                winter=False, summer_warm=True, outside_high=True, extreme_heat=False
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.SUMMER
+
+    def test_flags_none_uses_raw_behaviour(self) -> None:
+        """With climate_temp_flags None the handler classifies from raw temps."""
+        cover = _make_blind_cover()
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=10.0),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+            climate_temp_flags=None,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.WINTER
+
+    def test_is_summer_needs_both_smoothed_warm_and_outside(self) -> None:
+        """summer_warm True but outside_high False ⇒ not summer (composite)."""
+        cover = _make_blind_cover()
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0),
+            climate_options=_make_options(temp_high=26.0, transparent_blind=True),
+            climate_temp_flags=ClimateTempFlags(
+                winter=False,
+                summer_warm=True,
+                outside_high=False,
+                extreme_heat=False,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        # Not summer → transparent blind no longer force-closes; defers to glare.
+        assert result is None or result.control_method != ControlMethod.SUMMER
 
 
 class TestClimateHandlerSummerStrategy:

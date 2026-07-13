@@ -76,6 +76,118 @@ class TestOutsideTemperature:
 
 
 # ---------------------------------------------------------------------------
+# Temperature-season crossings (issue #917)
+# ---------------------------------------------------------------------------
+
+
+class TestTemperatureCrossings:
+    """read() emits (activate, release_cleared) pairs for the four crossings."""
+
+    def _states(self, mock_hass, mapping):
+        """Route mock_hass.states.get by entity_id via a dict."""
+        mock_hass.states.get.side_effect = lambda eid: mapping.get(eid)
+
+    @pytest.mark.unit
+    def test_default_field_values_match_asymmetry(self):
+        """A bare ClimateReadings reproduces each legacy property's fail value."""
+        r = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        # winter / summer-warm / extreme fail to (inactive, cleared).
+        assert r.temp_below_low_threshold is False
+        assert r.temp_low_release_cleared is True
+        assert r.temp_above_high_threshold is False
+        assert r.temp_high_release_cleared is True
+        assert r.outside_above_extreme_heat is False
+        assert r.extreme_heat_release_cleared is True
+        # outside-high FAILS OPEN (active, held).
+        assert r.outside_above_threshold is True
+        assert r.outside_release_cleared is False
+
+    @pytest.mark.unit
+    def test_winter_activate_blank_release(self, provider, mock_hass):
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "18")})
+        r = provider.read(
+            outside_entity="sensor.out",
+            temp_switch=True,
+            temp_low=21,
+        )
+        assert r.temp_below_low_threshold is True
+        assert r.temp_low_release_cleared is False  # blank release → not activate
+
+    @pytest.mark.unit
+    def test_outside_high_activate(self, provider, mock_hass):
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "33")})
+        r = provider.read(outside_entity="sensor.out", outside_threshold=32)
+        assert r.outside_above_threshold is True
+        assert r.outside_release_cleared is False
+
+    @pytest.mark.unit
+    def test_outside_high_release_band_holds(self, provider, mock_hass):
+        # 31 sits in the [30, 32] band — the reporter's fix.
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "31")})
+        r = provider.read(
+            outside_entity="sensor.out",
+            outside_threshold=32,
+            outside_threshold_release=30,
+        )
+        assert r.outside_above_threshold is False
+        assert r.outside_release_cleared is False  # in band → latch holds
+
+    @pytest.mark.unit
+    def test_outside_high_unavailable_fails_open(self, provider, mock_hass):
+        self._states(mock_hass, {})  # outside reads None
+        r = provider.read(outside_entity="sensor.out", outside_threshold=32)
+        assert r.outside_above_threshold is True
+        assert r.outside_release_cleared is False
+
+    @pytest.mark.unit
+    def test_extreme_heat_keyed_on_outside_despite_switch(self, provider, mock_hass):
+        # temp_switch False so current temp uses inside, but extreme heat must
+        # still key on the OUTSIDE reading.
+        self._states(
+            mock_hass,
+            {
+                "sensor.out": _mock_state("sensor.out", "41"),
+                "sensor.in": _mock_state("sensor.in", "20"),
+            },
+        )
+        r = provider.read(
+            outside_entity="sensor.out",
+            temp_entity="sensor.in",
+            auto_resolve_temp_from_area=False,
+            temp_switch=False,
+            temp_extreme_heat=40,
+        )
+        assert r.outside_above_extreme_heat is True
+        assert r.extreme_heat_release_cleared is False
+
+    @pytest.mark.unit
+    def test_summer_warm_uses_inside_when_no_switch(self, provider, mock_hass):
+        self._states(
+            mock_hass,
+            {
+                "sensor.out": _mock_state("sensor.out", "20"),
+                "sensor.in": _mock_state("sensor.in", "26"),
+            },
+        )
+        r = provider.read(
+            outside_entity="sensor.out",
+            temp_entity="sensor.in",
+            auto_resolve_temp_from_area=False,
+            temp_switch=False,
+            temp_high=25,
+        )
+        assert r.temp_above_high_threshold is True
+
+
+# ---------------------------------------------------------------------------
 # Inside temperature
 # ---------------------------------------------------------------------------
 

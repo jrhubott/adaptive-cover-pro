@@ -32,6 +32,7 @@ from .const import (
     CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
+    CONF_CLIMATE_TEMP_HOLD_TIME,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
@@ -60,6 +61,7 @@ from .const import (
     CONF_MIN_ELEVATION,
     CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -75,8 +77,11 @@ from .const import (
     CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENABLED,
@@ -101,6 +106,7 @@ from .const import (
     CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+    DEFAULT_CLIMATE_TEMP_HOLD_TIME,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
@@ -676,6 +682,26 @@ def temperature_climate_schema(
                 multiple=True,
                 mode=selector.SelectSelectorMode.LIST,
                 translation_key="tracking_seasons",
+            )
+        ),
+        # Temperature smoothing controls (issue #917). Optional per-crossing
+        # hysteresis release edges (blank = off) accept a number or template like
+        # the activate thresholds; the hold-time debounces the aggregate season
+        # decision. Mirrors the cloud smoothing schema.
+        vol.Optional(CONF_TEMP_LOW_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_TEMP_HIGH_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_OUTSIDE_THRESHOLD_RELEASE): _threshold_selector(),
+        vol.Optional(CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+            default=DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=3600,
+                step=30,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="s",
             )
         ),
     }

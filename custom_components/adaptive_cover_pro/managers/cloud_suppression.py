@@ -12,6 +12,10 @@ time-window guards.
 The manager is cover-type-agnostic — it consumes provider booleans and never
 reads HA or branches on cover type. Absent config (hold-time 0, blank release
 thresholds) reproduces today's instantaneous single-crossing behaviour exactly.
+
+The Schmitt latch and the hold-time debounce are the shared
+``managers/common/smoothing`` primitives (issue #917) — the same code
+``ClimateSmoothingManager`` delegates to.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..const import DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME
-from .common import EventRecorder, TimeoutController
+from .common import EventRecorder, HoldDebouncer, advance_schmitt_latch
 
 if TYPE_CHECKING:
     from ..state.climate_provider import ClimateReadings
@@ -61,14 +65,11 @@ class CloudSuppressionManager:
         self._irr_latched: bool = False
         self._cloud_latched: bool = False
 
-        # Resolved aggregate latch (after the hold-time debounce) and the last
-        # instantaneous value / pending debounce target.
-        self._active: bool = False
-        self._instantaneous: bool = False
-        self._pending_target: bool | None = None
-
-        # Hold-time debounce timer.
-        self._timer = TimeoutController(logger, label="cloud-suppression hold")
+        # Aggregate resolved bool + hold-time debounce (shared primitive).
+        self._debouncer = HoldDebouncer(
+            logger, label="cloud-suppression hold", on_commit=self._on_commit
+        )
+        self._debouncer.reset(False)
 
     # --- Configuration ---
 
@@ -94,12 +95,12 @@ class CloudSuppressionManager:
     @property
     def is_suppression_active(self) -> bool:
         """Return the resolved suppression bool (False when disabled)."""
-        return self._enabled and self._active
+        return self._enabled and self._debouncer.resolved
 
     @property
     def is_timeout_running(self) -> bool:
         """Return True when a hold-time debounce timer is pending."""
-        return self._timer.is_running
+        return self._debouncer.is_timeout_running
 
     # --- Evaluation ---
 
@@ -123,57 +124,25 @@ class CloudSuppressionManager:
             or self._irr_latched
             or self._cloud_latched
         )
-        self._instantaneous = instantaneous
-
-        if instantaneous == self._active:
-            # No transition needed. A timer counting toward a now-abandoned
-            # transition is cancelled (the condition reverted → true debounce).
-            if self.is_timeout_running:
-                self.cancel_hold_timeout()
-            self._pending_target = None
-            return None
-
-        # A transition is pending.
-        if self._hold_time <= 0:
-            self._commit(instantaneous)
-            return None
-
-        self._pending_target = instantaneous
-        if self.is_timeout_running:
-            return None
-        return "should_start_timeout"
+        return self._debouncer.evaluate(instantaneous, self._hold_time)
 
     def _update_latches(self, readings: ClimateReadings) -> None:
         """Advance each per-trigger Schmitt latch for this cycle."""
-        self._lux_latched = self._advance_latch(
+        self._lux_latched = advance_schmitt_latch(
             self._lux_latched,
             readings.lux_below_threshold,
             readings.lux_release_cleared,
         )
-        self._irr_latched = self._advance_latch(
+        self._irr_latched = advance_schmitt_latch(
             self._irr_latched,
             readings.irradiance_below_threshold,
             readings.irradiance_release_cleared,
         )
-        self._cloud_latched = self._advance_latch(
+        self._cloud_latched = advance_schmitt_latch(
             self._cloud_latched,
             readings.cloud_coverage_above_threshold,
             readings.cloud_coverage_release_cleared,
         )
-
-    @staticmethod
-    def _advance_latch(prev: bool, activate_met: bool, release_cleared: bool) -> bool:
-        """Return the next latch state: activate wins, then release, else hold.
-
-        With a blank release threshold the provider sets
-        ``release_cleared = not activate_met``, so this collapses to
-        ``latched == activate_met`` — exact back-compat.
-        """
-        if activate_met:
-            return True
-        if release_cleared:
-            return False
-        return prev
 
     # --- Hold-time debounce timer ---
 
@@ -184,50 +153,35 @@ class CloudSuppressionManager:
         transition. When the timer expires (and the transition has not been
         reverted), the resolved bool commits and ``refresh_callback`` runs.
         """
-        hold_time = self._hold_time
         self._logger.info(
             "Cloud-suppression change pending — holding %s seconds before it takes "
             "effect",
-            hold_time,
+            self._hold_time,
         )
-
-        async def _on_expire() -> None:
-            await self._on_hold_timeout_expired(refresh_callback)
-
-        self._timer.start(hold_time, _on_expire)
+        self._debouncer.start_hold_timeout(self._hold_time, refresh_callback)
 
     async def _on_hold_timeout_expired(self, refresh_callback: Callable) -> None:
         """Commit the pending transition once the hold-time has elapsed."""
-        if self._pending_target is None:
-            return
-        self._commit(self._pending_target)
-        await refresh_callback()
+        await self._debouncer._on_hold_timeout_expired(refresh_callback)
 
     def cancel_hold_timeout(self) -> None:
         """Cancel the running hold-time timer, if any."""
-        self._timer.cancel()
+        self._debouncer.cancel()
 
     # --- Internal helpers ---
 
-    def _commit(self, target: bool) -> None:
-        """Flip the resolved bool, record the transition, clear pending."""
-        previous = self._active
-        self._active = target
-        self._pending_target = None
-        if previous != target:
-            self._events.record(
-                "cloud_suppression_changed",
-                entity_id="",
-                previous=previous,
-                current=target,
-            )
+    def _on_commit(self, previous: bool, target: bool) -> None:
+        """Record the resolved-bool transition (fired by the debouncer)."""
+        self._events.record(
+            "cloud_suppression_changed",
+            entity_id="",
+            previous=previous,
+            current=target,
+        )
 
     def _reset(self) -> None:
         """Drop all latch/resolved/pending state and cancel any timer."""
         self._lux_latched = False
         self._irr_latched = False
         self._cloud_latched = False
-        self._active = False
-        self._instantaneous = False
-        self._pending_target = None
-        self.cancel_hold_timeout()
+        self._debouncer.reset(False)

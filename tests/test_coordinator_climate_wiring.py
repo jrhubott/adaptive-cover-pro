@@ -38,12 +38,19 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_OUTSIDE_TEMP_SOURCE,
+    CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
+    CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+    CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TRACKING_SEASONS,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
@@ -349,6 +356,8 @@ class TestClimateProviderApiCoverage:
         "use_irradiance",
         "use_cloud_coverage",
         "forecast_max_outside",
+        # temp_switch is derived from the temp-source toggle, not an options key.
+        "temp_switch",
     }
 
     # These map from options key → read() kwarg name (non-obvious mappings).
@@ -376,6 +385,17 @@ class TestClimateProviderApiCoverage:
         CONF_IS_SUNNY_TEMPLATE_MODE: "is_sunny_template_mode",
         CONF_PRESENCE_TEMPLATE: "presence_template",
         CONF_PRESENCE_TEMPLATE_MODE: "presence_template_mode",
+        # Temperature-season crossing inputs (issue #917).
+        CONF_TEMP_LOW: "temp_low",
+        CONF_TEMP_HIGH: "temp_high",
+        CONF_OUTSIDE_THRESHOLD: "outside_threshold",
+        CONF_TEMP_EXTREME_HEAT: "temp_extreme_heat",
+        CONF_TEMP_LOW_RELEASE_THRESHOLD: "temp_low_release_threshold",
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD: "temp_high_release_threshold",
+        CONF_OUTSIDE_THRESHOLD_RELEASE: "outside_threshold_release",
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD: (
+            "temp_extreme_heat_release_threshold"
+        ),
     }
 
     @pytest.mark.unit
@@ -437,6 +457,14 @@ class TestClimateProviderApiCoverage:
             CONF_IS_SUNNY_TEMPLATE_MODE: "or",
             CONF_PRESENCE_TEMPLATE: "{{ false }}",
             CONF_PRESENCE_TEMPLATE_MODE: "or",
+            CONF_TEMP_LOW: 21,
+            CONF_TEMP_HIGH: 25,
+            CONF_OUTSIDE_THRESHOLD: 32,
+            CONF_TEMP_EXTREME_HEAT: 40,
+            CONF_TEMP_LOW_RELEASE_THRESHOLD: 23,
+            CONF_TEMP_HIGH_RELEASE_THRESHOLD: 23,
+            CONF_OUTSIDE_THRESHOLD_RELEASE: 30,
+            CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD: 37,
         }
         coord._read_climate_state(options)
         _, kwargs = coord._climate_provider.read.call_args
@@ -791,6 +819,174 @@ class TestCloudSuppressionCoordinatorWiring:
         assert "cloud_suppression_active" in captured
 
 
+def _winter_readings() -> ClimateReadings:
+    """ClimateReadings whose winter crossing is active (and held)."""
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=None,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+        temp_below_low_threshold=True,
+        temp_low_release_cleared=False,
+        outside_above_threshold=False,
+        outside_release_cleared=True,
+    )
+
+
+class TestClimateSmoothingCoordinatorWiring:
+    """Coordinator wiring for the climate-smoothing manager (issue #917)."""
+
+    @pytest.mark.unit
+    def test_runtime_config_climate_smoothing_slice(self):
+        """RuntimeConfig carries the enable (climate mode) + hold-time slice."""
+        from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLIMATE_MODE,
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+        )
+
+        rc = RuntimeConfig.from_options(
+            {CONF_CLIMATE_MODE: True, CONF_CLIMATE_TEMP_HOLD_TIME: 120}
+        )
+        assert rc.climate_smoothing.enabled is True
+        assert rc.climate_smoothing.hold_time_seconds == 120
+
+    @pytest.mark.unit
+    def test_runtime_config_climate_smoothing_defaults(self):
+        """Absent keys default to disabled + the DEFAULT hold-time constant."""
+        from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
+        from custom_components.adaptive_cover_pro.const import (
+            DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+        )
+
+        rc = RuntimeConfig.from_options({})
+        assert rc.climate_smoothing.enabled is False
+        assert rc.climate_smoothing.hold_time_seconds == DEFAULT_CLIMATE_TEMP_HOLD_TIME
+
+    @pytest.mark.unit
+    def test_reconcile_flips_immediately_when_hold_zero(self):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+        from custom_components.adaptive_cover_pro.managers.climate_smoothing import (
+            ClimateSmoothingManager,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord.logger = MagicMock()
+        coord._climate_smoothing_mgr = ClimateSmoothingManager(logger=MagicMock())
+        coord._climate_smoothing_mgr.update_config(enabled=True, hold_time_seconds=0)
+        coord._start_climate_temp_hold_timeout = MagicMock()
+
+        coord._reconcile_climate_smoothing(_winter_readings())
+        assert coord._climate_smoothing_mgr.resolved_flags.winter is True
+        coord._start_climate_temp_hold_timeout.assert_not_called()
+
+    @pytest.mark.unit
+    def test_reconcile_starts_timeout_when_pending(self):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+        from custom_components.adaptive_cover_pro.managers.climate_smoothing import (
+            ClimateSmoothingManager,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord.logger = MagicMock()
+        coord._climate_smoothing_mgr = ClimateSmoothingManager(logger=MagicMock())
+        coord._climate_smoothing_mgr.update_config(enabled=True, hold_time_seconds=120)
+        coord._start_climate_temp_hold_timeout = MagicMock()
+
+        coord._reconcile_climate_smoothing(_winter_readings())
+        assert coord._climate_smoothing_mgr.resolved_flags.winter is False
+        coord._start_climate_temp_hold_timeout.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_start_climate_temp_hold_timeout_triggers_refresh(self):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+        from custom_components.adaptive_cover_pro.managers.climate_smoothing import (
+            ClimateSmoothingManager,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord.logger = MagicMock()
+        coord.state_change = False
+        coord.async_refresh = AsyncMock()
+        coord._climate_smoothing_mgr = MagicMock(spec=ClimateSmoothingManager)
+
+        captured = None
+
+        def _capture(refresh_callback):
+            nonlocal captured
+            captured = refresh_callback
+
+        coord._climate_smoothing_mgr.start_hold_timeout.side_effect = _capture
+        coord._start_climate_temp_hold_timeout()
+
+        assert captured is not None
+        await captured()
+        assert coord.state_change is True
+        coord.async_refresh.assert_called_once()
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_coordinator_creates_and_configures_climate_mgr(self, hass):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLIMATE_MODE,
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+        )
+        from custom_components.adaptive_cover_pro.managers.climate_smoothing import (
+            ClimateSmoothingManager,
+        )
+        from tests.ha_helpers import VERTICAL_OPTIONS, setup_integration
+
+        options = {
+            **VERTICAL_OPTIONS,
+            CONF_CLIMATE_MODE: True,
+            CONF_CLIMATE_TEMP_HOLD_TIME: 0,
+        }
+        entry = await setup_integration(
+            hass, options=options, entry_id="climate_mgr_wire_01"
+        )
+        coord = entry.runtime_data
+        assert isinstance(coord._climate_smoothing_mgr, ClimateSmoothingManager)
+
+        coord._update_options(options)
+        coord._reconcile_climate_smoothing(_winter_readings())
+        assert coord._climate_smoothing_mgr.resolved_flags.winter is True
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_coordinator_threads_climate_temp_flags_into_snapshot(self, hass):
+        """A full update cycle passes climate_temp_flags into build()."""
+        from custom_components.adaptive_cover_pro.const import CONF_CLIMATE_MODE
+        from tests.ha_helpers import VERTICAL_OPTIONS, setup_integration
+
+        entry = await setup_integration(
+            hass,
+            options={**VERTICAL_OPTIONS, CONF_CLIMATE_MODE: True},
+            entry_id="climate_thread_01",
+        )
+        coord = entry.runtime_data
+
+        captured: dict = {}
+        real_build = coord._snapshot_builder.build
+
+        def _spy(*args, **kwargs):
+            captured.update(kwargs)
+            return real_build(*args, **kwargs)
+
+        coord._snapshot_builder.build = _spy
+        await coord.async_refresh()
+        assert "climate_temp_flags" in captured
+
+
 class TestExtremeHeatWiring:
     """Guard that the extreme-heat options flow through into ClimateOptions (#766)."""
 
@@ -871,6 +1067,7 @@ class TestTrackingSeasonsWiring:
             climate_mode_enabled=True,
             climate_readings=self._readings(),
             climate_options=climate_options,
+            climate_temp_flags=None,
             policy=MagicMock(),
             cover_type="cover_blind",
             cover=MagicMock(),

@@ -411,6 +411,8 @@ async def _trigger_async_apply_user_position(coord):
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
     coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
     coord._compute_mean_cover_position = MagicMock(return_value=None)
     # is_motion_timeout_active / is_weather_override_active / check_adaptive_time
     # are properties — patch them at the class level for this call.

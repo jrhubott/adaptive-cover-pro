@@ -142,6 +142,42 @@ def test_sunset_tilt_in_option_ranges() -> None:
 
 
 @pytest.mark.unit
+def test_climate_temp_hold_time_range_and_default() -> None:
+    """Climate-mode smoothing hold-time is registered (0, 3600), default 0 (#917)."""
+    from custom_components.adaptive_cover_pro.config_fields import option_default
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CLIMATE_TEMP_HOLD_TIME,
+        DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+    )
+
+    assert CONF_CLIMATE_TEMP_HOLD_TIME in OPTION_RANGES
+    assert OPTION_RANGES[CONF_CLIMATE_TEMP_HOLD_TIME] == (0, 3600)
+    assert CONF_CLIMATE_TEMP_HOLD_TIME in FIELD_VALIDATORS
+    assert DEFAULT_CLIMATE_TEMP_HOLD_TIME == 0
+    assert option_default(CONF_CLIMATE_TEMP_HOLD_TIME) == 0
+
+
+@pytest.mark.unit
+def test_climate_temp_release_keys_are_templatable() -> None:
+    """The four climate release edges join TEMPLATABLE_KEYS (rendered per cycle, #917)."""
+    from custom_components.adaptive_cover_pro.config_fields import TEMPLATABLE_KEYS
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+    )
+
+    for key in (
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
+    ):
+        assert key in TEMPLATABLE_KEYS, f"{key} missing from TEMPLATABLE_KEYS"
+
+
+@pytest.mark.unit
 def test_venetian_tilt_safety_margin_in_option_ranges() -> None:
     """CONF_VENETIAN_TILT_SAFETY_MARGIN must appear in OPTION_RANGES with (0.0, 1.0)."""
     from custom_components.adaptive_cover_pro.const import (

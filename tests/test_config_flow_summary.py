@@ -1082,6 +1082,65 @@ def test_cloud_suppression_release_band_shown_when_set():
     assert "release" in summary.lower()
 
 
+def test_climate_temp_hold_time_shown_when_positive():
+    """A non-zero climate hold-time renders a smoothing-hold suffix (issue #917)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CLIMATE_TEMP_HOLD_TIME,
+        CONF_TEMP_HIGH,
+        CONF_TEMP_LOW,
+    )
+
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW: 20,
+        CONF_TEMP_HIGH: 25,
+        CONF_CLIMATE_TEMP_HOLD_TIME: 300,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "smoothing hold 300s" in summary
+
+
+def test_climate_temp_hold_time_hidden_when_zero():
+    """A zero climate hold-time (default) renders no smoothing suffix (#917)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CLIMATE_TEMP_HOLD_TIME,
+    )
+
+    cfg = {CONF_CLIMATE_MODE: True, CONF_CLIMATE_TEMP_HOLD_TIME: 0}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    # The climate line must not carry a smoothing-hold suffix.
+    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
+    assert "smoothing hold" not in climate_line
+
+
+def test_climate_temp_release_band_shown_when_set():
+    """Configured climate release edges render a release detail (issue #917)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+    )
+
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW_RELEASE_THRESHOLD: 23,
+        CONF_OUTSIDE_THRESHOLD_RELEASE: 30,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
+    assert "23" in climate_line
+    assert "30" in climate_line
+    assert "release" in climate_line.lower()
+
+
+def test_climate_line_unchanged_when_smoothing_absent():
+    """With no smoothing keys the climate line carries no smoothing/release text."""
+    cfg = {CONF_CLIMATE_MODE: True}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
+    assert "smoothing hold" not in climate_line
+    assert "release when" not in climate_line
+
+
 def test_light_sensors_without_suppression_noted():
     """Light sensors configured but suppression off shows informational note."""
     cfg = {CONF_LUX_ENTITY: "sensor.lux", CONF_CLOUD_SUPPRESSION: False}

@@ -169,6 +169,8 @@ def _make_my_position_coord():
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
     coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
 
     pipeline_result = PipelineResult(
         position=50,

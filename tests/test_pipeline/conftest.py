@@ -91,6 +91,7 @@ def make_snapshot(
     solar_floor_active: bool = True,
     group_intent=None,
     cloud_suppression_active: bool | None = None,
+    climate_temp_flags=None,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -160,4 +161,5 @@ def make_snapshot(
         solar_floor_active=solar_floor_active,
         group_intent=group_intent,
         cloud_suppression_active=cloud_suppression_active,
+        climate_temp_flags=climate_temp_flags,
     )

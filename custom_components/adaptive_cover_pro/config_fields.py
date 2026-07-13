@@ -50,6 +50,7 @@ from .const import (
     CONF_AWNING_PIVOT_OFFSET,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
+    CONF_CLIMATE_TEMP_HOLD_TIME,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
@@ -123,6 +124,7 @@ from .const import (
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
@@ -150,8 +152,11 @@ from .const import (
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TILT_ANGLE_0,
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
@@ -192,6 +197,7 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEBUG_CATEGORIES_ALL,
+    DEFAULT_CLIMATE_TEMP_HOLD_TIME,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
@@ -1557,6 +1563,42 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
         rng=const._RANGE_EXTREME_HEAT_POSITION,
         clearable=True,
     ),
+    # Temperature smoothing controls (issue #917) — the climate analogue of the
+    # cloud smoothing specs above. Hold-time is a bounded numeric (RANGE →
+    # auto-registers in OPTION_RANGES + FIELD_VALIDATORS). The four release
+    # edges mirror the activate thresholds: number-or-template (NONE,
+    # template-capable), clearable, blank = hysteresis off.
+    FieldSpec(
+        CONF_CLIMATE_TEMP_HOLD_TIME,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_CLIMATE_TEMP_HOLD_TIME,
+        default=DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+    ),
+    FieldSpec(
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
 )
 
 
@@ -1950,6 +1992,11 @@ TEMPLATABLE_KEYS: frozenset[str] = frozenset(
         CONF_WEATHER_WIND_SPEED_THRESHOLD,
         CONF_WEATHER_RAIN_THRESHOLD,
         CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+        # Climate-mode temperature smoothing release edges (issue #917).
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     }
 )
 

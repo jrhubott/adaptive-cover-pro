@@ -58,6 +58,7 @@ from ..const import (
     CONF_MY_POSITION_VALUE,
     CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -71,8 +72,11 @@ from ..const import (
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
@@ -106,6 +110,7 @@ from ..helpers import (
 from ..templates import combine_with_mode, is_template_string, render_condition
 from .types import (
     ClimateOptions,
+    ClimateTempFlags,
     CustomPositionSensorState,
     GroupIntent,
     PipelineSnapshot,
@@ -228,6 +233,20 @@ class PipelineSnapshotBuilder:
             is_sunny_template=options.get(CONF_IS_SUNNY_TEMPLATE),
             is_sunny_template_mode=options.get(CONF_IS_SUNNY_TEMPLATE_MODE)
             or DEFAULT_TEMPLATE_COMBINE_MODE,
+            # Temperature-season crossing inputs (issue #917). temp_switch comes
+            # from the runtime toggle (same source build_climate_options uses),
+            # thresholds/release edges straight from options.
+            temp_switch=bool(self._toggles.temp_toggle),
+            temp_low=options.get(CONF_TEMP_LOW),
+            temp_high=options.get(CONF_TEMP_HIGH),
+            outside_threshold=options.get(CONF_OUTSIDE_THRESHOLD),
+            temp_extreme_heat=options.get(CONF_TEMP_EXTREME_HEAT),
+            temp_low_release_threshold=options.get(CONF_TEMP_LOW_RELEASE_THRESHOLD),
+            temp_high_release_threshold=options.get(CONF_TEMP_HIGH_RELEASE_THRESHOLD),
+            outside_threshold_release=options.get(CONF_OUTSIDE_THRESHOLD_RELEASE),
+            temp_extreme_heat_release_threshold=options.get(
+                CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD
+            ),
         )
 
     def read_custom_position_sensors(
@@ -372,6 +391,7 @@ class PipelineSnapshotBuilder:
         current_cover_position: int | None,
         is_glare_zone_enabled: Callable[[int], bool],
         cloud_suppression_active: bool = False,
+        climate_temp_flags: ClimateTempFlags | None = None,
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
         cover_capabilities: dict | None = None,
@@ -487,4 +507,5 @@ class PipelineSnapshotBuilder:
             solar_floor_active=solar_floor_active,
             time_threshold_minutes=_delta_time_minutes(options.get(CONF_DELTA_TIME)),
             cloud_suppression_active=cloud_suppression_active,
+            climate_temp_flags=climate_temp_flags,
         )
