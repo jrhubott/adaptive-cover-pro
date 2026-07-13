@@ -16,10 +16,11 @@ from custom_components.adaptive_cover_pro.config_types import (
 from custom_components.adaptive_cover_pro.engine.covers.vertical import (
     AdaptiveVerticalCover,
 )
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod, ReasonCode
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
 )
+from custom_components.adaptive_cover_pro.reason_i18n import render_en
 from tests.test_pipeline.conftest import make_snapshot
 
 
@@ -90,7 +91,19 @@ class TestGlareZoneHandlerGating:
             active_zone_names={"desk"},
             in_time_window=False,
         )
-        assert self.handler.describe_skip(snap) == "outside time window"
+        assert render_en(self.handler.describe_skip(snap)) == "outside time window"
+
+    def test_describe_skip_payload_outside_time_window(self) -> None:
+        """describe_skip returns a skip.outside_window payload outside the window."""
+        cover = _make_vertical_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=_make_glare_config(),
+            active_zone_names={"desk"},
+            in_time_window=False,
+        )
+        assert self.handler.describe_skip(snap).code == ReasonCode.SKIP_OUTSIDE_WINDOW
 
     def test_matches_inside_time_window(self) -> None:
         """Returns result when in_time_window is True and all conditions met."""
@@ -737,9 +750,10 @@ class TestGlareZoneDescribeSkip:
             in_time_window=True,
         )
         assert (
-            self.handler.describe_skip(snap)
+            render_en(self.handler.describe_skip(snap))
             == "no active glare zones or sun outside acceptance angle"
         )
+        assert self.handler.describe_skip(snap).code == ReasonCode.SKIP_NO_GLARE_ZONES
 
     def test_describe_skip_sun_not_valid(self) -> None:
         """Sun not in FOV → same 'no active glare zones' message."""
@@ -755,9 +769,10 @@ class TestGlareZoneDescribeSkip:
             in_time_window=True,
         )
         assert (
-            self.handler.describe_skip(snap)
+            render_en(self.handler.describe_skip(snap))
             == "no active glare zones or sun outside acceptance angle"
         )
+        assert self.handler.describe_skip(snap).code == ReasonCode.SKIP_NO_GLARE_ZONES
 
 
 class TestGlareZoneReasonString:
@@ -832,6 +847,57 @@ class TestGlareZoneReasonString:
         assert result is not None
         assert "position" in result.reason
         assert "%" in result.reason
+
+    def test_reason_payload_code_and_params(self) -> None:
+        """The payload carries glare.protection with zone names, distance, position."""
+        cover = _make_vertical_cover(
+            distance=5.0,
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=30.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="my_monitor", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"my_monitor"},
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.GLARE_PROTECTION
+        assert result.reason_payload.params["zones"] == "my_monitor"
+        assert result.reason_payload.params["distance"] == pytest.approx(1.0, abs=0.01)
+        assert result.reason_payload.params["z_suffix"] == ""
+
+    def test_reason_payload_z_suffix_fragment_when_zone_has_z(self) -> None:
+        """The z_suffix param is a z_adjusted fragment when a contributing zone has Z>0."""
+        cover = _make_vertical_cover(
+            distance=5.0,
+            gamma=0.0,
+            sol_elev=45.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=30.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="eye", x=0.0, y=1.0, radius=0.0, z=1.1)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"eye"},
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        z_suffix = result.reason_payload.params["z_suffix"]
+        assert z_suffix.code == ReasonCode.FRAGMENT_Z_ADJUSTED
 
     def test_reason_includes_z_adjusted_suffix_when_contributing_zone_has_z(
         self,

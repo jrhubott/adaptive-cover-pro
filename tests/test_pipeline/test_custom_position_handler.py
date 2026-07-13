@@ -7,6 +7,7 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    ReasonCode,
 )
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
@@ -15,6 +16,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
+from custom_components.adaptive_cover_pro.reason_i18n import render_en
 
 from .conftest import make_snapshot
 
@@ -139,9 +141,15 @@ class TestEvaluateNoMatchingSlot:
 
     def test_describe_skip_mentions_slot(self) -> None:
         snapshot = make_snapshot(custom_position_sensors=[])
-        skip = _handler(slot=2).describe_skip(snapshot)
+        skip = render_en(_handler(slot=2).describe_skip(snapshot))
         assert "#2" in skip
         assert "not active" in skip
+
+    def test_describe_skip_payload_names_slot(self) -> None:
+        snapshot = make_snapshot(custom_position_sensors=[])
+        payload = _handler(slot=2).describe_skip(snapshot)
+        assert payload.code == ReasonCode.SKIP_CUSTOM_NOT_ACTIVE
+        assert payload.params["slot"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +281,118 @@ class TestTriggerReason:
         result = _handler(position=40).evaluate(snapshot)
         assert result is not None
         assert "binary_sensor.wind, template" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# reason_payload — stable code + params (issue #882)
+# ---------------------------------------------------------------------------
+
+
+class TestReasonPayload:
+    """The migrated handler emits a stable Reason payload on every path."""
+
+    def test_slot_head_position_payload(self) -> None:
+        """An unnamed slot on the exact-position path nests a head_slot fragment."""
+        snapshot = _snapshot_with(
+            "binary_sensor.morning", is_on=True, position=70, slot=2
+        )
+        result = _handler(slot=2, position=70).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.CUSTOM_POSITION_
+        assert result.reason_payload.params["position"] == 70
+        assert result.reason_payload.params["bypass_note"] == ""
+        head = result.reason_payload.params["head"]
+        assert head.code == ReasonCode.CUSTOM_HEAD_SLOT
+        assert head.params["slot"] == 2
+        # The trigger is a tuple of the active entity ids (scalars).
+        assert list(head.params["trigger"]) == ["binary_sensor.morning"]
+
+    def test_named_head_payload(self) -> None:
+        """A named slot nests a head_named fragment carrying the raw name."""
+        state = _make_state(
+            "binary_sensor.movie",
+            True,
+            40,
+            _DEFAULT_PRIORITY,
+            False,
+            False,
+            slot=3,
+            custom_name="Movie night",
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(slot=3, position=40).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        head = result.reason_payload.params["head"]
+        assert head.code == ReasonCode.CUSTOM_HEAD_NAMED
+        assert head.params["name"] == "Movie night"
+
+    def test_use_my_path_payload(self) -> None:
+        """The use-My path emits a custom.use_my payload."""
+        state = _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, True)
+        snapshot = make_snapshot(custom_position_sensors=[state], my_position_value=30)
+        result = _handler(position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.CUSTOM_USE_MY
+        assert result.reason_payload.params["position"] == 30
+
+    def test_bypass_note_fragment_on_safety_slot(self) -> None:
+        """A safety-priority slot sets bypass_note to a bypass fragment."""
+        state = _make_state(
+            _ENTITY, True, 50, CUSTOM_POSITION_SAFETY_PRIORITY, False, False
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(
+            position=50, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+        ).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        bypass = result.reason_payload.params["bypass_note"]
+        assert bypass.code == ReasonCode.FRAGMENT_BYPASS_NOTE
+
+    def test_trigger_tuple_includes_template_fragment(self) -> None:
+        """A sensor + template trigger nests the entity id and a template fragment."""
+        state = CustomPositionSensorState(
+            entity_ids=("binary_sensor.wind",),
+            is_on=True,
+            position=40,
+            priority=_DEFAULT_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            slot=1,
+            active_entity_ids=("binary_sensor.wind",),
+            template_active=True,
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(position=40).evaluate(snapshot)
+        assert result is not None
+        head = result.reason_payload.params["head"]
+        assert head.code == ReasonCode.CUSTOM_HEAD_SLOT
+        trigger = list(head.params["trigger"])
+        assert trigger[0] == "binary_sensor.wind"
+        assert trigger[1].code == ReasonCode.FRAGMENT_TRIGGER_TEMPLATE
+
+    def test_trigger_fallback_fragment_when_empty(self) -> None:
+        """A slot with no active sensors and no template uses the fallback fragment."""
+        state = CustomPositionSensorState(
+            entity_ids=(),
+            is_on=True,
+            position=40,
+            priority=_DEFAULT_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            slot=1,
+            active_entity_ids=(),
+            template_active=False,
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(position=40).evaluate(snapshot)
+        assert result is not None
+        head = result.reason_payload.params["head"]
+        trigger = head.params["trigger"]
+        assert trigger.code == ReasonCode.FRAGMENT_TRIGGER_FALLBACK
 
 
 # ---------------------------------------------------------------------------

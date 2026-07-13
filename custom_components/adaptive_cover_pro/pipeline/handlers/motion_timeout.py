@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...const import ControlMethod
+from ...const import ControlMethod, ReasonCode
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_default_position, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
@@ -40,24 +41,29 @@ class MotionTimeoutHandler(OverrideHandler):
             return PipelineResult(
                 position=held,
                 control_method=ControlMethod.MOTION,
-                reason=f"occupancy timeout — holding position {held}% (sun within acceptance angle)",
+                reason_payload=Reason(ReasonCode.OCCUPANCY_HOLDING, {"held": held}),
                 skip_command=True,
                 raw_calculated_position=compute_raw_calculated_position(snapshot),
             )
 
         position = compute_default_position(snapshot)
-        pos_label = (
-            "sunset position" if snapshot.is_sunset_active else "default position"
+        pos_label = Reason(
+            ReasonCode.FRAGMENT_SUNSET_POSITION
+            if snapshot.is_sunset_active
+            else ReasonCode.FRAGMENT_DEFAULT_POSITION
         )
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MOTION,
-            reason=f"occupancy timeout active — {pos_label} {position}%",
+            reason_payload=Reason(
+                ReasonCode.OCCUPANCY_LABEL,
+                {"pos_label": pos_label, "position": position},
+            ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
         """Reason when occupancy timeout is not active."""
         if not snapshot.motion_control_enabled:
-            return "occupancy detection disabled"
-        return "occupancy timeout not active"
+            return Reason(ReasonCode.SKIP_OCCUPANCY_DISABLED)
+        return Reason(ReasonCode.SKIP_OCCUPANCY_NOT_ACTIVE)

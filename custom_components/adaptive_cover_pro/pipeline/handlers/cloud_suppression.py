@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...const import ControlMethod
+from ...const import ControlMethod, ReasonCode
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
@@ -50,43 +51,49 @@ class CloudSuppressionHandler(OverrideHandler):
             return None
 
         r = snapshot.climate_readings
-        triggers = []
+        triggers: list[Reason] = []
         if not r.is_sunny:
-            triggers.append("weather not sunny")
+            triggers.append(Reason(ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY))
         if r.lux_below_threshold:
-            triggers.append("lux below threshold")
+            triggers.append(Reason(ReasonCode.FRAGMENT_TRIGGER_LUX_BELOW))
         if r.irradiance_below_threshold:
-            triggers.append("irradiance below threshold")
+            triggers.append(Reason(ReasonCode.FRAGMENT_TRIGGER_IRRADIANCE_BELOW))
         if r.cloud_coverage_above_threshold:
-            triggers.append("cloud coverage above threshold")
+            triggers.append(Reason(ReasonCode.FRAGMENT_TRIGGER_CLOUD_ABOVE))
         # The latch may be held by hysteresis / hold-time with no raw trigger
         # momentarily met — label that as a smoothing hold (issue #864).
         if not triggers:
-            triggers.append("smoothing hold")
+            triggers.append(Reason(ReasonCode.FRAGMENT_TRIGGER_SMOOTHING_HOLD))
 
         cloudy = snapshot.climate_options.cloudy_position
         if snapshot.is_sunset_active:
             position = compute_default_position(snapshot)
-            pos_label = "sunset position"
+            pos_label = Reason(ReasonCode.FRAGMENT_SUNSET_POSITION)
         elif cloudy is not None:
             position = apply_snapshot_limits(snapshot, cloudy, sun_valid=False)
-            pos_label = "cloudy position"
+            pos_label = Reason(ReasonCode.FRAGMENT_CLOUDY_POSITION)
         else:
             position = compute_default_position(snapshot)
-            pos_label = "default position"
+            pos_label = Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION)
 
-        trigger_detail = ", ".join(triggers)
         return PipelineResult(
             position=position,
             control_method=ControlMethod.CLOUD,
-            reason=f"cloud/low-light suppression — {trigger_detail} → {pos_label} {position}%",
+            reason_payload=Reason(
+                ReasonCode.CLOUD_SUPPRESSION,
+                {
+                    "triggers": tuple(triggers),
+                    "pos_label": pos_label,
+                    "position": position,
+                },
+            ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
         """Reason when cloud suppression is not active."""
         if not snapshot.in_time_window:
-            return "outside time window"
+            return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
         if not snapshot.cover.direct_sun_valid:
-            return "cloud suppression skipped (sun outside acceptance angle)"
-        return "cloud suppression inactive (direct sun present or feature disabled)"
+            return Reason(ReasonCode.SKIP_CLOUD_SKIPPED)
+        return Reason(ReasonCode.SKIP_CLOUD_INACTIVE)

@@ -5,8 +5,10 @@ from __future__ import annotations
 from ...const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     ControlMethod,
+    ReasonCode,
     custom_position_handler_name,
 )
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
 from ..types import CustomPositionSensorState, PipelineResult, PipelineSnapshot
@@ -72,27 +74,36 @@ class CustomPositionHandler(OverrideHandler):
         return self.priority >= CUSTOM_POSITION_SAFETY_PRIORITY
 
     @staticmethod
-    def _trigger_label(state: CustomPositionSensorState) -> str:
-        """Describe what activated the slot, for reason strings.
+    def _trigger_param(state: CustomPositionSensorState) -> object:
+        """Describe what activated the slot, as a reason-template param.
 
-        Active sensors are joined like the old force-override reason; a
-        template-only activation reads ``template``.
+        Active sensor entity ids stay scalar strings (never translated); a
+        template activation contributes a ``trigger_template`` fragment. When
+        both are present the value is a tuple rendered joined by ``", "`` (the
+        old force-override reason format). A slot with neither falls back to the
+        ``trigger_fallback`` fragment.
         """
-        parts = list(state.active_entity_ids)
+        parts: list[object] = list(state.active_entity_ids)
         if state.template_active:
-            parts.append("template")
-        return ", ".join(parts) if parts else "trigger"
+            parts.append(Reason(ReasonCode.FRAGMENT_TRIGGER_TEMPLATE))
+        if parts:
+            return tuple(parts)
+        return Reason(ReasonCode.FRAGMENT_TRIGGER_FALLBACK)
 
-    def _reason_head(self, state: CustomPositionSensorState) -> str:
-        """Return the leading clause of the reason string (issue #867).
+    def _reason_head(self, state: CustomPositionSensorState) -> Reason:
+        """Return the leading-clause fragment of the reason (issue #867).
 
-        A configured slot name reads ``"<name> active"``; otherwise falls
-        back to today's exact ``"custom position #N active (trigger)"`` form.
-        Single source of truth for both PipelineResult reason branches below.
+        A configured slot name renders ``"<name> active"`` (the name is a raw
+        scalar, never translated); otherwise falls back to today's exact
+        ``"custom position #N active (trigger)"`` form. Single source of truth
+        for both PipelineResult reason branches below.
         """
         if state.custom_name:
-            return f"{state.custom_name} active"
-        return f"custom position #{self._slot} active ({self._trigger_label(state)})"
+            return Reason(ReasonCode.CUSTOM_HEAD_NAMED, {"name": state.custom_name})
+        return Reason(
+            ReasonCode.CUSTOM_HEAD_SLOT,
+            {"slot": self._slot, "trigger": self._trigger_param(state)},
+        )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's trigger is active.
@@ -120,8 +131,10 @@ class CustomPositionHandler(OverrideHandler):
                     # Issue #767: only the priority-100 safety slot bypasses the
                     # Automatic-Control-OFF gate. Ordinary slots respect the switch.
                     bypass_auto_control = self._is_safety
-                    bypass_note = (
-                        " [bypasses automatic control]" if bypass_auto_control else ""
+                    bypass_note: Reason | str = (
+                        Reason(ReasonCode.FRAGMENT_BYPASS_NOTE)
+                        if bypass_auto_control
+                        else ""
                     )
                     # "Use My" path: route through the cover's hardware-stored My preset.
                     # my_position_value acts as both the target and the reason annotation.
@@ -135,8 +148,13 @@ class CustomPositionHandler(OverrideHandler):
                             bypass_auto_control=bypass_auto_control,
                             is_safety=self._is_safety,
                             control_method=ControlMethod.CUSTOM_POSITION,
-                            reason=(
-                                f"{reason_head} — use My position ({pos}%){bypass_note}"
+                            reason_payload=Reason(
+                                ReasonCode.CUSTOM_USE_MY,
+                                {
+                                    "head": reason_head,
+                                    "position": pos,
+                                    "bypass_note": bypass_note,
+                                },
                             ),
                             raw_calculated_position=raw,
                             custom_position_active_slot=self._slot,
@@ -152,7 +170,14 @@ class CustomPositionHandler(OverrideHandler):
                         bypass_auto_control=bypass_auto_control,
                         is_safety=self._is_safety,
                         control_method=ControlMethod.CUSTOM_POSITION,
-                        reason=f"{reason_head} — position {pos}%{bypass_note}",
+                        reason_payload=Reason(
+                            ReasonCode.CUSTOM_POSITION_,
+                            {
+                                "head": reason_head,
+                                "position": pos,
+                                "bypass_note": bypass_note,
+                            },
+                        ),
                         raw_calculated_position=raw,
                         custom_position_active_slot=self._slot,
                         custom_position_minimum_mode=None,
@@ -164,6 +189,6 @@ class CustomPositionHandler(OverrideHandler):
         # Slot not found in snapshot — configuration mismatch or not yet loaded
         return None
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:  # noqa: ARG002
         """Reason when this slot's trigger is not active."""
-        return f"custom position #{self._slot} not active"
+        return Reason(ReasonCode.SKIP_CUSTOM_NOT_ACTIVE, {"slot": self._slot})

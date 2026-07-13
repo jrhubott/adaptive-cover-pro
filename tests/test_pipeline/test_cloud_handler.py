@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod, ReasonCode
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
     CloudSuppressionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
+from custom_components.adaptive_cover_pro.reason_i18n import render_en
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -227,7 +228,7 @@ class TestCloudHandlerTimeWindow:
             climate_options=_make_options(enabled=True),
             in_time_window=False,
         )
-        reason = self.handler.describe_skip(snap)
+        reason = render_en(self.handler.describe_skip(snap))
         assert (
             "time window" in reason.lower()
         ), f"Expected 'time window' in describe_skip reason but got: {reason!r}"
@@ -318,6 +319,74 @@ class TestCloudHandlerReasonString:
         assert "lux below threshold" in result.reason
         assert "cloud coverage above threshold" in result.reason
 
+    def test_reason_payload_code_triggers_and_pos_label(self) -> None:
+        """The payload carries a tuple of trigger fragments + a pos_label fragment."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(
+                is_sunny=False,
+                lux_below_threshold=True,
+                cloud_coverage_above_threshold=True,
+            ),
+            climate_options=_make_options(enabled=True),
+            default_position=25,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.CLOUD_SUPPRESSION
+        assert result.reason_payload.params["position"] == 25
+        trigger_codes = [t.code for t in result.reason_payload.params["triggers"]]
+        assert trigger_codes == [
+            ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY,
+            ReasonCode.FRAGMENT_TRIGGER_LUX_BELOW,
+            ReasonCode.FRAGMENT_TRIGGER_CLOUD_ABOVE,
+        ]
+        assert (
+            result.reason_payload.params["pos_label"].code
+            == ReasonCode.FRAGMENT_DEFAULT_POSITION
+        )
+
+    def test_reason_payload_cloudy_position_fragment(self) -> None:
+        """A configured cloudy_position uses the cloudy pos_label fragment."""
+        options = ClimateOptions(
+            temp_low=None,
+            temp_high=None,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=True,
+            winter_close_insulation=False,
+            cloudy_position=15,
+        )
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=options,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert (
+            result.reason_payload.params["pos_label"].code
+            == ReasonCode.FRAGMENT_CLOUDY_POSITION
+        )
+
+    def test_reason_payload_smoothing_hold_fragment(self) -> None:
+        """A latch-only fire (no raw trigger) emits the smoothing-hold fragment."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=True),
+            climate_options=_make_options(enabled=True),
+            cloud_suppression_active=True,
+            default_position=40,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        trigger_codes = [t.code for t in result.reason_payload.params["triggers"]]
+        assert trigger_codes == [ReasonCode.FRAGMENT_TRIGGER_SMOOTHING_HOLD]
+
     def test_reason_does_not_say_no_direct_sun_detected(self) -> None:
         """Old generic phrase 'no direct sun detected' must not appear (Issue #222, sun in FOV)."""
         snap = make_snapshot(
@@ -394,10 +463,37 @@ class TestCloudHandlerFOVGate:
             climate_options=_make_options(enabled=True),
             in_time_window=True,
         )
-        reason = self.handler.describe_skip(snap)
+        reason = render_en(self.handler.describe_skip(snap))
         assert (
             "acceptance angle" in reason.lower()
         ), f"Expected 'acceptance angle' in describe_skip reason but got: {reason!r}"
+
+    def test_describe_skip_payloads(self) -> None:
+        """describe_skip returns the correct stable code for each non-fire path."""
+        outside = make_snapshot(
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            in_time_window=False,
+        )
+        assert (
+            self.handler.describe_skip(outside).code == ReasonCode.SKIP_OUTSIDE_WINDOW
+        )
+        sun_out = make_snapshot(
+            direct_sun_valid=False,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            in_time_window=True,
+        )
+        assert self.handler.describe_skip(sun_out).code == ReasonCode.SKIP_CLOUD_SKIPPED
+        inactive = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=True),
+            climate_options=_make_options(enabled=True),
+            in_time_window=True,
+        )
+        assert (
+            self.handler.describe_skip(inactive).code == ReasonCode.SKIP_CLOUD_INACTIVE
+        )
 
 
 # ---------------------------------------------------------------------------
