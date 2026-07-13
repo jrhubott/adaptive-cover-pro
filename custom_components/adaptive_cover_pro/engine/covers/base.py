@@ -8,6 +8,8 @@ from datetime import datetime
 
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
+from ...const import ReasonCode
+from ...reason_i18n import Reason, render_en
 from ...sun import SunData
 from ..sun_geometry import SunGeometry, azimuth_within_fov
 
@@ -230,19 +232,32 @@ class AdaptiveGeneralCover(ABC):
         return result
 
     @property
-    def control_state_reason(self) -> str:
-        """Determine why the cover is tracking the sun or using the default position."""
+    def control_state_reason_code(self) -> ReasonCode:
+        """Return the stable :class:`ReasonCode` for the current control state.
+
+        The pure engine emits a frozen code (no HA, no translation); the prose
+        is resolved at the diagnostics/sensor boundary. Branches mirror
+        :attr:`control_state_reason` exactly.
+        """
         if self.direct_sun_valid:
-            return "Direct Sun"
+            return ReasonCode.ENGINE_DIRECT_SUN
         if self.sunset_valid:
-            return "Default: Sunset Offset"
+            return ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET
         if not self.valid:
             if not self.valid_elevation:
-                return "Default: Elevation Limit"
-            return "Default: Acceptance Angle Exit"
+                return ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT
+            return ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT
         if self.is_sun_in_blind_spot:
-            return "Default: Blind Spot"
-        return "Default"
+            return ReasonCode.ENGINE_DEFAULT_BLIND_SPOT
+        return ReasonCode.ENGINE_DEFAULT
+
+    @property
+    def control_state_reason(self) -> str:
+        """Determine why the cover is tracking the sun or using the default position.
+
+        Byte-identical English shim over :attr:`control_state_reason_code`.
+        """
+        return render_en(Reason(self.control_state_reason_code))
 
     @abstractmethod
     def calculate_position(self) -> float:

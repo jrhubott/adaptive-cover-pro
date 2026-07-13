@@ -17,7 +17,9 @@ from ..const import (
     DEGREES_IN_CIRCLE,
     OPTION_RANGES,
     BlindSpot,
+    ReasonCode,
 )
+from ..reason_i18n import Reason, render_en
 from ..sun import SunData
 
 
@@ -328,25 +330,43 @@ class SunGeometry:
         return result
 
     @property
+    def control_state_reason_code(self) -> ReasonCode:
+        """Return the stable :class:`ReasonCode` for the current control state.
+
+        The pure engine emits a frozen code (no HA, no translation); the prose
+        is resolved at the diagnostics/sensor boundary. Branches mirror
+        :attr:`control_state_reason` exactly.
+
+        Returns:
+            One of ``ReasonCode.ENGINE_*``: DIRECT_SUN, DEFAULT_SUNSET_OFFSET,
+            DEFAULT_ELEVATION_LIMIT, DEFAULT_ACCEPTANCE_ANGLE_EXIT,
+            DEFAULT_BLIND_SPOT, or DEFAULT.
+
+        """
+        if self.direct_sun_valid:
+            return ReasonCode.ENGINE_DIRECT_SUN
+        if self.sunset_valid:
+            return ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET
+        if not self.valid:
+            if not self.valid_elevation:
+                return ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT
+            return ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT
+        if self.is_sun_in_blind_spot:
+            return ReasonCode.ENGINE_DEFAULT_BLIND_SPOT
+        return ReasonCode.ENGINE_DEFAULT
+
+    @property
     def control_state_reason(self) -> str:
         """Determine why the cover is tracking the sun or using the default position.
+
+        Byte-identical English shim over :attr:`control_state_reason_code`.
 
         Returns:
             Reason string: "Direct Sun", "Default: Acceptance Angle Exit", "Default: Elevation Limit",
             "Default: Sunset Offset", or "Default: Blind Spot".
 
         """
-        if self.direct_sun_valid:
-            return "Direct Sun"
-        if self.sunset_valid:
-            return "Default: Sunset Offset"
-        if not self.valid:
-            if not self.valid_elevation:
-                return "Default: Elevation Limit"
-            return "Default: Acceptance Angle Exit"
-        if self.is_sun_in_blind_spot:
-            return "Default: Blind Spot"
-        return "Default"
+        return render_en(Reason(self.control_state_reason_code))
 
     # ------------------------------------------------------------------
     # FOV helpers
