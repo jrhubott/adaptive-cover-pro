@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod, ReasonCode
 from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
     WeatherOverrideHandler,
 )
+from custom_components.adaptive_cover_pro.reason_i18n import Reason, render_en
 from tests.test_pipeline.conftest import make_snapshot
 
 
@@ -64,11 +65,49 @@ class TestWeatherOverrideHandler:
         assert WeatherOverrideHandler.name == "weather"
 
     def test_describe_skip_meaningful(self) -> None:
-        """describe_skip returns a non-empty string."""
+        """describe_skip renders a non-empty English string."""
         snap = make_snapshot()
-        reason = self.handler.describe_skip(snap)
+        reason = render_en(self.handler.describe_skip(snap))
         assert isinstance(reason, str)
         assert len(reason) > 0
+
+    def test_reason_payload_code_and_params(self) -> None:
+        """Winning result carries a weather.active payload; prose byte-identical."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=10,
+            weather_bypass_auto_control=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.WEATHER_ACTIVE
+        assert result.reason_payload.params["position"] == 10
+        assert result.reason_payload.params["bypass_note"] == ""
+        assert result.reason == "weather override active — position 10%"
+
+    def test_reason_payload_bypass_note(self) -> None:
+        """bypass_auto_control folds a bypass-note fragment into the payload."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=10,
+            weather_bypass_auto_control=True,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.reason_payload is not None
+        bypass_note = result.reason_payload.params["bypass_note"]
+        assert isinstance(bypass_note, Reason)
+        assert bypass_note.code == ReasonCode.FRAGMENT_BYPASS_NOTE
+        assert result.reason == (
+            "weather override active — position 10% [bypasses automatic control]"
+        )
+
+    def test_describe_skip_payload_code(self) -> None:
+        """describe_skip returns a skip.weather_not_active payload."""
+        snap = make_snapshot()
+        payload = self.handler.describe_skip(snap)
+        assert payload.code == ReasonCode.SKIP_WEATHER_NOT_ACTIVE
 
     @pytest.mark.parametrize("position", [0, 10, 50, 75, 100])
     def test_various_positions(self, position: int) -> None:

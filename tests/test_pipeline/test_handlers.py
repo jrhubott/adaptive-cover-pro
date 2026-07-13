@@ -24,6 +24,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
     PipelineResult,
 )
+from custom_components.adaptive_cover_pro.reason_i18n import render_en
 
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -678,9 +679,9 @@ class TestDefaultHandler:
         assert DefaultHandler.name == "default"
 
     def test_describe_skip_returns_string(self) -> None:
-        """describe_skip returns meaningful string."""
+        """describe_skip renders a meaningful English string."""
         snap = make_snapshot()
-        reason = self.handler.describe_skip(snap)
+        reason = render_en(self.handler.describe_skip(snap))
         assert isinstance(reason, str)
         assert len(reason) > 0
 

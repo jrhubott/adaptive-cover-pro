@@ -10,7 +10,13 @@ physical safety local to the cover trumps a zone lock.
 
 from __future__ import annotations
 
-from ...const import CUSTOM_POSITION_SAFETY_PRIORITY, ControlMethod, GroupIntentKind
+from ...const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    ControlMethod,
+    GroupIntentKind,
+    ReasonCode,
+)
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
@@ -39,15 +45,18 @@ class GroupLockHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.GROUP_LOCK,
-            reason=(f"group lock from group {intent.group_id} — holding {position}%"),
+            reason_payload=Reason(
+                ReasonCode.GROUP_LOCK,
+                {"group_id": intent.group_id, "position": position},
+            ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
             held_position=held,
             skip_command=True,
             bypass_auto_control=True,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
         """Reason when no lock intent is live."""
         if snapshot.group_intent is not None:
-            return "group intent is a scene, not a lock"
-        return "no group lock intent"
+            return Reason(ReasonCode.SKIP_GROUP_SCENE_NOT_LOCK)
+        return Reason(ReasonCode.SKIP_NO_GROUP_LOCK)

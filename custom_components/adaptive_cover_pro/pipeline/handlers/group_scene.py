@@ -8,8 +8,14 @@ still overrides a group scene. Not user-overridable.
 
 from __future__ import annotations
 
-from ...const import GROUP_SCENE_PRIORITY, ControlMethod, GroupIntentKind
+from ...const import (
+    GROUP_SCENE_PRIORITY,
+    ControlMethod,
+    GroupIntentKind,
+    ReasonCode,
+)
 from ...cover_types import get_policy
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
@@ -37,9 +43,13 @@ class GroupSceneHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.GROUP_SCENE,
-            reason=(
-                f"group scene '{intent.scene}' from group {intent.group_id}"
-                f" → {position}%"
+            reason_payload=Reason(
+                ReasonCode.GROUP_SCENE,
+                {
+                    "scene": intent.scene,
+                    "group_id": intent.group_id,
+                    "position": position,
+                },
             ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
             # Explicit user intent: runs even with automatic control off —
@@ -47,8 +57,8 @@ class GroupSceneHandler(OverrideHandler):
             bypass_auto_control=True,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
         """Reason when no scene intent is live."""
         if snapshot.group_intent is not None:
-            return "group intent is a lock, not a scene"
-        return "no group scene intent"
+            return Reason(ReasonCode.SKIP_GROUP_LOCK_NOT_SCENE)
+        return Reason(ReasonCode.SKIP_NO_GROUP_SCENE)

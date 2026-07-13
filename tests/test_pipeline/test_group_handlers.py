@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     ControlMethod,
     GroupIntentKind,
     GroupScene,
+    ReasonCode,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers import build_handlers
 from custom_components.adaptive_cover_pro.pipeline.handlers.group_lock import (
@@ -109,6 +110,31 @@ def test_scene_handler_reason_names_scene() -> None:
     assert str(GroupScene.ALL_OPEN) in result.reason
 
 
+def test_scene_handler_reason_payload_code_and_params() -> None:
+    """The scene winner carries a group.scene payload; prose byte-identical."""
+    handler = GroupSceneHandler()
+    snapshot = make_snapshot(cover_type="cover_blind", group_intent=_scene_intent())
+    result = handler.evaluate(snapshot)
+    assert result is not None
+    assert result.reason_payload is not None
+    assert result.reason_payload.code == ReasonCode.GROUP_SCENE
+    assert result.reason_payload.params["scene"] == GroupScene.PRIVACY
+    assert result.reason_payload.params["group_id"] == GROUP_ID
+    assert result.reason_payload.params["position"] == POSITION_CLOSED
+    assert result.reason == (
+        f"group scene '{GroupScene.PRIVACY}' from group {GROUP_ID}"
+        f" → {POSITION_CLOSED}%"
+    )
+
+
+def test_scene_handler_describe_skip_payloads() -> None:
+    handler = GroupSceneHandler()
+    no_intent = handler.describe_skip(make_snapshot())
+    assert no_intent.code == ReasonCode.SKIP_NO_GROUP_SCENE
+    on_lock = handler.describe_skip(make_snapshot(group_intent=_lock_intent()))
+    assert on_lock.code == ReasonCode.SKIP_GROUP_LOCK_NOT_SCENE
+
+
 # ---------------------------------------------------------------------------
 # GroupLockHandler
 # ---------------------------------------------------------------------------
@@ -152,6 +178,27 @@ def test_lock_handler_without_readable_position_uses_default() -> None:
     assert result is not None
     assert result.skip_command is True
     assert result.position == 60
+
+
+def test_lock_handler_reason_payload_code_and_params() -> None:
+    """The lock winner carries a group.lock payload; prose byte-identical."""
+    handler = GroupLockHandler()
+    snapshot = make_snapshot(group_intent=_lock_intent(), current_cover_position=37)
+    result = handler.evaluate(snapshot)
+    assert result is not None
+    assert result.reason_payload is not None
+    assert result.reason_payload.code == ReasonCode.GROUP_LOCK
+    assert result.reason_payload.params["group_id"] == GROUP_ID
+    assert result.reason_payload.params["position"] == 37
+    assert result.reason == f"group lock from group {GROUP_ID} — holding 37%"
+
+
+def test_lock_handler_describe_skip_payloads() -> None:
+    handler = GroupLockHandler()
+    no_intent = handler.describe_skip(make_snapshot())
+    assert no_intent.code == ReasonCode.SKIP_NO_GROUP_LOCK
+    on_scene = handler.describe_skip(make_snapshot(group_intent=_scene_intent()))
+    assert on_scene.code == ReasonCode.SKIP_GROUP_SCENE_NOT_LOCK
 
 
 # ---------------------------------------------------------------------------
