@@ -22,6 +22,7 @@ from ..const import (
     BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOTS,
     blind_spot_legacy_to_gamma,
+    resolve_fov_left,
     CONF_ARM_LENGTH,
     CONF_AWNING_ANGLE,
     CONF_AWNING_HOUSING_OFFSET,
@@ -1236,12 +1237,17 @@ async def _handle_set_option(hass: HomeAssistant, call: ServiceCall) -> None:
         )
 
     value = call.data.get("value")
-    patch = {option: value}
 
     targets = _resolve_targets(hass, call)
     for coord in targets:
+        current = dict(coord.config_entry.options)
+        patch = {option: value}
+        # A migration-read-only legacy blind-spot edge would validate and persist
+        # yet do nothing at runtime (the gamma keys shadow it). Project it onto
+        # the gamma keys so the write actually takes effect (issue #247, finding 5).
+        _augment_blind_spot_gamma(patch, current)
         sensor_type = coord.config_entry.data.get("sensor_type")
-        validate_options_patch(patch, dict(coord.config_entry.options), sensor_type)
+        validate_options_patch(patch, current, sensor_type)
         await apply_options_patch(hass, coord, patch)
         _LOGGER.debug(
             "set_option '%s' -> %r for entry %s",
@@ -1251,14 +1257,82 @@ async def _handle_set_option(hass: HomeAssistant, call: ServiceCall) -> None:
         )
 
 
+def _resolve_legacy_edge(
+    patch: dict,
+    current: dict,
+    legacy_key: str,
+    gamma_key: str,
+    fov_left: int,
+    *,
+    is_left: bool,
+) -> Any:
+    """Resolve one legacy blind-spot edge, completing it from *current* if absent.
+
+    Precedence: an edge supplied in *patch* wins; else the stored legacy key;
+    else the stored signed-gamma key, back-converted to the legacy frame (the
+    inverse of ``blind_spot_legacy_to_gamma``: ``old_left = fov_left - gamma``,
+    ``old_right = gamma + fov_left``). Returns ``None`` when the edge is
+    unresolvable on every path.
+    """
+    if legacy_key in patch:
+        return patch[legacy_key]
+    if current.get(legacy_key) is not None:
+        return current[legacy_key]
+    g = current.get(gamma_key)
+    if g is None:
+        return None
+    return fov_left - int(g) if is_left else int(g) + fov_left
+
+
+def _augment_blind_spot_gamma(patch: dict, current: dict) -> None:
+    """Fold a legacy blind-spot edge write into the signed-gamma keys (issue #247).
+
+    The engine reads only the signed-gamma keys; the legacy edges are
+    migration-read-only. So any service write of a legacy edge must be projected
+    onto the gamma keys or it silently no-ops. Per slot, mutating *patch* in
+    place:
+
+    * If an explicit gamma edge is already in *patch*, gamma WINS — the legacy
+      pair is NOT converted for that slot (finding 7).
+    * Otherwise, when either legacy edge is in *patch*, the missing edge is
+      completed from *current* via :func:`_resolve_legacy_edge` (stored legacy
+      preferred, else back-converted gamma) and the pair is converted to gamma
+      via the shared :func:`blind_spot_legacy_to_gamma` (finding 1/5). This
+      mirrors the patch+current merge that cross-field validation uses.
+
+    Shared by ``set_blind_spot`` and the generic ``set_option`` so the two can
+    never diverge.
+    """
+    fov_left = resolve_fov_left(current)
+    for keys in BLIND_SPOT_SLOTS.values():
+        if keys["left_gamma"] in patch or keys["right_gamma"] in patch:
+            continue  # explicit gamma wins — do not derive from legacy
+        if keys["left"] not in patch and keys["right"] not in patch:
+            continue  # no legacy edge touched for this slot
+        old_left = _resolve_legacy_edge(
+            patch, current, keys["left"], keys["left_gamma"], fov_left, is_left=True
+        )
+        old_right = _resolve_legacy_edge(
+            patch, current, keys["right"], keys["right_gamma"], fov_left, is_left=False
+        )
+        if old_left is None or old_right is None:
+            continue  # cannot form a complete wedge
+        new_left, new_right = blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+        # Overwrite (not setdefault): a legacy call must update the effective
+        # wedge even when stale gamma keys already exist.
+        patch[keys["left_gamma"]] = new_left
+        patch[keys["right_gamma"]] = new_right
+
+
 async def _handle_set_blind_spot(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle set_blind_spot with legacy→signed-gamma back-compat (issue #247).
 
-    The signed-gamma fields (``blind_spot_*_gamma``) are the primary inputs. For
-    back-compat, a call that supplies the deprecated legacy ``blind_spot_left`` /
-    ``blind_spot_right`` (or the ``_2`` / ``_3`` slots) is converted on write to
-    the signed-gamma keys via the shared ``blind_spot_legacy_to_gamma`` helper —
-    using the target cover's ``fov_left`` — so existing automations stay
+    The signed-gamma fields (``blind_spot_*_gamma``) are the primary inputs and,
+    when supplied, win verbatim. For back-compat, a call that supplies the
+    deprecated legacy ``blind_spot_left`` / ``blind_spot_right`` (or the ``_2`` /
+    ``_3`` slots) is converted on write to the signed-gamma keys — completing a
+    half-supplied pair from the stored options — via
+    :func:`_augment_blind_spot_gamma`, so existing automations stay
     bit-identical while the stored frame is the new one.
     """
     from . import _resolve_targets  # noqa: PLC0415
@@ -1268,19 +1342,7 @@ async def _handle_set_blind_spot(hass: HomeAssistant, call: ServiceCall) -> None
     for coord in targets:
         current = dict(coord.config_entry.options)
         patch = dict(base_patch)
-        fov_left = int(current.get(CONF_FOV_LEFT, 90))
-        for keys in BLIND_SPOT_SLOTS.values():
-            old_left = patch.get(keys["left"])
-            old_right = patch.get(keys["right"])
-            if old_left is None or old_right is None:
-                continue  # no complete legacy pair supplied for this slot
-            new_left, new_right = blind_spot_legacy_to_gamma(
-                fov_left, old_left, old_right
-            )
-            # Overwrite (not setdefault): a legacy call must update the effective
-            # wedge even when stale gamma keys already exist.
-            patch[keys["left_gamma"]] = new_left
-            patch[keys["right_gamma"]] = new_right
+        _augment_blind_spot_gamma(patch, current)
         sensor_type = coord.config_entry.data.get("sensor_type")
         validate_options_patch(patch, current, sensor_type)
         await apply_options_patch(hass, coord, patch)

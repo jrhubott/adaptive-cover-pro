@@ -2068,7 +2068,7 @@
       "name": "Automatisierungs-Timing einstellen"
     },
     "set_blind_spot": {
-      "description": "Aktualisiert Blendungszonenwinkelbereiche. blind_spot_right muss größer als blind_spot_left sein.",
+      "description": "Aktualisiert Blendungszonenwinkelbereiche. Winkel sind vorzeichenbehaftete Gamma-Werte, gemessen von der Fensternormale (0 = geradeaus, positiv zur linken Akzeptanzkante) — das gleiche Koordinatensystem wie der Sonnen-Akzeptanzwinkel. Der Keil ist -blind_spot_right_gamma ≤ gamma ≤ blind_spot_left_gamma, daher müssen blind_spot_left_gamma + blind_spot_right_gamma größer als 0 sein.",
       "fields": {
         "blind_spot": {
           "description": "Wenn wahr, ist die Blendungszone aktiv.",
@@ -2079,16 +2079,24 @@
           "name": "Höhenlimit"
         },
         "blind_spot_left": {
-          "description": "Offset in Grad nach innen von der linken Akzeptanzkante (ignoriert die Sonne).",
-          "name": "Blindfleck linke Akzeptanzkante"
+          "description": "VERALTET (Issue #247): ältere linke Kante, gemessen nach innen von der linken Akzeptanzkante (Bereich 0–359°). Wird für Rückwärtskompatibilität akzeptiert und beim Schreiben in vorzeichenbehaftetes Gamma konvertiert. Verwenden Sie stattdessen blind_spot_left_gamma.",
+          "name": "Linke Kante (veraltet)"
         },
         "blind_spot_right": {
-          "description": "Offset in Grad nach innen von der rechten Akzeptanzkante (ignoriert die Sonne).",
+          "description": "VERALTET (Issue #247): ältere rechte Kante, gemessen nach innen von der linken Akzeptanzkante (Bereich 1–360°). Wird für Rückwärtskompatibilität akzeptiert und beim Schreiben in vorzeichenbehaftetes Gamma konvertiert. Verwenden Sie stattdessen blind_spot_right_gamma.",
           "name": "Blindfleck rechte Akzeptanzkante"
         },
         "blind_spot_elevation_mode": {
           "name": "Höhenmodus",
           "description": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt: „unterhalb\" (Standard) blockiert tiefe Sonne (ein Baum oder Dachüberhang); „oberhalb\" blockiert hohe Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische)."
+        },
+        "blind_spot_left_gamma": {
+          "name": "Linke Kante (von der Fensternormale)",
+          "description": "Obere (linke) Kante des Blendungszonenkeil als vorzeichenbehaftetes Gamma von der Fensternormale, in Grad. Positiv = zur linken Sonnen-Akzeptanzkante. Bleibt innerhalb der konfigurierten linken/rechten Sonnen-Akzeptanzgrenzen."
+        },
+        "blind_spot_right_gamma": {
+          "name": "Rechte Kante (von der Fensternormale)",
+          "description": "Negierte untere (rechte) Kante des Blendungszonenkeil als vorzeichenbehaftetes Gamma von der Fensternormale, in Grad. Die untere Gamma-Kante ist -blind_spot_right_gamma. blind_spot_left_gamma + blind_spot_right_gamma muss größer als 0 sein. Bleibt innerhalb der konfigurierten linken/rechten Sonnen-Akzeptanzgrenzen."
         }
       },
       "name": "Blendungszone einstellen"

@@ -716,6 +716,34 @@ async def test_migrate_v3_7_to_v3_8_no_blind_spot_is_noop(hass: HomeAssistant) -
     assert entry.options == before
 
 
+async def test_migrate_v3_7_to_v3_8_tolerates_none_fov_left(
+    hass: HomeAssistant,
+) -> None:
+    """A present-but-None fov_left must NOT crash the startup migration (finding 4).
+
+    ``int(options.get(CONF_FOV_LEFT, 90))`` raises TypeError when the key is
+    present but None (a cleared field). Because the blind-spot seed now runs
+    inside async_migrate_entry, that would brick entry loading. The None-tolerant
+    resolver falls back to DEFAULT_FOV_LEFT (90): legacy 10/30 → gamma 80/-60.
+    """
+    entry = _make_entry(
+        hass,
+        {
+            "fov_left": None,
+            "fov_right": None,
+            "blind_spot": True,
+            "blind_spot_left": 10,
+            "blind_spot_right": 30,
+        },
+        version=3,
+        minor_version=7,
+    )
+    assert await async_migrate_entry(hass, entry) is True  # no TypeError
+    assert entry.minor_version == 8
+    assert entry.options["blind_spot_left_gamma"] == 80  # 90 - 10
+    assert entry.options["blind_spot_right_gamma"] == -60  # 30 - 90
+
+
 # ---------------------------------------------------------------------------
 # Reachability lock: config-flow handler version constants must cover every
 # migration block that exists in __init__.py.

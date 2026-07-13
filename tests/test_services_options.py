@@ -24,7 +24,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
+    CONF_BLIND_SPOT_LEFT_GAMMA,
     CONF_BLIND_SPOT_RIGHT,
+    CONF_BLIND_SPOT_RIGHT_GAMMA,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
@@ -1525,31 +1527,91 @@ class TestSetSunTracking:
 
 
 class TestSetBlindSpot:
-    """Integration tests for set_blind_spot service."""
+    """Integration tests for set_blind_spot service (VERTICAL_OPTIONS: fov_left=45)."""
 
-    async def test_updates_blind_spot_angles(self, hass: HomeAssistant):
-        await _setup(hass, entry_id="bs_01")
+    async def _run(self, hass: HomeAssistant, entry_id: str, data: dict) -> dict:
+        await _setup(hass, entry_id=entry_id)
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
             patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
         ):
-            await _call(
-                hass,
-                "set_blind_spot",
-                {CONF_BLIND_SPOT_LEFT: 10, CONF_BLIND_SPOT_RIGHT: 40},
-            )
+            await _call(hass, "set_blind_spot", data)
+        return mock_update.call_args[1]["options"]
 
-        new_opts = mock_update.call_args[1]["options"]
-        assert new_opts[CONF_BLIND_SPOT_LEFT] == 10
+    async def test_legacy_only_call_writes_correct_gamma(self, hass: HomeAssistant):
+        """A legacy-only call must write the CORRECT signed-gamma keys (finding 1).
+
+        fov_left=45: legacy left=10/right=40 → gamma left=45-10=35,
+        right=40-45=-5. The wedge the engine reads is the gamma pair, so the
+        conversion must land there.
+        """
+        new_opts = await self._run(
+            hass, "bs_legacy_01", {CONF_BLIND_SPOT_LEFT: 10, CONF_BLIND_SPOT_RIGHT: 40}
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT] == 10  # legacy retained
         assert new_opts[CONF_BLIND_SPOT_RIGHT] == 40
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 35
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5
 
-    async def test_right_must_exceed_left(self, hass: HomeAssistant):
+    async def test_single_legacy_edge_updates_wedge(self, hass: HomeAssistant):
+        """One legacy edge, pair completed from stored options (finding 1/7).
+
+        The entry already stores a legacy pair (left=10, right=40). Sending ONLY
+        a new legacy left=20 must complete the right from stored options, so gamma
+        becomes left=45-20=25, right stays 40-45=-5. A single-edge call that left
+        the pair incomplete would silently no-op the wedge.
+        """
+        opts = {
+            **VERTICAL_OPTIONS,
+            CONF_BLIND_SPOT_LEFT: 10,
+            CONF_BLIND_SPOT_RIGHT: 40,
+        }
+        await _setup(hass, entry_id="bs_single_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_blind_spot", {CONF_BLIND_SPOT_LEFT: 20})
+            new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 25  # 45 - 20
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5  # right completed (40 - 45)
+
+    async def test_gamma_call_writes_gamma_directly(self, hass: HomeAssistant):
+        """A gamma-only call stores the gamma keys verbatim (finding 7)."""
+        new_opts = await self._run(
+            hass,
+            "bs_gamma_01",
+            {CONF_BLIND_SPOT_LEFT_GAMMA: 30, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 30
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == 10
+
+    async def test_gamma_wins_over_legacy_in_same_call(self, hass: HomeAssistant):
+        """When gamma AND legacy are supplied for one slot, gamma wins (finding 7).
+
+        Explicit gamma (30/10) must not be clobbered by the legacy pair's
+        conversion (which would yield 35/-5).
+        """
+        new_opts = await self._run(
+            hass,
+            "bs_conflict_01",
+            {
+                CONF_BLIND_SPOT_LEFT_GAMMA: 30,
+                CONF_BLIND_SPOT_RIGHT_GAMMA: 10,
+                CONF_BLIND_SPOT_LEFT: 10,
+                CONF_BLIND_SPOT_RIGHT: 40,
+            },
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 30  # gamma preserved
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == 10
+
+    async def test_empty_gamma_wedge_rejected(self, hass: HomeAssistant):
         await _setup(hass, entry_id="bs_err_01")
         with pytest.raises((ServiceValidationError, Exception)):
             await _call(
                 hass,
                 "set_blind_spot",
-                {CONF_BLIND_SPOT_LEFT: 50, CONF_BLIND_SPOT_RIGHT: 30},
+                {CONF_BLIND_SPOT_LEFT_GAMMA: -50, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
             )
 
 
@@ -1668,6 +1730,30 @@ class TestSetOption:
             assert (
                 key in FIELD_VALIDATORS
             ), f"'{key}' is in ALL_SETTABLE_KEYS but missing from FIELD_VALIDATORS"
+
+    async def test_legacy_blind_spot_key_converts_to_gamma(self, hass: HomeAssistant):
+        """Writing a migration-read-only legacy blind-spot edge via set_option must
+        take runtime effect by converting to the signed-gamma keys (finding 5).
+
+        The gamma keys shadow the legacy edges at runtime, so a bare legacy write
+        would validate and persist yet do nothing. With fov_left=45, an entry that
+        already stores blind_spot_left=10 plus a set_option write of
+        blind_spot_right=40 must complete the pair to gamma 35/-5.
+        """
+        opts = {**VERTICAL_OPTIONS, CONF_BLIND_SPOT_LEFT: 10}
+        await _setup(hass, entry_id="so_bs_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_option",
+                {"option": CONF_BLIND_SPOT_RIGHT, "value": 40},
+            )
+            new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 35
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5
 
 
 class TestReloadPropagation:

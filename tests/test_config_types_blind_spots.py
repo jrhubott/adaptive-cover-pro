@@ -110,6 +110,27 @@ def test_legacy_fallback_converts():
     assert config.blind_spots[0].right == -15
 
 
+def test_fresh_default_wedge_does_not_block_sun_at_transit():
+    """A fresh entry that enables blind spot without touching sliders must not
+    block direct sun at the window normal (issue #247, finding 6).
+
+    The slot-1 schema default is a harmless 1° sliver at the LEFT acceptance
+    edge (left=fov_left, right=1-fov_left), NOT a wedge that swallows gamma 0.
+    Build the schema-defaulted options and assert gamma 0 is outside the wedge.
+    """
+    from custom_components.adaptive_cover_pro.config_dynamic import blind_spot_schema
+
+    fov = {CONF_FOV_LEFT: 45, CONF_FOV_RIGHT: 45}
+    defaulted = blind_spot_schema(fov)({})  # Required slot-1 defaults fill in
+    options = {**fov, CONF_ENABLE_BLIND_SPOT: True, **defaulted}
+    config = CoverConfig.from_options(options)
+    sg = SunGeometry(180.0, 45.0, _sun_data(), config, MagicMock())
+    assert sg.is_sun_in_blind_spot_at(0.0) is False
+    # The default wedge is still a valid (non-empty) sliver at the edge.
+    assert len(config.blind_spots) == 1
+    assert config.blind_spots[0].left + config.blind_spots[0].right > 0
+
+
 def test_new_keys_win_when_both_present():
     """When BOTH new and legacy keys exist, the new signed-gamma keys win."""
     config = CoverConfig.from_options(

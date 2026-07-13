@@ -50,6 +50,52 @@ def test_set_blind_spot_service_description_mentions_window_normal():
     assert "window normal" in desc
 
 
+def test_set_blind_spot_en_json_fields_match_services_yaml():
+    """en.json set_blind_spot.fields must document exactly the yaml fields.
+
+    Without this lock a new yaml field (the signed-gamma edges, #247) can ship
+    with a stale en.json that still describes the old FOV-relative frame and
+    lacks the gamma fields — HA then renders no label/description for them. Keys
+    must match 1:1 in both directions.
+    """
+    import json
+
+    yaml_fields = set(_load()["set_blind_spot"]["fields"])
+    en_path = (
+        Path(__file__).parent.parent
+        / "custom_components"
+        / "adaptive_cover_pro"
+        / "translations"
+        / "en.json"
+    )
+    with en_path.open(encoding="utf-8") as fh:
+        en = json.load(fh)
+    en_fields = set(en["services"]["set_blind_spot"]["fields"])
+    assert en_fields == yaml_fields, (
+        "services.yaml and en.json set_blind_spot fields disagree: "
+        f"only in yaml={sorted(yaml_fields - en_fields)}, "
+        f"only in en.json={sorted(en_fields - yaml_fields)}"
+    )
+
+
+def test_set_blind_spot_en_json_legacy_fields_marked_deprecated():
+    """The legacy edges in en.json must be flagged deprecated (frame switch #247)."""
+    import json
+
+    en_path = (
+        Path(__file__).parent.parent
+        / "custom_components"
+        / "adaptive_cover_pro"
+        / "translations"
+        / "en.json"
+    )
+    with en_path.open(encoding="utf-8") as fh:
+        en = json.load(fh)
+    fields = en["services"]["set_blind_spot"]["fields"]
+    for key in ("blind_spot_left", "blind_spot_right"):
+        assert "deprecated" in fields[key]["description"].lower()
+
+
 def test_set_position_service_exists_in_yaml():
     svc = _load()
     assert (

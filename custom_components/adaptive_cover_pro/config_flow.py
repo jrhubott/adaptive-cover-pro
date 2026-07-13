@@ -25,6 +25,7 @@ from .const import (
     BLIND_SPOT_ELEV_MODE_ABOVE,
     BLIND_SPOT_SLOTS,
     blind_spot_legacy_to_gamma,
+    resolve_fov_left,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     LIGHT_CLOUD_SENSOR_KEYS,
@@ -2588,7 +2589,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # per active slot — a slot is active when its left & right are both set
     # (issue #701). Slot 1 reuses the legacy unsuffixed keys.
     if config.get(CONF_ENABLE_BLIND_SPOT):
-        fov_left_cfg = int(config.get(CONF_FOV_LEFT, 90))
+        fov_left_cfg = resolve_fov_left(config)
         for keys in BLIND_SPOT_SLOTS.values():
             # Signed-gamma keys are the primary source (issue #247); fall back to
             # converting the legacy FOV-relative edges via the shared helper.

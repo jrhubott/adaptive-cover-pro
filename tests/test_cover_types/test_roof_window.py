@@ -744,13 +744,19 @@ def test_blind_spot_bit_identical_at_vertical_pitch():
     At vertical pitch ``fov_angle == gamma``, so routing the blind spot through
     the acceptance frame is a pure no-op — the roof-window result equals the
     plain vertical-cover result for the same config + sun.
+
+    The wedge (signed gamma left=25, right=-15 → ``15 <= gamma <= 25``) is chosen
+    so the test's gamma=20 sits INSIDE it: both covers report a genuine wedge HIT
+    (``True``), not a shared ``False`` miss that would never exercise the frame.
     """
     kwargs = {
         "sol_elev": 30.0,
         "gamma": 20.0,
-        "blind_spot_left": 10,
-        "blind_spot_right": 30,
+        "blind_spot_left": 25,
+        "blind_spot_right": -15,
     }
+    # Guard: gamma=20 is inside the wedge (-right <= gamma <= left).
+    assert -kwargs["blind_spot_right"] <= kwargs["gamma"] <= kwargs["blind_spot_left"]
     roof = _roof_with_blind_spot(roof_pitch=90, **kwargs)
     vert = AdaptiveVerticalCover(
         logger=MagicMock(),
@@ -767,6 +773,8 @@ def test_blind_spot_bit_identical_at_vertical_pitch():
         ),
         vert_config=make_vertical_config(distance=1.0, h_win=2.0),
     )
+    # Both must be True (a real wedge hit), and bit-identical.
+    assert roof.is_sun_in_blind_spot is True
     assert roof.is_sun_in_blind_spot == vert.is_sun_in_blind_spot
 
 
@@ -776,14 +784,20 @@ def test_vertical_cover_blind_spot_equals_raw_sun_geometry():
     Locks the no-op claim: because ``fov_angle`` defaults to ``gamma`` for a
     vertical cover, routing the blind spot through the acceptance frame leaves the
     result identical to the raw-gamma ``SunGeometry`` property.
+
+    The wedge (signed gamma left=25, right=-15 → ``15 <= gamma <= 25``) puts the
+    test's gamma=20 INSIDE, so the equality compares two genuine ``True`` hits.
     """
     gamma, sol_elev = 20.0, 30.0
+    blind_spot_left, blind_spot_right = 25, -15
+    # Guard: gamma=20 is inside the wedge (-right <= gamma <= left).
+    assert -blind_spot_right <= gamma <= blind_spot_left
     cover_config = make_cover_config(
         win_azi=_WIN_AZI,
         fov_left=90,
         fov_right=90,
-        blind_spot_left=10,
-        blind_spot_right=30,
+        blind_spot_left=blind_spot_left,
+        blind_spot_right=blind_spot_right,
         blind_spot_on=True,
     )
     vert = AdaptiveVerticalCover(
@@ -798,6 +812,7 @@ def test_vertical_cover_blind_spot_equals_raw_sun_geometry():
         _WIN_AZI - gamma, sol_elev, _safe_sun_data(), cover_config, MagicMock()
     )
     assert vert.fov_angle == pytest.approx(sg.gamma)
+    assert vert.is_sun_in_blind_spot is True  # a real wedge hit, not a shared miss
     assert vert.is_sun_in_blind_spot == sg.is_sun_in_blind_spot
 
 

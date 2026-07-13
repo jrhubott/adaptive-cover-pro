@@ -158,3 +158,50 @@ def test_returns_same_mapping_mutated_in_place():
     result = clamp_blind_spots_to_fov(options)
     assert result is options
     assert options["blind_spot_left_gamma"] == 75
+
+
+# ----------------------------------------------------------------------------
+# Non-empty repair (issue #247, finding 3): clamping a previously non-empty
+# wedge must never yield an empty wedge that hard-blocks the options step.
+# ----------------------------------------------------------------------------
+
+
+def test_ordering_preserved_after_clamp():
+    """A valid/default 1° sliver narrowed by the FOV stays a NON-empty wedge.
+
+    The fresh slot-1 default at fov 90/90 is the 1° sliver (left=90,
+    right=-89). Narrowing the FOV to 30/30 clamps left→30 and right→-30, which
+    is exactly empty (30 + -30 = 0). The clamp must repair it back to a
+    non-empty wedge (left + right > 0) so it never trips the empty-wedge gate.
+    """
+    options = {
+        CONF_FOV_LEFT: 30,
+        CONF_FOV_RIGHT: 30,
+        "blind_spot_left_gamma": 90,
+        "blind_spot_right_gamma": -89,
+    }
+    result = clamp_blind_spots_to_fov(options)
+    left = result["blind_spot_left_gamma"]
+    right = result["blind_spot_right_gamma"]
+    assert left + right > 0, f"wedge collapsed to empty: {left} + {right}"
+    # Edges still respect the signed FOV bounds.
+    assert -30 <= left <= 30
+    assert -30 <= right <= 30
+
+
+def test_already_empty_wedge_left_untouched_by_clamp():
+    """An input wedge that was ALREADY empty is not manufactured non-empty.
+
+    Both edges on the same (negative) side: -100/-100 → clamped -75/-75, an
+    empty wedge the user explicitly configured. The clamp only repairs wedges
+    that IT collapsed, not ones that arrived empty.
+    """
+    options = {
+        CONF_FOV_LEFT: 75,
+        CONF_FOV_RIGHT: 75,
+        "blind_spot_left_gamma": -100,
+        "blind_spot_right_gamma": -100,
+    }
+    result = clamp_blind_spots_to_fov(options)
+    assert result["blind_spot_left_gamma"] == -75
+    assert result["blind_spot_right_gamma"] == -75

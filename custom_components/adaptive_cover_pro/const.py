@@ -53,6 +53,7 @@ Section index
 import logging
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from typing import Any
 
 # =============================================================================
 # 1. Module Identity & Logging
@@ -209,6 +210,31 @@ CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
 DEFAULT_FOV_RIGHT = 90  # degrees; matches config flow default
+
+
+def resolve_fov_left(options: dict) -> int:
+    """Return ``fov_left`` from *options*, tolerant of a present-but-``None`` key.
+
+    ``int(options.get(CONF_FOV_LEFT, 90))`` raises ``TypeError`` when the key is
+    present but ``None`` (a cleared field) — and this now runs inside
+    ``async_migrate_entry`` at startup, where it could brick entry loading. This
+    is the single None-tolerant resolver, mirroring ``CoverConfig.from_options``;
+    every fov-reading site (migration, blind-spot clamp/schema, config-summary,
+    services) delegates here so they can never diverge.
+    """
+    v = options.get(CONF_FOV_LEFT)
+    return int(v) if v is not None else DEFAULT_FOV_LEFT
+
+
+def resolve_fov_right(options: dict) -> int:
+    """Return ``fov_right`` from *options*, tolerant of a present-but-``None`` key.
+
+    Companion to :func:`resolve_fov_left`.
+    """
+    v = options.get(CONF_FOV_RIGHT)
+    return int(v) if v is not None else DEFAULT_FOV_RIGHT
+
+
 CONF_FOV_COMPUTE = "fov_compute"  # transient form button: derive fov_left/right
 # from window width + reveal depth (#565). Never persisted. Legacy ``fov_mode``
 # values left in older entries' options are inert — the engine reads
@@ -496,6 +522,43 @@ def blind_spot_legacy_to_gamma(
     wrong — it swaps sides; this derivation is verified bit-for-bit.)
     """
     return int(fov_left) - int(old_left), int(old_right) - int(fov_left)
+
+
+def clamp_gamma_pair(
+    left: Any,
+    right: Any,
+    fov_left: int,
+    fov_right: int,
+) -> tuple[int | None, int | None]:
+    """Clamp a signed-gamma blind-spot ``(left, right)`` edge pair to the FOV.
+
+    The ONE clamp-arithmetic source (single-source-of-truth rule): the config
+    migration, the config-flow clamp-on-save, and any schema-bound derivation
+    delegate here so the bounds and the empty-wedge repair can never drift.
+
+    ``left`` (upper edge) is clamped to ``[-fov_right, fov_left]`` and ``right``
+    (negated lower edge) to ``[-fov_left, fov_right]`` — the same bounds the
+    slider schema exposes. Either edge may be ``None`` (that side stays ``None``
+    and no repair runs).
+
+    Non-empty repair (issue #247, finding 3): a wedge is non-empty only when
+    ``left + right > 0``. When BOTH edges are present and the clamp collapses a
+    *previously* non-empty wedge into an empty one (e.g. the default 1° sliver
+    at a wide FOV, re-clamped after the FOV narrows), the right edge — then the
+    left edge if still needed — is nudged back out to restore a minimal 1°
+    sliver, so a valid or default wedge can never be clamped into the
+    empty-wedge lockout that hard-blocks the options step. An input wedge that
+    was ALREADY empty is left exactly as configured.
+    """
+    new_left = None if left is None else max(-fov_right, min(int(left), fov_left))
+    new_right = None if right is None else max(-fov_left, min(int(right), fov_right))
+    if new_left is not None and new_right is not None:
+        was_non_empty = int(left) + int(right) > 0
+        if was_non_empty and new_left + new_right <= 0:
+            new_right = min(fov_right, 1 - new_left)
+            if new_left + new_right <= 0:
+                new_left = min(fov_left, 1 - new_right)
+    return new_left, new_right
 
 
 @dataclass(frozen=True, slots=True)

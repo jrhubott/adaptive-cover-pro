@@ -28,8 +28,6 @@ from .const import (
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_ENTITIES,
-    CONF_FOV_LEFT,
-    CONF_FOV_RIGHT,
     CONF_START_ENTITY,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -58,6 +56,9 @@ from .const import (
     DOMAIN,
     _LOGGER,
     blind_spot_legacy_to_gamma,
+    clamp_gamma_pair,
+    resolve_fov_left,
+    resolve_fov_right,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
@@ -519,8 +520,8 @@ def _seed_signed_gamma_blind_spots(options: dict) -> bool:
     rollback to the previous integration version keeps reading its exact config
     (old code ignores the unknown gamma keys). Returns True when any key seeded.
     """
-    fov_left = int(options.get(CONF_FOV_LEFT, 90))
-    fov_right = int(options.get(CONF_FOV_RIGHT, 90))
+    fov_left = resolve_fov_left(options)
+    fov_right = resolve_fov_right(options)
     seeded = False
     for keys in BLIND_SPOT_SLOTS.values():
         old_left = options.get(keys["left"])
@@ -528,8 +529,7 @@ def _seed_signed_gamma_blind_spots(options: dict) -> bool:
         if old_left is None or old_right is None:
             continue  # slot inactive on the legacy path — nothing to convert
         new_left, new_right = blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
-        new_left = max(-fov_right, min(new_left, fov_left))
-        new_right = max(-fov_left, min(new_right, fov_right))
+        new_left, new_right = clamp_gamma_pair(new_left, new_right, fov_left, fov_right)
         if keys["left_gamma"] not in options:
             options[keys["left_gamma"]] = new_left
             seeded = True

@@ -117,6 +117,9 @@ from .const import (
     OutsideTempSource,
     TemplateCombineMode,
     TrackingSeason,
+    clamp_gamma_pair,
+    resolve_fov_left,
+    resolve_fov_right,
 )
 from .unit_system import length_default, length_selector
 
@@ -290,15 +293,17 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
 def blind_spot_edges(options: dict | None = None) -> int:
     """Return the blind-spot azimuth span: ``fov_left + fov_right``.
 
-    Each side defaults to 90 when absent, matching the legacy in-step
-    construction (a cover created before the FOV fields are saved). This is
-    the single source for the formula: ``blind_spot_schema`` derives its
-    slider bounds from it, and ``clamp_blind_spots_to_fov`` (issue #852) uses
-    the identical value to re-clamp stored slots when the FOV narrows — the
-    two must never drift apart on this arithmetic.
+    Each side defaults to ``DEFAULT_FOV_LEFT``/``DEFAULT_FOV_RIGHT`` when absent
+    (None-tolerant via the shared resolvers).
+
+    NOTE: production-dead as of the signed-gamma switch (issue #247) —
+    ``blind_spot_schema`` and ``clamp_blind_spots_to_fov`` now derive their
+    signed bounds from ``fov_left``/``fov_right`` directly (and the shared
+    ``clamp_gamma_pair``), not from this sum. Retained only for external callers
+    and the ``test_blind_spot_edges_*`` tests that document the span formula.
     """
     opts = options or {}
-    return int(opts.get(CONF_FOV_LEFT, 90)) + int(opts.get(CONF_FOV_RIGHT, 90))
+    return resolve_fov_left(opts) + resolve_fov_right(opts)
 
 
 def clamp_blind_spots_to_fov(options: dict) -> dict:
@@ -321,16 +326,24 @@ def clamp_blind_spots_to_fov(options: dict) -> dict:
     left untouched — an unconfigured slot must stay inactive, never coerced
     into existence by the clamp. The legacy FOV-relative keys are
     migration-read-only and are NEVER touched here.
+
+    The bound arithmetic + non-empty repair lives in the shared
+    ``clamp_gamma_pair`` (single source shared with the migration), so a
+    previously non-empty wedge (e.g. the default 1° sliver) can never be
+    clamped into the empty-wedge lockout when the FOV narrows (issue #247).
     """
-    fov_left = int(options.get(CONF_FOV_LEFT, 90))
-    fov_right = int(options.get(CONF_FOV_RIGHT, 90))
+    fov_left = resolve_fov_left(options)
+    fov_right = resolve_fov_right(options)
     for keys in BLIND_SPOT_SLOTS.values():
         left = options.get(keys["left_gamma"])
-        if left is not None:
-            options[keys["left_gamma"]] = max(-fov_right, min(int(left), fov_left))
         right = options.get(keys["right_gamma"])
+        if left is None and right is None:
+            continue  # unconfigured slot — never coerce into existence
+        new_left, new_right = clamp_gamma_pair(left, right, fov_left, fov_right)
+        if left is not None:
+            options[keys["left_gamma"]] = new_left
         if right is not None:
-            options[keys["right_gamma"]] = max(-fov_left, min(int(right), fov_right))
+            options[keys["right_gamma"]] = new_right
     return options
 
 
@@ -344,9 +357,13 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     schema and clamp can never disagree. The wedge is
     ``-right_gamma <= gamma <= left_gamma``.
 
-    Slot 1 keeps ``Required`` markers with a valid minimal default (0 / 1 → a
-    non-empty wedge, so passing the step without configuring a blind spot never
-    trips the empty-wedge gate). Slots 2/3's left marker also gets ``default=0``
+    Slot 1 keeps ``Required`` markers whose default is a harmless 1° sliver at
+    the LEFT acceptance edge (``left=fov_left``, ``right=1-fov_left`` → wedge
+    ``fov_left-1 <= gamma <= fov_left``): non-empty (``fov_left + (1-fov_left) =
+    1 > 0``) so the empty-wedge gate never trips, yet it never swallows the
+    window normal (gamma 0) the way the old ``0 / 1`` default did — passing the
+    step without touching a slider leaves direct sun at transit unblocked
+    (issue #247, finding 6). Slots 2/3's left marker also gets ``default=0``
     — HA validates submitted form data against this schema before the step
     handler runs, and a frontend slider resting at 0 may never appear in the
     raw payload; without a default, ``vol.Optional`` drops the absent key
@@ -356,8 +373,8 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     edges present" gate still keeps a truly untouched slot inactive.
     """
     opts = options or {}
-    fov_left = int(opts.get(CONF_FOV_LEFT, 90))
-    fov_right = int(opts.get(CONF_FOV_RIGHT, 90))
+    fov_left = resolve_fov_left(opts)
+    fov_right = resolve_fov_right(opts)
 
     def _slider(min_v: int, max_v: int, *, step: int | None = None):
         cfg: dict = {
@@ -374,8 +391,10 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     for n in BLIND_SPOT_SLOT_NUMBERS:
         keys = BLIND_SPOT_SLOTS[n]
         if n == 1:
-            left_marker = vol.Required(keys["left_gamma"], default=0)
-            right_marker = vol.Required(keys["right_gamma"], default=1)
+            # Harmless 1° sliver at the left acceptance edge — non-empty but
+            # never blocks the window normal (issue #247, finding 6).
+            left_marker = vol.Required(keys["left_gamma"], default=fov_left)
+            right_marker = vol.Required(keys["right_gamma"], default=1 - fov_left)
         else:
             left_marker = vol.Optional(keys["left_gamma"], default=0)
             right_marker = vol.Optional(keys["right_gamma"])
