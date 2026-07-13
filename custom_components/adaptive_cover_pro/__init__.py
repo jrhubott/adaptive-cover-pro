@@ -17,6 +17,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.template import Template
 
 from .const import (
+    BLIND_SPOT_SLOTS,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
@@ -27,6 +28,8 @@ from .const import (
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_ENTITIES,
+    CONF_FOV_LEFT,
+    CONF_FOV_RIGHT,
     CONF_START_ENTITY,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -54,6 +57,7 @@ from .const import (
     DIAG_CACHE_KEY,
     DOMAIN,
     _LOGGER,
+    blind_spot_legacy_to_gamma,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
@@ -502,6 +506,39 @@ def _merge_force_override_into_slot_5(options: dict) -> bool:
     return True
 
 
+def _seed_signed_gamma_blind_spots(options: dict) -> bool:
+    """Seed signed-gamma blind-spot keys from the legacy edges (issue #247).
+
+    For every slot whose BOTH legacy FOV-relative edges are present, compute the
+    signed-gamma pair via the shared ``blind_spot_legacy_to_gamma`` helper (so
+    migration and the runtime fallback in ``CoverConfig.from_options`` can never
+    diverge) and ``setdefault`` it into the new keys, clamped to the signed
+    bounds ``[-fov_right, fov_left]`` / ``[-fov_left, fov_right]``.
+
+    Additive on purpose: the legacy ``blind_spot_*`` keys are left untouched so a
+    rollback to the previous integration version keeps reading its exact config
+    (old code ignores the unknown gamma keys). Returns True when any key seeded.
+    """
+    fov_left = int(options.get(CONF_FOV_LEFT, 90))
+    fov_right = int(options.get(CONF_FOV_RIGHT, 90))
+    seeded = False
+    for keys in BLIND_SPOT_SLOTS.values():
+        old_left = options.get(keys["left"])
+        old_right = options.get(keys["right"])
+        if old_left is None or old_right is None:
+            continue  # slot inactive on the legacy path — nothing to convert
+        new_left, new_right = blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+        new_left = max(-fov_right, min(new_left, fov_left))
+        new_right = max(-fov_left, min(new_right, fov_right))
+        if keys["left_gamma"] not in options:
+            options[keys["left_gamma"]] = new_left
+            seeded = True
+        if keys["right_gamma"] not in options:
+            options[keys["right_gamma"]] = new_right
+            seeded = True
+    return seeded
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
@@ -591,6 +628,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # at minor 6 to 7 so they stop re-triggering migration every restart.
     if new_version == 3 and new_minor < 7:
         new_minor = 7
+
+    # v3.7 → v3.8: convert legacy FOV-relative blind-spot edges to signed gamma
+    # from the window normal (issue #247). Additive + rollback-safe: the new
+    # ``blind_spot_*_gamma`` keys are setdefault-seeded from the untouched legacy
+    # edges via the shared conversion helper; a rollback keeps reading the legacy
+    # keys. New installs write the gamma keys directly via the config flow.
+    if new_version == 3 and new_minor < 8:
+        if _seed_signed_gamma_blind_spots(new_options):
+            _LOGGER.info(
+                "Migrated blind-spot edges of %s to signed gamma from the window normal",
+                entry.data.get("name", entry.entry_id),
+            )
+        new_minor = 8
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

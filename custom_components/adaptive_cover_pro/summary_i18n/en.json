@@ -167,7 +167,7 @@
     "gate_offset_ignored": "{indent}⚠️ Sunset/Sunrise Offset is ignored while a daytime gate is set — the gate, not the clock, decides the boundary."
   },
   "blind_spot": {
-    "line": "🟥 Blind spot: ignores sun at {bs} inward from the left acceptance edge (e.g. tree or roof overhang).",
+    "line": "🟥 Blind spot: ignores sun at {bs} (gamma from the window normal — e.g. tree or roof overhang).",
     "range": "{left}°–{right}°",
     "elevation": "up to {elev}° elevation",
     "elevation_above": "above {elev}° elevation"

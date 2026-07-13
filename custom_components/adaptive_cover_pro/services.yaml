@@ -1026,9 +1026,12 @@ set_sun_tracking:
 set_blind_spot:
   name: Set blind spot
   description: >-
-    Update blind spot zone angles. Angles are measured inward from the left
-    acceptance edge (not from window azimuth). blind_spot_right must be greater
-    than blind_spot_left. Enforced at validation time.
+    Update blind spot zone angles. Angles are signed gamma measured from the
+    window normal (0 = straight ahead, positive toward the left acceptance
+    edge) — the same frame as the sun-acceptance angle. The wedge is
+    -blind_spot_right_gamma ≤ gamma ≤ blind_spot_left_gamma, so
+    blind_spot_left_gamma + blind_spot_right_gamma must be greater than 0.
+    Enforced at validation time.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -1038,9 +1041,27 @@ set_blind_spot:
       description: "If true, the blind spot zone is active."
       selector:
         boolean:
+    blind_spot_left_gamma:
+      name: Blind spot left edge (from window normal)
+      description: "Upper (left) edge of the blind spot wedge as signed gamma from the window normal, degrees. Positive = toward the left acceptance edge. Within [-fov_right, fov_left]."
+      selector:
+        number:
+          min: -180
+          max: 180
+          mode: slider
+          unit_of_measurement: "°"
+    blind_spot_right_gamma:
+      name: Blind spot right edge (from window normal)
+      description: "Negated lower (right) edge of the blind spot wedge as signed gamma from the window normal, degrees. The lower gamma edge is -blind_spot_right_gamma. blind_spot_left_gamma + blind_spot_right_gamma must be greater than 0. Within [-fov_left, fov_right]."
+      selector:
+        number:
+          min: -180
+          max: 180
+          mode: slider
+          unit_of_measurement: "°"
     blind_spot_left:
-      name: Blind spot left edge
-      description: "Left edge of the blind spot zone in degrees inward from the left acceptance edge (0 = at that edge, range 0–359°)."
+      name: Blind spot left edge (deprecated)
+      description: "DEPRECATED (issue #247): legacy left edge measured inward from the left acceptance edge (0–359°). Accepted for back-compat and converted to signed gamma on write. Use blind_spot_left_gamma instead."
       selector:
         number:
           min: 0
@@ -1048,8 +1069,8 @@ set_blind_spot:
           mode: slider
           unit_of_measurement: "°"
     blind_spot_right:
-      name: Blind spot right edge
-      description: "Right edge of the blind spot zone in degrees inward from the left acceptance edge. Must be greater than left edge (range 1–360°)."
+      name: Blind spot right edge (deprecated)
+      description: "DEPRECATED (issue #247): legacy right edge measured inward from the left acceptance edge, must be greater than left edge (1–360°). Accepted for back-compat and converted to signed gamma on write. Use blind_spot_right_gamma instead."
       selector:
         number:
           min: 0

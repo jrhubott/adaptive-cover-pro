@@ -243,6 +243,43 @@ def test_sun_position_attributes_blind_spot_range_calculated():
     assert attrs["blind_spot_range"] == [40.0, 35.0]
 
 
+def test_blind_spot_range_from_new_keys_matches_legacy_emission():
+    """Signed-gamma keys emit the SAME blind_spot_range as legacy-only options.
+
+    Legacy 10/5 at fov_left=45 → [fov_left-5, fov_left-10] = [40, 35].
+    Gamma equivalent: left_gamma = 45-10 = 35, right_gamma = 5-45 = -40 →
+    [-right_gamma, left_gamma] = [40, 35]. Byte-identical.
+    """
+
+    def _emit(cfg_extra):
+        coord = _make_coordinator(
+            diagnostics={
+                "sun_azimuth": 180.0,
+                "sun_elevation": 45.0,
+                "gamma": None,
+                "configuration": {
+                    "azimuth": 180,
+                    "fov_left": 45,
+                    "fov_right": 45,
+                    "enable_blind_spot": True,
+                    **cfg_extra,
+                },
+            }
+        )
+        sensor = AdaptiveCoverSunPositionSensor(
+            unique_id="test_entry",
+            hass=_make_hass(),
+            config_entry=_make_config_entry(),
+            name="Test",
+            coordinator=coord,
+        )
+        return sensor.extra_state_attributes["blind_spot_range"]
+
+    legacy = _emit({"blind_spot_left": 10.0, "blind_spot_right": 5.0})
+    gamma = _emit({"blind_spot_left_gamma": 35.0, "blind_spot_right_gamma": -40.0})
+    assert gamma == legacy == [40.0, 35.0]
+
+
 def test_sun_position_attributes_blind_spot_ranges_multi_slot():
     """blind_spot_ranges lists every active slot; blind_spot_range stays slot 1."""
     coord = _make_coordinator(

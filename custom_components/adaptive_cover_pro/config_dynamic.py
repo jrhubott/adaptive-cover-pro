@@ -302,61 +302,62 @@ def blind_spot_edges(options: dict | None = None) -> int:
 
 
 def clamp_blind_spots_to_fov(options: dict) -> dict:
-    """Re-clamp stored blind-spot slot offsets to the current FOV span.
+    """Re-clamp stored signed-gamma blind-spot edges to the current FOV (issue #852/#247).
 
-    Blind-spot left/right are azimuth offsets *within* the FOV span
-    (``blind_spot_edges``), consumed raw at runtime. Nothing re-clamps them
-    when ``fov_left``/``fov_right`` narrow on the geometry step, so a slot
-    saved under a wider FOV can be left exceeding the new span — silently
-    disagreeing with the options-flow slider (max = the new edges) and
-    mis-shaping the wedge at runtime (issue #852).
+    Blind-spot edges are stored as signed gamma from the window normal
+    (issue #247): ``left_gamma`` (upper edge) ∈ ``[-fov_right, fov_left]`` and
+    ``right_gamma`` (negated lower edge) ∈ ``[-fov_left, fov_right]``. Nothing
+    re-clamps them when ``fov_left``/``fov_right`` narrow on the geometry step,
+    so an edge saved under a wider FOV can exceed the new span — silently
+    disagreeing with the options-flow slider and mis-shaping the wedge at
+    runtime (issue #852). The bounds here mirror ``blind_spot_schema`` exactly.
 
     Call this right after any options/config update that changes
     ``CONF_FOV_LEFT``/``CONF_FOV_RIGHT`` (the geometry-step save sites in
-    ``config_flow.py``, plus the geometry sync-merge). Bounds mirror
-    ``blind_spot_schema`` exactly (``0 <= left <= edges-1``,
-    ``1 <= right <= edges``), sourced from the same ``blind_spot_edges`` call
-    so schema and clamp can never disagree.
+    ``config_flow.py``, plus the geometry sync-merge).
 
     Mutates *options* in place (and returns it) for every slot in
     ``BLIND_SPOT_SLOTS``. A slot key that is absent or explicitly ``None`` is
     left untouched — an unconfigured slot must stay inactive, never coerced
-    into existence by the clamp.
+    into existence by the clamp. The legacy FOV-relative keys are
+    migration-read-only and are NEVER touched here.
     """
-    edges = blind_spot_edges(options)
-    left_max = edges - 1
-    right_max = edges
+    fov_left = int(options.get(CONF_FOV_LEFT, 90))
+    fov_right = int(options.get(CONF_FOV_RIGHT, 90))
     for keys in BLIND_SPOT_SLOTS.values():
-        left = options.get(keys["left"])
+        left = options.get(keys["left_gamma"])
         if left is not None:
-            options[keys["left"]] = min(int(left), left_max)
-        right = options.get(keys["right"])
+            options[keys["left_gamma"]] = max(-fov_right, min(int(left), fov_left))
+        right = options.get(keys["right_gamma"])
         if right is not None:
-            options[keys["right"]] = min(int(right), right_max)
+            options[keys["right_gamma"]] = max(-fov_left, min(int(right), fov_right))
     return options
 
 
 def blind_spot_schema(options: dict | None = None) -> vol.Schema:
-    """Blind-spot wedge schema for up to 3 slots (issue #701).
+    """Blind-spot wedge schema for up to 3 slots — signed gamma (issue #247/#701).
 
-    ``edges = fov_left + fov_right`` (defaulting to 90+90) sets the maximum
-    left/right azimuth offset, matching the legacy in-step construction. The
-    formula is single-sourced in ``blind_spot_edges`` — ``clamp_blind_spots_to_fov``
-    (issue #852) derives its clamp bounds from the same call.
+    Edges are signed gamma from the window normal: the left (upper) edge slider
+    spans ``[-fov_right, fov_left]`` and the right (negated lower) edge slider
+    spans ``[-fov_left, fov_right]`` (each side defaulting to 90 when absent).
+    ``clamp_blind_spots_to_fov`` (issue #852) clamps to the identical bounds so
+    schema and clamp can never disagree. The wedge is
+    ``-right_gamma <= gamma <= left_gamma``.
 
-    Slot 1 reuses the legacy unsuffixed keys and keeps its ``Required``
-    defaults (0/1) so its form is byte-for-byte unchanged. Slots 2/3's left
-    marker also gets ``default=0`` (mirroring slot 1) — HA validates
-    submitted form data against this schema before the step handler runs,
-    and a frontend slider resting at its minimum value (0) may never appear
-    in the raw payload; without a default, ``vol.Optional`` drops an absent
-    key entirely instead of backfilling it, silently losing a brand-new
-    slot's left edge (issue #868). Slot 2/3's right marker stays a
-    default-less ``Optional`` so an unconfigured slot's right edge remains
-    genuinely absent — ``_make_blind_spot``'s "both edges present" gate still
-    keeps a truly untouched slot inactive.
+    Slot 1 keeps ``Required`` markers with a valid minimal default (0 / 1 → a
+    non-empty wedge, so passing the step without configuring a blind spot never
+    trips the empty-wedge gate). Slots 2/3's left marker also gets ``default=0``
+    — HA validates submitted form data against this schema before the step
+    handler runs, and a frontend slider resting at 0 may never appear in the
+    raw payload; without a default, ``vol.Optional`` drops the absent key
+    entirely, silently losing a brand-new slot's left edge (issue #868). Slot
+    2/3's right marker stays a default-less ``Optional`` so an unconfigured
+    slot's right edge remains genuinely absent — ``_make_blind_spot``'s "both
+    edges present" gate still keeps a truly untouched slot inactive.
     """
-    edges = blind_spot_edges(options)
+    opts = options or {}
+    fov_left = int(opts.get(CONF_FOV_LEFT, 90))
+    fov_right = int(opts.get(CONF_FOV_RIGHT, 90))
 
     def _slider(min_v: int, max_v: int, *, step: int | None = None):
         cfg: dict = {
@@ -373,13 +374,15 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     for n in BLIND_SPOT_SLOT_NUMBERS:
         keys = BLIND_SPOT_SLOTS[n]
         if n == 1:
-            left_marker = vol.Required(keys["left"], default=0)
-            right_marker = vol.Required(keys["right"], default=1)
+            left_marker = vol.Required(keys["left_gamma"], default=0)
+            right_marker = vol.Required(keys["right_gamma"], default=1)
         else:
-            left_marker = vol.Optional(keys["left"], default=0)
-            right_marker = vol.Optional(keys["right"])
-        schema[left_marker] = _slider(0, edges - 1)
-        schema[right_marker] = _slider(1, edges)
+            left_marker = vol.Optional(keys["left_gamma"], default=0)
+            right_marker = vol.Optional(keys["right_gamma"])
+        # left (upper) edge ∈ [-fov_right, fov_left]; right (negated lower)
+        # edge ∈ [-fov_left, fov_right].
+        schema[left_marker] = _slider(-fov_right, fov_left)
+        schema[right_marker] = _slider(-fov_left, fov_right)
         schema[vol.Optional(keys["elevation"])] = _slider(0, 90, step=1)
         # Per-slot below/above elevation mode (issue #702). Defaults to "below"
         # so an unconfigured slot keeps today's "blocks low sun" behavior.

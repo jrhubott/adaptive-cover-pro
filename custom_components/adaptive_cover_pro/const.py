@@ -435,8 +435,19 @@ EVENT_FOV_EXIT = "fov_exit"  # boundary event: sun leaves window FOV
 # so direct-sun handling switches off even if geometry says otherwise.
 
 CONF_ENABLE_BLIND_SPOT = "blind_spot"  # master enable
-CONF_BLIND_SPOT_LEFT = "blind_spot_left"  # left edge, azimuth deg 0-359
-CONF_BLIND_SPOT_RIGHT = "blind_spot_right"  # right edge, azimuth deg 0-360
+# --- Legacy FOV-relative edges (migration-read-only, issue #247) -------------
+# These measure the wedge as an offset INWARD from the left acceptance edge.
+# As of v3.8 writers emit the signed-gamma keys below; these are retained only
+# so a rolled-back older build keeps reading its untouched config (additive,
+# rollback-safe). ``blind_spot_legacy_to_gamma`` converts them on read.
+CONF_BLIND_SPOT_LEFT = "blind_spot_left"  # legacy left offset, deg 0-359
+CONF_BLIND_SPOT_RIGHT = "blind_spot_right"  # legacy right offset, deg 0-360
+# --- Signed gamma from the window normal (primary storage, issue #247) -------
+# Same frame as ``gamma`` / ``fov_left`` / ``fov_right``: 0 = straight ahead,
+# positive = toward the left acceptance edge. The engine wedge is simply
+# ``-blind_spot_right_gamma <= gamma <= blind_spot_left_gamma``.
+CONF_BLIND_SPOT_LEFT_GAMMA = "blind_spot_left_gamma"  # upper gamma edge
+CONF_BLIND_SPOT_RIGHT_GAMMA = "blind_spot_right_gamma"  # negated lower gamma edge
 # Sun elevation below which the blind-spot wedge applies, degrees 0-90.
 CONF_BLIND_SPOT_ELEVATION = "blind_spot_elevation"
 
@@ -465,9 +476,37 @@ CONF_BLIND_SPOT_ELEVATION_MODE = "blind_spot_elevation_mode"
 BLIND_SPOT_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3)  # slot 1 = legacy keys
 
 
+def blind_spot_legacy_to_gamma(
+    fov_left: float, old_left: float, old_right: float
+) -> tuple[int, int]:
+    """Convert legacy FOV-relative blind-spot edges to signed gamma (issue #247).
+
+    The ONE conversion formula — used by both the v3.8 config migration and the
+    runtime legacy fallback in :meth:`CoverConfig.from_options`, so the two can
+    never drift (single-source-of-truth rule).
+
+    Legacy semantics: the wedge is ``fov_left - old_right <= gamma <=
+    fov_left - old_left`` (offsets inward from the left acceptance edge).
+    Signed-gamma semantics: ``-new_right <= gamma <= new_left``. Substituting
+
+        new_left  = fov_left - old_left
+        new_right = old_right - fov_left
+
+    reproduces the identical interval. (The formula in issue #247's notes is
+    wrong — it swaps sides; this derivation is verified bit-for-bit.)
+    """
+    return int(fov_left) - int(old_left), int(old_right) - int(fov_left)
+
+
 @dataclass(frozen=True, slots=True)
 class BlindSpot:
-    """One blind-spot wedge.
+    """One blind-spot wedge, stored as signed gamma from the window normal.
+
+    ``left`` is the upper gamma edge and ``right`` is the NEGATED lower gamma
+    edge, so the containment test is ``-right <= gamma <= left`` (issue #247) —
+    the same frame as ``gamma`` / ``fov_left`` / ``fov_right``. For a legacy
+    FOV-relative config the values are converted on read via
+    :func:`blind_spot_legacy_to_gamma`.
 
     ``elevation`` (None = applies at all elevations). ``elevation_mode``
     (issue #702) selects which side of ``elevation`` the wedge applies to:
@@ -487,12 +526,17 @@ def _blind_spot_slot_keys(n: int) -> dict[str, str]:
     """Return the wire-format option keys for blind-spot slot *n*.
 
     Slot 1 keeps the legacy unsuffixed keys (no data migration); slots 2+ are
-    suffixed ``_<n>``.
+    suffixed ``_<n>``. Each slot carries BOTH the legacy FOV-relative edges
+    (``left`` / ``right``, migration-read-only) and the primary signed-gamma
+    edges (``left_gamma`` / ``right_gamma``, issue #247).
     """
     s = "" if n == 1 else f"_{n}"
     return {
         "left": f"blind_spot_left{s}",
         "right": f"blind_spot_right{s}",
+        # Signed-gamma edges (issue #247) — the primary storage as of v3.8.
+        "left_gamma": f"blind_spot_left_gamma{s}",
+        "right_gamma": f"blind_spot_right_gamma{s}",
         "elevation": f"blind_spot_elevation{s}",
         # Per-slot below/above elevation selector (issue #702).
         "elevation_mode": f"blind_spot_elevation_mode{s}",
@@ -1558,9 +1602,16 @@ _RANGE_SLIDING_POINT_X = (-25.0, 25.0)  # CONF_SLIDING_POINT{1,2}_X, metres (sig
 _RANGE_SLIDING_POINT_Y = _RANGE_DISTANCE  # CONF_SLIDING_POINT{1,2}_Y, metres (0–50)
 
 # Blind spot.
-# Asymmetric LEFT vs RIGHT bounds are a historical quirk; preserved for compat.
+# Legacy FOV-relative edges (migration-read-only): asymmetric LEFT vs RIGHT
+# bounds are a historical quirk; the ranges are kept so OPTION_RANGES still
+# validates the read-only legacy keys.
 _RANGE_BLIND_SPOT_LEFT = (0, 359)  # CONF_BLIND_SPOT_LEFT, degrees
 _RANGE_BLIND_SPOT_RIGHT = (0, 360)  # CONF_BLIND_SPOT_RIGHT, degrees
+# Signed gamma from the window normal (issue #247): the effective per-slot
+# slider bounds are FOV-aware ([-fov_right, fov_left] / [-fov_left, fov_right]),
+# but the coarse OPTION_RANGES / service bound is the full signed span.
+_RANGE_BLIND_SPOT_LEFT_GAMMA = (-180, 180)  # CONF_BLIND_SPOT_LEFT_GAMMA, degrees
+_RANGE_BLIND_SPOT_RIGHT_GAMMA = (-180, 180)  # CONF_BLIND_SPOT_RIGHT_GAMMA, degrees
 _RANGE_BLIND_SPOT_ELEVATION = (0, 90)  # CONF_BLIND_SPOT_ELEVATION, degrees
 
 # Position limits & sunset.

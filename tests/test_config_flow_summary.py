@@ -141,8 +141,8 @@ def _full_vertical() -> dict:
             CONF_MIN_ELEVATION: 5,
             CONF_MAX_ELEVATION: 70,
             CONF_ENABLE_BLIND_SPOT: True,
-            CONF_BLIND_SPOT_LEFT: 10,
-            CONF_BLIND_SPOT_RIGHT: 20,
+            "blind_spot_left_gamma": 35,  # signed gamma (#247) → wedge [15, 35]
+            "blind_spot_right_gamma": -15,
             CONF_BLIND_SPOT_ELEVATION: 30,
             CONF_START_TIME: "07:30",
             CONF_END_TIME: "20:00",
@@ -820,29 +820,43 @@ def test_blind_spot_hidden_when_disabled():
 
 
 def test_blind_spot_shown_when_enabled():
-    """Blind spot bullet shows the degree range."""
+    """Blind spot bullet shows the signed-gamma wedge range (#247)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        CONF_BLIND_SPOT_LEFT: 10,
-        CONF_BLIND_SPOT_RIGHT: 20,
+        "blind_spot_left_gamma": 35,  # wedge [15, 35]
+        "blind_spot_right_gamma": -15,
         CONF_BLIND_SPOT_ELEVATION: 40,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "Blind spot" in summary
-    assert "10°" in summary
-    assert "20°" in summary
+    assert "15°" in summary
+    assert "35°" in summary
     assert "40°" in summary
-    assert "acceptance edge" in summary
+    assert "window normal" in summary
     # Single slot renders exactly one blind-spot line.
     assert summary.count("Blind spot") == 1
+
+
+def test_blind_spot_legacy_keys_still_render_via_conversion():
+    """Legacy-only options still render (converted to the gamma wedge)."""
+    cfg = {
+        CONF_ENABLE_BLIND_SPOT: True,
+        CONF_FOV_LEFT: 45,
+        CONF_BLIND_SPOT_LEFT: 10,  # → gamma [15, 35]
+        CONF_BLIND_SPOT_RIGHT: 30,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Blind spot" in summary
+    assert "15°" in summary
+    assert "35°" in summary
 
 
 def test_blind_spot_below_mode_wording():
     """A 'below' (default) elevation slot reads 'up to {elev}°' (#702)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        CONF_BLIND_SPOT_LEFT: 10,
-        CONF_BLIND_SPOT_RIGHT: 20,
+        "blind_spot_left_gamma": 35,
+        "blind_spot_right_gamma": -15,
         CONF_BLIND_SPOT_ELEVATION: 40,
         "blind_spot_elevation_mode": "below",
     }
@@ -855,8 +869,8 @@ def test_blind_spot_above_mode_wording():
     """An 'above' elevation slot reads 'above {elev}°' (#702)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        CONF_BLIND_SPOT_LEFT: 10,
-        CONF_BLIND_SPOT_RIGHT: 20,
+        "blind_spot_left_gamma": 35,
+        "blind_spot_right_gamma": -15,
         CONF_BLIND_SPOT_ELEVATION: 40,
         "blind_spot_elevation_mode": "above",
     }
@@ -869,15 +883,15 @@ def test_blind_spot_multiple_slots_render_one_line_each():
     """Two configured slots produce two blind-spot summary lines (#701)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        CONF_BLIND_SPOT_LEFT: 10,
-        CONF_BLIND_SPOT_RIGHT: 20,
-        "blind_spot_left_2": 40,
-        "blind_spot_right_2": 60,
+        "blind_spot_left_gamma": 35,  # slot 1 wedge [15, 35]
+        "blind_spot_right_gamma": -15,
+        "blind_spot_left_gamma_2": 5,  # slot 2 wedge [-15, 5]
+        "blind_spot_right_gamma_2": 15,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert summary.count("Blind spot") == 2
-    assert "10°" in summary
-    assert "60°" in summary
+    assert "15°" in summary
+    assert "35°" in summary
 
 
 # ---------------------------------------------------------------------------
@@ -1782,9 +1796,9 @@ def test_full_vertical_config_smoke():
     assert "sill 0.5m" in summary
     # Sun tracking
     assert "180°" in summary
-    # Blind spot
+    # Blind spot (signed gamma → wedge [15, 35])
     assert "Blind spot" in summary
-    assert "10°" in summary
+    assert "15°" in summary
     # Timing
     assert "07:30" in summary
     assert "20:00" in summary

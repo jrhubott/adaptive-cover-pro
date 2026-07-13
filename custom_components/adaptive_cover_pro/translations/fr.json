@@ -512,32 +512,32 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Bord gauche de la zone aveugle (à partir du bord d'acceptance gauche)",
-          "blind_spot_right": "Bord droit de la zone aveugle (à partir du bord d'acceptance gauche)",
           "blind_spot_elevation": "Élévation zone cachée",
-          "blind_spot_left_2": "Bord gauche de la zone aveugle 2 (à partir du bord d'acceptance gauche)",
-          "blind_spot_right_2": "Bord droit de la zone aveugle 2 (à partir du bord d'acceptance gauche)",
           "blind_spot_elevation_2": "Élévation zone cachée 2",
-          "blind_spot_left_3": "Bord gauche de la zone aveugle 3 (à partir du bord d'acceptance gauche)",
-          "blind_spot_right_3": "Bord droit de la zone aveugle 3 (à partir du bord d'acceptance gauche)",
           "blind_spot_elevation_3": "Élévation zone cachée 3",
           "blind_spot_elevation_mode": "Mode d'élévation zone cachée",
           "blind_spot_elevation_mode_2": "Mode d'élévation zone cachée 2",
-          "blind_spot_elevation_mode_3": "Mode d'élévation zone cachée 3"
+          "blind_spot_elevation_mode_3": "Mode d'élévation zone cachée 3",
+          "blind_spot_left_gamma": "Bord gauche de la zone aveugle (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_right_gamma": "Bord droit de la zone aveugle (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_left_gamma_2": "Bord gauche de la zone aveugle 2 (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_right_gamma_2": "Bord droit de la zone aveugle 2 (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_left_gamma_3": "Bord gauche de la zone aveugle 3 (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_right_gamma_3": "Bord droit de la zone aveugle 3 (gamma à partir de la normale à la fenêtre)"
         },
         "data_description": {
-          "blind_spot_left": "Bord gauche de la zone aveugle (angle horizontal en degrés à partir du bord d'acceptance gauche). Où 0 = au bord d'acceptance le plus à gauche. Exemple : Si votre angle d'acceptance solaire gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, définissez cette valeur à 10. Cela marque où l'obstruction commence horizontalement. Utilisez le capteur de position du soleil ou observez quand le soleil est bloqué pour trouver cette valeur.",
-          "blind_spot_right": "Bord droit de la zone aveugle (angle horizontal en degrés à partir du bord d'acceptance gauche, doit être > bord gauche). Exemple : Si votre angle d'acceptance solaire gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, définissez cette valeur à 20. Cela marque où l'obstruction se termine horizontalement. Crée une zone 'ne pas tracker le soleil ici' entre les bords gauche et droit.",
           "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle.",
-          "blind_spot_left_2": "Emplacement de zone aveugle deuxième optionnel. Bord gauche en degrés à partir du bord d'acceptance gauche. Laissez ce bord et le bord droit non définis pour désactiver l'emplacement 2.",
-          "blind_spot_right_2": "Bord droit de l'emplacement de zone aveugle deuxième (degrés à partir du bord d'acceptance gauche, doit être supérieur au bord gauche de l'emplacement 2).",
           "blind_spot_elevation_2": "Élévation solaire maximale où le slot 2 s'applique. Laissez vide pour s'appliquer à toutes les élévations.",
-          "blind_spot_left_3": "Emplacement de zone aveugle troisième optionnel. Bord gauche en degrés à partir du bord d'acceptance gauche. Laissez ce bord et le bord droit non définis pour désactiver l'emplacement 3.",
-          "blind_spot_right_3": "Bord droit de l'emplacement de zone aveugle troisième (degrés à partir du bord d'acceptance gauche, doit être supérieur au bord gauche de l'emplacement 3).",
           "blind_spot_elevation_3": "Élévation solaire maximale où le slot 3 s'applique. Laissez vide pour s'appliquer à toutes les élévations.",
           "blind_spot_elevation_mode": "De quel côté du seuil d'élévation se trouve la zone cachée. « En dessous » (par défaut) bloque le soleil BAS (un arbre ou avant-toit) ; « Au-dessus » bloque le soleil HAUT (un obstacle en surplomb comme un balcon ou une alcôve profonde). Ne s'applique que si une élévation est définie.",
           "blind_spot_elevation_mode_2": "De quel côté du seuil d'élévation du slot 2 se trouve la zone : « En dessous » bloque le soleil bas, « Au-dessus » bloque le soleil haut. Ne s'applique que si l'élévation du slot 2 est définie.",
-          "blind_spot_elevation_mode_3": "De quel côté du seuil d'élévation du slot 3 se trouve la zone : « En dessous » bloque le soleil bas, « Au-dessus » bloque le soleil haut. Ne s'applique que si l'élévation du slot 3 est définie."
+          "blind_spot_elevation_mode_3": "De quel côté du seuil d'élévation du slot 3 se trouve la zone : « En dessous » bloque le soleil bas, « Au-dessus » bloque le soleil haut. Ne s'applique que si l'élévation du slot 3 est définie.",
+          "blind_spot_left_gamma": "Bord supérieur (gauche) du secteur d'obstruction, exprimé en gamma signé à partir de la normale à la fenêtre (degrés) : 0 = devant, positif = vers le bord d'acceptation gauche, dans le cône d'acceptation solaire. Exemple : avec un angle d'acceptation solaire gauche de 45° et un arbre bloquant 10-20° à partir de ce bord, réglez cette valeur sur 35. Le secteur est -bord droit ≤ gamma ≤ bord gauche.",
+          "blind_spot_right_gamma": "Bord inférieur (droit) du secteur d'obstruction, entré comme sa négation — la limite inférieure du secteur est -cette valeur (gamma signé à partir de la normale à la fenêtre, dans le cône d'acceptation solaire). Bord gauche + bord droit doit être supérieur à 0. Exemple : avec le bord gauche à 35 et l'obstruction s'étendant jusqu'à gamma 15, réglez cette valeur sur -15.",
+          "blind_spot_left_gamma_2": "Deuxième emplacement de zone aveugle optionnel. Bord gauche (supérieur) exprimé en gamma signé à partir de la normale à la fenêtre. Laissez ce champ et le bord droit non définis pour désactiver l'emplacement 2.",
+          "blind_spot_right_gamma_2": "Bord droit (inférieur) du deuxième emplacement de zone aveugle exprimé en gamma signé à partir de la normale à la fenêtre. Bord gauche de l'emplacement 2 + bord droit doit être supérieur à 0.",
+          "blind_spot_left_gamma_3": "Troisième emplacement de zone aveugle optionnel. Bord gauche (supérieur) exprimé en gamma signé à partir de la normale à la fenêtre. Laissez ce champ et le bord droit non définis pour désactiver l'emplacement 3.",
+          "blind_spot_right_gamma_3": "Bord droit (inférieur) du troisième emplacement de zone aveugle exprimé en gamma signé à partir de la normale à la fenêtre. Bord gauche de l'emplacement 3 + bord droit doit être supérieur à 0."
         },
         "title": "Zone cachée",
         "description": "Définissez jusqu'à 3 zones indépendantes où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Le soleil est ignoré quand il tombe à l'intérieur de l'une d'elles. Ces valeurs angulaires sont relatives en degrés dans votre angle d'acceptance solaire, où 0 est la limite d'acceptance la plus à gauche. Laissez les bords gauche et droit d'un emplacement non définis pour le sauter.\n\n[En savoir plus]({learn_more})"
@@ -1350,32 +1350,32 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Bord gauche de la zone aveugle (à partir du bord d'acceptance gauche)",
-          "blind_spot_right": "Bord droit de la zone aveugle (à partir du bord d'acceptance gauche)",
           "blind_spot_elevation": "Élévation zone cachée",
-          "blind_spot_left_2": "Bord gauche de la zone aveugle 2 (à partir du bord d'acceptance gauche)",
-          "blind_spot_right_2": "Bord droit de la zone aveugle 2 (à partir du bord d'acceptance gauche)",
           "blind_spot_elevation_2": "Élévation zone cachée 2",
-          "blind_spot_left_3": "Bord gauche de la zone aveugle 3 (à partir du bord d'acceptance gauche)",
-          "blind_spot_right_3": "Bord droit de la zone aveugle 3 (à partir du bord d'acceptance gauche)",
           "blind_spot_elevation_3": "Élévation zone cachée 3",
           "blind_spot_elevation_mode": "Mode d'élévation zone cachée",
           "blind_spot_elevation_mode_2": "Mode d'élévation zone cachée 2",
-          "blind_spot_elevation_mode_3": "Mode d'élévation zone cachée 3"
+          "blind_spot_elevation_mode_3": "Mode d'élévation zone cachée 3",
+          "blind_spot_left_gamma": "Bord gauche de la zone aveugle (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_right_gamma": "Bord droit de la zone aveugle (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_left_gamma_2": "Bord gauche de la zone aveugle 2 (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_right_gamma_2": "Bord droit de la zone aveugle 2 (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_left_gamma_3": "Bord gauche de la zone aveugle 3 (gamma à partir de la normale à la fenêtre)",
+          "blind_spot_right_gamma_3": "Bord droit de la zone aveugle 3 (gamma à partir de la normale à la fenêtre)"
         },
         "data_description": {
-          "blind_spot_left": "Bord gauche de la zone aveugle (angle horizontal en degrés à partir du bord d'acceptance gauche). Où 0 = au bord d'acceptance le plus à gauche. Exemple : Si votre angle d'acceptance solaire gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, définissez cette valeur à 10. Cela marque où l'obstruction commence horizontalement. Utilisez le capteur de position du soleil ou observez quand le soleil est bloqué pour trouver cette valeur.",
-          "blind_spot_right": "Bord droit de la zone aveugle (angle horizontal en degrés à partir du bord d'acceptance gauche, doit être > bord gauche). Exemple : Si votre angle d'acceptance solaire gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, définissez cette valeur à 20. Cela marque où l'obstruction se termine horizontalement. Crée une zone 'ne pas tracker le soleil ici' entre les bords gauche et droit.",
           "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle.",
-          "blind_spot_left_2": "Emplacement de zone aveugle deuxième optionnel. Bord gauche en degrés à partir du bord d'acceptance gauche. Laissez ce bord et le bord droit non définis pour désactiver l'emplacement 2.",
-          "blind_spot_right_2": "Bord droit de l'emplacement de zone aveugle deuxième (degrés à partir du bord d'acceptance gauche, doit être supérieur au bord gauche de l'emplacement 2).",
           "blind_spot_elevation_2": "Élévation solaire maximale où le slot 2 s'applique. Laissez vide pour s'appliquer à toutes les élévations.",
-          "blind_spot_left_3": "Emplacement de zone aveugle troisième optionnel. Bord gauche en degrés à partir du bord d'acceptance gauche. Laissez ce bord et le bord droit non définis pour désactiver l'emplacement 3.",
-          "blind_spot_right_3": "Bord droit de l'emplacement de zone aveugle troisième (degrés à partir du bord d'acceptance gauche, doit être supérieur au bord gauche de l'emplacement 3).",
           "blind_spot_elevation_3": "Élévation solaire maximale où le slot 3 s'applique. Laissez vide pour s'appliquer à toutes les élévations.",
           "blind_spot_elevation_mode": "De quel côté du seuil d'élévation se trouve la zone cachée. « En dessous » (par défaut) bloque le soleil BAS (un arbre ou avant-toit) ; « Au-dessus » bloque le soleil HAUT (un obstacle en surplomb comme un balcon ou une alcôve profonde). Ne s'applique que si une élévation est définie.",
           "blind_spot_elevation_mode_2": "De quel côté du seuil d'élévation du slot 2 se trouve la zone : « En dessous » bloque le soleil bas, « Au-dessus » bloque le soleil haut. Ne s'applique que si l'élévation du slot 2 est définie.",
-          "blind_spot_elevation_mode_3": "De quel côté du seuil d'élévation du slot 3 se trouve la zone : « En dessous » bloque le soleil bas, « Au-dessus » bloque le soleil haut. Ne s'applique que si l'élévation du slot 3 est définie."
+          "blind_spot_elevation_mode_3": "De quel côté du seuil d'élévation du slot 3 se trouve la zone : « En dessous » bloque le soleil bas, « Au-dessus » bloque le soleil haut. Ne s'applique que si l'élévation du slot 3 est définie.",
+          "blind_spot_left_gamma": "Bord supérieur (gauche) du secteur d'obstruction, exprimé en gamma signé à partir de la normale à la fenêtre (degrés) : 0 = devant, positif = vers le bord d'acceptation gauche, dans le cône d'acceptation solaire. Exemple : avec un angle d'acceptation solaire gauche de 45° et un arbre bloquant 10-20° à partir de ce bord, réglez cette valeur sur 35. Le secteur est -bord droit ≤ gamma ≤ bord gauche.",
+          "blind_spot_right_gamma": "Bord inférieur (droit) du secteur d'obstruction, entré comme sa négation — la limite inférieure du secteur est -cette valeur (gamma signé à partir de la normale à la fenêtre, dans le cône d'acceptation solaire). Bord gauche + bord droit doit être supérieur à 0. Exemple : avec le bord gauche à 35 et l'obstruction s'étendant jusqu'à gamma 15, réglez cette valeur sur -15.",
+          "blind_spot_left_gamma_2": "Deuxième emplacement de zone aveugle optionnel. Bord gauche (supérieur) exprimé en gamma signé à partir de la normale à la fenêtre. Laissez ce champ et le bord droit non définis pour désactiver l'emplacement 2.",
+          "blind_spot_right_gamma_2": "Bord droit (inférieur) du deuxième emplacement de zone aveugle exprimé en gamma signé à partir de la normale à la fenêtre. Bord gauche de l'emplacement 2 + bord droit doit être supérieur à 0.",
+          "blind_spot_left_gamma_3": "Troisième emplacement de zone aveugle optionnel. Bord gauche (supérieur) exprimé en gamma signé à partir de la normale à la fenêtre. Laissez ce champ et le bord droit non définis pour désactiver l'emplacement 3.",
+          "blind_spot_right_gamma_3": "Bord droit (inférieur) du troisième emplacement de zone aveugle exprimé en gamma signé à partir de la normale à la fenêtre. Bord gauche de l'emplacement 3 + bord droit doit être supérieur à 0."
         },
         "title": "Zone cachée",
         "description": "Définissez jusqu'à 3 zones indépendantes où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Le soleil est ignoré quand il tombe à l'intérieur de l'une d'elles. Ces valeurs angulaires sont relatives en degrés dans votre angle d'acceptance solaire, où 0 est la limite d'acceptance la plus à gauche. Laissez les bords gauche et droit d'un emplacement non définis pour le sauter.\n\n[En savoir plus]({learn_more})"

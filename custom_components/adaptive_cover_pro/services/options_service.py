@@ -21,6 +21,7 @@ from ..const import (
     BLANK_TIME,
     BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOTS,
+    blind_spot_legacy_to_gamma,
     CONF_ARM_LENGTH,
     CONF_AWNING_ANGLE,
     CONF_AWNING_HOUSING_OFFSET,
@@ -393,7 +394,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     **{
         keys[sub]: _range(keys[sub])
         for keys in BLIND_SPOT_SLOTS.values()
-        for sub in ("left", "right", "elevation")
+        for sub in ("left", "right", "left_gamma", "right_gamma", "elevation")
     },
     # Per-slot elevation mode is a below/above select, not a numeric range.
     **{
@@ -722,7 +723,14 @@ _SECTION_BLIND_SPOT = frozenset(
     | {
         keys[sub]
         for keys in BLIND_SPOT_SLOTS.values()
-        for sub in ("left", "right", "elevation", "elevation_mode")
+        for sub in (
+            "left",
+            "right",
+            "left_gamma",
+            "right_gamma",
+            "elevation",
+            "elevation_mode",
+        )
     }
 )
 
@@ -895,8 +903,10 @@ def _cross_field_validate(
     # Remove keys explicitly cleared (value=None) from the merged view
     merged_active = {k: v for k, v in merged.items() if v is not None}
 
-    # Blind spot ordering — one check per slot (issue #701). Slot 1 uses the
-    # legacy unsuffixed keys; slots 2/3 are suffixed.
+    # Blind spot ordering — one check per slot (issue #701/#247). Slot 1 uses
+    # the unsuffixed keys; slots 2/3 are suffixed. Legacy FOV-relative edges use
+    # the ``right > left`` ordering; the primary signed-gamma edges must form a
+    # non-empty wedge (``left_gamma + right_gamma > 0``).
     for keys in BLIND_SPOT_SLOTS.values():
         left_key = keys["left"]
         right_key = keys["right"]
@@ -906,6 +916,16 @@ def _cross_field_validate(
             if left is not None and right is not None and right <= left:
                 raise ServiceValidationError(
                     f"{right_key} ({right}) must be greater than {left_key} ({left})."
+                )
+        left_g_key = keys["left_gamma"]
+        right_g_key = keys["right_gamma"]
+        if left_g_key in patch or right_g_key in patch:
+            left_g = merged_active.get(left_g_key)
+            right_g = merged_active.get(right_g_key)
+            if left_g is not None and right_g is not None and left_g + right_g <= 0:
+                raise ServiceValidationError(
+                    f"The blind-spot wedge for {left_g_key}/{right_g_key} is empty: "
+                    f"left edge + right edge must be greater than 0."
                 )
 
     # Temperature ordering (skipped when either side is a template — #577)
@@ -1231,6 +1251,46 @@ async def _handle_set_option(hass: HomeAssistant, call: ServiceCall) -> None:
         )
 
 
+async def _handle_set_blind_spot(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle set_blind_spot with legacy→signed-gamma back-compat (issue #247).
+
+    The signed-gamma fields (``blind_spot_*_gamma``) are the primary inputs. For
+    back-compat, a call that supplies the deprecated legacy ``blind_spot_left`` /
+    ``blind_spot_right`` (or the ``_2`` / ``_3`` slots) is converted on write to
+    the signed-gamma keys via the shared ``blind_spot_legacy_to_gamma`` helper —
+    using the target cover's ``fov_left`` — so existing automations stay
+    bit-identical while the stored frame is the new one.
+    """
+    from . import _resolve_targets  # noqa: PLC0415
+
+    base_patch = _build_patch(call.data, _SECTION_BLIND_SPOT)
+    targets = _resolve_targets(hass, call)
+    for coord in targets:
+        current = dict(coord.config_entry.options)
+        patch = dict(base_patch)
+        fov_left = int(current.get(CONF_FOV_LEFT, 90))
+        for keys in BLIND_SPOT_SLOTS.values():
+            old_left = patch.get(keys["left"])
+            old_right = patch.get(keys["right"])
+            if old_left is None or old_right is None:
+                continue  # no complete legacy pair supplied for this slot
+            new_left, new_right = blind_spot_legacy_to_gamma(
+                fov_left, old_left, old_right
+            )
+            # Overwrite (not setdefault): a legacy call must update the effective
+            # wedge even when stale gamma keys already exist.
+            patch[keys["left_gamma"]] = new_left
+            patch[keys["right_gamma"]] = new_right
+        sensor_type = coord.config_entry.data.get("sensor_type")
+        validate_options_patch(patch, current, sensor_type)
+        await apply_options_patch(hass, coord, patch)
+        _LOGGER.debug(
+            "set_blind_spot updated entry %s: %s",
+            coord.config_entry.entry_id,
+            list(patch),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -1291,9 +1351,11 @@ def register_options_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, "set_sun_tracking", _section_handler(_SECTION_SUN_TRACKING)
     )
-    hass.services.async_register(
-        DOMAIN, "set_blind_spot", _section_handler(_SECTION_BLIND_SPOT)
-    )
+
+    async def _blind_spot_handler(call: ServiceCall) -> None:
+        await _handle_set_blind_spot(hass, call)
+
+    hass.services.async_register(DOMAIN, "set_blind_spot", _blind_spot_handler)
     hass.services.async_register(
         DOMAIN, "set_interpolation", _section_handler(_SECTION_INTERPOLATION)
     )

@@ -167,7 +167,7 @@
     "gate_offset_ignored": "{indent}⚠️ Sonnenuntergangs-/Sonnenaufgangsversatz wird ignoriert, während ein Tageslicht-Gate gesetzt ist – das Gate, nicht die Uhr, entscheidet über die Grenze."
   },
   "blind_spot": {
-    "line": "🟥 Blindfleck: ignoriert Sonne bei {bs}° nach innen von der linken Akzeptanzkante (z. B. Baum oder Dachüberhang).",
+    "line": "🟥 Blindfleck: ignoriert Sonne bei {bs} (Gamma von der Fensternormale — z.B. Baum oder Dachüberhang).",
     "range": "{left}°–{right}°",
     "elevation": "bis {elev}° Höhe",
     "elevation_above": "ab {elev}° Höhe"

@@ -250,7 +250,7 @@ async def test_migrate_v3_2_copies_force_override_into_slot_5(
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
     assert entry.options[_SLOT5["min_mode"]] is True
     assert entry.version == 3
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
@@ -286,7 +286,7 @@ async def test_migrate_v3_2_no_force_config_is_a_noop(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
     assert _SLOT5["position"] not in entry.options
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> None:
@@ -299,7 +299,7 @@ async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_2_missing_position_defaults_to_zero(
@@ -326,7 +326,7 @@ async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.version == 3
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
 
@@ -363,7 +363,7 @@ async def test_migrate_v3_3_copies_legacy_single_sensor_into_list(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CUSTOM_POSITION_SLOTS[1]["sensors"]] == ["binary_sensor.table"]
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_3_leaves_legacy_key_intact(hass: HomeAssistant) -> None:
@@ -405,7 +405,7 @@ async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
         minor_version=2,
     )
     await async_migrate_entry(hass, entry)
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     for slot_n in (1, 2, 3, 4, 5):
         assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
 
@@ -428,7 +428,7 @@ async def test_migrate_v3_4_sets_position_matching_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=3)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> None:
@@ -441,7 +441,7 @@ async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -454,7 +454,7 @@ async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is False
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> None:
@@ -463,7 +463,7 @@ async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> 
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
     assert entry.version == 3
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ async def test_migrate_v3_6_sets_weather_enabled_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=5)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_WEATHER_ENABLED] is True
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_6_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -498,7 +498,7 @@ async def test_migrate_v3_6_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is False
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v3_6_explicit_true_survives(hass: HomeAssistant) -> None:
@@ -511,7 +511,7 @@ async def test_migrate_v3_6_explicit_true_survives(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is True
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> None:
@@ -520,7 +520,7 @@ async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is True
     assert entry.version == 3
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 # ---------------------------------------------------------------------------
@@ -541,7 +541,7 @@ async def test_migrate_v3_6_to_3_7_is_noop_bump(hass: HomeAssistant) -> None:
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     # Additive/no-op: no outside_temp_source key seeded, options untouched.
     assert "outside_temp_source" not in entry.options
     assert entry.options == before
@@ -557,9 +557,9 @@ async def test_migrate_v3_6_to_3_7_is_idempotent(hass: HomeAssistant) -> None:
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     assert entry.options == first
 
 
@@ -575,7 +575,7 @@ async def test_migrate_v3_6_to_3_7_preserves_explicit_source(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options["outside_temp_source"] == "max_of_live_and_forecast"
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
 
 
 # ---------------------------------------------------------------------------
@@ -604,11 +604,116 @@ async def test_migrate_v3_4_bumps_through_minor_5_without_seeding(
     )
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 7
+    assert entry.minor_version == 8
     # No dead key seeded by the v3.4→v3.5 block.
     assert "show_weather_retraction" not in entry.options
     # The only key added across the cascade is the v3.5→v3.6 weather toggle.
     assert entry.options == {**before, CONF_WEATHER_ENABLED: True}
+
+
+# ---------------------------------------------------------------------------
+# Migration: v3.7 → v3.8 — additively convert legacy FOV-relative blind-spot
+# edges to signed gamma from the window normal (issue #247). New keys are
+# setdefault-seeded per slot; legacy keys are retained (rollback-safe).
+# ---------------------------------------------------------------------------
+
+
+async def test_migrate_v3_7_to_v3_8_converts_blind_spots(hass: HomeAssistant) -> None:
+    """A v3.7 entry gains signed-gamma keys; legacy keys are preserved.
+
+    fov_left=45 → slot-1 legacy 10/30 converts to gamma 35/-15; slot-2 40/60
+    converts to 5/-15. A slot missing one edge (slot 3 left only) is skipped.
+    """
+    entry = _make_entry(
+        hass,
+        {
+            "fov_left": 45,
+            "fov_right": 45,
+            "blind_spot": True,
+            "blind_spot_left": 10,
+            "blind_spot_right": 30,
+            "blind_spot_left_2": 40,
+            "blind_spot_right_2": 60,
+            "blind_spot_left_3": 20,  # no right_3 → slot 3 skipped
+        },
+        version=3,
+        minor_version=7,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.version == 3
+    assert entry.minor_version == 8
+    opts = entry.options
+    # Slot 1 converted (new_left = 45-10 = 35, new_right = 30-45 = -15).
+    assert opts["blind_spot_left_gamma"] == 35
+    assert opts["blind_spot_right_gamma"] == -15
+    # Slot 2 converted (new_left = 45-40 = 5, new_right = 60-45 = 15).
+    assert opts["blind_spot_left_gamma_2"] == 5
+    assert opts["blind_spot_right_gamma_2"] == 15
+    # Slot 3 incomplete → no gamma keys seeded.
+    assert "blind_spot_left_gamma_3" not in opts
+    assert "blind_spot_right_gamma_3" not in opts
+    # Legacy keys retained unchanged (additive / rollback-safe).
+    assert opts["blind_spot_left"] == 10
+    assert opts["blind_spot_right"] == 30
+    assert opts["blind_spot_left_2"] == 40
+    assert opts["blind_spot_right_2"] == 60
+
+
+async def test_migrate_v3_7_to_v3_8_is_idempotent(hass: HomeAssistant) -> None:
+    """Re-running the v3.8 migration is stable and does not overwrite (setdefault)."""
+    entry = _make_entry(
+        hass,
+        {
+            "fov_left": 45,
+            "blind_spot": True,
+            "blind_spot_left": 10,
+            "blind_spot_right": 30,
+        },
+        version=3,
+        minor_version=7,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    first = dict(entry.options)
+    assert entry.minor_version == 8
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 8
+    assert entry.options == first
+
+
+async def test_migrate_v3_7_to_v3_8_preserves_existing_gamma_keys(
+    hass: HomeAssistant,
+) -> None:
+    """An entry that already stores signed-gamma keys keeps them (setdefault)."""
+    entry = _make_entry(
+        hass,
+        {
+            "fov_left": 45,
+            "blind_spot": True,
+            "blind_spot_left": 10,
+            "blind_spot_right": 30,
+            "blind_spot_left_gamma": 20,  # pre-existing, must survive
+            "blind_spot_right_gamma": -5,
+        },
+        version=3,
+        minor_version=7,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.options["blind_spot_left_gamma"] == 20
+    assert entry.options["blind_spot_right_gamma"] == -5
+
+
+async def test_migrate_v3_7_to_v3_8_no_blind_spot_is_noop(hass: HomeAssistant) -> None:
+    """An entry without any blind-spot edges only bumps the minor version."""
+    entry = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=7,
+    )
+    before = dict(entry.options)
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 8
+    assert entry.options == before
 
 
 # ---------------------------------------------------------------------------
@@ -655,13 +760,13 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     that minor are never seen as stale and the migration is dead code in
     production.
 
-    Currently the highest target is 7 (the v3.6 → v3.7 no-op block that advances
-    entries past the additive outside_temp_source option, per issue #547).
+    Currently the highest target is 8 (the v3.7 → v3.8 block that additively
+    converts legacy blind-spot edges to signed gamma, per issue #247).
     Raise this assertion whenever a new minor migration block is added.
     """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
-    assert ConfigFlowHandler.MINOR_VERSION == 7
+    assert ConfigFlowHandler.MINOR_VERSION == 8
 
 
 # ---------------------------------------------------------------------------

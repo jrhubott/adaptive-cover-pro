@@ -24,6 +24,7 @@ from .const import (
     BLANK_TIME,
     BLIND_SPOT_ELEV_MODE_ABOVE,
     BLIND_SPOT_SLOTS,
+    blind_spot_legacy_to_gamma,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     LIGHT_CLOUD_SENSOR_KEYS,
@@ -361,18 +362,23 @@ def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
 
 
 def _blind_spot_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
-    """Return per-slot ``right <= left`` errors for the blind-spot step (#701).
+    """Return per-slot empty-wedge errors for the blind-spot step (#247/#701).
 
-    Shared by the initial and options flows so the gate is identical. A slot is
-    only checked when both its edges are present; absent (optional) slots 2/3
-    produce no error.
+    Edges are signed gamma from the window normal; the wedge is
+    ``-right_gamma <= gamma <= left_gamma``, so it is non-empty only when
+    ``left_gamma + right_gamma > 0``. Shared by the initial and options flows so
+    the gate is identical. A slot is only checked when both its gamma edges are
+    present; absent (optional) slots 2/3 produce no error.
     """
     errors: dict[str, str] = {}
     for keys in BLIND_SPOT_SLOTS.values():
-        left = user_input.get(keys["left"])
-        right = user_input.get(keys["right"])
-        if left is not None and right is not None and right <= left:
-            errors[keys["right"]] = "Must be greater than 'Blind Spot Left Edge'"
+        left = user_input.get(keys["left_gamma"])
+        right = user_input.get(keys["right_gamma"])
+        if left is not None and right is not None and left + right <= 0:
+            errors[keys["right_gamma"]] = (
+                "The blind-spot wedge is empty: left edge + right edge must be "
+                "greater than 0."
+            )
     return errors
 
 
@@ -1562,8 +1568,8 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     ),
     # --- Blind spot ---
     "blind_spot.line": (
-        "🟥 Blind spot: ignores sun at {bs} inward from the left acceptance edge (e.g. tree "
-        "or roof overhang)."
+        "🟥 Blind spot: ignores sun at {bs} (gamma from the window normal — e.g. "
+        "tree or roof overhang)."
     ),
     "blind_spot.range": "{left}°–{right}°",
     "blind_spot.elevation": "up to {elev}° elevation",
@@ -2582,13 +2588,25 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # per active slot — a slot is active when its left & right are both set
     # (issue #701). Slot 1 reuses the legacy unsuffixed keys.
     if config.get(CONF_ENABLE_BLIND_SPOT):
+        fov_left_cfg = int(config.get(CONF_FOV_LEFT, 90))
         for keys in BLIND_SPOT_SLOTS.values():
-            bs_l = config.get(keys["left"])
-            bs_r = config.get(keys["right"])
-            if bs_l is None or bs_r is None:
-                continue
+            # Signed-gamma keys are the primary source (issue #247); fall back to
+            # converting the legacy FOV-relative edges via the shared helper.
+            left_gamma = config.get(keys["left_gamma"])
+            right_gamma = config.get(keys["right_gamma"])
+            if left_gamma is None or right_gamma is None:
+                old_l = config.get(keys["left"])
+                old_r = config.get(keys["right"])
+                if old_l is None or old_r is None:
+                    continue
+                left_gamma, right_gamma = blind_spot_legacy_to_gamma(
+                    fov_left_cfg, old_l, old_r
+                )
+            # Display the wedge bounds: low = -right_gamma, high = left_gamma.
             bs_e = config.get(keys["elevation"])
-            bs_parts = [L["blind_spot.range"].format(left=bs_l, right=bs_r)]
+            bs_parts = [
+                L["blind_spot.range"].format(left=-right_gamma, right=left_gamma)
+            ]
             if bs_e is not None:
                 # "above" blocks high sun; "below" (default) blocks low sun (#702).
                 bs_mode = config.get(
@@ -3489,8 +3507,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # into the new list key.
     # 3.7 (issue #547): no-op bump for the additive outside_temp_source option
     # (absent key reads as "live"); advances stale minor-6 entries.
+    # 3.8 (issue #247): blind spot stored as signed gamma from the window normal.
+    # The v3.7→v3.8 block setdefault-seeds the new blind_spot_*_gamma keys from
+    # the legacy FOV-relative edges; legacy keys are retained (read-only).
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 7
+    MINOR_VERSION = 8
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

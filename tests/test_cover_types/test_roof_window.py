@@ -720,8 +720,8 @@ def test_blind_spot_masks_obstruction_in_effective_frame():
         roof_pitch=12,
         sol_elev=10.0,
         gamma=110.0,
-        blind_spot_left=2,  # wedge upper edge fov_left - 2 = 88
-        blind_spot_right=10,  # wedge lower edge fov_left - 10 = 80
+        blind_spot_left=88,  # signed-gamma upper edge (#247)
+        blind_spot_right=-80,  # negated lower edge → wedge [80, 88]
     )
     # Sanity-pin the geometry: raw gamma 110 maps into the effective FOV.
     assert roof.gamma == pytest.approx(110.0)

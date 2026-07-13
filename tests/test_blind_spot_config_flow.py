@@ -1,4 +1,11 @@
-"""Config-flow blind-spot multi-slot rendering + per-slot validation (#701)."""
+"""Config-flow blind-spot multi-slot rendering + per-slot validation.
+
+Signed-gamma storage (issue #247): the schema exposes ``blind_spot_*_gamma``
+keys with signed sliders (left ∈ [-fov_right, fov_left], right ∈
+[-fov_left, fov_right]); the per-slot gate rejects an empty wedge
+(``left_gamma + right_gamma <= 0``). The #868 left-backfill and #852 clamp-on-save
+behaviours are preserved on the new keys.
+"""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,41 +24,65 @@ def _schema_keys(schema) -> set[str]:
     return {str(marker) for marker in schema.schema}
 
 
-def test_schema_renders_all_slot_keys():
+def _selector_for(schema, key):
+    for marker, sel in schema.schema.items():
+        if str(marker) == key:
+            return sel
+    raise KeyError(key)
+
+
+def test_schema_renders_all_gamma_slot_keys():
     schema = blind_spot_schema({"fov_left": 45, "fov_right": 45})
     keys = _schema_keys(schema)
-    # Slot 1 legacy keys
-    assert "blind_spot_left" in keys
-    assert "blind_spot_right" in keys
-    # Slots 2 and 3
-    assert "blind_spot_left_2" in keys
-    assert "blind_spot_right_2" in keys
-    assert "blind_spot_left_3" in keys
-    assert "blind_spot_right_3" in keys
+    assert "blind_spot_left_gamma" in keys
+    assert "blind_spot_right_gamma" in keys
+    assert "blind_spot_left_gamma_2" in keys
+    assert "blind_spot_right_gamma_2" in keys
+    assert "blind_spot_left_gamma_3" in keys
+    assert "blind_spot_right_gamma_3" in keys
 
 
-def test_slot_2_left_survives_omission_when_right_is_configured():
-    """A submission that configures slot 2's right edge but never touches
-    its left slider (at rest = 0) must not silently drop the slot's left
-    edge. Regression for issue #868 — HA's data_entry_flow validates
-    user_input against data_schema before the step handler runs, and
-    vol.Optional(key) with no default leaves an absent key absent.
+def test_schema_does_not_render_legacy_keys():
+    """Legacy keys are migration-read-only — they are NOT in the editable schema."""
+    keys = _schema_keys(blind_spot_schema({"fov_left": 45, "fov_right": 45}))
+    assert "blind_spot_left" not in keys
+    assert "blind_spot_right" not in keys
+
+
+def test_left_slider_bounds_are_neg_fov_right_to_fov_left():
+    schema = blind_spot_schema({"fov_left": 60, "fov_right": 40})
+    sel = _selector_for(schema, "blind_spot_left_gamma")
+    assert sel.config["min"] == -40  # -fov_right
+    assert sel.config["max"] == 60  # fov_left
+
+
+def test_right_slider_bounds_are_neg_fov_left_to_fov_right():
+    schema = blind_spot_schema({"fov_left": 60, "fov_right": 40})
+    sel = _selector_for(schema, "blind_spot_right_gamma")
+    assert sel.config["min"] == -60  # -fov_left
+    assert sel.config["max"] == 40  # fov_right
+
+
+def test_slot_2_left_gamma_survives_omission_when_right_is_configured():
+    """Regression for issue #868 on the new keys: slot-2 left at rest (0) must
+    not be dropped when its right edge is configured.
     """
     schema = blind_spot_schema({"fov_left": 45, "fov_right": 45})
     validated = schema(
-        {"blind_spot_left": 0, "blind_spot_right": 10, "blind_spot_right_2": 90}
+        {
+            "blind_spot_left_gamma": 0,
+            "blind_spot_right_gamma": 10,
+            "blind_spot_right_gamma_2": 30,
+        }
     )
-    assert validated.get("blind_spot_left_2") == 0
+    assert validated.get("blind_spot_left_gamma_2") == 0
 
 
 def test_slot_2_stays_inactive_when_completely_untouched():
-    """The new left default must not spuriously activate an unconfigured
-    slot 2/3 — right stays absent, so _make_blind_spot's guard still wins.
-    """
     schema = blind_spot_schema({"fov_left": 45, "fov_right": 45})
-    validated = schema({"blind_spot_left": 0, "blind_spot_right": 10})
-    assert validated.get("blind_spot_left_2") == 0  # new default present
-    assert "blind_spot_right_2" not in validated  # still genuinely absent
+    validated = schema({"blind_spot_left_gamma": 0, "blind_spot_right_gamma": 10})
+    assert validated.get("blind_spot_left_gamma_2") == 0  # new default present
+    assert "blind_spot_right_gamma_2" not in validated  # still genuinely absent
 
     from custom_components.adaptive_cover_pro.config_types import CoverConfig
 
@@ -59,31 +90,37 @@ def test_slot_2_stays_inactive_when_completely_untouched():
     assert len(config.blind_spots) == 1  # slot 2 did NOT activate
 
 
-def test_per_slot_left_right_errors():
+def test_per_slot_empty_wedge_errors():
     from custom_components.adaptive_cover_pro.config_flow import (
         _blind_spot_step_errors,
     )
 
-    # Slot 2 right <= left → error keyed on right_2.
+    # Empty/degenerate wedge (left_gamma + right_gamma <= 0) → error on right key.
     errors = _blind_spot_step_errors(
-        {"blind_spot_left_2": 30, "blind_spot_right_2": 20}
+        {"blind_spot_left_gamma_2": 10, "blind_spot_right_gamma_2": -20}
     )
-    assert "blind_spot_right_2" in errors
+    assert "blind_spot_right_gamma_2" in errors
 
-    # Valid slot 2 → no error.
+    # Exactly degenerate (sum == 0) → still an error.
+    errors0 = _blind_spot_step_errors(
+        {"blind_spot_left_gamma_2": 10, "blind_spot_right_gamma_2": -10}
+    )
+    assert "blind_spot_right_gamma_2" in errors0
+
+    # Valid non-empty wedge → no error.
     assert (
-        _blind_spot_step_errors({"blind_spot_left_2": 10, "blind_spot_right_2": 30})
+        _blind_spot_step_errors(
+            {"blind_spot_left_gamma_2": 35, "blind_spot_right_gamma_2": -15}
+        )
         == {}
     )
 
     # Absent slot keys → no error.
-    assert _blind_spot_step_errors({"blind_spot_left": 5}) == {}
+    assert _blind_spot_step_errors({"blind_spot_left_gamma": 5}) == {}
 
 
 # ----------------------------------------------------------------------------
-# Geometry-save clamp (#852): narrowing the FOV on the geometry step must
-# re-clamp stale blind-spot slot values, not leave them stranded past the new
-# span's slider max.
+# Geometry-save clamp (#852) on the signed-gamma keys.
 # ----------------------------------------------------------------------------
 
 
@@ -103,17 +140,16 @@ def _options_flow(options: dict, sensor_type=CoverType.BLIND):
 
 
 @pytest.mark.asyncio
-async def test_geometry_save_clamps_stale_blind_spot_to_narrowed_fov():
-    # Starting FOV 86/86 (edges=172) with an enabled blind-spot slot pinned at
-    # the old edge; narrowing to 75/75 (edges=150) must clamp the stored
-    # right value down to the new max instead of leaving it stranded at 172.
+async def test_geometry_save_clamps_stale_gamma_to_narrowed_fov():
+    # FOV 86/86 with a gamma edge pinned near the old edge; narrowing to 75/75
+    # must clamp the stored gamma down to the new signed bound.
     flow = _options_flow(
         {
             CONF_FOV_LEFT: 86,
             CONF_FOV_RIGHT: 86,
             CONF_ENABLE_BLIND_SPOT: True,
-            "blind_spot_left": 0,
-            "blind_spot_right": 172,
+            "blind_spot_left_gamma": 86,
+            "blind_spot_right_gamma": 0,
         }
     )
     result = await flow.async_step_geometry(
@@ -124,5 +160,5 @@ async def test_geometry_save_clamps_stale_blind_spot_to_narrowed_fov():
         }
     )
     assert result["type"] == "menu"  # advanced (saved)
-    assert flow.options["blind_spot_right"] == 150
-    assert flow.options["blind_spot_left"] == 0  # already in range, unchanged
+    assert flow.options["blind_spot_left_gamma"] == 75  # clamped to new fov_left
+    assert flow.options["blind_spot_right_gamma"] == 0  # in range, unchanged

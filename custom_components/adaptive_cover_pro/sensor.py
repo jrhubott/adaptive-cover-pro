@@ -518,6 +518,14 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         # every active slot.
         ranges: list[list[float]] = []
         for keys in BLIND_SPOT_SLOTS.values():
+            # Signed-gamma keys are the primary source (issue #247): the wedge is
+            # -right_gamma..left_gamma, so the emitted [right, left] pair is
+            # [-right_gamma, left_gamma] — byte-identical to the legacy formula.
+            lg = config.get(keys["left_gamma"])
+            rg = config.get(keys["right_gamma"])
+            if lg is not None and rg is not None:
+                ranges.append([-rg, lg])
+                continue
             bs_left = config.get(keys["left"])
             bs_right = config.get(keys["right"])
             if bs_left is None or bs_right is None:

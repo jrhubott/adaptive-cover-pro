@@ -22,25 +22,32 @@ def _load():
         return yaml.safe_load(fh)
 
 
-def test_set_blind_spot_left_description_uses_acceptance_frame():
-    svc = _load()["set_blind_spot"]["fields"]["blind_spot_left"]
-    desc = svc["description"]
-    assert "window azimuth" not in desc.lower()
-    assert "acceptance edge" in desc.lower()
+def test_set_blind_spot_gamma_fields_exist_with_signed_range():
+    """The primary signed-gamma fields are documented with a -180..180 range."""
+    fields = _load()["set_blind_spot"]["fields"]
+    for key in ("blind_spot_left_gamma", "blind_spot_right_gamma"):
+        assert key in fields
+        number = fields[key]["selector"]["number"]
+        assert number["min"] == -180
+        assert number["max"] == 180
 
 
-def test_set_blind_spot_right_description_uses_acceptance_frame():
-    svc = _load()["set_blind_spot"]["fields"]["blind_spot_right"]
-    desc = svc["description"]
-    assert "window azimuth" not in desc.lower()
-    assert "acceptance edge" in desc.lower()
-    assert "greater than" in desc.lower()
+def test_set_blind_spot_gamma_description_uses_window_normal_frame():
+    left = _load()["set_blind_spot"]["fields"]["blind_spot_left_gamma"]["description"]
+    assert "window normal" in left.lower()
 
 
-def test_set_blind_spot_service_description_mentions_acceptance_frame():
-    svc = _load()["set_blind_spot"]
-    desc = svc["description"].lower()
-    assert "acceptance" in desc
+def test_set_blind_spot_legacy_fields_are_deprecated():
+    """Legacy fields remain accepted for back-compat but are flagged deprecated."""
+    fields = _load()["set_blind_spot"]["fields"]
+    for key in ("blind_spot_left", "blind_spot_right"):
+        assert key in fields
+        assert "deprecated" in fields[key]["description"].lower()
+
+
+def test_set_blind_spot_service_description_mentions_window_normal():
+    desc = _load()["set_blind_spot"]["description"].lower()
+    assert "window normal" in desc
 
 
 def test_set_position_service_exists_in_yaml():

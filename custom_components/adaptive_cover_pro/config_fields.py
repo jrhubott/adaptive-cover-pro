@@ -1574,6 +1574,8 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
 def _blind_spot_specs() -> list[FieldSpec]:
     specs: list[FieldSpec] = []
     for keys in const.BLIND_SPOT_SLOTS.values():
+        # Legacy FOV-relative edges (migration-read-only) — kept in the registry
+        # so OPTION_RANGES/FIELD_VALIDATORS still bound the read-only keys.
         specs.append(
             FieldSpec(
                 keys["left"],
@@ -1588,6 +1590,23 @@ def _blind_spot_specs() -> list[FieldSpec]:
                 SECTION_BLIND_SPOT,
                 ValidatorKind.RANGE,
                 rng=const._RANGE_BLIND_SPOT_RIGHT,
+            )
+        )
+        # Signed-gamma edges (issue #247) — the primary editable keys.
+        specs.append(
+            FieldSpec(
+                keys["left_gamma"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_LEFT_GAMMA,
+            )
+        )
+        specs.append(
+            FieldSpec(
+                keys["right_gamma"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_RIGHT_GAMMA,
             )
         )
         specs.append(

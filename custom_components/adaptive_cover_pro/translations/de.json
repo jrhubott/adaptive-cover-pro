@@ -512,32 +512,32 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Blindfleck linke Akzeptanzkante",
-          "blind_spot_right": "Blindfleck rechte Akzeptanzkante",
           "blind_spot_elevation": "Blindfleck-Höhe",
-          "blind_spot_left_2": "Blindfleck linke Akzeptanzkante (Slot 2)",
-          "blind_spot_right_2": "Blindfleck rechte Akzeptanzkante (Slot 2)",
           "blind_spot_elevation_2": "Blindfleck 2 Höhe",
-          "blind_spot_left_3": "Blindfleck linke Akzeptanzkante (Slot 3)",
-          "blind_spot_right_3": "Blindfleck rechte Akzeptanzkante (Slot 3)",
           "blind_spot_elevation_3": "Blindfleck 3 Höhe",
           "blind_spot_elevation_mode": "Blindfleck-Höhenmodus",
           "blind_spot_elevation_mode_2": "Blindfleck 2 Höhenmodus",
-          "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus"
+          "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus",
+          "blind_spot_left_gamma": "Blindfleck linke Kante (Gamma von der Fensternormale)",
+          "blind_spot_right_gamma": "Blindfleck rechte Kante (Gamma von der Fensternormale)",
+          "blind_spot_left_gamma_2": "Blindfleck 2 linke Kante (Gamma von der Fensternormale)",
+          "blind_spot_right_gamma_2": "Blindfleck 2 rechte Kante (Gamma von der Fensternormale)",
+          "blind_spot_left_gamma_3": "Blindfleck 3 linke Kante (Gamma von der Fensternormale)",
+          "blind_spot_right_gamma_3": "Blindfleck 3 rechte Kante (Gamma von der Fensternormale)"
         },
         "data_description": {
-          "blind_spot_left": "Linke Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante). Wobei 0 = an der äußersten linken Akzeptanzkante liegt. Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu ermitteln.",
-          "blind_spot_right": "Rechte Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante, muss > linke Kante sein). Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 20. Dies markiert, wo die Obstruktion horizontal endet. Erstellt eine „Sonne hier nicht verfolgen\"-Zone zwischen linker und rechter Kante.",
           "blind_spot_elevation": "Sonnenhöhe (Grad über dem Horizont) Schwellenwert, wo der Blindfleck gilt. Pairing mit dem Höhenmodus: Im Modus 'darunter' blockiert der Fleck die Sonne unter oder unter diesem Winkel (z. B. ein Dachüberstand, der nur tiefe Sonne blockiert - auf 30 einstellen); im Modus 'darüber' blockiert er die Sonne unter oder über diesem Winkel (z. B. ein Balkon darüber - auf 50 einstellen). Sonnenhöhe: 0°=Horizont, 45°=halber Weg, 90°=direkt über Kopf.",
-          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 2 zu deaktivieren.",
-          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 2 sein).",
           "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
-          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 3 zu deaktivieren.",
-          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 3 sein).",
           "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
           "blind_spot_elevation_mode": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt. „Unterhalb\" (Standard) blockiert TIEFE Sonne (ein Baum oder Dachüberhang); „Oberhalb\" blockiert HOHE Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische). Ist nur relevant, wenn eine Höhe gesetzt ist.",
           "blind_spot_elevation_mode_2": "Welche Seite des Höhenschwellenwerts von Slot 2 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 2 Höhe gesetzt ist.",
-          "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist."
+          "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist.",
+          "blind_spot_left_gamma": "Obere (linke) Kante des Blindfleck-Keils als signiertes Gamma von der Fensternormale (Grad): 0 = geradeaus, positiv = Richtung der linken Akzeptanzkante, innerhalb des Sonnen-Akzeptanzkegels. Beispiel: Bei einem 45°-Sonnen-Akzeptanzwinkel nach links und einem Baum, der 10-20° von dieser Kante blockiert, setzen Sie dies auf 35. Der Keil ist -rechte Kante ≤ Gamma ≤ linke Kante.",
+          "blind_spot_right_gamma": "Untere (rechte) Kante des Blindfleck-Keils, eingegeben als Negation — die untere Grenze des Keils ist -dieser Wert (signiertes Gamma von der Fensternormale, innerhalb des Sonnen-Akzeptanzkegels). Linke Kante + rechte Kante müssen größer als 0 sein. Beispiel: Bei der linken Kante bei 35 und der Obstruktion bis Gamma 15, setzen Sie dies auf -15.",
+          "blind_spot_left_gamma_2": "Optionaler zweiter Blindfleck-Slot. Linke (obere) Kante als signiertes Gamma von der Fensternormale. Lassen Sie diese und die rechte Kante leer, um Slot 2 zu deaktivieren.",
+          "blind_spot_right_gamma_2": "Rechte (untere) Kante des zweiten Blindfleck-Slots als signiertes Gamma von der Fensternormale. Linke Kante + rechte Kante von Slot 2 müssen größer als 0 sein.",
+          "blind_spot_left_gamma_3": "Optionaler dritter Blindfleck-Slot. Linke (obere) Kante als signiertes Gamma von der Fensternormale. Lassen Sie diese und die rechte Kante leer, um Slot 3 zu deaktivieren.",
+          "blind_spot_right_gamma_3": "Rechte (untere) Kante des dritten Blindfleck-Slots als signiertes Gamma von der Fensternormale. Linke Kante + rechte Kante von Slot 3 müssen größer als 0 sein."
         },
         "title": "Blindfleck",
         "description": "Konfigurieren Sie bis zu 3 Blindfleck-Slots (Achsen, wo die Sonne blockiert ist). Geben Sie die Offset-Grad nach innen von jeder Akzeptanzkante an — z. B. 15° bedeutet: ignoriere die Sonne 15° nach innen von links/rechts."
@@ -1350,32 +1350,32 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Blindfleck linke Akzeptanzkante",
-          "blind_spot_right": "Blindfleck rechte Akzeptanzkante",
           "blind_spot_elevation": "Blindfleck-Höhe",
-          "blind_spot_left_2": "Blindfleck linke Akzeptanzkante (Slot 2)",
-          "blind_spot_right_2": "Blindfleck rechte Akzeptanzkante (Slot 2)",
           "blind_spot_elevation_2": "Blindfleck 2 Höhe",
-          "blind_spot_left_3": "Blindfleck linke Akzeptanzkante (Slot 3)",
-          "blind_spot_right_3": "Blindfleck rechte Akzeptanzkante (Slot 3)",
           "blind_spot_elevation_3": "Blindfleck 3 Höhe",
           "blind_spot_elevation_mode": "Blindfleck-Höhenmodus",
           "blind_spot_elevation_mode_2": "Blindfleck 2 Höhenmodus",
-          "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus"
+          "blind_spot_elevation_mode_3": "Blindfleck 3 Höhenmodus",
+          "blind_spot_left_gamma": "Blindfleck linke Kante (Gamma von der Fensternormale)",
+          "blind_spot_right_gamma": "Blindfleck rechte Kante (Gamma von der Fensternormale)",
+          "blind_spot_left_gamma_2": "Blindfleck 2 linke Kante (Gamma von der Fensternormale)",
+          "blind_spot_right_gamma_2": "Blindfleck 2 rechte Kante (Gamma von der Fensternormale)",
+          "blind_spot_left_gamma_3": "Blindfleck 3 linke Kante (Gamma von der Fensternormale)",
+          "blind_spot_right_gamma_3": "Blindfleck 3 rechte Kante (Gamma von der Fensternormale)"
         },
         "data_description": {
-          "blind_spot_left": "Linke Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante). Wobei 0 = an der äußersten linken Akzeptanzkante liegt. Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu ermitteln.",
-          "blind_spot_right": "Rechte Kante der Blindfleck-Zone (horizontaler Winkel in Grad von der linken Akzeptanzkante, muss > linke Kante sein). Beispiel: Wenn Ihr linker Sonnen-Akzeptanzwinkel 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, setzen Sie dies auf 20. Dies markiert, wo die Obstruktion horizontal endet. Erstellt eine „Sonne hier nicht verfolgen\"-Zone zwischen linker und rechter Kante.",
           "blind_spot_elevation": "Sonnenhöhe (Grad über dem Horizont) Schwellenwert, wo der Blindfleck gilt. Pairing mit dem Höhenmodus: Im Modus 'darunter' blockiert der Fleck die Sonne unter oder unter diesem Winkel (z. B. ein Dachüberstand, der nur tiefe Sonne blockiert - auf 30 einstellen); im Modus 'darüber' blockiert er die Sonne unter oder über diesem Winkel (z. B. ein Balkon darüber - auf 50 einstellen). Sonnenhöhe: 0°=Horizont, 45°=halber Weg, 90°=direkt über Kopf.",
-          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 2 zu deaktivieren.",
-          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 2 sein).",
           "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
-          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von der linken Akzeptanzkante. Lassen Sie diese und die rechte Kante ungesetzt, um Slot 3 zu deaktivieren.",
-          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von der linken Akzeptanzkante, muss größer als die linke Kante von Slot 3 sein).",
           "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
           "blind_spot_elevation_mode": "Welche Seite des Höhenschwellenwerts der Blindfleck abdeckt. „Unterhalb\" (Standard) blockiert TIEFE Sonne (ein Baum oder Dachüberhang); „Oberhalb\" blockiert HOHE Sonne (ein Hindernis über Kopf wie Balkon oder tiefe Nische). Ist nur relevant, wenn eine Höhe gesetzt ist.",
           "blind_spot_elevation_mode_2": "Welche Seite des Höhenschwellenwerts von Slot 2 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 2 Höhe gesetzt ist.",
-          "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist."
+          "blind_spot_elevation_mode_3": "Welche Seite des Höhenschwellenwerts von Slot 3 es abdeckt: „Unterhalb\" blockiert tiefe Sonne, „Oberhalb\" blockiert hohe Sonne. Ist nur relevant, wenn Slots 3 Höhe gesetzt ist.",
+          "blind_spot_left_gamma": "Obere (linke) Kante des Blindfleck-Keils als signiertes Gamma von der Fensternormale (Grad): 0 = geradeaus, positiv = Richtung der linken Akzeptanzkante, innerhalb des Sonnen-Akzeptanzkegels. Beispiel: Bei einem 45°-Sonnen-Akzeptanzwinkel nach links und einem Baum, der 10-20° von dieser Kante blockiert, setzen Sie dies auf 35. Der Keil ist -rechte Kante ≤ Gamma ≤ linke Kante.",
+          "blind_spot_right_gamma": "Untere (rechte) Kante des Blindfleck-Keils, eingegeben als Negation — die untere Grenze des Keils ist -dieser Wert (signiertes Gamma von der Fensternormale, innerhalb des Sonnen-Akzeptanzkegels). Linke Kante + rechte Kante müssen größer als 0 sein. Beispiel: Bei der linken Kante bei 35 und der Obstruktion bis Gamma 15, setzen Sie dies auf -15.",
+          "blind_spot_left_gamma_2": "Optionaler zweiter Blindfleck-Slot. Linke (obere) Kante als signiertes Gamma von der Fensternormale. Lassen Sie diese und die rechte Kante leer, um Slot 2 zu deaktivieren.",
+          "blind_spot_right_gamma_2": "Rechte (untere) Kante des zweiten Blindfleck-Slots als signiertes Gamma von der Fensternormale. Linke Kante + rechte Kante von Slot 2 müssen größer als 0 sein.",
+          "blind_spot_left_gamma_3": "Optionaler dritter Blindfleck-Slot. Linke (obere) Kante als signiertes Gamma von der Fensternormale. Lassen Sie diese und die rechte Kante leer, um Slot 3 zu deaktivieren.",
+          "blind_spot_right_gamma_3": "Rechte (untere) Kante des dritten Blindfleck-Slots als signiertes Gamma von der Fensternormale. Linke Kante + rechte Kante von Slot 3 müssen größer als 0 sein."
         },
         "title": "Blindfleck",
         "description": "Konfigurieren Sie bis zu 3 Blindfleck-Slots (Achsen, wo die Sonne blockiert ist). Geben Sie die Offset-Grad nach innen von jeder Akzeptanzkante an — z. B. 15° bedeutet: ignoriere die Sonne 15° nach innen von links/rechts."

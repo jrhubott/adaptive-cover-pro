@@ -167,7 +167,7 @@
     "gate_offset_ignored": "{indent}⚠️ Le décalage de coucher/lever de soleil est ignoré lorsqu'un filtre de jour est défini — le filtre, et non l'horloge, décide la limite."
   },
   "blind_spot": {
-    "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur à partir du bord d'acceptance gauche (par ex. arbre ou surplomb de toit).",
+    "line": "🟥 Zone aveugle : ignore le soleil à {bs} (gamma à partir de la normale à la fenêtre — par ex. arbre ou débord de toit).",
     "range": "{left}°–{right}°",
     "elevation": "jusqu'à {elev}° élévation",
     "elevation_above": "au-dessus de {elev}° élévation"

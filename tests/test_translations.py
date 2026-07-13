@@ -207,18 +207,18 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_en_blind_spot_labels_name_acceptance_frame() -> None:
-    """EN labels for blind_spot_left/right must name the acceptance-edge frame (#604)."""
+def test_en_blind_spot_labels_name_window_normal_frame() -> None:
+    """EN labels for the gamma edges must name the window-normal frame (#247)."""
     en = _load(TRANSLATIONS_DIR / "en.json")
     for step_key in ("options", "config"):
         bs = en[step_key]["step"]["blind_spot"]["data"]
-        assert "acceptance" in bs["blind_spot_left"].lower(), (
-            f"{step_key}.blind_spot.data.blind_spot_left label must name the "
-            "acceptance-edge frame"
+        assert "window normal" in bs["blind_spot_left_gamma"].lower(), (
+            f"{step_key}.blind_spot.data.blind_spot_left_gamma label must name the "
+            "window-normal frame"
         )
-        assert "acceptance" in bs["blind_spot_right"].lower(), (
-            f"{step_key}.blind_spot.data.blind_spot_right label must name the "
-            "acceptance-edge frame"
+        assert "window normal" in bs["blind_spot_right_gamma"].lower(), (
+            f"{step_key}.blind_spot.data.blind_spot_right_gamma label must name the "
+            "window-normal frame"
         )
 
 
@@ -283,10 +283,10 @@ def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
     en = _load(TRANSLATIONS_DIR / "en.json")
     for step_key in ("options", "config"):
         dd = en[step_key]["step"]["blind_spot"]["data_description"]
-        for key in ("blind_spot_left", "blind_spot_right"):
+        for key in ("blind_spot_left_gamma", "blind_spot_right_gamma"):
             assert "window azimuth" not in dd[key].lower(), (
                 f"{step_key}.blind_spot.data_description.{key} still references "
-                f"'window azimuth' — Option 2 requires FOV-left-edge framing"
+                f"'window azimuth' — issue #247 requires window-normal framing"
             )
 
 

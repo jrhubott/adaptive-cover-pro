@@ -142,8 +142,9 @@ class TestSunGeometryReasonCode:
     def test_blind_spot(self, mock_dt):
         mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         config = _make_config(
-            blind_spot_left=10, blind_spot_right=30, blind_spot_on=True
+            blind_spot_left=35, blind_spot_right=-15, blind_spot_on=True
         )
+        # gamma = 180 - 160 = 20, signed-gamma wedge [15, 35] (#247)
         sg = SunGeometry(160.0, 45.0, _sun_data_daytime(), config, _make_logger())
         assert sg.control_state_reason_code == ReasonCode.ENGINE_DEFAULT_BLIND_SPOT
         assert sg.control_state_reason == render_en(

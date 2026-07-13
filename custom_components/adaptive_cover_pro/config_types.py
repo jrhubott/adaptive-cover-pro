@@ -14,6 +14,7 @@ from .const import (
     DEFAULT_WEATHER_ENABLED,
     BlindSpot,
     TiltMode,
+    blind_spot_legacy_to_gamma,
 )
 
 
@@ -41,13 +42,40 @@ def _make_blind_spot(
     )
 
 
-def _extra_blind_spots_from(get: Any, *, enabled: bool) -> tuple[BlindSpot, ...]:
+def _resolve_slot_gamma(
+    get: Any, keys: dict[str, str], fov_left: float
+) -> tuple[int | None, int | None]:
+    """Resolve a slot's signed-gamma ``(left, right)`` edges (issue #247).
+
+    The signed-gamma keys are the primary storage: when BOTH
+    ``blind_spot_left_gamma`` and ``blind_spot_right_gamma`` are present they win
+    verbatim. Otherwise fall back to the legacy FOV-relative edges, converted via
+    the single shared :func:`blind_spot_legacy_to_gamma` (so migration and this
+    runtime fallback can never diverge). Returns ``(None, None)`` when the slot
+    is inactive on both paths — ``_make_blind_spot`` then treats it as unset.
+    """
+    new_left = get(keys["left_gamma"])
+    new_right = get(keys["right_gamma"])
+    if new_left is not None and new_right is not None:
+        return int(new_left), int(new_right)
+    old_left = get(keys["left"])
+    old_right = get(keys["right"])
+    if old_left is not None and old_right is not None:
+        return blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+    return None, None
+
+
+def _extra_blind_spots_from(
+    get: Any, *, enabled: bool, fov_left: float
+) -> tuple[BlindSpot, ...]:
     """Build blind-spot slots 2..N from an option accessor.
 
     Slot 1 is intentionally excluded: it derives *live* from the flat
     ``blind_spot_*`` fields on :class:`CoverConfig` (so post-construction
     mutation of those fields is reflected). The whole feature is gated by the
-    master ``enabled`` flag.
+    master ``enabled`` flag. Each slot's edges are resolved to signed gamma via
+    :func:`_resolve_slot_gamma` (new keys preferred, legacy converted with
+    ``fov_left``).
     """
     if not enabled:
         return ()
@@ -56,9 +84,10 @@ def _extra_blind_spots_from(get: Any, *, enabled: bool) -> tuple[BlindSpot, ...]
         if n == 1:
             continue
         keys = BLIND_SPOT_SLOTS[n]
+        left, right = _resolve_slot_gamma(get, keys, fov_left)
         bs = _make_blind_spot(
-            get(keys["left"]),
-            get(keys["right"]),
+            left,
+            right,
             get(keys["elevation"]),
             get(keys["elevation_mode"]),
         )
@@ -124,6 +153,12 @@ class CoverConfig:
     min_pos: int
     max_pos_sun_only: bool  # enable_max_position
     min_pos_sun_only: bool  # enable_min_position
+    # Slot-1 blind-spot edges as SIGNED GAMMA from the window normal (issue
+    # #247): ``blind_spot_left`` is the upper gamma edge, ``blind_spot_right``
+    # the negated lower edge, so the engine wedge is
+    # ``-blind_spot_right <= gamma <= blind_spot_left``. ``from_options``
+    # resolves these from the new signed-gamma keys or converts the legacy
+    # FOV-relative keys; direct construction supplies gamma values.
     blind_spot_left: int | None
     blind_spot_right: int | None
     blind_spot_elevation: int | None
@@ -171,8 +206,6 @@ class CoverConfig:
             CONF_AZIMUTH,
             CONF_BLIND_SPOT_ELEVATION,
             CONF_BLIND_SPOT_ELEVATION_MODE,
-            CONF_BLIND_SPOT_LEFT,
-            CONF_BLIND_SPOT_RIGHT,
             CONF_DEFAULT_HEIGHT,
             CONF_ENABLE_BLIND_SPOT,
             CONF_ENABLE_MAX_POSITION,
@@ -191,13 +224,20 @@ class CoverConfig:
             DEFAULT_FOV_RIGHT,
         )
 
+        fov_left = (
+            options[CONF_FOV_LEFT]
+            if options.get(CONF_FOV_LEFT) is not None
+            else DEFAULT_FOV_LEFT
+        )
+        # Slot-1 signed-gamma edges (issue #247): prefer the new keys, else
+        # convert the legacy FOV-relative edges with the resolved fov_left.
+        blind_spot_left, blind_spot_right = _resolve_slot_gamma(
+            options.get, BLIND_SPOT_SLOTS[1], fov_left
+        )
+
         return cls(
             win_azi=options.get(CONF_AZIMUTH) or 180,
-            fov_left=(
-                options[CONF_FOV_LEFT]
-                if options.get(CONF_FOV_LEFT) is not None
-                else DEFAULT_FOV_LEFT
-            ),
+            fov_left=fov_left,
             fov_right=(
                 options[CONF_FOV_RIGHT]
                 if options.get(CONF_FOV_RIGHT) is not None
@@ -223,15 +263,17 @@ class CoverConfig:
                 if options.get(CONF_MIN_POSITION_SUN_TRACKING) is not None
                 else None
             ),
-            blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
-            blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
+            blind_spot_left=blind_spot_left,
+            blind_spot_right=blind_spot_right,
             blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),
             blind_spot_elevation_mode=options.get(
                 CONF_BLIND_SPOT_ELEVATION_MODE, DEFAULT_BLIND_SPOT_ELEVATION_MODE
             ),
             blind_spot_on=options.get(CONF_ENABLE_BLIND_SPOT, False),
             extra_blind_spots=_extra_blind_spots_from(
-                options.get, enabled=options.get(CONF_ENABLE_BLIND_SPOT, False)
+                options.get,
+                enabled=options.get(CONF_ENABLE_BLIND_SPOT, False),
+                fov_left=fov_left,
             ),
             min_elevation=options.get(CONF_MIN_ELEVATION, None),
             max_elevation=options.get(CONF_MAX_ELEVATION, None),
