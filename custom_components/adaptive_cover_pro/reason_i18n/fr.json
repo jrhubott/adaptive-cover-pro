@@ -1,110 +1,110 @@
 {
   "fragment": {
-    "sunset_position": "sunset position",
-    "default_position": "default position",
-    "cloudy_position": "cloudy position",
-    "coverage_step": " (coverage step, max {steps})",
-    "z_adjusted": " (Z-adjusted)",
-    "bypass_note": " [bypasses automatic control]",
-    "season_extreme_heat": "extreme heat",
-    "season_tracking_off": "default: tracking off this season",
-    "season_summer": "summer",
-    "season_winter": "winter",
-    "season_glare_low_light": "glare control (low light)",
-    "season_glare": "glare control",
-    "trigger_not_sunny": "weather not sunny",
-    "trigger_lux_below": "lux below threshold",
-    "trigger_irradiance_below": "irradiance below threshold",
-    "trigger_cloud_above": "cloud coverage above threshold",
-    "trigger_smoothing_hold": "smoothing hold",
-    "trigger_template": "template",
-    "trigger_fallback": "trigger"
+    "sunset_position": "position coucher du soleil",
+    "default_position": "position par défaut",
+    "cloudy_position": "position nuageux",
+    "coverage_step": " (étape de couverture, max {steps})",
+    "z_adjusted": " (Z-ajusté)",
+    "bypass_note": " [contourne le contrôle automatique]",
+    "season_extreme_heat": "chaleur extrême",
+    "season_tracking_off": "défaut : suivi désactivé cette saison",
+    "season_summer": "été",
+    "season_winter": "hiver",
+    "season_glare_low_light": "contrôle d'éblouissement (faible luminosité)",
+    "season_glare": "contrôle d'éblouissement",
+    "trigger_not_sunny": "météo non ensoleillée",
+    "trigger_lux_below": "lux sous le seuil",
+    "trigger_irradiance_below": "irradiance sous le seuil",
+    "trigger_cloud_above": "couverture nuageuse au-dessus du seuil",
+    "trigger_smoothing_hold": "maintien de lissage",
+    "trigger_template": "modèle",
+    "trigger_fallback": "déclencheur"
   },
   "solar": {
-    "tracking": "sun within acceptance angle — position {position}%{suffix}"
+    "tracking": "soleil dans l'angle d'acceptation — position {position}%{suffix}"
   },
   "manual": {
-    "holding_solar": "manual override active — holding {held}% (solar would-be {position}%)",
-    "solar_only": "manual override active — solar would-be {position}%",
-    "holding_label": "manual override active — holding {held}% ({pos_label} would be {position}%)",
-    "label_only": "manual override active — {pos_label} {position}%"
+    "holding_solar": "dérogation manuelle active — maintien {held}% (soleil serait {position}%)",
+    "solar_only": "dérogation manuelle active — soleil serait {position}%",
+    "holding_label": "dérogation manuelle active — maintien {held}% ({pos_label} serait {position}%)",
+    "label_only": "dérogation manuelle active — {pos_label} {position}%"
   },
   "occupancy": {
-    "holding": "occupancy timeout — holding position {held}% (sun within acceptance angle)",
-    "label": "occupancy timeout active — {pos_label} {position}%"
+    "holding": "délai d'absence — maintien position {held}% (soleil dans l'angle d'acceptation)",
+    "label": "délai d'absence actif — {pos_label} {position}%"
   },
   "climate": {
-    "active": "climate mode active ({season}) — position {position}%"
+    "active": "mode climatique actif ({season}) — position {position}%"
   },
   "glare": {
-    "protection": "glare zone protection ({zones}) — effective distance {distance:.2f}m{z_suffix} → position {position}%"
+    "protection": "protection zone d'éblouissement ({zones}) — distance effective {distance:.2f}m{z_suffix} → position {position}%"
   },
   "cloud": {
-    "suppression": "cloud/low-light suppression — {triggers} → {pos_label} {position}%"
+    "suppression": "suppression nuages/faible luminosité — {triggers} → {pos_label} {position}%"
   },
   "weather": {
-    "active": "weather override active — position {position}%{bypass_note}"
+    "active": "dérogation météo active — position {position}%{bypass_note}"
   },
   "custom": {
-    "head_named": "{name} active",
-    "head_slot": "custom position #{slot} active ({trigger})",
-    "use_my": "{head} — use My position ({position}%){bypass_note}",
+    "head_named": "{name} actif",
+    "head_slot": "position personnalisée #{slot} active ({trigger})",
+    "use_my": "{head} — utiliser ma position ({position}%){bypass_note}",
     "position": "{head} — position {position}%{bypass_note}"
   },
   "default": {
-    "sunset_use_my": "sunset position — use My position ({position}%)",
-    "no_condition": "no active condition — {pos_label} {position}%"
+    "sunset_use_my": "position coucher du soleil — utiliser ma position ({position}%)",
+    "no_condition": "aucune condition active — {pos_label} {position}%"
   },
   "group": {
-    "lock": "group lock from group {group_id} — holding {position}%",
-    "scene": "group scene '{scene}' from group {group_id} → {position}%"
+    "lock": "verrouillage groupe depuis groupe {group_id} — maintien {position}%",
+    "scene": "scène groupe '{scene}' depuis groupe {group_id} → {position}%"
   },
   "registry": {
-    "outprioritized": "outprioritized by {handler}",
-    "floor_raised": "floor raised winner from {from_pos}% to {to_pos}% by {label}",
-    "floor_inactive": "floor {floor_pos}% inactive (winner {winner_pos}% above floor)",
-    "tilt_applied": "tilt-only: slat angle fixed at {tilt}% by {label}; position driven by {handler}",
-    "tilt_deferred": "tilt-only {tilt}% deferred — {handler} already set tilt {winner_tilt}%"
+    "outprioritized": "déprioritisé par {handler}",
+    "floor_raised": "minimum augmenté gagnant de {from_pos}% à {to_pos}% par {label}",
+    "floor_inactive": "minimum {floor_pos}% inactif (gagnant {winner_pos}% au-dessus du minimum)",
+    "tilt_applied": "inclinaison seule : angle lame fixé à {tilt}% par {label} ; position pilotée par {handler}",
+    "tilt_deferred": "inclinaison seule {tilt}% différée — {handler} a déjà défini inclinaison {winner_tilt}%"
   },
   "builder": {
-    "unknown": "Unknown",
-    "control_occupancy_timeout": "Occupancy Timeout",
-    "control_manual_override": "Manual Override",
-    "control_tracking_off_season": "Default: Tracking Off This Season",
-    "control_tilt_fixed": "{reason} — tilt fixed by Custom #{slot}",
-    "outside_window": "Outside time window → {pos_label} {pos}% (commands paused)",
-    "manual_divergence": "manual override active — holding cover at {held}% (solar would be {raw}%)",
-    "tilt_fixed": "tilt fixed at {tilt}% by Custom #{slot}",
-    "interpolated": "interpolated → {final}%",
-    "inversed": "inversed → {final}%"
+    "unknown": "Inconnu",
+    "control_occupancy_timeout": "Délai d'Absence",
+    "control_manual_override": "Dérogation Manuelle",
+    "control_tracking_off_season": "Défaut : Suivi Désactivé Cette Saison",
+    "control_tilt_fixed": "{reason} — inclinaison fixée par Position Personnalisée #{slot}",
+    "outside_window": "En dehors de la plage horaire → {pos_label} {pos}% (commandes en pause)",
+    "manual_divergence": "dérogation manuelle active — maintien protection à {held}% (soleil serait {raw}%)",
+    "tilt_fixed": "inclinaison fixée à {tilt}% par Position Personnalisée #{slot}",
+    "interpolated": "interpolé → {final}%",
+    "inversed": "inversé → {final}%"
   },
   "engine": {
-    "direct_sun": "Direct Sun",
-    "default_sunset_offset": "Default: Sunset Offset",
-    "default_elevation_limit": "Default: Elevation Limit",
-    "default_acceptance_angle_exit": "Default: Acceptance Angle Exit",
-    "default_blind_spot": "Default: Blind Spot",
-    "default": "Default"
+    "direct_sun": "Soleil Direct",
+    "default_sunset_offset": "Défaut : Décalage Coucher du Soleil",
+    "default_elevation_limit": "Défaut : Limite d'Élévation",
+    "default_acceptance_angle_exit": "Défaut : Sortie Angle d'Acceptation",
+    "default_blind_spot": "Défaut : Angle Mort",
+    "default": "Défaut"
   },
   "skip": {
-    "outside_window": "outside time window",
-    "sun_outside": "sun outside acceptance angle or elevation limits",
-    "manual_not_active": "manual override not active",
-    "occupancy_disabled": "occupancy detection disabled",
-    "occupancy_not_active": "occupancy timeout not active",
-    "climate_mode_off": "climate mode not enabled",
-    "climate_readings_unavailable": "climate readings or options unavailable",
-    "climate_deferred": "deferred glare-control to solar/glare handlers",
-    "no_glare_zones": "no active glare zones or sun outside acceptance angle",
-    "cloud_skipped": "cloud suppression skipped (sun outside acceptance angle)",
-    "cloud_inactive": "cloud suppression inactive (direct sun present or feature disabled)",
-    "weather_not_active": "weather override not active",
-    "custom_not_active": "custom position #{slot} not active",
-    "always_matches": "always matches",
-    "group_scene_not_lock": "group intent is a scene, not a lock",
-    "no_group_lock": "no group lock intent",
-    "group_lock_not_scene": "group intent is a lock, not a scene",
-    "no_group_scene": "no group scene intent",
-    "not_active": "not active"
+    "outside_window": "en dehors de la plage horaire",
+    "sun_outside": "soleil en dehors de l'angle d'acceptation ou des limites d'élévation",
+    "manual_not_active": "dérogation manuelle non active",
+    "occupancy_disabled": "détection de présence désactivée",
+    "occupancy_not_active": "délai d'absence non actif",
+    "climate_mode_off": "mode climatique non activé",
+    "climate_readings_unavailable": "lectures climatiques ou options indisponibles",
+    "climate_deferred": "contrôle d'éblouissement différé aux gestionnaires soleil/éblouissement",
+    "no_glare_zones": "aucune zone d'éblouissement active ou soleil en dehors de l'angle d'acceptation",
+    "cloud_skipped": "suppression nuages ignorée (soleil en dehors de l'angle d'acceptation)",
+    "cloud_inactive": "suppression nuages inactive (soleil direct présent ou fonction désactivée)",
+    "weather_not_active": "dérogation météo non active",
+    "custom_not_active": "position personnalisée #{slot} non active",
+    "always_matches": "toujours valide",
+    "group_scene_not_lock": "l'intention groupe est une scène, pas un verrouillage",
+    "no_group_lock": "aucune intention de verrouillage groupe",
+    "group_lock_not_scene": "l'intention groupe est un verrouillage, pas une scène",
+    "no_group_scene": "aucune intention de scène groupe",
+    "not_active": "non actif"
   }
 }

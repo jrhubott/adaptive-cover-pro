@@ -574,10 +574,12 @@ def test_load_reason_labels_missing_language_falls_back_to_english() -> None:
     assert load_reason_labels("zz") == _REASON_TEMPLATES_EN
 
 
-def test_load_reason_labels_seeded_de_fr_equal_english() -> None:
-    """DE/FR are seeded = EN for now, so they overlay to the same result."""
+def test_load_reason_labels_de_fr_are_translated() -> None:
+    """DE/FR ship real translations: they cover every code but diverge from EN."""
     for lang in ("de", "fr"):
-        assert load_reason_labels(lang) == _REASON_TEMPLATES_EN
+        labels = load_reason_labels(lang)
+        assert set(labels) == set(_REASON_TEMPLATES_EN)
+        assert labels != _REASON_TEMPLATES_EN
 
 
 def test_load_reason_labels_is_cached() -> None:
