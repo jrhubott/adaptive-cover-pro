@@ -135,6 +135,15 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         return self._max_degrees()
 
+    def _blocking_depth(self) -> float:
+        """Slat depth used in the cut-off solve.
+
+        Polymorphic hook. Base: the nominal chord (vertical venetian slats shade
+        tip-to-tip). The louvered-roof engine overrides this to account for the
+        interlock overlap of bioclimatic-pergola lamellae (#830).
+        """
+        return self.depth
+
     def _resolve_slat_angle(self, cutoff_angle: float) -> float:
         """Map the magnitude cut-off angle to the physical slat angle.
 
@@ -206,9 +215,10 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # large relative to tan(beta), making sqrt of a negative.  NumPy returns
         # nan silently; we return 0.0 (closed) as a safe fallback instead. The
         # cut-off math is shared with the louvered-roof engine via
-        # ``slat_cutoff_angle`` (only ``beta`` differs between them).
+        # ``slat_cutoff_angle`` (only ``beta`` and the ``_blocking_depth()`` hook
+        # differ between them — the roof widens the depth for interlock overlap).
         result, discriminant, negative_discriminant = slat_cutoff_angle(
-            beta, self.slat_distance, self.depth
+            beta, self.slat_distance, self._blocking_depth()
         )
         if negative_discriminant:
             self.logger.debug(

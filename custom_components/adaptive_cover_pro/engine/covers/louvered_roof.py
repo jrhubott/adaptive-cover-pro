@@ -10,7 +10,7 @@ Geometrically it is the cross-product of two shipped engines:
 * the pitched-plane sun geometry of the roof window (``roof_cos_aoi`` /
   ``roof_effective_gamma`` / ``roof_slope_ratio``).
 
-Only three things change relative to the vertical-facade venetian case:
+Only four things change relative to the vertical-facade venetian case:
 
 * the profile angle ``beta`` is taken relative to the roof plane —
   ``beta = arctan|roof_slope_ratio(gamma, elev, roof_pitch)|`` (the vertical
@@ -18,7 +18,12 @@ Only three things change relative to the vertical-facade venetian case:
 * the illumination gate requires the sun to strike the working face
   (``roof_cos_aoi > 0``) rather than a bare above-horizon test;
 * the FOV gate is measured in the tilted roof plane
-  (``roof_effective_gamma``), mirroring the roof window.
+  (``roof_effective_gamma``), mirroring the roof window;
+* the cut-off solve uses an effective blocking depth ``2d − s`` rather than the
+  nominal chord ``d`` — watertight interlocking lamellae overlap by ``d − s`` at
+  each joint, so the beam is intercepted over a larger span (``r_eff = s/(2d − s)``).
+  See ``_blocking_depth`` for the derivation and the #830 measured-optima
+  validation.
 
 Pitch convention (``roof_pitch``, FROM HORIZONTAL):
 
@@ -51,6 +56,11 @@ from .tilt import AdaptiveTiltCover
 # Decision-trace key: which side of the slat axis the sun is on. ``True`` = far
 # side (``cos(gamma) < 0``), where the cut-off angle is realized as ``180° − θ``.
 TRACE_KEY_FAR_SIDE_BRANCH = "louvered_far_side_branch"
+
+# Decision-trace key: the effective slat depth fed to the cut-off solve. Widened
+# to ``2d − s`` for interlock overlap on a flat/pitched roof (#830), nominal ``d``
+# at vertical pitch.
+TRACE_KEY_BLOCKING_DEPTH = "louvered_blocking_depth"
 
 
 @dataclass
@@ -123,6 +133,30 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
             return TILT_HORIZONTAL_DEG - inclination
         return TILT_HORIZONTAL_DEG + inclination
 
+    def _blocking_depth(self) -> float:
+        """Effective slat depth for the cut-off solve — the interlock overlap (#830).
+
+        A watertight bioclimatic-pergola roof closes into a continuous surface:
+        adjacent lamellae OVERLAP by ``d − s`` (chord ``d`` over spacing ``s``, the
+        lip that keeps the joint rain-tight). A grazing beam must therefore clear
+        the trailing tip of one slat AND the overlap lip of its neighbour, so the
+        blocking chord that intercepts the beam spans ``d + (d − s) = 2d − s`` over
+        the pitch ``s`` — an effective ratio ``r_eff = s/(2d − s)`` rather than the
+        nominal tip-to-tip ``s/d``. The nominal chord over-closes the slats by
+        ~8-9° across the working range; the ``2d − s`` chord reproduces the beta
+        tester's hand-measured optima to within their ±2° accuracy (5 of 6 points
+        within 0.5°, and the max-open crossover lands at 51.7° vs the measured
+        51.6°) — see ``TestMeasuredOptimaIssue830``.
+
+        ``max(0, d − s)`` degrades non-interlocking geometry (``s ≥ d``, no overlap)
+        back to the nominal chord. The ``roof_pitch = 90°`` vertical case returns
+        the nominal chord unchanged — the SAME gate ``_resolve_slat_angle`` uses —
+        so the venetian anchor stays byte-for-byte.
+        """
+        if self.roof_pitch == VERTICAL_GLASS_PITCH_DEG:
+            return self.depth
+        return self.depth + max(0.0, self.depth - self.slat_distance)
+
     def _effective_max_degrees(self) -> int:
         """Honour a configured physical ``max_slat_angle`` over the tilt-mode max.
 
@@ -166,5 +200,6 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
                 roof_slope_ratio(self.gamma, self.sol_elev, self.roof_pitch)
             ),
             TRACE_KEY_FAR_SIDE_BRANCH: self._is_far_side(),
+            TRACE_KEY_BLOCKING_DEPTH: float(self._blocking_depth()),
         }
         return result

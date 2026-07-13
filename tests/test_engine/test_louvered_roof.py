@@ -247,7 +247,7 @@ class TestCalculatePositionFlatRoof:
     def test_flat_roof_slat_angle(self) -> None:
         # Max-opening objective: a low near-side sun whose raw MDPI cut-off runs
         # PAST vertical (≥ 90°) means the slats already self-block, so the roof
-        # drives to fully OPEN (90°) — not the steep 130.5° interior-venetian
+        # drives to fully OPEN (90°) — not the steep 135.5° interior-venetian
         # cut-off the old objective produced.
         sol_elev = 30.0
         slat_distance, depth, mode = 0.02, 0.03, "mode2"
@@ -260,8 +260,9 @@ class TestCalculatePositionFlatRoof:
             mode=mode,
         )
         # Hand path: flat-roof beta = 90 - elev = 60°; the MDPI cut-off is > 90.
+        # The solve uses the interlock effective depth 2d − s (#830).
         beta = math.radians(90.0 - sol_elev)
-        ratio = slat_distance / depth
+        ratio = slat_distance / (2 * depth - slat_distance)
         disc = math.tan(beta) ** 2 - ratio**2 + 1
         cutoff = math.degrees(
             2 * math.atan((math.tan(beta) + math.sqrt(disc)) / (1 + ratio))
@@ -281,6 +282,8 @@ class TestCalculatePositionFlatRoof:
         assert "cos_aoi" in trace
         assert "slope_ratio" in trace
         assert "beta_rad" in trace  # inherited from the tilt trace
+        # Effective blocking depth 2d − s (#830): d=0.03, s=0.02 → 0.04.
+        assert trace["louvered_blocking_depth"] == pytest.approx(0.04)
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +300,9 @@ class TestFarSideFlip:
     """
 
     def test_flat_roof_near_and_far_mirror(self) -> None:
-        elev = 40.0
+        # elev=50 (raised from 40): at 40 the interlock effective depth pushes both
+        # folds to the fully-open 90° clamp, so the mirror pins lose their purpose.
+        elev = 50.0
         # win_azi=180: gamma = (180 - sol_azi + 180) % 360 - 180.
         # sol_azi=120 → gamma=60 (near, cos>0); sol_azi=60 → gamma=120 (far).
         near = _louvered(sol_azi=120, sol_elev=elev, roof_pitch=0, mode="mode2")
@@ -314,14 +319,17 @@ class TestFarSideFlip:
         # Max-opening objective: the raw cut-off is < 90 here, so the facing side
         # opens PAST vertical to 180 − cut-off while the far side rests at the
         # cut-off itself — the near/far roles invert vs the old steep objective.
+        # The solve uses the interlock effective depth 2d − s (#830).
         beta = math.atan(abs(roof_slope_ratio(60.0, elev, 0)))
-        raw, _, _ = slat_cutoff_angle(beta, near.slat_distance, near.depth)
+        raw, _, _ = slat_cutoff_angle(
+            beta, near.slat_distance, 2 * near.depth - near.slat_distance
+        )
         assert raw < 90.0
         assert near_angle == pytest.approx(180.0 - raw)
         assert far_angle == pytest.approx(raw)
-        # Pin the concrete numbers so a formula drift is caught.
-        assert near_angle == pytest.approx(94.1, abs=0.1)
-        assert far_angle == pytest.approx(85.9, abs=0.1)
+        # Pin the concrete numbers so a formula drift is caught (effective depth).
+        assert near_angle == pytest.approx(94.7, abs=0.1)
+        assert far_angle == pytest.approx(85.3, abs=0.1)
 
     def test_no_flip_at_pitch_90_near_side(self) -> None:
         # At vertical pitch the lit sun is always near side (cos_aoi needs
@@ -337,7 +345,10 @@ class TestFarSideFlip:
         # side opens PAST vertical (> 90) whenever the raw cut-off is < 90, so it
         # clamps to fully open (90). (The far side now rests at/below 90 instead,
         # inverting the old behaviour where the far side was the one clamping.)
-        near = _louvered(sol_azi=120, sol_elev=40, roof_pitch=0, mode="mode1")
+        # elev=50 (raised from 40) so the near angle (94.7°) genuinely exceeds 90
+        # and the mode1 clamp is exercised — under the effective depth the near
+        # angle at elev=40 lands exactly on 90 and never crosses the ceiling.
+        near = _louvered(sol_azi=120, sol_elev=50, roof_pitch=0, mode="mode1")
         assert near.gamma == pytest.approx(60.0)
         assert near.calculate_position() == pytest.approx(90.0)
 
@@ -354,12 +365,13 @@ class TestMaxSlatAngle:
     """``max_slat_angle`` overrides the mode's 90/180 as clamp + %-denominator."""
 
     def test_ceiling_above_raw_scales_percentage(self) -> None:
-        # gamma=0 (near side, no flip), elev=65 → raw cut-off 77.8° < 90, so the
-        # max-opening angle is 180 − 77.8 = 102.2° (past vertical). This exercises
-        # the max_slat_angle scaling on a near-side angle above the horizontal.
+        # gamma=0 (near side, no flip), elev=65 → raw cut-off 88.1° < 90 (interlock
+        # effective depth 2d − s), so the max-opening angle is 180 − 88.1 = 91.9°
+        # (past vertical). This exercises the max_slat_angle scaling on a near-side
+        # angle above the horizontal.
         base = _louvered(sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2")
         raw = base.calculate_position()
-        assert raw == pytest.approx(102.2, abs=0.2)
+        assert raw == pytest.approx(91.9, abs=0.2)
 
         denom = int(raw) + 10  # ceiling above the raw angle: position unchanged
         wide = _louvered(
@@ -411,22 +423,27 @@ class TestMaxOpeningObjective:
     """
 
     def test_full_open_when_cutoff_ge_90(self) -> None:
-        # Flat roof, low near-side sun (elev=30) → raw cut-off 130.5° ≥ 90 →
-        # inclination 0 → fully OPEN (90°), not the steep 130.5° the interior
-        # venetian objective would drive to.
+        # Flat roof, low near-side sun (elev=30) → raw cut-off 135.5° ≥ 90 →
+        # inclination 0 → fully OPEN (90°), not the steep 135.5° the interior
+        # venetian objective would drive to. Uses the interlock effective depth
+        # 2d − s (#830).
         cover = _louvered(sol_azi=180, sol_elev=30, roof_pitch=0, mode="mode2")
         beta = math.radians(90.0 - 30.0)  # flat-roof complement, gamma=0
-        raw, _, _ = slat_cutoff_angle(beta, cover.slat_distance, cover.depth)
+        raw, _, _ = slat_cutoff_angle(
+            beta, cover.slat_distance, 2 * cover.depth - cover.slat_distance
+        )
         assert raw > 90.0  # precondition: old objective drove past vertical
         assert cover.calculate_position() == pytest.approx(90.0)
 
     def test_near_side_tracks_toward_vertical(self) -> None:
-        # Flat roof, high near-side sun (elev=65) → raw cut-off 77.8° < 90 →
-        # max-opening angle is 180 − cut-off = 102.2° (just past vertical), NOT
-        # the 77.8° venetian cut-off.
+        # Flat roof, high near-side sun (elev=65) → raw cut-off 88.1° < 90 →
+        # max-opening angle is 180 − cut-off = 91.9° (just past vertical), NOT
+        # the 88.1° venetian cut-off. Uses the interlock effective depth 2d − s.
         cover = _louvered(sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2")
         beta = math.radians(90.0 - 65.0)
-        raw, _, _ = slat_cutoff_angle(beta, cover.slat_distance, cover.depth)
+        raw, _, _ = slat_cutoff_angle(
+            beta, cover.slat_distance, 2 * cover.depth - cover.slat_distance
+        )
         assert raw < 90.0
         result = cover.calculate_position()
         assert result == pytest.approx(180.0 - raw)
@@ -439,6 +456,115 @@ class TestMaxOpeningObjective:
         cover = _louvered(sol_azi=60, sol_elev=20, roof_pitch=0, mode="mode2")
         assert cover._is_far_side() is True
         assert cover.calculate_position() == pytest.approx(90.0)
+
+
+class TestMeasuredOptimaIssue830:
+    """Data-anchored regression: the resolved slat angle tracks a beta tester's
+    hand-measured max-opening optima on a real bioclimatic pergola (#830).
+
+    The nominal tip-to-tip venetian ratio ``s/d`` over-closes by ~8-9° across the
+    working range because watertight interlocking lamellae shade over a larger
+    EFFECTIVE blocking depth ``d_eff = 2d - s`` (each joint overlaps by ``d - s``),
+    giving ``r_eff = s/(2d - s)``. For s=0.150, d=0.170 → d_eff=0.190, r_eff=0.789.
+    These pins would fail against the old nominal-ratio objective (mid-range points
+    ~+5.4…+9.5° too closed).
+    """
+
+    # (sol_elev, expected_theta, tol) — beta tester's 6-point table, γ=0 so
+    # β_facade == elev. The 61.6° row is a single noisy measurement whose
+    # back-solved r is inconsistent with its neighbours (residual ~2.58°).
+    _MEASURED = [
+        (51.6, 90.0, 2.0),
+        (61.6, 103.0, 3.0),
+        (66.6, 113.0, 2.0),
+        (71.2, 120.0, 2.0),
+        (77.05, 127.0, 2.0),
+        (81.7, 133.0, 2.0),
+    ]
+
+    @pytest.mark.parametrize(("sol_elev", "expected_theta", "tol"), _MEASURED)
+    def test_near_side_matches_measured_optimum(
+        self, sol_elev: float, expected_theta: float, tol: float
+    ) -> None:
+        # sol_azi=180, win_azi=180 → γ=0 → β_facade = elev (near side).
+        cover = _louvered(
+            sol_azi=180,
+            sol_elev=sol_elev,
+            roof_pitch=0,
+            slat_distance=0.150,
+            depth=0.170,
+            mode="mode2",
+            win_azi=180,
+        )
+        assert cover.calculate_position() == pytest.approx(expected_theta, abs=tol)
+
+    @pytest.mark.parametrize(("sol_elev", "expected_theta", "tol"), _MEASURED)
+    def test_far_side_mirrors_measured_optimum(
+        self, sol_elev: float, expected_theta: float, tol: float
+    ) -> None:
+        # sol_azi=0, win_azi=180 → γ=180 (far side); |cos γ|=1 keeps β_facade=elev.
+        # The far face mirrors across the 90° turnover: θ_far = 180 − θ_near.
+        cover = _louvered(
+            sol_azi=0,
+            sol_elev=sol_elev,
+            roof_pitch=0,
+            slat_distance=0.150,
+            depth=0.170,
+            mode="mode2",
+            win_azi=180,
+        )
+        assert cover._is_far_side() is True
+        assert cover.calculate_position() == pytest.approx(
+            180.0 - expected_theta, abs=tol
+        )
+
+    def test_issue_830_live_datapoint(self) -> None:
+        # mellomanfl's live decision_trace: γ=−63.83 (near side). The pre-fix
+        # engine returned 136.4° (trace target_angle_deg); the measured optimum
+        # is 127°.
+        cover = _louvered(
+            sol_azi=206.83,
+            sol_elev=62.47,
+            roof_pitch=0,
+            slat_distance=0.150,
+            depth=0.170,
+            mode="mode2",
+            win_azi=143,
+            max_slat_angle=158,
+        )
+        assert cover.gamma == pytest.approx(-63.83, abs=0.01)
+        assert cover.calculate_position() == pytest.approx(127.0, abs=2.0)
+
+    def test_blocking_depth_hook(self) -> None:
+        # Flat roof, interlocking geometry (s < d): d_eff = d + (d − s).
+        interlock = _louvered(
+            sol_azi=180,
+            sol_elev=60,
+            roof_pitch=0,
+            slat_distance=0.150,
+            depth=0.170,
+        )
+        assert interlock._blocking_depth() == pytest.approx(0.170 + (0.170 - 0.150))
+
+        # Vertical pitch → nominal chord (venetian anchor untouched).
+        vertical = _louvered(
+            sol_azi=180,
+            sol_elev=60,
+            roof_pitch=90,
+            slat_distance=0.150,
+            depth=0.170,
+        )
+        assert vertical._blocking_depth() == pytest.approx(0.170)
+
+        # Non-interlocking geometry (s ≥ d) degrades to the nominal chord.
+        degrade = _louvered(
+            sol_azi=180,
+            sol_elev=60,
+            roof_pitch=0,
+            slat_distance=0.03,
+            depth=0.02,
+        )
+        assert degrade._blocking_depth() == pytest.approx(0.02)
 
 
 class TestFovAngle:
