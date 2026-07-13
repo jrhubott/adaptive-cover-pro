@@ -615,3 +615,94 @@ def test_render_en_renders_via_overlay_fallback() -> None:
     )
     # A key absent from the overlay falls back to English.
     assert render(reason, {"other.key": "x"}) == "Direct Sun"
+
+
+# ---------------------------------------------------------------------------
+# Step 3: reason_payload wire format on pipeline types + base handler
+# ---------------------------------------------------------------------------
+#
+# ``PipelineResult`` / ``DecisionStep`` gain a ``reason_payload`` field so
+# handlers can emit a stable ``Reason`` code+params. The canonical EN
+# ``reason`` string is auto-derived from the payload when no explicit reason is
+# passed, and the legacy explicit-string path is preserved unchanged.
+
+
+from custom_components.adaptive_cover_pro.const import ControlMethod  # noqa: E402
+from custom_components.adaptive_cover_pro.pipeline.handler import (  # noqa: E402
+    OverrideHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.types import (  # noqa: E402
+    DecisionStep,
+    PipelineResult,
+)
+
+
+def test_pipeline_result_payload_autoderives_reason() -> None:
+    """A payload with no explicit reason auto-derives reason == render_en(payload)."""
+    payload = Reason(ReasonCode.SOLAR_TRACKING, {"position": 50, "suffix": ""})
+    result = PipelineResult(
+        position=50,
+        control_method=ControlMethod.SOLAR,
+        reason_payload=payload,
+    )
+    assert result.reason == "sun within acceptance angle — position 50%"
+    assert result.reason == render_en(payload)
+    assert result.reason_payload is payload
+
+
+def test_pipeline_result_explicit_reason_preserved_without_payload() -> None:
+    """The legacy explicit-string path is unchanged (payload stays None)."""
+    result = PipelineResult(
+        position=50,
+        control_method=ControlMethod.SOLAR,
+        reason="legacy free text",
+    )
+    assert result.reason == "legacy free text"
+    assert result.reason_payload is None
+
+
+def test_pipeline_result_explicit_reason_wins_over_payload() -> None:
+    """An explicit reason is kept even when a payload is also supplied."""
+    payload = Reason(ReasonCode.SOLAR_TRACKING, {"position": 50, "suffix": ""})
+    result = PipelineResult(
+        position=50,
+        control_method=ControlMethod.SOLAR,
+        reason="explicit",
+        reason_payload=payload,
+    )
+    assert result.reason == "explicit"
+    assert result.reason_payload is payload
+
+
+def test_decision_step_payload_autoderives_reason() -> None:
+    payload = Reason(ReasonCode.REGISTRY_OUTPRIORITIZED, {"handler": "weather"})
+    step = DecisionStep(
+        handler="solar",
+        matched=False,
+        reason_payload=payload,
+        position=50,
+    )
+    assert step.reason == "outprioritized by weather"
+    assert step.reason_payload is payload
+
+
+def test_decision_step_explicit_reason_preserved_without_payload() -> None:
+    step = DecisionStep(handler="solar", matched=True, reason="won", position=50)
+    assert step.reason == "won"
+    assert step.reason_payload is None
+
+
+def test_base_describe_skip_returns_not_active_reason() -> None:
+    """The base handler's describe_skip returns Reason(SKIP_NOT_ACTIVE)."""
+
+    class _Bare(OverrideHandler):
+        name = "bare"
+        priority = 5
+
+        def evaluate(self, snapshot):  # noqa: ARG002
+            return None
+
+    skip = _Bare().describe_skip(object())  # type: ignore[arg-type]
+    assert isinstance(skip, Reason)
+    assert skip.code == ReasonCode.SKIP_NOT_ACTIVE
+    assert render_en(skip) == "not active"

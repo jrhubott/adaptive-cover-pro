@@ -216,6 +216,86 @@ def test_custom_position_floor_above_climate_is_inert() -> None:
     assert cp_step.matched is False
 
 
+def test_floor_raised_step_carries_reason_payload_code() -> None:
+    """The floor_clamp step carries a registry.floor_raised code + params,
+    while its English reason stays byte-identical to the legacy f-string.
+    """
+    from custom_components.adaptive_cover_pro.const import ReasonCode
+
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_summer_options(),
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    registry = _registry_with_custom([_cp_handler(1, 60)])
+    result = registry.evaluate(snap)
+    clamp = next(
+        s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
+    )
+    from_pos = clamp.reason_payload.params["from_pos"]
+    assert clamp.reason_payload is not None
+    assert clamp.reason_payload.code == ReasonCode.REGISTRY_FLOOR_RAISED
+    assert clamp.reason_payload.params == {
+        "from_pos": from_pos,
+        "to_pos": 60,
+        "label": "Table",
+    }
+    assert clamp.reason == f"floor raised winner from {from_pos}% to 60% by Table"
+
+
+def test_floor_inactive_step_carries_reason_payload_code() -> None:
+    """The inactive-floor step carries a registry.floor_inactive code + params,
+    while its English reason stays byte-identical to the legacy f-string.
+    """
+    from custom_components.adaptive_cover_pro.const import ReasonCode
+
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=22.0,
+            is_presence=False,
+            is_sunny=False,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        ),
+        climate_options=_summer_options(),
+        default_position=80,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    registry = _registry_with_custom([_cp_handler(1, 60)])
+    result = registry.evaluate(snap)
+    cp_step = next(s for s in result.decision_trace if s.handler == "custom_position_1")
+    assert cp_step.reason_payload is not None
+    assert cp_step.reason_payload.code == ReasonCode.REGISTRY_FLOOR_INACTIVE
+    assert cp_step.reason_payload.params == {"floor_pos": 60, "winner_pos": 80}
+    assert cp_step.reason == "floor 60% inactive (winner 80% above floor)"
+
+
 def test_two_custom_floors_pick_highest() -> None:
     """Two active floors at 40 and 60 — winner clamped to max (60)."""
     cover = _climate_cover(direct_sun_valid=False)

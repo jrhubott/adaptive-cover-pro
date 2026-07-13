@@ -5,11 +5,27 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 
+from ..const import ReasonCode
 from ..diagnostics.event_buffer import EventBuffer
+from ..reason_i18n import Reason, render_en
 from .floors import effective_floor, gather_active_floors
 from .handler import OverrideHandler
 from .tilt_axis import resolve_tilt_axis
 from .types import DecisionStep, PipelineResult, PipelineSnapshot
+
+
+def _normalize_reason(value: str | Reason) -> tuple[str, Reason | None]:
+    """Split a str-or-:class:`Reason` into (english text, payload-or-None).
+
+    Handlers migrate their ``describe_skip`` / ``reason`` emitters to stable
+    :class:`Reason` codes one batch at a time (issue #882). Until every emitter
+    is migrated the registry must accept both: a ``Reason`` yields its
+    English rendering plus the payload (for the card); a legacy ``str`` passes
+    through unchanged with no payload.
+    """
+    if isinstance(value, Reason):
+        return render_en(value), value
+    return value, None
 
 
 def _drop_trace_steps(
@@ -82,6 +98,7 @@ class PipelineRegistry:
                             handler=handler.name,
                             matched=True,
                             reason=result.reason,
+                            reason_payload=result.reason_payload,
                             position=result.position,
                             held_position=result.held_position,
                             priority=handler.priority,
@@ -92,17 +109,24 @@ class PipelineRegistry:
                         DecisionStep(
                             handler=handler.name,
                             matched=False,
-                            reason=f"outprioritized by {winning_handler.name}",
+                            reason_payload=Reason(
+                                ReasonCode.REGISTRY_OUTPRIORITIZED,
+                                {"handler": winning_handler.name},
+                            ),
                             position=result.position,
                             priority=handler.priority,
                         )
                     )
             else:
+                skip_text, skip_payload = _normalize_reason(
+                    handler.describe_skip(snapshot)
+                )
                 trace.append(
                     DecisionStep(
                         handler=handler.name,
                         matched=False,
-                        reason=handler.describe_skip(snapshot),
+                        reason=skip_text,
+                        reason_payload=skip_payload,
                         position=None,
                         priority=handler.priority,
                     )
@@ -166,9 +190,13 @@ class PipelineRegistry:
                 DecisionStep(
                     handler="floor_clamp",
                     matched=True,
-                    reason=(
-                        f"floor raised winner from {effective_winner_pos}% to "
-                        f"{floor_pos}% by {floor_info.label}"
+                    reason_payload=Reason(
+                        ReasonCode.REGISTRY_FLOOR_RAISED,
+                        {
+                            "from_pos": effective_winner_pos,
+                            "to_pos": floor_pos,
+                            "label": floor_info.label,
+                        },
                     ),
                     position=floor_pos,
                 )
@@ -186,9 +214,12 @@ class PipelineRegistry:
                 DecisionStep(
                     handler=info.source,
                     matched=False,
-                    reason=(
-                        f"floor {info.position}% inactive "
-                        f"(winner {effective_winner_pos}% above floor)"
+                    reason_payload=Reason(
+                        ReasonCode.REGISTRY_FLOOR_INACTIVE,
+                        {
+                            "floor_pos": info.position,
+                            "winner_pos": effective_winner_pos,
+                        },
                     ),
                     position=info.position,
                 )
@@ -221,10 +252,13 @@ class PipelineRegistry:
                     DecisionStep(
                         handler=tilt_contribution.source,
                         matched=True,
-                        reason=(
-                            f"tilt-only: slat angle fixed at "
-                            f"{tilt_contribution.tilt}% by {tilt_contribution.label}"
-                            f"; position driven by {winning_handler.name}"
+                        reason_payload=Reason(
+                            ReasonCode.REGISTRY_TILT_APPLIED,
+                            {
+                                "tilt": tilt_contribution.tilt,
+                                "label": tilt_contribution.label,
+                                "handler": winning_handler.name,
+                            },
                         ),
                         position=None,
                         tilt=tilt_contribution.tilt,
@@ -235,10 +269,13 @@ class PipelineRegistry:
                     DecisionStep(
                         handler=tilt_contribution.source,
                         matched=False,
-                        reason=(
-                            f"tilt-only {tilt_contribution.tilt}% deferred — "
-                            f"{winning_handler.name} already set tilt "
-                            f"{winner.tilt}%"
+                        reason_payload=Reason(
+                            ReasonCode.REGISTRY_TILT_DEFERRED,
+                            {
+                                "tilt": tilt_contribution.tilt,
+                                "handler": winning_handler.name,
+                                "winner_tilt": winner.tilt,
+                            },
                         ),
                         position=None,
                         tilt=tilt_contribution.tilt,

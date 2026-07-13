@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from ..const import ReasonCode
+from ..reason_i18n import Reason
 from .types import PipelineResult, PipelineSnapshot
 
 
@@ -36,6 +38,12 @@ class OverrideHandler(ABC):
         """
         return {}
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
-        """Reason string when this handler does not match."""
-        return "not active"
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str | Reason:  # noqa: ARG002
+        """Reason when this handler does not match.
+
+        May return either a legacy English ``str`` (subclass overrides not yet
+        migrated) or a stable :class:`Reason` payload. The registry normalizes
+        both — see ``PipelineRegistry.evaluate`` — so handlers migrate to codes
+        one batch at a time (issue #882).
+        """
+        return Reason(ReasonCode.SKIP_NOT_ACTIVE)

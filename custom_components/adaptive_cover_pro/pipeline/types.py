@@ -12,6 +12,7 @@ from ..const import (
     GroupIntentKind,
     GroupScene,
 )
+from ..reason_i18n import Reason, render_en
 
 if TYPE_CHECKING:
     from ..config_types import CoverConfig, GlareZonesConfig
@@ -324,8 +325,12 @@ class DecisionStep:
 
     handler: str
     matched: bool
-    reason: str
-    position: int | None
+    # Canonical English reason string. When ``reason_payload`` is provided and
+    # ``reason`` is left empty, ``__post_init__`` derives ``reason`` from it via
+    # ``render_en`` so the byte-identical EN prose is always available; passing
+    # an explicit ``reason`` (the legacy path) keeps it verbatim.
+    reason: str = ""
+    position: int | None = None
     tilt: int | None = None
     # Evaluation priority of the handler that produced this step (higher wins).
     # Surfaced in diagnostics so a re-ordered chain is visible for debugging.
@@ -337,6 +342,15 @@ class DecisionStep:
     # handlers and all other steps. Consumers must use explicit is-not-None
     # checks because 0% (fully closed) is a valid held position.
     held_position: int | None = None
+    # Stable reason code + params (issue #882). Localized by the Lovelace card
+    # and used to render the ``reason`` string above in the user's language.
+    # None on legacy steps that still carry only an English ``reason`` string.
+    reason_payload: Reason | None = None
+
+    def __post_init__(self) -> None:
+        """Derive the English ``reason`` from ``reason_payload`` when unset."""
+        if self.reason_payload is not None and not self.reason:
+            object.__setattr__(self, "reason", render_en(self.reason_payload))
 
 
 @dataclass(frozen=True)
@@ -345,7 +359,10 @@ class PipelineResult:
 
     position: int
     control_method: ControlMethod
-    reason: str
+    # Canonical English reason string. When ``reason_payload`` is provided and
+    # ``reason`` is left empty, ``__post_init__`` derives ``reason`` from it via
+    # ``render_en``; an explicit ``reason`` (the legacy path) is kept verbatim.
+    reason: str = ""
     decision_trace: list[DecisionStep] = field(default_factory=list)
     tilt: int | None = None
 
@@ -438,3 +455,14 @@ class PipelineResult:
     # None when the sensor isn't loaded, has no friendly_name, or when any
     # non-custom handler wins.
     custom_position_active_slot_name: str | None = None
+
+    # Stable reason code + params (issue #882). The winning handler's structured
+    # reason; the registry propagates it onto the winner's DecisionStep so the
+    # Lovelace card can localize it. None on legacy results that still carry only
+    # an English ``reason`` string (handlers migrate in later dispatches).
+    reason_payload: Reason | None = None
+
+    def __post_init__(self) -> None:
+        """Derive the English ``reason`` from ``reason_payload`` when unset."""
+        if self.reason_payload is not None and not self.reason:
+            object.__setattr__(self, "reason", render_en(self.reason_payload))
