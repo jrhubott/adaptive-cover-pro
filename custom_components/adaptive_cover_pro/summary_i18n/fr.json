@@ -119,7 +119,13 @@
     "transparent": "store transparent",
     "winter_close": "ferme complètement en hiver pour l'isolation",
     "summer_full_close": "ferme complètement en cas de chaleur estivale",
-    "extreme_heat": "maintient {pos} % toute la journée au-dessus de {thresh} °C extérieur"
+    "extreme_heat": "maintient {pos} % toute la journée au-dessus de {thresh} °C extérieur",
+    "hold_time": " · maintien du lissage {secs}s",
+    "release": " · relâchement quand {parts}",
+    "temp_low_release": "hiver ≥ {release}°",
+    "temp_high_release": "été ≤ {release}°",
+    "outside_release": "extérieur ≤ {release}°",
+    "extreme_heat_release": "chaleur extrême ≤ {release}°"
   },
   "glare": {
     "zones": "zones : {names}",

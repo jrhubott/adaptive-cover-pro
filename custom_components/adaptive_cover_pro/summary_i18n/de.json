@@ -119,7 +119,13 @@
     "transparent": "durchsichtige Jalousie",
     "winter_close": "schließt sich vollständig im Winter für Isolation",
     "summer_full_close": "schließt sich vollständig bei Sommerhitze",
-    "extreme_heat": "hält den ganzen Tag {pos}% bei über {thresh}°C außen"
+    "extreme_heat": "hält den ganzen Tag {pos}% bei über {thresh}°C außen",
+    "hold_time": " · Glättungs-Haltezeit {secs}s",
+    "release": " · Freigabe wenn {parts}",
+    "temp_low_release": "winter ≥ {release}°",
+    "temp_high_release": "sommer ≤ {release}°",
+    "outside_release": "außen ≤ {release}°",
+    "extreme_heat_release": "extremhitze ≤ {release}°"
   },
   "glare": {
     "zones": "Zonen: {names}",
