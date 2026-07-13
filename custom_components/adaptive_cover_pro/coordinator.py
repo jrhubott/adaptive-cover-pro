@@ -433,6 +433,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Diagnostics builder (extracted from coordinator)
         self._diagnostics_builder = DiagnosticsBuilder()
 
+        # Instance-language reason-template overlay (issue #882). Primed once in
+        # async_setup_entry via reason_i18n.async_prime(hass.config.language) and
+        # threaded into the DiagnosticContext + read by sensor.py so decision-trace
+        # reason strings render in the user's language. ``None`` → English defaults.
+        self._reason_labels: dict[str, str] | None = None
+
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
 
@@ -3153,6 +3159,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.config_entry.options.get(CONF_END_OF_WINDOW_POS) is not None
                 and not self.before_end_time
             ),
+            # issue #882: instance-language reason templates, primed once at setup.
+            reason_labels=self._reason_labels,
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)

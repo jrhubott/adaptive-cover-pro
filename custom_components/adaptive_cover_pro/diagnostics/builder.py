@@ -9,11 +9,19 @@ never accesses the coordinator directly.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from ..const import ControlStatus
-from ..const import ClimateStrategy, ControlMethod, FORECAST_STEP_MINUTES, SunState
+from ..const import (
+    ClimateStrategy,
+    ControlMethod,
+    FORECAST_STEP_MINUTES,
+    ReasonCode,
+    SunState,
+)
+from ..reason_i18n import _REASON_TEMPLATES_EN, Reason, render
 
 # Sensor state classifications (issue #693, Q3).
 _SENSOR_STATE_NOT_CONFIGURED = "not_configured"
@@ -164,6 +172,12 @@ class DiagnosticContext:
     # live reading.
     outside_temp_source: str = "live"
 
+    # issue #882: the instance-language reason-template overlay, primed once at
+    # setup by the coordinator (``coordinator._reason_labels``). ``None`` → the
+    # English defaults, so ``render(...)`` output is byte-identical on an EN
+    # install. Kept HA-free (a plain mapping) so the builder stays unit-testable.
+    reason_labels: Mapping[str, str] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -260,26 +274,51 @@ class DiagnosticsBuilder:
 
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:
-        """Get the current control state reason from pipeline result or cover geometry."""
+        """Get the current control state reason from pipeline result or cover geometry.
+
+        Renders through the instance-language ``ctx.reason_labels`` overlay
+        (issue #882); ``None`` → English defaults, byte-identical to the legacy
+        prose. The builder-owned control-state labels emit ``Reason(builder.*)``
+        codes; the cover-geometry branch prefers the engine's stable
+        ``control_state_reason_code`` (rendered with labels) and falls back to
+        the cover's English ``control_state_reason`` prose when no code is
+        exposed (e.g. legacy test doubles).
+        """
+        labels = ctx.reason_labels or _REASON_TEMPLATES_EN
         result = ctx.pipeline_result
         if result is not None and result.control_method == ControlMethod.MOTION:
-            reason = "Occupancy Timeout"
+            reason = render(
+                Reason(ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT), labels
+            )
         elif result is not None and result.control_method == ControlMethod.MANUAL:
-            reason = "Manual Override"
+            reason = render(Reason(ReasonCode.BUILDER_CONTROL_MANUAL_OVERRIDE), labels)
         elif (
             result is not None
             and result.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
         ):
-            reason = "Default: Tracking Off This Season"
+            reason = render(
+                Reason(ReasonCode.BUILDER_CONTROL_TRACKING_OFF_SEASON), labels
+            )
         elif ctx.cover:
-            reason = ctx.cover.control_state_reason
+            code = getattr(ctx.cover, "control_state_reason_code", None)
+            reason = (
+                render(Reason(code), labels)
+                if code is not None
+                else ctx.cover.control_state_reason
+            )
         else:
-            reason = "Unknown"
+            reason = render(Reason(ReasonCode.BUILDER_UNKNOWN), labels)
 
         # An applied tilt-only custom slot is otherwise invisible on the tracker
         # entity because the position winner owns the status (#667).
         if result is not None and result.tilt_only_slot is not None:
-            reason = f"{reason} — tilt fixed by Custom #{result.tilt_only_slot}"
+            reason = render(
+                Reason(
+                    ReasonCode.BUILDER_CONTROL_TILT_FIXED,
+                    {"reason": reason, "slot": result.tilt_only_slot},
+                ),
+                labels,
+            )
         return reason
 
     @staticmethod
@@ -292,6 +331,7 @@ class DiagnosticsBuilder:
         When manual override is active and the cover's physical position diverges
         from the solar calculation, the divergence is surfaced explicitly.
         """
+        labels = ctx.reason_labels or _REASON_TEMPLATES_EN
         result = ctx.pipeline_result
         if result is None:
             return "Unknown"
@@ -299,13 +339,28 @@ class DiagnosticsBuilder:
         # Outside time window — pipeline ran but commands are gated
         if not ctx.check_adaptive_time:
             pos = result.default_position
-            pos_label = (
-                "sunset position" if result.is_sunset_active else "default position"
+            pos_label = Reason(
+                ReasonCode.FRAGMENT_SUNSET_POSITION
+                if result.is_sunset_active
+                else ReasonCode.FRAGMENT_DEFAULT_POSITION
             )
-            return f"Outside time window → {pos_label} {pos}% (commands paused)"
+            return render(
+                Reason(
+                    ReasonCode.BUILDER_OUTSIDE_WINDOW,
+                    {"pos_label": pos_label, "pos": pos},
+                ),
+                labels,
+            )
 
-        # Base explanation is the pipeline reason (already human-readable)
-        parts: list[str] = [result.reason]
+        # Base explanation is the pipeline reason (already human-readable). Prefer
+        # the structured payload so the base localizes; fall back to the legacy
+        # English ``reason`` string when a result carries no payload.
+        base = (
+            render(result.reason_payload, labels)
+            if result.reason_payload is not None
+            else result.reason
+        )
+        parts: list[str] = [base]
 
         # Surface the divergence between the physical held position and the solar calc
         # only when they differ — avoids noise when the cover happens to be at the
@@ -316,23 +371,43 @@ class DiagnosticsBuilder:
             and result.held_position != result.raw_calculated_position
         ):
             parts.append(
-                f"manual override active — holding cover at {result.held_position}%"
-                f" (solar would be {result.raw_calculated_position}%)"
+                render(
+                    Reason(
+                        ReasonCode.BUILDER_MANUAL_DIVERGENCE,
+                        {
+                            "held": result.held_position,
+                            "raw": result.raw_calculated_position,
+                        },
+                    ),
+                    labels,
+                )
             )
 
         # Surface an applied tilt-only custom slot alongside the position winner
         # so it is visible in the Control Status string (#667).
         if result.tilt_only_slot is not None:
             parts.append(
-                f"tilt fixed at {result.tilt}% by Custom #{result.tilt_only_slot}"
+                render(
+                    Reason(
+                        ReasonCode.BUILDER_TILT_FIXED,
+                        {"tilt": result.tilt, "slot": result.tilt_only_slot},
+                    ),
+                    labels,
+                )
             )
 
         # Append post-processing transforms if they changed the value
         final = ctx.final_state
         if ctx.use_interpolation:
-            parts.append(f"interpolated → {final}%")
+            parts.append(
+                render(
+                    Reason(ReasonCode.BUILDER_INTERPOLATED, {"final": final}), labels
+                )
+            )
         elif ctx.inverse_state and final != result.position:
-            parts.append(f"inversed → {final}%")
+            parts.append(
+                render(Reason(ReasonCode.BUILDER_INVERSED, {"final": final}), labels)
+            )
 
         return " → ".join(parts)
 

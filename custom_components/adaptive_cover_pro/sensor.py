@@ -57,8 +57,42 @@ from .helpers import (
     custom_position_slot_sensors,
     motion_entities,
 )
+from .reason_i18n import _REASON_TEMPLATES_EN, Reason, render, reason_to_dict
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
+
+
+def _localized_reason(
+    coordinator: AdaptiveDataUpdateCoordinator,
+    payload: Reason | None,
+    fallback: str,
+) -> str:
+    """Render a reason payload in the instance language (issue #882).
+
+    Uses the coordinator's primed ``_reason_labels`` overlay (``None`` → English
+    defaults, byte-identical). Legacy payload-less reasons keep their English
+    ``fallback`` string. Shared by the cover-position and decision-trace sensors
+    so the render path lives in exactly one place.
+    """
+    if payload is None:
+        return fallback
+    labels = coordinator._reason_labels or _REASON_TEMPLATES_EN  # noqa: SLF001
+    return render(payload, labels)
+
+
+def _reason_to_dict_attrs(payload: Reason) -> dict[str, Any]:
+    """Map a reason payload to the additive ``reason_code`` + ``reason_params`` attrs.
+
+    ``reason_to_dict`` yields a JSON-safe ``{"code", "params"}`` payload (nested
+    fragments preserved); this flattens it into the two attribute names the
+    companion card reads to localize with its own templates (issue #882).
+    """
+    payload_dict = reason_to_dict(payload)
+    return {
+        "reason_code": payload_dict["code"],
+        "reason_params": payload_dict["params"],
+    }
+
 
 # ---------------------------------------------------------------------------
 # Description dataclass
@@ -326,7 +360,9 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
     attrs["control_method"] = s.data.states.get("control")
     pipeline_result = s.coordinator._pipeline_result  # noqa: SLF001
     if pipeline_result is not None:
-        attrs["reason"] = pipeline_result.reason
+        attrs["reason"] = _localized_reason(
+            s.coordinator, pipeline_result.reason_payload, pipeline_result.reason
+        )
     diagnostics = s.coordinator.data.diagnostics if s.coordinator.data else None
     if diagnostics:
         position_explanation = diagnostics.get("position_explanation")
@@ -976,7 +1012,11 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             {
                 "handler": step.handler,
                 "matched": step.matched,
-                "reason": step.reason,
+                # Localized to the instance language (issue #882); falls back to
+                # the step's English ``reason`` for legacy payload-less steps.
+                "reason": _localized_reason(
+                    s.coordinator, step.reason_payload, step.reason
+                ),
                 "position": step.position,
                 **({"tilt": step.tilt} if step.tilt is not None else {}),
                 **(
@@ -984,10 +1024,22 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
                     if step.held_position is not None
                     else {}
                 ),
+                # Additive card payload (issue #882): the stable code + params so
+                # the companion card can localize with its own templates. Omitted
+                # on legacy steps that carry only an English ``reason`` string.
+                **(
+                    _reason_to_dict_attrs(step.reason_payload)
+                    if step.reason_payload is not None
+                    else {}
+                ),
             }
             for step in result.decision_trace
         ]
-        attrs["reason"] = result.reason
+        attrs["reason"] = _localized_reason(
+            s.coordinator, result.reason_payload, result.reason
+        )
+        if result.reason_payload is not None:
+            attrs.update(_reason_to_dict_attrs(result.reason_payload))
         attrs["bypass_auto_control"] = result.bypass_auto_control
         attrs["default_position"] = result.default_position
         attrs["is_sunset_active"] = result.is_sunset_active

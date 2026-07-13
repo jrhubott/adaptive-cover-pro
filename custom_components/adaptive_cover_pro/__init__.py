@@ -343,6 +343,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
 
     entry.async_on_unload(_cancel_forecast_timer)
 
+    # Prime the instance-language reason-template overlay once (issue #882),
+    # mirroring the summary_i18n priming: resolve the language the same way
+    # (the HA instance language, #905 semantics) and offload the bundle file
+    # read to the executor so no JSON I/O runs on the event loop. The resolved
+    # mapping is cached on the coordinator, threaded into the DiagnosticContext,
+    # and read by sensor.py to localize decision-trace reason strings.
+    from .reason_i18n import async_prime as _async_prime_reason_labels
+
+    coordinator._reason_labels = await _async_prime_reason_labels(
+        hass, hass.config.language or "en"
+    )
+
     # Store coordinator before platform setup so sensor async_added_to_hass can
     # access it during RestoreEntity rehydration (must run before first_refresh).
     entry.runtime_data = coordinator

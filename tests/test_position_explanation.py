@@ -816,6 +816,7 @@ class TestPositionExplanationChangeDetection:
         coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
         coord._diagnostics_builder = DiagnosticsBuilder()
         coord._last_position_explanation = ""
+        coord._reason_labels = None
         coord.logger = MagicMock()
 
         # Minimal stubs for DiagnosticContext construction
