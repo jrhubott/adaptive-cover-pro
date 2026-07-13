@@ -448,6 +448,10 @@ class DiagnosticsBuilder:
         result = ctx.pipeline_result
         raw_pos = result.raw_calculated_position if result is not None else 0
         diagnostics["calculated_position"] = raw_pos
+        # Pre-interpolation logical target (issue #911): the position the pipeline
+        # decided, before interpolation maps it onto the motor curve. Equals the
+        # interpolated motor value when interpolation is off.
+        diagnostics["linear_position"] = result.position if result is not None else 0
 
         if result is not None and result.climate_state is not None:
             diagnostics["calculated_position_climate"] = result.climate_state

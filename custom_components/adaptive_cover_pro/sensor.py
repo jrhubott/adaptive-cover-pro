@@ -368,6 +368,9 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         if position_explanation is not None:
             attrs["position_explanation"] = position_explanation
         attrs["raw_calculated_position"] = diagnostics.get("calculated_position")
+        # Pre-interpolation logical target (issue #911); the companion card shows
+        # this as the primary position, demoting the interpolated `state`.
+        attrs["linear_position"] = diagnostics.get("linear_position")
         calc_details = diagnostics.get("calculation_details")
         if calc_details:
             attrs["edge_case_detected"] = calc_details.get("edge_case_detected")

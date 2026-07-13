@@ -1760,3 +1760,67 @@ class TestCalculationDetailsAllCoverTypes:
         assert "beta_rad" in details["tilt"]
         # Top-level position axis present.
         assert "position_pct" in details
+
+
+# ---------------------------------------------------------------------------
+# linear_position — pre-interpolation logical target (issue #911)
+# ---------------------------------------------------------------------------
+
+
+class TestLinearPosition:
+    """`linear_position` exposes the pipeline's logical target, pre-interpolation."""
+
+    def test_equals_pipeline_position_when_interpolating(
+        self, builder: DiagnosticsBuilder
+    ):
+        """When interpolation maps 10 -> 31, linear_position stays the logical 10."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=10),
+                use_interpolation=True,
+                final_state=31,
+            )
+        )
+        assert diag["linear_position"] == 10
+        # Decoupled from the interpolated motor value.
+        assert diag["linear_position"] != 31
+
+    def test_equals_final_state_when_not_interpolating(
+        self, builder: DiagnosticsBuilder
+    ):
+        """With interpolation off, linear_position matches the motor value."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=40),
+                use_interpolation=False,
+                final_state=40,
+            )
+        )
+        assert diag["linear_position"] == 40
+
+    def test_is_plain_int(self, builder: DiagnosticsBuilder):
+        """linear_position is a plain int, never a numpy scalar."""
+        diag, _ = builder.build(_base_ctx(pipeline_result=_make_pr(position=10)))
+        # isinstance still rejects numpy scalars (np.int64 is not an int subclass).
+        assert isinstance(diag["linear_position"], int)
+
+    def test_present_for_safety_winner(self, builder: DiagnosticsBuilder):
+        """Safety winners (interpolation bypassed) still carry linear_position."""
+        diag, _ = builder.build(
+            _base_ctx(pipeline_result=_make_pr(position=10, is_safety=True))
+        )
+        assert diag["linear_position"] == 10
+
+    def test_present_for_bypass_winner(self, builder: DiagnosticsBuilder):
+        """Bypass winners still carry linear_position."""
+        diag, _ = builder.build(
+            _base_ctx(pipeline_result=_make_pr(position=10, bypass_auto_control=True))
+        )
+        assert diag["linear_position"] == 10
+
+    def test_defaults_to_zero_without_pipeline_result(
+        self, builder: DiagnosticsBuilder
+    ):
+        """No pipeline result -> linear_position defaults to 0, like calculated_position."""
+        diag, _ = builder.build(_base_ctx(pipeline_result=None))
+        assert diag["linear_position"] == 0
