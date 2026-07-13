@@ -62,6 +62,7 @@ def build_priority_chain(
     supports_glare: bool,
     custom_slots: Iterable[Sequence] = (),
     priorities: Mapping[str, int] | None = None,
+    slot_names: Mapping[int, str] | None = None,
 ) -> list[PriorityChainEntry]:
     """Return the decision chain ordered highest-priority-first.
 
@@ -71,7 +72,10 @@ def build_priority_chain(
     slot tuples ``(slot, trigger, position, priority, use_my, tilt, tilt_only)``;
     each is interleaved at its configured priority. The sort is stable, so a
     custom slot sharing a fixed handler's priority renders after that handler
-    (fixed anchors are inserted first).
+    (fixed anchors are inserted first). ``slot_names`` is an optional
+    ``slot -> custom_position_name_N`` map (issue #910); when a slot has a
+    non-empty name, its label is ``f"{name}({priority})"`` instead of the
+    default ``f"Custom#{slot}({priority})"``.
     """
     overrides = priorities or {}
 
@@ -92,9 +96,9 @@ def build_priority_chain(
     for slot_tuple in custom_slots:
         slot = slot_tuple[0]
         priority = slot_tuple[3]
-        entries.append(
-            PriorityChainEntry(priority, f"Custom#{slot}({priority})", True, slot=slot)
-        )
+        name = (slot_names or {}).get(slot)
+        label = f"{name}({priority})" if name else f"Custom#{slot}({priority})"
+        entries.append(PriorityChainEntry(priority, label, True, slot=slot))
     # Stable sort highest-priority-first; ties keep insertion order (fixed
     # anchors before custom slots).
     entries.sort(key=lambda e: e.priority, reverse=True)

@@ -54,6 +54,7 @@ from .managers.manual_override.expiry import (
 )
 from .helpers import (
     custom_position_slot_configured,
+    custom_position_slot_name,
     custom_position_slot_sensors,
     motion_entities,
 )
@@ -983,7 +984,7 @@ def _build_custom_position_slots_snapshot(
                 "sensor_name": sensor_name,
                 # User-configured slot label (issue #867); overrides sensor_name
                 # in the reason/decision_trace/card when set. None = unset.
-                "custom_name": options.get(slot_keys["name"]) or None,
+                "custom_name": custom_position_slot_name(options, slot_keys),
                 "position": int(position) if configured else None,
                 "priority": (
                     int(

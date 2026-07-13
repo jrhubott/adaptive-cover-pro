@@ -100,6 +100,7 @@ from ..const import (
 from ..helpers import (
     compute_effective_default,
     custom_position_slot_configured,
+    custom_position_slot_name,
     custom_position_slot_sensors,
 )
 from ..templates import combine_with_mode, is_template_string, render_condition
@@ -286,7 +287,7 @@ class PipelineSnapshotBuilder:
             )
             # Optional user-configured label (issue #867); empty string (a
             # cleared text box) normalizes to None, same as an absent key.
-            custom_name = options.get(slot_keys["name"]) or None
+            custom_name = custom_position_slot_name(options, slot_keys)
 
             priority = int(
                 options.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY

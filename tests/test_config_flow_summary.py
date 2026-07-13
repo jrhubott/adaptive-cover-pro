@@ -1657,6 +1657,19 @@ def test_priority_safety_slot_in_chain():
     assert "✅Custom#5(100)" in summary
 
 
+def test_priority_custom_slot_named_shown_in_decision_priority():
+    """A named custom slot renders its name, not Custom#N (issue #910)."""
+    cfg = {
+        "custom_position_sensors_2": ["binary_sensor.protection_solaire_canicule"],
+        "custom_position_2": 10,
+        "custom_position_priority_2": 75,
+        "custom_position_name_2": "Canicule",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "✅Canicule(75)" in summary
+    assert "Custom#2" not in summary
+
+
 def test_priority_no_force_entry_remains():
     """The standalone Force chain entry is gone (merged into custom slots, #563)."""
     summary = _build_config_summary({}, CoverType.BLIND)

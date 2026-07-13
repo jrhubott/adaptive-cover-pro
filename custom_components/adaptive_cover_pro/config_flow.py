@@ -220,6 +220,7 @@ from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
 from .helpers import (
     custom_position_slot_configured,
+    custom_position_slot_name,
     custom_position_slot_sensors,
     mirror_legacy_slot_sensor_keys,
 )
@@ -1841,6 +1842,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     #    has_trigger)
     _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool, bool]] = []
     _and_no_sensor_slots: list[int] = []
+    # slot -> configured custom_position_name_N (issue #910); feeds the
+    # Decision Priority chain's per-slot label below.
+    _custom_slot_names: dict[int, str] = {}
     for _i, _slot_keys in CUSTOM_POSITION_SLOTS.items():
         if not custom_position_slot_configured(config, _slot_keys):
             continue
@@ -1881,6 +1885,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 _has_trigger,
             )
         )
+        _name = custom_position_slot_name(config, _slot_keys)
+        if _name:
+            _custom_slot_names[_i] = _name
     has_custom_position = bool(_custom_slots)
     my_pos = config.get(CONF_MY_POSITION_VALUE)  # None = not configured
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
@@ -2743,6 +2750,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         supports_glare=summary_policy.supports_glare_zones,
         custom_slots=_custom_slots,
         priorities=_handler_priority_overrides(config),
+        slot_names=_custom_slot_names,
     )
     chain = [_ch(e.active, e.label) for e in _chain_entries]
 
@@ -2764,6 +2772,7 @@ def _render_priority_scale(config: dict, policy) -> str:
     ladder reflects the *last submitted* priorities and refreshes on re-render.
     """
     custom_slots: list[tuple] = []
+    slot_names: dict[int, str] = {}
     for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
         if not custom_position_slot_configured(config, slot_keys):
             continue
@@ -2772,6 +2781,9 @@ def _render_priority_scale(config: dict, policy) -> str:
         )
         # build_priority_chain reads index 0 (slot) and 3 (priority).
         custom_slots.append((slot, None, 0, priority, False, None, False))
+        name = custom_position_slot_name(config, slot_keys)
+        if name:
+            slot_names[slot] = name
 
     entries = build_priority_chain(
         has_weather=True,
@@ -2783,6 +2795,7 @@ def _render_priority_scale(config: dict, policy) -> str:
         supports_glare=policy.supports_glare_zones,
         custom_slots=custom_slots,
         priorities=_handler_priority_overrides(config),
+        slot_names=slot_names,
     )
 
     lines = ["```"]

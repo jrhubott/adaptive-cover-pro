@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.helpers import (
     check_cover_features,
     check_time_passed,
     custom_position_slot_configured,
+    custom_position_slot_name,
     custom_position_slot_sensors,
     dt_check_time_passed,
     get_datetime_from_str,
@@ -93,6 +94,20 @@ def test_slot_configured_requires_trigger_and_position():
     assert not custom_position_slot_configured(
         {_SLOT1["template"]: "not a template", _SLOT1["position"]: 50}, _SLOT1
     )
+
+
+@pytest.mark.unit
+def test_custom_position_slot_name_reads_option_key():
+    """Returns the configured custom_position_name_N value (issue #867/#910)."""
+    options = {_SLOT1["name"]: "Canicule"}
+    assert custom_position_slot_name(options, _SLOT1) == "Canicule"
+
+
+@pytest.mark.unit
+def test_custom_position_slot_name_empty_string_normalizes_to_none():
+    """An empty string (cleared text box) and an absent key both mean unset."""
+    assert custom_position_slot_name({_SLOT1["name"]: ""}, _SLOT1) is None
+    assert custom_position_slot_name({}, _SLOT1) is None
 
 
 @pytest.mark.unit

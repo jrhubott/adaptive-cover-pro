@@ -131,6 +131,18 @@ def custom_position_slot_configured(
     return has_trigger and options.get(slot_keys["position"]) is not None
 
 
+def custom_position_slot_name(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> str | None:
+    """Return a custom-position slot's user-configured label, or None.
+
+    Single source of truth for reading ``custom_position_name_N`` (issue
+    #867): an empty string (a cleared text box) and an absent key both
+    normalize to ``None`` so every consumer treats "unset" the same way.
+    """
+    return options.get(slot_keys["name"]) or None
+
+
 def get_safe_state(hass: HomeAssistant, entity_id: str):
     """Get a safe state value if not available."""
     state = hass.states.get(entity_id)
