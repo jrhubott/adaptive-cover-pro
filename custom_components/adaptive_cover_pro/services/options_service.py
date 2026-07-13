@@ -22,7 +22,9 @@ from ..const import (
     BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOTS,
     blind_spot_legacy_to_gamma,
+    clamp_gamma_pair,
     resolve_fov_left,
+    resolve_fov_right,
     CONF_ARM_LENGTH,
     CONF_AWNING_ANGLE,
     CONF_AWNING_HOUSING_OFFSET,
@@ -1268,20 +1270,26 @@ def _resolve_legacy_edge(
 ) -> Any:
     """Resolve one legacy blind-spot edge, completing it from *current* if absent.
 
-    Precedence: an edge supplied in *patch* wins; else the stored legacy key;
-    else the stored signed-gamma key, back-converted to the legacy frame (the
-    inverse of ``blind_spot_legacy_to_gamma``: ``old_left = fov_left - gamma``,
-    ``old_right = gamma + fov_left``). Returns ``None`` when the edge is
+    Precedence: an edge supplied in *patch* wins; else the stored signed-gamma
+    key back-converted to the legacy frame (the RUNTIME TRUTH); else the stored
+    legacy key. The back-conversion is the inverse of
+    ``blind_spot_legacy_to_gamma``: ``old_left = fov_left - gamma``,
+    ``old_right = gamma + fov_left``. Returns ``None`` when the edge is
     unresolvable on every path.
+
+    Gamma is preferred over the stored legacy key because the options flow saves
+    ONLY the gamma keys — the legacy edges freeze at migration and go stale after
+    any UI wedge edit. Completing the missing edge from the stale legacy key would
+    silently revert the user's UI edit (N1). For never-edited entries the stored
+    legacy and the back-converted gamma agree, so this is behaviour-preserving
+    where it matters.
     """
     if legacy_key in patch:
         return patch[legacy_key]
-    if current.get(legacy_key) is not None:
-        return current[legacy_key]
     g = current.get(gamma_key)
-    if g is None:
-        return None
-    return fov_left - int(g) if is_left else int(g) + fov_left
+    if g is not None:
+        return fov_left - int(g) if is_left else int(g) + fov_left
+    return current.get(legacy_key)
 
 
 def _augment_blind_spot_gamma(patch: dict, current: dict) -> None:
@@ -1295,15 +1303,23 @@ def _augment_blind_spot_gamma(patch: dict, current: dict) -> None:
     * If an explicit gamma edge is already in *patch*, gamma WINS — the legacy
       pair is NOT converted for that slot (finding 7).
     * Otherwise, when either legacy edge is in *patch*, the missing edge is
-      completed from *current* via :func:`_resolve_legacy_edge` (stored legacy
-      preferred, else back-converted gamma) and the pair is converted to gamma
-      via the shared :func:`blind_spot_legacy_to_gamma` (finding 1/5). This
-      mirrors the patch+current merge that cross-field validation uses.
+      completed from *current* via :func:`_resolve_legacy_edge` (back-converted
+      live gamma preferred, else the stored legacy key) and the pair is converted
+      to gamma via the shared :func:`blind_spot_legacy_to_gamma` (finding 1/5).
+      This mirrors the patch+current merge that cross-field validation uses.
+
+    The converted gamma pair is clamped to the FOV via the shared
+    :func:`clamp_gamma_pair` — the SAME helper the config migration uses — so an
+    extreme legacy input (a harmless never-matching wedge pre-#247) behaves like
+    the migration and never hard-fails the range validator on a key the caller
+    never supplied (N2). The clamp applies ONLY to the legacy→gamma path; a caller
+    supplying a gamma key directly skips this block and is validated normally.
 
     Shared by ``set_blind_spot`` and the generic ``set_option`` so the two can
     never diverge.
     """
     fov_left = resolve_fov_left(current)
+    fov_right = resolve_fov_right(current)
     for keys in BLIND_SPOT_SLOTS.values():
         if keys["left_gamma"] in patch or keys["right_gamma"] in patch:
             continue  # explicit gamma wins — do not derive from legacy
@@ -1318,6 +1334,7 @@ def _augment_blind_spot_gamma(patch: dict, current: dict) -> None:
         if old_left is None or old_right is None:
             continue  # cannot form a complete wedge
         new_left, new_right = blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+        new_left, new_right = clamp_gamma_pair(new_left, new_right, fov_left, fov_right)
         # Overwrite (not setdefault): a legacy call must update the effective
         # wedge even when stale gamma keys already exist.
         patch[keys["left_gamma"]] = new_left

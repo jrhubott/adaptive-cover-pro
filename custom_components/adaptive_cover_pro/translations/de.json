@@ -2084,7 +2084,7 @@
         },
         "blind_spot_right": {
           "description": "VERALTET (Issue #247): ältere rechte Kante, gemessen nach innen von der linken Akzeptanzkante (Bereich 1–360°). Wird für Rückwärtskompatibilität akzeptiert und beim Schreiben in vorzeichenbehaftetes Gamma konvertiert. Verwenden Sie stattdessen blind_spot_right_gamma.",
-          "name": "Blindfleck rechte Akzeptanzkante"
+          "name": "Rechte Kante (veraltet)"
         },
         "blind_spot_elevation_mode": {
           "name": "Höhenmodus",

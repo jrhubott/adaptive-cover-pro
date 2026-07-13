@@ -2084,7 +2084,7 @@
         },
         "blind_spot_right": {
           "description": "OBSOLÈTE (issue #247) : bord droit hérité mesuré vers l'intérieur à partir du bord d'acceptance gauche (plage 1–360°). Accepté pour la rétro-compatibilité et converti en gamma signé à l'écriture. Utilisez blind_spot_right_gamma à la place.",
-          "name": "Bord droit (à partir du bord d'acceptance gauche)"
+          "name": "Bord droit (obsolète)"
         },
         "blind_spot_elevation_mode": {
           "name": "Mode d'élévation",

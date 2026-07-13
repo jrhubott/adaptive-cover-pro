@@ -1614,6 +1614,70 @@ class TestSetBlindSpot:
                 {CONF_BLIND_SPOT_LEFT_GAMMA: -50, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
             )
 
+    async def test_single_legacy_edge_prefers_live_gamma_over_stale_legacy(
+        self, hass: HomeAssistant
+    ):
+        """Completing a half-supplied legacy pair must use the LIVE gamma keys, not
+        the stale stored legacy edge (N1).
+
+        The options flow saves only the signed-gamma keys, so the legacy edges
+        freeze at migration and go stale after any UI wedge edit. A migrated entry
+        seeds gamma 35/-15 (legacy 10/30 @ fov_left=45); a later UI edit moved the
+        stored gamma right to -5 while the legacy keys stayed at 10/30. Sending
+        only legacy blind_spot_left=20 must back-convert the missing right edge
+        from the LIVE gamma (-5 → old_right=40), yielding gamma right=-5 — NOT the
+        stale legacy 30 which would revert it to -15 and silently discard the
+        user's edit.
+        """
+        opts = {
+            **VERTICAL_OPTIONS,
+            CONF_BLIND_SPOT_LEFT: 10,  # stale legacy, frozen at migration
+            CONF_BLIND_SPOT_RIGHT: 30,  # stale legacy
+            CONF_BLIND_SPOT_LEFT_GAMMA: 35,
+            CONF_BLIND_SPOT_RIGHT_GAMMA: -5,  # live: UI moved this from -15 to -5
+        }
+        await _setup(hass, entry_id="bs_stale_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_blind_spot", {CONF_BLIND_SPOT_LEFT: 20})
+            new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 25  # 45 - 20
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5  # live gamma preserved
+
+    async def test_extreme_legacy_input_clamped_like_migration(
+        self, hass: HomeAssistant
+    ):
+        """Extreme legacy edges must clamp (like the migration), not hard-fail (N2).
+
+        Pre-#247 legacy 300/340 @ fov_left=45 was a harmless never-matching wedge.
+        It now converts to out-of-range gamma (-255/295); the migration clamps it
+        via the shared clamp_gamma_pair helper and never errors. A legacy-field
+        service call must behave the same — clamp, don't reject a key the caller
+        never supplied. Expected clamped gamma matches
+        ``_seed_signed_gamma_blind_spots`` for the same legacy input @ fov 45/45.
+        """
+        new_opts = await self._run(
+            hass,
+            "bs_extreme_01",
+            {CONF_BLIND_SPOT_LEFT: 300, CONF_BLIND_SPOT_RIGHT: 340},
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == -44
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == 45
+
+    async def test_direct_out_of_range_gamma_still_rejected(self, hass: HomeAssistant):
+        """The N2 clamp is back-compat leniency for the LEGACY path only. A caller
+        supplying a gamma key DIRECTLY must still be range-validated (N2 guard).
+        """
+        await _setup(hass, entry_id="bs_gamma_oor_01")
+        with pytest.raises((ServiceValidationError, Exception)):
+            await _call(
+                hass,
+                "set_blind_spot",
+                {CONF_BLIND_SPOT_LEFT_GAMMA: 200, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
+            )
+
 
 class TestSetInterpolation:
     """Integration tests for set_interpolation service."""
