@@ -334,7 +334,9 @@ class TestClimateHandlerGlareControl:
             climate_readings=_make_readings(inside_temperature=22.0, is_presence=True),
             climate_options=_make_options(temp_low=18.0, temp_high=26.0),
         )
-        assert "deferred" in self.handler.describe_skip(snap).lower()
+        from custom_components.adaptive_cover_pro.reason_i18n import render_en
+
+        assert "deferred" in render_en(self.handler.describe_skip(snap)).lower()
 
 
 class TestClimateHandlerMetadata:
@@ -354,6 +356,53 @@ class TestClimateHandlerMetadata:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.climate_strategy is not None
+
+    def test_winning_reason_payload_carries_season_fragment(self) -> None:
+        """The winning result's reason_payload is CLIMATE_ACTIVE with a nested season fragment."""
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.reason_i18n import Reason
+
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0),
+            climate_options=_make_options(temp_low=18.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        payload = result.reason_payload
+        assert payload is not None
+        assert payload.code == ReasonCode.CLIMATE_ACTIVE
+        assert payload.params["position"] == result.position
+        season = payload.params["season"]
+        assert isinstance(season, Reason)
+        # Cold inside (15 < temp_low 18) → winter season fragment.
+        assert season.code == ReasonCode.FRAGMENT_SEASON_WINTER
+
+    def test_winning_reason_payload_summer_fragment(self) -> None:
+        """Hot inside above temp_high labels the season fragment as summer."""
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.reason_i18n import Reason
+
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0),
+            climate_options=_make_options(
+                temp_low=18.0, temp_high=26.0, transparent_blind=True
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.SUMMER
+        payload = result.reason_payload
+        assert payload is not None
+        assert payload.code == ReasonCode.CLIMATE_ACTIVE
+        season = payload.params["season"]
+        assert isinstance(season, Reason)
+        assert season.code == ReasonCode.FRAGMENT_SEASON_SUMMER
 
     def test_priority_is_50(self) -> None:
         """ClimateHandler has priority 50."""
@@ -611,8 +660,10 @@ class TestClimateHandlerTimeWindow:
 
     def test_describe_skip_outside_window(self) -> None:
         """describe_skip() should mention 'time window' when outside window."""
+        from custom_components.adaptive_cover_pro.reason_i18n import render_en
+
         snap = self._active_snap(in_time_window=False)
-        reason = self.handler.describe_skip(snap)
+        reason = render_en(self.handler.describe_skip(snap))
         assert (
             "time window" in reason.lower()
         ), f"Expected 'time window' in describe_skip reason but got: {reason!r}"

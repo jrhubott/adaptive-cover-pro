@@ -258,15 +258,21 @@ class TestClimateInactiveReasonSlugsDescribeSkipConsistency:
 
         self.handler = ClimateHandler()
 
+    def _describe_skip_en(self, snap) -> str:
+        """Render describe_skip's Reason payload to English prose (issue #882)."""
+        from custom_components.adaptive_cover_pro.reason_i18n import render_en
+
+        return render_en(self.handler.describe_skip(snap)).lower()
+
     def test_describe_skip_outside_time_window_still_works(self) -> None:
         """Refactored describe_skip must still mention 'time window' for outside-window case."""
         snap = make_snapshot(climate_mode_enabled=True, in_time_window=False)
-        assert "time window" in self.handler.describe_skip(snap).lower()
+        assert "time window" in self._describe_skip_en(snap)
 
     def test_describe_skip_mode_off_still_works(self) -> None:
         """Refactored describe_skip must still mention 'not enabled' for mode-off case."""
         snap = make_snapshot(climate_mode_enabled=False)
-        assert "not enabled" in self.handler.describe_skip(snap).lower()
+        assert "not enabled" in self._describe_skip_en(snap)
 
     def test_describe_skip_unavailable_still_works(self) -> None:
         """Refactored describe_skip must still mention 'unavailable' for readings-missing case."""
@@ -276,7 +282,7 @@ class TestClimateInactiveReasonSlugsDescribeSkipConsistency:
             climate_readings=None,
             climate_options=None,
         )
-        assert "unavailable" in self.handler.describe_skip(snap).lower()
+        assert "unavailable" in self._describe_skip_en(snap)
 
     def test_describe_skip_deferred_still_works(self) -> None:
         """Refactored describe_skip must still mention 'deferred' for threshold-not-met case."""
@@ -309,4 +315,104 @@ class TestClimateInactiveReasonSlugsDescribeSkipConsistency:
             climate_readings=readings,
             climate_options=opts,
         )
-        assert "deferred" in self.handler.describe_skip(snap).lower()
+        assert "deferred" in self._describe_skip_en(snap)
+
+
+class TestInactiveReasonFromResultLanguageIndependence:
+    """inactive_reason_from_result must key on the frozen reason CODE, not prose.
+
+    Once decision-trace reason strings are localized (issue #882) the climate
+    step's ``reason`` prose can be German/French. The reverse-map that derives a
+    ClimateInactiveReason must resolve from ``reason_payload.code`` so the join
+    key is language-independent. Each fixture carries deliberately non-English
+    prose while its payload code names the real climate skip/outprioritized code.
+    """
+
+    def _climate_step_with(self, code: str, params, prose: str) -> DecisionStep:
+        from custom_components.adaptive_cover_pro.reason_i18n import Reason
+
+        return DecisionStep(
+            handler="climate",
+            matched=False,
+            reason=prose,  # non-English junk — must be ignored by the reverse map
+            reason_payload=Reason(code, params),
+            position=None,
+        )
+
+    def _result_with(self, climate_step: DecisionStep) -> PipelineResult:
+        from custom_components.adaptive_cover_pro.const import ControlMethod
+
+        return PipelineResult(
+            position=50,
+            control_method=ControlMethod.DEFAULT,
+            reason="irgendein deutscher text",
+            decision_trace=[climate_step],
+        )
+
+    def test_outprioritized_from_code_not_german_prose(self) -> None:
+        """registry.outprioritized code + German prose → OTHER_MODE_ACTIVE."""
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+            inactive_reason_from_result,
+        )
+
+        step = self._climate_step_with(
+            ReasonCode.REGISTRY_OUTPRIORITIZED,
+            {"handler": "manual_override"},
+            prose="von Übersteuerung überstimmt",  # NOT "outprioritized by ..."
+        )
+        assert (
+            inactive_reason_from_result(self._result_with(step))
+            == ClimateInactiveReason.OTHER_MODE_ACTIVE
+        )
+
+    def test_mode_off_from_code_not_french_prose(self) -> None:
+        """skip.climate_mode_off code + French prose → MODE_OFF."""
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+            inactive_reason_from_result,
+        )
+
+        step = self._climate_step_with(
+            ReasonCode.SKIP_CLIMATE_MODE_OFF,
+            {},
+            prose="mode climatique désactivé",
+        )
+        assert (
+            inactive_reason_from_result(self._result_with(step))
+            == ClimateInactiveReason.MODE_OFF
+        )
+
+    def test_readings_unavailable_from_code_not_german_prose(self) -> None:
+        """skip.climate_readings_unavailable code + German prose → READINGS_UNAVAILABLE."""
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+            inactive_reason_from_result,
+        )
+
+        step = self._climate_step_with(
+            ReasonCode.SKIP_CLIMATE_READINGS_UNAVAILABLE,
+            {},
+            prose="Klimawerte nicht verfügbar",
+        )
+        assert (
+            inactive_reason_from_result(self._result_with(step))
+            == ClimateInactiveReason.READINGS_UNAVAILABLE
+        )
+
+    def test_deferred_from_code_not_french_prose(self) -> None:
+        """skip.climate_deferred code + French prose → THRESHOLDS_NOT_MET."""
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+        from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+            inactive_reason_from_result,
+        )
+
+        step = self._climate_step_with(
+            ReasonCode.SKIP_CLIMATE_DEFERRED,
+            {},
+            prose="contrôle de l'éblouissement différé",
+        )
+        assert (
+            inactive_reason_from_result(self._result_with(step))
+            == ClimateInactiveReason.THRESHOLDS_NOT_MET
+        )

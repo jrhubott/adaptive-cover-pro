@@ -20,14 +20,16 @@ from ...const import (
     ClimateInactiveReason,
     ClimateStrategy,
     ControlMethod,
+    ReasonCode,
 )
+from ...reason_i18n import Reason, _REASON_TEMPLATES_EN
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
     compute_raw_calculated_position,
     compute_solar_position,
 )
-from ..types import PipelineResult, PipelineSnapshot
+from ..types import DecisionStep, PipelineResult, PipelineSnapshot
 from .climate_modes import (
     NORMAL_WITH_PRESENCE,
     NORMAL_WITHOUT_PRESENCE,
@@ -277,23 +279,63 @@ class ClimateCoverState:
 
 
 # ---------------------------------------------------------------------------
-# Inactive-reason slug derivation — shared by ClimateHandler and sensor.py
+# Inactive-reason ↔ reason-code mapping — shared by ClimateHandler and sensor.py
 # ---------------------------------------------------------------------------
 
-# Maps each ClimateInactiveReason slug to a human-readable prose string.
-# This is the single source of truth so that describe_skip and the slug helper
-# stay in sync without duplicating branch logic.
-_SLUG_TO_PROSE: dict[str, str] = {
-    ClimateInactiveReason.MODE_OFF: "climate mode not enabled",
-    ClimateInactiveReason.OUTSIDE_TIME_WINDOW: "outside time window",
-    ClimateInactiveReason.READINGS_UNAVAILABLE: "climate readings or options unavailable",
-    ClimateInactiveReason.THRESHOLDS_NOT_MET: "deferred glare-control to solar/glare handlers",
-    # ACTIVE and OTHER_MODE_ACTIVE have no describe_skip prose (handler wins / outprioritized)
+# Each ClimateInactiveReason slug that has describe_skip prose maps to a frozen
+# ReasonCode (issue #882). The CODE — never the localized prose — is the join
+# key, so describe_skip and the reverse derivation below both stay
+# language-independent. ACTIVE and OTHER_MODE_ACTIVE have no describe_skip code
+# (the handler wins / is outprioritized before describe_skip runs).
+_INACTIVE_REASON_TO_CODE: dict[str, str] = {
+    ClimateInactiveReason.MODE_OFF: ReasonCode.SKIP_CLIMATE_MODE_OFF,
+    ClimateInactiveReason.OUTSIDE_TIME_WINDOW: ReasonCode.SKIP_OUTSIDE_WINDOW,
+    ClimateInactiveReason.READINGS_UNAVAILABLE: (
+        ReasonCode.SKIP_CLIMATE_READINGS_UNAVAILABLE
+    ),
+    ClimateInactiveReason.THRESHOLDS_NOT_MET: ReasonCode.SKIP_CLIMATE_DEFERRED,
 }
 
-# Reverse map for deriving a slug from a describe_skip prose string (sensor.py use).
-# Built once at module load from _SLUG_TO_PROSE — stays in sync automatically.
-_PROSE_TO_SLUG: dict[str, str] = {v: k for k, v in _SLUG_TO_PROSE.items()}
+# Reverse map: derive the inactive-reason slug from a decision step's frozen
+# reason CODE. Built once from the forward map so the two stay in sync.
+_CODE_TO_INACTIVE_REASON: dict[str, str] = {
+    code: slug for slug, code in _INACTIVE_REASON_TO_CODE.items()
+}
+
+# Defensive fallback for legacy, payload-less decision steps (pre-#882 steps
+# carrying only English prose). Built from the English templates so no prose
+# literal is duplicated here. Production steps always carry reason_payload, so
+# this only fires for hand-constructed or historical steps.
+_LEGACY_PROSE_TO_INACTIVE_REASON: dict[str, str] = {
+    _REASON_TEMPLATES_EN[code]: slug
+    for code, slug in _CODE_TO_INACTIVE_REASON.items()
+    if code in _REASON_TEMPLATES_EN
+}
+
+
+def _climate_step_inactive_reason(step: DecisionStep) -> str:
+    """Derive a ClimateInactiveReason from a non-winning climate decision step.
+
+    Keys on the frozen ``reason_payload.code`` (language-independent) — the
+    "outprioritized" case is detected by code equality with
+    ``ReasonCode.REGISTRY_OUTPRIORITIZED``, not by matching prose. Falls back to
+    English-prose matching only for legacy payload-less steps (defensive).
+    """
+    if step.matched:
+        return ClimateInactiveReason.ACTIVE
+    payload = step.reason_payload
+    if payload is not None:
+        if payload.code == ReasonCode.REGISTRY_OUTPRIORITIZED:
+            return ClimateInactiveReason.OTHER_MODE_ACTIVE
+        return _CODE_TO_INACTIVE_REASON.get(
+            payload.code, ClimateInactiveReason.THRESHOLDS_NOT_MET
+        )
+    # Legacy payload-less step: match the English prose (defensive only).
+    if step.reason.startswith("outprioritized by"):
+        return ClimateInactiveReason.OTHER_MODE_ACTIVE
+    return _LEGACY_PROSE_TO_INACTIVE_REASON.get(
+        step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET
+    )
 
 
 def inactive_reason(
@@ -323,16 +365,13 @@ def inactive_reason(
     if snapshot.climate_readings is None or snapshot.climate_options is None:
         return ClimateInactiveReason.READINGS_UNAVAILABLE
 
-    # Inspect the decision trace for the climate step.
+    # Inspect the decision trace for the climate step. The distinction between
+    # ACTIVE / OTHER_MODE_ACTIVE / THRESHOLDS_NOT_MET is derived from the step's
+    # frozen reason CODE (see _climate_step_inactive_reason), not its prose.
     if pipeline_result is not None:
         for step in pipeline_result.decision_trace:
             if step.handler == "climate":
-                if step.matched:
-                    return ClimateInactiveReason.ACTIVE
-                if step.reason.startswith("outprioritized by"):
-                    return ClimateInactiveReason.OTHER_MODE_ACTIVE
-                # Present but not matched and not outprioritized → deferred
-                return ClimateInactiveReason.THRESHOLDS_NOT_MET
+                return _climate_step_inactive_reason(step)
 
     # No climate step in trace (e.g. climate deferred without a trace entry)
     return ClimateInactiveReason.THRESHOLDS_NOT_MET
@@ -343,9 +382,10 @@ def inactive_reason_from_result(
 ) -> str:
     """Derive a ClimateInactiveReason slug from a PipelineResult alone.
 
-    Used by sensor.py where no PipelineSnapshot is in scope.  Inspects the
-    decision_trace climate step and maps via _PROSE_TO_SLUG (the reverse of
-    the _SLUG_TO_PROSE map that describe_skip uses) — single source of truth.
+    Used by sensor.py where no PipelineSnapshot is in scope. Inspects the
+    decision_trace climate step and maps its frozen ``reason_payload.code`` back
+    to a slug via _CODE_TO_INACTIVE_REASON. Keying on the CODE — not the
+    (now localizable) prose — keeps this join language-independent (issue #882).
 
     Falls back to MODE_OFF when the result is None or has no climate step.
     """
@@ -354,14 +394,7 @@ def inactive_reason_from_result(
 
     for step in pipeline_result.decision_trace:
         if step.handler == "climate":
-            if step.matched:
-                return ClimateInactiveReason.ACTIVE
-            if step.reason.startswith("outprioritized by"):
-                return ClimateInactiveReason.OTHER_MODE_ACTIVE
-            # Map the prose reason back to a slug via the reverse map.
-            return _PROSE_TO_SLUG.get(
-                step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET
-            )
+            return _climate_step_inactive_reason(step)
 
     # No climate step in trace → climate was never considered → mode off or not applicable.
     return ClimateInactiveReason.MODE_OFF
@@ -445,7 +478,7 @@ class ClimateHandler(OverrideHandler):
             # get_state()/apply_snapshot_limits above — this branch only sets the
             # label + control method, never a short-circuit before get_state().
             method = ControlMethod.EXTREME_HEAT
-            season = "extreme heat"
+            season_code = ReasonCode.FRAGMENT_SEASON_EXTREME_HEAT
         elif (
             climate_cover_state.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
         ):
@@ -454,28 +487,31 @@ class ClimateHandler(OverrideHandler):
             # before is_summer/is_winter because the gate can fire in any season
             # the user deselected, and DEFAULT is the honest control method.
             method = ControlMethod.DEFAULT
-            season = "default: tracking off this season"
+            season_code = ReasonCode.FRAGMENT_SEASON_TRACKING_OFF
         elif climate_data.is_summer:
             method = ControlMethod.SUMMER
-            season = "summer"
+            season_code = ReasonCode.FRAGMENT_SEASON_SUMMER
         elif climate_data.is_winter:
             method = ControlMethod.WINTER
-            season = "winter"
+            season_code = ReasonCode.FRAGMENT_SEASON_WINTER
         elif climate_cover_state.climate_strategy == ClimateStrategy.LOW_LIGHT:
             # Low-light / no-sun branch — the cover returns to its default
             # position rather than tracking the sun.  Emitting SOLAR here
             # would cause VenetianPolicy to synthesise a tilt from the
             # still-drifting azimuth even when the sun has set (issue #33).
             method = ControlMethod.DEFAULT
-            season = "glare control (low light)"
+            season_code = ReasonCode.FRAGMENT_SEASON_GLARE_LOW_LIGHT
         else:
             method = ControlMethod.SOLAR
-            season = "glare control"
+            season_code = ReasonCode.FRAGMENT_SEASON_GLARE
 
         return PipelineResult(
             position=position,
             control_method=method,
-            reason=f"climate mode active ({season}) — position {position}%",
+            reason_payload=Reason(
+                ReasonCode.CLIMATE_ACTIVE,
+                {"season": Reason(season_code), "position": position},
+            ),
             climate_state=position,
             climate_strategy=climate_cover_state.climate_strategy,
             climate_data=climate_data,
@@ -494,13 +530,15 @@ class ClimateHandler(OverrideHandler):
             return {}
         return {"climate_data": climate_data}
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
         """Reason when climate handler does not match.
 
         Delegates to the inactive_reason slug helper (single source of truth)
-        and maps each slug to its prose via _SLUG_TO_PROSE.  The other_mode_active
-        and active slugs never reach describe_skip (those paths win the handler),
-        so their prose entries are omitted from the map.
+        and maps each slug to its frozen ReasonCode via _INACTIVE_REASON_TO_CODE
+        so the registry can localize it (issue #882). The other_mode_active and
+        active slugs never reach describe_skip (those paths win the handler), so
+        their codes are omitted from the map.
         """
         slug = inactive_reason(snapshot, pipeline_result=None)
-        return _SLUG_TO_PROSE.get(slug, slug)
+        code = _INACTIVE_REASON_TO_CODE.get(slug, ReasonCode.SKIP_NOT_ACTIVE)
+        return Reason(code)
