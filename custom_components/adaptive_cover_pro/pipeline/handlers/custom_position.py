@@ -171,7 +171,7 @@ class CustomPositionHandler(OverrideHandler):
                         is_safety=self._is_safety,
                         control_method=ControlMethod.CUSTOM_POSITION,
                         reason_payload=Reason(
-                            ReasonCode.CUSTOM_POSITION_,
+                            ReasonCode.CUSTOM_POSITION,
                             {
                                 "head": reason_head,
                                 "position": pos,

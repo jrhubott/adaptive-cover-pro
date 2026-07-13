@@ -21,7 +21,7 @@ from ..const import (
     ReasonCode,
     SunState,
 )
-from ..reason_i18n import _REASON_TEMPLATES_EN, Reason, render
+from ..reason_i18n import Reason, render
 
 # Sensor state classifications (issue #693, Q3).
 _SENSOR_STATE_NOT_CONFIGURED = "not_configured"
@@ -284,7 +284,7 @@ class DiagnosticsBuilder:
         the cover's English ``control_state_reason`` prose when no code is
         exposed (e.g. legacy test doubles).
         """
-        labels = ctx.reason_labels or _REASON_TEMPLATES_EN
+        labels = ctx.reason_labels
         result = ctx.pipeline_result
         if result is not None and result.control_method == ControlMethod.MOTION:
             reason = render(
@@ -331,10 +331,10 @@ class DiagnosticsBuilder:
         When manual override is active and the cover's physical position diverges
         from the solar calculation, the divergence is surfaced explicitly.
         """
-        labels = ctx.reason_labels or _REASON_TEMPLATES_EN
+        labels = ctx.reason_labels
         result = ctx.pipeline_result
         if result is None:
-            return "Unknown"
+            return render(Reason(ReasonCode.BUILDER_UNKNOWN), labels)
 
         # Outside time window — pipeline ran but commands are gated
         if not ctx.check_adaptive_time:

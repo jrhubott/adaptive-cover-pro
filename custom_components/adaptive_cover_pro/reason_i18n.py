@@ -22,6 +22,7 @@ passed-in hass executor; it imports nothing from Home Assistant.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cache
@@ -29,6 +30,8 @@ from pathlib import Path
 
 from .const import ReasonCode
 from .i18n_bundle import load_bundle_overlay, merge_labels
+
+_LOGGER = logging.getLogger(__name__)
 
 _REASON_I18N_DIR = Path(__file__).parent / "reason_i18n"
 
@@ -116,7 +119,7 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.CUSTOM_HEAD_NAMED: "{name} active",
     ReasonCode.CUSTOM_HEAD_SLOT: "custom position #{slot} active ({trigger})",
     ReasonCode.CUSTOM_USE_MY: "{head} — use My position ({position}%){bypass_note}",
-    ReasonCode.CUSTOM_POSITION_: "{head} — position {position}%{bypass_note}",
+    ReasonCode.CUSTOM_POSITION: "{head} — position {position}%{bypass_note}",
     # -- default handler
     ReasonCode.DEFAULT_SUNSET_USE_MY: "sunset position — use My position ({position}%)",
     ReasonCode.DEFAULT_NO_CONDITION: "no active condition — {pos_label} {position}%",
@@ -189,13 +192,14 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _render_value(value: object, labels: Mapping[str, str]) -> object:
+def _render_value(value: object, labels: Mapping[str, str] | None = None) -> object:
     """Render a single param value, recursing into fragments.
 
     A :class:`Reason` renders to its (localized) prose; a non-str sequence of
     values renders each element and joins with ``", "``; every other value
     passes through unchanged so the parent template's format spec (e.g.
-    ``{distance:.2f}``) still applies.
+    ``{distance:.2f}``) still applies. ``labels`` of ``None`` renders in
+    English (mirrors :func:`render`).
     """
     if isinstance(value, Reason):
         return render(value, labels)
@@ -204,26 +208,28 @@ def _render_value(value: object, labels: Mapping[str, str]) -> object:
     return value
 
 
-def render(reason: Reason, labels: Mapping[str, str]) -> str:
+def render(reason: Reason, labels: Mapping[str, str] | None = None) -> str:
     """Render ``reason`` using ``labels``, falling back to English per key.
 
     ``labels`` is an overlay (a translated bundle): a key it lacks falls back
-    to :data:`_REASON_TEMPLATES_EN`. An unknown code degrades gracefully to the
-    code string itself.
+    to :data:`_REASON_TEMPLATES_EN`. ``None`` renders entirely in English. An
+    unknown code degrades gracefully to the code string itself.
     """
-    template = labels.get(reason.code) or _REASON_TEMPLATES_EN.get(reason.code)
+    active = labels if labels is not None else _REASON_TEMPLATES_EN
+    template = active.get(reason.code) or _REASON_TEMPLATES_EN.get(reason.code)
     if template is None:
         return str(reason.code)
     rendered = {key: _render_value(val, labels) for key, val in reason.params.items()}
     try:
         return template.format(**rendered)
-    except (KeyError, IndexError, ValueError):
+    except (KeyError, IndexError, ValueError) as exc:
+        _LOGGER.debug("reason render fallback for %s: %r", reason.code, exc)
         return template
 
 
 def render_en(reason: Reason) -> str:
     """Render ``reason`` with the English templates."""
-    return render(reason, _REASON_TEMPLATES_EN)
+    return render(reason)
 
 
 def reason_to_dict(reason: Reason) -> dict[str, object]:

@@ -209,7 +209,7 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         "Privacy active — use My position (70%)",
     ),
     (
-        ReasonCode.CUSTOM_POSITION_,
+        ReasonCode.CUSTOM_POSITION,
         {
             "head": Reason(
                 ReasonCode.CUSTOM_HEAD_SLOT, {"slot": 3, "trigger": "template"}
@@ -607,6 +607,48 @@ def test_reason_i18n_module_has_no_homeassistant_import() -> None:
     src = inspect.getsource(reason_i18n)
     assert "import homeassistant" not in src
     assert "from homeassistant" not in src
+
+
+def test_render_without_labels_equals_render_en() -> None:
+    """``render(reason)`` with no labels arg == ``render_en(reason)`` for every code.
+
+    Covers plain scalars, nested-fragment params, and fragment sequences.
+    """
+    for code, params, expected in LEGACY_CASES:
+        reason = Reason(code, params)
+        assert render(reason) == render_en(reason) == expected
+
+
+def test_render_none_labels_matches_english() -> None:
+    """Passing ``labels=None`` explicitly is identical to the English default."""
+    reason = Reason(
+        ReasonCode.CLOUD_SUPPRESSION,
+        {
+            "triggers": [
+                Reason(ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY),
+                Reason(ReasonCode.FRAGMENT_TRIGGER_LUX_BELOW),
+            ],
+            "pos_label": Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION),
+            "position": 25,
+        },
+    )
+    assert render(reason, None) == render(reason) == render_en(reason)
+
+
+def test_render_logs_debug_on_bad_params(caplog: pytest.LogCaptureFixture) -> None:
+    """A template whose params can't format logs a debug line and returns the template."""
+    import logging
+
+    reason = Reason(ReasonCode.SOLAR_TRACKING, {})  # missing position/suffix
+    with caplog.at_level(
+        logging.DEBUG, logger="custom_components.adaptive_cover_pro.reason_i18n"
+    ):
+        result = render(reason, {})
+    # Fallback behavior is unchanged: the raw template is returned.
+    assert result == _REASON_TEMPLATES_EN[ReasonCode.SOLAR_TRACKING]
+    assert any(
+        ReasonCode.SOLAR_TRACKING in record.getMessage() for record in caplog.records
+    )
 
 
 def test_render_en_renders_via_overlay_fallback() -> None:

@@ -1377,7 +1377,7 @@ class ReasonCode(StrEnum):
     CUSTOM_HEAD_NAMED = "custom.head_named"
     CUSTOM_HEAD_SLOT = "custom.head_slot"
     CUSTOM_USE_MY = "custom.use_my"
-    CUSTOM_POSITION_ = "custom.position"
+    CUSTOM_POSITION = "custom.position"
 
     # -- default handler
     DEFAULT_SUNSET_USE_MY = "default.sunset_use_my"

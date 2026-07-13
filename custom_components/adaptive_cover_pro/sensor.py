@@ -57,7 +57,7 @@ from .helpers import (
     custom_position_slot_sensors,
     motion_entities,
 )
-from .reason_i18n import _REASON_TEMPLATES_EN, Reason, render, reason_to_dict
+from .reason_i18n import Reason, render, reason_to_dict
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
 
@@ -76,8 +76,7 @@ def _localized_reason(
     """
     if payload is None:
         return fallback
-    labels = coordinator._reason_labels or _REASON_TEMPLATES_EN  # noqa: SLF001
-    return render(payload, labels)
+    return render(payload, coordinator._reason_labels)  # noqa: SLF001
 
 
 def _reason_to_dict_attrs(payload: Reason) -> dict[str, Any]:

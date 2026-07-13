@@ -126,6 +126,12 @@ def test_position_explanation_outside_window_renders_de_with_fragment() -> None:
     )
 
 
+def test_position_explanation_unknown_de() -> None:
+    """A None pipeline result localizes the ``Unknown`` fallback (issue #882)."""
+    ctx = _ctx(pipeline_result=None, reason_labels=_FAKE_DE)
+    assert DiagnosticsBuilder._build_position_explanation(ctx) == "Unbekannt"
+
+
 def test_position_explanation_manual_divergence_and_inverse_de() -> None:
     pr = PipelineResult(
         position=72,
@@ -251,6 +257,12 @@ def test_position_explanation_outside_window_en_byte_identical() -> None:
     assert DiagnosticsBuilder._build_position_explanation(ctx) == (
         "Outside time window → sunset position 30% (commands paused)"
     )
+
+
+def test_position_explanation_unknown_en_byte_identical() -> None:
+    """The None-result fallback stays exactly ``Unknown`` with EN labels."""
+    ctx = _ctx(pipeline_result=None)
+    assert DiagnosticsBuilder._build_position_explanation(ctx) == "Unknown"
 
 
 def test_position_explanation_base_payload_en_byte_identical() -> None:

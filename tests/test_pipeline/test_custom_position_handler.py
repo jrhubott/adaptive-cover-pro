@@ -299,7 +299,7 @@ class TestReasonPayload:
         result = _handler(slot=2, position=70).evaluate(snapshot)
         assert result is not None
         assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.CUSTOM_POSITION_
+        assert result.reason_payload.code == ReasonCode.CUSTOM_POSITION
         assert result.reason_payload.params["position"] == 70
         assert result.reason_payload.params["bypass_note"] == ""
         head = result.reason_payload.params["head"]
