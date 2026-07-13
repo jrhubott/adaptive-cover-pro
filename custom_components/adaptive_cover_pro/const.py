@@ -1312,6 +1312,130 @@ class ClimateInactiveReason:
     READINGS_UNAVAILABLE = "readings_unavailable"  # sensors misconfigured/unavailable
 
 
+class ReasonCode(StrEnum):
+    """Stable identifiers for every human-readable reason/explanation string.
+
+    Each value is the join key into the ``reason_i18n/`` template bundle
+    (mirrors the ``summary_i18n/`` mechanism): the integration renders the
+    English template on the ``sensor.*`` reason attributes and the Lovelace
+    card localizes the same codes+params into the user's language.
+
+    These are FROZEN identifiers exposed in diagnostics and consumed by the
+    card; do not rename without updating both ``reason_i18n/*.json`` and the
+    downstream card templates. Dotted values group by emitter
+    (``solar.*``, ``manual.*``, ``registry.*``, ``builder.*``, ``engine.*``,
+    ``skip.*``, ``fragment.*``).
+    """
+
+    # -- fragments: composed sub-phrases rendered inline into a parent template
+    FRAGMENT_SUNSET_POSITION = "fragment.sunset_position"
+    FRAGMENT_DEFAULT_POSITION = "fragment.default_position"
+    FRAGMENT_CLOUDY_POSITION = "fragment.cloudy_position"
+    FRAGMENT_COVERAGE_STEP = "fragment.coverage_step"
+    FRAGMENT_Z_ADJUSTED = "fragment.z_adjusted"
+    FRAGMENT_BYPASS_NOTE = "fragment.bypass_note"
+    FRAGMENT_SEASON_EXTREME_HEAT = "fragment.season_extreme_heat"
+    FRAGMENT_SEASON_TRACKING_OFF = "fragment.season_tracking_off"
+    FRAGMENT_SEASON_SUMMER = "fragment.season_summer"
+    FRAGMENT_SEASON_WINTER = "fragment.season_winter"
+    FRAGMENT_SEASON_GLARE_LOW_LIGHT = "fragment.season_glare_low_light"
+    FRAGMENT_SEASON_GLARE = "fragment.season_glare"
+    FRAGMENT_TRIGGER_NOT_SUNNY = "fragment.trigger_not_sunny"
+    FRAGMENT_TRIGGER_LUX_BELOW = "fragment.trigger_lux_below"
+    FRAGMENT_TRIGGER_IRRADIANCE_BELOW = "fragment.trigger_irradiance_below"
+    FRAGMENT_TRIGGER_CLOUD_ABOVE = "fragment.trigger_cloud_above"
+    FRAGMENT_TRIGGER_SMOOTHING_HOLD = "fragment.trigger_smoothing_hold"
+    FRAGMENT_TRIGGER_TEMPLATE = "fragment.trigger_template"
+    FRAGMENT_TRIGGER_FALLBACK = "fragment.trigger_fallback"
+
+    # -- solar handler
+    SOLAR_TRACKING = "solar.tracking"
+
+    # -- manual override handler
+    MANUAL_HOLDING_SOLAR = "manual.holding_solar"
+    MANUAL_SOLAR_ONLY = "manual.solar_only"
+    MANUAL_HOLDING_LABEL = "manual.holding_label"
+    MANUAL_LABEL_ONLY = "manual.label_only"
+
+    # -- motion/occupancy timeout handler (#881 wording)
+    OCCUPANCY_HOLDING = "occupancy.holding"
+    OCCUPANCY_LABEL = "occupancy.label"
+
+    # -- climate handler
+    CLIMATE_ACTIVE = "climate.active"
+
+    # -- glare zone handler
+    GLARE_PROTECTION = "glare.protection"
+
+    # -- cloud suppression handler
+    CLOUD_SUPPRESSION = "cloud.suppression"
+
+    # -- weather override handler
+    WEATHER_ACTIVE = "weather.active"
+
+    # -- custom position handler
+    CUSTOM_HEAD_NAMED = "custom.head_named"
+    CUSTOM_HEAD_SLOT = "custom.head_slot"
+    CUSTOM_USE_MY = "custom.use_my"
+    CUSTOM_POSITION_ = "custom.position"
+
+    # -- default handler
+    DEFAULT_SUNSET_USE_MY = "default.sunset_use_my"
+    DEFAULT_NO_CONDITION = "default.no_condition"
+
+    # -- group handlers
+    GROUP_LOCK = "group.lock"
+    GROUP_SCENE = "group.scene"
+
+    # -- registry composition (outprioritized / floor / tilt-axis passes)
+    REGISTRY_OUTPRIORITIZED = "registry.outprioritized"
+    REGISTRY_FLOOR_RAISED = "registry.floor_raised"
+    REGISTRY_FLOOR_INACTIVE = "registry.floor_inactive"
+    REGISTRY_TILT_APPLIED = "registry.tilt_applied"
+    REGISTRY_TILT_DEFERRED = "registry.tilt_deferred"
+
+    # -- diagnostics builder (control-state reason + position explanation)
+    BUILDER_UNKNOWN = "builder.unknown"
+    BUILDER_CONTROL_OCCUPANCY_TIMEOUT = "builder.control_occupancy_timeout"
+    BUILDER_CONTROL_MANUAL_OVERRIDE = "builder.control_manual_override"
+    BUILDER_CONTROL_TRACKING_OFF_SEASON = "builder.control_tracking_off_season"
+    BUILDER_CONTROL_TILT_FIXED = "builder.control_tilt_fixed"
+    BUILDER_OUTSIDE_WINDOW = "builder.outside_window"
+    BUILDER_MANUAL_DIVERGENCE = "builder.manual_divergence"
+    BUILDER_TILT_FIXED = "builder.tilt_fixed"
+    BUILDER_INTERPOLATED = "builder.interpolated"
+    BUILDER_INVERSED = "builder.inversed"
+
+    # -- engine control_state_reason (pure calc layer — codes resolved at boundary)
+    ENGINE_DIRECT_SUN = "engine.direct_sun"
+    ENGINE_DEFAULT_SUNSET_OFFSET = "engine.default_sunset_offset"
+    ENGINE_DEFAULT_ELEVATION_LIMIT = "engine.default_elevation_limit"
+    ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT = "engine.default_acceptance_angle_exit"
+    ENGINE_DEFAULT_BLIND_SPOT = "engine.default_blind_spot"
+    ENGINE_DEFAULT = "engine.default"
+
+    # -- describe_skip / inactive-reason prose
+    SKIP_OUTSIDE_WINDOW = "skip.outside_window"
+    SKIP_SUN_OUTSIDE = "skip.sun_outside"
+    SKIP_MANUAL_NOT_ACTIVE = "skip.manual_not_active"
+    SKIP_OCCUPANCY_DISABLED = "skip.occupancy_disabled"
+    SKIP_OCCUPANCY_NOT_ACTIVE = "skip.occupancy_not_active"
+    SKIP_CLIMATE_MODE_OFF = "skip.climate_mode_off"
+    SKIP_CLIMATE_READINGS_UNAVAILABLE = "skip.climate_readings_unavailable"
+    SKIP_CLIMATE_DEFERRED = "skip.climate_deferred"
+    SKIP_NO_GLARE_ZONES = "skip.no_glare_zones"
+    SKIP_CLOUD_SKIPPED = "skip.cloud_skipped"
+    SKIP_CLOUD_INACTIVE = "skip.cloud_inactive"
+    SKIP_WEATHER_NOT_ACTIVE = "skip.weather_not_active"
+    SKIP_CUSTOM_NOT_ACTIVE = "skip.custom_not_active"
+    SKIP_ALWAYS_MATCHES = "skip.always_matches"
+    SKIP_GROUP_SCENE_NOT_LOCK = "skip.group_scene_not_lock"
+    SKIP_NO_GROUP_LOCK = "skip.no_group_lock"
+    SKIP_GROUP_LOCK_NOT_SCENE = "skip.group_lock_not_scene"
+    SKIP_NO_GROUP_SCENE = "skip.no_group_scene"
+    SKIP_NOT_ACTIVE = "skip.not_active"
+
+
 # =============================================================================
 # 24. Geometric Accuracy (calc engine)
 # =============================================================================

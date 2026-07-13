@@ -1,0 +1,617 @@
+"""Tests for the reason-string i18n foundation (issue #882).
+
+The pipeline decision-trace reason strings, diagnostics explanations, and
+engine control-state reasons are localized via a ``reason_i18n/`` bundle that
+mirrors the ``summary_i18n/`` mechanism. English output must stay
+byte-identical to the pre-i18n f-strings so the ~40 reason-asserting test
+files stay green.
+
+This file covers the foundation only (plan steps 1 & 2): the ``ReasonCode``
+vocabulary, the ``_REASON_TEMPLATES_EN`` map, the ``Reason`` payload + render
+helpers, the shipped ``reason_i18n/{en,de,fr}.json`` bundles + parity locks,
+and the shared ``i18n_bundle`` loader. No handler/builder/engine emitter is
+migrated yet.
+"""
+
+from __future__ import annotations
+
+import inspect
+import json
+import string
+from pathlib import Path
+
+import pytest
+
+from custom_components.adaptive_cover_pro import i18n_bundle, reason_i18n
+from custom_components.adaptive_cover_pro.const import ReasonCode
+from custom_components.adaptive_cover_pro.reason_i18n import (
+    _REASON_TEMPLATES_EN,
+    Reason,
+    async_prime,
+    load_reason_labels,
+    reason_to_dict,
+    render,
+    render_en,
+)
+
+pytestmark = pytest.mark.unit
+
+REASON_I18N_DIR = (
+    Path(__file__).parent.parent
+    / "custom_components"
+    / "adaptive_cover_pro"
+    / "reason_i18n"
+)
+
+
+# ---------------------------------------------------------------------------
+# Legacy-string render table — one row per ReasonCode with representative
+# params, asserting render_en() reproduces the exact legacy f-string output.
+# ``params`` values may be nested ``Reason`` fragments (composed sub-phrases)
+# or plain values.
+# ---------------------------------------------------------------------------
+
+_SUNSET = Reason(ReasonCode.FRAGMENT_SUNSET_POSITION)
+_DEFAULT = Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION)
+
+# (code, params, expected legacy string)
+LEGACY_CASES: list[tuple[str, dict, str]] = [
+    # --- fragments (rendered standalone) ---
+    (ReasonCode.FRAGMENT_SUNSET_POSITION, {}, "sunset position"),
+    (ReasonCode.FRAGMENT_DEFAULT_POSITION, {}, "default position"),
+    (ReasonCode.FRAGMENT_CLOUDY_POSITION, {}, "cloudy position"),
+    (ReasonCode.FRAGMENT_COVERAGE_STEP, {"steps": 3}, " (coverage step, max 3)"),
+    (ReasonCode.FRAGMENT_Z_ADJUSTED, {}, " (Z-adjusted)"),
+    (
+        ReasonCode.FRAGMENT_BYPASS_NOTE,
+        {},
+        " [bypasses automatic control]",
+    ),
+    (ReasonCode.FRAGMENT_SEASON_EXTREME_HEAT, {}, "extreme heat"),
+    (
+        ReasonCode.FRAGMENT_SEASON_TRACKING_OFF,
+        {},
+        "default: tracking off this season",
+    ),
+    (ReasonCode.FRAGMENT_SEASON_SUMMER, {}, "summer"),
+    (ReasonCode.FRAGMENT_SEASON_WINTER, {}, "winter"),
+    (
+        ReasonCode.FRAGMENT_SEASON_GLARE_LOW_LIGHT,
+        {},
+        "glare control (low light)",
+    ),
+    (ReasonCode.FRAGMENT_SEASON_GLARE, {}, "glare control"),
+    (ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY, {}, "weather not sunny"),
+    (ReasonCode.FRAGMENT_TRIGGER_LUX_BELOW, {}, "lux below threshold"),
+    (
+        ReasonCode.FRAGMENT_TRIGGER_IRRADIANCE_BELOW,
+        {},
+        "irradiance below threshold",
+    ),
+    (
+        ReasonCode.FRAGMENT_TRIGGER_CLOUD_ABOVE,
+        {},
+        "cloud coverage above threshold",
+    ),
+    (ReasonCode.FRAGMENT_TRIGGER_SMOOTHING_HOLD, {}, "smoothing hold"),
+    (ReasonCode.FRAGMENT_TRIGGER_TEMPLATE, {}, "template"),
+    (ReasonCode.FRAGMENT_TRIGGER_FALLBACK, {}, "trigger"),
+    # --- solar ---
+    (
+        ReasonCode.SOLAR_TRACKING,
+        {"position": 50, "suffix": ""},
+        "sun within acceptance angle — position 50%",
+    ),
+    (
+        ReasonCode.SOLAR_TRACKING,
+        {
+            "position": 50,
+            "suffix": Reason(ReasonCode.FRAGMENT_COVERAGE_STEP, {"steps": 4}),
+        },
+        "sun within acceptance angle — position 50% (coverage step, max 4)",
+    ),
+    # --- manual override ---
+    (
+        ReasonCode.MANUAL_HOLDING_SOLAR,
+        {"held": 30, "position": 60},
+        "manual override active — holding 30% (solar would-be 60%)",
+    ),
+    (
+        ReasonCode.MANUAL_SOLAR_ONLY,
+        {"position": 60},
+        "manual override active — solar would-be 60%",
+    ),
+    (
+        ReasonCode.MANUAL_HOLDING_LABEL,
+        {"held": 30, "pos_label": _SUNSET, "position": 60},
+        "manual override active — holding 30% (sunset position would be 60%)",
+    ),
+    (
+        ReasonCode.MANUAL_LABEL_ONLY,
+        {"pos_label": _DEFAULT, "position": 60},
+        "manual override active — default position 60%",
+    ),
+    # --- occupancy / motion timeout (#881 wording) ---
+    (
+        ReasonCode.OCCUPANCY_HOLDING,
+        {"held": 42},
+        "occupancy timeout — holding position 42% (sun within acceptance angle)",
+    ),
+    (
+        ReasonCode.OCCUPANCY_LABEL,
+        {"pos_label": _DEFAULT, "position": 20},
+        "occupancy timeout active — default position 20%",
+    ),
+    # --- climate ---
+    (
+        ReasonCode.CLIMATE_ACTIVE,
+        {"season": Reason(ReasonCode.FRAGMENT_SEASON_SUMMER), "position": 10},
+        "climate mode active (summer) — position 10%",
+    ),
+    # --- glare zone ---
+    (
+        ReasonCode.GLARE_PROTECTION,
+        {"zones": "Desk, Sofa", "distance": 1.5, "z_suffix": "", "position": 35},
+        "glare zone protection (Desk, Sofa) — effective distance 1.50m → position 35%",
+    ),
+    (
+        ReasonCode.GLARE_PROTECTION,
+        {
+            "zones": "Desk",
+            "distance": 2.0,
+            "z_suffix": Reason(ReasonCode.FRAGMENT_Z_ADJUSTED),
+            "position": 35,
+        },
+        "glare zone protection (Desk) — effective distance 2.00m (Z-adjusted) → position 35%",
+    ),
+    # --- cloud suppression ---
+    (
+        ReasonCode.CLOUD_SUPPRESSION,
+        {
+            "triggers": [
+                Reason(ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY),
+                Reason(ReasonCode.FRAGMENT_TRIGGER_LUX_BELOW),
+            ],
+            "pos_label": _DEFAULT,
+            "position": 25,
+        },
+        "cloud/low-light suppression — weather not sunny, lux below threshold → default position 25%",
+    ),
+    # --- weather ---
+    (
+        ReasonCode.WEATHER_ACTIVE,
+        {"position": 0, "bypass_note": ""},
+        "weather override active — position 0%",
+    ),
+    (
+        ReasonCode.WEATHER_ACTIVE,
+        {"position": 0, "bypass_note": Reason(ReasonCode.FRAGMENT_BYPASS_NOTE)},
+        "weather override active — position 0% [bypasses automatic control]",
+    ),
+    # --- custom position ---
+    (
+        ReasonCode.CUSTOM_HEAD_NAMED,
+        {"name": "Privacy"},
+        "Privacy active",
+    ),
+    (
+        ReasonCode.CUSTOM_HEAD_SLOT,
+        {"slot": 3, "trigger": "binary_sensor.a"},
+        "custom position #3 active (binary_sensor.a)",
+    ),
+    (
+        ReasonCode.CUSTOM_USE_MY,
+        {
+            "head": Reason(ReasonCode.CUSTOM_HEAD_NAMED, {"name": "Privacy"}),
+            "position": 70,
+            "bypass_note": "",
+        },
+        "Privacy active — use My position (70%)",
+    ),
+    (
+        ReasonCode.CUSTOM_POSITION_,
+        {
+            "head": Reason(
+                ReasonCode.CUSTOM_HEAD_SLOT, {"slot": 3, "trigger": "template"}
+            ),
+            "position": 70,
+            "bypass_note": Reason(ReasonCode.FRAGMENT_BYPASS_NOTE),
+        },
+        "custom position #3 active (template) — position 70% [bypasses automatic control]",
+    ),
+    # --- default handler ---
+    (
+        ReasonCode.DEFAULT_SUNSET_USE_MY,
+        {"position": 55},
+        "sunset position — use My position (55%)",
+    ),
+    (
+        ReasonCode.DEFAULT_NO_CONDITION,
+        {"pos_label": _SUNSET, "position": 55},
+        "no active condition — sunset position 55%",
+    ),
+    # --- group ---
+    (
+        ReasonCode.GROUP_LOCK,
+        {"group_id": "living", "position": 40},
+        "group lock from group living — holding 40%",
+    ),
+    (
+        ReasonCode.GROUP_SCENE,
+        {"scene": "Privacy", "group_id": "living", "position": 40},
+        "group scene 'Privacy' from group living → 40%",
+    ),
+    # --- registry ---
+    (
+        ReasonCode.REGISTRY_OUTPRIORITIZED,
+        {"handler": "weather"},
+        "outprioritized by weather",
+    ),
+    (
+        ReasonCode.REGISTRY_FLOOR_RAISED,
+        {"from_pos": 10, "to_pos": 60, "label": "Desk sensor"},
+        "floor raised winner from 10% to 60% by Desk sensor",
+    ),
+    (
+        ReasonCode.REGISTRY_FLOOR_INACTIVE,
+        {"floor_pos": 60, "winner_pos": 80},
+        "floor 60% inactive (winner 80% above floor)",
+    ),
+    (
+        ReasonCode.REGISTRY_TILT_APPLIED,
+        {"tilt": 30, "label": "Slat sensor", "handler": "solar"},
+        "tilt-only: slat angle fixed at 30% by Slat sensor; position driven by solar",
+    ),
+    (
+        ReasonCode.REGISTRY_TILT_DEFERRED,
+        {"tilt": 30, "handler": "solar", "winner_tilt": 45},
+        "tilt-only 30% deferred — solar already set tilt 45%",
+    ),
+    # --- builder ---
+    (ReasonCode.BUILDER_UNKNOWN, {}, "Unknown"),
+    (ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT, {}, "Occupancy Timeout"),
+    (ReasonCode.BUILDER_CONTROL_MANUAL_OVERRIDE, {}, "Manual Override"),
+    (
+        ReasonCode.BUILDER_CONTROL_TRACKING_OFF_SEASON,
+        {},
+        "Default: Tracking Off This Season",
+    ),
+    (
+        ReasonCode.BUILDER_CONTROL_TILT_FIXED,
+        {"reason": "Manual Override", "slot": 5},
+        "Manual Override — tilt fixed by Custom #5",
+    ),
+    (
+        ReasonCode.BUILDER_OUTSIDE_WINDOW,
+        {"pos_label": _DEFAULT, "pos": 50},
+        "Outside time window → default position 50% (commands paused)",
+    ),
+    (
+        ReasonCode.BUILDER_MANUAL_DIVERGENCE,
+        {"held": 30, "raw": 60},
+        "manual override active — holding cover at 30% (solar would be 60%)",
+    ),
+    (
+        ReasonCode.BUILDER_TILT_FIXED,
+        {"tilt": 30, "slot": 5},
+        "tilt fixed at 30% by Custom #5",
+    ),
+    (ReasonCode.BUILDER_INTERPOLATED, {"final": 48}, "interpolated → 48%"),
+    (ReasonCode.BUILDER_INVERSED, {"final": 52}, "inversed → 52%"),
+    # --- engine control_state_reason ---
+    (ReasonCode.ENGINE_DIRECT_SUN, {}, "Direct Sun"),
+    (ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET, {}, "Default: Sunset Offset"),
+    (ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT, {}, "Default: Elevation Limit"),
+    (
+        ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT,
+        {},
+        "Default: Acceptance Angle Exit",
+    ),
+    (ReasonCode.ENGINE_DEFAULT_BLIND_SPOT, {}, "Default: Blind Spot"),
+    (ReasonCode.ENGINE_DEFAULT, {}, "Default"),
+    # --- skip / describe_skip ---
+    (ReasonCode.SKIP_OUTSIDE_WINDOW, {}, "outside time window"),
+    (
+        ReasonCode.SKIP_SUN_OUTSIDE,
+        {},
+        "sun outside acceptance angle or elevation limits",
+    ),
+    (ReasonCode.SKIP_MANUAL_NOT_ACTIVE, {}, "manual override not active"),
+    (ReasonCode.SKIP_OCCUPANCY_DISABLED, {}, "occupancy detection disabled"),
+    (ReasonCode.SKIP_OCCUPANCY_NOT_ACTIVE, {}, "occupancy timeout not active"),
+    (ReasonCode.SKIP_CLIMATE_MODE_OFF, {}, "climate mode not enabled"),
+    (
+        ReasonCode.SKIP_CLIMATE_READINGS_UNAVAILABLE,
+        {},
+        "climate readings or options unavailable",
+    ),
+    (
+        ReasonCode.SKIP_CLIMATE_DEFERRED,
+        {},
+        "deferred glare-control to solar/glare handlers",
+    ),
+    (
+        ReasonCode.SKIP_NO_GLARE_ZONES,
+        {},
+        "no active glare zones or sun outside acceptance angle",
+    ),
+    (
+        ReasonCode.SKIP_CLOUD_SKIPPED,
+        {},
+        "cloud suppression skipped (sun outside acceptance angle)",
+    ),
+    (
+        ReasonCode.SKIP_CLOUD_INACTIVE,
+        {},
+        "cloud suppression inactive (direct sun present or feature disabled)",
+    ),
+    (ReasonCode.SKIP_WEATHER_NOT_ACTIVE, {}, "weather override not active"),
+    (
+        ReasonCode.SKIP_CUSTOM_NOT_ACTIVE,
+        {"slot": 2},
+        "custom position #2 not active",
+    ),
+    (ReasonCode.SKIP_ALWAYS_MATCHES, {}, "always matches"),
+    (
+        ReasonCode.SKIP_GROUP_SCENE_NOT_LOCK,
+        {},
+        "group intent is a scene, not a lock",
+    ),
+    (ReasonCode.SKIP_NO_GROUP_LOCK, {}, "no group lock intent"),
+    (
+        ReasonCode.SKIP_GROUP_LOCK_NOT_SCENE,
+        {},
+        "group intent is a lock, not a scene",
+    ),
+    (ReasonCode.SKIP_NO_GROUP_SCENE, {}, "no group scene intent"),
+    (ReasonCode.SKIP_NOT_ACTIVE, {}, "not active"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Step 1: contract — every code has a template and vice-versa
+# ---------------------------------------------------------------------------
+
+
+def test_every_reason_code_has_template() -> None:
+    codes = {c.value for c in ReasonCode}
+    templates = set(_REASON_TEMPLATES_EN)
+    assert codes == templates, (
+        f"codes-without-template: {sorted(codes - templates)}\n"
+        f"templates-without-code: {sorted(templates - codes)}"
+    )
+
+
+def test_en_render_matches_legacy_strings() -> None:
+    """render_en() reproduces the exact legacy f-string output for every code."""
+    for code, params, expected in LEGACY_CASES:
+        got = render_en(Reason(code, params))
+        assert got == expected, f"{code}: {got!r} != {expected!r}"
+
+
+def test_legacy_cases_cover_every_code() -> None:
+    """The legacy-render table must exercise every ReasonCode at least once."""
+    covered = {code for code, _, _ in LEGACY_CASES}
+    all_codes = {c.value for c in ReasonCode}
+    assert covered == all_codes, (
+        f"uncovered codes: {sorted(all_codes - covered)}\n"
+        f"unknown codes in table: {sorted(covered - all_codes)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fragment recursion + fallback
+# ---------------------------------------------------------------------------
+
+
+def test_nested_reason_fragment_renders_inline() -> None:
+    reason = Reason(
+        ReasonCode.MANUAL_LABEL_ONLY,
+        {"pos_label": Reason(ReasonCode.FRAGMENT_SUNSET_POSITION), "position": 60},
+    )
+    assert render_en(reason) == "manual override active — sunset position 60%"
+
+
+def test_fragment_sequence_joins_with_comma_space() -> None:
+    reason = Reason(
+        ReasonCode.CLOUD_SUPPRESSION,
+        {
+            "triggers": (
+                Reason(ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY),
+                Reason(ReasonCode.FRAGMENT_TRIGGER_LUX_BELOW),
+                Reason(ReasonCode.FRAGMENT_TRIGGER_SMOOTHING_HOLD),
+            ),
+            "pos_label": Reason(ReasonCode.FRAGMENT_CLOUDY_POSITION),
+            "position": 25,
+        },
+    )
+    assert render_en(reason) == (
+        "cloud/low-light suppression — weather not sunny, lux below threshold, "
+        "smoothing hold → cloudy position 25%"
+    )
+
+
+def test_unknown_code_falls_back_to_code_string() -> None:
+    """An unknown/missing code degrades to the code string itself."""
+    assert render_en(Reason("does.not.exist")) == "does.not.exist"
+    assert render(Reason("also.missing", {"x": 1}), {}) == "also.missing"
+
+
+def test_reason_to_dict_is_json_safe_and_nested() -> None:
+    reason = Reason(
+        ReasonCode.CLOUD_SUPPRESSION,
+        {
+            "triggers": [Reason(ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY)],
+            "pos_label": Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION),
+            "position": 25,
+        },
+    )
+    d = reason_to_dict(reason)
+    # Round-trips through JSON unchanged (proves it is JSON-safe).
+    assert json.loads(json.dumps(d)) == d
+    assert d["code"] == ReasonCode.CLOUD_SUPPRESSION
+    assert d["params"]["position"] == 25
+    assert d["params"]["triggers"][0]["code"] == ReasonCode.FRAGMENT_TRIGGER_NOT_SUNNY
+    assert d["params"]["pos_label"]["code"] == ReasonCode.FRAGMENT_DEFAULT_POSITION
+
+
+def test_reason_params_default_is_empty_mapping() -> None:
+    reason = Reason(ReasonCode.ENGINE_DIRECT_SUN)
+    assert dict(reason.params) == {}
+    assert render_en(reason) == "Direct Sun"
+
+
+# ---------------------------------------------------------------------------
+# Bundle parity locks (mirror summary_i18n)
+# ---------------------------------------------------------------------------
+
+
+def _flat(data: dict) -> dict[str, str]:
+    out: dict[str, str] = {}
+
+    def _walk(node: object, prefix: str) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                _walk(v, f"{prefix}.{k}" if prefix else k)
+        elif isinstance(node, str):
+            out[prefix] = node
+
+    _walk(data, "")
+    return out
+
+
+def _load_json(name: str) -> dict:
+    with (REASON_I18N_DIR / name).open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _placeholders(template: str) -> set[tuple[str, str | None, str | None]]:
+    """Return the (field, format_spec, conversion) placeholder tuples.
+
+    Includes the format spec (e.g. ``.2f``) so a DE/FR template that drops a
+    numeric format is caught, not just a renamed field.
+    """
+    stripped = template.replace("{{", "").replace("}}", "")
+    return {
+        (field, spec, conv)
+        for _, field, spec, conv in string.Formatter().parse(stripped)
+        if field
+    }
+
+
+def test_reason_i18n_en_matches_code_defaults() -> None:
+    """Flattened ``reason_i18n/en.json`` == ``_REASON_TEMPLATES_EN`` byte-for-byte."""
+    assert _flat(_load_json("en.json")) == _REASON_TEMPLATES_EN
+
+
+def test_reason_i18n_key_parity_de_fr() -> None:
+    en = _flat(_load_json("en.json"))
+    assert en, "en.json must not be empty"
+    for lang in ("de", "fr"):
+        target = _flat(_load_json(f"{lang}.json"))
+        assert set(target) == set(en), (
+            f"{lang}.json key-set differs from en.json:\n"
+            f"  missing: {sorted(set(en) - set(target))[:10]}\n"
+            f"  extra:   {sorted(set(target) - set(en))[:10]}"
+        )
+
+
+def test_reason_placeholder_parity_de_fr() -> None:
+    en = _flat(_load_json("en.json"))
+    for lang in ("de", "fr"):
+        target = _flat(_load_json(f"{lang}.json"))
+        for key, en_value in en.items():
+            assert key in target, f"{lang}.json missing key {key!r}"
+            assert _placeholders(en_value) == _placeholders(target[key]), (
+                f"{lang}.json[{key}] placeholders {_placeholders(target[key])} "
+                f"!= en {_placeholders(en_value)}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Step 2: shared i18n_bundle loader
+# ---------------------------------------------------------------------------
+
+
+def test_flatten_bundle_nested_to_dotted() -> None:
+    nested = {"solar": {"tracking": "T"}, "skip": {"not_active": "N"}}
+    assert i18n_bundle.flatten_bundle(nested) == {
+        "solar.tracking": "T",
+        "skip.not_active": "N",
+    }
+
+
+def test_load_bundle_overlay_partial_overrides_only_its_keys(tmp_path: Path) -> None:
+    """A partial overlay overrides only its keys; the rest fall back to defaults."""
+    (tmp_path / "xx.json").write_text(
+        json.dumps({"solar": {"tracking": "XX-TRACK"}}), encoding="utf-8"
+    )
+    defaults = {"solar.tracking": "EN-TRACK", "skip.not_active": "EN-NA"}
+    overlay = i18n_bundle.load_bundle_overlay(tmp_path, "xx")
+    merged = i18n_bundle.merge_labels(defaults, overlay)
+    assert merged == {"solar.tracking": "XX-TRACK", "skip.not_active": "EN-NA"}
+
+
+def test_load_bundle_overlay_missing_language_is_empty(tmp_path: Path) -> None:
+    assert i18n_bundle.load_bundle_overlay(tmp_path, "zz") == {}
+
+
+def test_load_bundle_overlay_en_is_empty(tmp_path: Path) -> None:
+    (tmp_path / "en.json").write_text('{"a": "b"}', encoding="utf-8")
+    assert i18n_bundle.load_bundle_overlay(tmp_path, "en") == {}
+
+
+def test_load_bundle_overlay_malformed_is_empty(tmp_path: Path) -> None:
+    (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
+    assert i18n_bundle.load_bundle_overlay(tmp_path, "bad") == {}
+
+
+def test_load_reason_labels_en_returns_code_defaults() -> None:
+    assert load_reason_labels("en") == _REASON_TEMPLATES_EN
+
+
+def test_load_reason_labels_missing_language_falls_back_to_english() -> None:
+    assert load_reason_labels("zz") == _REASON_TEMPLATES_EN
+
+
+def test_load_reason_labels_seeded_de_fr_equal_english() -> None:
+    """DE/FR are seeded = EN for now, so they overlay to the same result."""
+    for lang in ("de", "fr"):
+        assert load_reason_labels(lang) == _REASON_TEMPLATES_EN
+
+
+def test_load_reason_labels_is_cached() -> None:
+    assert load_reason_labels("fr") is not None
+    assert load_reason_labels("fr") == load_reason_labels("fr")
+
+
+async def test_async_prime_offloads_language_to_executor() -> None:
+    class _FakeHass:
+        def __init__(self) -> None:
+            self.calls: list[tuple] = []
+
+        async def async_add_executor_job(self, func, *args):
+            self.calls.append(args)
+            return func(*args)
+
+    hass = _FakeHass()
+    labels = await async_prime(hass, "fr")
+    assert hass.calls == [("fr",)]
+    assert labels == load_reason_labels("fr")
+
+
+def test_reason_i18n_module_has_no_homeassistant_import() -> None:
+    """The reason_i18n module must stay pure stdlib (engine-like constraint)."""
+    src = inspect.getsource(reason_i18n)
+    assert "import homeassistant" not in src
+    assert "from homeassistant" not in src
+
+
+def test_render_en_renders_via_overlay_fallback() -> None:
+    """render(reason, labels) uses the overlay, falling back to EN per key."""
+    reason = Reason(ReasonCode.ENGINE_DIRECT_SUN)
+    assert render(reason, {ReasonCode.ENGINE_DIRECT_SUN: "Direkte Sonne"}) == (
+        "Direkte Sonne"
+    )
+    # A key absent from the overlay falls back to English.
+    assert render(reason, {"other.key": "x"}) == "Direct Sun"

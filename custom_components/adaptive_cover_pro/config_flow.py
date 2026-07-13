@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from functools import cache
 from pathlib import Path
@@ -218,6 +217,7 @@ from .const import (
     TemplateCombineMode,
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
+from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
 from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_sensors,
@@ -1654,16 +1654,13 @@ _SUMMARY_I18N_DIR = Path(__file__).parent / "summary_i18n"
 
 
 def _flatten_summary_labels(node: object, prefix: str = "") -> dict[str, str]:
-    """Flatten a nested label tree to dotted keys (``rules.force`` → template)."""
-    out: dict[str, str] = {}
-    if isinstance(node, dict):
-        for key, value in node.items():
-            out.update(
-                _flatten_summary_labels(value, f"{prefix}.{key}" if prefix else key)
-            )
-    elif isinstance(node, str):
-        out[prefix] = node
-    return out
+    """Flatten a nested label tree to dotted keys (``rules.force`` → template).
+
+    Thin delegate to the shared :func:`i18n_bundle.flatten_bundle` (issue #882
+    extracted the flatten/overlay/merge logic so summary_i18n and reason_i18n
+    share one implementation — no duplication).
+    """
+    return flatten_bundle(node, prefix)
 
 
 @cache
@@ -1673,15 +1670,9 @@ def _summary_label_overlay(language: str) -> tuple[tuple[str, str], ...]:
     Cached (the bundles are shipped, read-only) and returned as a tuple of items
     so the cached value cannot be mutated by callers. ``en`` and any missing or
     malformed file yield an empty overlay — the English defaults then apply.
+    Delegates the read/flatten to the shared :func:`i18n_bundle.load_bundle_overlay`.
     """
-    if not language or language == "en":
-        return ()
-    path = _SUMMARY_I18N_DIR / f"{language}.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ()
-    return tuple(_flatten_summary_labels(data).items())
+    return tuple(load_bundle_overlay(_SUMMARY_I18N_DIR, language).items())
 
 
 def _load_summary_labels_sync(language: str) -> dict[str, str]:
@@ -1690,7 +1681,7 @@ def _load_summary_labels_sync(language: str) -> dict[str, str]:
     English defaults overlaid with the translated bundle. Pure/synchronous —
     safe to unit-test directly.
     """
-    return {**_SUMMARY_LABELS_EN, **dict(_summary_label_overlay(language))}
+    return merge_labels(_SUMMARY_LABELS_EN, dict(_summary_label_overlay(language)))
 
 
 async def _load_summary_labels(hass: HomeAssistant, language: str) -> dict[str, str]:

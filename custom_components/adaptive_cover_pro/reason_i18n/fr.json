@@ -1,0 +1,110 @@
+{
+  "fragment": {
+    "sunset_position": "sunset position",
+    "default_position": "default position",
+    "cloudy_position": "cloudy position",
+    "coverage_step": " (coverage step, max {steps})",
+    "z_adjusted": " (Z-adjusted)",
+    "bypass_note": " [bypasses automatic control]",
+    "season_extreme_heat": "extreme heat",
+    "season_tracking_off": "default: tracking off this season",
+    "season_summer": "summer",
+    "season_winter": "winter",
+    "season_glare_low_light": "glare control (low light)",
+    "season_glare": "glare control",
+    "trigger_not_sunny": "weather not sunny",
+    "trigger_lux_below": "lux below threshold",
+    "trigger_irradiance_below": "irradiance below threshold",
+    "trigger_cloud_above": "cloud coverage above threshold",
+    "trigger_smoothing_hold": "smoothing hold",
+    "trigger_template": "template",
+    "trigger_fallback": "trigger"
+  },
+  "solar": {
+    "tracking": "sun within acceptance angle — position {position}%{suffix}"
+  },
+  "manual": {
+    "holding_solar": "manual override active — holding {held}% (solar would-be {position}%)",
+    "solar_only": "manual override active — solar would-be {position}%",
+    "holding_label": "manual override active — holding {held}% ({pos_label} would be {position}%)",
+    "label_only": "manual override active — {pos_label} {position}%"
+  },
+  "occupancy": {
+    "holding": "occupancy timeout — holding position {held}% (sun within acceptance angle)",
+    "label": "occupancy timeout active — {pos_label} {position}%"
+  },
+  "climate": {
+    "active": "climate mode active ({season}) — position {position}%"
+  },
+  "glare": {
+    "protection": "glare zone protection ({zones}) — effective distance {distance:.2f}m{z_suffix} → position {position}%"
+  },
+  "cloud": {
+    "suppression": "cloud/low-light suppression — {triggers} → {pos_label} {position}%"
+  },
+  "weather": {
+    "active": "weather override active — position {position}%{bypass_note}"
+  },
+  "custom": {
+    "head_named": "{name} active",
+    "head_slot": "custom position #{slot} active ({trigger})",
+    "use_my": "{head} — use My position ({position}%){bypass_note}",
+    "position": "{head} — position {position}%{bypass_note}"
+  },
+  "default": {
+    "sunset_use_my": "sunset position — use My position ({position}%)",
+    "no_condition": "no active condition — {pos_label} {position}%"
+  },
+  "group": {
+    "lock": "group lock from group {group_id} — holding {position}%",
+    "scene": "group scene '{scene}' from group {group_id} → {position}%"
+  },
+  "registry": {
+    "outprioritized": "outprioritized by {handler}",
+    "floor_raised": "floor raised winner from {from_pos}% to {to_pos}% by {label}",
+    "floor_inactive": "floor {floor_pos}% inactive (winner {winner_pos}% above floor)",
+    "tilt_applied": "tilt-only: slat angle fixed at {tilt}% by {label}; position driven by {handler}",
+    "tilt_deferred": "tilt-only {tilt}% deferred — {handler} already set tilt {winner_tilt}%"
+  },
+  "builder": {
+    "unknown": "Unknown",
+    "control_occupancy_timeout": "Occupancy Timeout",
+    "control_manual_override": "Manual Override",
+    "control_tracking_off_season": "Default: Tracking Off This Season",
+    "control_tilt_fixed": "{reason} — tilt fixed by Custom #{slot}",
+    "outside_window": "Outside time window → {pos_label} {pos}% (commands paused)",
+    "manual_divergence": "manual override active — holding cover at {held}% (solar would be {raw}%)",
+    "tilt_fixed": "tilt fixed at {tilt}% by Custom #{slot}",
+    "interpolated": "interpolated → {final}%",
+    "inversed": "inversed → {final}%"
+  },
+  "engine": {
+    "direct_sun": "Direct Sun",
+    "default_sunset_offset": "Default: Sunset Offset",
+    "default_elevation_limit": "Default: Elevation Limit",
+    "default_acceptance_angle_exit": "Default: Acceptance Angle Exit",
+    "default_blind_spot": "Default: Blind Spot",
+    "default": "Default"
+  },
+  "skip": {
+    "outside_window": "outside time window",
+    "sun_outside": "sun outside acceptance angle or elevation limits",
+    "manual_not_active": "manual override not active",
+    "occupancy_disabled": "occupancy detection disabled",
+    "occupancy_not_active": "occupancy timeout not active",
+    "climate_mode_off": "climate mode not enabled",
+    "climate_readings_unavailable": "climate readings or options unavailable",
+    "climate_deferred": "deferred glare-control to solar/glare handlers",
+    "no_glare_zones": "no active glare zones or sun outside acceptance angle",
+    "cloud_skipped": "cloud suppression skipped (sun outside acceptance angle)",
+    "cloud_inactive": "cloud suppression inactive (direct sun present or feature disabled)",
+    "weather_not_active": "weather override not active",
+    "custom_not_active": "custom position #{slot} not active",
+    "always_matches": "always matches",
+    "group_scene_not_lock": "group intent is a scene, not a lock",
+    "no_group_lock": "no group lock intent",
+    "group_lock_not_scene": "group intent is a lock, not a scene",
+    "no_group_scene": "no group scene intent",
+    "not_active": "not active"
+  }
+}
