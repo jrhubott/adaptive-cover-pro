@@ -77,7 +77,8 @@
     "proxy_no_min": "⚠️ Proxy-Beschattung ist aktiviert, aber kein benutzerdefinierter Positionsslot hat Als Minimum verwenden aktiviert — die verwaltete Beschattung wird nicht begrenzt.",
     "custom_and_no_sensors": "⚠️ Benutzerdefiniert #{slot}: Kombinationsmodus UND ist gesetzt, aber keine Auslösesensoren konfiguriert — das Template allein aktiviert den Slot.",
     "custom_safety_bypass": "⚠️ Benutzerdefiniert #{slot} hat Sicherheitspriorität ({safety}) – umgeht den Schalter für die automatische Steuerung, die manuelle Übersteuerung und das Start-/Endzeitfenster, kann die Beschattung also auch dann bewegen, wenn die automatische Steuerung AUS ist und außerhalb Ihres Zeitplans. Senken Sie seine Priorität unter {safety}, um diese Gates einzuhalten.",
-    "group_empty": "⚠️ Diese Gruppe hat keine Mitglieder – sie wird nichts steuern."
+    "group_empty": "⚠️ Diese Gruppe hat keine Mitglieder – sie wird nichts steuern.",
+    "forecast_source_no_weather_entity": "⚠️ Außentemperaturquelle basiert auf Vorhersage, aber es ist keine Wetter-Entität konfiguriert — die Vorhersage wird stillschweigend auf den Live-Messwert zurückfallen. Konfigurieren Sie eine Wetter-Entität unter Wetter, Licht & Wolken."
   },
   "motion": {
     "action_hold": "Behänge halten aktuelle Position (zurück zum Standard, wenn Sonne den Sonnen-Akzeptanzwinkel verlässt)",

@@ -77,7 +77,8 @@
     "proxy_no_min": "⚠️ Store mandataire est activé mais aucun emplacement de position personnalisée n'a Utiliser comme minimum activé — le store géré ne limitera pas.",
     "custom_and_no_sensors": "⚠️ Personnalisé #{slot} : le mode de combinaison ET est défini mais aucun capteur déclencheur n'est configuré — le template seul active le slot.",
     "custom_safety_bypass": "⚠️ L'emplacement personnalisé #{slot} est à la priorité de sécurité ({safety}) — il contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin, pour que le store puisse se déplacer même quand le contrôle automatique est DÉSACTIVÉ et en dehors de votre horaire. Réduisez sa priorité en dessous de {safety} pour qu'elle respecte ces seuils.",
-    "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien."
+    "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien.",
+    "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages."
   },
   "motion": {
     "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'acceptance solaire)",
