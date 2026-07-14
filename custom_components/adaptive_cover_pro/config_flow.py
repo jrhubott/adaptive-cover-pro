@@ -143,6 +143,8 @@ from .const import (
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
+    DEFAULT_OUTSIDE_TEMP_SOURCE,
+    OutsideTempSource,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -395,6 +397,28 @@ def _tilt_angle_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
     if angle_0 is None or angle_100 is None or angle_0 < angle_100:
         return {}
     return {CONF_TILT_ANGLE_100: "Must be greater than tilt_angle_0"}
+
+
+def _forecast_temp_source_notice(source: str | None, weather_entity: str | None) -> str:
+    """Non-blocking Markdown notice: forecast outdoor-temp source with no weather entity.
+
+    ``forecast_max``/``max_of_live_and_forecast`` (issue #547) silently degrade to the
+    live reading when no weather entity is configured (state/climate_provider.py
+    ``live_fallback``). The weather entity picker lives on the separate Weather,
+    Light & Cloud step, so point there directly instead of letting the mismatch
+    degrade silently (issue #912).
+    """
+    if weather_entity or source not in (
+        OutsideTempSource.FORECAST_MAX.value,
+        OutsideTempSource.MAX_OF_LIVE_AND_FORECAST.value,
+    ):
+        return ""
+    return (
+        "\n\n⚠️ **Forecast source needs a weather entity.** The outdoor-temperature "
+        "source above is forecast-based, but no weather entity is configured — the "
+        "forecast will silently fall back to the live reading. Configure one in "
+        "**☁️ Weather, Light & Cloud**."
+    )
 
 
 # Module-level constant for tests / imports. Identical to the legacy
@@ -1508,6 +1532,11 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "climate.temp_high_release": "summer ≤ {release}°",
     "climate.outside_release": "outside ≤ {release}°",
     "climate.extreme_heat_release": "extreme ≤ {release}°",
+    "warnings.forecast_source_no_weather_entity": (
+        "⚠️ Outdoor-temperature source is forecast-based but no weather entity "
+        "is configured — the forecast will silently fall back to the live "
+        "reading. Configure a weather entity in Weather, Light & Cloud."
+    ),
     # --- Glare (45) ---
     "rules.glare": (
         "🔆 Glare zones: lowers blind further to protect floor areas from "
@@ -2419,6 +2448,15 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 parts=", ".join(climate_release_parts)
             )
         lines.append(climate_line + _badge(_prio["climate"]))
+
+        # Warn if the outdoor-temp source is forecast-based but no weather
+        # entity is configured — it silently degrades to the live reading
+        # (issue #912).
+        if not weather_ent and config.get(CONF_OUTSIDE_TEMP_SOURCE) in (
+            OutsideTempSource.FORECAST_MAX.value,
+            OutsideTempSource.MAX_OF_LIVE_AND_FORECAST.value,
+        ):
+            lines.append(L["warnings.forecast_source_no_weather_entity"])
 
     # Glare zones — vertical only (45, below climate)
     if has_glare:
@@ -4161,7 +4199,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     ),
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
                     description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode",
+                        "forecast_notice": _forecast_temp_source_notice(
+                            self.config.get(
+                                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
+                            ),
+                            self.config.get(CONF_WEATHER_ENTITY),
+                        ),
                     },
                 )
             self.config.update(user_input)
@@ -4178,7 +4222,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 temperature_climate_schema(self.hass, suggested), suggested
             ),
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode",
+                "forecast_notice": _forecast_temp_source_notice(
+                    self.config.get(
+                        CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
+                    ),
+                    self.config.get(CONF_WEATHER_ENTITY),
+                ),
             },
         )
 
@@ -5400,6 +5450,12 @@ class OptionsFlowHandler(OptionsFlow):
                         "profile_inherit": self._profile_inherit_note(
                             _TEMPERATURE_PROFILE_KEYS
                         ),
+                        "forecast_notice": _forecast_temp_source_notice(
+                            self.options.get(
+                                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
+                            ),
+                            self.options.get(CONF_WEATHER_ENTITY),
+                        ),
                     },
                 )
             self.options.update(user_input)
@@ -5413,6 +5469,12 @@ class OptionsFlowHandler(OptionsFlow):
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode",
                 "profile_inherit": self._profile_inherit_note(
                     _TEMPERATURE_PROFILE_KEYS
+                ),
+                "forecast_notice": _forecast_temp_source_notice(
+                    self.options.get(
+                        CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
+                    ),
+                    self.options.get(CONF_WEATHER_ENTITY),
                 ),
             },
         )

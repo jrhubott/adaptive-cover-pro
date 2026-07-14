@@ -77,7 +77,8 @@
     "proxy_no_min": "⚠️ Proxy cover is enabled but no custom-position slot has Use as minimum on — the managed cover will not clamp.",
     "custom_and_no_sensors": "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are configured — the template alone activates the slot.",
     "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates.",
-    "group_empty": "⚠️ This group has no members — it will not command anything."
+    "group_empty": "⚠️ This group has no members — it will not command anything.",
+    "forecast_source_no_weather_entity": "⚠️ Outdoor-temperature source is forecast-based but no weather entity is configured — the forecast will silently fall back to the live reading. Configure a weather entity in Weather, Light & Cloud."
   },
   "motion": {
     "template_source": "occupancy template",

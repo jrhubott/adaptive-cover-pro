@@ -61,6 +61,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_TEMPLATE,
     CONF_MOTION_TIMEOUT,
     CONF_OUTSIDETEMP_ENTITY,
+    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -100,6 +101,7 @@ from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     CoverType,
+    OutsideTempSource,
 )
 
 # ---------------------------------------------------------------------------
@@ -2909,6 +2911,37 @@ def test_cloudy_position_no_warning_when_suppression_on():
         (ln for ln in summary.splitlines() if "Cloud suppression" in ln), ""
     )
     assert "⚠️" not in cloud_line
+
+
+# ---------------------------------------------------------------------------
+# Forecast outdoor-temp source without a weather entity (issue #912)
+# ---------------------------------------------------------------------------
+
+
+def test_forecast_source_no_weather_entity_shows_warning():
+    """⚠️ warning when the outdoor-temp source is forecast-based but no
+    weather entity is configured — it silently degrades to the live reading.
+    """
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_OUTSIDE_TEMP_SOURCE: OutsideTempSource.FORECAST_MAX.value,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️" in summary
+    assert "weather entity" in summary.lower()
+
+
+def test_forecast_source_no_warning_when_weather_entity_set():
+    """No warning when a weather entity is configured alongside the forecast source."""
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_OUTSIDE_TEMP_SOURCE: OutsideTempSource.MAX_OF_LIVE_AND_FORECAST.value,
+        CONF_WEATHER_ENTITY: "weather.home",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
+    assert "⚠️" not in climate_line
+    assert "forecast will silently fall back" not in summary
 
 
 # ---------------------------------------------------------------------------
