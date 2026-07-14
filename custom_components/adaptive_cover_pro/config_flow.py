@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -1383,7 +1384,7 @@ def _cover_type_label(
 #
 # Each value is a Python ``str.format`` template. Literal ``{`` / ``}`` that are
 # NOT format fields (the cloud "weather in {set}" notation) are escaped as
-# ``{{`` / ``}}``. Priority badges are NOT baked in — ``_badge(N)`` is appended
+# ``{{`` / ``}}``. Priority badges are NOT baked in — ``_badge(N)`` is prepended
 # AFTER ``.format()`` so handler-priority integers stay imported, never
 # duplicated into translation strings.
 #
@@ -1825,6 +1826,37 @@ def _build_group_summary(
     return "\n".join(lines)
 
 
+# How It Decides — tie-break order when two rules share the same effective
+# priority. Higher-priority rules always sort first (by value); this index only
+# decides ties, mirroring the evaluation order so built-ins beat custom slots on
+# a tie (issue #923). Values are relative, not priorities — never conflate them.
+_HID_ORDER_INDEX: dict[str, int] = {
+    "weather": 0,
+    "manual_override": 1,
+    "motion_timeout": 2,
+    "cloud_suppression": 3,
+    "climate": 4,
+    "glare_zone": 5,
+    "solar": 6,
+    "default": 7,
+}
+# Custom slot N breaks ties after every built-in: base + N (1..10).
+_HID_CUSTOM_ORDER_BASE = 100
+
+
+@dataclass(frozen=True, slots=True)
+class _HidBlock:
+    """One sortable rule in the How It Decides section.
+
+    Holds a rule's primary (badged) line plus any sub-bullets/warnings that must
+    travel with it through the priority sort.
+    """
+
+    priority: int
+    order_index: int
+    lines: list[str] = field(default_factory=list)
+
+
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     config: dict,
     sensor_type: str | None,
@@ -1836,8 +1868,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
 
     Produces four sections:
       1. Your Cover  — what is controlled and physical setup
-      2. How It Decides — full decision chain: each rule's trigger, target, and
-         today's sun times inline; priority badge [N] at end of each rule
+      2. How It Decides — full decision chain sorted by descending priority:
+         each rule's trigger, target, and today's sun times inline, with a bold
+         **[N]** priority badge leading each rule (issue #923)
       3. Position Limits — compact one-liner for range/default/delta/flags
       4. Decision Priority — compact chain showing active/inactive handlers
 
@@ -1964,8 +1997,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         return L["my.label_plain"].format(pct=raw_pct)
 
     def _badge(priority: int) -> str:
-        """Render a priority badge suffix: two nbsp + [N]."""
-        return f"\u00a0\u00a0[{priority}]"
+        """Render a priority badge as a bold leading prefix: ``**[N]** ``."""
+        return f"**[{priority}]** "
 
     # Effective built-in handler priorities (configured overrides or class
     # defaults). Each rule's badge reads its own handler here so a re-ordered
@@ -2045,6 +2078,30 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     lines.append("")
     lines.append(L["headers.how_it_decides"])
 
+    # Collect each rule as a sortable block instead of appending straight to
+    # ``lines`` (issue #923). Blocks are sorted by descending effective priority
+    # (ties broken by ``_HID_ORDER_INDEX``) and flattened just before Section 3,
+    # so custom slots interleave with built-ins by their real priority and every
+    # rule's sub-bullets/warnings travel with it.
+    _hid_blocks: list[_HidBlock] = []
+    _cur: _HidBlock | None = None
+
+    def _open(priority: int, order_index: int, text: str) -> None:
+        """Open a rule block whose primary line carries the bold priority badge."""
+        nonlocal _cur
+        _cur = _HidBlock(priority, order_index, [_badge(priority) + text])
+        _hid_blocks.append(_cur)
+
+    def _open_note(priority: int, order_index: int, text: str) -> None:
+        """Open a badge-less block (a warning/info line) at a category's slot."""
+        nonlocal _cur
+        _cur = _HidBlock(priority, order_index, [text])
+        _hid_blocks.append(_cur)
+
+    def _sub(text: str) -> None:
+        """Append a sub-bullet/continuation line to the current block."""
+        _cur.lines.append(text)
+
     # Weather safety override (90). The master toggle (issue #719) gates the
     # whole feature. A summary config missing the key is treated as enabled
     # (back-compat — the warning must only fire on an explicit opt-out); a new
@@ -2052,7 +2109,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # OFF-with-sensors footgun warning instead of the normal rule line.
     weather_enabled = config.get(CONF_WEATHER_ENABLED, True)
     if has_weather and not weather_enabled:
-        lines.append(L["weather.disabled_warning"])
+        _open_note(
+            _prio["weather"],
+            _HID_ORDER_INDEX["weather"],
+            L["weather.disabled_warning"],
+        )
     elif has_weather:
         wx_parts = []
         wind_sensor = config.get(CONF_WEATHER_WIND_SPEED_SENSOR)
@@ -2104,15 +2165,16 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         bypass_str = (
             L["weather.bypass"] if config.get(CONF_WEATHER_BYPASS_AUTO_CONTROL) else ""
         )
-        lines.append(
+        _open(
+            _prio["weather"],
+            _HID_ORDER_INDEX["weather"],
             L["rules.weather"].format(
                 wx_condition=wx_condition,
                 weather_pos=weather_pos,
                 weather_min=weather_min_str,
                 delay=delay_str,
                 bypass=bypass_str,
-            )
-            + _badge(_prio["weather"])
+            ),
         )
 
     # Manual override (80)
@@ -2142,11 +2204,16 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             L["manual.transit_timeout"].format(seconds=int(transit_timeout))
         )
     mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
-    lines.append(
-        L["rules.manual"].format(detail=mo_str) + _badge(_prio["manual_override"])
+    _open(
+        _prio["manual_override"],
+        _HID_ORDER_INDEX["manual_override"],
+        L["rules.manual"].format(detail=mo_str),
     )
 
-    # Custom positions — each slot at its own configured priority
+    # Custom positions — each slot at its own configured priority. Each slot is
+    # its own sortable block; its warnings are folded in (issue #923) so they
+    # travel with the slot's line through the priority sort instead of clumping
+    # after every slot in separate passes.
     if has_custom_position:
         for (
             _slot,
@@ -2168,15 +2235,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             safety_note = (
                 L["fragments.safety"] if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY else ""
             )
+            _order = _HID_CUSTOM_ORDER_BASE + _slot
             if _tilt_only:
                 # Tilt-only fixes the slat angle and lets the position pipeline
                 # (solar etc.) drive the carriage — min_mode/use_my are ignored.
                 slat = _slot_tilt if _slot_tilt is not None else 0
-                lines.append(
+                _open(
+                    _pri,
+                    _order,
                     L["rules.custom_tilt_only"].format(
                         slot=_slot, trigger=_trigger, slat=slat
-                    )
-                    + _badge(_pri)
+                    ),
                 )
             else:
                 target = _pos_label(_pos, _use_my)
@@ -2185,7 +2254,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     if config.get(f"custom_position_min_mode_{_slot}")
                     else ""
                 )
-                lines.append(
+                _open(
+                    _pri,
+                    _order,
                     L["rules.custom"].format(
                         slot=_slot,
                         trigger=_trigger,
@@ -2193,39 +2264,28 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                         cp_min=cp_min,
                         tilt_note=tilt_note,
                         safety=safety_note,
-                    )
-                    + _badge(_pri)
+                    ),
                 )
-        # Mutual-exclusion warning: tilt_only wins over min_mode / use_my
-        # (issue #514). Surface the conflict so the user knows the latter two
-        # are ignored for that slot.
-        for (
-            _slot,
-            _trigger,
-            _pos,
-            _pri,
-            _use_my,
-            _slot_tilt,
-            _tilt_only,
-            _has_trigger,
-        ) in _custom_slots:
+            # Mutual-exclusion warning: tilt_only wins over min_mode / use_my
+            # (issue #514). Surface the conflict so the user knows the latter two
+            # are ignored for that slot.
             if _tilt_only and (
                 config.get(f"custom_position_min_mode_{_slot}") or _use_my
             ):
-                lines.append(L["warnings.custom_tilt_only_conflict"].format(slot=_slot))
+                _sub(L["warnings.custom_tilt_only_conflict"].format(slot=_slot))
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
             if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY and _has_trigger:
-                lines.append(
+                _sub(
                     L["warnings.custom_safety_bypass"].format(
                         slot=_slot, safety=CUSTOM_POSITION_SAFETY_PRIORITY
                     )
                 )
-        # Footgun warning: AND combine mode with no sensors — the template
-        # gates nothing and the slot degenerates to template-only OR.
-        for _slot in _and_no_sensor_slots:
-            lines.append(L["warnings.custom_and_no_sensors"].format(slot=_slot))
+            # Footgun warning: AND combine mode with no sensors — the template
+            # gates nothing and the slot degenerates to template-only OR.
+            if _slot in _and_no_sensor_slots:
+                _sub(L["warnings.custom_and_no_sensors"].format(slot=_slot))
 
     # Motion timeout (75)
     timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
@@ -2242,16 +2302,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             action = L["motion.action_hold"]
         else:
             action = L["motion.action_return"].format(default_pos=default_pos)
-        lines.append(
+        _open(
+            _prio["motion_timeout"],
+            _HID_ORDER_INDEX["motion_timeout"],
             L["rules.motion"].format(
                 motion_timeout=motion_timeout,
                 sources=sources,
                 action=action,
-            )
-            + _badge(_prio["motion_timeout"])
+            ),
         )
     elif timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
-        lines.append(L["warnings.motion_hold_no_sensors"])
+        _open_note(
+            _prio["motion_timeout"],
+            _HID_ORDER_INDEX["motion_timeout"],
+            L["warnings.motion_hold_no_sensors"],
+        )
 
     # Cloud suppression (60)
     if has_cloud:
@@ -2324,7 +2389,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
         if release_parts:
             cloud_line += L["cloud.release"].format(parts=", ".join(release_parts))
-        lines.append(cloud_line + _badge(_prio["cloud_suppression"]))
+        _open(
+            _prio["cloud_suppression"],
+            _HID_ORDER_INDEX["cloud_suppression"],
+            cloud_line,
+        )
     elif any(
         [
             config.get(CONF_LUX_ENTITY),
@@ -2343,12 +2412,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             sensor_names.append(L["info.light_cloud_coverage"])
         if v := config.get(CONF_IS_SUNNY_SENSOR):
             sensor_names.append(v)
-        lines.append(L["info.light_sensors_off"].format(names=", ".join(sensor_names)))
+        _open_note(
+            _prio["cloud_suppression"],
+            _HID_ORDER_INDEX["cloud_suppression"],
+            L["info.light_sensors_off"].format(names=", ".join(sensor_names)),
+        )
 
     # Warn if cloudy_position set but cloud suppression is disabled
     cloudy_pos_cfg = config.get(CONF_CLOUDY_POSITION)
     if cloudy_pos_cfg is not None and not has_cloud:
-        lines.append(L["warnings.cloudy_pos_ignored"].format(pos=cloudy_pos_cfg))
+        _open_note(
+            _prio["cloud_suppression"],
+            _HID_ORDER_INDEX["cloud_suppression"],
+            L["warnings.cloudy_pos_ignored"].format(pos=cloudy_pos_cfg),
+        )
 
     # Climate mode (50)
     if has_climate:
@@ -2447,7 +2524,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             climate_line += L["climate.release"].format(
                 parts=", ".join(climate_release_parts)
             )
-        lines.append(climate_line + _badge(_prio["climate"]))
+        _open(_prio["climate"], _HID_ORDER_INDEX["climate"], climate_line)
 
         # Warn if the outdoor-temp source is forecast-based but no weather
         # entity is configured — it silently degrades to the live reading
@@ -2456,7 +2533,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             OutsideTempSource.FORECAST_MAX.value,
             OutsideTempSource.MAX_OF_LIVE_AND_FORECAST.value,
         ):
-            lines.append(L["warnings.forecast_source_no_weather_entity"])
+            _sub(L["warnings.forecast_source_no_weather_entity"])
 
     # Glare zones — vertical only (45, below climate)
     if has_glare:
@@ -2483,8 +2560,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 )
             )
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
-        lines.append(
-            L["rules.glare"].format(detail=gz_str) + _badge(_prio["glare_zone"])
+        _open(
+            _prio["glare_zone"],
+            _HID_ORDER_INDEX["glare_zone"],
+            L["rules.glare"].format(detail=gz_str),
         )
 
     # Solar tracking — baseline calculation (40)
@@ -2518,9 +2597,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             today_str = L["solar.today_no_window"]
         else:
             today_str = ""
-        lines.append(
-            L["rules.solar"].format(sun_desc=sun_desc, today=today_str)
-            + _badge(_prio["solar"])
+        _open(
+            _prio["solar"],
+            _HID_ORDER_INDEX["solar"],
+            L["rules.solar"].format(sun_desc=sun_desc, today=today_str),
         )
         if config.get(CONF_MINIMIZE_MOVEMENTS, False):
             steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
@@ -2529,9 +2609,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 detail = L["solar.minimize_one_step"]
             else:
                 detail = L["solar.minimize_steps"].format(steps=steps)
-            lines.append(L["solar.minimize"].format(indent=indent, detail=detail))
+            _sub(L["solar.minimize"].format(indent=indent, detail=detail))
     else:
-        lines.append(L["rules.solar_disabled"] + _badge(_prio["solar"]))
+        _open(
+            _prio["solar"],
+            _HID_ORDER_INDEX["solar"],
+            L["rules.solar_disabled"],
+        )
 
     # Timing window (sub-bullet under ☀️)
     start_time = config.get(CONF_START_TIME)
@@ -2571,7 +2655,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
         indent = "\u00a0" * 4
-        lines.append(L["timing.line"].format(indent=indent, timing=timing_str))
+        _sub(L["timing.line"].format(indent=indent, timing=timing_str))
         if sunset_pos is not None:
             # Merge today's effective time (or entity ID) and offset into one parenthetical
             def _sun_annotation(
@@ -2597,12 +2681,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             _sunset_use_my = bool(config.get(CONF_SUNSET_USE_MY))
             _sunset_target = _pos_label(int(sunset_pos), _sunset_use_my)
             if has_end_time and int(sunset_pos) != int(default_pos):
-                lines.append(
+                _sub(
                     L["timing.after_end_to_default"].format(
                         indent=indent, default_pos=default_pos
                     )
                 )
-                lines.append(
+                _sub(
                     L["timing.after_sunset"].format(
                         indent=indent, ann=sunset_ann, target=_sunset_target
                     )
@@ -2613,7 +2697,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     if has_end_time
                     else L["timing.label_sunset"]
                 )
-                lines.append(
+                _sub(
                     L["timing.after_label"].format(
                         indent=indent,
                         label=label,
@@ -2621,28 +2705,26 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                         target=_sunset_target,
                     )
                 )
-            lines.append(
+            _sub(
                 L["timing.after_sunrise"].format(
                     indent=indent, ann=sunrise_ann, default_pos=default_pos
                 )
             )
             if config.get(CONF_RETURN_SUNSET):
-                lines.append(L["timing.return_sunset"].format(indent=indent))
+                _sub(L["timing.return_sunset"].format(indent=indent))
 
         # End-of-window position (issue #625) — renders independently of
         # sunset_pos (a user may set it WITHOUT a sunset position). Footgun:
         # the position only applies when CONF_RETURN_SUNSET ("Move covers when
         # end time is reached") is on.
         if eow_pos is not None:
-            lines.append(
+            _sub(
                 L["timing.end_of_window"].format(
                     indent=indent, target=_pos_label(int(eow_pos), use_my=False)
                 )
             )
             if not config.get(CONF_RETURN_SUNSET):
-                lines.append(
-                    L["timing.end_of_window_needs_return"].format(indent=indent)
-                )
+                _sub(L["timing.end_of_window_needs_return"].format(indent=indent))
 
     # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
     # replacing the astronomical sunset/sunrise calc. Rendered independently of the
@@ -2657,22 +2739,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         indent = " " * 4
         sensors_str = ", ".join(gate_sensors)
         if gate_sensors and gate_has_template:
-            lines.append(
+            _sub(
                 L["timing.gate_both"].format(
                     indent=indent, sensors=sensors_str, mode=gate_mode
                 )
             )
         elif gate_sensors:
-            lines.append(
-                L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str)
-            )
+            _sub(L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str))
         else:
-            lines.append(L["timing.gate_template"].format(indent=indent))
-        lines.append(L["timing.gate_explainer"].format(indent=indent))
+            _sub(L["timing.gate_template"].format(indent=indent))
+        _sub(L["timing.gate_explainer"].format(indent=indent))
         # Footgun: sunset/sunrise offsets are no-ops once the gate owns the
         # boundary. Only warn when an offset is actually set (avoid noise).
         if sunset_off or sunrise_off:
-            lines.append(L["timing.gate_offset_ignored"].format(indent=indent))
+            _sub(L["timing.gate_offset_ignored"].format(indent=indent))
 
     # Blind spot (sub-bullet / informational, no priority of its own). One line
     # per active slot — a slot is active when its left & right are both set
@@ -2708,17 +2788,28 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     else "blind_spot.elevation"
                 )
                 bs_parts.append(L[elev_key].format(elev=bs_e))
-            lines.append(L["blind_spot.line"].format(bs=" ".join(bs_parts)))
+            _sub(L["blind_spot.line"].format(bs=" ".join(bs_parts)))
 
     # Default fallback (priority 0) — shown as the final row of the chain
-    lines.append(L["rules.default"].format(default_pos=default_pos) + _badge(0))
+    _open(
+        0,
+        _HID_ORDER_INDEX["default"],
+        L["rules.default"].format(default_pos=default_pos),
+    )
     # Explicit tilt for venetian covers (solar-computed when absent)
     _default_tilt = config.get(CONF_DEFAULT_TILT)
     _sunset_tilt = config.get(CONF_SUNSET_TILT)
     if _default_tilt is not None:
-        lines.append(L["default.tilt"].format(tilt=_default_tilt))
+        _sub(L["default.tilt"].format(tilt=_default_tilt))
     if _sunset_tilt is not None:
-        lines.append(L["default.sunset_tilt"].format(tilt=_sunset_tilt))
+        _sub(L["default.sunset_tilt"].format(tilt=_sunset_tilt))
+
+    # Emit the collected rules highest-priority-first (issue #923). Ties break by
+    # _HID_ORDER_INDEX (evaluation order), so built-ins beat custom slots on a
+    # tie; sub-bullets ride inside each block and stay adjacent to their rule.
+    _hid_blocks.sort(key=lambda b: (-b.priority, b.order_index))
+    for _block in _hid_blocks:
+        lines.extend(_block.lines)
 
     # =========================================================================
     # Section 3: Position Limits

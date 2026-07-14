@@ -2380,16 +2380,106 @@ def test_priority_badges_on_every_rule():
 
 
 def test_priority_badge_default_zero():
-    """Default fallback line shows the [0] badge."""
+    """Default fallback line shows the [0] badge as a bold leading prefix."""
     summary = _build_config_summary({}, CoverType.BLIND)
     assert "🌙 Default (no rule matches) → 0%" in summary
-    # [0] appears on the same line as the default fallback
+    # The badge leads the line as a bold **[0]** prefix (issue #923)
     for line in summary.splitlines():
         if "🌙 Default" in line:
-            assert "[0]" in line
+            assert line.startswith("**[0]** ")
             break
     else:
         raise AssertionError("No default fallback line found")
+
+
+# ---------------------------------------------------------------------------
+# Issue #923 — sort How It Decides by descending priority + bold badge prefix
+# ---------------------------------------------------------------------------
+
+
+def test_how_it_decides_sorted_by_descending_priority():
+    """Rules render by descending priority, incl. custom slots by their own value.
+
+    Slot 1 is configured at priority 77 and slot 3 at priority 80; despite slot 1
+    coming first in slot order, slot 3 (80) must render above slot 1 (77), and both
+    below Manual (80) — the built-in wins the 80 tie.
+    """
+    cfg = _full_vertical()
+    cfg["custom_position_sensor_1"] = "binary_sensor.a"
+    cfg["custom_position_1"] = 10
+    cfg["custom_position_priority_1"] = 77
+    cfg["custom_position_sensor_3"] = "binary_sensor.b"
+    cfg["custom_position_3"] = 100
+    cfg["custom_position_priority_3"] = 80
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    manual_idx = summary.index("✋ Manual override")
+    c3_idx = summary.index("🎯 Custom #3")
+    c1_idx = summary.index("🎯 Custom #1")
+    assert manual_idx < c3_idx < c1_idx
+
+
+def test_priority_badge_is_bold_prefix():
+    """The priority badge is a bold **[N]** prefix at the start of the rule line."""
+    summary = _build_config_summary({}, CoverType.BLIND)
+    default_line = next(
+        ln for ln in summary.splitlines() if "🌙 Default (no rule matches)" in ln
+    )
+    assert default_line.startswith("**[0]** ")
+
+
+def test_how_it_decides_default_priority_category_order():
+    """Regression guard for PR #110: at class-default priorities with no custom
+    slots, categories keep the evaluation order weather > manual > motion > cloud
+    > climate > glare > solar > default.
+    """
+    cfg = _full_vertical()
+    # Strip the safety custom slot so only built-in rules remain.
+    for key in list(cfg):
+        if key.startswith("custom_position"):
+            del cfg[key]
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    order = [
+        "🌧️ Weather safety",
+        "✋ Manual override",
+        "🚶 Occupancy",
+        "☁️ Cloud suppression",
+        "🌡️ Climate mode",
+        "🔆 Glare zones",
+        "☀️ Tracks the sun",
+        "🌙 Default (no rule matches)",
+    ]
+    indices = [summary.index(sub) for sub in order]
+    assert indices == sorted(indices)
+
+
+def test_custom_slot_warning_travels_with_its_slot_after_sort():
+    """A slot's warning renders immediately after that slot's line even when the
+    slot is not the highest-priority one (warnings move with their block).
+    """
+    cfg = {
+        # Higher-priority slot, no warning.
+        "custom_position_sensor_2": "binary_sensor.high",
+        "custom_position_2": 50,
+        "custom_position_priority_2": 90,
+        # Lower-priority slot with a tilt-only mutual-exclusion warning.
+        "custom_position_sensor_1": "binary_sensor.low",
+        "custom_position_1": 30,
+        "custom_position_priority_1": 60,
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+        "custom_position_min_mode_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    lines = summary.splitlines()
+    slot2_idx = next(i for i, ln in enumerate(lines) if "🎯 Custom #2" in ln)
+    slot1_idx = next(i for i, ln in enumerate(lines) if "🎯 Custom #1" in ln)
+    warn_idx = next(
+        i
+        for i, ln in enumerate(lines)
+        if "⚠️ Custom #1" in ln and "tilt only" in ln.lower()
+    )
+    assert slot2_idx < slot1_idx  # 90 before 60
+    assert warn_idx == slot1_idx + 1  # warning immediately follows its slot line
 
 
 # ---------------------------------------------------------------------------
