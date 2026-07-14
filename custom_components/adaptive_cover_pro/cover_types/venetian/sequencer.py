@@ -22,6 +22,7 @@ machinery belongs next to its policy, not in the cover-type-agnostic
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime as dt
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -89,6 +90,23 @@ _ANCHOR_SOURCE_TARGET_FALLBACK = "target_fallback"
 # intent and must never be silently swallowed by drift suppression. This
 # mirrors the position-axis behaviour in ``managers/cover_command/routing.py``.
 _TILT_SPECIAL_POSITIONS: list[int] = [POSITION_CLOSED, POSITION_OPEN]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ResetExcursion:
+    """A drift-reset endpoint excursion awaiting its late state publish (#927).
+
+    When ``_maybe_drift_reset`` drives the slats to a mechanical endpoint and
+    back, a slow actuator (Somfy IO/Overkiz) may publish the endpoint's
+    ``current_tilt_position`` several seconds later — after the command grace
+    window has closed. ``endpoint`` is the LOGICAL endpoint the reset drove to
+    (``POSITION_OPEN``/``POSITION_CLOSED``); ``at`` is the UTC instant the
+    endpoint command was sent, anchoring the value-matching window in
+    :meth:`DualAxisSequencer.is_reset_excursion_publish`.
+    """
+
+    endpoint: int
+    at: dt.datetime
 
 
 class DualAxisSequencer:
@@ -195,6 +213,14 @@ class DualAxisSequencer:
         # tilt actually sends via ``update_tilt_only``. Drives
         # ``has_pending_tilt`` so the coordinator keeps re-attempting dispatch.
         self._pending_tilt: dict[str, dict] = {}
+        # Per-entity drift-reset endpoint excursion awaiting its late state
+        # publish (issue #927). A reset drives the slats to a mechanical
+        # endpoint and back; on slow actuators the endpoint's stale
+        # ``current_tilt_position`` publishes after the command grace closes.
+        # ``is_reset_excursion_publish`` consumes this one-shot to suppress
+        # that late publish (value-matched, time-boxed) so it isn't misread as
+        # a manual move.
+        self._reset_excursion: dict[str, _ResetExcursion] = {}
 
     # -- tilt inversion ---------------------------------------------------- #
 
@@ -399,6 +425,48 @@ class DualAxisSequencer:
         ):
             return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
+
+    def is_reset_excursion_publish(self, entity_id: str, delta: float) -> bool:
+        """Suppress the late state publish of a drift-reset endpoint excursion (#927).
+
+        A drift reset (``_maybe_drift_reset``) drives the slats to a mechanical
+        endpoint (``tilt→0`` for ``direction=close``) and restores the target
+        ~1.5 s later. On a slow Somfy IO/Overkiz actuator the endpoint's
+        ``current_tilt_position`` publishes ~6-7 s after it was sent — after
+        the 5 s command grace has closed — and the tilt-only path never opened
+        the back-rotate suppression window, so nothing else guards it.
+        ``SecondaryAxisCheck.evaluate`` then reads it as a large-delta manual
+        move and fires a false ``manual_override_set``.
+
+        Delta reconstruction: ``SecondaryAxisCheck.expected`` is the stored
+        logical tilt target (``result.tilt``) and the late publish's
+        ``new_value`` is the wire endpoint value, so ``evaluate`` computes
+        ``delta = abs(stored_target - wire_endpoint)``. This predicate rebuilds
+        that same quantity from the recorded LOGICAL endpoint via
+        :meth:`_to_wire` (so inversion is handled once) and matches within
+        ``VENETIAN_TILT_VERIFY_TOLERANCE``. On a match the record is consumed
+        (one-shot) and True is returned; a non-matching intermediate event
+        leaves the record intact so the real endpoint publish still matches.
+
+        The window reuses the configured publish-lag setting
+        (``backrotate_publish_lag_seconds``, default 45 s) — the same clock
+        that already absorbs slow-bus republish on this class of actuator — so
+        a genuine user move to the same value seconds later still trips.
+        """
+        record = self._reset_excursion.get(entity_id)
+        if record is None:
+            return False
+        if self._seconds_since(record.at) >= self._backrotate_publish_lag_seconds:
+            self._reset_excursion.pop(entity_id, None)
+            return False
+        stored = self._tilt_targets.get(entity_id)
+        if stored is None:
+            return False
+        expected_delta = abs(stored - self._to_wire(record.endpoint))
+        if abs(delta - expected_delta) <= VENETIAN_TILT_VERIFY_TOLERANCE:
+            self._reset_excursion.pop(entity_id, None)  # one-shot consume
+            return True
+        return False
 
     # -- tilt sequence ----------------------------------------------------- #
 
@@ -731,12 +799,16 @@ class DualAxisSequencer:
         :meth:`_send_tilt_command` (reusing inverse / grace / dedup gates per
         the no-duplication rule):
 
-        1. Drive the slats to the mechanical endpoint chosen by
-           ``get_tilt_reset_direction`` (issue #686) — logical ``POSITION_OPEN``
-           (default) or ``POSITION_CLOSED`` (``force=True``, ``verify=False``).
-           The literal logical value is passed so ``_to_wire`` applies inversion
-           exactly once; it is NOT clamped to ``CONF_MAX_TILT`` — the hardware
-           endpoint is the correct re-zero anchor.
+        1. Record a per-entity endpoint-excursion stamp (issue #927) so a stale
+           endpoint state publish arriving after the command grace closes is
+           later recognised by :meth:`is_reset_excursion_publish` as ACP's own
+           move rather than a manual override, then drive the slats to the
+           mechanical endpoint chosen by ``get_tilt_reset_direction`` (issue
+           #686) — logical ``POSITION_OPEN`` (default) or ``POSITION_CLOSED``
+           (``force=True``, ``verify=False``). The literal logical value is
+           passed so ``_to_wire`` applies inversion exactly once; it is NOT
+           clamped to ``CONF_MAX_TILT`` — the hardware endpoint is the correct
+           re-zero anchor.
         2. Settle (``VENETIAN_POST_TILT_REBASE_DELAY_SECONDS``).
         3. Re-send the original target (``force=True``, ``verify=True``) so the
            dedup gate doesn't swallow the unchanged value.
@@ -781,6 +853,13 @@ class DualAxisSequencer:
                 "tilt_reset_open",
                 entity_id=entity_id,
                 tilt_position=reset_endpoint,
+            )
+            # Record the endpoint excursion so a stale endpoint state publish
+            # that lands after the command grace closes is recognised as ACP's
+            # own move, not a manual override (issue #927). The LOGICAL endpoint
+            # is stored; is_reset_excursion_publish applies _to_wire on match.
+            self._reset_excursion[entity_id] = _ResetExcursion(
+                endpoint=reset_endpoint, at=dt.datetime.now(dt.UTC)
             )
             await self._send_tilt_command(
                 entity_id,

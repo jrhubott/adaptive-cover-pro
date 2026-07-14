@@ -861,12 +861,21 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         Per CODING_GUIDELINES.md § "No Code Duplication" the shared
         callback inside :meth:`secondary_axis_check` now delegates here
         instead of inlining its own OR-composition.
+
+        Issue #927 adds a third term: a drift-reset endpoint excursion
+        (``DualAxisSequencer.is_reset_excursion_publish``). The tilt-only reset
+        path never opens the back-rotate window and the endpoint's stale
+        ``current_tilt_position`` publish can arrive after the command grace
+        closes; the value-matched, time-boxed, one-shot excursion predicate
+        catches exactly that late publish without widening the general cap.
         """
         if self._sequencer is None:
             return False
-        return self._sequencer.is_in_suppression_with_cap(
-            entity_id, delta
-        ) or self._is_in_tilt_command_grace(entity_id, delta)
+        return (
+            self._sequencer.is_in_suppression_with_cap(entity_id, delta)
+            or self._is_in_tilt_command_grace(entity_id, delta)
+            or self._sequencer.is_reset_excursion_publish(entity_id, delta)
+        )
 
     def _clear_last_tilt(self) -> None:
         """Forget the last resolved tilt so tilt-only cycles don't replay it.
@@ -1035,9 +1044,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         The suppression callback is the same predicate
         :meth:`primary_axis_suppression` exposes for the position axis
         (issue #33 Phase 5 cross-axis): the motor back-rotate window
-        OR'd with the command-grace period. Sharing one callback across
-        both axes keeps the publish-lag and grace logic from drifting per
-        CODING_GUIDELINES.md § "No Code Duplication".
+        OR'd with the command-grace period OR'd with the drift-reset
+        endpoint excursion (issue #927). Sharing one callback across
+        both axes keeps the publish-lag, grace, and excursion logic from
+        drifting per CODING_GUIDELINES.md § "No Code Duplication".
         """
         if result is None or result.tilt is None:
             return None
