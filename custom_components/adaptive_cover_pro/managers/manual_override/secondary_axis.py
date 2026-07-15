@@ -76,6 +76,20 @@ class SecondaryAxisCheck:
     # misread as a manual move (issue #927).
     excursion_match: Callable[[str, float], bool] | None = None
 
+    def consume_excursion(self, entity_id: str, new_state) -> None:
+        """Consume a matching one-shot excursion stamp under another gate.
+
+        When another gate (e.g. command grace) already suppressed this update,
+        pop any matching one-shot excursion stamp anyway so it does not linger
+        and later swallow a genuine move to the same value (issue #927).
+        """
+        if self.excursion_match is None:
+            return
+        new_value = new_state.attributes.get(self.attribute)
+        if new_value is None:
+            return
+        self.excursion_match(entity_id, new_value)  # one-shot pop on match
+
     def evaluate(
         self,
         entity_id: str,

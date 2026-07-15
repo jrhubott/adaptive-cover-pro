@@ -1222,12 +1222,16 @@ async def test_position_axis_move_during_window_trips_override() -> None:
 async def test_endpoint_publish_inside_grace_consumes_record() -> None:
     """Finding #3: a matching endpoint publish inside grace consumes the record.
 
-    With the policy command-grace window still open, the grace term short-
-    circuited the old OR-composition so the excursion term was never evaluated
-    and the record lingered the full window — later swallowing a genuine move.
-    Now ``excursion_match`` is consulted BEFORE the grace check, so the matching
-    endpoint publish is recognised and its one-shot record is consumed even
-    while grace is active. A later genuine move to the endpoint value then trips.
+    Mirrors production: the coordinator wires ``is_in_command_grace`` to the
+    SAME ``GracePeriodManager`` the policy's excursion window uses. On a fast
+    actuator the endpoint publish lands WHILE that command-grace window is still
+    open, so ``handle_state_change`` returns early in the grace-reject branch
+    BEFORE ``secondary_axis_check.evaluate`` ever runs. Without a fix the
+    one-shot excursion record is never consumed and lingers the full window,
+    later swallowing a genuine user tilt-to-endpoint move (bounded false
+    negative). The fix consumes the matching excursion stamp in the grace-reject
+    branch via the generic ``SecondaryAxisCheck.consume_excursion`` so the record
+    does not linger; a later genuine move to the endpoint value then trips.
     """
     entity_id = "cover.og_studio_tur_grace"
     seq, policy = await _drive_drift_reset(entity_id, target=79, grace_active=True)
@@ -1235,6 +1239,8 @@ async def test_endpoint_publish_inside_grace_consumes_record() -> None:
 
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
+    # In-grace endpoint publish: command grace is active (as production wires it
+    # off the same GracePeriodManager), so the grace-reject branch fires first.
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=50, tilt=0),
         our_state=50,
@@ -1243,12 +1249,32 @@ async def test_endpoint_publish_inside_grace_consumes_record() -> None:
         is_waiting=lambda _eid: False,
         manual_threshold=2,
         secondary_axis_check=_secondary_check(policy, 79),
+        is_in_command_grace=lambda _eid: True,
     )
 
+    # Grace rejects the update, so no override — but the one-shot record MUST be
+    # consumed so it can't linger and swallow a genuine later move (finding #3).
     assert not mgr.is_cover_manual(entity_id)
-    # The one-shot record is consumed by the in-grace publish (finding #3):
-    # the grace term no longer short-circuits it into lingering.
     assert entity_id not in seq._reset_excursion
+
+    # After grace expires, a genuine user tilt-to-endpoint move (no stamp left)
+    # must still trip override — proving the consume did not disable detection.
+    # Flip the policy's command grace off too (the suppression callback consults
+    # it), mirroring the window having closed.
+    policy._grace_mgr.is_in_command_grace_period = lambda _eid: False
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+        is_in_command_grace=lambda _eid: False,
+    )
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a genuine user move to the endpoint after grace must still trip override"
 
 
 async def test_endpoint_publish_after_excursion_window_trips_override() -> None:

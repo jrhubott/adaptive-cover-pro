@@ -20,6 +20,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
 from custom_components.adaptive_cover_pro.const import (
@@ -1029,6 +1030,27 @@ class TestResetExcursionPublishSuppression:
             dry_run=True,
             get_tilt_reset_threshold=lambda: 1,
             get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_CLOSE,
+        )
+        await seq._maybe_drift_reset(
+            "cover.x", original_target=79, position_target=50, pre_send_anchor=0
+        )
+        assert "cover.x" not in seq._reset_excursion
+
+    async def test_stamp_not_recorded_when_endpoint_send_fails(self):
+        """No stamp when the endpoint ``set_cover_tilt_position`` raises.
+
+        If the endpoint send fails the slats never leave their angle, so no
+        stale endpoint publish is coming. Recording the excursion stamp anyway
+        would leave a one-shot that later swallows a genuine user move to that
+        value. The stamp is recorded only after the endpoint send dispatches
+        successfully.
+        """
+        hass, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 1,
+            get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_CLOSE,
+        )
+        hass.services.async_call = AsyncMock(
+            side_effect=HomeAssistantError("service unavailable")
         )
         await seq._maybe_drift_reset(
             "cover.x", original_target=79, position_target=50, pre_send_anchor=0

@@ -382,6 +382,14 @@ class AdaptiveCoverManager:
             )
             return
         if is_in_command_grace is not None and is_in_command_grace(entity_id):
+            # Consume any matching one-shot excursion stamp BEFORE returning
+            # (#927). The grace gate short-circuits the secondary-axis check, but
+            # on fast actuators the drift-reset endpoint publish lands inside the
+            # command-grace window — if the stamp isn't consumed here it lingers
+            # the full publish-lag window and later swallows a genuine move to
+            # the same value. Generic call keeps the manager cover-type-agnostic.
+            if secondary_axis_check is not None:
+                secondary_axis_check.consume_excursion(entity_id, event.new_state)
             self._record_event(
                 entity_id,
                 "manual_override_rejected_command_grace",

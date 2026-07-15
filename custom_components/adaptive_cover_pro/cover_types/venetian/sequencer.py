@@ -581,8 +581,15 @@ class DualAxisSequencer:
         verify: bool = True,
         drift_reset_eligible: bool = True,
         _retry_depth: int = 0,
-    ) -> None:
+    ) -> bool:
         """Emit ``set_cover_tilt_position`` and rebase the commanded position.
+
+        Returns ``True`` only when the ``set_cover_tilt_position`` service call
+        actually dispatched. Every early-out — target-unchanged dedup,
+        min-delta gate, dry-run, and a ``HomeAssistantError`` from the service
+        call — returns ``False``. The drift-reset endpoint stamp (issue #927)
+        relies on this so it records only after the endpoint move really went
+        out; a failed send leaves no stale record to swallow a later user move.
 
         Shared by ``run_sequence`` (post-settle chase) and ``update_tilt_only``
         (tilt-only update when position hasn't changed).
@@ -635,7 +642,7 @@ class DualAxisSequencer:
                 await self._verify_and_record_tilt(
                     entity_id, tilt_target, _retry_depth=_retry_depth
                 )
-            return
+            return False
 
         if not force and self._get_min_change is not None:
             anchor, anchor_source = self._resolve_tilt_anchor(entity_id)
@@ -669,7 +676,7 @@ class DualAxisSequencer:
                     anchor_source=anchor_source,
                     min_delta_required=self._get_min_change(),
                 )
-                return
+                return False
 
         if self._is_dry_run():
             self._logger.info(
@@ -685,7 +692,7 @@ class DualAxisSequencer:
                 position_target=position_target,
                 trigger=reason,
             )
-            return
+            return False
 
         # Capture the pre-send anchor BEFORE overwriting _tilt_targets so the
         # drift accumulator (issue #663) measures real commanded travel. Uses
@@ -746,7 +753,7 @@ class DualAxisSequencer:
                 position_target=position_target,
                 trigger=reason,
             )
-            return
+            return False
 
         self._record_event(
             "tilt_command_sent",
@@ -771,7 +778,7 @@ class DualAxisSequencer:
             )
 
         if not verify:
-            return
+            return True
 
         # Wait for the motor's mechanical back-drive on the vertical axis to
         # settle before reading current_position for the rebase. Without this
@@ -797,6 +804,7 @@ class DualAxisSequencer:
                 position_target=position_target,
                 trigger=reason,
             )
+        return True
 
     async def _maybe_drift_reset(
         self,
@@ -870,19 +878,7 @@ class DualAxisSequencer:
                 entity_id=entity_id,
                 tilt_position=reset_endpoint,
             )
-            # Record the endpoint excursion so a stale endpoint state publish
-            # that lands after the command grace closes is recognised as ACP's
-            # own move, not a manual override (issue #927). The LOGICAL endpoint
-            # is stored; is_reset_excursion_publish applies _to_wire on match.
-            # Only stamp when the endpoint command will actually be sent: in
-            # dry-run the send below is skipped, so a stamp would linger with no
-            # matching publish and could later swallow a genuine move. Append —
-            # a second reset inside the window keeps its own record.
-            if not self._is_dry_run():
-                self._reset_excursion.setdefault(entity_id, []).append(
-                    _ResetExcursion(endpoint=reset_endpoint, at=dt.datetime.now(dt.UTC))
-                )
-            await self._send_tilt_command(
+            sent = await self._send_tilt_command(
                 entity_id,
                 tilt_target=reset_endpoint,
                 position_target=position_target,
@@ -890,6 +886,19 @@ class DualAxisSequencer:
                 force=True,
                 verify=False,
             )
+            # Record the endpoint excursion so a stale endpoint state publish
+            # that lands after the command grace closes is recognised as ACP's
+            # own move, not a manual override (issue #927). The LOGICAL endpoint
+            # is stored; is_reset_excursion_publish applies _to_wire on match.
+            # Only stamp when the endpoint command ACTUALLY dispatched: in
+            # dry-run the send is skipped, and a HomeAssistantError leaves the
+            # slats put — either way a stamp would linger with no matching
+            # publish and could later swallow a genuine move. Append — a second
+            # reset inside the window keeps its own record.
+            if sent:
+                self._reset_excursion.setdefault(entity_id, []).append(
+                    _ResetExcursion(endpoint=reset_endpoint, at=dt.datetime.now(dt.UTC))
+                )
             await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
             self._record_event(
                 "tilt_reset_return",
