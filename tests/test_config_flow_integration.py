@@ -1354,7 +1354,14 @@ async def test_custom_position_step_exposes_priority_scale(
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "custom_position"}
         )
+    # custom_position is now a slot sub-menu (#945); the priority-scale visual
+    # moved onto the focused per-slot page. Open the first free slot via "Add".
     assert result["step_id"] == "custom_position"
+    assert result["type"] == "menu"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_custom_position"}
+    )
+    assert result["step_id"] == "custom_position_slot"
     scale = result["description_placeholders"]["priority_scale"]
     assert "Weather" in scale and "Default" in scale
 
@@ -1503,15 +1510,9 @@ def test_config_flow_does_not_use_system_language() -> None:
                 CONF_MANUAL_IGNORE_INTERMEDIATE: False,
             },
         ),
-        (
-            "custom_position",
-            {
-                "custom_position_sensors_5": ["binary_sensor.alarm"],
-                "custom_position_5": 100,
-                "custom_position_priority_5": 100,
-            },
-        ),
-        ("custom_position", {}),
+        # custom_position is a slot sub-menu (#945), not a form step — its
+        # save/clear round-trips are covered by the dedicated paged-flow tests
+        # below and by tests/test_per_slot_config_pages.py.
         ("motion_override", {"motion_sensors": [], "motion_timeout": 300}),
         (
             "weather_override",
@@ -1726,34 +1727,108 @@ async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
     assert result["type"] == "menu"
     assert "glare_zones" in result.get("menu_options", [])
 
+    # glare_zones is now a zone sub-menu (#945): open a zone via "Add", then
+    # submit one zone under the generic un-suffixed field keys.
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "glare_zones"}
     )
     assert result["step_id"] == "glare_zones"
+    assert result["type"] == "menu"
 
-    # Submit zone data
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_glare_zone"}
+    )
+    assert result["step_id"] == "glare_zone_slot"
+
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "glare_zone_1_name": "East Window",
-            "glare_zone_1_x": 0.0,
-            "glare_zone_1_y": 1.0,
-            "glare_zone_1_radius": 0.3,
-            "glare_zone_2_name": "",
-            "glare_zone_2_x": 0.0,
-            "glare_zone_2_y": 1.0,
-            "glare_zone_2_radius": 0.3,
-            "glare_zone_3_name": "",
-            "glare_zone_3_x": 0.0,
-            "glare_zone_3_y": 1.0,
-            "glare_zone_3_radius": 0.3,
-            "glare_zone_4_name": "",
-            "glare_zone_4_x": 0.0,
-            "glare_zone_4_y": 1.0,
-            "glare_zone_4_radius": 0.3,
+            "glare_zone_name": "East Window",
+            "glare_zone_x": 0.0,
+            "glare_zone_y": 1.0,
+            "glare_zone_radius": 0.3,
+            "glare_zone_z": 0.0,
         },
     )
-    assert result["type"] in ("form", "menu", "create_entry")
+    # Saving returns to the zone sub-menu; go Back to init then Save & Close so
+    # the options entry commits, and confirm zone 1's suffixed keys are stored
+    # (and no generic key leaked into storage).
+    assert result["type"] == "menu"
+    assert result["step_id"] == "glare_zones"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"]["glare_zone_1_name"] == "East Window"
+    assert "glare_zone_name" not in result["data"]
+
+
+@pytest.mark.integration
+async def test_options_flow_custom_position_paged_save(hass: HomeAssistant) -> None:
+    """A custom-position slot page saves under the slot's suffixed keys (#945).
+
+    End-to-end through the real flow manager: init menu → custom_position sub-
+    menu → "Add" opens the lowest free slot page (generic keys) → submitting it
+    writes slot 1's suffixed storage keys and returns to the sub-menu.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Paged CP", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="paged_cp_01",
+        title="Paged CP",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position"}
+    )
+    assert result["step_id"] == "custom_position"
+    # No slots configured yet → only the Add + Back entries are listed.
+    assert "custom_position_slot_1" not in result.get("menu_options", {})
+    assert "add_custom_position" in result.get("menu_options", {})
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_custom_position"}
+    )
+    assert result["step_id"] == "custom_position_slot"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "custom_position_sensors": ["binary_sensor.alarm"],
+            "custom_position": 100,
+            "custom_position_priority": 100,
+        },
+    )
+    # Back at the sub-menu, slot 1 is now listed and committed on Save & Close.
+    assert result["type"] == "menu"
+    assert result["step_id"] == "custom_position"
+    assert "custom_position_slot_1" in result.get("menu_options", {})
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+    saved = result["data"]
+    assert saved["custom_position_1"] == 100
+    assert saved["custom_position_priority_1"] == 100
+    assert saved["custom_position_sensors_1"] == ["binary_sensor.alarm"]
+    # No generic key leaked into storage.
+    assert "custom_position" not in saved
+    assert "custom_position_priority" not in saved
 
 
 # ---------------------------------------------------------------------------
@@ -2027,19 +2102,19 @@ async def test_options_flow_cover_entities_combined_form_with_devices(
 async def test_options_flow_custom_position_clears_sensor_position_and_priority(
     hass: HomeAssistant,
 ) -> None:
-    """Clearing custom position fields in options flow must set keys to None.
+    """Clearing a custom-position slot page must set its keys to None.
 
-    Regression for issue #323: submitting an empty custom_position form while
-    previously-saved slot values exist must overwrite them with None, not leave
-    the old values in place.
+    Regression for issue #323 on the paged flow (#945): opening a configured
+    slot and submitting it empty must overwrite the slot's stored values with
+    None, not leave the old values in place.
     """
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
     pre_options = dict(VERTICAL_OPTIONS)
-    for n, slot in CUSTOM_POSITION_SLOTS.items():
-        pre_options[slot["sensor"]] = f"binary_sensor.slot_{n}"
-        pre_options[slot["position"]] = 25
-        pre_options[slot["priority"]] = 60
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    pre_options[slot1["sensor"]] = "binary_sensor.slot_1"
+    pre_options[slot1["position"]] = 25
+    pre_options[slot1["priority"]] = 60
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -2060,26 +2135,32 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
         result["flow_id"], {"next_step_id": "custom_position"}
     )
     assert result["step_id"] == "custom_position"
+    # The configured slot 1 is listed; open it and submit the page empty.
+    assert "custom_position_slot_1" in result.get("menu_options", {})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position_slot_1"}
+    )
+    assert result["step_id"] == "custom_position_slot"
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    assert result["type"] in ("form", "menu")
+    assert result["type"] == "menu"  # back to the slot sub-menu
 
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "done"}
     )
     assert result["type"] == "create_entry"
 
     saved = result["data"]
-    for slot in CUSTOM_POSITION_SLOTS.values():
-        assert (
-            saved.get(slot["sensor"]) is None
-        ), f"{slot['sensor']} should be None after clearing"
-        assert (
-            saved.get(slot["position"]) is None
-        ), f"{slot['position']} should be None after clearing"
-        assert (
-            saved.get(slot["priority"]) is None
-        ), f"{slot['priority']} should be None after clearing"
+    assert saved.get(slot1["sensor"]) is None, "legacy sensor mirror should be None"
+    assert (
+        saved.get(slot1["position"]) is None
+    ), "position should be None after clearing"
+    assert (
+        saved.get(slot1["priority"]) is None
+    ), "priority should be None after clearing"
 
 
 @pytest.mark.integration

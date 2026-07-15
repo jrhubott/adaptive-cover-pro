@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -24,6 +25,8 @@ from .const import (
     ADAPTIVE_NAME_PREFIX,
     BLANK_TIME,
     BLIND_SPOT_ELEV_MODE_ABOVE,
+    BLIND_SPOT_FORM_KEYS,
+    BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
     blind_spot_legacy_to_gamma,
     resolve_fov_left,
@@ -81,6 +84,7 @@ from .const import (
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
     CUSTOM_POSITION_SAFETY_PRIORITY,
+    CUSTOM_POSITION_FORM_KEYS,
     CUSTOM_POSITION_SLOT_NUMBERS,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -207,6 +211,9 @@ from .const import (
     DEFAULT_GROUP_STAGGER_DELAY,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MOTION_TIMEOUT,
+    GLARE_ZONE_FORM_KEYS,
+    GLARE_ZONE_SLOT_NUMBERS,
+    GLARE_ZONE_SLOTS,
     GROUP_SCENE_PRIORITY,
     OPT_OUT_ALL_SCENES,
     CONF_DEBUG_CATEGORIES,
@@ -314,8 +321,10 @@ from . import config_fields  # noqa: E402
 from .config_dynamic import (  # noqa: E402
     behavior_schema as _behavior_schema,
     blind_spot_schema,
+    blind_spot_slot_schema,
     building_profile_sensors_schema,
     clamp_blind_spots_to_fov,
+    glare_zone_slot_schema,
     glare_zones_schema as _glare_zones_schema,
     light_cloud_schema,
     sun_tracking_schema,
@@ -2539,7 +2548,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     if has_glare:
         zone_names = [
             config.get(f"glare_zone_{i}_name")
-            for i in range(1, 5)
+            for i in GLARE_ZONE_SLOT_NUMBERS
             if config.get(f"glare_zone_{i}_name")
         ]
         width = config.get(CONF_WINDOW_WIDTH)
@@ -2550,7 +2559,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             gz_parts.append(L["glare.window"].format(width=float(width)))
         z_values = [
             float(config.get(f"glare_zone_{i}_z") or 0.0)
-            for i in range(1, 5)
+            for i in GLARE_ZONE_SLOT_NUMBERS
             if config.get(f"glare_zone_{i}_name")
         ]
         if any(z > 0 for z in z_values):
@@ -3394,7 +3403,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         {CONF_ENABLE_GLARE_ZONES}
         | {
             f"glare_zone_{i}_{axis}"
-            for i in range(1, 5)
+            for i in GLARE_ZONE_SLOT_NUMBERS
             for axis in ("name", "x", "y", "radius", "z")
         }
     ),
@@ -3672,7 +3681,7 @@ def _glare_zone_length_keys() -> tuple[str, ...]:
     """Return the 16 metres-stored option keys for the 4 glare zone slots."""
     return tuple(
         f"glare_zone_{i}_{axis}"
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis in ("x", "y", "radius", "z")
     )
 
@@ -3680,6 +3689,44 @@ def _glare_zone_length_keys() -> tuple[str, ...]:
 # Glare-zones schema is built in ``config_dynamic`` (locale-aware). Thin alias
 # preserves the existing call sites / signature ``(options, hass)``.
 _build_glare_zones_schema = _glare_zones_schema
+
+
+# ── Per-slot options pages (issue #945) ──────────────────────────────────────
+# Each of the three paged areas (custom positions, blind spots, glare zones) is
+# a sub-menu that lists its configured slots plus an "Add" entry; picking one
+# opens a focused single-slot page. The metadata below lets one shared engine
+# drive all three. ``area`` is the singular token used in the dynamic step names
+# (``custom_position_slot_3`` / ``add_blind_spot``); the sub-menu step keeps its
+# historical id via ``_area_menu`` so the init-menu wiring and translations are
+# unchanged.
+_SLOT_AREA_META: dict[str, tuple[tuple[int, ...], dict[int, dict[str, str]]]] = {
+    "custom_position": (CUSTOM_POSITION_SLOT_NUMBERS, CUSTOM_POSITION_SLOTS),
+    "blind_spot": (BLIND_SPOT_SLOT_NUMBERS, BLIND_SPOT_SLOTS),
+    "glare_zone": (GLARE_ZONE_SLOT_NUMBERS, GLARE_ZONE_SLOTS),
+}
+
+# The metres-stored generic length keys for a single glare-zone page — the
+# per-slot analogue of ``_glare_zone_length_keys`` used for locale conversion.
+_GLARE_ZONE_FORM_LENGTH_KEYS: tuple[str, ...] = tuple(
+    GLARE_ZONE_FORM_KEYS[sub] for sub in ("x", "y", "radius", "z")
+)
+
+
+def _area_menu(area: str) -> str:
+    """Return the sub-menu step id for a slot *area* token.
+
+    Only glare zones differ (singular token ``glare_zone`` → plural historical
+    step ``glare_zones``); the other two areas' tokens already match their step.
+    """
+    return "glare_zones" if area == "glare_zone" else area
+
+
+# Wiki link surfaced as the ``{learn_more}`` placeholder on each slot sub-menu.
+_SLOT_AREA_WIKI: dict[str, str] = {
+    "custom_position": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
+    "blind_spot": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot",
+    "glare_zone": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones",
+}
 
 
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -4552,6 +4599,52 @@ class OptionsFlowHandler(OptionsFlow):
         )
         self.selected_sync_targets: list[str] = []
         self.selected_sync_categories: list[str] = []
+        # Which slot each per-slot options page (issue #945) is editing. Set on
+        # the GET (menu dispatch / "Add") and read on the shared POST handler,
+        # whose step_id carries no slot number so the translation block is
+        # authored once. Keyed by area name (custom_position/blind_spot/
+        # glare_zone).
+        self._active_slot: dict[str, int] = {}
+
+    def __getattr__(self, name: str):
+        """Dispatch dynamic per-slot options steps (issue #945).
+
+        HA resolves a step via ``getattr(handler, f"async_step_{step_id}")``, so
+        the per-slot menu entries (``custom_position_slot_3``) and the "Add"
+        entries (``add_blind_spot``) resolve here instead of 17 hand-written
+        near-identical methods. Only the two exact shapes match; every other
+        miss raises ``AttributeError`` so ``hasattr`` probes behave normally and
+        there is no recursion (the returned coroutine touches ``self`` only when
+        awaited, after ``__init__`` has run).
+        """
+        slot_match = re.fullmatch(
+            r"async_step_(custom_position|blind_spot|glare_zone)_slot_(\d+)", name
+        )
+        if slot_match:
+            area, slot_n = slot_match.group(1), int(slot_match.group(2))
+
+            async def _open_slot(user_input=None, _area=area, _n=slot_n):
+                self._active_slot[_area] = _n
+                return await getattr(self, f"_render_{_area}_slot")(user_input)
+
+            return _open_slot
+
+        add_match = re.fullmatch(
+            r"async_step_add_(custom_position|blind_spot|glare_zone)", name
+        )
+        if add_match:
+            area = add_match.group(1)
+
+            async def _add_slot(user_input=None, _area=area):
+                free = self._lowest_free_slot(_area)
+                if free is None:  # every slot full — fall back to the sub-menu
+                    return await getattr(self, f"async_step_{_area_menu(_area)}")()
+                self._active_slot[_area] = free
+                return await getattr(self, f"_render_{_area}_slot")(user_input)
+
+            return _add_slot
+
+        raise AttributeError(name)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -4751,23 +4844,246 @@ class OptionsFlowHandler(OptionsFlow):
             description_placeholders=_geometry_placeholders(self.sensor_type, src),
         )
 
+    # ── Per-slot paging engine (issue #945) ─────────────────────────────
+    # Shared helpers that let the three paged areas list, add, and route to
+    # single-slot pages. The dynamic ``async_step_<area>_slot_<n>`` /
+    # ``async_step_add_<area>`` entrypoints resolve via ``__getattr__`` and set
+    # ``self._active_slot[area]`` before delegating to ``_render_<area>_slot``.
+
+    def _slot_configured(self, area: str, n: int) -> bool:
+        """Return True when slot *n* of *area* holds a usable configuration."""
+        _, slots = _SLOT_AREA_META[area]
+        keys = slots[n]
+        if area == "custom_position":
+            return custom_position_slot_configured(self.options, keys)
+        if area == "blind_spot":
+            return (
+                self.options.get(keys["left_gamma"]) is not None
+                and self.options.get(keys["right_gamma"]) is not None
+            )
+        # glare_zone — a zone participates once it has a non-blank name.
+        return bool(self.options.get(keys["name"]))
+
+    def _lowest_free_slot(self, area: str) -> int | None:
+        """Return the lowest unconfigured slot number, or None when all full."""
+        numbers, _ = _SLOT_AREA_META[area]
+        for n in numbers:
+            if not self._slot_configured(area, n):
+                return n
+        return None
+
+    def _slot_label(self, area: str, n: int) -> str:
+        """Build the dynamic menu label for a configured slot."""
+        _, slots = _SLOT_AREA_META[area]
+        keys = slots[n]
+        if area == "custom_position":
+            name = custom_position_slot_name(self.options, keys) or f"Slot {n}"
+            prio = self.options.get(keys["priority"])
+            suffix = f" · P{int(prio)}" if prio is not None else ""
+            return f"{n} · {name}{suffix}"
+        if area == "blind_spot":
+            left = self.options.get(keys["left_gamma"])
+            right = self.options.get(keys["right_gamma"])
+            return f"{n} · edges {left}° / {right}°"
+        return f"{n} · {self.options.get(keys['name'])}"
+
+    def _slot_menu(self, area: str) -> FlowResult:
+        """Render an area's slot sub-menu: configured slots + Add + Back."""
+        numbers, _ = _SLOT_AREA_META[area]
+        menu_options: dict[str, str] = {
+            f"{area}_slot_{n}": self._slot_label(area, n)
+            for n in numbers
+            if self._slot_configured(area, n)
+        }
+        if area == "custom_position" and self._custom_position_include_tilt():
+            menu_options["custom_position_tilt_defaults"] = "🎚️ Default & sunset tilt"
+        if self._lowest_free_slot(area) is not None:
+            menu_options[f"add_{area}"] = "➕ Add…"
+        menu_options["init"] = "⬅️ Back"
+        return self.async_show_menu(  # type: ignore[return-value]
+            step_id=_area_menu(area),
+            menu_options=menu_options,
+            description_placeholders={"learn_more": _SLOT_AREA_WIKI[area]},
+        )
+
+    # ── Custom positions ────────────────────────────────────────────────
+
+    def _custom_position_include_tilt(self) -> bool:
+        """Whether this cover type carries per-slot / global tilt fields."""
+        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        return sensor_type in POLICY_REGISTRY and bool(
+            get_policy(sensor_type).extra_field_keys(
+                config_fields.SECTION_CUSTOM_POSITION
+            )
+        )
+
+    async def async_step_custom_position(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """List custom-position slots as a sub-menu (issue #945)."""
+        return self._slot_menu("custom_position")
+
+    async def async_step_custom_position_slot(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Handle the shared single-slot POST/re-render (slot in _active_slot)."""
+        return await self._render_custom_position_slot(user_input)
+
+    async def _render_custom_position_slot(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        n = self._active_slot["custom_position"]
+        slot_keys = CUSTOM_POSITION_SLOTS[n]
+        include_tilt = self._custom_position_include_tilt()
+        if user_input is not None:
+            # Fill cleared optional (no-default) fields so a clear round-trips.
+            form_optional = [
+                CUSTOM_POSITION_FORM_KEYS[sub]
+                for sub in ("name", "template", "position", "priority", "tilt")
+            ]
+            self.optional_entities(form_optional, user_input)
+            mapped = {
+                slot_keys[sub]: user_input[form_key]
+                for sub, form_key in CUSTOM_POSITION_FORM_KEYS.items()
+                if form_key in user_input
+            }
+            self.options.update(mapped)
+            # Mirror on the merged options so a cleared slot nulls its stale
+            # legacy single-sensor key (rollback fidelity, issue #563).
+            mirror_legacy_slot_sensor_keys(self.options)
+            return await self.async_step_custom_position()
+        seeded = {
+            form_key: self.options.get(slot_keys[sub])
+            for sub, form_key in CUSTOM_POSITION_FORM_KEYS.items()
+        }
+        schema = config_fields.custom_position_slot_schema(include_tilt=include_tilt)
+        return self.async_show_form(
+            step_id="custom_position_slot",
+            data_schema=self.add_suggested_values_to_schema(schema, seeded),
+            description_placeholders={
+                "slot": str(n),
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
+                "priority_scale": _render_priority_scale(
+                    self.options, get_policy(self.sensor_type)
+                ),
+            },
+        )
+
+    async def async_step_custom_position_tilt_defaults(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Venetian global default/sunset tilt (peeled off the slot pages)."""
+        if user_input is not None:
+            self.optional_entities([CONF_DEFAULT_TILT, CONF_SUNSET_TILT], user_input)
+            self.options.update(user_input)
+            return await self.async_step_custom_position()
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_DEFAULT_TILT): config_fields.position_slider(),
+                vol.Optional(CONF_SUNSET_TILT): config_fields.position_slider(),
+            }
+        )
+        return self.async_show_form(
+            step_id="custom_position_tilt_defaults",
+            data_schema=self.add_suggested_values_to_schema(schema, self.options),
+        )
+
+    # ── Blind spots ─────────────────────────────────────────────────────
+
+    async def async_step_blind_spot(self, user_input: dict[str, Any] | None = None):
+        """List blind-spot slots as a sub-menu (issue #945)."""
+        return self._slot_menu("blind_spot")
+
+    async def async_step_blind_spot_slot(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Handle the shared single-slot POST/re-render (slot in _active_slot)."""
+        return await self._render_blind_spot_slot(user_input)
+
+    async def _render_blind_spot_slot(self, user_input: dict[str, Any] | None = None):
+        n = self._active_slot["blind_spot"]
+        slot_keys = BLIND_SPOT_SLOTS[n]
+        schema = blind_spot_slot_schema(n, self.options)
+        if user_input is not None:
+            left = user_input.get(BLIND_SPOT_FORM_KEYS["left_gamma"])
+            right = user_input.get(BLIND_SPOT_FORM_KEYS["right_gamma"])
+            if left is not None and right is not None and left + right <= 0:
+                return self.async_show_form(
+                    step_id="blind_spot_slot",
+                    data_schema=self.add_suggested_values_to_schema(schema, user_input),
+                    errors={
+                        BLIND_SPOT_FORM_KEYS["right_gamma"]: (
+                            "The blind-spot wedge is empty: left edge + right "
+                            "edge must be greater than 0."
+                        )
+                    },
+                    description_placeholders={
+                        "slot": str(n),
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot",
+                    },
+                )
+            mapped = {
+                slot_keys[sub]: user_input[form_key]
+                for sub, form_key in BLIND_SPOT_FORM_KEYS.items()
+                if form_key in user_input
+            }
+            self.options.update(mapped)
+            return await self.async_step_blind_spot()
+        seeded = {
+            form_key: self.options.get(slot_keys[sub])
+            for sub, form_key in BLIND_SPOT_FORM_KEYS.items()
+            if self.options.get(slot_keys[sub]) is not None
+        }
+        return self.async_show_form(
+            step_id="blind_spot_slot",
+            data_schema=self.add_suggested_values_to_schema(schema, seeded),
+            description_placeholders={
+                "slot": str(n),
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot",
+            },
+        )
+
+    # ── Glare zones ─────────────────────────────────────────────────────
+
     async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
-        """Configure glare zone definitions (options)."""
-        gz_keys = _glare_zone_length_keys()
+        """List glare zones as a sub-menu (issue #945)."""
+        return self._slot_menu("glare_zone")
+
+    async def async_step_glare_zone_slot(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Handle the shared single-zone POST/re-render (zone in _active_slot)."""
+        return await self._render_glare_zone_slot(user_input)
+
+    async def _render_glare_zone_slot(self, user_input: dict[str, Any] | None = None):
+        n = self._active_slot["glare_zone"]
+        slot_keys = GLARE_ZONE_SLOTS[n]
         if user_input is not None:
             canonical = user_input_to_canonical(
-                self.hass, user_input, length_keys=gz_keys
+                self.hass, user_input, length_keys=_GLARE_ZONE_FORM_LENGTH_KEYS
             )
-            self.options.update(canonical)
-            return await self.async_step_init()
-
-        schema = _build_glare_zones_schema(self.options, self.hass)
-        suggested = options_to_display(self.hass, self.options, length_keys=gz_keys)
+            mapped = {
+                slot_keys[sub]: canonical[form_key]
+                for sub, form_key in GLARE_ZONE_FORM_KEYS.items()
+                if form_key in canonical
+            }
+            self.options.update(mapped)
+            return await self.async_step_glare_zones()
+        metres = {
+            GLARE_ZONE_FORM_KEYS[sub]: self.options[wire]
+            for sub, wire in slot_keys.items()
+            if wire in self.options
+        }
+        suggested = options_to_display(
+            self.hass, metres, length_keys=_GLARE_ZONE_FORM_LENGTH_KEYS
+        )
+        schema = glare_zone_slot_schema(n, self.options, self.hass)
         return self.async_show_form(
-            step_id="glare_zones",
+            step_id="glare_zone_slot",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones"
+                "slot": str(n),
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones",
             },
         )
 
@@ -4887,32 +5203,6 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
-            },
-        )
-
-    async def async_step_custom_position(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Manage custom position sensors."""
-        if user_input is not None:
-            self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
-            self.options.update(user_input)
-            # Mirror on the merged options so a cleared slot nulls its stale
-            # legacy single-sensor key (rollback fidelity, issue #563).
-            mirror_legacy_slot_sensor_keys(self.options)
-            return await self.async_step_init()
-        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
-        schema = vol.Schema(_build_custom_position_schema_dict(sensor_type=sensor_type))
-        return self.async_show_form(
-            step_id="custom_position",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, user_input or self.options
-            ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
-                "priority_scale": _render_priority_scale(
-                    self.options, get_policy(sensor_type)
-                ),
             },
         )
 
@@ -5473,32 +5763,6 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
-            },
-        )
-
-    async def async_step_blind_spot(self, user_input: dict[str, Any] | None = None):
-        """Add blindspot to data."""
-        schema = blind_spot_schema(self.options)
-        if user_input is not None:
-            errors = _blind_spot_step_errors(user_input)
-            if errors:
-                return self.async_show_form(
-                    step_id="blind_spot",
-                    data_schema=schema,
-                    errors=errors,
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
-                    },
-                )
-            self.options.update(user_input)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="blind_spot",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, user_input or self.options
-            ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
             },
         )
 

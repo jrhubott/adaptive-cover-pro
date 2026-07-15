@@ -39,6 +39,7 @@ from ..const import (
     CONF_WINDOW_WIDTH,
     DEFAULT_DISTANCE,
     DEFAULT_GLARE_ZONE_Z,
+    GLARE_ZONE_SLOT_NUMBERS,
     DEFAULT_MAX_TILT,
     DEFAULT_MAX_TILT_SUN_ONLY,
     DEFAULT_MIN_TILT,
@@ -179,7 +180,7 @@ class ConfigurationService:
             return None
 
         zones = []
-        for i in range(1, 5):  # zones 1–4
+        for i in GLARE_ZONE_SLOT_NUMBERS:  # zones 1–4
             name = options.get(f"glare_zone_{i}_name", "")
             if not name:
                 continue

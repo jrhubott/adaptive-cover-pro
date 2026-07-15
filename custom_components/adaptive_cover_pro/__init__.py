@@ -18,6 +18,7 @@ from homeassistant.helpers.template import Template
 
 from .const import (
     BLIND_SPOT_SLOTS,
+    GLARE_ZONE_SLOT_NUMBERS,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
@@ -468,7 +469,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 _CM_TO_M_SENTINEL = 5.0
 _GLARE_ZONE_DIMENSION_KEYS = tuple(
     f"glare_zone_{i}_{suffix}"
-    for i in range(1, 5)
+    for i in GLARE_ZONE_SLOT_NUMBERS
     for suffix in ("x", "y", "radius", "z")
 )
 

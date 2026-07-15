@@ -210,14 +210,16 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
 def test_en_blind_spot_labels_name_window_normal_frame() -> None:
     """EN labels for the gamma edges must name the window-normal frame (#247)."""
     en = _load(TRANSLATIONS_DIR / "en.json")
-    for step_key in ("options", "config"):
-        bs = en[step_key]["step"]["blind_spot"]["data"]
+    # Options flow paginates blind spots into per-slot pages (#945); its editable
+    # gamma labels live on blind_spot_slot. The create flow keeps the flat form.
+    for step_key, step in (("options", "blind_spot_slot"), ("config", "blind_spot")):
+        bs = en[step_key]["step"][step]["data"]
         assert "window normal" in bs["blind_spot_left_gamma"].lower(), (
-            f"{step_key}.blind_spot.data.blind_spot_left_gamma label must name the "
+            f"{step_key}.{step}.data.blind_spot_left_gamma label must name the "
             "window-normal frame"
         )
         assert "window normal" in bs["blind_spot_right_gamma"].lower(), (
-            f"{step_key}.blind_spot.data.blind_spot_right_gamma label must name the "
+            f"{step_key}.{step}.data.blind_spot_right_gamma label must name the "
             "window-normal frame"
         )
 
@@ -323,11 +325,11 @@ def test_enforce_delta_at_endpoints_strings_present() -> None:
 def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
     """Helper text must not contradict services.yaml by saying 'from window azimuth'."""
     en = _load(TRANSLATIONS_DIR / "en.json")
-    for step_key in ("options", "config"):
-        dd = en[step_key]["step"]["blind_spot"]["data_description"]
+    for step_key, step in (("options", "blind_spot_slot"), ("config", "blind_spot")):
+        dd = en[step_key]["step"][step]["data_description"]
         for key in ("blind_spot_left_gamma", "blind_spot_right_gamma"):
             assert "window azimuth" not in dd[key].lower(), (
-                f"{step_key}.blind_spot.data_description.{key} still references "
+                f"{step_key}.{step}.data_description.{key} still references "
                 f"'window azimuth' — issue #247 requires window-normal framing"
             )
 
@@ -409,14 +411,18 @@ def test_priority_field_documents_all_three_gates() -> None:
     discoverable from the field help.
     """
     en = _load(TRANSLATIONS_DIR / "en.json")
-    for step_key in ("config", "options"):
-        dd = en[step_key]["step"]["custom_position"]["data_description"]
-        desc = dd["custom_position_priority_1"]
+    # Options flow paginates custom positions (#945): the priority help lives on
+    # the generic per-slot page key; the create flow keeps the slot-1 suffixed key.
+    for step_key, step, key in (
+        ("config", "custom_position", "custom_position_priority_1"),
+        ("options", "custom_position_slot", "custom_position_priority"),
+    ):
+        dd = en[step_key]["step"][step]["data_description"]
+        desc = dd[key]
         for phrase in ("automatic-control toggle", "manual override", "time window"):
-            assert phrase in desc, (
-                f"{step_key}.custom_position.data_description."
-                f"custom_position_priority_1 missing {phrase!r}"
-            )
+            assert (
+                phrase in desc
+            ), f"{step_key}.{step}.data_description.{key} missing {phrase!r}"
 
 
 # ---------------------------------------------------------------------------

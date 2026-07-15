@@ -611,6 +611,16 @@ BLIND_SPOT_SLOTS: dict[int, dict[str, str]] = {
     n: _blind_spot_slot_keys(n) for n in BLIND_SPOT_SLOT_NUMBERS
 }
 
+# Generic (un-suffixed) field keys for the single-slot blind-spot options page
+# (issue #945). The per-slot page renders these slot-agnostic keys so the
+# translation block is authored once; GET seeds them from a slot's stored keys
+# and POST maps them back. They coincide with slot 1's storage keys (whose wire
+# format is already un-suffixed), so editing slot 1 is an identity mapping.
+BLIND_SPOT_FORM_KEYS: dict[str, str] = {
+    sub: _blind_spot_slot_keys(1)[sub]
+    for sub in ("left_gamma", "right_gamma", "elevation", "elevation_mode")
+}
+
 
 # =============================================================================
 # 10. Glare Zones
@@ -618,6 +628,39 @@ BLIND_SPOT_SLOTS: dict[int, dict[str, str]] = {
 # Optional glare-zone handler (priority 45 in the override pipeline).
 
 CONF_ENABLE_GLARE_ZONES = "enable_glare_zones"  # activate glare-zone handler
+
+# Up to four floor glare zones, each with a name and x/y/radius/z geometry
+# (issue #945). Mirrors CUSTOM_POSITION_SLOTS / BLIND_SPOT_SLOTS so the slot
+# count lives in one place instead of a hard-coded range(1, 5) scattered across
+# the schema builder, specs, runtime parse, and summary.
+GLARE_ZONE_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3, 4)
+
+
+def _glare_zone_slot_keys(n: int) -> dict[str, str]:
+    """Return the wire-format option keys for glare-zone slot *n*."""
+    return {
+        "name": f"glare_zone_{n}_name",
+        "x": f"glare_zone_{n}_x",
+        "y": f"glare_zone_{n}_y",
+        "radius": f"glare_zone_{n}_radius",
+        "z": f"glare_zone_{n}_z",
+    }
+
+
+# {slot_number: {sub_key: wire_key}}
+GLARE_ZONE_SLOTS: dict[int, dict[str, str]] = {
+    n: _glare_zone_slot_keys(n) for n in GLARE_ZONE_SLOT_NUMBERS
+}
+
+# Generic (un-suffixed) field keys for the single-slot glare-zone options page
+# (issue #945) — the translation block is authored once against these.
+GLARE_ZONE_FORM_KEYS: dict[str, str] = {
+    "name": "glare_zone_name",
+    "x": "glare_zone_x",
+    "y": "glare_zone_y",
+    "radius": "glare_zone_radius",
+    "z": "glare_zone_z",
+}
 
 
 # =============================================================================
@@ -851,6 +894,24 @@ DEFAULT_CUSTOM_POSITION_ENABLED = True
 # {slot_number: {sub_key: wire_key}}
 CUSTOM_POSITION_SLOTS: dict[int, dict[str, str]] = {
     n: _custom_position_slot_keys(n) for n in CUSTOM_POSITION_SLOT_NUMBERS
+}
+
+# Generic (un-suffixed) field keys for the single-slot custom-position options
+# page (issue #945). Only the user-editable sub-keys appear (the legacy single
+# `sensor` mirror and the card-controlled `enabled` flag are handled at save
+# time, not on the form). GET seeds these from a slot's stored suffixed keys;
+# POST maps them back so storage stays the flat per-slot format.
+CUSTOM_POSITION_FORM_KEYS: dict[str, str] = {
+    "name": "custom_position_name",
+    "sensors": "custom_position_sensors",
+    "template": "custom_position_template",
+    "template_mode": "custom_position_template_mode",
+    "position": "custom_position",
+    "priority": "custom_position_priority",
+    "min_mode": "custom_position_min_mode",
+    "use_my": "custom_position_use_my",
+    "tilt": "custom_position_tilt",
+    "tilt_only": "custom_position_tilt_only",
 }
 
 

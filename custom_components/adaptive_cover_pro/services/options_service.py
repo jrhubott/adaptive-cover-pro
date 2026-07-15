@@ -21,6 +21,7 @@ from ..const import (
     BLANK_TIME,
     BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOTS,
+    GLARE_ZONE_SLOT_NUMBERS,
     blind_spot_legacy_to_gamma,
     clamp_gamma_pair,
     resolve_fov_left,
@@ -499,7 +500,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # OPTION_RANGES (bounds mirror config_flow._build_glare_zones_schema).
     **{
         f"glare_zone_{i}_{axis}": _range(f"glare_zone_{i}_{axis}")
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis in ("x", "y", "radius", "z")
     },
     # Motion

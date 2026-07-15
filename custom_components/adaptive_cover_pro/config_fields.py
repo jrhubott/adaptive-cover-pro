@@ -31,7 +31,7 @@ or ``cover_types`` — those import *this*.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -68,6 +68,7 @@ from .const import (
     CONF_DRY_RUN,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
+    GLARE_ZONE_SLOT_NUMBERS,
     CONF_EXTREME_HEAT_POSITION,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
@@ -1174,6 +1175,43 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
     return specs
 
 
+def _custom_position_slot_fields(
+    keys: Mapping[str, str], *, include_tilt: bool
+) -> dict:
+    """Build one custom-position slot's schema markers, keyed by *keys*.
+
+    ``keys`` maps each sub-key (``name``/``sensors``/…) to the wire key it
+    should render under: a ``CUSTOM_POSITION_SLOTS[n]`` mapping for the
+    slot-interleaved flatten form, or ``CUSTOM_POSITION_FORM_KEYS`` for the
+    generic single-slot page (issue #945). One place builds a slot either way.
+    """
+    schema: dict = {}
+    schema[vol.Optional(keys["name"])] = selector.TextSelector()
+    schema[vol.Optional(keys["sensors"], default=[])] = binary_on_selector(
+        multiple=True
+    )
+    schema[vol.Optional(keys["template"])] = selector.TemplateSelector()
+    schema[
+        vol.Optional(keys["template_mode"], default=DEFAULT_TEMPLATE_COMBINE_MODE)
+    ] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[m.value for m in const.TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        )
+    )
+    schema[vol.Optional(keys["position"])] = position_slider()
+    schema[vol.Optional(keys["priority"])] = priority_slider()
+    schema[vol.Optional(keys["min_mode"], default=False)] = selector.BooleanSelector()
+    schema[vol.Optional(keys["use_my"], default=False)] = selector.BooleanSelector()
+    if include_tilt:
+        schema[vol.Optional(keys["tilt"])] = position_slider()
+        schema[vol.Optional(keys["tilt_only"], default=False)] = (
+            selector.BooleanSelector()
+        )
+    return schema
+
+
 def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     """Build the custom-position section schema (slot-interleaved).
 
@@ -1185,35 +1223,25 @@ def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     """
     schema: dict = {}
     for slot in CUSTOM_POSITION_SLOTS.values():
-        schema[vol.Optional(slot["name"])] = selector.TextSelector()
-        schema[vol.Optional(slot["sensors"], default=[])] = binary_on_selector(
-            multiple=True
-        )
-        schema[vol.Optional(slot["template"])] = selector.TemplateSelector()
-        schema[
-            vol.Optional(slot["template_mode"], default=DEFAULT_TEMPLATE_COMBINE_MODE)
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[m.value for m in const.TemplateCombineMode],
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="template_combine_mode",
-            )
-        )
-        schema[vol.Optional(slot["position"])] = position_slider()
-        schema[vol.Optional(slot["priority"])] = priority_slider()
-        schema[vol.Optional(slot["min_mode"], default=False)] = (
-            selector.BooleanSelector()
-        )
-        schema[vol.Optional(slot["use_my"], default=False)] = selector.BooleanSelector()
-        if include_tilt:
-            schema[vol.Optional(slot["tilt"])] = position_slider()
-            schema[vol.Optional(slot["tilt_only"], default=False)] = (
-                selector.BooleanSelector()
-            )
+        schema.update(_custom_position_slot_fields(slot, include_tilt=include_tilt))
     if include_tilt:
         schema[vol.Optional(CONF_DEFAULT_TILT)] = position_slider()
         schema[vol.Optional(CONF_SUNSET_TILT)] = position_slider()
     return vol.Schema(schema)
+
+
+def custom_position_slot_schema(*, include_tilt: bool = False) -> vol.Schema:
+    """Single-slot custom-position schema for the per-slot options page (#945).
+
+    Renders exactly one slot under the generic ``CUSTOM_POSITION_FORM_KEYS``
+    (so the translation block is authored once). The global default/sunset tilt
+    fields are intentionally absent — they get their own venetian sub-menu entry.
+    """
+    return vol.Schema(
+        _custom_position_slot_fields(
+            const.CUSTOM_POSITION_FORM_KEYS, include_tilt=include_tilt
+        )
+    )
 
 
 # Built-in handler priority overrides. One slider per configurable handler, in
@@ -1906,7 +1934,7 @@ _GLARE_ZONE_SPECS = _spec(
             ValidatorKind.RANGE,
             rng=rng,
         )
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis, rng in (
             ("x", const._RANGE_GLARE_ZONE_X),
             ("y", const._RANGE_GLARE_ZONE_Y),

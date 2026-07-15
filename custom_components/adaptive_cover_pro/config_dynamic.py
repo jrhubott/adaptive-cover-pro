@@ -15,6 +15,8 @@ selector construction. It imports the neutral selector primitives from
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
@@ -26,6 +28,7 @@ from .config_fields import (
 )
 from .const import (
     BLIND_SPOT_ELEVATION_MODES,
+    BLIND_SPOT_FORM_KEYS,
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
@@ -112,6 +115,9 @@ from .const import (
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
+    GLARE_ZONE_FORM_KEYS,
+    GLARE_ZONE_SLOT_NUMBERS,
+    GLARE_ZONE_SLOTS,
     DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TRACKING_SEASONS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
@@ -382,47 +388,79 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
     fov_left = resolve_fov_left(opts)
     fov_right = resolve_fov_right(opts)
 
-    def _slider(min_v: int, max_v: int, *, step: int | None = None):
-        cfg: dict = {
-            "mode": selector.NumberSelectorMode.SLIDER,
-            "unit_of_measurement": "°",
-            "min": min_v,
-            "max": max_v,
-        }
-        if step is not None:
-            cfg["step"] = step
-        return selector.NumberSelector(selector.NumberSelectorConfig(**cfg))
-
     schema: dict = {}
     for n in BLIND_SPOT_SLOT_NUMBERS:
-        keys = BLIND_SPOT_SLOTS[n]
-        if n == 1:
-            # Harmless 1° sliver at the left acceptance edge — non-empty but
-            # never blocks the window normal (issue #247, finding 6).
-            left_marker = vol.Required(keys["left_gamma"], default=fov_left)
-            right_marker = vol.Required(keys["right_gamma"], default=1 - fov_left)
-        else:
-            left_marker = vol.Optional(keys["left_gamma"], default=0)
-            right_marker = vol.Optional(keys["right_gamma"])
-        # left (upper) edge ∈ [-fov_right, fov_left]; right (negated lower)
-        # edge ∈ [-fov_left, fov_right].
-        schema[left_marker] = _slider(-fov_right, fov_left)
-        schema[right_marker] = _slider(-fov_left, fov_right)
-        schema[vol.Optional(keys["elevation"])] = _slider(0, 90, step=1)
-        # Per-slot below/above elevation mode (issue #702). Defaults to "below"
-        # so an unconfigured slot keeps today's "blocks low sun" behavior.
-        schema[
-            vol.Optional(
-                keys["elevation_mode"], default=DEFAULT_BLIND_SPOT_ELEVATION_MODE
-            )
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=list(BLIND_SPOT_ELEVATION_MODES),
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="blind_spot_elevation_mode",
-            )
+        schema.update(
+            _blind_spot_slot_fields(n, BLIND_SPOT_SLOTS[n], fov_left, fov_right)
         )
     return vol.Schema(schema)
+
+
+def _blind_spot_gamma_slider(min_v: int, max_v: int, *, step: int | None = None):
+    """Signed-gamma degree slider for a blind-spot edge."""
+    cfg: dict = {
+        "mode": selector.NumberSelectorMode.SLIDER,
+        "unit_of_measurement": "°",
+        "min": min_v,
+        "max": max_v,
+    }
+    if step is not None:
+        cfg["step"] = step
+    return selector.NumberSelector(selector.NumberSelectorConfig(**cfg))
+
+
+def _blind_spot_slot_fields(
+    n: int, keys: Mapping[str, str], fov_left: int, fov_right: int
+) -> dict:
+    """Build one blind-spot slot's schema markers, keyed by *keys*.
+
+    ``keys`` is a ``BLIND_SPOT_SLOTS[n]`` mapping for the multi-slot form, or
+    ``BLIND_SPOT_FORM_KEYS`` for the generic single-slot page (issue #945). The
+    *slot number* — not the keys — selects the marker semantics, so slot 1 keeps
+    its legacy ``Required`` 1° sliver and slots 2/3 stay ``Optional`` regardless
+    of which key set renders them.
+    """
+    schema: dict = {}
+    if n == 1:
+        # Harmless 1° sliver at the left acceptance edge — non-empty but
+        # never blocks the window normal (issue #247, finding 6).
+        left_marker = vol.Required(keys["left_gamma"], default=fov_left)
+        right_marker = vol.Required(keys["right_gamma"], default=1 - fov_left)
+    else:
+        left_marker = vol.Optional(keys["left_gamma"], default=0)
+        right_marker = vol.Optional(keys["right_gamma"])
+    # left (upper) edge ∈ [-fov_right, fov_left]; right (negated lower)
+    # edge ∈ [-fov_left, fov_right].
+    schema[left_marker] = _blind_spot_gamma_slider(-fov_right, fov_left)
+    schema[right_marker] = _blind_spot_gamma_slider(-fov_left, fov_right)
+    schema[vol.Optional(keys["elevation"])] = _blind_spot_gamma_slider(0, 90, step=1)
+    # Per-slot below/above elevation mode (issue #702). Defaults to "below"
+    # so an unconfigured slot keeps today's "blocks low sun" behavior.
+    schema[
+        vol.Optional(keys["elevation_mode"], default=DEFAULT_BLIND_SPOT_ELEVATION_MODE)
+    ] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(BLIND_SPOT_ELEVATION_MODES),
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="blind_spot_elevation_mode",
+        )
+    )
+    return schema
+
+
+def blind_spot_slot_schema(slot_n: int, options: dict | None = None) -> vol.Schema:
+    """Single-slot blind-spot schema for the per-slot options page (issue #945).
+
+    Renders exactly slot *slot_n* under the generic ``BLIND_SPOT_FORM_KEYS`` so
+    the translation block is authored once. Slot-1 semantics (``Required`` + the
+    #247 sliver default) and the FOV-tracking slider bounds are preserved.
+    """
+    opts = options or {}
+    fov_left = resolve_fov_left(opts)
+    fov_right = resolve_fov_right(opts)
+    return vol.Schema(
+        _blind_spot_slot_fields(slot_n, BLIND_SPOT_FORM_KEYS, fov_left, fov_right)
+    )
 
 
 def weather_override_schema(
@@ -797,63 +835,90 @@ def glare_zones_schema(
 ) -> vol.Schema:
     """Glare-zones schema: name + x/y/radius/z for 4 zone slots (locale-aware)."""
     opts = options or {}
+    schema_dict: dict = {}
+    for n in GLARE_ZONE_SLOT_NUMBERS:
+        schema_dict.update(_glare_zone_slot_fields(GLARE_ZONE_SLOTS[n], opts, hass))
+    return vol.Schema(schema_dict)
 
-    def _default(key: str, canonical_fallback: float) -> float:
-        canonical = float(opts.get(key, canonical_fallback))
+
+def _glare_zone_slot_fields(
+    keys: Mapping[str, str], opts: dict, hass: HomeAssistant | None
+) -> dict:
+    """Build one glare-zone slot's schema markers, keyed by *keys*.
+
+    ``keys`` is a ``GLARE_ZONE_SLOTS[n]`` mapping for the 4-zone form, or
+    ``GLARE_ZONE_FORM_KEYS`` for the generic single-slot page (issue #945).
+    Defaults are seeded (locale-aware) from ``opts`` under the *same* key set,
+    so the single-slot caller passes a slot-remapped ``opts``.
+    """
+
+    def _default(sub: str, canonical_fallback: float) -> float:
+        canonical = float(opts.get(keys[sub], canonical_fallback))
         return length_default(canonical, hass)
 
     schema_dict: dict = {}
-    for i in range(1, 5):
-        prefix = f"glare_zone_{i}"
-        schema_dict[
-            vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))
-        ] = selector.TextSelector()
-        schema_dict[
-            vol.Optional(f"{prefix}_x", default=_default(f"{prefix}_x", 0.0))
-        ] = length_selector(
-            hass,
-            min_m=-5.0,
-            max_m=5.0,
-            metric_step=0.05,
-            mode=selector.NumberSelectorMode.SLIDER,
-        )
-        schema_dict[
-            vol.Optional(f"{prefix}_y", default=_default(f"{prefix}_y", 1.0))
-        ] = length_selector(
-            hass,
-            min_m=0.0,
-            max_m=10.0,
-            metric_step=0.05,
-            mode=selector.NumberSelectorMode.SLIDER,
-        )
-        schema_dict[
-            vol.Optional(f"{prefix}_radius", default=_default(f"{prefix}_radius", 0.3))
-        ] = length_selector(
+    schema_dict[vol.Optional(keys["name"], default=opts.get(keys["name"], ""))] = (
+        selector.TextSelector()
+    )
+    schema_dict[vol.Optional(keys["x"], default=_default("x", 0.0))] = length_selector(
+        hass,
+        min_m=-5.0,
+        max_m=5.0,
+        metric_step=0.05,
+        mode=selector.NumberSelectorMode.SLIDER,
+    )
+    schema_dict[vol.Optional(keys["y"], default=_default("y", 1.0))] = length_selector(
+        hass,
+        min_m=0.0,
+        max_m=10.0,
+        metric_step=0.05,
+        mode=selector.NumberSelectorMode.SLIDER,
+    )
+    schema_dict[vol.Optional(keys["radius"], default=_default("radius", 0.3))] = (
+        length_selector(
             hass,
             min_m=0.1,
             max_m=2.0,
             metric_step=0.05,
             mode=selector.NumberSelectorMode.SLIDER,
         )
-        schema_dict[
-            vol.Optional(
-                f"{prefix}_z",
-                default=_default(f"{prefix}_z", DEFAULT_GLARE_ZONE_Z),
-            )
-        ] = length_selector(
-            hass,
-            min_m=0.0,
-            max_m=3.0,
-            metric_step=0.05,
-            mode=selector.NumberSelectorMode.SLIDER,
-        )
-    return vol.Schema(schema_dict)
+    )
+    schema_dict[
+        vol.Optional(keys["z"], default=_default("z", DEFAULT_GLARE_ZONE_Z))
+    ] = length_selector(
+        hass,
+        min_m=0.0,
+        max_m=3.0,
+        metric_step=0.05,
+        mode=selector.NumberSelectorMode.SLIDER,
+    )
+    return schema_dict
+
+
+def glare_zone_slot_schema(
+    slot_n: int, options: dict | None = None, hass: HomeAssistant | None = None
+) -> vol.Schema:
+    """Single-slot glare-zone schema for the per-slot options page (issue #945).
+
+    Renders slot *slot_n* under the generic ``GLARE_ZONE_FORM_KEYS`` (one
+    translation block). Defaults are seeded from the slot's stored metres values
+    remapped onto the generic keys, so the baked slider defaults are correct even
+    before ``add_suggested_values_to_schema`` overlays locale-converted values.
+    """
+    stored = options or {}
+    slot_keys = GLARE_ZONE_SLOTS[slot_n]
+    remapped = {
+        GLARE_ZONE_FORM_KEYS[sub]: stored[wire]
+        for sub, wire in slot_keys.items()
+        if wire in stored
+    }
+    return vol.Schema(_glare_zone_slot_fields(GLARE_ZONE_FORM_KEYS, remapped, hass))
 
 
 def glare_zone_length_keys() -> tuple[str, ...]:
     """Return the 16 metres-stored option keys for the 4 glare-zone slots."""
     return tuple(
         f"glare_zone_{i}_{axis}"
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis in ("x", "y", "radius", "z")
     )

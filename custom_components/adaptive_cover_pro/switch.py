@@ -18,6 +18,7 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
+    GLARE_ZONE_SLOT_NUMBERS,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
@@ -188,7 +189,7 @@ def _glare_zone_specs(entry: ConfigEntry) -> list[_SwitchSpec]:
 
     specs: list[_SwitchSpec] = []
     zone_counter = 0
-    for idx in range(1, 5):  # idx is 1-based (matches config option keys)
+    for idx in GLARE_ZONE_SLOT_NUMBERS:  # idx is 1-based (matches config option keys)
         zone_name = entry.options.get(f"glare_zone_{idx}_name", "")
         if not zone_name:
             continue
