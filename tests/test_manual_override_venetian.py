@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 from collections.abc import Callable
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -1027,9 +1028,10 @@ def test_warn_log_fires_on_first_suppression_per_entity(caplog) -> None:
 # grace expires must not be misread as a manual override. The reset drives the
 # slats to a mechanical endpoint (tilt→0 for direction=close) and back; on slow
 # Somfy IO/Overkiz actuators the endpoint's ``current_tilt_position=0`` publishes
-# ~6-7 s later — past the command grace. The shared primary_axis_suppression
-# predicate must recognise that stale endpoint publish as ACP's own excursion
-# (value-matched, time-boxed, one-shot), while a genuine user move still trips.
+# ~6-7 s later — past the command grace. A VALUE-based, tilt-axis-only
+# ``excursion_match`` predicate (wired on the tilt ``SecondaryAxisCheck``, NOT
+# folded into the shared position-axis suppression) recognises that stale
+# endpoint publish as ACP's own excursion, while a genuine user move still trips.
 # ---------------------------------------------------------------------------
 
 
@@ -1039,6 +1041,7 @@ async def _drive_drift_reset(
     target: int,
     anchor: int = 0,
     reset_threshold: int = 1,
+    grace_active: bool = False,
 ) -> tuple[DualAxisSequencer, VenetianPolicy]:
     """Run a real close-direction drift reset and return ``(seq, policy)``.
 
@@ -1047,8 +1050,10 @@ async def _drive_drift_reset(
     the accumulator crosses the threshold, then drives one tilt-only update so
     the two-step endpoint excursion (tilt→0 then back to ``target``) runs
     through the public path. Wraps the sequencer in a ``VenetianPolicy`` whose
-    command grace is already expired — the #927 timeline where the endpoint
-    publish lands ~0.6 s after grace closes.
+    command grace is expired by default (``grace_active=False``) — the #927
+    timeline where the endpoint publish lands ~0.6 s after grace closes. Set
+    ``grace_active=True`` to model the endpoint publish landing WHILE the policy
+    command-grace window is still open (finding #3).
 
     ``get_current_tilt_position`` is left unwired so the verify step is a no-op
     (no phantom drift pop of ``_tilt_targets``) and the drift accumulator
@@ -1074,11 +1079,21 @@ async def _drive_drift_reset(
     )
 
     grace_mgr = MagicMock()
-    grace_mgr.is_in_command_grace_period = lambda _eid: False
+    grace_mgr.is_in_command_grace_period = lambda _eid: grace_active
     policy = VenetianPolicy()
     policy._sequencer = seq
     policy._grace_mgr = grace_mgr
     return seq, policy
+
+
+def _secondary_check(policy: VenetianPolicy, expected: int) -> SecondaryAxisCheck:
+    """Build the tilt ``SecondaryAxisCheck`` via the production policy path.
+
+    Going through ``policy.secondary_axis_check`` (rather than constructing the
+    check by hand) exercises the real wiring — ``suppression`` AND the #927
+    ``excursion_match`` — so these tests break if either is mis-wired.
+    """
+    return policy.secondary_axis_check(SimpleNamespace(tilt=expected), None)
 
 
 async def test_drift_reset_endpoint_publish_after_grace_is_suppressed() -> None:
@@ -1086,10 +1101,10 @@ async def test_drift_reset_endpoint_publish_after_grace_is_suppressed() -> None:
 
     A close-direction reset drives the slats to tilt 0 and restores 79; the
     endpoint's ``current_tilt_position=0`` publishes ~7 s later, past the 5 s
-    command grace. Pre-fix, ``SecondaryAxisCheck.evaluate`` sees delta=79% and
-    fires ``manual_override_set``. Post-fix, ``is_reset_excursion_publish``
-    recognises the value-matched endpoint publish inside the excursion window
-    and suppresses it.
+    command grace. Pre-fix (no excursion mechanism) ``evaluate`` sees delta=79%
+    and fires ``manual_override_set``. Post-fix ``excursion_match`` recognises
+    the value-matched endpoint publish inside the excursion window and
+    suppresses it.
     """
     entity_id = "cover.og_studio_tur"
     seq, policy = await _drive_drift_reset(entity_id, target=79)
@@ -1103,12 +1118,7 @@ async def test_drift_reset_endpoint_publish_after_grace_is_suppressed() -> None:
         allow_reset=True,
         is_waiting=lambda _eid: False,
         manual_threshold=2,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=79,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=policy.primary_axis_suppression,
-        ),
+        secondary_axis_check=_secondary_check(policy, 79),
     )
 
     assert not mgr.is_cover_manual(
@@ -1137,17 +1147,108 @@ async def test_user_tilt_move_to_endpoint_without_reset_trips_override() -> None
         allow_reset=True,
         is_waiting=lambda _eid: False,
         manual_threshold=2,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=79,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=policy.primary_axis_suppression,
-        ),
+        secondary_axis_check=_secondary_check(policy, 79),
     )
 
     assert mgr.is_cover_manual(
         entity_id
     ), "a real user move to the endpoint with no reset must trip manual override"
+
+
+async def test_user_tilt_move_to_mirror_value_during_window_trips_override() -> None:
+    """Finding #1: a user move to the MIRROR value during the window must trip.
+
+    Close reset from anchor 0 to target 35 stamps an endpoint-0 excursion. The
+    old delta-based predicate matched any publish whose ``|expected − value|``
+    equalled the excursion delta (35), so a genuine user move to the mirror
+    value ``2·35 − 0 = 70`` (delta 35) was wrongly swallowed and burned the
+    one-shot. The value-based predicate matches only value≈0, so the move to
+    tilt 70 trips override.
+    """
+    entity_id = "cover.og_studio_tur_mirror"
+    seq, policy = await _drive_drift_reset(entity_id, target=35)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=70),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 35),
+    )
+
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a user tilt move to the mirror value must trip, not be swallowed (finding #1)"
+
+
+async def test_position_axis_move_during_window_trips_override() -> None:
+    """Finding #2: the POSITION axis must not consult the tilt excursion.
+
+    After a close reset (endpoint-0 excursion, delta 35), the tilt reports
+    on-target (35) so the secondary axis falls through, and a genuine POSITION
+    move (our_state 50 → current_position 15, delta 35) must trip. The old
+    design OR'd the excursion into the shared ``primary_axis_suppression`` that
+    the position axis probes, so this position move — coincidentally matching
+    the excursion delta — was suppressed and the tilt one-shot burned.
+    """
+    entity_id = "cover.og_studio_tur_pos"
+    seq, policy = await _drive_drift_reset(entity_id, target=35)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    # Pass the WIRED policy so the position axis consults the same
+    # ``primary_axis_suppression`` the sequencer backs — this is the path
+    # finding #2 lives on (the old design folded the excursion into it).
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=15, tilt=35),
+        our_state=50,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 35),
+    )
+
+    assert mgr.is_cover_manual(entity_id), (
+        "a genuine position-axis move must trip; the position axis must not "
+        "consult the tilt excursion (finding #2)"
+    )
+
+
+async def test_endpoint_publish_inside_grace_consumes_record() -> None:
+    """Finding #3: a matching endpoint publish inside grace consumes the record.
+
+    With the policy command-grace window still open, the grace term short-
+    circuited the old OR-composition so the excursion term was never evaluated
+    and the record lingered the full window — later swallowing a genuine move.
+    Now ``excursion_match`` is consulted BEFORE the grace check, so the matching
+    endpoint publish is recognised and its one-shot record is consumed even
+    while grace is active. A later genuine move to the endpoint value then trips.
+    """
+    entity_id = "cover.og_studio_tur_grace"
+    seq, policy = await _drive_drift_reset(entity_id, target=79, grace_active=True)
+    assert entity_id in seq._reset_excursion
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+    )
+
+    assert not mgr.is_cover_manual(entity_id)
+    # The one-shot record is consumed by the in-grace publish (finding #3):
+    # the grace term no longer short-circuits it into lingering.
+    assert entity_id not in seq._reset_excursion
 
 
 async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
@@ -1161,11 +1262,13 @@ async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
     entity_id = "cover.og_studio_tur_late"
     seq, policy = await _drive_drift_reset(entity_id, target=79)
     # Backdate the excursion stamp past the publish-lag-sized window.
-    record = seq._reset_excursion[entity_id]
-    seq._reset_excursion[entity_id] = dataclasses.replace(
-        record,
-        at=record.at - dt.timedelta(seconds=seq._backrotate_publish_lag_seconds + 1.0),
-    )
+    seq._reset_excursion[entity_id] = [
+        dataclasses.replace(
+            r,
+            at=r.at - dt.timedelta(seconds=seq._backrotate_publish_lag_seconds + 1.0),
+        )
+        for r in seq._reset_excursion[entity_id]
+    ]
 
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
@@ -1176,12 +1279,7 @@ async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
         allow_reset=True,
         is_waiting=lambda _eid: False,
         manual_threshold=2,
-        secondary_axis_check=SecondaryAxisCheck(
-            expected=79,
-            attribute="current_tilt_position",
-            label="tilt",
-            suppression=policy.primary_axis_suppression,
-        ),
+        secondary_axis_check=_secondary_check(policy, 79),
     )
 
     assert mgr.is_cover_manual(

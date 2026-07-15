@@ -100,8 +100,9 @@ class _ResetExcursion:
     back, a slow actuator (Somfy IO/Overkiz) may publish the endpoint's
     ``current_tilt_position`` several seconds later — after the command grace
     window has closed. ``endpoint`` is the LOGICAL endpoint the reset drove to
-    (``POSITION_OPEN``/``POSITION_CLOSED``); ``at`` is the UTC instant the
-    endpoint command was sent, anchoring the value-matching window in
+    (``POSITION_OPEN``/``POSITION_CLOSED``) — matched against the published wire
+    value via :meth:`DualAxisSequencer._to_wire`; ``at`` is the UTC instant the
+    endpoint command was sent, bounding the publish-lag window in
     :meth:`DualAxisSequencer.is_reset_excursion_publish`.
     """
 
@@ -213,14 +214,15 @@ class DualAxisSequencer:
         # tilt actually sends via ``update_tilt_only``. Drives
         # ``has_pending_tilt`` so the coordinator keeps re-attempting dispatch.
         self._pending_tilt: dict[str, dict] = {}
-        # Per-entity drift-reset endpoint excursion awaiting its late state
-        # publish (issue #927). A reset drives the slats to a mechanical
-        # endpoint and back; on slow actuators the endpoint's stale
+        # Per-entity list of drift-reset endpoint excursions awaiting their
+        # late state publish (issue #927). A reset drives the slats to a
+        # mechanical endpoint and back; on slow actuators the endpoint's stale
         # ``current_tilt_position`` publishes after the command grace closes.
-        # ``is_reset_excursion_publish`` consumes this one-shot to suppress
-        # that late publish (value-matched, time-boxed) so it isn't misread as
-        # a manual move.
-        self._reset_excursion: dict[str, _ResetExcursion] = {}
+        # ``is_reset_excursion_publish`` consumes one one-shot record per
+        # matching publish (value-matched, time-boxed) so it isn't misread as a
+        # manual move. A list (not a single slot) so two resets firing inside
+        # the same window each keep their own record instead of clobbering.
+        self._reset_excursion: dict[str, list[_ResetExcursion]] = {}
 
     # -- tilt inversion ---------------------------------------------------- #
 
@@ -426,7 +428,7 @@ class DualAxisSequencer:
             return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
 
-    def is_reset_excursion_publish(self, entity_id: str, delta: float) -> bool:
+    def is_reset_excursion_publish(self, entity_id: str, new_value: float) -> bool:
         """Suppress the late state publish of a drift-reset endpoint excursion (#927).
 
         A drift reset (``_maybe_drift_reset``) drives the slats to a mechanical
@@ -438,35 +440,49 @@ class DualAxisSequencer:
         ``SecondaryAxisCheck.evaluate`` then reads it as a large-delta manual
         move and fires a false ``manual_override_set``.
 
-        Delta reconstruction: ``SecondaryAxisCheck.expected`` is the stored
-        logical tilt target (``result.tilt``) and the late publish's
-        ``new_value`` is the wire endpoint value, so ``evaluate`` computes
-        ``delta = abs(stored_target - wire_endpoint)``. This predicate rebuilds
-        that same quantity from the recorded LOGICAL endpoint via
-        :meth:`_to_wire` (so inversion is handled once) and matches within
-        ``VENETIAN_TILT_VERIFY_TOLERANCE``. On a match the record is consumed
-        (one-shot) and True is returned; a non-matching intermediate event
-        leaves the record intact so the real endpoint publish still matches.
+        Matches on the PUBLISHED WIRE VALUE, not on a reconstructed delta: the
+        stale publish's ``new_value`` is the wire endpoint reading, and a match
+        holds when it lands within ``VENETIAN_TILT_VERIFY_TOLERANCE`` of the
+        recorded LOGICAL endpoint mapped through :meth:`_to_wire` (so inversion
+        is handled once). Value-matching — rather than the old
+        ``abs(delta - expected_delta)`` reconstruction — means a genuine user
+        tilt move to the *mirror* value ``2·target − endpoint`` (which produces
+        the same delta) is NOT swallowed, and it never reads ``_tilt_targets``,
+        so a diverged stored target (e.g. tilt-skip-above open mode) can't make
+        the guard silently inert.
 
-        The window reuses the configured publish-lag setting
-        (``backrotate_publish_lag_seconds``, default 45 s) — the same clock
-        that already absorbs slow-bus republish on this class of actuator — so
-        a genuine user move to the same value seconds later still trips.
+        One record per matching publish is consumed (first match popped, order
+        preserved); non-matching intermediate events leave every record intact
+        so the real endpoint publish still matches. Expired records (older than
+        the configured ``backrotate_publish_lag_seconds`` window, default 45 s)
+        are dropped first, so a genuine user move to the same value seconds
+        later — once the window has lapsed — still trips.
         """
-        record = self._reset_excursion.get(entity_id)
-        if record is None:
+        records = self._reset_excursion.get(entity_id)
+        if not records:
             return False
-        if self._seconds_since(record.at) >= self._backrotate_publish_lag_seconds:
+        # Drop expired records before matching so a stale record can't outlive
+        # its publish-lag window and swallow a genuine later move.
+        live = [
+            record
+            for record in records
+            if self._seconds_since(record.at) < self._backrotate_publish_lag_seconds
+        ]
+        matched = False
+        remaining: list[_ResetExcursion] = []
+        for record in live:
+            if not matched and (
+                abs(new_value - self._to_wire(record.endpoint))
+                <= VENETIAN_TILT_VERIFY_TOLERANCE
+            ):
+                matched = True  # one-shot: consume only the first matching record
+                continue
+            remaining.append(record)
+        if remaining:
+            self._reset_excursion[entity_id] = remaining
+        else:
             self._reset_excursion.pop(entity_id, None)
-            return False
-        stored = self._tilt_targets.get(entity_id)
-        if stored is None:
-            return False
-        expected_delta = abs(stored - self._to_wire(record.endpoint))
-        if abs(delta - expected_delta) <= VENETIAN_TILT_VERIFY_TOLERANCE:
-            self._reset_excursion.pop(entity_id, None)  # one-shot consume
-            return True
-        return False
+        return matched
 
     # -- tilt sequence ----------------------------------------------------- #
 
@@ -858,9 +874,14 @@ class DualAxisSequencer:
             # that lands after the command grace closes is recognised as ACP's
             # own move, not a manual override (issue #927). The LOGICAL endpoint
             # is stored; is_reset_excursion_publish applies _to_wire on match.
-            self._reset_excursion[entity_id] = _ResetExcursion(
-                endpoint=reset_endpoint, at=dt.datetime.now(dt.UTC)
-            )
+            # Only stamp when the endpoint command will actually be sent: in
+            # dry-run the send below is skipped, so a stamp would linger with no
+            # matching publish and could later swallow a genuine move. Append —
+            # a second reset inside the window keeps its own record.
+            if not self._is_dry_run():
+                self._reset_excursion.setdefault(entity_id, []).append(
+                    _ResetExcursion(endpoint=reset_endpoint, at=dt.datetime.now(dt.UTC))
+                )
             await self._send_tilt_command(
                 entity_id,
                 tilt_target=reset_endpoint,
