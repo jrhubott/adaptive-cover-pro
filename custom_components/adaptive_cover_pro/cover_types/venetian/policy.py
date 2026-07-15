@@ -757,6 +757,13 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         Per CODING_GUIDELINES.md § "No Code Duplication" the shared
         callback inside :meth:`secondary_axis_check` now delegates here
         instead of inlining its own OR-composition.
+
+        The drift-reset endpoint excursion guard (issue #927) is deliberately
+        NOT folded in here: it is a value-based, tilt-axis-only predicate wired
+        as ``SecondaryAxisCheck.excursion_match`` on the tilt axis. The position
+        axis must not consult it, or a position move whose delta coincidentally
+        matched a stale tilt excursion would be suppressed and the excursion's
+        one-shot record burned before the real tilt publish arrives.
         """
         if self._sequencer is None:
             return False
@@ -934,6 +941,13 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         OR'd with the command-grace period. Sharing one callback across
         both axes keeps the publish-lag and grace logic from drifting per
         CODING_GUIDELINES.md § "No Code Duplication".
+
+        ``excursion_match`` wires the drift-reset endpoint guard (issue #927)
+        onto the TILT axis only. It is value-based (matches the raw published
+        wire tilt against the recorded endpoint) and consumed before the grace
+        check, so a stale endpoint publish landing after the command grace
+        closes is recognised as ACP's own move — without the position axis ever
+        consulting it.
         """
         if result is None or result.tilt is None:
             return None
@@ -943,6 +957,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
+            excursion_match=(
+                self._sequencer.is_reset_excursion_publish
+                if self._sequencer is not None
+                else None
+            ),
         )
 
     def _drift_reset_eligible(self, context: Any) -> bool:

@@ -14,10 +14,13 @@ top exercise the config/runtime wiring.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime as dt
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
 from custom_components.adaptive_cover_pro.const import (
@@ -893,3 +896,207 @@ class TestRuntimeConfigScopePlumbing:
         assert policy._get_tilt_reset_scope() == VENETIAN_TILT_RESET_SCOPE_ALL
         box["value"] = VENETIAN_TILT_RESET_SCOPE_SOLAR
         assert policy._get_tilt_reset_scope() == VENETIAN_TILT_RESET_SCOPE_SOLAR
+
+
+# ---------------------------------------------------------------------------
+# Issue #927 — the drift-reset endpoint excursion records a one-shot,
+# VALUE-matched, time-boxed suppression so a stale endpoint state publish
+# arriving after the command grace closes is not misread as a manual move.
+# Matching is on the published WIRE tilt value (the endpoint the reset drove
+# to), never on a reconstructed delta and never reading ``_tilt_targets``.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestResetExcursionPublishSuppression:
+    """``is_reset_excursion_publish`` recognises ACP's own endpoint excursion."""
+
+    async def _run_reset(
+        self,
+        *,
+        target,
+        anchor,
+        direction=VENETIAN_TILT_RESET_CLOSE,
+        invert_tilt=None,
+        threshold=1,
+        seq=None,
+    ):
+        """Drive one close/open drift reset through the public path.
+
+        Seeds the tilt anchor so the accumulator crosses ``threshold`` and the
+        two-step endpoint excursion runs. ``get_current_tilt_position`` is left
+        unwired so the verify step is a no-op and ``_tilt_targets`` ends at the
+        restored ``target``. Pass ``seq`` to run a second reset on the SAME
+        sequencer (multi-slot coverage).
+        """
+        if seq is None:
+            _, seq = _build_sequencer(
+                get_tilt_reset_threshold=lambda: threshold,
+                get_tilt_reset_direction=lambda: direction,
+                invert_tilt=invert_tilt,
+            )
+        seq._tilt_targets["cover.x"] = anchor
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=target, current_position=40, reason="solar"
+        )
+        return seq
+
+    async def test_reset_stamps_excursion_record(self):
+        seq = await self._run_reset(target=79, anchor=0)
+        records = seq._reset_excursion["cover.x"]
+        assert [r.endpoint for r in records] == [POSITION_CLOSED]
+
+    async def test_matching_value_within_window_suppresses(self):
+        # Close reset drove tilt to the wire endpoint 0; the stale publish is
+        # current_tilt_position=0 — that VALUE (not the delta 79) is what matches.
+        seq = await self._run_reset(target=79, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_match_is_one_shot(self):
+        seq = await self._run_reset(target=79, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        # Consumed — a second identical query no longer suppresses.
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
+
+    async def test_non_matching_value_not_suppressed_and_record_retained(self):
+        seq = await self._run_reset(target=79, anchor=0)
+        # An intermediate non-endpoint publish (value 40, endpoint 0).
+        assert seq.is_reset_excursion_publish("cover.x", 40.0) is False
+        # The real endpoint publish still matches — record was NOT burned.
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_user_move_to_mirror_value_not_suppressed(self):
+        """Finding #1: the old delta-based match swallowed a user move to the
+        mirror value ``2·target − endpoint`` (same delta, different value).
+
+        target=35, wire endpoint 0 → mirror = 70. The value-based predicate
+        matches on 0, not on the 35-delta, so a genuine move to tilt 70 is NOT
+        suppressed and the record survives for the real endpoint publish.
+        """
+        seq = await self._run_reset(target=35, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 70.0) is False
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_diverged_stored_target_still_suppressed_by_value(self):
+        """Finding #6: matching must not read ``_tilt_targets``.
+
+        A diverged stored target (e.g. tilt-skip-above open mode stored 100
+        while the restored target differs) must not make the guard inert. With
+        the value-based predicate the endpoint publish (value 0) still matches
+        regardless of what ``_tilt_targets`` holds.
+        """
+        seq = await self._run_reset(target=79, anchor=0)
+        seq._tilt_targets["cover.x"] = 100  # diverged from the endpoint
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_window_expiry_not_suppressed(self):
+        seq = await self._run_reset(target=79, anchor=0)
+        records = seq._reset_excursion["cover.x"]
+        seq._reset_excursion["cover.x"] = [
+            dataclasses.replace(
+                r,
+                at=r.at
+                - dt.timedelta(seconds=seq._backrotate_publish_lag_seconds + 1.0),
+            )
+            for r in records
+        ]
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
+        # The stale record is dropped on the expiry sweep.
+        assert "cover.x" not in seq._reset_excursion
+
+    async def test_multi_slot_two_resets_both_endpoint_publishes_suppressed(self):
+        """Finding #4: two resets inside the window keep two records.
+
+        A single-slot store would let the second reset clobber the first, so
+        only one endpoint publish would suppress. With a list, both do — in
+        either order — and a third query then falls through.
+        """
+        seq = await self._run_reset(target=79, anchor=0)  # record 1, endpoint 0
+        # Second reset on the SAME sequencer; anchor now the restored target 79.
+        await self._run_reset(target=20, anchor=79, seq=seq)  # record 2, endpoint 0
+        assert len(seq._reset_excursion["cover.x"]) == 2
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
+
+    async def test_dry_run_does_not_stamp(self):
+        """Finding #5: no stamp when the endpoint send is dry-run skipped.
+
+        ``_maybe_drift_reset`` is invoked directly with dry-run active so the
+        endpoint ``_send_tilt_command`` is skipped; stamping anyway would leave
+        a record with no possible matching publish.
+        """
+        _, seq = _build_sequencer(
+            dry_run=True,
+            get_tilt_reset_threshold=lambda: 1,
+            get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_CLOSE,
+        )
+        await seq._maybe_drift_reset(
+            "cover.x", original_target=79, position_target=50, pre_send_anchor=0
+        )
+        assert "cover.x" not in seq._reset_excursion
+
+    async def test_stamp_not_recorded_when_endpoint_send_fails(self):
+        """No stamp when the endpoint ``set_cover_tilt_position`` raises.
+
+        If the endpoint send fails the slats never leave their angle, so no
+        stale endpoint publish is coming. Recording the excursion stamp anyway
+        would leave a one-shot that later swallows a genuine user move to that
+        value. The stamp is recorded only after the endpoint send dispatches
+        successfully.
+        """
+        hass, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 1,
+            get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_CLOSE,
+        )
+        hass.services.async_call = AsyncMock(
+            side_effect=HomeAssistantError("service unavailable")
+        )
+        await seq._maybe_drift_reset(
+            "cover.x", original_target=79, position_target=50, pre_send_anchor=0
+        )
+        assert "cover.x" not in seq._reset_excursion
+
+    async def test_open_direction_endpoint_match(self):
+        seq = await self._run_reset(
+            target=21, anchor=100, direction=VENETIAN_TILT_RESET_OPEN
+        )
+        assert [r.endpoint for r in seq._reset_excursion["cover.x"]] == [POSITION_OPEN]
+        # Open reset drove tilt to wire endpoint 100; the publish value is 100.
+        assert seq.is_reset_excursion_publish("cover.x", 100.0) is True
+
+    async def test_inverted_tilt_endpoint_match(self):
+        seq = await self._run_reset(target=60, anchor=0, invert_tilt=lambda: True)
+        # Logical endpoint POSITION_CLOSED (0) → wire inverse_state(0) = 100.
+        # The published wire value is 100; the naive logical 0 must NOT match
+        # (proves _to_wire is applied to the recorded endpoint).
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
+        assert seq.is_reset_excursion_publish("cover.x", 100.0) is True
+
+    async def test_no_reset_no_suppression(self):
+        _, seq = _build_sequencer(get_tilt_reset_threshold=lambda: 0)
+        seq._tilt_targets["cover.x"] = 0
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=60, current_position=40, reason="solar"
+        )
+        assert "cover.x" not in seq._reset_excursion
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
+
+    async def test_reset_two_step_send_sequence_unchanged(self):
+        buf = EventBuffer(maxlen=100)
+        hass, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 50,
+            get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_CLOSE,
+            event_buffer=buf,
+        )
+        seq._tilt_targets["cover.x"] = 0  # anchor 0 → delta 60 ≥ 50
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=60, current_position=40, reason="solar"
+        )
+        tilt_values = [
+            c.args[2]["tilt_position"] for c in hass.services.async_call.call_args_list
+        ]
+        assert tilt_values == [60, POSITION_CLOSED, 60]
+        events = [e["event"] for e in buf.snapshot()]
+        assert "tilt_reset_open" in events
+        assert "tilt_reset_return" in events
