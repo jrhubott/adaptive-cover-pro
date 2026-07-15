@@ -212,7 +212,7 @@ def test_en_blind_spot_labels_name_window_normal_frame() -> None:
     en = _load(TRANSLATIONS_DIR / "en.json")
     # Options flow paginates blind spots into per-slot pages (#945); its editable
     # gamma labels live on blind_spot_slot. The create flow keeps the flat form.
-    for step_key, step in (("options", "blind_spot_slot"), ("config", "blind_spot")):
+    for step_key, step in (("options", "blind_spot_slot"),):
         bs = en[step_key]["step"][step]["data"]
         assert "window normal" in bs["blind_spot_left_gamma"].lower(), (
             f"{step_key}.{step}.data.blind_spot_left_gamma label must name the "
@@ -309,7 +309,8 @@ def test_fr_has_no_acceptance_anglicism_or_champ_de_vision() -> None:
 def test_enforce_delta_at_endpoints_strings_present() -> None:
     """en.json carries the label + description on both config and options steps (#679)."""
     en = _load(TRANSLATIONS_DIR / "en.json")
-    for step_key in ("config", "options"):
+    # Position moved out of the create wizard (#945 Part 2) — options only now.
+    for step_key in ("options",):
         pos = en[step_key]["step"]["position"]
         assert (
             "enforce_delta_at_endpoints" in pos["data"]
@@ -325,7 +326,7 @@ def test_enforce_delta_at_endpoints_strings_present() -> None:
 def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
     """Helper text must not contradict services.yaml by saying 'from window azimuth'."""
     en = _load(TRANSLATIONS_DIR / "en.json")
-    for step_key, step in (("options", "blind_spot_slot"), ("config", "blind_spot")):
+    for step_key, step in (("options", "blind_spot_slot"),):
         dd = en[step_key]["step"][step]["data_description"]
         for key in ("blind_spot_left_gamma", "blind_spot_right_gamma"):
             assert "window azimuth" not in dd[key].lower(), (
@@ -413,8 +414,9 @@ def test_priority_field_documents_all_three_gates() -> None:
     en = _load(TRANSLATIONS_DIR / "en.json")
     # Options flow paginates custom positions (#945): the priority help lives on
     # the generic per-slot page key; the create flow keeps the slot-1 suffixed key.
+    # custom_position moved out of the create wizard (#945 Part 2); the paged
+    # options slot page is the sole home of the priority help now.
     for step_key, step, key in (
-        ("config", "custom_position", "custom_position_priority_1"),
         ("options", "custom_position_slot", "custom_position_priority"),
     ):
         dd = en[step_key]["step"][step]["data_description"]

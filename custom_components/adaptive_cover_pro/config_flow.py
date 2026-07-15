@@ -320,7 +320,6 @@ from .unit_system import (  # noqa: E402
 from . import config_fields  # noqa: E402
 from .config_dynamic import (  # noqa: E402
     behavior_schema as _behavior_schema,
-    blind_spot_schema,
     blind_spot_slot_schema,
     building_profile_sensors_schema,
     clamp_blind_spots_to_fov,
@@ -3759,7 +3758,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self.config: dict[str, Any] = {}
         self.mode: str = "basic"
         self.selected_source_entry_id: str | None = None
-        self.setup_mode: str = "quick"  # "quick" or "full"
         self._has_device_options: bool = False
         self._cover_devices: dict[str, str] = {}
 
@@ -3792,7 +3790,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input:
             self.config = user_input
             self.type_blind = self.config[CONF_MODE]
-            return await self.async_step_setup_mode()
+            # Minimal create wizard (#945 Part 2): capture the cover(s) and
+            # geometry only, then create — everything else is edited in Options.
+            return await self.async_step_cover_entities()
         return self.async_show_form(
             step_id="create_new",
             data_schema=CONFIG_SCHEMA,
@@ -3848,26 +3848,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
             },
         )
-
-    async def async_step_setup_mode(self, user_input: dict[str, Any] | None = None):
-        """Choose between quick and full setup."""
-        return self.async_show_menu(
-            step_id="setup_mode",
-            menu_options=["quick_setup", "full_setup"],
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
-            },
-        )
-
-    async def async_step_quick_setup(self, user_input: dict[str, Any] | None = None):
-        """Start quick setup — minimal steps."""
-        self.setup_mode = "quick"
-        return await self.async_step_cover_entities()
-
-    async def async_step_full_setup(self, user_input: dict[str, Any] | None = None):
-        """Start full setup — all configuration steps."""
-        self.setup_mode = "full"
-        return await self.async_step_cover_entities()
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Select cover entities and optionally link to a physical device.
@@ -3963,7 +3943,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             # spots aren't configured yet this early in the create flow, so
             # this is normally a no-op, but keeps both save sites identical.
             clamp_blind_spots_to_fov(self.config)
-            return await self.async_step_sun_tracking()
+            # Minimal create wizard (#945 Part 2): geometry is the last collected
+            # step — advance straight to the summary, then create.
+            return await self.async_step_summary()
 
         return self._show_geometry_form(self.config)
 
@@ -3982,405 +3964,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="geometry",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
             description_placeholders=_geometry_placeholders(self.type_blind, src),
-        )
-
-    async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
-        """Configure glare zone definitions (initial flow)."""
-        if user_input is not None:
-            canonical = user_input_to_canonical(
-                self.hass, user_input, length_keys=_glare_zone_length_keys()
-            )
-            self.config.update(canonical)
-            # Glare zone (priority 45) is the last L3 handler → L4 automation.
-            return await self.async_step_automation()
-
-        schema = _build_glare_zones_schema(self.config, self.hass)
-        return self.async_show_form(
-            step_id="glare_zones",
-            data_schema=schema,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones"
-            },
-        )
-
-    async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
-        """Configure sun tracking parameters."""
-        if user_input is not None:
-            self.optional_entities([CONF_MIN_ELEVATION, CONF_MAX_ELEVATION], user_input)
-            # The FOV button + shaded distance moved to the geometry step (#778);
-            # the sun-tracking step now carries only behavioural angle/toggle
-            # fields, so there is nothing unit-dependent to canonicalize.
-            if (
-                user_input.get(CONF_MAX_ELEVATION) is not None
-                and user_input.get(CONF_MIN_ELEVATION) is not None
-                and user_input[CONF_MAX_ELEVATION] <= user_input[CONF_MIN_ELEVATION]
-            ):
-                return self._show_sun_tracking_form(
-                    user_input,
-                    errors={
-                        CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
-                    },
-                )
-            self.config.update(user_input)
-            # In full setup, offer to link this cover to a Building Profile when
-            # any profiles exist. Check profiles first so the guard short-circuits
-            # safely in unit tests that build a bare ConfigFlowHandler without
-            # initialising setup_mode (profiles are [] with a MagicMock hass).
-            if (
-                _building_profile_entries(self.hass)
-                and self.setup_mode != "quick"
-                and get_policy(self.type_blind).controls_cover
-            ):
-                return await self.async_step_building_profile()
-            # L1 physical setup: the blind-spot sub-step (when enabled) attaches
-            # to the window here, before L2 positions. Quick setup skips it.
-            return await self._route_after_window_config()
-        return self._show_sun_tracking_form(self.config)
-
-    def _show_sun_tracking_form(
-        self,
-        values: dict[str, Any] | None = None,
-        *,
-        errors: dict | None = None,
-    ):
-        """Render the create-flow sun-tracking form."""
-        schema = _get_sun_tracking_schema(self.type_blind, self.hass)
-        return self.async_show_form(
-            step_id="sun_tracking",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, values or self.config
-            ),
-            errors=errors,
-            description_placeholders=_sun_tracking_placeholders(
-                self.type_blind, self.config
-            ),
-        )
-
-    async def _route_after_window_config(self) -> FlowResult:
-        """Route to blind_spot or position after all window-config steps complete.
-
-        Called from ``async_step_sun_tracking`` (no profiles path) and from
-        ``async_step_building_profile`` (after profile selection), so the routing
-        logic lives in one place instead of being mirrored in both callers.
-        """
-        if self.config.get(CONF_ENABLE_BLIND_SPOT) and self.setup_mode != "quick":
-            return await self.async_step_blind_spot()
-        return await self.async_step_position()
-
-    async def async_step_building_profile(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Link this new cover to a Building Profile during creation.
-
-        Merges the profile's non-empty shared-sensor keys directly into
-        ``self.config`` (there is no existing entry yet) and stores
-        ``CONF_BUILDING_PROFILE_ID``. Selecting the none/skip choice leaves
-        the cover unlinked. On submit, routes to the same blind_spot/position
-        step that ``async_step_sun_tracking`` would have used, via the shared
-        ``_route_after_window_config`` helper.
-        """
-        if user_input is not None:
-            chosen = user_input.get(CONF_BUILDING_PROFILE_ID) or _PROFILE_NONE_SENTINEL
-            if chosen != _PROFILE_NONE_SENTINEL:
-                profile = self.hass.config_entries.async_get_entry(chosen)
-                if profile is not None:
-                    self.config[CONF_BUILDING_PROFILE_ID] = profile.entry_id
-                    # Eagerly merge the profile's non-empty shared-sensor keys
-                    # so the later create steps render them as suggested defaults
-                    # (issue #851). The unconditional async_step_update merge
-                    # stays the safety net — optional_entities() nulls absent
-                    # keys mid-wizard, and that merge re-fills them at create.
-                    merge_profile_into_config(profile, self.config)
-            return await self._route_after_window_config()
-
-        profiles = _building_profile_entries(self.hass)
-        options = [
-            {"value": _PROFILE_NONE_SENTINEL, "label": "None (unlinked)"},
-            *({"value": e.entry_id, "label": e.title} for e in profiles),
-        ]
-        current = self.config.get(CONF_BUILDING_PROFILE_ID) or _PROFILE_NONE_SENTINEL
-        schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_BUILDING_PROFILE_ID, default=current
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-            }
-        )
-        return self.async_show_form(
-            step_id="building_profile",
-            data_schema=schema,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
-            },
-        )
-
-    async def async_step_position(self, user_input: dict[str, Any] | None = None):
-        """Configure position settings."""
-        if user_input is not None:
-            self.optional_entities(_POSITION_OPTIONAL_KEYS, user_input)
-            self.config.update(user_input)
-            # Quick setup: skip optional screens, go straight to summary
-            if self.setup_mode == "quick":
-                return await self.async_step_summary()
-            # L2a positions → L2b behavior.
-            return await self.async_step_behavior()
-        return self.async_show_form(
-            step_id="position",
-            data_schema=POSITION_SCHEMA,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
-            },
-        )
-
-    async def async_step_behavior(self, user_input: dict[str, Any] | None = None):
-        """Configure L2b timing & threshold behavior."""
-        if user_input is not None:
-            self.optional_entities(_BEHAVIOR_OPTIONAL_KEYS, user_input)
-            self.config.update(user_input)
-            # L2 calibration (interp) stays attached to positions/behavior; then
-            # the L3 handler steps begin in pipeline-priority order (weather = 90).
-            if self.config.get(CONF_INTERP):
-                return await self.async_step_interp()
-            return await self.async_step_weather_override()
-        return self.async_show_form(
-            step_id="behavior",
-            data_schema=self.add_suggested_values_to_schema(
-                _behavior_schema(self.config), self.config
-            ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
-                "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
-            },
-        )
-
-    async def async_step_blind_spot(self, user_input: dict[str, Any] | None = None):
-        """Add blindspot to data."""
-        schema = blind_spot_schema(self.config)
-        if user_input is not None:
-            errors = _blind_spot_step_errors(user_input)
-            if errors:
-                return self.async_show_form(
-                    step_id="blind_spot",
-                    data_schema=schema,
-                    errors=errors,
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
-                    },
-                )
-            self.config.update(user_input)
-            # Blind spot is the tail of L1 physical setup → continue to L2 positions.
-            return await self.async_step_position()
-
-        return self.async_show_form(
-            step_id="blind_spot",
-            data_schema=schema,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
-            },
-        )
-
-    async def async_step_interp(self, user_input: dict[str, Any] | None = None):
-        """Show interpolation options."""
-        if user_input is not None:
-            if len(user_input[CONF_INTERP_LIST]) != len(
-                user_input[CONF_INTERP_LIST_NEW]
-            ):
-                return self.async_show_form(
-                    step_id="interp",
-                    data_schema=INTERPOLATION_OPTIONS,
-                    errors={
-                        CONF_INTERP_LIST_NEW: "Must have same length as 'Calculated positions (input)' list"
-                    },
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
-                    },
-                )
-            self.config.update(user_input)
-            # Calibration done → begin L3 handler steps in priority order.
-            return await self.async_step_weather_override()
-        return self.async_show_form(
-            step_id="interp",
-            data_schema=INTERPOLATION_OPTIONS,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
-            },
-        )
-
-    async def async_step_automation(self, user_input: dict[str, Any] | None = None):
-        """Manage automation options."""
-        if user_input is not None:
-            self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
-            self.config.update(user_input)
-            # L4 global motion constraints are the final config step → summary.
-            return await self.async_step_summary()
-        return self.async_show_form(
-            step_id="automation",
-            data_schema=AUTOMATION_SCHEMA,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation"
-            },
-        )
-
-    async def async_step_manual_override(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Configure manual override settings."""
-        if user_input is not None:
-            self.optional_entities([CONF_MANUAL_THRESHOLD], user_input)
-            self.config.update(user_input)
-            return await self.async_step_custom_position()
-        return self.async_show_form(
-            step_id="manual_override",
-            data_schema=MANUAL_OVERRIDE_SCHEMA,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
-            },
-        )
-
-    async def async_step_custom_position(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Configure custom position sensors."""
-        if user_input is not None:
-            self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
-            self.config.update(user_input)
-            # Mirror on the merged dict so a cleared slot can null a stale
-            # legacy key carried over from a copied/source entry.
-            mirror_legacy_slot_sensor_keys(self.config)
-            return await self.async_step_motion_override()
-        schema = vol.Schema(
-            _build_custom_position_schema_dict(sensor_type=self.type_blind)
-        )
-        return self.async_show_form(
-            step_id="custom_position",
-            data_schema=schema,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
-                "priority_scale": _render_priority_scale(
-                    self.config, get_policy(self.type_blind)
-                ),
-            },
-        )
-
-    async def async_step_motion_override(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Configure motion/occupancy-based control."""
-        if user_input is not None:
-            self.config.update(user_input)
-            # L3 priority 75 → 60 (cloud / light).
-            return await self.async_step_light_cloud()
-        return self.async_show_form(
-            step_id="motion_override",
-            data_schema=MOTION_OVERRIDE_SCHEMA,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
-            },
-        )
-
-    async def async_step_weather_override(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Configure weather-based safety overrides."""
-        if user_input is not None:
-            self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
-            self.config.update(user_input)
-            # L3 priority 90 → 80 (manual override).
-            return await self.async_step_manual_override()
-        suggested = _stringify_templatable(self.config)
-        return self.async_show_form(
-            step_id="weather_override",
-            data_schema=self.add_suggested_values_to_schema(
-                weather_override_schema(self.hass, suggested), suggested
-            ),
-            description_placeholders=_weather_override_placeholders(
-                self.hass, suggested
-            ),
-        )
-
-    async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
-        """Configure light sensors, weather conditions, and cloud suppression."""
-        if user_input is not None:
-            self.optional_entities(_LIGHT_CLOUD_OPTIONAL_KEYS, user_input)
-            self.config.update(user_input)
-            return await self.async_step_temperature_climate()
-        suggested = _stringify_templatable(self.config)
-        return self.async_show_form(
-            step_id="light_cloud",
-            data_schema=self.add_suggested_values_to_schema(
-                light_cloud_schema(self.hass, suggested), suggested
-            ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
-            },
-        )
-
-    async def async_step_temperature_climate(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Configure temperature-based climate mode."""
-        if user_input is not None:
-            self.optional_entities(_TEMPERATURE_CLIMATE_OPTIONAL_KEYS, user_input)
-            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
-                CONF_TEMP_ENTITY
-            ):
-                suggested = _stringify_templatable(user_input)
-                return self.async_show_form(
-                    step_id="temperature_climate",
-                    data_schema=self.add_suggested_values_to_schema(
-                        temperature_climate_schema(self.hass, suggested), suggested
-                    ),
-                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode",
-                        "forecast_notice": _forecast_temp_source_notice(
-                            self.config.get(
-                                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
-                            ),
-                            self.config.get(CONF_WEATHER_ENTITY),
-                        ),
-                    },
-                )
-            self.config.update(user_input)
-            # L3 priority 50 → glare (45) when supported/enabled, else L4 automation.
-            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
-                CONF_ENABLE_GLARE_ZONES
-            ):
-                return await self.async_step_glare_zones()
-            return await self.async_step_automation()
-        suggested = _stringify_templatable(self.config)
-        return self.async_show_form(
-            step_id="temperature_climate",
-            data_schema=self.add_suggested_values_to_schema(
-                temperature_climate_schema(self.hass, suggested), suggested
-            ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode",
-                "forecast_notice": _forecast_temp_source_notice(
-                    self.config.get(
-                        CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
-                    ),
-                    self.config.get(CONF_WEATHER_ENTITY),
-                ),
-            },
-        )
-
-    async def async_step_weather(self, user_input: dict[str, Any] | None = None):
-        """Manage weather conditions."""
-        if user_input is not None:
-            self.config.update(user_input)
-            return await self.async_step_summary()
-        return self.async_show_form(
-            step_id="weather",
-            data_schema=WEATHER_OPTIONS,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
-            },
         )
 
     async def async_step_summary(self, user_input: dict[str, Any] | None = None):
