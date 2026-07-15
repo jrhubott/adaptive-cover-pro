@@ -1048,10 +1048,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
 
         ``excursion_match`` wires the drift-reset endpoint guard (issue #927)
         onto the TILT axis only. It is value-based (matches the raw published
-        wire tilt against the recorded endpoint) and consumed before the grace
-        check, so a stale endpoint publish landing after the command grace
-        closes is recognised as ACP's own move — without the position axis ever
-        consulting it.
+        wire tilt against the recorded endpoint) and consulted before the grace
+        check; it tracks the full out-and-back trajectory (#930), so a stale
+        endpoint publish landing after the command grace closes is recognised as
+        ACP's own move — without the position axis ever consulting it.
         """
         if result is None or result.tilt is None:
             return None

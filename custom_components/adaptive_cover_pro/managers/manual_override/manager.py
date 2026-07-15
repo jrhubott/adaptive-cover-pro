@@ -258,16 +258,17 @@ class AdaptiveCoverManager:
         secondary_axis_check,
         new_state,
     ) -> None:
-        """Reject an update at an early gate, consuming any one-shot excursion stamp.
+        """Reject an update at an early gate, advancing any excursion trajectory.
 
         The wait_for_target and command-grace gates both short-circuit
         ``handle_state_change`` before ``secondary_axis_check.evaluate`` runs.
-        On a slow actuator the drift-reset endpoint publish lands inside one of
-        these gates — if the one-shot excursion stamp isn't consumed here it
-        lingers the full publish-lag window and later swallows a genuine move to
-        the same value (issue #927; PR #928 fixed the command-grace gate, and
-        the wait_for_target analog is issue #930). The generic
-        ``consume_excursion`` call keeps the manager cover-type-agnostic.
+        On a slow actuator the drift-reset publishes land inside one of these
+        gates — the excursion trajectory must keep advancing here (mark endpoint
+        / consume on target return), otherwise the record lingers the full
+        publish-lag window and later swallows a genuine move to the same value
+        (issue #927; PR #928 fixed the command-grace gate, and the
+        wait_for_target analog is issue #930). The generic ``consume_excursion``
+        call keeps the manager cover-type-agnostic.
         """
         if secondary_axis_check is not None:
             secondary_axis_check.consume_excursion(entity_id, new_state)

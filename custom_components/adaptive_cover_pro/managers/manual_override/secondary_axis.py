@@ -63,8 +63,10 @@ class SecondaryAxisCheck:
     receives the raw PUBLISHED value (not a delta) and reports whether it
     matches an integration-issued excursion the axis owner recorded (e.g.
     venetian's drift-reset endpoint publish). It is consulted BEFORE
-    ``suppression`` so a matching publish is recognised and consumed whether or
-    not a time-based grace window happens to be open at the same instant.
+    ``suppression`` so a matching publish is recognised whether or not a
+    time-based grace window happens to be open at the same instant. The record
+    is trajectory-tracked, not one-shot-popped: an endpoint publish marks it and
+    a target-return publish consumes it (#930).
     """
 
     expected: int
@@ -72,23 +74,32 @@ class SecondaryAxisCheck:
     label: str  # e.g. "tilt" — flavours the rejection-reason text
     suppression: Callable[[str, float], bool] | None = None
     # Value-based (not delta-based) predicate over the raw published value;
-    # matches an integration-issued excursion so its stale late publish isn't
-    # misread as a manual move (issue #927).
+    # matches an integration-issued excursion so its stale late publishes aren't
+    # misread as a manual move. Trajectory advanced (trajectory-tracked, not
+    # one-shot-popped): endpoint publish marks, target-return consumes
+    # (issue #927/#930).
     excursion_match: Callable[[str, float], bool] | None = None
 
     def consume_excursion(self, entity_id: str, new_state) -> None:
-        """Consume a matching one-shot excursion stamp under another gate.
+        """Advance the excursion trajectory state under another gate.
 
-        When another gate (e.g. command grace) already suppressed this update,
-        pop any matching one-shot excursion stamp anyway so it does not linger
-        and later swallow a genuine move to the same value (issue #927).
+        When another gate (e.g. command grace or wait_for_target) already
+        suppressed this update, feed the published value to ``excursion_match``
+        anyway for its side effects so the excursion trajectory keeps advancing
+        while ``evaluate`` is short-circuited: an endpoint publish marks the
+        record, a target-return publish consumes it (issue #927/#930).
+        Intermediate and endpoint publishes do NOT pop the record — only a
+        target-return (or window expiry) does — so it can't linger and later
+        swallow a genuine move to the same value.
         """
         if self.excursion_match is None:
             return
         new_value = new_state.attributes.get(self.attribute)
         if new_value is None:
             return
-        self.excursion_match(entity_id, new_value)  # one-shot pop on match
+        # Side-effect call: advances trajectory state (mark endpoint / consume
+        # on target-return); the boolean return is intentionally discarded.
+        self.excursion_match(entity_id, new_value)
 
     def evaluate(
         self,
@@ -104,13 +115,14 @@ class SecondaryAxisCheck:
         effective_threshold = effective_manual_threshold(manual_threshold)
 
         # Issue #927: consult the value-based excursion predicate FIRST, before
-        # the delta-based suppression grace check. A drift-reset endpoint
-        # publish must be recognised and consume its one-shot record even when
-        # the command-grace window is simultaneously open — otherwise the grace
-        # term short-circuits, the record lingers the full publish-lag window,
-        # and a genuine later move to the endpoint value gets swallowed. This
-        # matches on the raw published value, so a user move to the mirror value
-        # (same delta, different value) is not swallowed.
+        # the delta-based suppression grace check. A drift-reset publish must be
+        # recognised and its trajectory state advanced (endpoint marked /
+        # target-return consumed) even when the command-grace window is
+        # simultaneously open — otherwise the grace term short-circuits, the
+        # record lingers the full publish-lag window, and a genuine later move to
+        # the endpoint value gets swallowed. This matches on the raw published
+        # value, so a user move to the mirror value (same delta, different value)
+        # is not swallowed.
         if self.excursion_match is not None and self.excursion_match(
             entity_id, new_value
         ):
@@ -122,8 +134,8 @@ class SecondaryAxisCheck:
                     "new_position": new_value,
                     "effective_threshold": effective_threshold,
                     "reason": (
-                        f"{self.label} value {new_value:.0f}% matches an ACP "
-                        "drift-reset endpoint excursion; suppressing both tilt "
+                        f"{self.label} value {new_value:.0f}% lies on an ACP "
+                        "drift-reset excursion trajectory; suppressing both tilt "
                         "and position checks"
                     ),
                 },
