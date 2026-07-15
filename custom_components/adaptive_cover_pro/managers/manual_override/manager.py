@@ -239,6 +239,38 @@ class AdaptiveCoverManager:
             reason=reason,
         )
 
+    def _reject_gated_update(
+        self,
+        entity_id: str,
+        *,
+        event_name: str,
+        reason: str,
+        our_state,
+        secondary_axis_check,
+        new_state,
+    ) -> None:
+        """Reject an update at an early gate, advancing any excursion trajectory.
+
+        The wait_for_target and command-grace gates both short-circuit
+        ``handle_state_change`` before ``secondary_axis_check.evaluate`` runs.
+        On a slow actuator the drift-reset publishes land inside one of these
+        gates — the excursion trajectory must keep advancing here (mark endpoint
+        / consume on target return), otherwise the record lingers the full
+        publish-lag window and later swallows a genuine move to the same value
+        (issue #927; PR #928 fixed the command-grace gate, and the
+        wait_for_target analog is issue #930). The generic ``consume_excursion``
+        call keeps the manager cover-type-agnostic.
+        """
+        if secondary_axis_check is not None:
+            secondary_axis_check.consume_excursion(entity_id, new_state)
+        self._record_event(
+            entity_id,
+            event_name,
+            our_state=our_state,
+            new_position=None,
+            reason=reason,
+        )
+
     def get_event_buffer(self) -> list[dict]:
         """Return a snapshot of the ring buffer (backward-compat wrapper)."""
         return self._event_buffer.snapshot()
@@ -364,29 +396,23 @@ class AdaptiveCoverManager:
         if entity_id not in self.covers:
             return
         if is_waiting(entity_id):
-            self._record_event(
+            self._reject_gated_update(
                 entity_id,
-                "manual_override_rejected_wait_for_target",
-                our_state=our_state,
-                new_position=None,
+                event_name="manual_override_rejected_wait_for_target",
                 reason="wait_for_target active",
+                our_state=our_state,
+                secondary_axis_check=secondary_axis_check,
+                new_state=event.new_state,
             )
             return
         if is_in_command_grace is not None and is_in_command_grace(entity_id):
-            # Consume any matching one-shot excursion stamp BEFORE returning
-            # (#927). The grace gate short-circuits the secondary-axis check, but
-            # on fast actuators the drift-reset endpoint publish lands inside the
-            # command-grace window — if the stamp isn't consumed here it lingers
-            # the full publish-lag window and later swallows a genuine move to
-            # the same value. Generic call keeps the manager cover-type-agnostic.
-            if secondary_axis_check is not None:
-                secondary_axis_check.consume_excursion(entity_id, event.new_state)
-            self._record_event(
+            self._reject_gated_update(
                 entity_id,
-                "manual_override_rejected_command_grace",
-                our_state=our_state,
-                new_position=None,
+                event_name="manual_override_rejected_command_grace",
                 reason="command grace period active",
+                our_state=our_state,
+                secondary_axis_check=secondary_axis_check,
+                new_state=event.new_state,
             )
             return
 

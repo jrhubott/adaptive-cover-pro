@@ -1219,19 +1219,21 @@ async def test_position_axis_move_during_window_trips_override() -> None:
     )
 
 
-async def test_endpoint_publish_inside_grace_consumes_record() -> None:
-    """Finding #3: a matching endpoint publish inside grace consumes the record.
+async def test_endpoint_publish_inside_grace_marks_record_then_target_return_consumes() -> (
+    None
+):
+    """#930 finding 3: an endpoint publish inside grace MARKS; target return consumes.
 
     Mirrors production: the coordinator wires ``is_in_command_grace`` to the
     SAME ``GracePeriodManager`` the policy's excursion window uses. On a fast
     actuator the endpoint publish lands WHILE that command-grace window is still
     open, so ``handle_state_change`` returns early in the grace-reject branch
-    BEFORE ``secondary_axis_check.evaluate`` ever runs. Without a fix the
-    one-shot excursion record is never consumed and lingers the full window,
-    later swallowing a genuine user tilt-to-endpoint move (bounded false
-    negative). The fix consumes the matching excursion stamp in the grace-reject
-    branch via the generic ``SecondaryAxisCheck.consume_excursion`` so the record
-    does not linger; a later genuine move to the endpoint value then trips.
+    BEFORE ``secondary_axis_check.evaluate`` ever runs. The grace-reject branch
+    still advances the excursion trajectory via the generic
+    ``SecondaryAxisCheck.consume_excursion``: the endpoint publish marks the
+    record (it survives the return leg), and a later publish back on the target
+    consumes it. A genuine user move to the endpoint after the whole trajectory
+    then trips.
     """
     entity_id = "cover.og_studio_tur_grace"
     seq, policy = await _drive_drift_reset(entity_id, target=79, grace_active=True)
@@ -1240,7 +1242,8 @@ async def test_endpoint_publish_inside_grace_consumes_record() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     # In-grace endpoint publish: command grace is active (as production wires it
-    # off the same GracePeriodManager), so the grace-reject branch fires first.
+    # off the same GracePeriodManager), so the grace-reject branch fires first
+    # and marks (not consumes) the excursion record.
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=50, tilt=0),
         our_state=50,
@@ -1251,16 +1254,28 @@ async def test_endpoint_publish_inside_grace_consumes_record() -> None:
         secondary_axis_check=_secondary_check(policy, 79),
         is_in_command_grace=lambda _eid: True,
     )
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id in seq._reset_excursion
+    assert seq._reset_excursion[entity_id][0].endpoint_seen is True
 
-    # Grace rejects the update, so no override — but the one-shot record MUST be
-    # consumed so it can't linger and swallow a genuine later move (finding #3).
+    # In-grace target-return publish (tilt back to 79) consumes the record.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=79),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+        is_in_command_grace=lambda _eid: True,
+    )
     assert not mgr.is_cover_manual(entity_id)
     assert entity_id not in seq._reset_excursion
 
     # After grace expires, a genuine user tilt-to-endpoint move (no stamp left)
-    # must still trip override — proving the consume did not disable detection.
-    # Flip the policy's command grace off too (the suppression callback consults
-    # it), mirroring the window having closed.
+    # must still trip override — proving the trajectory tracking did not disable
+    # detection. Flip the policy's command grace off too (the suppression
+    # callback consults it), mirroring the window having closed.
     policy._grace_mgr.is_in_command_grace_period = lambda _eid: False
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=50, tilt=0),
@@ -1275,6 +1290,69 @@ async def test_endpoint_publish_inside_grace_consumes_record() -> None:
     assert mgr.is_cover_manual(
         entity_id
     ), "a genuine user move to the endpoint after grace must still trip override"
+
+
+async def test_endpoint_publish_during_wait_for_target_marks_record_then_target_return_consumes() -> (
+    None
+):
+    """Case 2 (#930): an endpoint publish inside wait_for_target marks; target return consumes.
+
+    The ``is_waiting`` gate returns early — like the command-grace gate — BEFORE
+    ``secondary_axis_check.evaluate`` runs. When a position command is still
+    awaiting its target as the drift-reset endpoint publish lands, the
+    grace-reject branch advances the excursion trajectory: the endpoint publish
+    marks the record (retained through the return leg), and a later publish back
+    on the target consumes it. Symmetric with
+    ``test_endpoint_publish_inside_grace_marks_record_then_target_return_consumes``.
+    """
+    entity_id = "cover.og_studio_tur_wait"
+    seq, policy = await _drive_drift_reset(entity_id, target=79)
+    assert entity_id in seq._reset_excursion
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    # In-flight position command: wait_for_target active — the is_waiting branch
+    # fires first and marks (not consumes) the excursion record.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: True,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+    )
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id in seq._reset_excursion
+    assert seq._reset_excursion[entity_id][0].endpoint_seen is True
+
+    # Target-return publish while still waiting consumes the record.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=79),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: True,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+    )
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id not in seq._reset_excursion
+
+    # Once the command settles (is_waiting False, no stamp left), a genuine user
+    # tilt-to-endpoint move must still trip override.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+    )
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a genuine user move to the endpoint after wait_for_target must still trip"
 
 
 async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
@@ -1311,3 +1389,138 @@ async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
     assert mgr.is_cover_manual(
         entity_id
     ), "endpoint publish after the excursion window must trip manual override"
+
+
+async def test_drift_reset_intermediate_publish_does_not_trip_override() -> None:
+    """Case 1 (#930): a mid-excursion INTERMEDIATE tilt publish must NOT trip.
+
+    A close reset to target 41 drives the slats 41→0→41. On a slow actuator an
+    intermediate ``current_tilt_position=9`` publishes mid-travel — delta 32
+    from the 41 target, well over the threshold. The traversal-band suppression
+    recognises it as ACP's own excursion. The endpoint publish then marks the
+    record (still retained, not burned); only a publish landing back on the
+    target (41) consumes it.
+    """
+    entity_id = "cover.og_studio_tur_intermediate"
+    seq, policy = await _drive_drift_reset(entity_id, target=41)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=9),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 41),
+    )
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "an intermediate mid-excursion tilt publish must NOT trip manual override"
+
+    # The endpoint publish marks the record; it is RETAINED, not consumed, so it
+    # still protects the return leg (#930).
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 41),
+    )
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id in seq._reset_excursion
+
+    # The target-return publish (tilt back to 41) consumes the record.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=41),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 41),
+    )
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id not in seq._reset_excursion
+
+
+async def test_return_leg_intermediate_after_endpoint_publish_does_not_trip_override() -> (
+    None
+):
+    """#930 finding 1: an intermediate on the RETURN leg must NOT trip override.
+
+    A close reset to target 35 drives the slats 35→0→35. The endpoint publish
+    (tilt 0) marks the record; then on the return leg an intermediate tilt-28
+    publish lands (delta 7 from the 35 target, over the threshold). Because the
+    record survives until the target-return consumes it, the return-leg
+    intermediate is recognised as ACP's own move. Pre-#930 the endpoint publish
+    burned the one-shot, so this return-leg intermediate tripped a false
+    override.
+    """
+    entity_id = "cover.og_studio_tur_return"
+    seq, policy = await _drive_drift_reset(entity_id, target=35)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+
+    def _drive(tilt: int) -> None:
+        mgr.handle_state_change(
+            states_data=_make_event(entity_id, position=50, tilt=tilt),
+            our_state=50,
+            policy=get_policy("cover_venetian"),
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=2,
+            secondary_axis_check=_secondary_check(policy, 35),
+        )
+
+    # Endpoint publish marks the record.
+    _drive(0)
+    assert not mgr.is_cover_manual(entity_id)
+    # Return-leg intermediate — must NOT trip (pre-#930 it did).
+    _drive(28)
+    assert not mgr.is_cover_manual(entity_id)
+    # Target return consumes the record.
+    _drive(35)
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id not in seq._reset_excursion
+
+    # A genuine user move to the endpoint after the trajectory completes trips.
+    _drive(0)
+    assert mgr.is_cover_manual(entity_id)
+
+
+async def test_near_target_tilt_publish_position_axis_still_evaluated() -> None:
+    """#930 finding 2: a near-target tilt publish keeps the position axis observable.
+
+    After a close reset to target 35, a tilt publish of 34 is within tolerance
+    of the target, so the excursion predicate falls through (rather than
+    swallowing both axes as an in-band intermediate). With the tilt delta below
+    threshold, a simultaneous genuine POSITION move (our_state 50 →
+    current_position 15) must still trip manual override. Pre-#930 the near-
+    target value was swallowed by the band rule and the position move was lost.
+    """
+    entity_id = "cover.og_studio_tur_near_target"
+    seq, policy = await _drive_drift_reset(entity_id, target=35)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    # Pass the WIRED policy so the position axis consults the sequencer-backed
+    # ``primary_axis_suppression`` (which must NOT swallow this move).
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=15, tilt=34),
+        our_state=50,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 35),
+    )
+
+    assert mgr.is_cover_manual(entity_id), (
+        "a near-target tilt publish must fall through so a genuine position "
+        "move still trips (finding #2)"
+    )

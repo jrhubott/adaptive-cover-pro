@@ -952,18 +952,31 @@ class TestResetExcursionPublishSuppression:
         seq = await self._run_reset(target=79, anchor=0)
         assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
 
-    async def test_match_is_one_shot(self):
+    async def test_endpoint_retained_until_target_return_consumes(self):
+        """#930: the endpoint publish MARKS+RETAINS; only target return consumes.
+
+        A close reset to target 79 stamps endpoint 0. The endpoint publish
+        (value 0) marks the record and suppresses, and a republished endpoint
+        still suppresses — the record survives the whole out-and-back. Only a
+        publish landing back on the target (79) consumes it; afterwards the
+        protection is over.
+        """
         seq = await self._run_reset(target=79, anchor=0)
         assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
-        # Consumed — a second identical query no longer suppresses.
+        # Republished endpoint still suppressed — record retained, not burned.
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        # Target-return publish consumes the completed excursion.
+        assert seq.is_reset_excursion_publish("cover.x", 79.0) is False
+        assert "cover.x" not in seq._reset_excursion
+        # Protection over: a later endpoint value now falls through.
         assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
 
-    async def test_non_matching_value_not_suppressed_and_record_retained(self):
-        seq = await self._run_reset(target=79, anchor=0)
-        # An intermediate non-endpoint publish (value 40, endpoint 0).
-        assert seq.is_reset_excursion_publish("cover.x", 40.0) is False
-        # The real endpoint publish still matches — record was NOT burned.
-        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+    # NOTE (#930): the former ``test_non_matching_value_not_suppressed_and_record_
+    # retained`` asserted an IN-BAND intermediate (value 40, target 79/endpoint 0)
+    # was NOT suppressed. Issue #930 deliberately reverses that: an intermediate
+    # inside the traversal band IS now suppressed. Its surviving guarantee — a
+    # genuine OUT-OF-band move is not suppressed and the record is retained — is
+    # covered by ``test_out_of_band_value_not_suppressed_and_record_retained``.
 
     async def test_user_move_to_mirror_value_not_suppressed(self):
         """Finding #1: the old delta-based match swallowed a user move to the
@@ -1008,16 +1021,136 @@ class TestResetExcursionPublishSuppression:
         """Finding #4: two resets inside the window keep two records.
 
         A single-slot store would let the second reset clobber the first, so
-        only one endpoint publish would suppress. With a list, both do — in
-        either order — and a third query then falls through.
+        only one excursion would survive. With a list, both do: each endpoint
+        publish marks its own record (#930), and each is consumed only when a
+        publish lands back on that record's target.
         """
         seq = await self._run_reset(target=79, anchor=0)  # record 1, endpoint 0
         # Second reset on the SAME sequencer; anchor now the restored target 79.
         await self._run_reset(target=20, anchor=79, seq=seq)  # record 2, endpoint 0
         assert len(seq._reset_excursion["cover.x"]) == 2
+        # Endpoint publishes mark each record in turn; both stay retained.
         assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
         assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        assert all(r.endpoint_seen for r in seq._reset_excursion["cover.x"])
+        # A further endpoint publish is still suppressed (records survive).
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        # Target returns consume each completed record in turn.
+        assert seq.is_reset_excursion_publish("cover.x", 79.0) is False
+        assert seq.is_reset_excursion_publish("cover.x", 20.0) is False
+        assert "cover.x" not in seq._reset_excursion
         assert seq.is_reset_excursion_publish("cover.x", 0.0) is False
+
+    async def test_intermediate_in_band_publish_suppressed_without_burning_record(self):
+        """Issue #930: in-band intermediates suppress; only target return consumes.
+
+        Close reset from anchor 0 to target 41 stamps endpoint 0. The slats
+        travel 41→0→41, so a mid-excursion publish anywhere in the band
+        ``[-5, 46]`` (endpoint 0 .. target 41, ±tolerance) is ACP's own move —
+        suppressed WITHOUT consuming the record. The endpoint publish marks the
+        record (still suppressed, still retained); only a publish landing back
+        on the target consumes it, ending protection.
+        """
+        seq = await self._run_reset(target=41, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 9.0) is True
+        # Non-consuming: a second in-band intermediate still suppresses.
+        assert seq.is_reset_excursion_publish("cover.x", 28.0) is True
+        # The endpoint publish marks the record; still suppressed, still retained.
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        # Return-leg endpoint republish still suppressed (record survives).
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        # Target-return publish consumes the completed excursion.
+        assert seq.is_reset_excursion_publish("cover.x", 41.0) is False
+        assert "cover.x" not in seq._reset_excursion
+        assert seq.is_reset_excursion_publish("cover.x", 9.0) is False
+
+    async def test_intermediate_at_seven_percent_delta_suppressed(self):
+        """Issue #930: the reporter's ``28 @ delta 7%`` intermediate suppresses.
+
+        Close reset to target 35 (band ``[-5, 40]``); a tilt-28 publish (delta 7
+        from target) is in-band and suppressed, then the endpoint publish marks
+        the record (consumption happens on the later target-return, not here).
+        """
+        seq = await self._run_reset(target=35, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 28.0) is True
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_out_of_band_value_not_suppressed_and_record_retained(self):
+        """A genuine move OUTSIDE the traversal band is not suppressed; record kept.
+
+        Close reset to target 79 (band ``[-5, 84]``). A publish of 90 lies beyond
+        the target side of the band — a genuine move — so it is NOT suppressed,
+        and the endpoint publish still matches (record was not burned). This is
+        the surviving half of the deleted ``test_non_matching_value_not_...``.
+        """
+        seq = await self._run_reset(target=79, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 90.0) is False
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_return_leg_intermediate_after_endpoint_still_suppressed(self):
+        """#930 finding 1: an intermediate on the RETURN leg stays suppressed.
+
+        Close reset to target 35 stamps endpoint 0. Once the endpoint publish
+        has marked the record, the slats travel 0→35 (the return leg); an
+        intermediate publish (28, in-band) on that leg must still be suppressed
+        because the record survives until the target-return consumes it.
+        """
+        seq = await self._run_reset(target=35, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+        assert seq._reset_excursion["cover.x"][0].endpoint_seen is True
+        # Return-leg intermediate — still protected (pre-#930 this tripped).
+        assert seq.is_reset_excursion_publish("cover.x", 28.0) is True
+        # Target return consumes and falls through.
+        assert seq.is_reset_excursion_publish("cover.x", 35.0) is False
+        assert "cover.x" not in seq._reset_excursion
+        assert seq.is_reset_excursion_publish("cover.x", 28.0) is False
+
+    async def test_near_target_value_falls_through_without_consuming(self):
+        """#930 finding 2: a near-target value falls through (position stays observable).
+
+        Close reset to target 35. A publish of 34 is within tolerance of the
+        target, so it is treated as the settled resting position and falls
+        through (returns False) rather than being swallowed as an in-band
+        intermediate — leaving a simultaneous genuine POSITION move detectable.
+        The record is not consumed (no endpoint seen yet), so the endpoint
+        publish still protects the excursion.
+        """
+        seq = await self._run_reset(target=35, anchor=0)
+        assert seq.is_reset_excursion_publish("cover.x", 34.0) is False
+        records = seq._reset_excursion["cover.x"]
+        assert len(records) == 1
+        assert records[0].endpoint_seen is False
+        assert seq.is_reset_excursion_publish("cover.x", 0.0) is True
+
+    async def test_in_band_value_after_window_expiry_not_suppressed(self):
+        """After the publish-lag window lapses, an in-band value no longer suppresses.
+
+        The band check runs only over LIVE records; once the excursion stamp is
+        older than ``backrotate_publish_lag_seconds`` it is dropped on the expiry
+        sweep, so a genuine same-region move seconds later trips.
+        """
+        seq = await self._run_reset(target=41, anchor=0)
+        records = seq._reset_excursion["cover.x"]
+        seq._reset_excursion["cover.x"] = [
+            dataclasses.replace(
+                r,
+                at=r.at
+                - dt.timedelta(seconds=seq._backrotate_publish_lag_seconds + 1.0),
+            )
+            for r in records
+        ]
+        assert seq.is_reset_excursion_publish("cover.x", 9.0) is False
+
+    async def test_band_respects_tilt_inversion(self):
+        """The traversal band is computed on WIRE values, honouring tilt inversion.
+
+        With inversion, close reset to target 79: logical endpoint 0 → wire 100,
+        target 79 → wire 21, so the wire band is ``[16, 105]``. A wire-60 publish
+        is in-band (suppressed); a wire-5 publish is below the band (trips).
+        """
+        seq = await self._run_reset(target=79, anchor=0, invert_tilt=lambda: True)
+        assert seq.is_reset_excursion_publish("cover.x", 60.0) is True
+        assert seq.is_reset_excursion_publish("cover.x", 5.0) is False
 
     async def test_dry_run_does_not_stamp(self):
         """Finding #5: no stamp when the endpoint send is dry-run skipped.
