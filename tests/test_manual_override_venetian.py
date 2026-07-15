@@ -1277,6 +1277,55 @@ async def test_endpoint_publish_inside_grace_consumes_record() -> None:
     ), "a genuine user move to the endpoint after grace must still trip override"
 
 
+async def test_endpoint_publish_during_wait_for_target_consumes_record() -> None:
+    """Case 2 (#930): a matching endpoint publish inside wait_for_target consumes.
+
+    The ``is_waiting`` gate returns early — like the command-grace gate — BEFORE
+    ``secondary_axis_check.evaluate`` runs. If a position command is still
+    awaiting its target when the late drift-reset endpoint publish lands, the
+    one-shot excursion record must be consumed here too; otherwise it lingers the
+    full publish-lag window and later swallows a genuine user tilt-to-endpoint
+    move. Symmetric with ``test_endpoint_publish_inside_grace_consumes_record``.
+    """
+    entity_id = "cover.og_studio_tur_wait"
+    seq, policy = await _drive_drift_reset(entity_id, target=79)
+    assert entity_id in seq._reset_excursion
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    # In-flight position command: wait_for_target is active, so the is_waiting
+    # branch fires first and returns before evaluate() runs.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: True,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+    )
+
+    # wait_for_target rejects the update, so no override — but the one-shot
+    # record MUST be consumed so it can't linger and swallow a later move.
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id not in seq._reset_excursion
+
+    # Once the command settles (is_waiting False, no stamp left), a genuine user
+    # tilt-to-endpoint move must still trip override.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 79),
+    )
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a genuine user move to the endpoint after wait_for_target must still trip"
+
+
 async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
     """A matching endpoint publish arriving AFTER the excursion window trips.
 
@@ -1311,3 +1360,46 @@ async def test_endpoint_publish_after_excursion_window_trips_override() -> None:
     assert mgr.is_cover_manual(
         entity_id
     ), "endpoint publish after the excursion window must trip manual override"
+
+
+async def test_drift_reset_intermediate_publish_does_not_trip_override() -> None:
+    """Case 1 (#930): a mid-excursion INTERMEDIATE tilt publish must NOT trip.
+
+    A close reset to target 41 drives the slats 41→0→41. On a slow actuator an
+    intermediate ``current_tilt_position=9`` publishes mid-travel — delta 32
+    from the 41 target, well over the threshold. Pre-fix the value-only matcher
+    (0/100 endpoint) missed it, so ``evaluate`` scored it a manual move. The
+    traversal-band suppression now recognises it as ACP's own excursion without
+    burning the one-shot, so the later real endpoint publish still consumes.
+    """
+    entity_id = "cover.og_studio_tur_intermediate"
+    seq, policy = await _drive_drift_reset(entity_id, target=41)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=9),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 41),
+    )
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "an intermediate mid-excursion tilt publish must NOT trip manual override"
+
+    # The intermediate must not have burned the one-shot: the real endpoint
+    # publish still suppresses and consumes the record.
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=2,
+        secondary_axis_check=_secondary_check(policy, 41),
+    )
+    assert not mgr.is_cover_manual(entity_id)
+    assert entity_id not in seq._reset_excursion

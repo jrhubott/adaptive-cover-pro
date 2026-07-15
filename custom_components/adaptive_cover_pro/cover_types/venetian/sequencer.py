@@ -103,11 +103,16 @@ class _ResetExcursion:
     (``POSITION_OPEN``/``POSITION_CLOSED``) — matched against the published wire
     value via :meth:`DualAxisSequencer._to_wire`; ``at`` is the UTC instant the
     endpoint command was sent, bounding the publish-lag window in
-    :meth:`DualAxisSequencer.is_reset_excursion_publish`.
+    :meth:`DualAxisSequencer.is_reset_excursion_publish`. ``target`` is the
+    LOGICAL tilt target the reset returns to; together the ``(endpoint,
+    target)`` pair defines the physical traversal band (slats travel
+    target->endpoint->target), so an intermediate publish landing inside that
+    band is recognised as ACP's own move rather than a manual override (#930).
     """
 
     endpoint: int
     at: dt.datetime
+    target: int
 
 
 class DualAxisSequencer:
@@ -451,12 +456,17 @@ class DualAxisSequencer:
         so a diverged stored target (e.g. tilt-skip-above open mode) can't make
         the guard silently inert.
 
-        One record per matching publish is consumed (first match popped, order
-        preserved); non-matching intermediate events leave every record intact
-        so the real endpoint publish still matches. Expired records (older than
-        the configured ``backrotate_publish_lag_seconds`` window, default 45 s)
-        are dropped first, so a genuine user move to the same value seconds
-        later — once the window has lapsed — still trips.
+        One record per matching endpoint publish is consumed (first match
+        popped, order preserved). A publish that is not the endpoint value but
+        falls inside the physical traversal band ``[min(endpoint, target),
+        max(endpoint, target)]`` (±``VENETIAN_TILT_VERIFY_TOLERANCE``, both
+        mapped through :meth:`_to_wire`) is an intermediate mid-excursion move —
+        it is suppressed but does NOT consume the one-shot, so the real endpoint
+        publish still matches (#930). The mirror value ``2·target − endpoint``
+        lies on the far side of the target, outside the band, so a genuine user
+        move to it still trips. Expired records (older than the configured
+        ``backrotate_publish_lag_seconds`` window, default 45 s) are dropped
+        first, so a genuine user move — once the window has lapsed — still trips.
         """
         records = self._reset_excursion.get(entity_id)
         if not records:
@@ -482,6 +492,33 @@ class DualAxisSequencer:
             self._reset_excursion[entity_id] = remaining
         else:
             self._reset_excursion.pop(entity_id, None)
+        if not matched:
+            # In-band intermediate publish (#930): the slats physically travel
+            # target->endpoint->target, so a publish whose wire value lands in
+            # the closed traversal band [min(endpoint, target), max(...)] (±the
+            # verify tolerance) is ACP's own mid-excursion move. Suppress it but
+            # do NOT consume the one-shot — the real endpoint publish still needs
+            # to match and consume it. Checked over the LIVE records only
+            # (expired ones already dropped), so it stays time-boxed; the mirror
+            # value 2*target-endpoint lies outside the band, so a genuine mirror
+            # move still trips.
+            #
+            # The target value itself is deliberately excluded: a publish AT the
+            # target is the settled resting position (tilt delta 0, which can
+            # never trip a manual check), so it must fall through to the normal
+            # on-target path rather than short-circuit as an excursion — that
+            # keeps a simultaneous genuine POSITION move detectable (finding #2).
+            for record in live:
+                wire_target = self._to_wire(record.target)
+                if new_value == wire_target:
+                    continue
+                lo, hi = sorted((self._to_wire(record.endpoint), wire_target))
+                if (
+                    lo - VENETIAN_TILT_VERIFY_TOLERANCE
+                    <= new_value
+                    <= hi + VENETIAN_TILT_VERIFY_TOLERANCE
+                ):
+                    return True
         return matched
 
     # -- tilt sequence ----------------------------------------------------- #
@@ -897,7 +934,11 @@ class DualAxisSequencer:
             # reset inside the window keeps its own record.
             if sent:
                 self._reset_excursion.setdefault(entity_id, []).append(
-                    _ResetExcursion(endpoint=reset_endpoint, at=dt.datetime.now(dt.UTC))
+                    _ResetExcursion(
+                        endpoint=reset_endpoint,
+                        at=dt.datetime.now(dt.UTC),
+                        target=original_target,
+                    )
                 )
             await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
             self._record_event(
