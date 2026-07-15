@@ -123,6 +123,7 @@ async def test_switch_platform_builds_group_automation_switch(
     assert [e.unique_id for e in entities] == [
         "group_01_group_automation",
         "group_01_group_lock",
+        "group_01_group_climate_mode",
     ]
 
     coordinator = group_entry.runtime_data
@@ -146,11 +147,13 @@ async def test_button_platform_builds_scene_and_clear_buttons(
     assert unique_ids == {
         *(f"group_01_group_scene_{scene}" for scene in GroupScene),
         "group_01_group_clear_overrides",
+        "group_01_group_stop",
     }
 
     coordinator = group_entry.runtime_data
     coordinator.async_activate_scene = AsyncMock()
     coordinator.async_clear_overrides = AsyncMock()
+    coordinator.async_stop = AsyncMock()
     by_id = {e.unique_id: e for e in entities}
 
     await by_id[f"group_01_group_scene_{GroupScene.ALL_OPEN}"].async_press()
@@ -158,6 +161,9 @@ async def test_button_platform_builds_scene_and_clear_buttons(
 
     await by_id["group_01_group_clear_overrides"].async_press()
     coordinator.async_clear_overrides.assert_awaited_once()
+
+    await by_id["group_01_group_stop"].async_press()
+    coordinator.async_stop.assert_awaited_once()
 
 
 async def test_select_platform_builds_scene_picker(hass, group_entry) -> None:
@@ -212,6 +218,31 @@ async def test_group_lock_switch_drives_lock_intent(hass, group_entry) -> None:
     await lock.async_turn_off()
     coordinator.async_set_lock.assert_awaited_with(False)
     assert lock.is_on is False
+
+
+async def test_group_climate_switch_drives_and_reflects_members(
+    hass, group_entry
+) -> None:
+    """Turn on/off delegate to the coordinator; is_on derives from member modes."""
+    coordinator = group_entry.runtime_data
+    coordinator.async_set_climate_mode = AsyncMock()
+    entities = {
+        e.unique_id: e for e in await _added_entities(switch, hass, group_entry)
+    }
+    climate = entities["group_01_group_climate_mode"]
+    climate.async_write_ha_state = MagicMock()
+
+    coordinator.member_climate_modes = MagicMock(return_value={"cover.a": None})
+    assert climate.is_on is False
+    coordinator.member_climate_modes = MagicMock(
+        return_value={"cover.a": "summer_mode"}
+    )
+    assert climate.is_on is True
+
+    await climate.async_turn_on()
+    coordinator.async_set_climate_mode.assert_awaited_once_with(True)
+    await climate.async_turn_off()
+    coordinator.async_set_climate_mode.assert_awaited_with(False)
 
 
 async def test_select_auto_clears_scene(hass, group_entry) -> None:

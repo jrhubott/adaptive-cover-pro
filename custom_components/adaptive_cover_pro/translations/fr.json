@@ -1891,6 +1891,9 @@
       },
       "group_lock": {
         "name": "Verrouillage de groupe"
+      },
+      "group_climate_mode": {
+        "name": "Mode climatique du groupe"
       }
     },
     "button": {
@@ -1908,6 +1911,9 @@
       },
       "group_clear_overrides": {
         "name": "Supprimer les dérogations des membres"
+      },
+      "group_stop": {
+        "name": "Arrêter les stores"
       }
     },
     "number": {
@@ -2740,6 +2746,10 @@
           "description": "Secondes à attendre après que l'occupation disparaisse avant d'appliquer la position du délai d'occupation (30–3600)."
         }
       }
+    },
+    "group_stop": {
+      "name": "Groupe : arrêter",
+      "description": "Arrête chaque membre des groupes de stores ciblés en cours de déplacement. Sans cible, s'applique à tous les groupes de stores."
     }
   }
 }

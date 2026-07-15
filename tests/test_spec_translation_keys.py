@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.group_entities import (
     GroupActiveSceneSensor,
     GroupAutomationSwitch,
     GroupClimateSensor,
+    GroupClimateSwitch,
     GroupLockSwitch,
     GroupPositionSensor,
     GroupStateSensor,
@@ -88,7 +89,8 @@ _GROUP_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
     )
 )
 _GROUP_SWITCH_TRANSLATION_KEYS: frozenset[str] = frozenset(
-    _class_translation_key(cls) for cls in (GroupAutomationSwitch, GroupLockSwitch)
+    _class_translation_key(cls)
+    for cls in (GroupAutomationSwitch, GroupLockSwitch, GroupClimateSwitch)
 )
 
 

@@ -152,6 +152,42 @@ class GroupLockSwitch(_GroupEntityBase, SwitchEntity):
         self.async_write_ha_state()
 
 
+class GroupClimateSwitch(_GroupEntityBase, SwitchEntity):
+    """Bulk-enable/disable climate mode across all ACP members.
+
+    Unlike ``GroupAutomationSwitch`` (which mirrors its last command), this
+    reflects live reality: ``is_on`` is true when any member currently
+    reports an active climate mode. ``member_climate_modes`` returns non-None
+    only when a member's climate handler is actually active, so the switch
+    honestly tracks member state with no drift and no RestoreEntity.
+    """
+
+    _attr_translation_key = "group_climate_mode"
+    _attr_icon = "mdi:sun-thermometer-outline"
+
+    def __init__(self, *args) -> None:
+        """Initialize the group climate switch."""
+        super().__init__(*args, "group_climate_mode")
+
+    @property
+    def is_on(self) -> bool:
+        """True when any member currently reports an active climate mode."""
+        return any(
+            mode is not None
+            for mode in self.coordinator.member_climate_modes().values()
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
+        """Bulk-enable climate mode on all members."""
+        await self.coordinator.async_set_climate_mode(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
+        """Bulk-disable climate mode on all members."""
+        await self.coordinator.async_set_climate_mode(False)
+        self.async_write_ha_state()
+
+
 class GroupWhoWonSensor(_GroupEntityBase, SensorEntity):
     """How many members this group currently drives, with per-member detail.
 
@@ -317,6 +353,21 @@ class GroupClearOverridesButton(_GroupEntityBase, ButtonEntity):
         await self.coordinator.async_clear_overrides()
 
 
+class GroupStopButton(_GroupEntityBase, ButtonEntity):
+    """Stop every member cover mid-travel across the group."""
+
+    _attr_translation_key = "group_stop"
+    _attr_icon = "mdi:stop"
+
+    def __init__(self, *args) -> None:
+        """Initialize the stop button."""
+        super().__init__(*args, "group_stop")
+
+    async def async_press(self) -> None:
+        """Stop every member cover immediately."""
+        await self.coordinator.async_stop()
+
+
 class GroupSceneSelect(_GroupEntityBase, SelectEntity):
     """Scene picker: selecting an option activates the scene group-wide."""
 
@@ -383,6 +434,7 @@ def build_group_switches(
     return [
         GroupAutomationSwitch(entry_id, hass, config_entry, coordinator),
         GroupLockSwitch(entry_id, hass, config_entry, coordinator),
+        GroupClimateSwitch(entry_id, hass, config_entry, coordinator),
     ]
 
 
@@ -397,6 +449,7 @@ def build_group_buttons(
     return [
         *(GroupSceneButton(*args, scene) for scene in GroupScene),
         GroupClearOverridesButton(*args),
+        GroupStopButton(*args),
     ]
 
 

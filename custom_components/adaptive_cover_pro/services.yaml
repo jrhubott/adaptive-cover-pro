@@ -1429,6 +1429,15 @@ group_clear_overrides:
     entity:
       integration: adaptive_cover_pro
 
+group_stop:
+  name: "Group: stop"
+  description: >-
+    Stops every member cover of the targeted cover groups mid-travel. With no
+    target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
 group_set_automation:
   name: "Group: set automation"
   description: >-

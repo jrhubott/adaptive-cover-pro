@@ -470,6 +470,12 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             coordinator.automatic_control = enabled
             await coordinator.async_refresh()
 
+    async def async_set_climate_mode(self, enabled: bool) -> None:
+        """Bulk-enable/disable climate mode on every ACP member."""
+        for _entry, coordinator in self.resolved_members():
+            coordinator.switch_mode = enabled
+            await coordinator.async_refresh()
+
     async def async_clear_overrides(self) -> None:
         """Clear manual overrides on every ACP member via its shared reset path."""
         for _entry, coordinator in self.resolved_members():

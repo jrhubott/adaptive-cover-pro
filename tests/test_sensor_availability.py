@@ -81,11 +81,13 @@ from custom_components.adaptive_cover_pro.group_entities import (
     GroupAutomationSwitch,
     GroupClearOverridesButton,
     GroupClimateSensor,
+    GroupClimateSwitch,
     GroupLockSwitch,
     GroupPositionSensor,
     GroupSceneButton,
     GroupSceneSelect,
     GroupStateSensor,
+    GroupStopButton,
     GroupWhoWonSensor,
 )
 
@@ -327,6 +329,18 @@ ENTITY_FACTORIES: dict[type, object] = {
         _make_config_entry(),
         _make_coordinator(),
         "group_climate_mode",
+    ),
+    GroupClimateSwitch: lambda: GroupClimateSwitch(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
+    ),
+    GroupStopButton: lambda: GroupStopButton(
+        "test_avail_entry",
+        _make_hass(),
+        _make_config_entry(),
+        _make_coordinator(),
     ),
     AdaptiveGroupCover: lambda: AdaptiveGroupCover(
         "test_avail_entry",

@@ -35,6 +35,7 @@ GROUP_SERVICE_NAMES: tuple[str, ...] = (
     "group_unlock",
     "group_clear_overrides",
     "group_set_automation",
+    "group_stop",
 )
 
 _SCENE_CHOICES: tuple[str, ...] = (
@@ -182,6 +183,12 @@ async def async_handle_group_set_automation(call: ServiceCall) -> None:
         await group.async_set_automation(enabled)
 
 
+async def async_handle_group_stop(call: ServiceCall) -> None:
+    """Stop every member cover of the targeted groups mid-travel."""
+    for group in resolve_group_targets(call.hass, call):
+        await group.async_stop()
+
+
 def register_group_services(hass: HomeAssistant) -> None:
     """Register the six group services (called from async_setup_services)."""
     hass.services.async_register(
@@ -213,4 +220,7 @@ def register_group_services(hass: HomeAssistant) -> None:
         "group_set_automation",
         async_handle_group_set_automation,
         schema=GROUP_SET_AUTOMATION_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, "group_stop", async_handle_group_stop, schema=GROUP_NO_FIELDS_SCHEMA
     )

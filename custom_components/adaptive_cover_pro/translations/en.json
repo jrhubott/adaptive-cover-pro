@@ -1891,6 +1891,9 @@
       },
       "group_lock": {
         "name": "Group Lock"
+      },
+      "group_climate_mode": {
+        "name": "Group Climate Mode"
       }
     },
     "button": {
@@ -1908,6 +1911,9 @@
       },
       "group_clear_overrides": {
         "name": "Clear Member Overrides"
+      },
+      "group_stop": {
+        "name": "Stop Covers"
       }
     },
     "number": {
@@ -2730,6 +2736,10 @@
     "group_clear_overrides": {
       "name": "Group: clear member overrides",
       "description": "Clears manual overrides on every ACP member of the targeted cover groups and resends each member's pipeline position."
+    },
+    "group_stop": {
+      "name": "Group: stop",
+      "description": "Stops every member cover of the targeted cover groups mid-travel. With no target, acts on all cover groups."
     },
     "group_set_automation": {
       "name": "Group: set automation",

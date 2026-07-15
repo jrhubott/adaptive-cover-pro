@@ -1891,6 +1891,9 @@
       },
       "group_lock": {
         "name": "Gruppensperre"
+      },
+      "group_climate_mode": {
+        "name": "Gruppen-Klimamodus"
       }
     },
     "button": {
@@ -1908,6 +1911,9 @@
       },
       "group_clear_overrides": {
         "name": "Mitglied-Übersteuerungen löschen"
+      },
+      "group_stop": {
+        "name": "Beschattungen stoppen"
       }
     },
     "number": {
@@ -2740,6 +2746,10 @@
           "description": "Sekunden zum Warten, nachdem die Belegung endet, bevor die Belegungs-Timeout-Position angewendet wird (30–3600)."
         }
       }
+    },
+    "group_stop": {
+      "name": "Gruppe: Stoppen",
+      "description": "Stoppt alle Mitglied-Beschattungen der angestrebten Beschattungsgruppen während der Fahrt. Ohne Ziel wirkt es auf alle Beschattungsgruppen."
     }
   }
 }

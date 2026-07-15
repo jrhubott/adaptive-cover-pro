@@ -181,6 +181,21 @@ async def test_set_automation_flips_member_toggles(group_setup) -> None:
     assert blind_coord.automatic_control is True
 
 
+async def test_set_climate_mode_flips_member_switch_mode(group_setup) -> None:
+    """Bulk climate on sets each member's switch_mode and refreshes."""
+    coordinator, blind_coord, awning_coord = group_setup
+
+    await coordinator.async_set_climate_mode(True)
+
+    for member in (blind_coord, awning_coord):
+        assert member.switch_mode is True
+        member.async_refresh.assert_awaited_once()
+
+    await coordinator.async_set_climate_mode(False)
+    assert blind_coord.switch_mode is False
+    assert awning_coord.switch_mode is False
+
+
 async def test_clear_overrides_delegates_to_members(group_setup) -> None:
     """Bulk clear rides each member's shared reset path."""
     coordinator, blind_coord, awning_coord = group_setup

@@ -64,6 +64,7 @@ def _mock_group_coordinator() -> MagicMock:
         "async_set_lock",
         "async_clear_overrides",
         "async_set_automation",
+        "async_stop",
     ):
         setattr(coord, name, AsyncMock())
     return coord
@@ -177,6 +178,9 @@ async def test_group_services_drive_coordinator_methods(hass, loaded_pair) -> No
         DOMAIN, "group_set_automation", {"enabled": False}, blocking=True
     )
     group_coord.async_set_automation.assert_awaited_once_with(False)
+
+    await hass.services.async_call(DOMAIN, "group_stop", {}, blocking=True)
+    group_coord.async_stop.assert_awaited_once()
 
 
 async def test_group_set_position_without_tilt_skips_tilt(hass, loaded_pair) -> None:
