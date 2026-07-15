@@ -220,10 +220,10 @@ async def test_group_lock_switch_drives_lock_intent(hass, group_entry) -> None:
     assert lock.is_on is False
 
 
-async def test_group_climate_switch_drives_and_reflects_members(
+async def test_group_climate_switch_drives_and_mirrors_command(
     hass, group_entry
 ) -> None:
-    """Turn on/off delegate to the coordinator; is_on derives from member modes."""
+    """Turn on/off delegate to the coordinator; is_on mirrors the last command."""
     coordinator = group_entry.runtime_data
     coordinator.async_set_climate_mode = AsyncMock()
     entities = {
@@ -232,17 +232,15 @@ async def test_group_climate_switch_drives_and_reflects_members(
     climate = entities["group_01_group_climate_mode"]
     climate.async_write_ha_state = MagicMock()
 
-    coordinator.member_climate_modes = MagicMock(return_value={"cover.a": None})
-    assert climate.is_on is False
-    coordinator.member_climate_modes = MagicMock(
-        return_value={"cover.a": "summer_mode"}
-    )
-    assert climate.is_on is True
+    assert climate.is_on is False  # climate off by default
 
     await climate.async_turn_on()
     coordinator.async_set_climate_mode.assert_awaited_once_with(True)
+    assert climate.is_on is True
+
     await climate.async_turn_off()
     coordinator.async_set_climate_mode.assert_awaited_with(False)
+    assert climate.is_on is False
 
 
 async def test_select_auto_clears_scene(hass, group_entry) -> None:

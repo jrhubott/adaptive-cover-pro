@@ -190,7 +190,7 @@ async def async_handle_group_stop(call: ServiceCall) -> None:
 
 
 def register_group_services(hass: HomeAssistant) -> None:
-    """Register the six group services (called from async_setup_services)."""
+    """Register the seven group services (called from async_setup_services)."""
     hass.services.async_register(
         DOMAIN,
         "group_activate_scene",

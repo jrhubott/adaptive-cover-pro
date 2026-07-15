@@ -155,36 +155,30 @@ class GroupLockSwitch(_GroupEntityBase, SwitchEntity):
 class GroupClimateSwitch(_GroupEntityBase, SwitchEntity):
     """Bulk-enable/disable climate mode across all ACP members.
 
-    Unlike ``GroupAutomationSwitch`` (which mirrors its last command), this
-    reflects live reality: ``is_on`` is true when any member currently
-    reports an active climate mode. ``member_climate_modes`` returns non-None
-    only when a member's climate handler is actually active, so the switch
-    honestly tracks member state with no drift and no RestoreEntity.
+    Reflects the last bulk command sent through this group (defaults to off),
+    not a consensus of live member states — members remain individually
+    togglable. For the "what's actually acting" view, the read-only
+    ``sensor.<group>_climate_mode`` rolls up live member climate modes.
     """
 
     _attr_translation_key = "group_climate_mode"
     _attr_icon = "mdi:sun-thermometer-outline"
 
     def __init__(self, *args) -> None:
-        """Initialize the group climate switch."""
+        """Initialize with climate mode considered off."""
         super().__init__(*args, "group_climate_mode")
-
-    @property
-    def is_on(self) -> bool:
-        """True when any member currently reports an active climate mode."""
-        return any(
-            mode is not None
-            for mode in self.coordinator.member_climate_modes().values()
-        )
+        self._attr_is_on = False
 
     async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
         """Bulk-enable climate mode on all members."""
         await self.coordinator.async_set_climate_mode(True)
+        self._attr_is_on = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
         """Bulk-disable climate mode on all members."""
         await self.coordinator.async_set_climate_mode(False)
+        self._attr_is_on = False
         self.async_write_ha_state()
 
 
