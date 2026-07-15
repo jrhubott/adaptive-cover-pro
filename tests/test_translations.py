@@ -262,6 +262,48 @@ def test_en_has_no_field_of_view_wording() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Issue #938 — the FR label for the sun-acceptance-angle concept is
+# "angle d'ouverture solaire", NOT the anglicism "angle d'acceptance solaire"
+# and NOT the pre-rename "champ de vision".
+# ---------------------------------------------------------------------------
+
+
+def test_fr_sun_acceptance_angle_uses_ouverture_labels() -> None:
+    """FR fov_left/fov_right/fov_compute labels use 'ouverture solaire' (#938)."""
+    fr = _load(TRANSLATIONS_DIR / "fr.json")
+    for step_key in ("options", "config"):
+        data = fr[step_key]["step"]["geometry"]["data"]
+        assert (
+            data["fov_left"] == "Angle d'ouverture solaire — gauche"
+        ), f"{step_key}.geometry.data.fov_left must read 'Angle d'ouverture solaire — gauche'"
+        assert (
+            data["fov_right"] == "Angle d'ouverture solaire — droite"
+        ), f"{step_key}.geometry.data.fov_right must read 'Angle d'ouverture solaire — droite'"
+        assert (
+            "ouverture solaire" in data["fov_compute"].lower()
+        ), f"{step_key}.geometry.data.fov_compute must name the angle d'ouverture solaire"
+
+
+def test_fr_has_no_acceptance_anglicism_or_champ_de_vision() -> None:
+    """No FR value may use the anglicism 'd'acceptance' or the pre-rename 'champ de vision' (#938)."""
+    summary_i18n_dir = TRANSLATIONS_DIR.parent / "summary_i18n"
+    fr_files = [TRANSLATIONS_DIR / "fr.json", summary_i18n_dir / "fr.json"]
+    offenders: list[str] = []
+    for path in fr_files:
+        data = _load(path)
+        offenders += [
+            f"{path.parent.name}/{path.name}: {v}"
+            for v in _all_leaf_values(data)
+            if "d'acceptance" in v.lower() or "champ de vision" in v.lower()
+        ]
+    assert not offenders, (
+        "FR strings still contain the 'd'acceptance' anglicism or 'champ de vision' "
+        "after the #938 rename to 'ouverture':\n"
+        + "\n".join(f"  - {o}" for o in offenders)
+    )
+
+
 def test_enforce_delta_at_endpoints_strings_present() -> None:
     """en.json carries the label + description on both config and options steps (#679)."""
     en = _load(TRANSLATIONS_DIR / "en.json")

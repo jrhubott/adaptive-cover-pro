@@ -81,7 +81,7 @@
     "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages."
   },
   "motion": {
-    "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'acceptance solaire)",
+    "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'ouverture solaire)",
     "action_return": "stores reviennent au défaut ({default_pos}%)",
     "template_source": "modèle de présence"
   },
@@ -136,7 +136,7 @@
   },
   "solar": {
     "azimuth": "azimut {azimuth}°",
-    "fov": "±{fov_l}°/{fov_r}° angle d'acceptance solaire",
+    "fov": "±{fov_l}°/{fov_r}° angle d'ouverture solaire",
     "elev_above": "au-dessus {elev}°",
     "elev_below": "au-dessous {elev}°",
     "elevation": "élévation {parts}",
@@ -260,7 +260,7 @@
       "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%"
     },
     "fov": {
-      "computed": "Angle d'acceptance calculé ≈ {deg}°/{deg}° ({w} m de largeur, {d} m de profondeur de niche)"
+      "computed": "Angle d'ouverture calculé ≈ {deg}°/{deg}° ({w} m de largeur, {d} m de profondeur de niche)"
     },
     "roof": {
       "pitch": "pente de toit {v}° depuis l'horizontale",
