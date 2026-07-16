@@ -1433,9 +1433,10 @@ class CoverCommandService:
                 # itself enforces for the carriage. The user gets the cover,
                 # both axes, until the override clears — UNLESS a forced
                 # cycle (safety / custom-position slot, floor clamp) reaches
-                # the tilt axis via the same_position or delta branches above,
-                # which is intentional: see _service_secondary_axis's
-                # docstring.
+                # the tilt axis via the same_position branch above, which is
+                # intentional: see _service_secondary_axis's docstring. The
+                # delta branches are not force-reachable; a forced cycle
+                # falls through to the send path instead.
                 return self._skip(
                     entity_id,
                     "manual_override",
