@@ -1108,6 +1108,37 @@ class CoverCommandService:
         )
         return last_target == plan.routed_target
 
+    async def _service_secondary_axis(
+        self,
+        entity_id: str,
+        *,
+        current_position: int | None,
+        context: PositionContext,
+        trigger: str,
+    ) -> None:
+        """Give the cover-type policy a chance to move its secondary axis.
+
+        Called from every gate where the carriage declines to move for a
+        *hysteresis* reason (``same_position``, ``delta_too_small``,
+        ``time_delta_too_small``) — never from ``manual_override``, which is
+        genuine hands-off intent rather than hysteresis. Position and tilt
+        are independent axes with independent gates; a carriage delta under
+        ``CONF_DELTA_POSITION`` must gate only the carriage, not silently
+        drop the secondary-axis target too (issue #954).
+
+        No-op on single-axis cover types via the base ``CoverTypePolicy``'s
+        no-op ``maybe_update_tilt_only`` default — this method never branches
+        on cover type itself, it only decides *that* the policy gets a
+        chance, never *what* it does with it.
+        """
+        if context.policy is not None and context.tilt is not None:
+            await context.policy.maybe_update_tilt_only(
+                entity_id,
+                current_position=current_position,
+                context=context,
+                reason=trigger,
+            )
+
     # ------------------------------------------------------------------ #
     # Primary entry point
     # ------------------------------------------------------------------ #
@@ -1275,6 +1306,14 @@ class CoverCommandService:
         # recurring resends (custom_position, override-clear) also set and which
         # MUST stay deduped here to avoid relay clicks (issue #290/#779). So the
         # bypass keys on user_command, not force (issue #900).
+        #
+        # This same_position branch is ONE of three hysteresis gates that now
+        # service the secondary axis via _service_secondary_axis (issue #954):
+        # delta_too_small and time_delta_too_small below do too. A carriage
+        # delta under CONF_DELTA_POSITION (or a too-recent command) is a
+        # reason to hold the carriage still — it is not a reason to also
+        # starve the tilt axis, which owns its own independent min-delta and
+        # suppression gates downstream (VenetianPolicy/DualAxisSequencer).
         if (
             not context.sun_just_appeared
             and not force_endpoint
@@ -1297,13 +1336,12 @@ class CoverCommandService:
                 )
             )
         ):
-            if context.policy is not None and context.tilt is not None:
-                await context.policy.maybe_update_tilt_only(
-                    entity_id,
-                    current_position=_current,
-                    context=context,
-                    reason=_trigger,
-                )
+            await self._service_secondary_axis(
+                entity_id,
+                current_position=_current,
+                context=context,
+                trigger=_trigger,
+            )
             return self._skip(
                 entity_id,
                 "same_position",
@@ -1322,6 +1360,19 @@ class CoverCommandService:
                 sun_just_appeared=context.sun_just_appeared,
             ):
                 _delta = abs(_current - position) if _current is not None else None
+                # Issue #954: the carriage delta gates only the carriage. The
+                # tilt axis is independent and owns its own gates downstream
+                # (VenetianPolicy.maybe_update_tilt_only ->
+                # DualAxisSequencer.update_tilt_only's target-unchanged dedup
+                # and min-delta check) — give it the same chance the
+                # same_position branch above already gives it, before this
+                # skip drops the carriage command.
+                await self._service_secondary_axis(
+                    entity_id,
+                    current_position=_current,
+                    context=context,
+                    trigger=_trigger,
+                )
                 return self._skip(
                     entity_id,
                     "delta_too_small",
@@ -1337,6 +1388,14 @@ class CoverCommandService:
 
             if not self._check_time_delta(entity_id, context.time_threshold):
                 _elapsed = self._elapsed_minutes(entity_id)
+                # Issue #954: delta_time is a carriage rate-limiter, not a
+                # tilt gate — same reasoning as delta_too_small above.
+                await self._service_secondary_axis(
+                    entity_id,
+                    current_position=_current,
+                    context=context,
+                    trigger=_trigger,
+                )
                 return self._skip(
                     entity_id,
                     "time_delta_too_small",
@@ -1351,6 +1410,13 @@ class CoverCommandService:
                 )
 
             if context.manual_override:
+                # Deliberately NOT serviced (issue #954 scope decision): manual
+                # override is genuine hands-off intent, not a hysteresis gate.
+                # Moving the tilt axis while ACP has stepped back for a user
+                # touch would regress the false-manual-override family
+                # (#927/#930) that the drift-reset suppression machinery
+                # guards against — the user gets the cover, both axes, until
+                # the override clears.
                 return self._skip(
                     entity_id,
                     "manual_override",
