@@ -150,7 +150,7 @@
       },
       "summary": {
         "title": "Konfigurationszusammenfassung",
-        "description": "{summary}\n\n**Weiter:** Sonnenverfolgung, Position, Übersteuerungen, benutzerdefinierte Positionen, Blendungszonen, Klima, Bewegung, Wetter und Automatisierung werden nach dem Abschluss alle unter **Konfigurieren** eingerichtet. Siehe die [Einrichtungsanleitung](https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup)."
+        "description": "{summary}\n\n**Weiter:** Sonnenverfolgung, Position, Übersteuerungen, benutzerdefinierte Positionen, Blendungszonen, Klima, Bewegung, Wetter und Automatisierung werden nach dem Abschluss alle unter **Konfigurieren** eingerichtet. Siehe die [Einrichtungsanleitung]({learn_more})."
       },
       "create_building_profile": {
         "title": "Gebäudeprofil erstellen",

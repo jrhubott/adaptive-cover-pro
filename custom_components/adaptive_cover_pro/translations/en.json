@@ -150,7 +150,7 @@
       },
       "summary": {
         "title": "Configuration Summary",
-        "description": "{summary}\n\n**Next:** sun tracking, position, overrides, custom positions, blind spots, glare zones, climate, motion, weather, and automation are all configured under **Configure** after you finish. See the [setup guide](https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup)."
+        "description": "{summary}\n\n**Next:** sun tracking, position, overrides, custom positions, blind spots, glare zones, climate, motion, weather, and automation are all configured under **Configure** after you finish. See the [setup guide]({learn_more})."
       },
       "create_building_profile": {
         "title": "Create Building Profile",

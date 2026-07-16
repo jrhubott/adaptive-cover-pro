@@ -3980,7 +3980,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),
-            description_placeholders={"summary": summary_text},
+            description_placeholders={
+                "summary": summary_text,
+                # The wiki link is supplied as a placeholder, not baked into the
+                # translation string — hassfest forbids literal URLs in strings.
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup",
+            },
         )
 
     async def async_step_update(self, user_input: dict[str, Any] | None = None):

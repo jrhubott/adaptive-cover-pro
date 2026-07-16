@@ -150,7 +150,7 @@
       },
       "summary": {
         "title": "Résumé de la configuration",
-        "description": "{summary}\n\n**Ensuite :** le suivi solaire, la position, les dérogations, les positions personnalisées, les zones d'éblouissement, le climat, le mouvement, la météo et l'automatisation se configurent tous sous **Configurer** une fois terminé. Consultez le [guide de configuration](https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup)."
+        "description": "{summary}\n\n**Ensuite :** le suivi solaire, la position, les dérogations, les positions personnalisées, les zones d'éblouissement, le climat, le mouvement, la météo et l'automatisation se configurent tous sous **Configurer** une fois terminé. Consultez le [guide de configuration]({learn_more})."
       },
       "create_building_profile": {
         "title": "Créer un profil de bâtiment",

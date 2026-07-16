@@ -201,6 +201,39 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
             )
 
 
+@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
+def test_no_literal_urls_in_config_and_options_step_strings(lang_file: Path) -> None:
+    """config/options step strings must not embed literal URLs — pass them as
+    description placeholders instead.
+
+    HA's hassfest rejects a literal ``http(s)://`` URL inside any ``config`` /
+    ``options`` step title/description/data string with "the string should not
+    contain URLs, please use description placeholders instead". That rule is not
+    covered by ``validate_translations.py`` or structural-parity tests, so a
+    literal wiki link slips past local CI and only fails in the Hassfest GitHub
+    job (this bit issue #945 Part 2's summary pointer). This guard reproduces
+    the rule locally: every wiki link must be authored as ``[text]({learn_more})``
+    (or similar) with the URL supplied at runtime via ``description_placeholders``.
+    """
+    data = _load(lang_file)
+    offenders: list[str] = []
+    for section in ("config", "options"):
+        steps = data.get(section, {}).get("step", {})
+        for step_id, step in steps.items():
+            # _flatten returns leaf dotpaths; re-walk each to read its value.
+            for dotpath in _flatten(step):
+                node = step
+                for part in dotpath.split("."):
+                    node = node[part]
+                if isinstance(node, str) and ("http://" in node or "https://" in node):
+                    offenders.append(f"{section}.step.{step_id}.{dotpath}")
+    assert not offenders, (
+        f"{lang_file.name}: literal URL(s) in config/options step strings — "
+        f"hassfest forbids this. Use a {{learn_more}} placeholder instead:\n"
+        + "\n".join(f"  - {o}" for o in offenders)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Issue #211 Option 2 — blind_spot labels are acceptance-edge-relative, not
 # azimuth-relative. Issue #604 renamed the "FOV" frame to "acceptance edge".
