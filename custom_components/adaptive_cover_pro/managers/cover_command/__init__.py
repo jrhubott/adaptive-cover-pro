@@ -1120,18 +1120,27 @@ class CoverCommandService:
 
         Called from every gate where the carriage declines to move for a
         *hysteresis* reason (``same_position``, ``delta_too_small``,
-        ``time_delta_too_small``) — never from ``manual_override``, which is
-        genuine hands-off intent rather than hysteresis. Position and tilt
-        are independent axes with independent gates; a carriage delta under
-        ``CONF_DELTA_POSITION`` must gate only the carriage, not silently
-        drop the secondary-axis target too (issue #954).
+        ``time_delta_too_small``). Position and tilt are independent axes
+        with independent gates; a carriage delta under ``CONF_DELTA_POSITION``
+        must gate only the carriage, not silently drop the secondary-axis
+        target too (issue #954).
+
+        Never services the axis while ``context.manual_override`` is set —
+        that is genuine hands-off intent, not hysteresis, and the guard below
+        enforces the exclusion directly so it holds regardless of branch
+        order (moving tilt under an active override would regress the
+        false-manual-override family, #927/#930).
 
         No-op on single-axis cover types via the base ``CoverTypePolicy``'s
         no-op ``maybe_update_tilt_only`` default — this method never branches
         on cover type itself, it only decides *that* the policy gets a
         chance, never *what* it does with it.
         """
-        if context.policy is not None and context.tilt is not None:
+        if (
+            context.policy is not None
+            and context.tilt is not None
+            and not context.manual_override
+        ):
             await context.policy.maybe_update_tilt_only(
                 entity_id,
                 current_position=current_position,
@@ -1410,13 +1419,17 @@ class CoverCommandService:
                 )
 
             if context.manual_override:
-                # Deliberately NOT serviced (issue #954 scope decision): manual
-                # override is genuine hands-off intent, not a hysteresis gate.
-                # Moving the tilt axis while ACP has stepped back for a user
-                # touch would regress the false-manual-override family
-                # (#927/#930) that the drift-reset suppression machinery
-                # guards against — the user gets the cover, both axes, until
-                # the override clears.
+                # Manual override is genuine hands-off intent, not a hysteresis
+                # gate (issue #954 scope decision). The secondary axis is
+                # already excluded here — this branch is reached only after
+                # delta_too_small/time_delta_too_small pass, and
+                # _service_secondary_axis's own guard checks
+                # context.manual_override directly, so the exclusion holds no
+                # matter which gate this cover trips first. Moving the tilt
+                # axis while ACP has stepped back for a user touch would
+                # regress the false-manual-override family (#927/#930) that
+                # the drift-reset suppression machinery guards against — the
+                # user gets the cover, both axes, until the override clears.
                 return self._skip(
                     entity_id,
                     "manual_override",

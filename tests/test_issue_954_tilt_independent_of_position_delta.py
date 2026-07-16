@@ -240,6 +240,54 @@ async def test_tilt_not_sent_under_manual_override(svc):
 
 
 @pytest.mark.asyncio
+async def test_tilt_not_sent_under_manual_override_when_position_delta_too_small(svc):
+    """Manual override combined with a tripped hysteresis gate (audit finding).
+
+    ``delta_too_small`` and ``time_delta_too_small`` are evaluated BEFORE the
+    ``manual_override`` branch, so the branch-ordering alone cannot be relied
+    on to keep tilt off the wire under override — the guard inside
+    ``_service_secondary_axis`` itself must check ``context.manual_override``.
+    Reporter's exact numbers: current=2, target=1, min_change=5 -> delta=1<5.
+    """
+    entity_id = "cover.og_studio_tur"
+    _patch_position(svc, 2)
+
+    policy = MagicMock()
+    policy.maybe_update_tilt_only = AsyncMock()
+
+    ctx = _ctx(tilt=47, policy=policy, manual_override=True)
+
+    outcome, reason = await svc.apply_position(entity_id, 1, "solar", ctx)
+
+    assert outcome == "skipped"
+    assert reason == "delta_too_small"
+    policy.maybe_update_tilt_only.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tilt_not_sent_under_manual_override_when_time_delta_too_small(svc):
+    """Same as above but tripping the time gate instead of the delta gate."""
+    entity_id = "cover.og_studio_fenster"
+    _patch_position(svc, 90)  # large position delta so only the time gate fires
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10)
+
+    policy = MagicMock()
+    policy.maybe_update_tilt_only = AsyncMock()
+
+    ctx = _ctx(tilt=47, policy=policy, manual_override=True)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=recent,
+    ):
+        outcome, reason = await svc.apply_position(entity_id, 1, "solar", ctx)
+
+    assert outcome == "skipped"
+    assert reason == "time_delta_too_small"
+    policy.maybe_update_tilt_only.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_same_position_branch_still_updates_tilt(svc):
     """The pre-existing same_position -> tilt wiring must survive the extraction."""
     entity_id = "cover.og_kuche"
