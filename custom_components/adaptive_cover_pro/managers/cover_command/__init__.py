@@ -1125,11 +1125,16 @@ class CoverCommandService:
         must gate only the carriage, not silently drop the secondary-axis
         target too (issue #954).
 
-        Never services the axis while ``context.manual_override`` is set —
-        that is genuine hands-off intent, not hysteresis, and the guard below
-        enforces the exclusion directly so it holds regardless of branch
-        order (moving tilt under an active override would regress the
-        false-manual-override family, #927/#930).
+        Excludes ``context.manual_override`` the same place production gates
+        it: only when ``context.force`` is not set. ``PositionContext.force``
+        is documented as "skip delta/time/manual_override gates", and the
+        ``same_position`` branch above is deliberately reached even while
+        forced (it has no ``not context.force`` guard) — a safety /
+        custom-position slot or a floor clamp must still be able to land the
+        tilt on the very cycle it forces the carriage. An unforced cycle
+        keeps the exclusion: manual override is genuine hands-off intent,
+        not hysteresis, and moving tilt under an active override would
+        regress the false-manual-override family (#927/#930).
 
         No-op on single-axis cover types via the base ``CoverTypePolicy``'s
         no-op ``maybe_update_tilt_only`` default — this method never branches
@@ -1139,7 +1144,7 @@ class CoverCommandService:
         if (
             context.policy is not None
             and context.tilt is not None
-            and not context.manual_override
+            and not (context.manual_override and not context.force)
         ):
             await context.policy.maybe_update_tilt_only(
                 entity_id,
@@ -1420,16 +1425,17 @@ class CoverCommandService:
 
             if context.manual_override:
                 # Manual override is genuine hands-off intent, not a hysteresis
-                # gate (issue #954 scope decision). The secondary axis is
-                # already excluded here — this branch is reached only after
-                # delta_too_small/time_delta_too_small pass, and
-                # _service_secondary_axis's own guard checks
-                # context.manual_override directly, so the exclusion holds no
-                # matter which gate this cover trips first. Moving the tilt
-                # axis while ACP has stepped back for a user touch would
-                # regress the false-manual-override family (#927/#930) that
-                # the drift-reset suppression machinery guards against — the
-                # user gets the cover, both axes, until the override clears.
+                # gate (issue #954 scope decision). This branch only runs
+                # inside `if not context.force`, so `context.force` is False
+                # by construction here — _service_secondary_axis's guard
+                # (`not (manual_override and not force)`) therefore still
+                # excludes the tilt axis, matching the exclusion this branch
+                # itself enforces for the carriage. The user gets the cover,
+                # both axes, until the override clears — UNLESS a forced
+                # cycle (safety / custom-position slot, floor clamp) reaches
+                # the tilt axis via the same_position or delta branches above,
+                # which is intentional: see _service_secondary_axis's
+                # docstring.
                 return self._skip(
                     entity_id,
                     "manual_override",

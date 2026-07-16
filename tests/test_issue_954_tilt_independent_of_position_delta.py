@@ -288,6 +288,66 @@ async def test_tilt_not_sent_under_manual_override_when_time_delta_too_small(svc
 
 
 @pytest.mark.asyncio
+async def test_forced_cycle_services_tilt_despite_manual_override(svc):
+    """Re-audit regression pin: a forced cycle must still service the tilt
+    axis even while ``manual_override`` is latched.
+
+    The ``same_position`` branch has no ``not context.force`` guard — only
+    ``sun_just_appeared``/``force_endpoint``/``user_command`` bypass it — so a
+    safety slot or any custom-position slot outranking
+    ``ManualOverrideHandler`` (priority 80) reaches it with ``force=True``
+    while override is still latched. If the carriage already sits at the
+    slot's position, this is the exact scenario: current == target == 50,
+    tilt=47, force=True, manual_override=True. The tilt must still go out —
+    ``_service_secondary_axis``'s guard only excludes manual_override when
+    NOT forced, mirroring where the production gates actually live
+    (``PositionContext.force``: "skip delta/time/manual_override gates").
+    """
+    entity_id = "cover.og_studio_tur"
+    _patch_position(svc, 50)
+
+    policy = MagicMock()
+    policy.maybe_update_tilt_only = AsyncMock()
+
+    ctx = _ctx(tilt=47, policy=policy, manual_override=True, force=True)
+
+    outcome, reason = await svc.apply_position(entity_id, 50, "custom_position", ctx)
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    policy.maybe_update_tilt_only.assert_awaited_once_with(
+        entity_id,
+        current_position=50,
+        context=ctx,
+        reason="custom_position",
+    )
+
+
+@pytest.mark.asyncio
+async def test_unforced_same_position_does_not_service_tilt_under_manual_override(svc):
+    """The other direction of the force interaction: without ``force``, the
+    manual-override exclusion still applies on the ``same_position`` branch.
+
+    Same current/target/tilt as the forced test above, but ``force=False`` —
+    pins that the fix doesn't accidentally drop the exclusion for the
+    ordinary (non-safety, non-custom-position-slot) case.
+    """
+    entity_id = "cover.og_studio_tur"
+    _patch_position(svc, 50)
+
+    policy = MagicMock()
+    policy.maybe_update_tilt_only = AsyncMock()
+
+    ctx = _ctx(tilt=47, policy=policy, manual_override=True, force=False)
+
+    outcome, reason = await svc.apply_position(entity_id, 50, "solar", ctx)
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    policy.maybe_update_tilt_only.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_same_position_branch_still_updates_tilt(svc):
     """The pre-existing same_position -> tilt wiring must survive the extraction."""
     entity_id = "cover.og_kuche"
