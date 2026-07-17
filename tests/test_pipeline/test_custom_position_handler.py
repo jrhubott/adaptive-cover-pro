@@ -1190,3 +1190,37 @@ class TestConstraintModeDeferral:
         result = _handler(position=50).evaluate(snap)
         assert result is not None
         assert result.position == 50
+
+
+class TestUseMyWithoutAPosition:
+    """``use_my`` bypasses the deferral — it must not claim a phantom 0.
+
+    Audit finding 3: a slot with a trigger, ``use_my`` on, no stored position
+    and a cover with no My value fell through to the handler's position
+    sentinel and silently closed the cover.
+    """
+
+    def _snap(self, *, my_position_value=None, position=None):
+        return make_snapshot(
+            custom_position_sensors=[
+                _constraint_state(position=position, use_my=True, tilt_min=50)
+            ],
+            my_position_value=my_position_value,
+        )
+
+    def test_no_my_value_and_no_position_defers(self) -> None:
+        """Nothing to claim → defer, rather than close the cover."""
+        assert _handler(position=None).evaluate(self._snap()) is None
+
+    def test_no_my_value_falls_back_to_a_stored_position(self) -> None:
+        """Parity: with a position configured the fallback is unchanged."""
+        result = _handler(position=45).evaluate(self._snap(position=45))
+        assert result is not None
+        assert result.position == 45
+
+    def test_my_value_still_claims_without_a_stored_position(self) -> None:
+        """The My path itself is unaffected by the missing position."""
+        result = _handler(position=None).evaluate(self._snap(my_position_value=42))
+        assert result is not None
+        assert result.position == 42
+        assert result.use_my_position is True

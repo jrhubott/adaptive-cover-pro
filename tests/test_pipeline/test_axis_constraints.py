@@ -28,6 +28,7 @@ from custom_components.adaptive_cover_pro.pipeline.axis_constraints import (
 )
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
+    derive_axis_mode,
 )
 
 from tests.test_pipeline.conftest import make_snapshot
@@ -446,6 +447,79 @@ class TestGatherNewConstraints:
         snap = _snapshot(sensors=[_slot(1, position=30, min_mode=True, tilt_min=50)])
         for c in gather_axis_constraints(snap):
             assert c.axis in (AXIS_NAME_POSITION, AXIS_NAME_TILT)
+
+
+class TestDeriveAxisMode:
+    """Precedence between an exact value and the bounds on one axis.
+
+    FIXED outranks MAX (audit finding 5): a slot that names a position keeps
+    its claim, and a lone ``position_max`` is ignored unless the slot is also
+    in minimum mode. This mirrors the tilt axis, where a FIXED (``tilt_only``)
+    claim has always won over the bounds on the same axis.
+    """
+
+    def test_low_and_high_is_range(self) -> None:
+        """Both bounds → RANGE."""
+        assert derive_axis_mode(fixed=None, low=30, high=70) is AxisConstraintMode.RANGE
+
+    def test_low_only_is_min(self) -> None:
+        """A lone floor → MIN."""
+        assert derive_axis_mode(fixed=None, low=30, high=None) is AxisConstraintMode.MIN
+
+    def test_high_only_is_max(self) -> None:
+        """A lone ceiling with no exact value → MAX."""
+        assert derive_axis_mode(fixed=None, low=None, high=70) is AxisConstraintMode.MAX
+
+    def test_fixed_only_is_fixed(self) -> None:
+        """An exact value with no bounds → FIXED."""
+        assert derive_axis_mode(fixed=50, low=None, high=None) is (
+            AxisConstraintMode.FIXED
+        )
+
+    def test_fixed_outranks_high(self) -> None:
+        """An exact value beats a ceiling — the stored value is the target."""
+        assert derive_axis_mode(fixed=70, low=None, high=50) is (
+            AxisConstraintMode.FIXED
+        )
+
+    def test_low_outranks_fixed(self) -> None:
+        """A floor still wins: the stored position *is* the floor (min_mode)."""
+        assert derive_axis_mode(fixed=50, low=30, high=None) is AxisConstraintMode.MIN
+
+    def test_nothing_is_none(self) -> None:
+        """No claim at all → NONE."""
+        assert derive_axis_mode(fixed=None, low=None, high=None) is (
+            AxisConstraintMode.NONE
+        )
+
+    def test_zero_fixed_is_a_claim(self) -> None:
+        """0 is a real value, not "unset"."""
+        assert derive_axis_mode(fixed=0, low=None, high=None) is (
+            AxisConstraintMode.FIXED
+        )
+
+
+class TestPositionModeFixedNormalizesTheCeiling:
+    """A FIXED position slot contributes no ceiling (audit finding 5)."""
+
+    def test_position_with_a_ceiling_derives_fixed(self) -> None:
+        """Position 70 + position_max 50, no min_mode → FIXED."""
+        state = _slot(1, position=70, position_max=50)
+        assert state.position_mode is AxisConstraintMode.FIXED
+
+    def test_fixed_position_slot_emits_no_position_constraint(self) -> None:
+        """The ceiling is normalized off — nothing composes it onto the winner."""
+        snap = _snapshot(sensors=[_slot(1, position=70, position_max=50)])
+        assert _on(gather_axis_constraints(snap), AXIS_NAME_POSITION) == []
+
+    def test_min_mode_with_a_ceiling_still_derives_range(self) -> None:
+        """The RANGE cell is untouched — a ceiling needs a floor to apply."""
+        state = _slot(1, position=30, min_mode=True, position_max=70)
+        assert state.position_mode is AxisConstraintMode.RANGE
+
+    def test_ceiling_without_a_position_still_derives_max(self) -> None:
+        """A constraint-only ceiling slot is unaffected."""
+        assert _slot(1, position_max=60).position_mode is AxisConstraintMode.MAX
 
 
 class TestGatherIsPure:

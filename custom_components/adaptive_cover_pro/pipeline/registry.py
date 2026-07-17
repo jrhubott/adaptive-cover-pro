@@ -11,6 +11,7 @@ from ..diagnostics.event_buffer import EventBuffer
 from ..reason_i18n import Reason, render_en
 from .axis_constraints import (
     bound_label,
+    bounding_constraint,
     clamp_to_bounds,
     compose_bounds,
     constraint_label,
@@ -39,56 +40,106 @@ def _normalize_reason(value: str | Reason) -> tuple[str, Reason | None]:
 def _drop_trace_steps(
     trace: list[DecisionStep], sources: set[str]
 ) -> list[DecisionStep]:
-    """Remove trace steps whose handler is one of ``sources``.
+    """Remove the *deferral* trace steps whose handler is one of ``sources``.
 
     Both the floor pass and the tilt-axis pass re-emit fresh trace steps for
     handlers that *deferred* (returned None) so the registry can replace the
     handler's unhelpful ``describe_skip`` entry. They share this removal step
     so the dedup logic lives in one place (CODING_GUIDELINES § No Duplication).
+
+    A ``matched=True`` step is never dropped: since #943 a slot can win the
+    pipeline (an exact position or ``use_my``) *and* contribute a bound on the
+    other axis, so its own source appears in ``sources`` even though it did not
+    defer. Sweeping it out left the winner unnamed in the trace (audit finding
+    1); the matched guard keeps the winner's step while still replacing every
+    deferral skip.
     """
-    return [step for step in trace if step.handler not in sources]
+    return [step for step in trace if step.matched or step.handler not in sources]
 
 
 def _inactive_position_steps(
     constraints: list,
     *,
     winner_pos: int,
-    bound_pos: int | None,
+    final_pos: int,
     floor_raised: bool,
+    binding,
 ) -> list[DecisionStep]:
     """Explain every position bound that was active but did not bind.
 
     A constraint whose handler deferred would otherwise be left with an
     unhelpful ``describe_skip`` step (the registry drops those). Give each
-    non-binding bound a step saying it was evaluated and why it did nothing —
-    the floor/ceiling pair mirror each other exactly.
+    non-binding bound a step saying it was evaluated and why it did nothing.
 
-    ``bound_pos`` is the value that *did* bind this cycle (None when nothing
-    clamped); the bound that produced it is skipped, since it was already
-    emitted as the matched clamp step.
+    ``binding`` is the single constraint that produced this cycle's clamp (None
+    when nothing clamped); it is skipped, since it was already emitted as the
+    matched clamp step. Skipping by *identity* rather than by value keeps a
+    losing tie-floor visible — two slots at the same floor no longer collapse
+    into one trace entry (audit finding 4b).
+
+    A ceiling the floor beat is reported as *overridden*, not *inactive*: when
+    ``floor_raised`` lifted the cover above a ceiling, that ceiling did not sit
+    idle — it was outranked, and the honest wording says so (audit finding 7).
     """
     steps: list[DecisionStep] = []
     for c in constraints:
         if c.axis != AXIS_NAME_POSITION or c.kind is AxisConstraintMode.FIXED:
             continue
-        bound_value = c.low if floor_raised else c.high
-        if bound_pos is not None and bound_value == bound_pos:
+        if c is binding:
             continue  # this bound *did* bind — already emitted as the clamp
-        for value, code, key in (
-            (c.low, ReasonCode.REGISTRY_FLOOR_INACTIVE, "floor_pos"),
-            (c.high, ReasonCode.REGISTRY_CEILING_INACTIVE, "ceiling_pos"),
-        ):
-            if value is None:
-                continue
+        if c.low is not None:
             steps.append(
                 DecisionStep(
                     handler=c.source,
                     matched=False,
-                    reason_payload=Reason(code, {key: value, "winner_pos": winner_pos}),
-                    position=value,
+                    reason_payload=Reason(
+                        ReasonCode.REGISTRY_FLOOR_INACTIVE,
+                        {"floor_pos": c.low, "winner_pos": winner_pos},
+                    ),
+                    position=c.low,
+                )
+            )
+        if c.high is not None:
+            if floor_raised and c.high < final_pos:
+                code, params = (
+                    ReasonCode.REGISTRY_CEILING_OVERRIDDEN,
+                    {"ceiling_pos": c.high, "to_pos": final_pos},
+                )
+            else:
+                code, params = (
+                    ReasonCode.REGISTRY_CEILING_INACTIVE,
+                    {"ceiling_pos": c.high, "winner_pos": winner_pos},
+                )
+            steps.append(
+                DecisionStep(
+                    handler=c.source,
+                    matched=False,
+                    reason_payload=Reason(code, params),
+                    position=c.high,
                 )
             )
     return steps
+
+
+def _tilt_to_clamp(
+    tilt_overlay: int | None,
+    winner_tilt: int | None,
+    merged: dict[str, object],
+) -> int | None:
+    """Return the tilt a bound should clamp, in precedence order.
+
+    The FIXED overlay we just filled wins; then the winner's own tilt; then a
+    tilt merged onto the result from a lower-priority handler or ``contribute()``
+    (the ``_MERGEABLE`` fill). The merged case is the one the pre-audit code
+    skipped, letting a configured minimum be silently violated (audit finding
+    2). Returns None when nothing has set a tilt yet (the venetian engine will).
+    """
+    if tilt_overlay is not None:
+        return tilt_overlay
+    if winner_tilt is not None:
+        return winner_tilt
+    merged_tilt = merged.get("tilt")
+    return int(merged_tilt) if merged_tilt is not None else None  # type: ignore[arg-type]
 
 
 class PipelineRegistry:
@@ -245,11 +296,26 @@ class PipelineRegistry:
         # Unchanged position keeps the winner's own value (today's behaviour:
         # an inert bound must not overwrite ``position`` with ``held_position``).
         clamped_position = final_pos if position_clamped else winner.position
+        # The single constraint that actually bound — resolved back from the
+        # composed value so the trace credits the one slot that produced the
+        # move, not the join of every active bound (audit finding 4a).
+        position_binding = (
+            bounding_constraint(
+                constraints, AXIS_NAME_POSITION, final_pos, low=floor_raised
+            )
+            if position_clamped
+            else None
+        )
         if position_clamped:
             code, source = (
                 (ReasonCode.REGISTRY_FLOOR_RAISED, "floor_clamp")
                 if floor_raised
                 else (ReasonCode.REGISTRY_CEILING_LOWERED, "ceiling_clamp")
+            )
+            label = (
+                position_binding.label
+                if position_binding is not None
+                else constraint_label(constraints, AXIS_NAME_POSITION)
             )
             trace.append(
                 DecisionStep(
@@ -260,23 +326,28 @@ class PipelineRegistry:
                         {
                             "from_pos": effective_winner_pos,
                             "to_pos": final_pos,
-                            "label": constraint_label(constraints, AXIS_NAME_POSITION),
+                            "label": label,
                         },
                     ),
                     position=final_pos,
                 )
             )
-        # Replace any existing trace step whose handler matches a constraint's
-        # source — those steps came from the deferral path and carry an
-        # unhelpful describe_skip reason.  We give them a fresh entry that
-        # explains the constraint was active but did not bind.
-        trace = _drop_trace_steps(trace, {c.source for c in constraints})
+        # Replace the deferral steps of the position-bound sources — those
+        # steps came from the deferral path and carry an unhelpful describe_skip
+        # reason. Only position sources are swept here so a tilt-only / tilt-
+        # bound slot's step is left for the tilt pass to handle (audit finding
+        # 4c); the matched winner's step is never dropped (finding 1).
+        trace = _drop_trace_steps(
+            trace,
+            {c.source for c in constraints if c.axis == AXIS_NAME_POSITION},
+        )
         trace.extend(
             _inactive_position_steps(
                 constraints,
                 winner_pos=effective_winner_pos,
-                bound_pos=final_pos if position_clamped else None,
+                final_pos=final_pos,
                 floor_raised=floor_raised,
+                binding=position_binding,
             )
         )
 
@@ -337,10 +408,27 @@ class PipelineRegistry:
 
         # Bounded tilt constraints (issue #943). Unlike the FIXED overlay above,
         # a bound clamps a tilt that is already set — the exact case the
-        # fill-when-unset branch skips. The tilt to clamp is the winner's own,
-        # or the overlay we just filled in.
+        # fill-when-unset branch skips.
         tilt_low, tilt_high = compose_bounds(constraints, AXIS_NAME_TILT)
-        resolved_tilt = winner.tilt if tilt_overlay is None else tilt_overlay
+        # Replace the deferral skips of the bounded tilt sources — they are
+        # re-explained by the clamp / bound-active step below (a losing FIXED
+        # tilt-only slot is deliberately left out of this set so its step
+        # survives; audit finding 4c). Matched winner steps are protected.
+        trace = _drop_trace_steps(
+            trace,
+            {
+                c.source
+                for c in constraints
+                if c.axis == AXIS_NAME_TILT and c.kind is not AxisConstraintMode.FIXED
+            },
+        )
+        # The tilt to clamp is, in precedence order: the FIXED overlay we just
+        # filled, the winner's own tilt, or a tilt merged from a lower-priority
+        # handler / contribute() (the ``_MERGEABLE`` fill). The merged case is
+        # the one the pre-audit code missed — a configured minimum was silently
+        # violated whenever a handler-supplied tilt reached the result by merge
+        # (audit finding 2). One clamp site covers all three.
+        resolved_tilt = _tilt_to_clamp(tilt_overlay, winner.tilt, merged)
         tilt_clamped = False
         carried_low: int | None = None
         carried_high: int | None = None
@@ -351,11 +439,21 @@ class PipelineRegistry:
                 bounded_tilt = clamp_to_bounds(resolved_tilt, tilt_low, tilt_high)
                 if bounded_tilt != resolved_tilt:
                     tilt_clamped = True
+                    tilt_binding = bounding_constraint(
+                        constraints,
+                        AXIS_NAME_TILT,
+                        bounded_tilt,
+                        low=bounded_tilt > resolved_tilt,
+                    )
                     trace.append(
                         tilt_clamp_step(
                             from_tilt=resolved_tilt,
                             to_tilt=bounded_tilt,
-                            label=tilt_label,
+                            label=(
+                                tilt_binding.label
+                                if tilt_binding is not None
+                                else tilt_label
+                            ),
                             source="tilt_clamp",
                         )
                     )

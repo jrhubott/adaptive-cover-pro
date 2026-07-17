@@ -44,7 +44,7 @@ class CustomPositionHandler(OverrideHandler):
     def __init__(
         self,
         slot: int,
-        position: int,
+        position: int | None,
         priority: int,
         tilt: int | None = None,
     ) -> None:
@@ -52,7 +52,8 @@ class CustomPositionHandler(OverrideHandler):
 
         Args:
             slot:      1-based slot number (1–10).  Used to build ``name``.
-            position:  Cover position (0–100 %) to apply when the trigger is on.
+            position:  Cover position (0–100 %) to apply when the trigger is on,
+                       or None for a constraint-only slot that names no position.
             priority:  Pipeline evaluation priority (1–100).  Higher = evaluated first.
             tilt:      Explicit tilt (0–100 %) for venetian covers. None = solar tilt.
 
@@ -169,8 +170,13 @@ class CustomPositionHandler(OverrideHandler):
                             custom_position_active_slot_name=state.slot_name,
                         )
                     # Exact-position branch (state.min_mode is False here —
-                    # floor mode defers above).
+                    # floor mode defers above). A ``use_my`` slot reaches here
+                    # even with no position of its own; when its My value is
+                    # also unavailable there is nothing to send, so defer rather
+                    # than close the cover with a phantom 0 (audit finding 3).
                     pos = self._position
+                    if pos is None:
+                        return None
                     return PipelineResult(
                         position=pos,
                         tilt=self._tilt,

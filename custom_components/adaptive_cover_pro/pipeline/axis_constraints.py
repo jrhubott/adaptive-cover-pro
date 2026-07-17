@@ -148,6 +148,34 @@ def compose_bounds(
     return low, high
 
 
+def bounding_constraint(
+    constraints: Iterable[AxisConstraint],
+    axis: str,
+    value: int,
+    *,
+    low: bool,
+) -> AxisConstraint | None:
+    """Return the single constraint whose bound actually bound this cycle.
+
+    ``compose_bounds`` collapses many claims into one ``(low, high)`` pair, so
+    a clamp knows the value it applied but not *which* claim produced it. This
+    walks back: the binding floor is the first ``MIN``/``RANGE`` whose ``low``
+    equals ``value`` (``low=True``); the binding ceiling the first
+    ``MAX``/``RANGE`` whose ``high`` equals ``value`` (``low=False``). "First"
+    matches the tie rule the composition already uses (max-of-mins keeps the
+    earliest slot on a tie), so the trace credits exactly one slot — never the
+    join of every active bound (audit finding 4a). Returns None when nothing
+    matched (an inert axis).
+    """
+    for c in constraints:
+        if c.axis != axis or c.kind is AxisConstraintMode.FIXED:
+            continue
+        edge = c.low if low else c.high
+        if edge is not None and edge == value:
+            return c
+    return None
+
+
 def resolve_fixed(
     constraints: Iterable[AxisConstraint], axis: str
 ) -> AxisConstraint | None:

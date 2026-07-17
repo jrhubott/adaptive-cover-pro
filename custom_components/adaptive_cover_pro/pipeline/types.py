@@ -92,26 +92,34 @@ def derive_axis_mode(
 ) -> AxisConstraintMode:
     """Resolve one axis's :class:`AxisConstraintMode` from its raw claims.
 
-    Bounds outrank an exact value: a slot that names a floor (``min_mode``)
-    reads as ``MIN``, not ``FIXED``, even though it also stores a position —
-    that position *is* the floor. This is the derived replacement for the
-    hand-rolled boolean precedence the flag model was straining under (three
-    booleans already needed hand-written mutual exclusion), and it reproduces
-    today's outcomes exactly for every pre-#943 config, which can only ever
-    yield ``FIXED`` / ``MIN`` / ``NONE``.
+    Precedence, most to least specific:
 
-    The single source of the precedence, for both axes. Callers pass the claims
-    already normalized for cross-axis conflicts (see
+    * a floor (``low``) present: it *pairs* with a ceiling into ``RANGE``, else
+      it is a ``MIN``. A floor always wins over a bare exact value because a
+      slot that names a floor (``min_mode``) stores its position *as* the floor.
+    * an exact value (``fixed``): ``FIXED``. This **outranks a lone ceiling** —
+      a slot with an explicit position keeps its fixed claim, and a
+      ``position_max`` is honored only alongside ``min_mode`` (as the ceiling of
+      a ``RANGE``). This mirrors the tilt axis, where a FIXED (``tilt_only``)
+      claim has always won over the bounds on the same axis, and keeps the
+      config summary's ``→ 70%`` honest instead of quietly capping it (audit
+      finding 5).
+    * a lone ceiling (``high``): ``MAX``.
+    * nothing: ``NONE``.
+
+    Every pre-#943 config yields ``FIXED`` / ``MIN`` / ``NONE`` only, so their
+    outcomes are unchanged. The single source of the precedence, for both axes;
+    callers pass the claims already normalized for cross-axis conflicts (see
     :attr:`CustomPositionSensorState.position_mode`).
     """
     if low is not None and high is not None:
         return AxisConstraintMode.RANGE
     if low is not None:
         return AxisConstraintMode.MIN
-    if high is not None:
-        return AxisConstraintMode.MAX
     if fixed is not None:
         return AxisConstraintMode.FIXED
+    if high is not None:
+        return AxisConstraintMode.MAX
     return AxisConstraintMode.NONE
 
 

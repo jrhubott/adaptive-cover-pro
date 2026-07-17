@@ -1605,6 +1605,10 @@ class ReasonCode(StrEnum):
     # because the tilt resolves after the pipeline (venetian engine tilt).
     REGISTRY_CEILING_LOWERED = "registry.ceiling_lowered"
     REGISTRY_CEILING_INACTIVE = "registry.ceiling_inactive"
+    # A ceiling the floor beat: the clamp applies the floor last, so the cover
+    # ends up *above* the ceiling. "inactive" would read as a lie in exactly the
+    # conflict the config summary already warns about.
+    REGISTRY_CEILING_OVERRIDDEN = "registry.ceiling_overridden"
     REGISTRY_TILT_BOUND_ACTIVE = "registry.tilt_bound_active"
     REGISTRY_TILT_CLAMPED = "registry.tilt_clamped"
 

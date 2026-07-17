@@ -146,6 +146,9 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.REGISTRY_CEILING_INACTIVE: (
         "ceiling {ceiling_pos}% inactive (winner {winner_pos}% below ceiling)"
     ),
+    ReasonCode.REGISTRY_CEILING_OVERRIDDEN: (
+        "ceiling {ceiling_pos}% overridden — a floor raised the cover to {to_pos}%"
+    ),
     ReasonCode.REGISTRY_TILT_BOUND_ACTIVE: (
         "tilt bound {low_label}–{high_label} active by {label}; "
         "awaiting the resolved tilt"

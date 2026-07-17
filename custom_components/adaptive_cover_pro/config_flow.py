@@ -1430,7 +1430,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "words.source_plural": "sources",
     # --- shared fragments ---
     "fragments.as_minimum": " (as minimum)",
-    "fragments.as_maximum": " (as maximum)",
+    "fragments.as_maximum": " (at most {max}%)",
     "fragments.safety": " 🔒 safety: acts outside the time window too",
     "fragments.template_value": "[template]",
     # --- Weather safety (90) ---
@@ -2291,8 +2291,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     else L["custom.no_position_claim"]
                 )
                 cp_min = L["fragments.as_minimum"] if _is_min else ""
-                if _pos_max is not None:
-                    cp_min += L["fragments.as_maximum"]
+                # A lone position_max on a FIXED-position slot is ignored — the
+                # exact position keeps its claim (audit finding 5), so only
+                # surface the ceiling when it actually applies (min-mode range,
+                # or a constraint-only slot with no position of its own). Render
+                # its value, like the tilt-bound fragments do (audit finding 6).
+                if _pos_max is not None and (_is_min or _pos is None):
+                    cp_min += L["fragments.as_maximum"].format(max=_pos_max)
                 # Tilt bounds (issue #943). Mutually exclusive with the fixed
                 # tilt note above — tilt_only is handled in the other branch.
                 _t_min = config.get(_keys["tilt_min"])

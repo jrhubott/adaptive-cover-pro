@@ -278,6 +278,11 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         "ceiling 60% inactive (winner 40% below ceiling)",
     ),
     (
+        ReasonCode.REGISTRY_CEILING_OVERRIDDEN,
+        {"ceiling_pos": 40, "to_pos": 60},
+        "ceiling 40% overridden — a floor raised the cover to 60%",
+    ),
+    (
         ReasonCode.REGISTRY_TILT_BOUND_ACTIVE,
         {"low_label": "50%", "high_label": "—", "label": "Door sensor"},
         "tilt bound 50%–— active by Door sensor; awaiting the resolved tilt",

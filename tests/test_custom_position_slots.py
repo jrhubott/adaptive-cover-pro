@@ -330,6 +330,21 @@ class TestBuildHandlersConstraintOnlySlot:
         handlers = build_handlers(options)
         assert "custom_position_7" in [h.name for h in handlers]
 
+    def test_constraint_only_slot_carries_no_position_sentinel(self) -> None:
+        """No stored position must stay None, not become a phantom 0.
+
+        Audit finding 3: the 0 sentinel *is* readable — the ``use_my`` path
+        bypasses the deferral — and a phantom 0 fully closes the cover.
+        """
+        options = {
+            "custom_position_sensors_7": ["binary_sensor.door"],
+            "custom_position_tilt_min_7": 50,
+        }
+        handler = next(
+            h for h in build_handlers(options) if h.name == "custom_position_7"
+        )
+        assert handler._position is None  # noqa: SLF001
+
 
 # ---------------------------------------------------------------------------
 # Card / sensor slot snapshot — issue #943

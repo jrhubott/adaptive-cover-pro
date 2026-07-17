@@ -3662,13 +3662,17 @@ def _custom_line(cfg, slot=1, cover_type=CoverType.BLIND):
     return next(ln for ln in summary.splitlines() if f"Custom #{slot}" in ln)
 
 
-def test_custom_position_max_shown():
-    """A position ceiling renders '(as maximum)' on the slot line."""
+def test_custom_position_max_shows_its_value():
+    """A position ceiling names its number, like the tilt-bound fragments do.
+
+    Audit finding 6: '(as maximum)' was a bare suffix — the ceiling's value only
+    appeared inside the min>max conflict warning.
+    """
     cfg = {
         "custom_position_sensors_1": ["binary_sensor.movie"],
         "custom_position_position_max_1": 60,
     }
-    assert "(as maximum)" in _custom_line(cfg)
+    assert "at most 60%" in _custom_line(cfg)
 
 
 def test_custom_position_min_and_max_both_shown():
@@ -3681,7 +3685,24 @@ def test_custom_position_min_and_max_both_shown():
     }
     line = _custom_line(cfg)
     assert "(as minimum)" in line
-    assert "(as maximum)" in line
+    assert "at most 70%" in line
+
+
+def test_fixed_position_slot_never_claims_a_ceiling():
+    """An exact position outranks position_max, so the line must not show one.
+
+    Audit finding 5: the slot renders '→ 70%' and the stored ceiling does
+    nothing — advertising it implied 70 was capped at 50.
+    """
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.movie"],
+        "custom_position_1": 70,
+        "custom_position_position_max_1": 50,
+    }
+    line = _custom_line(cfg)
+    assert "70%" in line
+    assert "maximum" not in line
+    assert "at most" not in line
 
 
 def test_custom_tilt_min_note_shown():
@@ -3736,7 +3757,7 @@ def test_no_constraint_note_without_constraints():
         "custom_position_1": 40,
     }
     line = _custom_line(cfg)
-    assert "as maximum" not in line
+    assert "at most" not in line
     assert "tilt at least" not in line
 
 

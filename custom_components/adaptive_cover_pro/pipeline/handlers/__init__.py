@@ -117,13 +117,15 @@ def _custom_position_handlers(options: Mapping[str, Any]) -> list[OverrideHandle
             raw_tilt = options.get(slot_keys["tilt"])
             tilt = int(raw_tilt) if raw_tilt is not None else None
             # A constraint-only slot (e.g. trigger → minimum tilt) has no
-            # position claim; the sentinel is never read because the handler
-            # defers on any non-FIXED position mode (issue #943).
+            # position claim. Pass None rather than a 0 sentinel: the ``use_my``
+            # path bypasses the non-FIXED deferral, so a 0 here would fully
+            # close the cover when the My value is also unavailable (audit
+            # finding 3). The handler defers instead when it has nothing to send.
             raw_position = options.get(slot_keys["position"])
             handlers.append(
                 CustomPositionHandler(
                     slot=slot,
-                    position=int(raw_position) if raw_position is not None else 0,
+                    position=int(raw_position) if raw_position is not None else None,
                     priority=priority,
                     tilt=tilt,
                 )

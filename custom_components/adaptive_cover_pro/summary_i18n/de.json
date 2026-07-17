@@ -23,7 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (als Minimum)",
-    "as_maximum": " (als Maximum)",
+    "as_maximum": " (höchstens {max}%)",
     "safety": " 🔒 Sicherheit: wirkt auch außerhalb des Zeitfensters",
     "template_value": "[template]"
   },

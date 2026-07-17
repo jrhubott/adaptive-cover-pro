@@ -11,8 +11,6 @@ way they compose with the floors that were already there.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 from custom_components.adaptive_cover_pro.const import (
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     ControlMethod,
@@ -99,10 +97,40 @@ def _slot(
     )
 
 
-def _evaluate(sensors, *, winner: _StubWinner | None = None):
+class _StubTiltContributor(OverrideHandler):
+    """A lower-priority handler that matches and supplies only a tilt.
+
+    Reproduces the ``_MERGEABLE`` fill path: the winner leaves ``tilt`` unset
+    and this handler's tilt is merged onto the result.
+    """
+
+    name = "stub_tilt"
+
+    def __init__(self, tilt: int, *, priority: int = 50) -> None:
+        self._tilt = tilt
+        self.priority = priority
+
+    def evaluate(self, snapshot) -> PipelineResult:  # noqa: ARG002
+        return PipelineResult(
+            position=99,
+            tilt=self._tilt,
+            control_method=ControlMethod.SOLAR,
+            reason="stub tilt",
+        )
+
+    def describe_skip(self, snapshot):  # noqa: ARG002
+        return "stub tilt skip"
+
+
+def _evaluate(
+    sensors,
+    *,
+    winner: _StubWinner | None = None,
+    extra: list[OverrideHandler] | None = None,
+):
     """Run a registry with a stub winner plus one handler per slot."""
     win = winner or _StubWinner()
-    handlers: list[OverrideHandler] = [win, DefaultHandler()]
+    handlers: list[OverrideHandler] = [win, DefaultHandler(), *(extra or [])]
     for s in sensors:
         handlers.append(
             CustomPositionHandler(
@@ -112,9 +140,7 @@ def _evaluate(sensors, *, winner: _StubWinner | None = None):
                 tilt=s.tilt,
             )
         )
-    snap = make_snapshot(
-        cover=MagicMock(), custom_position_sensors=sensors, default_position=0
-    )
+    snap = make_snapshot(custom_position_sensors=sensors, default_position=0)
     return PipelineRegistry(handlers).evaluate(snap)
 
 
@@ -356,3 +382,208 @@ class TestTiltBoundsCarriedWhenTiltUnresolved:
         assert (res.tilt_low, res.tilt_high) is not None or True
         assert res.tilt_low is None
         assert res.tilt_high is None
+
+
+# ---------------------------------------------------------------------------
+# Pre-merge audit regressions (issue #943)
+# ---------------------------------------------------------------------------
+
+
+class TestWinnerTraceStepSurvivesItsOwnConstraint:
+    """A slot can win the pipeline *and* carry a tilt bound (audit finding 1).
+
+    Sweeping every constraint source out of the trace left the winner unnamed:
+    the card showed a move with no matched step explaining it.
+    """
+
+    def _res(self):
+        return _evaluate(
+            [_slot(1, position=40, tilt_min=50)],
+            winner=_StubWinner(80, priority=10),
+        )
+
+    def test_slot_still_wins_the_position(self) -> None:
+        """The fixed claim is unaffected — this is a trace bug, not a value bug."""
+        assert self._res().position == 40
+
+    def test_winner_keeps_its_matched_trace_step(self) -> None:
+        """The handler that won must be named in the trace."""
+        matched = [
+            s.handler for s in self._res().decision_trace if s.matched and s.position
+        ]
+        assert "custom_position_1" in matched
+
+    def test_trace_has_exactly_one_matched_position_step(self) -> None:
+        """No clamp fires here, so the winner is the only matched position step."""
+        res = self._res()
+        matched = [
+            s for s in res.decision_trace if s.matched and s.handler != "tilt_clamp"
+        ]
+        assert [s.handler for s in matched] == ["custom_position_1"]
+
+
+class TestMergedTiltIsClamped:
+    """A tilt reaching the result via the _MERGEABLE fill must be clamped.
+
+    Audit finding 2 — the headline feature failing at its own job: the registry
+    clamped only ``winner.tilt`` / the FIXED overlay, so a tilt merged from a
+    lower-priority handler (or a ``contribute()``) sailed past the bound.
+    """
+
+    def _res(self, tilt_min=50):
+        return _evaluate(
+            [_slot(3, tilt_min=tilt_min)],
+            winner=_StubWinner(70, priority=80),
+            extra=[_StubTiltContributor(30, priority=50)],
+        )
+
+    def test_merged_tilt_is_raised_to_the_bound(self) -> None:
+        """Merged tilt 30 under a minimum of 50 → 50."""
+        assert self._res().tilt == 50
+
+    def test_bounds_are_not_also_carried(self) -> None:
+        """Once a tilt is clamped there is exactly one clamp site — not two.
+
+        Carrying the bounds as well would let the venetian policy clamp the
+        already-clamped tilt a second time.
+        """
+        res = self._res()
+        assert (res.tilt_low, res.tilt_high) == (None, None)
+
+    def test_merged_tilt_within_bounds_survives(self) -> None:
+        """A merged tilt already inside the bound is untouched."""
+        assert self._res(tilt_min=20).tilt == 30
+
+    def test_clamped_merge_emits_the_trace_step(self) -> None:
+        """The clamp is visible rather than a silent value change."""
+        assert ReasonCode.REGISTRY_TILT_CLAMPED in _codes(self._res())
+
+
+class TestBindingBoundIsNamed:
+    """Trace steps name the bound that actually bound (audit finding 4a)."""
+
+    def test_floor_raised_names_only_the_binding_floor(self) -> None:
+        """Two floors, one binds — the raise must not credit the other."""
+        res = _evaluate(
+            [
+                _slot(1, position=40, min_mode=True, sensor_name="Sensor 1"),
+                _slot(2, position=60, min_mode=True, sensor_name="Sensor 2"),
+            ],
+            winner=_StubWinner(10),
+        )
+        params = _step(res, ReasonCode.REGISTRY_FLOOR_RAISED).reason_payload.params
+        assert params["label"] == "Sensor 2"
+
+    def test_ceiling_lowered_names_only_the_binding_ceiling(self) -> None:
+        """The mirror: the lowest ceiling binds and is the one credited."""
+        res = _evaluate(
+            [
+                _slot(1, position_max=60, sensor_name="Sensor 1"),
+                _slot(2, position_max=30, sensor_name="Sensor 2"),
+            ],
+            winner=_StubWinner(90),
+        )
+        params = _step(res, ReasonCode.REGISTRY_CEILING_LOWERED).reason_payload.params
+        assert params["label"] == "Sensor 2"
+
+    def test_tilt_clamp_names_only_the_binding_tilt_bound(self) -> None:
+        """Same rule on the tilt axis."""
+        res = _evaluate(
+            [
+                _slot(1, tilt_min=30, sensor_name="Sensor 1"),
+                _slot(2, tilt_min=50, sensor_name="Sensor 2"),
+            ],
+            winner=_StubWinner(50, tilt=10),
+        )
+        params = _step(res, ReasonCode.REGISTRY_TILT_CLAMPED).reason_payload.params
+        assert params["label"] == "Sensor 2"
+
+
+class TestTiedFloorsBothTraced:
+    """Tie floors: the losing slot keeps an inactive step (audit finding 4b)."""
+
+    def test_losing_tied_floor_emits_an_inactive_step(self) -> None:
+        """Equal floors resolve to the first — the second must still explain itself."""
+        res = _evaluate(
+            [
+                _slot(1, position=60, min_mode=True),
+                _slot(2, position=60, min_mode=True),
+            ],
+            winner=_StubWinner(10),
+        )
+        inactive = [
+            s.handler
+            for s in res.decision_trace
+            if s.reason_payload is not None
+            and s.reason_payload.code is ReasonCode.REGISTRY_FLOOR_INACTIVE
+        ]
+        assert inactive == ["custom_position_2"]
+
+
+class TestLosingTiltOnlySlotKeepsAStep:
+    """A deferred tilt-only loser is not swept out of the trace (finding 4c)."""
+
+    def test_losing_tilt_only_slot_is_still_named(self) -> None:
+        """Slot 2 loses the FIXED tilt resolution but must stay visible."""
+        res = _evaluate(
+            [
+                _slot(1, tilt=20, tilt_only=True, priority=90),
+                _slot(2, tilt=70, tilt_only=True, priority=50),
+            ],
+            winner=_StubWinner(50),
+        )
+        assert "custom_position_2" in [s.handler for s in res.decision_trace]
+
+
+class TestCeilingOverriddenByFloor:
+    """The floor-beats-ceiling conflict reads honestly (audit finding 7)."""
+
+    def _res(self):
+        return _evaluate(
+            [
+                _slot(1, position=60, min_mode=True, sensor_name="Floor"),
+                _slot(2, position_max=40, sensor_name="Ceiling"),
+            ],
+            winner=_StubWinner(50),
+        )
+
+    def test_overridden_ceiling_is_not_reported_as_inactive(self) -> None:
+        """The cover ended up *above* the ceiling — 'inactive' is a lie."""
+        assert ReasonCode.REGISTRY_CEILING_INACTIVE not in _codes(self._res())
+
+    def test_overridden_ceiling_emits_the_overridden_step(self) -> None:
+        """Say the floor overrode it, which is what actually happened."""
+        assert ReasonCode.REGISTRY_CEILING_OVERRIDDEN in _codes(self._res())
+
+    def test_overridden_step_names_the_final_position(self) -> None:
+        """The payload carries the ceiling and where the cover really went."""
+        params = _step(
+            self._res(), ReasonCode.REGISTRY_CEILING_OVERRIDDEN
+        ).reason_payload.params
+        assert params["ceiling_pos"] == 40
+        assert params["to_pos"] == 60
+
+    def test_inert_ceiling_still_reads_as_inactive(self) -> None:
+        """Without a conflict the ceiling keeps today's inactive wording."""
+        res = _evaluate([_slot(1, position_max=60)], winner=_StubWinner(40))
+        assert ReasonCode.REGISTRY_CEILING_INACTIVE in _codes(res)
+
+
+class TestFixedPositionOutranksCeiling:
+    """An explicit position keeps its claim; position_max needs min_mode (#5)."""
+
+    def test_fixed_position_wins_over_a_stored_position_max(self) -> None:
+        """Slot names 70 with a stale ceiling of 50 → the slot claims 70."""
+        res = _evaluate(
+            [_slot(1, position=70, position_max=50)],
+            winner=_StubWinner(20, priority=10),
+        )
+        assert res.position == 70
+
+    def test_min_mode_still_pairs_with_position_max_as_a_range(self) -> None:
+        """The RANGE cell is unaffected — the ceiling applies alongside a floor."""
+        res = _evaluate(
+            [_slot(1, position=30, min_mode=True, position_max=50)],
+            winner=_StubWinner(90),
+        )
+        assert res.position == 50

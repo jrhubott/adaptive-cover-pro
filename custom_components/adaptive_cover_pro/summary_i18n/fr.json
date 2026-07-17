@@ -23,7 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (comme minimum)",
-    "as_maximum": " (comme maximum)",
+    "as_maximum": " (au plus {max}%)",
     "safety": " 🔒 sécurité : agit aussi en dehors de la fenêtre horaire",
     "template_value": "[template]"
   },

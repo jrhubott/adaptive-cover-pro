@@ -67,6 +67,7 @@
     "tilt_deferred": "nur Neigung {tilt}% verschoben — {handler} hat bereits Neigung {winner_tilt}% gesetzt",
     "ceiling_lowered": "Obergrenze abgesenkter Gewinner von {from_pos}% zu {to_pos}% durch {label}",
     "ceiling_inactive": "Obergrenze {ceiling_pos}% inaktiv (Gewinner {winner_pos}% unter Obergrenze)",
+    "ceiling_overridden": "Obergrenze {ceiling_pos}% überschrieben — eine Untergrenze hat die Abdeckung auf {to_pos}% angehoben",
     "tilt_bound_active": "Neigungsgrenze {low_label}–{high_label} aktiv durch {label}; wartet auf die aufgelöste Neigung",
     "tilt_clamped": "Neigung begrenzt von {from_tilt}% auf {to_tilt}% durch {label}"
   },

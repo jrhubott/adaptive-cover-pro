@@ -67,6 +67,7 @@
     "tilt_deferred": "tilt-only {tilt}% deferred — {handler} already set tilt {winner_tilt}%",
     "ceiling_lowered": "ceiling lowered winner from {from_pos}% to {to_pos}% by {label}",
     "ceiling_inactive": "ceiling {ceiling_pos}% inactive (winner {winner_pos}% below ceiling)",
+    "ceiling_overridden": "ceiling {ceiling_pos}% overridden — a floor raised the cover to {to_pos}%",
     "tilt_bound_active": "tilt bound {low_label}–{high_label} active by {label}; awaiting the resolved tilt",
     "tilt_clamped": "tilt clamped from {from_tilt}% to {to_tilt}% by {label}"
   },
