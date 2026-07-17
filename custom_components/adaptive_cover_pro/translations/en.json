@@ -871,8 +871,11 @@
           "custom_position_priority": "Priority",
           "custom_position_min_mode": "Minimum mode",
           "custom_position_use_my": "Use My position",
+          "custom_position_position_max": "Maximum position",
           "custom_position_tilt": "Tilt",
-          "custom_position_tilt_only": "Tilt only"
+          "custom_position_tilt_only": "Tilt only",
+          "custom_position_tilt_min": "Minimum tilt",
+          "custom_position_tilt_max": "Maximum tilt"
         },
         "data_description": {
           "custom_position_sensors": "Binary sensors that, when any is 'on', move the cover to its configured position (OR logic). Leave empty to use only a template — or to skip this slot.",
@@ -883,7 +886,10 @@
           "custom_position_min_mode": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my": "When this slot's trigger is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
           "custom_position_tilt": "Tilt angle (0-100%) to set when this slot's sensor is active. Venetian covers only — ignored for other cover types. Leave unset to let the engine calculate tilt automatically.",
-          "custom_position_tilt_only": "When enabled, this slot fixes only the slat angle (its Tilt value) — sun tracking still drives the carriage position. Venetian covers only. Overrides Minimum mode and Use My position for this slot."
+          "custom_position_tilt_only": "When enabled, this slot fixes only the slat angle (its Tilt value) — sun tracking still drives the carriage position. Venetian covers only. Overrides Minimum mode and Use My position for this slot.",
+          "custom_position_position_max": "When set, the position acts as a maximum ceiling while this slot's trigger is active — lower positions from sun tracking or other calculations are allowed through, but anything above is clamped down to this. The mirror of Minimum mode. Leave unset for no maximum. If it conflicts with a minimum, the minimum wins.",
+          "custom_position_tilt_min": "When set, the tilt acts as a minimum while this slot's trigger is active — a calculated tilt below this is raised to it, and anything above is left alone. Unlike Tilt only (which fixes an exact angle), this is a boundary. Venetian covers only. Leave unset for no minimum.",
+          "custom_position_tilt_max": "When set, the tilt acts as a maximum while this slot's trigger is active — a calculated tilt above this is lowered to it. Venetian covers only. Leave unset for no maximum."
         }
       },
       "custom_position_tilt_defaults": {

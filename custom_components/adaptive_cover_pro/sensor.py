@@ -996,7 +996,11 @@ def _build_custom_position_slots_snapshot(
                 # User-configured slot label (issue #867); overrides sensor_name
                 # in the reason/decision_trace/card when set. None = unset.
                 "custom_name": custom_position_slot_name(options, slot_keys),
-                "position": int(position) if configured else None,
+                # None for a constraint-only slot — configured, but making no
+                # position claim (issue #943).
+                "position": (
+                    int(position) if configured and position is not None else None
+                ),
                 "priority": (
                     int(
                         options.get(slot_keys["priority"])
@@ -1010,6 +1014,12 @@ def _build_custom_position_slots_snapshot(
                     if configured
                     else None
                 ),
+                # Axis constraints (issue #943). None = the constraint is off,
+                # which is also what an unconfigured slot reports.
+                **{
+                    sub: (options.get(slot_keys[sub]) if configured else None)
+                    for sub in ("position_max", "tilt_min", "tilt_max")
+                },
             }
         )
     return snapshot

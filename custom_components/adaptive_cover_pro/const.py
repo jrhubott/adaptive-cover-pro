@@ -879,6 +879,23 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         # position. Reuses the slot's existing `tilt` value as the slat angle
         # (issue #514). Venetian-only; gated on custom_position_includes_tilt.
         "tilt_only": f"custom_position_tilt_only_{n}",
+        # Axis constraints (issue #943). All optional — an absent key means the
+        # constraint is off, so every pre-#943 entry keeps its exact behavior.
+        # Values live in the same pre-inversion canonical space as `position` /
+        # `tilt` (0 = closed, 100 = open), deliberately NOT named
+        # "minimum open"/"maximum closed": the physical meaning flips with
+        # inverse_state / inverse_tilt.
+        #
+        # While the slot's trigger is active:
+        #   position_max — clamps the normally-resolved position DOWN to at
+        #                  most this (the mirror of `min_mode`'s clamp-up).
+        #   tilt_min     — clamps the final tilt UP to at least this.
+        #   tilt_max     — clamps the final tilt DOWN to at most this.
+        # These are priority-independent clamps: the pipeline resolves normally
+        # and the clamp composes on top (pipeline/axis_constraints.py).
+        "position_max": f"custom_position_position_max_{n}",
+        "tilt_min": f"custom_position_tilt_min_{n}",
+        "tilt_max": f"custom_position_tilt_max_{n}",
         # `enabled` is opt-out: existing entries lack the key and behave as
         # enabled. Set to False to silence a slot without clearing its
         # configuration — used by the companion card's slot toggle UI.
@@ -912,6 +929,9 @@ CUSTOM_POSITION_FORM_KEYS: dict[str, str] = {
     "use_my": "custom_position_use_my",
     "tilt": "custom_position_tilt",
     "tilt_only": "custom_position_tilt_only",
+    "position_max": "custom_position_position_max",
+    "tilt_min": "custom_position_tilt_min",
+    "tilt_max": "custom_position_tilt_max",
 }
 
 
@@ -1580,6 +1600,13 @@ class ReasonCode(StrEnum):
     REGISTRY_FLOOR_INACTIVE = "registry.floor_inactive"
     REGISTRY_TILT_APPLIED = "registry.tilt_applied"
     REGISTRY_TILT_DEFERRED = "registry.tilt_deferred"
+    # Axis constraints (issue #943). The ceiling codes mirror the floor pair
+    # above; the tilt pair covers a bound that clamped and one still pending
+    # because the tilt resolves after the pipeline (venetian engine tilt).
+    REGISTRY_CEILING_LOWERED = "registry.ceiling_lowered"
+    REGISTRY_CEILING_INACTIVE = "registry.ceiling_inactive"
+    REGISTRY_TILT_BOUND_ACTIVE = "registry.tilt_bound_active"
+    REGISTRY_TILT_CLAMPED = "registry.tilt_clamped"
 
     # -- diagnostics builder (control-state reason + position explanation)
     BUILDER_UNKNOWN = "builder.unknown"
@@ -1966,6 +1993,35 @@ class CoverType(StrEnum):
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
         }[self]
+
+
+class AxisConstraintMode(StrEnum):
+    """How one custom-position slot claims one axis (issue #943).
+
+    **Derived, never stored.** The wire format stays the ``min_mode`` /
+    ``tilt_only`` booleans plus the optional numeric constraint keys — that is
+    the rollback contract (an older build must find its config exactly as it
+    left it). ``SnapshotBuilder.read_custom_position_sensors`` derives a mode
+    per axis at the single normalization site, replacing the hand-rolled
+    boolean precedence that was straining at three flags.
+
+    Semantics per mode, while the slot's trigger is active:
+
+    ``NONE``   The slot makes no claim on this axis — it defers entirely.
+    ``FIXED``  The slot names an exact value. Highest-priority slot wins, and
+               the value is applied fill-when-unset (today's ``tilt_only`` /
+               exact-position behavior).
+    ``MIN``    The slot names a floor. Composed max-of-mins across slots and
+               applied as an always-clamp (today's ``min_mode``).
+    ``MAX``    The slot names a ceiling. Composed min-of-maxes; always-clamp.
+    ``RANGE``  Both a floor and a ceiling.
+    """
+
+    NONE = "none"
+    FIXED = "fixed"
+    MIN = "min"
+    MAX = "max"
+    RANGE = "range"
 
 
 class GroupScene(StrEnum):

@@ -1092,6 +1092,57 @@ class TestSetCustomPosition:
         assert new_opts["custom_position_sensor_1"] == "binary_sensor.high_sun"
         assert new_opts["custom_position_1"] == 80
 
+    async def test_axis_constraints_routing(self, hass: HomeAssistant):
+        """position_max / tilt_min / tilt_max route to the slot's wire keys."""
+        await _setup(hass, entry_id="cp_axis")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_custom_position",
+                {
+                    "slot": 1,
+                    "sensor": "binary_sensor.door",
+                    "position": 80,
+                    "position_max": 60,
+                    "tilt_min": 50,
+                    "tilt_max": 90,
+                },
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts["custom_position_position_max_1"] == 60
+        assert new_opts["custom_position_tilt_min_1"] == 50
+        assert new_opts["custom_position_tilt_max_1"] == 90
+
+    async def test_constraint_only_slot_is_complete(self, hass: HomeAssistant):
+        """A trigger + tilt_min slot needs no position (issue #943)."""
+        await _setup(hass, entry_id="cp_conly")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_custom_position",
+                {"slot": 3, "sensor": "binary_sensor.door", "tilt_min": 50},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts["custom_position_tilt_min_3"] == 50
+
+    async def test_trigger_without_any_claim_still_rejected(self, hass: HomeAssistant):
+        """A bare trigger claims nothing — the completeness gate still fires."""
+        await _setup(hass, entry_id="cp_bare")
+        with pytest.raises(Exception, match="incomplete"):
+            await _call(
+                hass,
+                "set_custom_position",
+                {"slot": 4, "sensor": "binary_sensor.door"},
+            )
+
     async def test_slot_2_routing(self, hass: HomeAssistant):
         await _setup(hass, entry_id="cp_02")
         with (

@@ -488,8 +488,9 @@ set_custom_position:
   name: Set custom position slot
   description: >-
     Update one custom position slot (1–10). A slot is active when it has a
-    trigger (sensors and/or template) and a position. Pass an empty list and
-    null position to clear the slot. Priority 100 gives the slot safety
+    trigger (sensors and/or template) and a claim on an axis — a position, or
+    one of the position_max / tilt_min / tilt_max constraints. Pass an empty
+    list and null position to clear the slot. Priority 100 gives the slot safety
     semantics: it acts outside the time window and bypasses delta gates.
   target:
     entity:
@@ -560,6 +561,36 @@ set_custom_position:
       description: "If true, use my_position_value instead of position when the trigger is active."
       selector:
         boolean:
+    position_max:
+      name: Maximum position
+      description: "Clamp the resolved position down to at most this (0–100%) while the trigger is active. Null = no maximum."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    tilt_min:
+      name: Minimum tilt
+      description: "Clamp the resolved tilt up to at least this (0–100%) while the trigger is active. Null = no minimum."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    tilt_max:
+      name: Maximum tilt
+      description: "Clamp the resolved tilt down to at most this (0–100%) while the trigger is active. Null = no maximum."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
 
 set_motion:
   name: Set occupancy settings (deprecated)

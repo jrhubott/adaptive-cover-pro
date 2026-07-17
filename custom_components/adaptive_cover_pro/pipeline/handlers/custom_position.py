@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
+    AxisConstraintMode,
     ControlMethod,
     ReasonCode,
     custom_position_handler_name,
@@ -108,23 +109,29 @@ class CustomPositionHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's trigger is active.
 
-        In ``min_mode`` (and not on the ``use_my`` path), the handler defers
-        by returning ``None``. The registry then composes the configured
-        position as a post-decision floor clamp on whichever lower-priority
-        handler wins (issue #463).
+        The handler only claims the position axis when the slot names an
+        *exact* position (``position_mode`` is ``FIXED``). Every other mode —
+        a floor (``min_mode``, issue #463), a ceiling or range, or no position
+        claim at all (issue #943) — defers by returning ``None`` so the
+        registry can compose the constraint onto whichever handler actually
+        wins. That is what makes a constraint priority-independent.
+
+        The ``use_my`` path is the exception: it is hardware-pinned, ignores
+        constraint semantics entirely, and always claims.
         """
         # Find our slot in the snapshot's sensor list.
         for state in snapshot.custom_position_sensors:
             if state.slot == self._slot:
                 if state.is_on:
-                    # Tilt-only mode defers to the tilt-axis overlay pass — the
-                    # slot fixes the slat angle but never claims position
-                    # (issue #514). See pipeline/tilt_axis.py.
-                    if state.tilt_only:
-                        return None
-                    # Floor mode (without use_my) defers to the floor-clamp
-                    # composition pass — see pipeline/floors.py.
-                    if state.min_mode and not state.use_my:
+                    # Defer to the axis-constraint composition pass — see
+                    # pipeline/axis_constraints.py. Covers today's tilt-only
+                    # (#514) and floor (#463) deferrals plus the ceiling /
+                    # range / no-claim modes, with identical outcomes for
+                    # every pre-#943 configuration.
+                    if (
+                        state.position_mode is not AxisConstraintMode.FIXED
+                        and not state.use_my
+                    ):
                         return None
                     raw = compute_raw_calculated_position(snapshot)
                     reason_head = self._reason_head(state)

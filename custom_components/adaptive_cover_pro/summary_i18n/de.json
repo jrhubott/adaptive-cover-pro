@@ -23,6 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (als Minimum)",
+    "as_maximum": " (als Maximum)",
     "safety": " 🔒 Sicherheit: wirkt auch außerhalb des Zeitfensters",
     "template_value": "[template]"
   },
@@ -65,9 +66,14 @@
     "tilt_note": ", Neigung {tilt}%",
     "trigger_sensors": "einer von {n} Sensoren",
     "trigger_template": "Template",
-    "trigger_join": " oder "
+    "trigger_join": " oder ",
+    "tilt_bound_min": ", Neigung mindestens {min}%",
+    "tilt_bound_max": ", Neigung höchstens {max}%",
+    "tilt_bound_range": ", Neigung {min}–{max}%",
+    "no_position_claim": "die berechnete Position"
   },
   "warnings": {
+    "custom_position_bound_conflict": "⚠️ Benutzerdefiniert #{slot}: Das Maximum ({max}%) liegt unter dem Minimum ({min}%) — das Minimum gewinnt und das Maximum wird ignoriert.",
     "custom_tilt_only_conflict": "⚠️ Benutzerdefiniert #{slot}: Nur Neigung ist aktiviert — Als Minimum verwenden / Meine Position verwenden werden für diesen Slot ignoriert.",
     "motion_hold_no_sensors": "⚠️ Der Modus Position halten ist eingestellt, aber es sind keine Belegungsquellen konfiguriert – die Einstellung hat keine Auswirkungen, bis eine Belegungsquelle hinzugefügt wird",
     "cloudy_pos_ignored": "⚠️ Bewölkte Position ({pos}%) konfiguriert, aber Wolkenunterdrückung ist deaktiviert — Wert wird ignoriert.",

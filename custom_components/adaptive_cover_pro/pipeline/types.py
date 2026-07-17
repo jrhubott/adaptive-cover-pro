@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..const import (
     DEFAULT_TRACKING_SEASONS,
+    AxisConstraintMode,
     ClimateStrategy,
     ControlMethod,
     GroupIntentKind,
@@ -86,6 +87,34 @@ class ClimateTempFlags:
     extreme_heat: bool
 
 
+def derive_axis_mode(
+    *, fixed: int | None, low: int | None, high: int | None
+) -> AxisConstraintMode:
+    """Resolve one axis's :class:`AxisConstraintMode` from its raw claims.
+
+    Bounds outrank an exact value: a slot that names a floor (``min_mode``)
+    reads as ``MIN``, not ``FIXED``, even though it also stores a position —
+    that position *is* the floor. This is the derived replacement for the
+    hand-rolled boolean precedence the flag model was straining under (three
+    booleans already needed hand-written mutual exclusion), and it reproduces
+    today's outcomes exactly for every pre-#943 config, which can only ever
+    yield ``FIXED`` / ``MIN`` / ``NONE``.
+
+    The single source of the precedence, for both axes. Callers pass the claims
+    already normalized for cross-axis conflicts (see
+    :attr:`CustomPositionSensorState.position_mode`).
+    """
+    if low is not None and high is not None:
+        return AxisConstraintMode.RANGE
+    if low is not None:
+        return AxisConstraintMode.MIN
+    if high is not None:
+        return AxisConstraintMode.MAX
+    if fixed is not None:
+        return AxisConstraintMode.FIXED
+    return AxisConstraintMode.NONE
+
+
 @dataclass(frozen=True, slots=True)
 class CustomPositionSensorState:
     """Per-slot trigger reading carried in the pipeline snapshot.
@@ -101,7 +130,11 @@ class CustomPositionSensorState:
     # Slot activation: OR across the sensors, folded with the optional
     # condition template via templates.combine_with_mode() at snapshot time.
     is_on: bool
-    position: int
+    # The slot's position claim, in pre-inversion canonical space. ``None`` =
+    # the slot makes no position claim — a constraint-only slot (e.g. trigger →
+    # minimum tilt) added by issue #943. 0 is a valid position (fully closed),
+    # so consumers must test ``is None``, never truthiness.
+    position: int | None
     priority: int
     min_mode: bool
     use_my: bool
@@ -133,6 +166,57 @@ class CustomPositionSensorState:
     # snapshot). None = no name configured (default; byte-identical to
     # pre-#867 behavior).
     custom_name: str | None = None
+
+    # --- Axis constraints (issue #943) -------------------------------------
+    # Optional per-axis bounds that clamp whatever the pipeline resolves while
+    # this slot's trigger is active. None = the bound is off. Values are in the
+    # same pre-inversion canonical space as ``position`` / ``tilt``.
+    #
+    # ``position_max`` is normalized off on the ``use_my`` path (hardware-pinned)
+    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off by
+    # ``tilt_only`` (a FIXED tilt claim wins over bounds on the same axis).
+    position_max: int | None = None
+    tilt_min: int | None = None
+    tilt_max: int | None = None
+
+    @property
+    def position_mode(self) -> AxisConstraintMode:
+        """This slot's derived claim on the position axis (issue #943).
+
+        A *property*, not a stored field: the mode is a pure function of the
+        wire format (``min_mode`` / ``tilt_only`` + the numeric keys), and the
+        wire format is what rollback safety pins. Deriving here rather than in
+        the snapshot builder means every construction path — the builder, the
+        card, and every test that builds a state by hand — agrees, with no way
+        for a stored copy to drift from the flags it was derived from.
+
+        ``tilt_only`` wins the whole slot: it fixes the slat angle and lets the
+        position pipeline drive the carriage, so it claims nothing here.
+        """
+        if self.tilt_only:
+            return AxisConstraintMode.NONE
+        return derive_axis_mode(
+            fixed=None if self.min_mode else self.position,
+            low=self.position if self.min_mode else None,
+            high=self.position_max,
+        )
+
+    @property
+    def tilt_mode(self) -> AxisConstraintMode:
+        """This slot's derived claim on the tilt axis (issue #943).
+
+        ``tilt_only`` is an exact (``FIXED``) tilt claim and wins over the
+        bounds — mirroring the precedence it already has over ``min_mode`` /
+        ``use_my``. A tilt-only slot with no configured slat angle claims
+        nothing (pre-#943 behavior, preserved).
+        """
+        if self.tilt_only:
+            return (
+                AxisConstraintMode.FIXED
+                if self.tilt is not None
+                else AxisConstraintMode.NONE
+            )
+        return derive_axis_mode(fixed=None, low=self.tilt_min, high=self.tilt_max)
 
     @property
     def slot_name(self) -> str | None:
@@ -427,11 +511,25 @@ class PipelineResult:
     # behavior (issue #563).
     is_safety: bool = False
 
-    # When True, the registry's floor-clamp composition pass raised this
-    # winner's position to a user-configured floor. The coordinator's `state`
-    # property treats the position as already in cover-position space and
-    # skips interpolation / inverse-state remapping (issue #469).
+    # When True, the registry's axis-constraint composition pass clamped this
+    # winner's position to a user-configured bound — a floor raise (issue #463)
+    # or, since issue #943, a ceiling lower. The coordinator's `state` property
+    # treats the position as already in cover-position space and skips
+    # interpolation / inverse-state remapping (issue #469); that holds for
+    # either bound, since both are values the user typed in cover space.
     floor_clamp_applied: bool = False
+
+    # Composed tilt bounds that could not be applied during evaluation because
+    # the winner had no tilt to clamp yet (issue #943). Tilt can resolve *after*
+    # the pipeline — the venetian engine fills it in ``post_pipeline_resolve`` —
+    # so the bounds ride the result and that policy applies them via the shared
+    # ``axis_constraints.clamp_to_bounds``. None = unbounded on that side. When
+    # the registry could clamp the tilt itself, it already did and these stay
+    # None. ``tilt_bound_label`` names the slot(s) the bounds came from so the
+    # deferred clamp's trace step reads the same as an in-registry one.
+    tilt_low: int | None = None
+    tilt_high: int | None = None
+    tilt_bound_label: str | None = None
 
     # When True, the registry's tilt-axis pass overlaid a per-slot tilt-only
     # contribution onto this winner (issue #514). VenetianPolicy reads this in

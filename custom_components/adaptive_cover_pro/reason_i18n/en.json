@@ -64,7 +64,11 @@
     "floor_raised": "floor raised winner from {from_pos}% to {to_pos}% by {label}",
     "floor_inactive": "floor {floor_pos}% inactive (winner {winner_pos}% above floor)",
     "tilt_applied": "tilt-only: slat angle fixed at {tilt}% by {label}; position driven by {handler}",
-    "tilt_deferred": "tilt-only {tilt}% deferred — {handler} already set tilt {winner_tilt}%"
+    "tilt_deferred": "tilt-only {tilt}% deferred — {handler} already set tilt {winner_tilt}%",
+    "ceiling_lowered": "ceiling lowered winner from {from_pos}% to {to_pos}% by {label}",
+    "ceiling_inactive": "ceiling {ceiling_pos}% inactive (winner {winner_pos}% below ceiling)",
+    "tilt_bound_active": "tilt bound {low_label}–{high_label} active by {label}; awaiting the resolved tilt",
+    "tilt_clamped": "tilt clamped from {from_tilt}% to {to_tilt}% by {label}"
   },
   "builder": {
     "unknown": "Unknown",

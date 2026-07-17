@@ -871,8 +871,11 @@
           "custom_position_priority": "Priorité",
           "custom_position_min_mode": "Mode minimum",
           "custom_position_use_my": "Utiliser la position My",
+          "custom_position_position_max": "Position maximale",
           "custom_position_tilt": "Inclinaison",
-          "custom_position_tilt_only": "Inclinaison uniquement"
+          "custom_position_tilt_only": "Inclinaison uniquement",
+          "custom_position_tilt_min": "Inclinaison minimale",
+          "custom_position_tilt_max": "Inclinaison maximale"
         },
         "data_description": {
           "custom_position_sensors": "Capteurs binaires qui, si l'un est « activé », déplacent le store à sa position configurée (logique OU). Laisser vide pour n'utiliser qu'un modèle — ou pour ignorer cet emplacement.",
@@ -883,7 +886,10 @@
           "custom_position_min_mode": "Lorsqu'activé, la position agit comme un plancher minimum — les positions plus élevées du suivi solaire ou d'autres calculs sont autorisées. Lorsque désactivé (par défaut), le store est toujours défini à la position configurée exacte.",
           "custom_position_use_my": "Lorsque le déclencheur d'emplacement est actif, déclencher la position prédéfinie « My » du store au lieu de la position numérique de l'emplacement. Nécessite que la valeur de position « My » soit définie.",
           "custom_position_tilt": "Angle d'inclinaison (0-100 %) à définir lorsque le capteur de cet emplacement est actif. Stores vénitiens uniquement — ignoré pour les autres types de stores. Laisser indéfini pour laisser le moteur calculer l'inclinaison automatiquement.",
-          "custom_position_tilt_only": "Lorsqu'activé, cet emplacement corrige uniquement l'angle des lamelles (sa valeur Inclinaison) — le suivi solaire pilote toujours la position du chariot. Stores vénitiens uniquement. Remplace le mode Minimum et Utiliser la position « My » pour cet emplacement."
+          "custom_position_tilt_only": "Lorsqu'activé, cet emplacement corrige uniquement l'angle des lamelles (sa valeur Inclinaison) — le suivi solaire pilote toujours la position du chariot. Stores vénitiens uniquement. Remplace le mode Minimum et Utiliser la position « My » pour cet emplacement.",
+          "custom_position_position_max": "Lorsque définie, la position agit comme un plafond maximum tant que le déclencheur de ce slot est actif — les positions plus basses du suivi solaire ou d'autres calculs sont autorisées, mais tout ce qui dépasse est ramené à cette valeur. Le pendant du mode minimum. Laisser vide pour aucun maximum. En cas de conflit avec un minimum, le minimum l'emporte.",
+          "custom_position_tilt_min": "Lorsque définie, l'inclinaison agit comme un minimum tant que le déclencheur de ce slot est actif — une inclinaison calculée en dessous est relevée à cette valeur, et tout ce qui est au-dessus reste inchangé. Contrairement à « Inclinaison uniquement » (qui fixe un angle exact), il s'agit d'une limite. Stores vénitiens uniquement. Laisser vide pour aucun minimum.",
+          "custom_position_tilt_max": "Lorsque définie, l'inclinaison agit comme un maximum tant que le déclencheur de ce slot est actif — une inclinaison calculée au-dessus est abaissée à cette valeur. Stores vénitiens uniquement. Laisser vide pour aucun maximum."
         }
       },
       "custom_position_tilt_defaults": {

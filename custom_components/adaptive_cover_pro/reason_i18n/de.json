@@ -64,7 +64,11 @@
     "floor_raised": "Untergrenze angehobener Gewinner von {from_pos}% zu {to_pos}% durch {label}",
     "floor_inactive": "Untergrenze {floor_pos}% inaktiv (Gewinner {winner_pos}% über Untergrenze)",
     "tilt_applied": "nur Neigung: Lamellen-Winkel fest bei {tilt}% durch {label}; Position gesteuert durch {handler}",
-    "tilt_deferred": "nur Neigung {tilt}% verschoben — {handler} hat bereits Neigung {winner_tilt}% gesetzt"
+    "tilt_deferred": "nur Neigung {tilt}% verschoben — {handler} hat bereits Neigung {winner_tilt}% gesetzt",
+    "ceiling_lowered": "Obergrenze abgesenkter Gewinner von {from_pos}% zu {to_pos}% durch {label}",
+    "ceiling_inactive": "Obergrenze {ceiling_pos}% inaktiv (Gewinner {winner_pos}% unter Obergrenze)",
+    "tilt_bound_active": "Neigungsgrenze {low_label}–{high_label} aktiv durch {label}; wartet auf die aufgelöste Neigung",
+    "tilt_clamped": "Neigung begrenzt von {from_tilt}% auf {to_tilt}% durch {label}"
   },
   "builder": {
     "unknown": "Unbekannt",

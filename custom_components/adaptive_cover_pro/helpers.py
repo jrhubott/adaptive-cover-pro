@@ -117,18 +117,35 @@ def mirror_legacy_slot_sensor_keys(options: dict) -> None:
             options[slot_keys["sensor"]] = None
 
 
+# Sub-keys whose presence gives a slot something to contribute on its own,
+# even without a `position` claim (issue #943). A trigger + "minimum tilt 50%"
+# is a complete slot: it constrains the axis and lets the pipeline resolve the
+# rest. Single source of truth for the claim vocabulary.
+CUSTOM_POSITION_CLAIM_KEYS: tuple[str, ...] = (
+    "position",
+    "position_max",
+    "tilt_min",
+    "tilt_max",
+)
+
+
 def custom_position_slot_configured(
     options: Mapping, slot_keys: Mapping[str, str]
 ) -> bool:
     """Return True when a custom-position slot is fully configured.
 
     Single source of truth for the "slot participates" gate: a slot needs a
-    trigger (at least one sensor, or a condition template) and a position.
+    trigger (at least one sensor, or a condition template) and at least one
+    claim on an axis — a `position`, or one of the axis constraints added by
+    issue #943. A trigger alone still contributes nothing.
     """
     has_trigger = bool(
         custom_position_slot_sensors(options, slot_keys)
     ) or is_template_string(options.get(slot_keys["template"]))
-    return has_trigger and options.get(slot_keys["position"]) is not None
+    has_claim = any(
+        options.get(slot_keys[sub]) is not None for sub in CUSTOM_POSITION_CLAIM_KEYS
+    )
+    return has_trigger and has_claim
 
 
 def custom_position_slot_name(

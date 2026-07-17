@@ -871,8 +871,11 @@
           "custom_position_priority": "Priorität",
           "custom_position_min_mode": "Mindestmodus",
           "custom_position_use_my": "Meine Position verwenden",
+          "custom_position_position_max": "Maximalposition",
           "custom_position_tilt": "Neigung",
-          "custom_position_tilt_only": "Nur Neigung"
+          "custom_position_tilt_only": "Nur Neigung",
+          "custom_position_tilt_min": "Mindestneigung",
+          "custom_position_tilt_max": "Maximalneigung"
         },
         "data_description": {
           "custom_position_sensors": "Binärsensoren, die beim ‚on'-Status eine Übersteuerung auf die konfigurierte Position auslösen (ODER-Logik). Leer lassen für nur Vorlagen-Auslöser — oder um diesen Slot zu deaktivieren.",
@@ -883,7 +886,10 @@
           "custom_position_min_mode": "Bei Aktivierung fungiert die Position als Mindestgrenzwert — höhere Positionen von der Sonnenverfolgung oder anderen Berechnungen werden zugelassen. Bei Deaktivierung (Standard) wird die Jalousie immer auf die exakte konfigurierte Position gesetzt.",
           "custom_position_use_my": "Wenn dieser Slot-Auslöser aktiv ist, wird die Voreinstellung ‚Meine Position' ausgelöst statt der numerischen Slot-Position. Erfordert, dass der Wert für Meine Position gesetzt ist.",
           "custom_position_tilt": "Neigungswinkel (0–100 %), gesetzt wenn dieser Slot-Sensor aktiv ist. Nur für Jalousien mit Lamellenneigung — wird für andere Jalousientypen ignoriert. Leer lassen für automatische Berechnung durch die Engine.",
-          "custom_position_tilt_only": "Bei Aktivierung wird nur der Lamellenwinkel (der Neigungswert) fixiert — die Sonnenverfolgung steuert weiterhin die Wagenposition. Nur für Jalousien mit Lamellenneigung. Setzt Minimummodus und Meine Position für diesen Slot außer Kraft."
+          "custom_position_tilt_only": "Bei Aktivierung wird nur der Lamellenwinkel (der Neigungswert) fixiert — die Sonnenverfolgung steuert weiterhin die Wagenposition. Nur für Jalousien mit Lamellenneigung. Setzt Minimummodus und Meine Position für diesen Slot außer Kraft.",
+          "custom_position_position_max": "Wenn gesetzt, fungiert die Position als Höchstgrenze, solange der Auslöser dieses Slots aktiv ist — niedrigere Positionen von der Sonnenverfolgung oder anderen Berechnungen werden zugelassen, alles darüber wird darauf begrenzt. Das Gegenstück zum Mindestmodus. Nicht gesetzt lassen für kein Maximum. Bei einem Konflikt mit einem Minimum gewinnt das Minimum.",
+          "custom_position_tilt_min": "Wenn gesetzt, fungiert die Neigung als Mindestwert, solange der Auslöser dieses Slots aktiv ist — eine berechnete Neigung darunter wird darauf angehoben, alles darüber bleibt unverändert. Anders als „Nur Neigung“ (das einen exakten Winkel festlegt) ist dies eine Grenze. Nur für Jalousien. Nicht gesetzt lassen für kein Minimum.",
+          "custom_position_tilt_max": "Wenn gesetzt, fungiert die Neigung als Höchstwert, solange der Auslöser dieses Slots aktiv ist — eine berechnete Neigung darüber wird darauf abgesenkt. Nur für Jalousien. Nicht gesetzt lassen für kein Maximum."
         }
       },
       "custom_position_tilt_defaults": {

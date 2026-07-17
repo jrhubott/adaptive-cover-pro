@@ -23,6 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (as minimum)",
+    "as_maximum": " (as maximum)",
     "safety": " 🔒 safety: acts outside the time window too",
     "template_value": "[template]"
   },
@@ -65,9 +66,14 @@
     "tilt_note": ", tilt {tilt}%",
     "trigger_sensors": "any of {n} sensors",
     "trigger_template": "template",
-    "trigger_join": " or "
+    "trigger_join": " or ",
+    "tilt_bound_min": ", tilt at least {min}%",
+    "tilt_bound_max": ", tilt at most {max}%",
+    "tilt_bound_range": ", tilt {min}–{max}%",
+    "no_position_claim": "the calculated position"
   },
   "warnings": {
+    "custom_position_bound_conflict": "⚠️ Custom #{slot}: the maximum ({max}%) is below the minimum ({min}%) — the minimum wins and the maximum is ignored.",
     "custom_tilt_only_conflict": "⚠️ Custom #{slot}: tilt only is on — Use as minimum / Use My position are ignored for this slot.",
     "motion_hold_no_sensors": "⚠️ hold_position mode is set but no occupancy sources are configured — the setting has no effect until an occupancy source is added",
     "cloudy_pos_ignored": "⚠️ Cloudy position ({pos}%) configured but cloud suppression is disabled — value will be ignored.",

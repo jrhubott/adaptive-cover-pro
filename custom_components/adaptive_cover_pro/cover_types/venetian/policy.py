@@ -84,6 +84,7 @@ from ...const import (
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import SecondaryAxisCheck
+from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from ...position_utils import PositionConverter
 from .._helpers import window_dimensions_lines
@@ -715,6 +716,24 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             cover_trace[TRACE_KEY_TILT] = tilt_trace
         position = result.position
         trace = list(result.decision_trace)
+
+        # Axis constraints (issue #943). The registry could not clamp this tilt
+        # — it did not exist yet, the engine just produced it — so it carried
+        # the composed bounds on the result instead. Apply them here, through
+        # the same shared clamp the registry uses: the arithmetic stays in the
+        # one pipeline helper, while the knowledge that a venetian resolves its
+        # tilt after the pipeline stays inside the venetian policy.
+        bounded = clamp_to_bounds(tilt, result.tilt_low, result.tilt_high)
+        if bounded != tilt:
+            trace.append(
+                tilt_clamp_step(
+                    from_tilt=tilt,
+                    to_tilt=bounded,
+                    label=result.tilt_bound_label or "constraint",
+                    source="tilt_clamp",
+                )
+            )
+            tilt = bounded
 
         if (
             self._venetian_mode == VENETIAN_MODE_TILT_ONLY

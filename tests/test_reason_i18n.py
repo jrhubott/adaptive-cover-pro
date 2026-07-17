@@ -267,6 +267,26 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {"tilt": 30, "handler": "solar", "winner_tilt": 45},
         "tilt-only 30% deferred — solar already set tilt 45%",
     ),
+    (
+        ReasonCode.REGISTRY_CEILING_LOWERED,
+        {"from_pos": 80, "to_pos": 60, "label": "Awning sensor"},
+        "ceiling lowered winner from 80% to 60% by Awning sensor",
+    ),
+    (
+        ReasonCode.REGISTRY_CEILING_INACTIVE,
+        {"ceiling_pos": 60, "winner_pos": 40},
+        "ceiling 60% inactive (winner 40% below ceiling)",
+    ),
+    (
+        ReasonCode.REGISTRY_TILT_BOUND_ACTIVE,
+        {"low_label": "50%", "high_label": "—", "label": "Door sensor"},
+        "tilt bound 50%–— active by Door sensor; awaiting the resolved tilt",
+    ),
+    (
+        ReasonCode.REGISTRY_TILT_CLAMPED,
+        {"from_tilt": 30, "to_tilt": 50, "label": "Door sensor"},
+        "tilt clamped from 30% to 50% by Door sensor",
+    ),
     # --- builder ---
     (ReasonCode.BUILDER_UNKNOWN, {}, "Unknown"),
     (ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT, {}, "Occupancy Timeout"),

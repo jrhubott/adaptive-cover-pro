@@ -855,10 +855,21 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(_build_custom_position_schema_dict())
 # #323). The `sensors` list key carries default=[] so a cleared multi-select
 # round-trips as [] on its own (it must NOT become None — None would re-enable
 # the legacy single-sensor fallback).
+# The axis-constraint keys (issue #943) are clearable too — an absent key is
+# how a constraint is turned off, so a cleared slider must round-trip to None.
 _CUSTOM_POSITION_OPTIONAL_KEYS: list[str] = [
     slot[field]
     for slot in CUSTOM_POSITION_SLOTS.values()
-    for field in ("name", "template", "position", "priority", "tilt")
+    for field in (
+        "name",
+        "template",
+        "position",
+        "priority",
+        "tilt",
+        "position_max",
+        "tilt_min",
+        "tilt_max",
+    )
 ] + [CONF_DEFAULT_TILT, CONF_SUNSET_TILT]
 
 # Built-in handler priority sliders: clearing one omits it from user_input, so
@@ -1419,6 +1430,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "words.source_plural": "sources",
     # --- shared fragments ---
     "fragments.as_minimum": " (as minimum)",
+    "fragments.as_maximum": " (as maximum)",
     "fragments.safety": " 🔒 safety: acts outside the time window too",
     "fragments.template_value": "[template]",
     # --- Weather safety (90) ---
@@ -1465,6 +1477,14 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "custom.trigger_sensors": "any of {n} sensors",
     "custom.trigger_template": "template",
     "custom.trigger_join": " or ",
+    "custom.tilt_bound_min": ", tilt at least {min}%",
+    "custom.tilt_bound_max": ", tilt at most {max}%",
+    "custom.tilt_bound_range": ", tilt {min}–{max}%",
+    "custom.no_position_claim": "the calculated position",
+    "warnings.custom_position_bound_conflict": (
+        "⚠️ Custom #{slot}: the maximum ({max}%) is below the minimum ({min}%) — "
+        "the minimum wins and the maximum is ignored."
+    ),
     "warnings.custom_tilt_only_conflict": (
         "⚠️ Custom #{slot}: tilt only is on — "
         "Use as minimum / Use My position are ignored for this slot."
@@ -1934,7 +1954,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # list of
     #   (slot, trigger_desc, position, priority, use_my, tilt, tilt_only,
     #    has_trigger)
-    _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool, bool]] = []
+    # ``position`` is None for a constraint-only slot (issue #943) — one that
+    # bounds an axis without naming a position.
+    _custom_slots: list[
+        tuple[int, str, int | None, int, bool, int | None, bool, bool]
+    ] = []
     _and_no_sensor_slots: list[int] = []
     # slot -> configured custom_position_name_N (issue #910); feeds the
     # Decision Priority chain's per-slot label below.
@@ -1971,7 +1995,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             (
                 _i,
                 _trigger,
-                int(_pos),
+                int(_pos) if _pos is not None else None,
                 _pri,
                 _use_my,
                 _slot_tilt,
@@ -2256,12 +2280,31 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     ),
                 )
             else:
-                target = _pos_label(_pos, _use_my)
-                cp_min = (
-                    L["fragments.as_minimum"]
-                    if config.get(f"custom_position_min_mode_{_slot}")
-                    else ""
+                _keys = CUSTOM_POSITION_SLOTS[_slot]
+                _pos_max = config.get(_keys["position_max"])
+                _is_min = bool(config.get(_keys["min_mode"]))
+                # A constraint-only slot names no position — the pipeline's own
+                # result is what gets clamped (issue #943).
+                target = (
+                    _pos_label(_pos, _use_my)
+                    if _pos is not None
+                    else L["custom.no_position_claim"]
                 )
+                cp_min = L["fragments.as_minimum"] if _is_min else ""
+                if _pos_max is not None:
+                    cp_min += L["fragments.as_maximum"]
+                # Tilt bounds (issue #943). Mutually exclusive with the fixed
+                # tilt note above — tilt_only is handled in the other branch.
+                _t_min = config.get(_keys["tilt_min"])
+                _t_max = config.get(_keys["tilt_max"])
+                if _t_min is not None and _t_max is not None:
+                    tilt_note += L["custom.tilt_bound_range"].format(
+                        min=_t_min, max=_t_max
+                    )
+                elif _t_min is not None:
+                    tilt_note += L["custom.tilt_bound_min"].format(min=_t_min)
+                elif _t_max is not None:
+                    tilt_note += L["custom.tilt_bound_max"].format(max=_t_max)
                 _open(
                     _pri,
                     _order,
@@ -2274,6 +2317,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                         safety=safety_note,
                     ),
                 )
+                # Footgun (issue #943): a ceiling below the floor. The clamp
+                # applies the floor last, so the floor silently wins — say so
+                # rather than let the user think the maximum is in effect.
+                if (
+                    _is_min
+                    and _pos is not None
+                    and _pos_max is not None
+                    and _pos_max < _pos
+                ):
+                    _sub(
+                        L["warnings.custom_position_bound_conflict"].format(
+                            slot=_slot, max=_pos_max, min=_pos
+                        )
+                    )
             # Mutual-exclusion warning: tilt_only wins over min_mode / use_my
             # (issue #514). Surface the conflict so the user knows the latter two
             # are ignored for that slot.
@@ -3188,6 +3245,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             "template_mode",
             "tilt",
             "tilt_only",
+            "position_max",
+            "tilt_min",
+            "tilt_max",
         )
     )
     | {CONF_DEFAULT_TILT, CONF_SUNSET_TILT},
@@ -3750,7 +3810,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # The v3.7→v3.8 block setdefault-seeds the new blind_spot_*_gamma keys from
     # the legacy FOV-relative edges; legacy keys are retained (read-only).
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 8
+    MINOR_VERSION = 9
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -4527,7 +4587,18 @@ class OptionsFlowHandler(OptionsFlow):
             # Fill cleared optional (no-default) fields so a clear round-trips.
             form_optional = [
                 CUSTOM_POSITION_FORM_KEYS[sub]
-                for sub in ("name", "template", "position", "priority", "tilt")
+                for sub in (
+                    "name",
+                    "template",
+                    "position",
+                    "priority",
+                    "tilt",
+                    # Axis constraints (issue #943): clearing one is how the
+                    # user turns the constraint off, so it must round-trip.
+                    "position_max",
+                    "tilt_min",
+                    "tilt_max",
+                )
             ]
             self.optional_entities(form_optional, user_input)
             mapped = {

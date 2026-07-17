@@ -1126,6 +1126,18 @@ def _custom_position_base_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
+        # Position ceiling (issue #943) — the mirror of `min_mode`'s floor.
+        # Absent = off, so no DEFAULT_* constant exists for it.
+        specs.append(
+            FieldSpec(
+                slot["position_max"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_CUSTOM_POSITION,
+                clearable=True,
+                make_selector=_const(position_slider),
+            )
+        )
     return specs
 
 
@@ -1152,6 +1164,19 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
+        # Tilt bounds (issue #943). Absent = off. `tilt_only` (a FIXED tilt
+        # claim) wins over these — normalized once in the snapshot builder.
+        for sub in ("tilt_min", "tilt_max"):
+            specs.append(
+                FieldSpec(
+                    slot[sub],
+                    SECTION_CUSTOM_POSITION,
+                    ValidatorKind.RANGE,
+                    rng=const._RANGE_TILT,
+                    clearable=True,
+                    make_selector=_const(position_slider),
+                )
+            )
     specs.append(
         FieldSpec(
             CONF_DEFAULT_TILT,
@@ -1204,11 +1229,17 @@ def _custom_position_slot_fields(
     schema[vol.Optional(keys["priority"])] = priority_slider()
     schema[vol.Optional(keys["min_mode"], default=False)] = selector.BooleanSelector()
     schema[vol.Optional(keys["use_my"], default=False)] = selector.BooleanSelector()
+    # Axis constraints (issue #943). The position ceiling always renders; the
+    # tilt bounds ride the same `include_tilt` gate as `tilt` / `tilt_only`,
+    # which the caller derives from the policy — never from a cover-type string.
+    schema[vol.Optional(keys["position_max"])] = position_slider()
     if include_tilt:
         schema[vol.Optional(keys["tilt"])] = position_slider()
         schema[vol.Optional(keys["tilt_only"], default=False)] = (
             selector.BooleanSelector()
         )
+        schema[vol.Optional(keys["tilt_min"])] = position_slider()
+        schema[vol.Optional(keys["tilt_max"])] = position_slider()
     return schema
 
 

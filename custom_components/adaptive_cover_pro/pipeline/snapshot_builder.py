@@ -142,6 +142,18 @@ def _delta_time_minutes(value: object) -> int:
     return int(value)
 
 
+def _opt_int(options: dict, key: str) -> int | None:
+    """Read an optional numeric option as ``int``, or ``None`` when absent.
+
+    Absent means "the constraint is off" (issue #943) — there is deliberately
+    no ``DEFAULT_*`` for the axis-constraint keys, so a missing key and an
+    explicitly cleared one both read as None. ``0`` is a meaningful value and
+    must survive, so this tests ``is None`` rather than truthiness.
+    """
+    raw = options.get(key)
+    return int(raw) if raw is not None else None
+
+
 class PipelineSnapshotBuilder:
     """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`."""
 
@@ -327,11 +339,33 @@ class PipelineSnapshotBuilder:
             if tilt_only:
                 min_mode = False
                 use_my = False
+
+            # --- Axis constraints (issue #943) --------------------------------
+            # A constraint-only slot (e.g. trigger → minimum tilt) carries no
+            # position; None means "makes no position claim", distinct from 0.
+            position = _opt_int(options, slot_keys["position"])
+            position_max = _opt_int(options, slot_keys["position_max"])
+            tilt_min = _opt_int(options, slot_keys["tilt_min"])
+            tilt_max = _opt_int(options, slot_keys["tilt_max"])
+            # Same mutual-exclusion pass as min_mode / use_my above: tilt_only
+            # fixes the slat angle and lets the position pipeline drive the
+            # carriage, so the slot carries no bounds on either axis. The My
+            # path is hardware-pinned — a position ceiling cannot apply to it.
+            # Normalizing the stored values here (rather than only deriving
+            # around them) keeps what diagnostics surface honest about what is
+            # actually in effect.
+            if tilt_only:
+                position_max = None
+                tilt_min = None
+                tilt_max = None
+            elif use_my:
+                position_max = None
+
             result.append(
                 CustomPositionSensorState(
                     entity_ids=tuple(sensors),
                     is_on=is_on,
-                    position=int(options.get(slot_keys["position"])),
+                    position=position,
                     priority=priority,
                     min_mode=min_mode,
                     use_my=use_my,
@@ -342,6 +376,9 @@ class PipelineSnapshotBuilder:
                     active_entity_ids=active,
                     template_active=template_active,
                     custom_name=custom_name,
+                    position_max=position_max,
+                    tilt_min=tilt_min,
+                    tilt_max=tilt_max,
                 )
             )
         return result

@@ -3650,3 +3650,101 @@ def test_summary_group_shows_area_line_when_configured():
         {**base, CONF_GROUP_AREA: "living_room"}, CoverType.GROUP
     )
     assert "living_room" in with_area
+
+
+# ---------------------------------------------------------------------------
+# Axis constraints on the custom-slot lines — issue #943
+# ---------------------------------------------------------------------------
+
+
+def _custom_line(cfg, slot=1, cover_type=CoverType.BLIND):
+    summary = _build_config_summary(cfg, cover_type)
+    return next(ln for ln in summary.splitlines() if f"Custom #{slot}" in ln)
+
+
+def test_custom_position_max_shown():
+    """A position ceiling renders '(as maximum)' on the slot line."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.movie"],
+        "custom_position_position_max_1": 60,
+    }
+    assert "(as maximum)" in _custom_line(cfg)
+
+
+def test_custom_position_min_and_max_both_shown():
+    """A two-sided position bound names both ends."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.movie"],
+        "custom_position_1": 30,
+        "custom_position_min_mode_1": True,
+        "custom_position_position_max_1": 70,
+    }
+    line = _custom_line(cfg)
+    assert "(as minimum)" in line
+    assert "(as maximum)" in line
+
+
+def test_custom_tilt_min_note_shown():
+    """A minimum tilt is surfaced on the slot line."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.door"],
+        "custom_position_tilt_min_1": 50,
+    }
+    line = _custom_line(cfg, cover_type=CoverType.VENETIAN)
+    assert "tilt at least 50%" in line
+
+
+def test_custom_tilt_max_note_shown():
+    """A maximum tilt is surfaced on the slot line."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.door"],
+        "custom_position_tilt_max_1": 60,
+    }
+    assert "tilt at most 60%" in _custom_line(cfg, cover_type=CoverType.VENETIAN)
+
+
+def test_custom_tilt_range_note_shown():
+    """A two-sided tilt bound renders as a range."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.door"],
+        "custom_position_tilt_min_1": 40,
+        "custom_position_tilt_max_1": 80,
+    }
+    assert "tilt 40–80%" in _custom_line(cfg, cover_type=CoverType.VENETIAN)
+
+
+def test_custom_position_conflict_warning():
+    """A ceiling below the floor is a footgun — the floor silently wins."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.movie"],
+        "custom_position_1": 70,
+        "custom_position_min_mode_1": True,
+        "custom_position_position_max_1": 40,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️" in summary
+    assert any(
+        "maximum" in ln and "minimum" in ln and "⚠️" in ln
+        for ln in summary.splitlines()
+    )
+
+
+def test_no_constraint_note_without_constraints():
+    """A legacy slot's line is unchanged."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.movie"],
+        "custom_position_1": 40,
+    }
+    line = _custom_line(cfg)
+    assert "as maximum" not in line
+    assert "tilt at least" not in line
+
+
+def test_constraint_only_slot_renders_without_a_position():
+    """The reporter's config: a trigger and a tilt minimum, no position."""
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.door"],
+        "custom_position_tilt_min_1": 50,
+    }
+    line = _custom_line(cfg, cover_type=CoverType.VENETIAN)
+    assert "tilt at least 50%" in line

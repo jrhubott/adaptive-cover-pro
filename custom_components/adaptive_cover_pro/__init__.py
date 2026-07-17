@@ -643,6 +643,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         new_minor = 8
 
+    # v3.8 → v3.9: added the additive per-slot axis-constraint options —
+    # custom_position_position_max_N / _tilt_min_N / _tilt_max_N (issue #943).
+    # An absent key already reads as "constraint off", so nothing needs seeding
+    # — this is a no-op minor bump kept only to advance entries sitting at minor
+    # 8 to 9 so they stop re-triggering migration every restart (the v3.6 → v3.7
+    # precedent). Rollback-safe: min_mode / tilt_only remain the stored wire
+    # format and are untouched, so an older build finds its config exactly as it
+    # left it and simply ignores the new keys.
+    if new_version == 3 and new_minor < 9:
+        new_minor = 9
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

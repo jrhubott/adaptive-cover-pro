@@ -1091,3 +1091,102 @@ class TestCustomPositionCustomName:
         assert result.use_my_position is True
         assert result.reason.startswith("Nap time active")
         assert result.custom_position_active_slot_name == "Nap time"
+
+
+# ---------------------------------------------------------------------------
+# Axis-constraint deferral — issue #943
+#
+# The deferral generalizes from "min_mode and not use_my" to "position_mode is
+# not FIXED and not use_my". Every pre-#943 config keeps its exact outcome; the
+# new constraint modes defer for the same reason min_mode always has — the
+# registry composes them onto whichever handler actually wins.
+# ---------------------------------------------------------------------------
+
+
+def _constraint_state(
+    *,
+    position: int | None = None,
+    min_mode: bool = False,
+    use_my: bool = False,
+    position_max: int | None = None,
+    tilt_min: int | None = None,
+    tilt_max: int | None = None,
+    tilt: int | None = None,
+    tilt_only: bool = False,
+) -> CustomPositionSensorState:
+    return CustomPositionSensorState(
+        entity_ids=(_ENTITY,),
+        is_on=True,
+        position=position,
+        priority=_DEFAULT_PRIORITY,
+        min_mode=min_mode,
+        use_my=use_my,
+        tilt=tilt,
+        tilt_only=tilt_only,
+        slot=1,
+        active_entity_ids=(_ENTITY,),
+        position_max=position_max,
+        tilt_min=tilt_min,
+        tilt_max=tilt_max,
+    )
+
+
+class TestConstraintModeDeferral:
+    """Non-FIXED position modes defer so the registry can compose them."""
+
+    def test_max_mode_slot_defers(self) -> None:
+        """A position-ceiling slot must not claim an exact position."""
+        snap = make_snapshot(
+            custom_position_sensors=[_constraint_state(position_max=60)]
+        )
+        assert _handler().evaluate(snap) is None
+
+    def test_range_mode_slot_defers(self) -> None:
+        """A floor+ceiling slot defers, exactly as a floor-only slot does."""
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _constraint_state(position=30, min_mode=True, position_max=70)
+            ]
+        )
+        assert _handler().evaluate(snap) is None
+
+    def test_none_mode_slot_defers(self) -> None:
+        """A tilt-bound-only slot makes no position claim at all."""
+        snap = make_snapshot(custom_position_sensors=[_constraint_state(tilt_min=50)])
+        assert _handler().evaluate(snap) is None
+
+    def test_fixed_mode_slot_still_claims(self) -> None:
+        """The exact-position path is unchanged."""
+        snap = make_snapshot(custom_position_sensors=[_constraint_state(position=50)])
+        result = _handler(position=50).evaluate(snap)
+        assert result is not None
+        assert result.position == 50
+
+    def test_min_mode_slot_still_defers(self) -> None:
+        """Parity: today's floor-mode deferral is unchanged."""
+        snap = make_snapshot(
+            custom_position_sensors=[_constraint_state(position=60, min_mode=True)]
+        )
+        assert _handler().evaluate(snap) is None
+
+    def test_use_my_with_min_mode_still_claims(self) -> None:
+        """Parity: the My path ignores floor semantics and claims (unchanged)."""
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _constraint_state(position=60, min_mode=True, use_my=True)
+            ],
+            my_position_value=42,
+        )
+        result = _handler().evaluate(snap)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.position == 42
+
+    def test_tilt_bounds_do_not_stop_a_fixed_position_claim(self) -> None:
+        """A slot may fix a position and bound the tilt at the same time."""
+        snap = make_snapshot(
+            custom_position_sensors=[_constraint_state(position=50, tilt_min=50)]
+        )
+        result = _handler(position=50).evaluate(snap)
+        assert result is not None
+        assert result.position == 50

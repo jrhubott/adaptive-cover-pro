@@ -199,7 +199,7 @@ from ..const import (
     DOMAIN,
     OPTION_RANGES,
 )
-from ..helpers import custom_position_slot_sensors
+from ..helpers import CUSTOM_POSITION_CLAIM_KEYS, custom_position_slot_sensors
 from ..templates import is_template_string as _is_template_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -494,6 +494,14 @@ FIELD_VALIDATORS: dict[str, Any] = {
     **{
         slot_keys["tilt"]: _range(slot_keys["tilt"])
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
+    # Axis constraints (issue #943) — all three pull their bounds from
+    # OPTION_RANGES, which the FieldSpec registry derives from the same
+    # _RANGE_CUSTOM_POSITION / _RANGE_TILT the config-flow selectors use.
+    **{
+        slot_keys[sub]: _range(slot_keys[sub])
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+        for sub in ("position_max", "tilt_min", "tilt_max")
     },
     **{slot_keys["enabled"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     # Glare zones 1–4 — name is free-form text; x/y/radius/z pull ranges from
@@ -974,19 +982,24 @@ def _cross_field_validate(
             )
 
     # Custom position slot completeness: a slot needs a trigger (sensors,
-    # legacy sensor, or template) AND a position — or neither.
+    # legacy sensor, or template) AND a claim on an axis — or neither. The
+    # claim vocabulary is CUSTOM_POSITION_CLAIM_KEYS: a position, or one of the
+    # axis constraints (issue #943), so a trigger → "minimum tilt 50%" slot is
+    # complete without a position.
     for i in CUSTOM_POSITION_SLOT_NUMBERS if check_slot_completeness else ():
         slot = _CUSTOM_SLOT_KEYS[i]
         trigger_keys = (slot["sensor"], slot["sensors"], slot["template"])
-        p_key = slot["position"]
-        if any(k in patch for k in trigger_keys) or p_key in patch:
+        claim_keys = tuple(slot[sub] for sub in CUSTOM_POSITION_CLAIM_KEYS)
+        if any(k in patch for k in trigger_keys + claim_keys):
             has_trigger = bool(
                 custom_position_slot_sensors(merged_active, slot)
             ) or _is_template_str(merged_active.get(slot["template"]))
-            pos_set = merged_active.get(p_key) is not None
-            if has_trigger != pos_set:
+            has_claim = any(merged_active.get(k) is not None for k in claim_keys)
+            if has_trigger != has_claim:
                 missing = (
-                    p_key if has_trigger else f"{slot['sensors']} or {slot['template']}"
+                    f"{slot['position']} (or an axis constraint)"
+                    if has_trigger
+                    else f"{slot['sensors']} or {slot['template']}"
                 )
                 raise ServiceValidationError(
                     f"Custom position slot {i}: incomplete — '{missing}' is missing. "
@@ -1159,6 +1172,10 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         "min_mode": slot_keys["min_mode"],
         "use_my": slot_keys["use_my"],
         "enabled": slot_keys["enabled"],
+        # Axis constraints (issue #943)
+        "position_max": slot_keys["position_max"],
+        "tilt_min": slot_keys["tilt_min"],
+        "tilt_max": slot_keys["tilt_max"],
     }
 
     # Build patch: only include fields that were supplied in the call

@@ -32,6 +32,7 @@ from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_TRACKING_SEASONS,
+    AxisConstraintMode,
     TrackingSeason,
 )
 from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
@@ -803,3 +804,209 @@ def test_read_climate_use_lux_inferred_from_cloud_suppression():
     builder.read_climate(opts)
     _, kwargs = climate_provider.read.call_args
     assert kwargs["use_lux"] is True
+
+
+# ---------------------------------------------------------------------------
+# Axis-constraint derivation — issue #943
+#
+# The stored wire format stays the min_mode / tilt_only booleans plus the
+# optional numeric constraint keys; the per-axis mode is DERIVED here, at the
+# one normalization site, and never persisted.
+# ---------------------------------------------------------------------------
+
+
+def _constraint_builder(slot_keys: dict, opts: dict):
+    """Read one slot whose trigger sensor is on, and return its state."""
+    on_state = MagicMock()
+    on_state.state = "on"
+    builder, _, _ = _make_builder(states={"binary_sensor.trigger": on_state})
+    merged = {slot_keys["sensors"]: ["binary_sensor.trigger"], **opts}
+    out = builder.read_custom_position_sensors(merged)
+    assert len(out) == 1
+    return out[0]
+
+
+@pytest.mark.unit
+def test_constraint_keys_land_on_state():
+    """position_max / tilt_min / tilt_max are carried onto the slot state."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["position"]: 30,
+            keys["position_max"]: 70,
+            keys["tilt_min"]: 40,
+            keys["tilt_max"]: 80,
+        },
+    )
+    assert state.position_max == 70
+    assert state.tilt_min == 40
+    assert state.tilt_max == 80
+
+
+@pytest.mark.unit
+def test_constraint_keys_default_to_none():
+    """A legacy slot carries no constraints — every new field reads None."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30})
+    assert state.position_max is None
+    assert state.tilt_min is None
+    assert state.tilt_max is None
+
+
+# --- Position axis ---------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_position_mode_fixed_for_legacy_exact_slot():
+    """A plain position slot claims the position axis exactly — parity."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30})
+    assert state.position_mode is AxisConstraintMode.FIXED
+
+
+@pytest.mark.unit
+def test_position_mode_min_for_legacy_min_mode_slot():
+    """min_mode reads as a position floor — parity with today's floor pass."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30, keys["min_mode"]: True})
+    assert state.position_mode is AxisConstraintMode.MIN
+
+
+@pytest.mark.unit
+def test_position_mode_range_for_min_mode_plus_position_max():
+    """min_mode + position_max is a two-sided position bound."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["position"]: 30, keys["min_mode"]: True, keys["position_max"]: 70},
+    )
+    assert state.position_mode is AxisConstraintMode.RANGE
+
+
+@pytest.mark.unit
+def test_position_mode_max_for_position_max_only():
+    """position_max alone defers the position and clamps it down."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position_max"]: 70})
+    assert state.position_mode is AxisConstraintMode.MAX
+
+
+@pytest.mark.unit
+def test_position_mode_none_for_tilt_only_slot():
+    """tilt_only makes no position claim — parity with today's deferral."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["position"]: 30, keys["tilt"]: 50, keys["tilt_only"]: True},
+    )
+    assert state.position_mode is AxisConstraintMode.NONE
+
+
+@pytest.mark.unit
+def test_position_mode_none_when_no_position_claim():
+    """Trigger + tilt_min only: the slot is present but claims no position."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["tilt_min"]: 50})
+    assert state.position_mode is AxisConstraintMode.NONE
+    assert state.tilt_mode is AxisConstraintMode.MIN
+
+
+@pytest.mark.unit
+def test_use_my_keeps_my_path_and_drops_position_max():
+    """The My path is hardware-pinned — orthogonal to the constraint model."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["position"]: 30, keys["use_my"]: True, keys["position_max"]: 70},
+    )
+    assert state.use_my is True
+    assert state.position_max is None
+
+
+@pytest.mark.unit
+def test_tilt_only_normalizes_position_max_off():
+    """tilt_only wins: the slot's position-axis constraints are dropped."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt"]: 50, keys["tilt_only"]: True, keys["position_max"]: 70},
+    )
+    assert state.position_max is None
+
+
+# --- Tilt axis -------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_tilt_mode_none_for_legacy_slot():
+    """A slot with no tilt configuration claims nothing on the tilt axis."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30})
+    assert state.tilt_mode is AxisConstraintMode.NONE
+
+
+@pytest.mark.unit
+def test_tilt_mode_fixed_for_tilt_only_slot():
+    """tilt_only + a tilt value is an exact tilt claim — parity with #514.
+
+    A tilt-only slot still stores a position (the pre-#943 gate requires one);
+    tilt_only is what makes the slot ignore it on the position axis.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys, {keys["position"]: 30, keys["tilt"]: 50, keys["tilt_only"]: True}
+    )
+    assert state.tilt_mode is AxisConstraintMode.FIXED
+
+
+@pytest.mark.unit
+def test_tilt_mode_none_for_tilt_only_without_tilt_value():
+    """A tilt-only slot with no slat angle contributes nothing — parity."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30, keys["tilt_only"]: True})
+    assert state.tilt_mode is AxisConstraintMode.NONE
+
+
+@pytest.mark.unit
+def test_tilt_mode_min_for_tilt_min_only():
+    """The reporter's ask: a minimum tilt boundary."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30, keys["tilt_min"]: 50})
+    assert state.tilt_mode is AxisConstraintMode.MIN
+
+
+@pytest.mark.unit
+def test_tilt_mode_max_for_tilt_max_only():
+    """A maximum tilt boundary."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(keys, {keys["position"]: 30, keys["tilt_max"]: 60})
+    assert state.tilt_mode is AxisConstraintMode.MAX
+
+
+@pytest.mark.unit
+def test_tilt_mode_range_for_both_tilt_bounds():
+    """Both bounds set is a two-sided tilt range."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys, {keys["position"]: 30, keys["tilt_min"]: 40, keys["tilt_max"]: 80}
+    )
+    assert state.tilt_mode is AxisConstraintMode.RANGE
+
+
+@pytest.mark.unit
+def test_tilt_only_wins_over_tilt_bounds():
+    """FIXED beats MIN/MAX on the tilt axis, mirroring tilt_only's precedence."""
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["tilt"]: 50,
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 20,
+            keys["tilt_max"]: 80,
+        },
+    )
+    assert state.tilt_mode is AxisConstraintMode.FIXED
+    assert state.tilt_min is None
+    assert state.tilt_max is None

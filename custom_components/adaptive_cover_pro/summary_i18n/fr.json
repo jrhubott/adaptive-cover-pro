@@ -23,6 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (comme minimum)",
+    "as_maximum": " (comme maximum)",
     "safety": " 🔒 sécurité : agit aussi en dehors de la fenêtre horaire",
     "template_value": "[template]"
   },
@@ -65,9 +66,14 @@
     "tilt_note": ", inclinaison {tilt}%",
     "trigger_sensors": "l'un des {n} capteurs",
     "trigger_template": "template",
-    "trigger_join": " ou "
+    "trigger_join": " ou ",
+    "tilt_bound_min": ", inclinaison d'au moins {min}%",
+    "tilt_bound_max": ", inclinaison d'au plus {max}%",
+    "tilt_bound_range": ", inclinaison {min}–{max}%",
+    "no_position_claim": "la position calculée"
   },
   "warnings": {
+    "custom_position_bound_conflict": "⚠️ Personnalisé #{slot} : le maximum ({max}%) est inférieur au minimum ({min}%) — le minimum l'emporte et le maximum est ignoré.",
     "custom_tilt_only_conflict": "⚠️ Personnalisé #{slot} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
     "motion_hold_no_sensors": "Aucun capteur d'occupation configuré. La détection d'occupation est désactivée.",
     "cloudy_pos_ignored": "⚠️ Position nuageux ({pos}%) configurée mais suppression de nuages est désactivée — la valeur sera ignorée.",
