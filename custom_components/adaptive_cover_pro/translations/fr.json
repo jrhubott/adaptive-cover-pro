@@ -86,7 +86,10 @@
           "sliding_point1_y": "Point d'ombrage 1 — Vers l'intérieur (Y)",
           "sliding_point2_x": "Point d'ombrage 2 — Le long du mur (X)",
           "sliding_point2_y": "Point d'ombrage 2 — Vers l'intérieur (Y)",
-          "tilt_safety_margin": "Marge de sécurité d'inclinaison"
+          "tilt_safety_margin": "Marge de sécurité d'inclinaison",
+          "tilt_mode": "Mode d'inclinaison",
+          "tilt_angle_0": "Angle d'inclinaison à 0%",
+          "tilt_angle_100": "Angle d'inclinaison à 100%"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -131,7 +134,10 @@
           "sliding_point1_y": "Profondeur du point 1 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre.",
           "sliding_point2_x": "Position le long du mur du point 2 de la zone d'ombrage, mesurée à partir du centre de la fenêtre (0), positive vers la droite en regardant la fenêtre de l'intérieur. Affichée dans l'unité configurée pour Home Assistant. Même système de coordonnées que les zones d'éblouissement.",
           "sliding_point2_y": "Profondeur du point 2 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre.",
-          "tilt_safety_margin": "Marge supplémentaire de fermeture des lamelles pour le soleil en bord de vue sur les stores d'inclinaison, 0,0–1,0. Met à l'échelle la marge de géométrie automatique dépendante de l'angle que l'axe vertical applique déjà, mais dans la direction de fermeture des lamelles. Par défaut, 0,0 conserve l'angle exact de rasance (comportement actuel) ; augmentez vers 1,0 pour fermer légèrement plus les lamelles lors des angles de soleil extrêmes afin qu'une trace de soleil direct ne s'échappe pas. Préférez cela à l'abaissement de l'Inclinaison Maximale des Lamelles (%), qui est un plafond global brutal."
+          "tilt_safety_margin": "Marge supplémentaire de fermeture des lamelles pour le soleil en bord de vue sur les stores d'inclinaison, 0,0–1,0. Met à l'échelle la marge de géométrie automatique dépendante de l'angle que l'axe vertical applique déjà, mais dans la direction de fermeture des lamelles. Par défaut, 0,0 conserve l'angle exact de rasance (comportement actuel) ; augmentez vers 1,0 pour fermer légèrement plus les lamelles lors des angles de soleil extrêmes afin qu'une trace de soleil direct ne s'échappe pas. Préférez cela à l'abaissement de l'Inclinaison Maximale des Lamelles (%), qui est un plafond global brutal.",
+          "tilt_mode": "Comment le pourcentage d'inclinaison correspond à l'angle des lamelles. **Direction unique** (0% = fermé / 100% = ouvert) : les lamelles se tournent d'un seul côté. **Bidirectionnel** (0% = fermé / 50% = ouvert / 100% = fermé) : les lamelles s'ouvrent à 50% et se ferment dans chaque direction. **Spécifier les angles** : définissez l'angle exact des lamelles brutes à 0% et 100% d'inclinaison ci-dessous, pour le matériel dont la course ne correspond à aucun préréglage.",
+          "tilt_angle_0": "Angle brut de la lamelle quand le store signale 0% d'inclinaison : 0° = fermé vers le bas, 90° = horizontal, 180° = fermé vers le haut. Utilisé uniquement lorsque le mode d'inclinaison est défini sur Spécifier les angles.",
+          "tilt_angle_100": "Angle brut de la lamelle quand le store signale 100% d'inclinaison : 0° = fermé vers le bas, 90° = horizontal, 180° = fermé vers le haut. Utilisé uniquement lorsque le mode d'inclinaison est défini sur Spécifier les angles."
         }
       },
       "duplicate_select": {
@@ -342,7 +348,10 @@
           "sliding_point1_y": "Point d'ombrage 1 — Vers l'intérieur (Y)",
           "sliding_point2_x": "Point d'ombrage 2 — Le long du mur (X)",
           "sliding_point2_y": "Point d'ombrage 2 — Vers l'intérieur (Y)",
-          "tilt_safety_margin": "Marge de sécurité d'inclinaison"
+          "tilt_safety_margin": "Marge de sécurité d'inclinaison",
+          "tilt_mode": "Mode d'inclinaison",
+          "tilt_angle_0": "Angle d'inclinaison à 0%",
+          "tilt_angle_100": "Angle d'inclinaison à 100%"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -387,7 +396,10 @@
           "sliding_point1_y": "Profondeur du point 1 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre.",
           "sliding_point2_x": "Position le long du mur du point 2 de la zone d'ombrage, mesurée à partir du centre de la fenêtre (0), positive vers la droite en regardant la fenêtre de l'intérieur. Affichée dans l'unité configurée pour Home Assistant. Même système de coordonnées que les zones d'éblouissement.",
           "sliding_point2_y": "Profondeur du point 2 de la zone d'ombrage dans la pièce, mesurée à partir du plan de la fenêtre (doit être supérieure à 0). Affichée dans l'unité configurée pour Home Assistant. Les deux points délimitent la zone de sol que vous souhaitez garder dans l'ombre.",
-          "tilt_safety_margin": "Marge supplémentaire de fermeture des lamelles pour le soleil en bord de vue sur les stores d'inclinaison, 0,0–1,0. Met à l'échelle la marge de géométrie automatique dépendante de l'angle que l'axe vertical applique déjà, mais dans la direction de fermeture des lamelles. Par défaut, 0,0 conserve l'angle exact de rasance (comportement actuel) ; augmentez vers 1,0 pour fermer légèrement plus les lamelles lors des angles de soleil extrêmes afin qu'une trace de soleil direct ne s'échappe pas. Préférez cela à l'abaissement de l'Inclinaison Maximale des Lamelles (%), qui est un plafond global brutal."
+          "tilt_safety_margin": "Marge supplémentaire de fermeture des lamelles pour le soleil en bord de vue sur les stores d'inclinaison, 0,0–1,0. Met à l'échelle la marge de géométrie automatique dépendante de l'angle que l'axe vertical applique déjà, mais dans la direction de fermeture des lamelles. Par défaut, 0,0 conserve l'angle exact de rasance (comportement actuel) ; augmentez vers 1,0 pour fermer légèrement plus les lamelles lors des angles de soleil extrêmes afin qu'une trace de soleil direct ne s'échappe pas. Préférez cela à l'abaissement de l'Inclinaison Maximale des Lamelles (%), qui est un plafond global brutal.",
+          "tilt_mode": "Comment le pourcentage d'inclinaison correspond à l'angle des lamelles. **Direction unique** (0% = fermé / 100% = ouvert) : les lamelles se tournent d'un seul côté. **Bidirectionnel** (0% = fermé / 50% = ouvert / 100% = fermé) : les lamelles s'ouvrent à 50% et se ferment dans chaque direction. **Spécifier les angles** : définissez l'angle exact des lamelles brutes à 0% et 100% d'inclinaison ci-dessous, pour le matériel dont la course ne correspond à aucun préréglage.",
+          "tilt_angle_0": "Angle brut de la lamelle quand le store signale 0% d'inclinaison : 0° = fermé vers le bas, 90° = horizontal, 180° = fermé vers le haut. Utilisé uniquement lorsque le mode d'inclinaison est défini sur Spécifier les angles.",
+          "tilt_angle_100": "Angle brut de la lamelle quand le store signale 100% d'inclinaison : 0° = fermé vers le bas, 90° = horizontal, 180° = fermé vers le haut. Utilisé uniquement lorsque le mode d'inclinaison est défini sur Spécifier les angles."
         }
       },
       "sun_tracking": {

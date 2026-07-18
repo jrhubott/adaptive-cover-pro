@@ -86,7 +86,10 @@
           "sliding_point1_y": "Schattenpunkt 1 – In den Raum (Y)",
           "sliding_point2_x": "Schattenpunkt 2 – Entlang der Wand (X)",
           "sliding_point2_y": "Schattenpunkt 2 – In den Raum (Y)",
-          "tilt_safety_margin": "Neigungs-Sicherheitsmarge"
+          "tilt_safety_margin": "Neigungs-Sicherheitsmarge",
+          "tilt_mode": "Neigungsmodus",
+          "tilt_angle_0": "Neigungswinkel bei 0%",
+          "tilt_angle_100": "Neigungswinkel bei 100%"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -131,7 +134,10 @@
           "sliding_point1_y": "Tiefe des Beschattungspunkts 1 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll.",
           "sliding_point2_x": "Position des Beschattungspunkts 2 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
           "sliding_point2_y": "Tiefe des Beschattungspunkts 2 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll.",
-          "tilt_safety_margin": "Zusätzlicher Lamellen-Schließmargen für Sonnenlicht am Rand des Sichtbereichs bei Neigungs-Abdeckungen, 0,0–1,0. Skaliert die automatische, winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, aber in Schließrichtung der Lamellen. Standard 0,0 behält den exakten Streifwinkel (heutiges Verhalten) bei; erhöhen Sie bis 1,0, um die Lamellen bei extremen Sonnenwinkeln etwas stärker zu schließen, damit kein direktes Sonnenlicht hindurchdringt. Bevorzugen Sie dies gegenüber einer Senkung der maximalen Lamellenneigung, die eine pauschale globale Obergrenze darstellt."
+          "tilt_safety_margin": "Zusätzlicher Lamellen-Schließmargen für Sonnenlicht am Rand des Sichtbereichs bei Neigungs-Abdeckungen, 0,0–1,0. Skaliert die automatische, winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, aber in Schließrichtung der Lamellen. Standard 0,0 behält den exakten Streifwinkel (heutiges Verhalten) bei; erhöhen Sie bis 1,0, um die Lamellen bei extremen Sonnenwinkeln etwas stärker zu schließen, damit kein direktes Sonnenlicht hindurchdringt. Bevorzugen Sie dies gegenüber einer Senkung der maximalen Lamellenneigung, die eine pauschale globale Obergrenze darstellt.",
+          "tilt_mode": "Wie der Neigungsprozentsatz auf den Lamellenwinkel abgebildet wird. **Einfache Richtung** (0% = geschlossen / 100% = offen): Die Lamellen drehen sich in nur eine Richtung. **Bidirektional** (0% = geschlossen / 50% = offen / 100% = geschlossen): Die Lamellen öffnen sich bei 50% und schließen sich in beide Richtungen. **Winkel angeben**: Legen Sie den exakten Rohlamellenwinkel bei 0% und 100% Neigung unten fest, für Hardware, deren Bewegungsbereich keiner der Voreinstellungen entspricht.",
+          "tilt_angle_0": "Rohlamellenwinkel, wenn die Beschattung 0% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
+          "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist."
         }
       },
       "duplicate_select": {
@@ -342,7 +348,10 @@
           "sliding_point1_y": "Schattenpunkt 1 – In den Raum (Y)",
           "sliding_point2_x": "Schattenpunkt 2 – Entlang der Wand (X)",
           "sliding_point2_y": "Schattenpunkt 2 – In den Raum (Y)",
-          "tilt_safety_margin": "Neigungs-Sicherheitsmarge"
+          "tilt_safety_margin": "Neigungs-Sicherheitsmarge",
+          "tilt_mode": "Neigungsmodus",
+          "tilt_angle_0": "Neigungswinkel bei 0%",
+          "tilt_angle_100": "Neigungswinkel bei 100%"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -387,7 +396,10 @@
           "sliding_point1_y": "Tiefe des Beschattungspunkts 1 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll.",
           "sliding_point2_x": "Position des Beschattungspunkts 2 entlang der Wand, gemessen von der Fenstermitte (0), positiv nach rechts von innen. Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Gleiches Koordinatensystem wie Blendungszonen.",
           "sliding_point2_y": "Tiefe des Beschattungspunkts 2 in den Raum, gemessen von der Fensterebene (muss größer als 0 sein). Wird in der Einheit angezeigt, die Home Assistant konfiguriert hat. Die zwei Punkte begrenzen die Bodenfläche, die im Schatten bleiben soll.",
-          "tilt_safety_margin": "Zusätzlicher Lamellen-Schließmargen für Sonnenlicht am Rand des Sichtbereichs bei Neigungs-Abdeckungen, 0,0–1,0. Skaliert die automatische, winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, aber in Schließrichtung der Lamellen. Standard 0,0 behält den exakten Streifwinkel (heutiges Verhalten) bei; erhöhen Sie bis 1,0, um die Lamellen bei extremen Sonnenwinkeln etwas stärker zu schließen, damit kein direktes Sonnenlicht hindurchdringt. Bevorzugen Sie dies gegenüber einer Senkung der maximalen Lamellenneigung, die eine pauschale globale Obergrenze darstellt."
+          "tilt_safety_margin": "Zusätzlicher Lamellen-Schließmargen für Sonnenlicht am Rand des Sichtbereichs bei Neigungs-Abdeckungen, 0,0–1,0. Skaliert die automatische, winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, aber in Schließrichtung der Lamellen. Standard 0,0 behält den exakten Streifwinkel (heutiges Verhalten) bei; erhöhen Sie bis 1,0, um die Lamellen bei extremen Sonnenwinkeln etwas stärker zu schließen, damit kein direktes Sonnenlicht hindurchdringt. Bevorzugen Sie dies gegenüber einer Senkung der maximalen Lamellenneigung, die eine pauschale globale Obergrenze darstellt.",
+          "tilt_mode": "Wie der Neigungsprozentsatz auf den Lamellenwinkel abgebildet wird. **Einfache Richtung** (0% = geschlossen / 100% = offen): Die Lamellen drehen sich in nur eine Richtung. **Bidirektional** (0% = geschlossen / 50% = offen / 100% = geschlossen): Die Lamellen öffnen sich bei 50% und schließen sich in beide Richtungen. **Winkel angeben**: Legen Sie den exakten Rohlamellenwinkel bei 0% und 100% Neigung unten fest, für Hardware, deren Bewegungsbereich keiner der Voreinstellungen entspricht.",
+          "tilt_angle_0": "Rohlamellenwinkel, wenn die Beschattung 0% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
+          "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist."
         }
       },
       "sun_tracking": {
