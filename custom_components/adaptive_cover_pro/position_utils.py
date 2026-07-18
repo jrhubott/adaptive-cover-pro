@@ -240,7 +240,20 @@ class PositionConverter:
             Constrained tilt value (0-100).
 
         """
-        if transform == VENETIAN_TILT_TRANSFORM_PROPORTIONAL and sun_valid:
+        # Degenerate/reversed band guard (issue #957 nit): min_tilt and max_tilt
+        # have independent (0,100) ranges with no cross-field validation, so a
+        # reversed band (min > max) is reachable via misconfiguration. A
+        # proportional ramp over hi <= lo would descend (more sun → less tilt),
+        # diverging from clamp. Fall back to the clamp path so proportional and
+        # clamp behave identically here (predictably pinned to the band). None
+        # bounds map to lo=0/hi=100, so a None max is not degenerate.
+        _lo = 0 if min_tilt is None else min_tilt
+        _hi = 100 if max_tilt is None else max_tilt
+        if (
+            transform == VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+            and sun_valid
+            and _hi > _lo
+        ):
             return _proportional_remap(value, min_tilt, max_tilt)
         return PositionConverter.apply_limits(
             value,
