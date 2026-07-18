@@ -35,6 +35,7 @@ from ..const import (
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_TRANSFORM,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_DISTANCE,
@@ -45,6 +46,7 @@ from ..const import (
     DEFAULT_MIN_TILT,
     DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
+    DEFAULT_VENETIAN_TILT_TRANSFORM,
     DEFAULT_TILT_ANGLE_0,
     DEFAULT_TILT_ANGLE_100,
     DEFAULT_WINDOW_HEIGHT,
@@ -168,6 +170,9 @@ class ConfigurationService:
                     CONF_VENETIAN_TILT_SAFETY_MARGIN,
                     DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
                 )
+            ),
+            tilt_transform=options.get(
+                CONF_VENETIAN_TILT_TRANSFORM, DEFAULT_VENETIAN_TILT_TRANSFORM
             ),
         )
 

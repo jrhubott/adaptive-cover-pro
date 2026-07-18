@@ -332,6 +332,21 @@ DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = 0.0
 MIN_VENETIAN_TILT_SAFETY_MARGIN = 0.0
 MAX_VENETIAN_TILT_SAFETY_MARGIN = 1.0
 
+# Proportional tilt output transform (issue #957). Chooses how the sun-tracking
+# tilt demand is fitted into the ``[min_tilt, max_tilt]`` band. ``clamp``
+# (default, back-compat) flat-caps the value at the band edges — today's exact
+# behaviour. ``proportional`` linearly remaps the full 0–100% solar demand onto
+# the band so a calculated 50% with a band of [0, 40] becomes 20% instead of
+# flat-lining at 40%. Venetian-only enum.
+CONF_VENETIAN_TILT_TRANSFORM = "venetian_tilt_transform"  # one of below
+VENETIAN_TILT_TRANSFORM_CLAMP = "clamp"  # flat cap at band edges (default)
+VENETIAN_TILT_TRANSFORM_PROPORTIONAL = "proportional"  # linear remap into band
+DEFAULT_VENETIAN_TILT_TRANSFORM = VENETIAN_TILT_TRANSFORM_CLAMP  # back-compat
+VENETIAN_TILT_TRANSFORMS = (
+    VENETIAN_TILT_TRANSFORM_CLAMP,
+    VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+)
+
 
 # =============================================================================
 # 6. Position Limits & Inverse State

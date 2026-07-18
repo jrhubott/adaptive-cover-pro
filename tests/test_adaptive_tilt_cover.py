@@ -330,6 +330,39 @@ def test_get_tilt_data_reads_min_tilt():
     assert result_default.min_tilt == 0
 
 
+def test_get_tilt_data_reads_tilt_transform():
+    """get_tilt_data populates TiltConfig.tilt_transform; defaults to clamp."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_TRANSFORM,
+        VENETIAN_TILT_TRANSFORM_CLAMP,
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
+
+    config_entry = MagicMock()
+    config_entry.data = {"name": "Test Tilt"}
+    config_service = ConfigurationService(
+        MagicMock(), config_entry, MagicMock(), "cover_venetian", None, None, None
+    )
+
+    result_custom = config_service.get_tilt_data(
+        {
+            "slat_distance": 3.0,
+            "slat_depth": 2.0,
+            "tilt_mode": "mode1",
+            CONF_VENETIAN_TILT_TRANSFORM: VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        }
+    )
+    assert result_custom.tilt_transform == VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+
+    result_default = config_service.get_tilt_data(
+        {"slat_distance": 3.0, "slat_depth": 2.0, "tilt_mode": "mode1"}
+    )
+    assert result_default.tilt_transform == VENETIAN_TILT_TRANSFORM_CLAMP
+
+
 def test_get_tilt_data_reads_specified_endpoint_angles():
     """get_tilt_data stores explicit endpoint angles for specify-angles mode."""
     from custom_components.adaptive_cover_pro.services.configuration_service import (

@@ -108,6 +108,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.venetian.max_tilt": "max tilt {max_tilt}%",
     "geometry.venetian.min_tilt": "min tilt {min_tilt}%",
     "geometry.venetian.tilt_safety_margin": "tilt safety margin {pct}%",
+    "geometry.venetian.tilt_transform": "proportional tilt remap into min–max band",
     "geometry.venetian.post_settle_hold": "post-settle hold {hold}s",
     "geometry.venetian.backrotate_lag": "back-rotate publish lag {lag}s",
     "geometry.venetian.drift_reset": (

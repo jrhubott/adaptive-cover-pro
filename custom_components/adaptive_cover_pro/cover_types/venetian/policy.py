@@ -43,6 +43,7 @@ from ...const import (
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_VENETIAN_TILT_TRANSFORM,
     ControlMethod,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MAX_TILT,
@@ -60,6 +61,7 @@ from ...const import (
     DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     DEFAULT_VENETIAN_TILT_SKIP_MODE,
+    DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_TILT_RESET_THRESHOLD,
     MAX_VENETIAN_TILT_SAFETY_MARGIN,
@@ -81,6 +83,8 @@ from ...const import (
     VENETIAN_TILT_RESET_SCOPES,
     VENETIAN_TILT_SKIP_MODES,
     VENETIAN_TILT_SKIP_SUPPRESS,
+    VENETIAN_TILT_TRANSFORM_CLAMP,
+    VENETIAN_TILT_TRANSFORMS,
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import SecondaryAxisCheck
@@ -124,6 +128,7 @@ _POSITION_AXIS_SERVICES = frozenset(
 _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_VENETIAN_TILT_TRANSFORM,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
@@ -163,6 +168,9 @@ def _venetian_extras_schema() -> dict:
         vol.Optional(
             CONF_VENETIAN_TILT_SKIP_MODE, default=DEFAULT_VENETIAN_TILT_SKIP_MODE
         ): vol.In(VENETIAN_TILT_SKIP_MODES),
+        vol.Optional(
+            CONF_VENETIAN_TILT_TRANSFORM, default=DEFAULT_VENETIAN_TILT_TRANSFORM
+        ): vol.In(VENETIAN_TILT_TRANSFORMS),
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             default=DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -450,6 +458,16 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             if safety_margin
             else []
         )
+        # Tilt output transform is opt-in (issue #957): render only when it
+        # departs from the default clamp, matching the zero-disables convention.
+        tilt_transform = config.get(
+            CONF_VENETIAN_TILT_TRANSFORM, DEFAULT_VENETIAN_TILT_TRANSFORM
+        )
+        tilt_transform_line = (
+            [L["geometry.venetian.tilt_transform"]]
+            if tilt_transform != VENETIAN_TILT_TRANSFORM_CLAMP
+            else []
+        )
         return (
             window_dimensions_lines(config, labels)
             + slat_line
@@ -460,6 +478,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             + min_tilt_line
             + max_tilt_line
             + safety_margin_line
+            + tilt_transform_line
             + post_settle_line
             + backrotate_line
             + drift_reset_line

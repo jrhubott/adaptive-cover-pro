@@ -96,6 +96,11 @@ class VenetianCoverCalculation:
         DefaultHandler default-tilt clamp (#503). With ``sun_valid=True`` the
         limits always apply regardless of the ``*_sun_only`` toggles, preserving
         the original unconditional ``max(min, min(v, max))`` behavior.
+
+        ``cfg.tilt_transform`` selects clamp (default, unchanged) vs the
+        proportional remap into ``[min_tilt, max_tilt]`` (#957). This is the only
+        seam that opts into the proportional transform; the default-tilt path
+        stays on clamp.
         """
         cfg = self._tilt.tilt_config
         return PositionConverter.apply_tilt_limits(
@@ -105,6 +110,7 @@ class VenetianCoverCalculation:
             cfg.min_tilt_sun_only,
             cfg.max_tilt_sun_only,
             sun_valid=True,
+            transform=cfg.tilt_transform,
         )
 
     def _compute_tilt(self) -> int:

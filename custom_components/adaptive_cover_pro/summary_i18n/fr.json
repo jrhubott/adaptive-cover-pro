@@ -263,7 +263,8 @@
       "drift_reset": "réinitialisation de dérive tous les {threshold}% d'inclinaison cumulée (via {direction})",
       "drift_reset_scope_solar": "commandes de suivi solaire uniquement",
       "skip_tilt_suppress": "supprimer l'inclinaison à partir de {skip_above}% (pas d'envoi neutre)",
-      "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%"
+      "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%",
+      "tilt_transform": "remappage proportionnel de l'inclinaison dans la plage min-max"
     },
     "fov": {
       "computed": "Angle d'ouverture calculé ≈ {deg}°/{deg}° ({w} m de largeur, {d} m de profondeur de niche)"

@@ -613,3 +613,143 @@ class TestClampTiltDelegation:
         )
         calc._tilt.calculate_percentage = Mock(return_value=math.nan)
         assert calc.calculate_dual().tilt == 20
+
+
+class TestProportionalTiltTransform:
+    """Proportional tilt output transform (issue #957).
+
+    Feeds a deterministic raw tilt through ``calculate_dual`` by mocking the
+    inner ``calculate_percentage``, so the assertions isolate the transform
+    applied at the ``_clamp_tilt`` seam. ``clamp`` (default) must stay identical
+    to today's flat clamp; ``proportional`` linearly remaps the full 0–100%
+    demand onto ``[min_tilt, max_tilt]``.
+    """
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_proportional_remaps_50_to_20_on_band_0_40(self, mock_datetime):
+        """Reporter's worked example: raw 50 on band [0,40] → 20 (clamp gives 40)."""
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        proportional = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(
+                max_tilt=40, tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+            ),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            logger=_make_logger(),
+        )
+        clamp = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(max_tilt=40),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            logger=_make_logger(),
+        )
+        proportional._tilt.calculate_percentage = Mock(return_value=50.0)
+        clamp._tilt.calculate_percentage = Mock(return_value=50.0)
+        assert proportional.calculate_dual().tilt == 20
+        assert clamp.calculate_dual().tilt == 40
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_proportional_identity_on_default_band(self, mock_datetime):
+        """Proportional on the default band [0,100] equals the clamp result (no-op)."""
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        for raw in (0.0, 25.0, 50.0, 75.0, 100.0):
+            proportional = VenetianCoverCalculation(
+                config=make_cover_config(win_azi=180),
+                vert_config=make_vertical_config(),
+                tilt_config=make_tilt_config(
+                    tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+                ),
+                sun_data=_make_sun_data(),
+                sol_azi=180.0,
+                sol_elev=45.0,
+                logger=_make_logger(),
+            )
+            proportional._tilt.calculate_percentage = Mock(return_value=raw)
+            assert proportional.calculate_dual().tilt == round(raw)
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_proportional_monotonic_sweep_on_band_0_40(self, mock_datetime):
+        """Proportional remap is monotonic non-decreasing across a 0–100 sweep."""
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        results = []
+        for raw in range(0, 101, 5):
+            calc = VenetianCoverCalculation(
+                config=make_cover_config(win_azi=180),
+                vert_config=make_vertical_config(),
+                tilt_config=make_tilt_config(
+                    max_tilt=40, tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+                ),
+                sun_data=_make_sun_data(),
+                sol_azi=180.0,
+                sol_elev=45.0,
+                logger=_make_logger(),
+            )
+            calc._tilt.calculate_percentage = Mock(return_value=float(raw))
+            results.append(calc.calculate_dual().tilt)
+        assert all(b >= a for a, b in zip(results, results[1:]))
+        assert results[0] == 0
+        assert results[-1] == 40
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_proportional_nan_fallback_floors_to_min_tilt(self, mock_datetime):
+        """NaN geometry falls back to raw 0, proportional band [10,40] → floor 10."""
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(
+                min_tilt=10,
+                max_tilt=40,
+                tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+            ),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            logger=_make_logger(),
+        )
+        calc._tilt.calculate_percentage = Mock(return_value=math.nan)
+        assert calc.calculate_dual().tilt == 10
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_explicit_clamp_still_flat_clamps(self, mock_datetime):
+        """Explicit clamp transform keeps today's flat cap: raw 80 on [0,40] → 40."""
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_CLAMP,
+        )
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(
+                max_tilt=40, tilt_transform=VENETIAN_TILT_TRANSFORM_CLAMP
+            ),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            logger=_make_logger(),
+        )
+        calc._tilt.calculate_percentage = Mock(return_value=80.0)
+        assert calc.calculate_dual().tilt == 40

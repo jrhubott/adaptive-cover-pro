@@ -529,6 +529,52 @@ def test_tilt_skip_mode_constants_exist() -> None:
     )
 
 
+def test_tilt_transform_constants_exist() -> None:
+    """CONF/DEFAULT/value/tuple constants for the tilt transform must exist (#957)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_TRANSFORM,
+        DEFAULT_VENETIAN_TILT_TRANSFORM,
+        VENETIAN_TILT_TRANSFORM_CLAMP,
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        VENETIAN_TILT_TRANSFORMS,
+    )
+
+    assert CONF_VENETIAN_TILT_TRANSFORM == "venetian_tilt_transform"
+    assert VENETIAN_TILT_TRANSFORM_CLAMP == "clamp"
+    assert VENETIAN_TILT_TRANSFORM_PROPORTIONAL == "proportional"
+    # Default MUST stay clamp — byte-for-byte no-op / rollback-safe.
+    assert DEFAULT_VENETIAN_TILT_TRANSFORM == VENETIAN_TILT_TRANSFORM_CLAMP
+    assert VENETIAN_TILT_TRANSFORMS == (
+        VENETIAN_TILT_TRANSFORM_CLAMP,
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+
+def test_geometry_schema_includes_tilt_transform() -> None:
+    """GEOMETRY_VENETIAN_SCHEMA defaults transform to clamp and rejects bad values."""
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_TRANSFORM,
+        DEFAULT_VENETIAN_TILT_TRANSFORM,
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+    from custom_components.adaptive_cover_pro.cover_types.venetian import (
+        GEOMETRY_VENETIAN_SCHEMA,
+    )
+
+    assert (
+        GEOMETRY_VENETIAN_SCHEMA({})[CONF_VENETIAN_TILT_TRANSFORM]
+        == DEFAULT_VENETIAN_TILT_TRANSFORM
+    )
+    out = GEOMETRY_VENETIAN_SCHEMA(
+        {CONF_VENETIAN_TILT_TRANSFORM: VENETIAN_TILT_TRANSFORM_PROPORTIONAL}
+    )
+    assert out[CONF_VENETIAN_TILT_TRANSFORM] == VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+    with pytest.raises(vol.Invalid):
+        GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_TILT_TRANSFORM: "bogus"})
+
+
 def test_geometry_schema_skip_mode_default_and_validation() -> None:
     """GEOMETRY_VENETIAN_SCHEMA defaults skip_mode to neutral and rejects bad values."""
     import voluptuous as vol

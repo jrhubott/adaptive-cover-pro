@@ -263,7 +263,8 @@
       "drift_reset": "Drift-Reset alle {threshold}% akkumulierte Neigung (über {direction})",
       "drift_reset_scope_solar": "nur Sonnenstands-Befehle",
       "skip_tilt_suppress": "Neigung ab {skip_above}% unterdrücken (kein neutrales Senden)",
-      "tilt_safety_margin": "neigungssicherheitsmarge {pct}%"
+      "tilt_safety_margin": "neigungssicherheitsmarge {pct}%",
+      "tilt_transform": "proportionale Neigungsumsetzung in Min-Max-Band"
     },
     "fov": {
       "computed": "Berechneter Akzeptanzwinkel ≈ {deg}°/{deg}° ({w} m Breite, {d} m Laibungstiefe)"

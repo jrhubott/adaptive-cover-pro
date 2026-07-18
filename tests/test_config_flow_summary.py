@@ -419,6 +419,24 @@ def test_geometry_venetian_shows_min_tilt_custom():
     assert "min tilt 15%" in summary
 
 
+def test_geometry_venetian_shows_tilt_transform_when_proportional():
+    """Venetian summary shows the proportional-transform line when opted in (#957)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_TRANSFORM,
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    cfg = {CONF_VENETIAN_TILT_TRANSFORM: VENETIAN_TILT_TRANSFORM_PROPORTIONAL}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "proportional tilt remap" in summary
+
+
+def test_geometry_venetian_omits_tilt_transform_when_clamp():
+    """Default clamp transform renders no extra summary line."""
+    summary = _build_config_summary({}, CoverType.VENETIAN)
+    assert "proportional tilt remap" not in summary
+
+
 def test_geometry_venetian_shows_post_settle_hold_default():
     """Venetian summary includes post-settle hold at the default value (3.0 s)."""
     summary = _build_config_summary({}, CoverType.VENETIAN)

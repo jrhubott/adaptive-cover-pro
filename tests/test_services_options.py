@@ -487,6 +487,24 @@ class TestFieldValidators:
         with pytest.raises(vol.Invalid):
             v("bogus")
 
+    def test_field_validators_venetian_tilt_transform(self):
+        """venetian_tilt_transform accepts clamp/proportional; rejects out-of-set."""
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_VENETIAN_TILT_TRANSFORM,
+            VENETIAN_TILT_TRANSFORM_CLAMP,
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        v = FIELD_VALIDATORS[CONF_VENETIAN_TILT_TRANSFORM]
+        v(VENETIAN_TILT_TRANSFORM_CLAMP)
+        v(VENETIAN_TILT_TRANSFORM_PROPORTIONAL)
+        v(None)  # optional clear
+
+        with pytest.raises(vol.Invalid):
+            v("bogus")
+
     def test_field_validators_venetian_post_settle_mode(self):
         """venetian_post_settle_mode accepts fixed_delay/entity_state; rejects bogus (issue #801)."""
         import voluptuous as vol

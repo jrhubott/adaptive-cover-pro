@@ -126,6 +126,7 @@ _TILT_CONFIG_FIELDS = {
     "angle_100",
     "max_tilt",
     "min_tilt",
+    "tilt_transform",
 }
 
 

@@ -12,6 +12,7 @@ from .const import (
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_ENABLED,
+    VENETIAN_TILT_TRANSFORM_CLAMP,
     BlindSpot,
     TiltMode,
     blind_spot_legacy_to_gamma,
@@ -515,6 +516,11 @@ class TiltConfig:
     # slat-closing direction. Scales the automatic ``SafetyMarginCalculator``
     # factor — see ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
+    # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
+    # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact
+    # behaviour; "proportional" linearly remaps the full 0–100% demand into the
+    # band. Venetian-only; consumed at the engine _clamp_tilt seam.
+    tilt_transform: str = VENETIAN_TILT_TRANSFORM_CLAMP
 
 
 # ---------------------------------------------------------------------------
