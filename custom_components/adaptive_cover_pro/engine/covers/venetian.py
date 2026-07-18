@@ -57,6 +57,11 @@ class VenetianCoverCalculation:
             sun_data=sun_data,
             config=config,
             tilt_config=tilt_config,
+            # The dual-axis path applies the tilt-axis limits itself at
+            # ``_clamp_tilt`` (below), so the sub-engine must not also clamp in
+            # ``calculate_percentage`` — a double proportional remap would
+            # otherwise compress the band twice (issue #964).
+            apply_tilt_axis_limits=False,
         )
 
     def calculate_dual(self) -> DualAxisResult:

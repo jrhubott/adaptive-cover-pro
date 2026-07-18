@@ -53,6 +53,14 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
     """Calculate state for tilted blinds."""
 
     tilt_config: TiltConfig = None  # type: ignore[assignment]
+    # When True (tilt-only / louvered-roof), ``calculate_percentage`` self-applies
+    # the shared tilt-axis limits (``[min_tilt, max_tilt]`` + the ``*_sun_only``
+    # flags + ``tilt_transform``) via ``PositionConverter.apply_tilt_limits``
+    # (issue #964). Venetian composes this engine and applies the identical limits
+    # itself downstream at ``VenetianCoverCalculation._clamp_tilt``, so it builds
+    # its sub-engine with ``apply_tilt_axis_limits=False`` to avoid clamping twice
+    # (a double proportional remap would otherwise compress the band twice).
+    apply_tilt_axis_limits: bool = True
 
     @property
     def slat_distance(self) -> float:
@@ -326,8 +334,51 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 )
                 self._last_calc_details["tilt_angle_0_deg"] = self.angle_0
                 self._last_calc_details["tilt_angle_100_deg"] = self.angle_100
-            return max(0.0, min(100.0, percentage))
+            pct = max(0.0, min(100.0, percentage))
+        else:
+            # Same effective ceiling the position solve clamps to (the mode max
+            # for tilt/venetian; a configurable physical max for the louvered roof).
+            pct = float(
+                PositionConverter.to_percentage(position, self._effective_max_degrees())
+            )
 
-        # Same effective ceiling the position solve clamps to (the mode max for
-        # tilt/venetian; a configurable physical max for the louvered roof).
-        return PositionConverter.to_percentage(position, self._effective_max_degrees())
+        return self._apply_tilt_axis_limits(pct)
+
+    def _apply_tilt_axis_limits(self, pct: float) -> float:
+        """Clamp the sun-derived tilt % to the configured tilt-axis band.
+
+        Routes through the shared :meth:`PositionConverter.apply_tilt_limits`
+        seam (issue #503/#957) so a tilt-only or louvered-roof cover honors the
+        same ``[min_tilt, max_tilt]`` band, ``*_sun_only`` flags, and
+        ``tilt_transform`` venetian already reaches (issue #964). The engine
+        path is always sun-tracking, so ``sun_valid=True``. A no-op at defaults
+        (``min_tilt=0``/``max_tilt=100``/``clamp``), preserving the exact raw %.
+
+        Only the return value is limited — the diagnostics trace keeps the raw
+        geometry percentage, matching how venetian's ``_clamp_tilt`` leaves the
+        tilt engine's trace untouched.
+
+        Venetian's composed sub-engine sets ``apply_tilt_axis_limits=False`` and
+        applies the identical limits itself, so this is skipped there.
+        """
+        if not self.apply_tilt_axis_limits:
+            return pct
+        cfg = self.tilt_config
+        limited = PositionConverter.apply_tilt_limits(
+            int(round(pct)),
+            cfg.min_tilt,
+            cfg.max_tilt,
+            cfg.min_tilt_sun_only,
+            cfg.max_tilt_sun_only,
+            sun_valid=True,
+            transform=cfg.tilt_transform,
+        )
+        # The shared primitive is int-valued, but ``calculate_percentage`` has
+        # always returned a float — specify-angles yields a fractional percent
+        # the pipeline rounds downstream. When the band leaves the rounded value
+        # untouched (a no-op / within-band clamp), keep the exact float so that
+        # precision is preserved byte-for-byte; only substitute the primitive's
+        # value when it actually moved the tilt (a cap, floor, or transform bit).
+        if limited == int(round(pct)):
+            return pct
+        return float(limited)

@@ -174,11 +174,17 @@ from .const import (
     CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
     CONF_TEMP_LOW_RELEASE_THRESHOLD,
+    CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
+    CONF_MIN_TILT,
+    CONF_MIN_TILT_SUN_ONLY,
     CONF_TILT_ANGLE_0,
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    CONF_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_TRANSFORM,
     CONF_TRACKING_SEASONS,
     CONF_TRANSPARENT_BLIND,
     CONF_WINTER_CLOSE_INSULATION,
@@ -3141,6 +3147,15 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TILT_MODE,
             CONF_TILT_ANGLE_0,
             CONF_TILT_ANGLE_100,
+            # Shared tilt-axis limit/shape controls (#964): now part of the
+            # tilt geometry fragment reached by tilt-only, louvered-roof, and
+            # venetian covers, so they sync with the tilt geometry above.
+            CONF_MIN_TILT,
+            CONF_MAX_TILT,
+            CONF_MIN_TILT_SUN_ONLY,
+            CONF_MAX_TILT_SUN_ONLY,
+            CONF_TILT_SAFETY_MARGIN,
+            CONF_VENETIAN_TILT_TRANSFORM,
             # Per-window aperture fields relocated from sun_tracking (#778). They
             # live on the geometry step and sync with the physical measurements.
             # CONF_AZIMUTH is intentionally NOT listed — it stays in
@@ -3820,8 +3835,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # 3.8 (issue #247): blind spot stored as signed gamma from the window normal.
     # The v3.7→v3.8 block setdefault-seeds the new blind_spot_*_gamma keys from
     # the legacy FOV-relative edges; legacy keys are retained (read-only).
+    # 3.10 (issue #964): tilt safety margin renamed to the neutral
+    # CONF_TILT_SAFETY_MARGIN (shared by all tilt-axis covers). The v3.9→v3.10
+    # block copies the legacy venetian_tilt_safety_margin value into the new key;
+    # the legacy key is retained (read-only). (3.9 was a no-op bump for #943.)
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 9
+    MINOR_VERSION = 10
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

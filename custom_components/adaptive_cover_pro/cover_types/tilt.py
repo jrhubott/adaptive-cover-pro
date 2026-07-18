@@ -9,13 +9,28 @@ from homeassistant.helpers import selector
 
 from ..const import (
     CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET,
+    CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
+    CONF_MIN_TILT,
+    CONF_MIN_TILT_SUN_ONLY,
     CONF_TILT_ANGLE_0,
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    CONF_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_TRANSFORM,
+    DEFAULT_MAX_TILT,
+    DEFAULT_MAX_TILT_SUN_ONLY,
+    DEFAULT_MIN_TILT,
+    DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_TILT_ANGLE_0,
     DEFAULT_TILT_ANGLE_100,
+    DEFAULT_TILT_SAFETY_MARGIN,
+    DEFAULT_VENETIAN_TILT_TRANSFORM,
+    MAX_TILT_SAFETY_MARGIN,
+    MIN_TILT_SAFETY_MARGIN,
+    VENETIAN_TILT_TRANSFORMS,
 )
 from ..engine.covers import AdaptiveTiltCover
 from ..const import TiltMode
@@ -45,6 +60,46 @@ TILT_SLAT_KEYS: tuple[str, ...] = (CONF_TILT_DEPTH, CONF_TILT_DISTANCE)
 # Default slat dimensions (canonical centimetres).
 _DEFAULT_TILT_DEPTH_CM = 3.0
 _DEFAULT_TILT_DISTANCE_CM = 2.0
+
+
+def tilt_limits_schema() -> dict:
+    """Shared tilt-axis limit/shape controls (issue #964, unit-independent).
+
+    Cover-type-agnostic controls that clamp and shape the sun-derived slat tilt:
+    the ``[min_tilt, max_tilt]`` band, the two ``*_sun_only`` enforcement flags,
+    the tilt safety margin, and the clamp/proportional output transform. Every
+    tilt-axis cover reaches them — ``geometry_tilt_schema`` composes this
+    fragment (so tilt-only and, via it, louvered-roof get them), and the
+    venetian geometry schema composes ``geometry_tilt_schema`` too. Kept as a
+    plain dict so both schemas can spread it inline.
+    """
+    return {
+        vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(
+            CONF_MIN_TILT_SUN_ONLY, default=DEFAULT_MIN_TILT_SUN_ONLY
+        ): selector.BooleanSelector(),
+        vol.Optional(CONF_MAX_TILT, default=DEFAULT_MAX_TILT): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(
+            CONF_MAX_TILT_SUN_ONLY, default=DEFAULT_MAX_TILT_SUN_ONLY
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_TILT_SAFETY_MARGIN, default=DEFAULT_TILT_SAFETY_MARGIN
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=MIN_TILT_SAFETY_MARGIN,
+                max=MAX_TILT_SAFETY_MARGIN,
+                step=0.05,
+                mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+        vol.Optional(
+            CONF_VENETIAN_TILT_TRANSFORM, default=DEFAULT_VENETIAN_TILT_TRANSFORM
+        ): vol.In(VENETIAN_TILT_TRANSFORMS),
+    }
 
 
 def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
@@ -78,6 +133,7 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
                     min=0, max=360, step=1, mode=selector.NumberSelectorMode.BOX
                 )
             ),
+            **tilt_limits_schema(),
         }
     )
 

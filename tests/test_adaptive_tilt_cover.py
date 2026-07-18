@@ -467,3 +467,140 @@ def test_tilt_data_warns_on_small_values(caplog):
         "slat dimensions are very small" in record.message for record in caplog.records
     )
     assert any("CENTIMETERS" in record.message for record in caplog.records)
+
+
+class TestTiltAxisLimits:
+    """Shared tilt-axis limits honored on the standalone tilt engine (issue #964).
+
+    ``AdaptiveTiltCover.calculate_percentage`` self-applies ``[min_tilt,
+    max_tilt]`` (plus the ``*_sun_only`` flags and the ``tilt_transform``) via
+    the shared ``PositionConverter.apply_tilt_limits`` seam, so a tilt-only (and
+    louvered-roof) cover honors the same tilt-band controls venetian already
+    reaches. The venetian sub-engine opts out (``apply_tilt_axis_limits=False``)
+    because ``VenetianCoverCalculation._clamp_tilt`` applies them downstream.
+    """
+
+    # Low elevation + high gamma → positive discriminant, mid-range raw tilt %,
+    # so a cap/floor/transform is observable.
+    _GEO = {"sol_azi": 255, "sol_elev": 8, "slat_distance": 0.02, "depth": 0.03}
+
+    def _pct(self, **tilt_over):
+        cover = build_tilt_cover(
+            logger=MagicMock(),
+            sol_azi=self._GEO["sol_azi"],
+            sol_elev=self._GEO["sol_elev"],
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            sun_data=MagicMock(),
+            fov_left=90,
+            fov_right=90,
+            win_azi=180,
+            h_def=50,
+            max_pos=100,
+            min_pos=0,
+            max_pos_bool=False,
+            min_pos_bool=False,
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            slat_distance=self._GEO["slat_distance"],
+            depth=self._GEO["depth"],
+            mode="mode1",
+            **tilt_over,
+        )
+        return cover.calculate_percentage()
+
+    @pytest.mark.unit
+    def test_baseline_is_mid_range(self):
+        baseline = int(round(self._pct()))
+        assert 0 < baseline < 100, f"geometry must yield mid-range tilt, got {baseline}"
+
+    @pytest.mark.unit
+    def test_default_limits_are_no_op(self):
+        assert self._pct() == self._pct(min_tilt=0, max_tilt=100)
+
+    @pytest.mark.unit
+    def test_max_tilt_caps_output(self):
+        baseline = int(round(self._pct()))
+        cap = baseline - 5
+        assert int(round(self._pct(max_tilt=cap))) == cap
+
+    @pytest.mark.unit
+    def test_min_tilt_floors_output(self):
+        baseline = int(round(self._pct()))
+        floor = baseline + 5
+        assert int(round(self._pct(min_tilt=floor))) == floor
+
+    @pytest.mark.unit
+    def test_proportional_transform_remaps_into_band(self):
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+        from custom_components.adaptive_cover_pro.position_utils import (
+            PositionConverter,
+        )
+
+        raw = int(round(self._pct()))
+        got = int(
+            round(
+                self._pct(
+                    min_tilt=20,
+                    max_tilt=60,
+                    tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+                )
+            )
+        )
+        expected = PositionConverter.apply_tilt_limits(
+            raw,
+            20,
+            60,
+            False,
+            False,
+            sun_valid=True,
+            transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+        assert got == expected
+        # Proportional actually differs from a flat clamp here.
+        assert got != int(round(self._pct(min_tilt=20, max_tilt=60)))
+
+    @pytest.mark.unit
+    def test_sun_only_flag_still_applies_on_sun_tracking_path(self):
+        # The engine path is always sun-tracking (sun_valid=True), so a
+        # sun-only cap still bites here.
+        baseline = int(round(self._pct()))
+        cap = baseline - 5
+        assert int(round(self._pct(max_tilt=cap, max_tilt_sun_only=True))) == cap
+
+    @pytest.mark.unit
+    def test_venetian_subengine_opts_out_of_self_clamp(self):
+        """A tilt engine with apply_tilt_axis_limits=False returns raw (uncapped).
+
+        This is the seam VenetianCoverCalculation relies on to avoid applying
+        the tilt band twice (its own _clamp_tilt does it downstream).
+        """
+        from custom_components.adaptive_cover_pro.engine.covers import (
+            AdaptiveTiltCover,
+        )
+        from tests.cover_helpers import make_cover_config, make_tilt_config
+
+        baseline = int(round(self._pct()))
+        cap = baseline - 5
+        raw_engine = AdaptiveTiltCover(
+            logger=MagicMock(),
+            sol_azi=self._GEO["sol_azi"],
+            sol_elev=self._GEO["sol_elev"],
+            sun_data=MagicMock(),
+            config=make_cover_config(win_azi=180, fov_left=90, fov_right=90),
+            tilt_config=make_tilt_config(
+                slat_distance=self._GEO["slat_distance"],
+                depth=self._GEO["depth"],
+                mode="mode1",
+                max_tilt=cap,
+            ),
+            apply_tilt_axis_limits=False,
+        )
+        assert int(round(raw_engine.calculate_percentage())) == baseline

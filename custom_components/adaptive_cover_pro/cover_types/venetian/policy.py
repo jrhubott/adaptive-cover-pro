@@ -29,10 +29,9 @@ from ...const import (
     CONF_INVERSE_TILT,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_TILT,
-    CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
-    CONF_MIN_TILT_SUN_ONLY,
     CONF_MINIMIZE_MOVEMENTS,
+    CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
@@ -47,10 +46,9 @@ from ...const import (
     ControlMethod,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MAX_TILT,
-    DEFAULT_MAX_TILT_SUN_ONLY,
     DEFAULT_MIN_TILT,
-    DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
@@ -58,17 +56,14 @@ from ...const import (
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
-    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     DEFAULT_VENETIAN_TILT_SKIP_MODE,
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_TILT_RESET_THRESHOLD,
-    MAX_VENETIAN_TILT_SAFETY_MARGIN,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
     MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MIN_VENETIAN_TILT_RESET_THRESHOLD,
-    MIN_VENETIAN_TILT_SAFETY_MARGIN,
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -84,7 +79,6 @@ from ...const import (
     VENETIAN_TILT_SKIP_MODES,
     VENETIAN_TILT_SKIP_SUPPRESS,
     VENETIAN_TILT_TRANSFORM_CLAMP,
-    VENETIAN_TILT_TRANSFORMS,
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import SecondaryAxisCheck
@@ -125,19 +119,17 @@ _POSITION_AXIS_SERVICES = frozenset(
 
 
 # Re-exported for callers that want the unit-independent venetian-only keys.
+# The tilt-band controls (min/max tilt, the *_sun_only flags, safety margin, and
+# the output transform) moved to the shared tilt-limits fragment in #964 and are
+# no longer venetian-only, so they are not listed here.
 _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
-    CONF_VENETIAN_TILT_TRANSFORM,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_INVERSE_TILT,
-    CONF_MAX_TILT,
-    CONF_MAX_TILT_SUN_ONLY,
-    CONF_MIN_TILT,
-    CONF_MIN_TILT_SUN_ONLY,
 )
 
 # Control methods that carry an explicit, user-specified position.
@@ -188,9 +180,6 @@ def _venetian_extras_schema() -> dict:
             CONF_VENETIAN_TILT_SKIP_MODE, default=DEFAULT_VENETIAN_TILT_SKIP_MODE
         ): _venetian_select(VENETIAN_TILT_SKIP_MODES, "venetian_tilt_skip_mode"),
         vol.Optional(
-            CONF_VENETIAN_TILT_TRANSFORM, default=DEFAULT_VENETIAN_TILT_TRANSFORM
-        ): vol.In(VENETIAN_TILT_TRANSFORMS),
-        vol.Optional(
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             default=DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
         ): vol.All(
@@ -231,29 +220,6 @@ def _venetian_extras_schema() -> dict:
             ),
         ),
         vol.Optional(CONF_INVERSE_TILT, default=False): bool,
-        vol.Optional(CONF_MAX_TILT, default=DEFAULT_MAX_TILT): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
-        vol.Optional(
-            CONF_MAX_TILT_SUN_ONLY, default=DEFAULT_MAX_TILT_SUN_ONLY
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
-        vol.Optional(
-            CONF_MIN_TILT_SUN_ONLY, default=DEFAULT_MIN_TILT_SUN_ONLY
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_VENETIAN_TILT_SAFETY_MARGIN,
-            default=DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=MIN_VENETIAN_TILT_SAFETY_MARGIN,
-                max=MAX_VENETIAN_TILT_SAFETY_MARGIN,
-                step=0.05,
-                mode=selector.NumberSelectorMode.SLIDER,
-            )
-        ),
     }
 
 
@@ -466,9 +432,12 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         else:
             drift_reset_line = []
         # Tilt safety margin is opt-in (issue #783): render only when non-zero,
-        # matching the drift-reset line's zero-disables convention.
+        # matching the drift-reset line's zero-disables convention. Read the
+        # neutral #964 key, falling back to the legacy venetian-prefixed key for
+        # entries not yet migrated (or rolled forward from an older build).
         safety_margin = config.get(
-            CONF_VENETIAN_TILT_SAFETY_MARGIN, DEFAULT_VENETIAN_TILT_SAFETY_MARGIN
+            CONF_TILT_SAFETY_MARGIN,
+            config.get(CONF_VENETIAN_TILT_SAFETY_MARGIN, DEFAULT_TILT_SAFETY_MARGIN),
         )
         safety_margin_line = (
             [

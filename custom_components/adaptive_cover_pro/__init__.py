@@ -40,6 +40,8 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_TEMP_ENTITY,
+    CONF_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_WEATHER_ENABLED,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -653,6 +655,20 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # left it and simply ignores the new keys.
     if new_version == 3 and new_minor < 9:
         new_minor = 9
+
+    # v3.9 → v3.10: the tilt safety margin was renamed from the venetian-prefixed
+    # key to the neutral CONF_TILT_SAFETY_MARGIN now that tilt-only and
+    # louvered-roof covers share it (issue #964). Additive + rollback-safe: copy
+    # the legacy value into the new key when present; the old key is left
+    # untouched so an older build still reads its exact config, and the
+    # configuration-service read falls back to the old key regardless.
+    if new_version == 3 and new_minor < 10:
+        if CONF_VENETIAN_TILT_SAFETY_MARGIN in new_options:
+            new_options.setdefault(
+                CONF_TILT_SAFETY_MARGIN,
+                new_options[CONF_VENETIAN_TILT_SAFETY_MARGIN],
+            )
+        new_minor = 10
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

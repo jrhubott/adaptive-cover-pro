@@ -324,13 +324,26 @@ DEFAULT_MAX_TILT_SUN_ONLY = False
 # the safety-margin transform closes away from. MODE1: 90° = fully open.
 TILT_HORIZONTAL_DEG = 90
 
-# Configurable venetian tilt safety margin (issue #783): scales the automatic
-# angle-dependent geometry margin (0.0 = no-op = today's exact grazing angle,
-# 1.0 = full geometry margin applied in the closing direction).
+# Configurable tilt safety margin (issue #783, generalized to every tilt-axis
+# cover in #964): scales the automatic angle-dependent geometry margin
+# (0.0 = no-op = today's exact grazing angle, 1.0 = full geometry margin applied
+# in the closing direction). Shared by tilt-only, louvered-roof, and venetian
+# covers, so the key is neutral rather than venetian-prefixed.
+CONF_TILT_SAFETY_MARGIN = "tilt_safety_margin"
+DEFAULT_TILT_SAFETY_MARGIN = 0.0
+MIN_TILT_SAFETY_MARGIN = 0.0
+MAX_TILT_SAFETY_MARGIN = 1.0
+# Legacy key (migration-read-only, #964). Pre-#964 entries stored the margin
+# under the venetian-prefixed key; the v3.10 migration copies it into
+# CONF_TILT_SAFETY_MARGIN and the configuration-service read falls back to it.
+# Kept only for those reads — the old key is never written and is left untouched
+# on migration so a rollback to an older build finds its config unchanged. The
+# DEFAULT/MIN/MAX aliases point at the neutral values so existing references
+# resolve identically.
 CONF_VENETIAN_TILT_SAFETY_MARGIN = "venetian_tilt_safety_margin"
-DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = 0.0
-MIN_VENETIAN_TILT_SAFETY_MARGIN = 0.0
-MAX_VENETIAN_TILT_SAFETY_MARGIN = 1.0
+DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = DEFAULT_TILT_SAFETY_MARGIN
+MIN_VENETIAN_TILT_SAFETY_MARGIN = MIN_TILT_SAFETY_MARGIN
+MAX_VENETIAN_TILT_SAFETY_MARGIN = MAX_TILT_SAFETY_MARGIN
 
 # Proportional tilt output transform (issue #957). Chooses how the sun-tracking
 # tilt demand is fitted into the ``[min_tilt, max_tilt]`` band. ``clamp``
@@ -1783,10 +1796,12 @@ _RANGE_TILT_DEPTH = (0.1, 30.0)  # CONF_TILT_DEPTH, cm (raised to 300 mm for #83
 _RANGE_TILT_DISTANCE = (0.1, 30.0)  # CONF_TILT_DISTANCE, cm (raised to 300 mm, #830)
 _RANGE_MAX_TILT = (0, 100)  # CONF_MAX_TILT, percent
 _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
-_RANGE_VENETIAN_TILT_SAFETY_MARGIN = (
-    MIN_VENETIAN_TILT_SAFETY_MARGIN,
-    MAX_VENETIAN_TILT_SAFETY_MARGIN,
-)  # CONF_VENETIAN_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
+_RANGE_TILT_SAFETY_MARGIN = (
+    MIN_TILT_SAFETY_MARGIN,
+    MAX_TILT_SAFETY_MARGIN,
+)  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
+# Legacy alias (#964) so any name-based lookup of the old range still resolves.
+_RANGE_VENETIAN_TILT_SAFETY_MARGIN = _RANGE_TILT_SAFETY_MARGIN
 
 # Sun tracking.
 _RANGE_AZIMUTH = (0, 359)  # CONF_AZIMUTH, degrees

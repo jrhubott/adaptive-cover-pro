@@ -155,26 +155,31 @@ def test_tilt_safety_margin_constants_exist() -> None:
 
 
 def test_geometry_schema_accepts_tilt_safety_margin() -> None:
-    """GEOMETRY_VENETIAN_SCHEMA validates the tilt safety margin: 0.0–1.0, default 0.0."""
+    """GEOMETRY_VENETIAN_SCHEMA validates the tilt safety margin: 0.0–1.0, default 0.0.
+
+    The margin now lives in the shared tilt-limits fragment under the neutral
+    CONF_TILT_SAFETY_MARGIN key (#964); venetian composes it via
+    geometry_tilt_schema.
+    """
     import voluptuous as vol
 
     from custom_components.adaptive_cover_pro.const import (
-        CONF_VENETIAN_TILT_SAFETY_MARGIN,
+        CONF_TILT_SAFETY_MARGIN,
     )
     from custom_components.adaptive_cover_pro.cover_types.venetian import (
         GEOMETRY_VENETIAN_SCHEMA,
     )
 
     result_default = GEOMETRY_VENETIAN_SCHEMA({})
-    assert result_default[CONF_VENETIAN_TILT_SAFETY_MARGIN] == 0.0
+    assert result_default[CONF_TILT_SAFETY_MARGIN] == 0.0
 
-    result_custom = GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_TILT_SAFETY_MARGIN: 0.5})
-    assert result_custom[CONF_VENETIAN_TILT_SAFETY_MARGIN] == 0.5
+    result_custom = GEOMETRY_VENETIAN_SCHEMA({CONF_TILT_SAFETY_MARGIN: 0.5})
+    assert result_custom[CONF_TILT_SAFETY_MARGIN] == 0.5
 
     with pytest.raises(vol.Invalid):
-        GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_TILT_SAFETY_MARGIN: 1.5})
+        GEOMETRY_VENETIAN_SCHEMA({CONF_TILT_SAFETY_MARGIN: 1.5})
     with pytest.raises(vol.Invalid):
-        GEOMETRY_VENETIAN_SCHEMA({CONF_VENETIAN_TILT_SAFETY_MARGIN: -0.1})
+        GEOMETRY_VENETIAN_SCHEMA({CONF_TILT_SAFETY_MARGIN: -0.1})
 
 
 def test_geometry_schema_accepts_venetian_mode() -> None:

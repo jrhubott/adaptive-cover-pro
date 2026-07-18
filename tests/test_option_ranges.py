@@ -178,13 +178,17 @@ def test_climate_temp_release_keys_are_templatable() -> None:
 
 
 @pytest.mark.unit
-def test_venetian_tilt_safety_margin_in_option_ranges() -> None:
-    """CONF_VENETIAN_TILT_SAFETY_MARGIN must appear in OPTION_RANGES with (0.0, 1.0)."""
+def test_tilt_safety_margin_in_option_ranges() -> None:
+    """CONF_TILT_SAFETY_MARGIN must appear in OPTION_RANGES with (0.0, 1.0).
+
+    Renamed from the venetian-prefixed key in #964 now that every tilt-axis
+    cover shares it.
+    """
     from custom_components.adaptive_cover_pro.const import (
-        CONF_VENETIAN_TILT_SAFETY_MARGIN,
+        CONF_TILT_SAFETY_MARGIN,
     )
 
     assert (
-        CONF_VENETIAN_TILT_SAFETY_MARGIN in OPTION_RANGES
-    ), "venetian_tilt_safety_margin missing from OPTION_RANGES"
-    assert OPTION_RANGES[CONF_VENETIAN_TILT_SAFETY_MARGIN] == (0.0, 1.0)
+        CONF_TILT_SAFETY_MARGIN in OPTION_RANGES
+    ), "tilt_safety_margin missing from OPTION_RANGES"
+    assert OPTION_RANGES[CONF_TILT_SAFETY_MARGIN] == (0.0, 1.0)
