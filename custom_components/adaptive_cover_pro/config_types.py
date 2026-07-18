@@ -511,15 +511,16 @@ class TiltConfig:
     # enforce. Issue #503/#629.
     min_tilt_sun_only: bool = False
     max_tilt_sun_only: bool = False
-    # Configurable venetian tilt safety margin (issue #783): 0.0 (default) is a
-    # provable no-op; 1.0 applies the full angle-dependent geometry margin in the
-    # slat-closing direction. Scales the automatic ``SafetyMarginCalculator``
-    # factor — see ``engine/covers/tilt.py``.
+    # Configurable tilt safety margin (issue #783, shared by every tilt-axis
+    # cover in #964): 0.0 (default) is a provable no-op; 1.0 applies the full
+    # angle-dependent geometry margin in the slat-closing direction. Scales the
+    # automatic ``SafetyMarginCalculator`` factor — see ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
     # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
     # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact
     # behaviour; "proportional" linearly remaps the full 0–100% demand into the
-    # band. Venetian-only; consumed at the engine _clamp_tilt seam.
+    # band. Shared by all tilt-axis covers (#964): consumed at the venetian
+    # ``_clamp_tilt`` seam and at ``AdaptiveTiltCover._apply_tilt_axis_limits``.
     tilt_transform: str = VENETIAN_TILT_TRANSFORM_CLAMP
 
 
