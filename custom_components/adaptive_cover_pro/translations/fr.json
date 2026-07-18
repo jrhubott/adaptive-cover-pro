@@ -1219,6 +1219,36 @@
         "intermediate": "Intersaison",
         "summer": "Été"
       }
+    },
+    "venetian_mode": {
+      "options": {
+        "position_and_tilt": "Position et inclinaison",
+        "tilt_only": "Inclinaison seule"
+      }
+    },
+    "venetian_tilt_reset_direction": {
+      "options": {
+        "open": "Ouvrir",
+        "close": "Fermer"
+      }
+    },
+    "venetian_tilt_reset_scope": {
+      "options": {
+        "all_tilt_commands": "Toutes les commandes d'inclinaison",
+        "sun_tracking_only": "Suivi du soleil uniquement"
+      }
+    },
+    "venetian_tilt_skip_mode": {
+      "options": {
+        "neutral": "Neutre",
+        "suppress": "Supprimer"
+      }
+    },
+    "venetian_post_settle_mode": {
+      "options": {
+        "fixed_delay": "Délai fixe",
+        "entity_state": "État de l'entité"
+      }
     }
   },
   "services": {

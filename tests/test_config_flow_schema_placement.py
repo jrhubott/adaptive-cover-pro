@@ -29,6 +29,10 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNSET_TIME_ENTITY,
     CONF_TRANSIT_TIMEOUT,
     CONF_VENETIAN_MODE,
+    CONF_VENETIAN_POST_SETTLE_MODE,
+    CONF_VENETIAN_TILT_RESET_DIRECTION,
+    CONF_VENETIAN_TILT_RESET_SCOPE,
+    CONF_VENETIAN_TILT_SKIP_MODE,
 )
 
 
@@ -153,6 +157,37 @@ def test_venetian_mode_in_geometry_venetian_schema() -> None:
 
     keys = _schema_keys(GEOMETRY_VENETIAN_SCHEMA)
     assert CONF_VENETIAN_MODE in keys
+
+
+@pytest.mark.parametrize(
+    "conf_key, expected_translation_key",
+    [
+        (CONF_VENETIAN_MODE, "venetian_mode"),
+        (CONF_VENETIAN_TILT_RESET_DIRECTION, "venetian_tilt_reset_direction"),
+        (CONF_VENETIAN_TILT_RESET_SCOPE, "venetian_tilt_reset_scope"),
+        (CONF_VENETIAN_TILT_SKIP_MODE, "venetian_tilt_skip_mode"),
+        (CONF_VENETIAN_POST_SETTLE_MODE, "venetian_post_settle_mode"),
+    ],
+)
+def test_venetian_select_fields_use_selector_with_translation_key(
+    conf_key: str, expected_translation_key: str
+) -> None:
+    """The 5 venetian enum fields must render via SelectSelector(translation_key=...),
+    not a bare vol.In(...), or the frontend shows raw enum values instead of
+    translated labels (issue: untranslated venetian select options).
+    """
+    from homeassistant.helpers import selector as ha_selector
+
+    from custom_components.adaptive_cover_pro.cover_types.venetian import (
+        GEOMETRY_VENETIAN_SCHEMA,
+    )
+
+    marker = next(k for k in GEOMETRY_VENETIAN_SCHEMA.schema if str(k) == conf_key)
+    value_validator = GEOMETRY_VENETIAN_SCHEMA.schema[marker]
+    assert isinstance(
+        value_validator, ha_selector.SelectSelector
+    ), f"{conf_key} must use SelectSelector, not vol.In"
+    assert value_validator.config.get("translation_key") == expected_translation_key
 
 
 def test_tilt_sun_only_toggles_in_venetian_schema_default_false() -> None:

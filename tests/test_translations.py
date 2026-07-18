@@ -436,6 +436,34 @@ def test_venetian_mode_in_en_geometry_translations() -> None:
     ), "venetian_mode description missing from options.step.geometry.data_description"
 
 
+def test_venetian_select_options_translated_in_en() -> None:
+    """The 5 venetian enum fields must carry a selector.<key>.options block whose
+    keys exactly match the corresponding const tuple values, or SelectSelector's
+    translation_key lookup resolves to nothing and the frontend falls back to raw
+    enum values (issue: untranslated venetian select options).
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_MODES,
+        VENETIAN_POST_SETTLE_MODES,
+        VENETIAN_TILT_RESET_DIRECTIONS,
+        VENETIAN_TILT_RESET_SCOPES,
+        VENETIAN_TILT_SKIP_MODES,
+    )
+
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    sel = en["selector"]
+    expected = {
+        "venetian_mode": set(VENETIAN_MODES),
+        "venetian_tilt_reset_direction": set(VENETIAN_TILT_RESET_DIRECTIONS),
+        "venetian_tilt_reset_scope": set(VENETIAN_TILT_RESET_SCOPES),
+        "venetian_tilt_skip_mode": set(VENETIAN_TILT_SKIP_MODES),
+        "venetian_post_settle_mode": set(VENETIAN_POST_SETTLE_MODES),
+    }
+    for key, option_values in expected.items():
+        assert key in sel, f"selector.{key} missing from en.json"
+        assert set(sel[key]["options"].keys()) == option_values
+
+
 def test_priority_field_documents_all_three_gates() -> None:
     """The slot-1 priority description names all three bypassed gates (#711).
 

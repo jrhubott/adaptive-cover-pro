@@ -149,6 +149,25 @@ _EXPLICIT_USER_POSITION_METHODS = frozenset(
 )
 
 
+def _venetian_select(
+    options: tuple[str, ...], translation_key: str
+) -> selector.SelectSelector:
+    """Build a translated dropdown for one of the venetian enum fields.
+
+    Mirrors the working pattern in ``config_dynamic.py``
+    (``blind_spot_elevation_mode``) / ``config_fields._select()`` — a bare
+    ``vol.In(...)`` renders raw enum values in the frontend with no
+    translation attempted at all.
+    """
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(options),
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key=translation_key,
+        )
+    )
+
+
 def _venetian_extras_schema() -> dict:
     """Return the venetian-only schema dict (unit-independent fields)."""
     return {
@@ -162,7 +181,7 @@ def _venetian_extras_schema() -> dict:
         ),
         vol.Optional(
             CONF_VENETIAN_TILT_SKIP_MODE, default=DEFAULT_VENETIAN_TILT_SKIP_MODE
-        ): vol.In(VENETIAN_TILT_SKIP_MODES),
+        ): _venetian_select(VENETIAN_TILT_SKIP_MODES, "venetian_tilt_skip_mode"),
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             default=DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -176,21 +195,23 @@ def _venetian_extras_schema() -> dict:
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             default=DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
-        ): vol.In(VENETIAN_TILT_RESET_DIRECTIONS),
+        ): _venetian_select(
+            VENETIAN_TILT_RESET_DIRECTIONS, "venetian_tilt_reset_direction"
+        ),
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_SCOPE,
             default=DEFAULT_VENETIAN_TILT_RESET_SCOPE,
-        ): vol.In(VENETIAN_TILT_RESET_SCOPES),
-        vol.Optional(CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE): vol.In(
-            VENETIAN_MODES
-        ),
+        ): _venetian_select(VENETIAN_TILT_RESET_SCOPES, "venetian_tilt_reset_scope"),
+        vol.Optional(
+            CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE
+        ): _venetian_select(VENETIAN_MODES, "venetian_mode"),
         vol.Optional(
             CONF_VENETIAN_POST_SETTLE_HOLD,
             default=DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
         vol.Optional(
             CONF_VENETIAN_POST_SETTLE_MODE, default=DEFAULT_VENETIAN_POST_SETTLE_MODE
-        ): vol.In(VENETIAN_POST_SETTLE_MODES),
+        ): _venetian_select(VENETIAN_POST_SETTLE_MODES, "venetian_post_settle_mode"),
         vol.Optional(
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             default=DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,

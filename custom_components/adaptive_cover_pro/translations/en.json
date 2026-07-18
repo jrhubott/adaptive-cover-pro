@@ -1219,6 +1219,36 @@
         "intermediate": "Intermediate",
         "summer": "Summer"
       }
+    },
+    "venetian_mode": {
+      "options": {
+        "position_and_tilt": "Position and tilt",
+        "tilt_only": "Tilt only"
+      }
+    },
+    "venetian_tilt_reset_direction": {
+      "options": {
+        "open": "Open",
+        "close": "Close"
+      }
+    },
+    "venetian_tilt_reset_scope": {
+      "options": {
+        "all_tilt_commands": "All tilt commands",
+        "sun_tracking_only": "Sun-tracking only"
+      }
+    },
+    "venetian_tilt_skip_mode": {
+      "options": {
+        "neutral": "Neutral",
+        "suppress": "Suppress"
+      }
+    },
+    "venetian_post_settle_mode": {
+      "options": {
+        "fixed_delay": "Fixed delay",
+        "entity_state": "Entity state"
+      }
     }
   },
   "services": {
