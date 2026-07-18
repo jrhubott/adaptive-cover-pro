@@ -1609,7 +1609,18 @@ class ReasonCode(StrEnum):
     # ends up *above* the ceiling. "inactive" would read as a lie in exactly the
     # conflict the config summary already warns about.
     REGISTRY_CEILING_OVERRIDDEN = "registry.ceiling_overridden"
+    # The floor side of the same conflict: when the floor beats the ceiling and
+    # the winner started *above* the floor, the net move is a lowering — so
+    # "floor raised winner from 80% to 60%" would contradict itself. This names
+    # the floor as the determining bound without implying a direction from the
+    # winner (audit finding C).
+    REGISTRY_FLOOR_OVERRIDES_CEILING = "registry.floor_overrides_ceiling"
     REGISTRY_TILT_BOUND_ACTIVE = "registry.tilt_bound_active"
+    # A tilt bound that was active but did not bind — the tilt-axis analog of
+    # floor_inactive / ceiling_inactive. Emitted so an out-composed or
+    # already-satisfied tilt bound still explains itself instead of vanishing
+    # from the trace (audit findings A / B).
+    REGISTRY_TILT_BOUND_INACTIVE = "registry.tilt_bound_inactive"
     REGISTRY_TILT_CLAMPED = "registry.tilt_clamped"
 
     # -- diagnostics builder (control-state reason + position explanation)

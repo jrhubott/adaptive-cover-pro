@@ -3769,3 +3769,20 @@ def test_constraint_only_slot_renders_without_a_position():
     }
     line = _custom_line(cfg, cover_type=CoverType.VENETIAN)
     assert "tilt at least 50%" in line
+
+
+def test_min_mode_without_position_shows_no_as_minimum():
+    """Finding D: a min_mode toggle with no stored position contributes no floor.
+
+    The derived mode is MAX (a lone ceiling), so the phantom '(as minimum)'
+    fragment must not appear — it would claim a floor that does not exist.
+    """
+    cfg = {
+        "custom_position_sensors_1": ["binary_sensor.movie"],
+        "custom_position_min_mode_1": True,
+        "custom_position_position_max_1": 50,
+    }
+    line = _custom_line(cfg)
+    assert "(as minimum)" not in line
+    assert "at most 50%" in line
+    assert "the calculated position" in line

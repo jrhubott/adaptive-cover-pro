@@ -57,12 +57,29 @@ def _drop_trace_steps(
     return [step for step in trace if step.matched or step.handler not in sources]
 
 
+def _iter_nonbinding_bounds(constraints: list, axis: str, binding):
+    """Yield the active bounded constraints on ``axis`` that did not bind.
+
+    Shared by the position and tilt inactive-step passes so the axis filter,
+    the FIXED skip, and the ``binding``-by-identity skip live in one place
+    (CODING_GUIDELINES § No Duplication). Skipping by *identity* rather than by
+    value keeps a losing tie-bound visible — two slots at the same floor no
+    longer collapse into one trace entry (audit finding 4b).
+    """
+    for c in constraints:
+        if c.axis != axis or c.kind is AxisConstraintMode.FIXED:
+            continue
+        if c is binding:
+            continue  # this bound *did* bind — already emitted as the clamp
+        yield c
+
+
 def _inactive_position_steps(
     constraints: list,
     *,
     winner_pos: int,
     final_pos: int,
-    floor_raised: bool,
+    floor_wins: bool,
     binding,
 ) -> list[DecisionStep]:
     """Explain every position bound that was active but did not bind.
@@ -73,20 +90,15 @@ def _inactive_position_steps(
 
     ``binding`` is the single constraint that produced this cycle's clamp (None
     when nothing clamped); it is skipped, since it was already emitted as the
-    matched clamp step. Skipping by *identity* rather than by value keeps a
-    losing tie-floor visible — two slots at the same floor no longer collapse
-    into one trace entry (audit finding 4b).
+    matched clamp step.
 
     A ceiling the floor beat is reported as *overridden*, not *inactive*: when
-    ``floor_raised`` lifted the cover above a ceiling, that ceiling did not sit
-    idle — it was outranked, and the honest wording says so (audit finding 7).
+    the floor won the conflict (``floor_wins``) it sits above that ceiling, so
+    the ceiling was outranked, not idle — the honest wording says so (audit
+    findings 7 / C).
     """
     steps: list[DecisionStep] = []
-    for c in constraints:
-        if c.axis != AXIS_NAME_POSITION or c.kind is AxisConstraintMode.FIXED:
-            continue
-        if c is binding:
-            continue  # this bound *did* bind — already emitted as the clamp
+    for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_POSITION, binding):
         if c.low is not None:
             steps.append(
                 DecisionStep(
@@ -100,7 +112,7 @@ def _inactive_position_steps(
                 )
             )
         if c.high is not None:
-            if floor_raised and c.high < final_pos:
+            if floor_wins and c.high < final_pos:
                 code, params = (
                     ReasonCode.REGISTRY_CEILING_OVERRIDDEN,
                     {"ceiling_pos": c.high, "to_pos": final_pos},
@@ -118,6 +130,40 @@ def _inactive_position_steps(
                     position=c.high,
                 )
             )
+    return steps
+
+
+def _inactive_tilt_steps(
+    constraints: list, *, resolved_tilt: int, binding
+) -> list[DecisionStep]:
+    """Explain every tilt bound that was active but did not bind.
+
+    The tilt-axis analog of :func:`_inactive_position_steps`: a tilt bound that
+    the resolved tilt already satisfied, or one out-composed by a stricter
+    bound, would otherwise be dropped with the deferral sweep and vanish from
+    the trace (audit findings A / B). ``binding`` is the one bound that actually
+    clamped (None when the tilt was already within every bound); it is skipped
+    by identity, exactly as the position pass skips its binding constraint.
+    """
+    steps: list[DecisionStep] = []
+    for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_TILT, binding):
+        steps.append(
+            DecisionStep(
+                handler=c.source,
+                matched=False,
+                reason_payload=Reason(
+                    ReasonCode.REGISTRY_TILT_BOUND_INACTIVE,
+                    {
+                        "low_label": bound_label(c.low),
+                        "high_label": bound_label(c.high),
+                        "label": c.label,
+                        "tilt": resolved_tilt,
+                    },
+                ),
+                position=None,
+                tilt=None,
+            )
+        )
     return steps
 
 
@@ -290,9 +336,22 @@ class PipelineRegistry:
         # held below it must still be lifted; issue #809).  Because
         # ``clamp_to_bounds`` applies the floor last, a floor above a ceiling
         # still reads as a raise — the deliberate conflict rule.
-        floor_raised = final_pos > effective_winner_pos
-        ceiling_lowered = final_pos < effective_winner_pos
-        position_clamped = floor_raised or ceiling_lowered
+        raised = final_pos > effective_winner_pos
+        lowered = final_pos < effective_winner_pos
+        position_clamped = raised or lowered
+        # In a floor/ceiling conflict ``clamp_to_bounds`` applies the floor last,
+        # so the floor always determines the final value (== floor_pos) no matter
+        # where the winner started. Detect the conflict explicitly rather than
+        # inferring the direction from ``final`` vs ``effective``: when the winner
+        # sat *above* the floor the net move is a lowering, yet the floor — not
+        # the ceiling — is what bound (audit finding C). Outside a conflict,
+        # ``floor_wins`` collapses to the old ``floor_raised`` predicate.
+        floor_conflict = (
+            floor_pos is not None
+            and ceiling_pos is not None
+            and floor_pos > ceiling_pos
+        )
+        floor_wins = floor_conflict or raised
         # Unchanged position keeps the winner's own value (today's behaviour:
         # an inert bound must not overwrite ``position`` with ``held_position``).
         clamped_position = final_pos if position_clamped else winner.position
@@ -301,34 +360,39 @@ class PipelineRegistry:
         # move, not the join of every active bound (audit finding 4a).
         position_binding = (
             bounding_constraint(
-                constraints, AXIS_NAME_POSITION, final_pos, low=floor_raised
+                constraints, AXIS_NAME_POSITION, final_pos, low=floor_wins
             )
             if position_clamped
             else None
         )
         if position_clamped:
-            code, source = (
-                (ReasonCode.REGISTRY_FLOOR_RAISED, "floor_clamp")
-                if floor_raised
-                else (ReasonCode.REGISTRY_CEILING_LOWERED, "ceiling_clamp")
-            )
+            source = "floor_clamp" if floor_wins else "ceiling_clamp"
             label = (
                 position_binding.label
                 if position_binding is not None
                 else constraint_label(constraints, AXIS_NAME_POSITION)
             )
+            params = {
+                "from_pos": effective_winner_pos,
+                "to_pos": final_pos,
+                "label": label,
+            }
+            if not floor_wins:
+                code = ReasonCode.REGISTRY_CEILING_LOWERED
+            elif raised:
+                code = ReasonCode.REGISTRY_FLOOR_RAISED
+            else:
+                # The floor won a conflict but the winner started above it: the
+                # net move is a lowering, so "floor raised from 80% to 60%" would
+                # contradict itself. A floor-wins step names the floor as the
+                # determining bound without implying a direction (finding C).
+                code = ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING
+                params["ceiling_pos"] = ceiling_pos
             trace.append(
                 DecisionStep(
                     handler=source,
                     matched=True,
-                    reason_payload=Reason(
-                        code,
-                        {
-                            "from_pos": effective_winner_pos,
-                            "to_pos": final_pos,
-                            "label": label,
-                        },
-                    ),
+                    reason_payload=Reason(code, params),
                     position=final_pos,
                 )
             )
@@ -346,7 +410,7 @@ class PipelineRegistry:
                 constraints,
                 winner_pos=effective_winner_pos,
                 final_pos=final_pos,
-                floor_raised=floor_raised,
+                floor_wins=floor_wins,
                 binding=position_binding,
             )
         )
@@ -437,6 +501,7 @@ class PipelineRegistry:
             tilt_label = constraint_label(constraints, AXIS_NAME_TILT)
             if resolved_tilt is not None:
                 bounded_tilt = clamp_to_bounds(resolved_tilt, tilt_low, tilt_high)
+                tilt_binding = None
                 if bounded_tilt != resolved_tilt:
                     tilt_clamped = True
                     tilt_binding = bounding_constraint(
@@ -461,6 +526,19 @@ class PipelineRegistry:
                         tilt_overlay = bounded_tilt
                     else:
                         merged["tilt"] = bounded_tilt
+                # Every active tilt bound that did not bind still explains itself
+                # — the tilt-axis analog of the position inactive steps. Covers a
+                # bound the resolved tilt already satisfied (nothing clamped) and
+                # one out-composed by a stricter bound; ``tilt_binding`` (the one
+                # that did clamp, or None) is skipped by identity so it is not
+                # both clamped and inactive (audit findings A / B).
+                trace.extend(
+                    _inactive_tilt_steps(
+                        constraints,
+                        resolved_tilt=resolved_tilt,
+                        binding=tilt_binding,
+                    )
+                )
             else:
                 # Nothing has resolved a tilt yet. It still can: the venetian
                 # engine fills tilt after the pipeline, in

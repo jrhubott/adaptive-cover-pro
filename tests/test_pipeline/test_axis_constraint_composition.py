@@ -569,6 +569,150 @@ class TestCeilingOverriddenByFloor:
         assert ReasonCode.REGISTRY_CEILING_INACTIVE in _codes(res)
 
 
+# ---------------------------------------------------------------------------
+# Second-round pre-merge audit regressions (issue #943)
+# ---------------------------------------------------------------------------
+
+
+class TestLosingPositionSlotWithTiltBoundStaysVisible:
+    """Finding A: a slot that loses the position axis but carries a tilt bound.
+
+    Slot 2 names an exact position that loses on priority (a matched=False
+    ``OUTPRIORITIZED`` step) while also contributing a tilt minimum. The tilt
+    pass's ``_drop_trace_steps`` swept the slot's step away with nothing
+    re-emitted, so an active, constraining slot vanished from the trace.
+    """
+
+    def _res(self):
+        return _evaluate(
+            [_slot(2, position=25, tilt_min=10, priority=50)],
+            winner=_StubWinner(80, tilt=60, priority=80),
+        )
+
+    def test_no_value_changes(self) -> None:
+        """This is a trace bug: winner keeps position 80 and tilt 60."""
+        res = self._res()
+        assert res.position == 80
+        assert res.tilt == 60
+
+    def test_losing_slot_is_named_in_the_trace(self) -> None:
+        """custom_position_2 was active and constrained — it must appear."""
+        assert "custom_position_2" in [s.handler for s in self._res().decision_trace]
+
+    def test_losing_slot_gets_a_tilt_bound_inactive_step(self) -> None:
+        """Its non-binding tilt bound explains itself with the inactive step."""
+        assert ReasonCode.REGISTRY_TILT_BOUND_INACTIVE in _codes(self._res())
+
+
+class TestTiltBoundInactiveStep:
+    """Finding B: the tilt axis gains the position axis's inactive analog."""
+
+    def test_within_bound_emits_inactive_step(self) -> None:
+        """Winner tilt 75 already satisfies tilt_min 50 — the bound stays visible."""
+        res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(50, tilt=75))
+        assert res.tilt == 75  # value unchanged
+        assert ReasonCode.REGISTRY_TILT_BOUND_INACTIVE in _codes(res)
+
+    def test_inactive_step_carries_payload_params(self) -> None:
+        """The step names the bound and the tilt that was already within it."""
+        res = _evaluate(
+            [_slot(1, tilt_min=50, sensor_name="Door")],
+            winner=_StubWinner(50, tilt=75),
+        )
+        params = _step(
+            res, ReasonCode.REGISTRY_TILT_BOUND_INACTIVE
+        ).reason_payload.params
+        assert params["low_label"] == "50%"
+        assert params["high_label"] == "—"
+        assert params["label"] == "Door"
+        assert params["tilt"] == 75
+
+    def test_out_composed_bound_emits_inactive_step(self) -> None:
+        """A tilt_min out-composed by a stricter one still explains itself."""
+        res = _evaluate(
+            [
+                _slot(1, tilt_min=30, sensor_name="Sensor 1"),
+                _slot(2, tilt_min=50, sensor_name="Sensor 2"),
+            ],
+            winner=_StubWinner(50, tilt=10),
+        )
+        assert res.tilt == 50  # value unchanged (max-of-mins)
+        inactive = [
+            s.handler
+            for s in res.decision_trace
+            if s.reason_payload is not None
+            and s.reason_payload.code is ReasonCode.REGISTRY_TILT_BOUND_INACTIVE
+        ]
+        assert inactive == ["custom_position_1"]
+
+    def test_binding_bound_is_not_also_inactive(self) -> None:
+        """The bound that actually clamped gets the clamp step, not an inactive one."""
+        res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(50, tilt=10))
+        assert ReasonCode.REGISTRY_TILT_CLAMPED in _codes(res)
+        assert ReasonCode.REGISTRY_TILT_BOUND_INACTIVE not in _codes(res)
+
+    def test_carried_bound_is_not_reported_inactive(self) -> None:
+        """A pending bound (no tilt resolved yet) stays 'active', never 'inactive'."""
+        res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(50))
+        assert ReasonCode.REGISTRY_TILT_BOUND_ACTIVE in _codes(res)
+        assert ReasonCode.REGISTRY_TILT_BOUND_INACTIVE not in _codes(res)
+
+
+class TestFloorBeatsCeilingWinnerAboveFloor:
+    """Finding C: floor-beats-ceiling with the winner above the floor.
+
+    Floor 60, ceiling 40, winner 80 → position 60 (floor wins). The winner
+    started above the floor, so the net move is a lowering — but the floor,
+    not the ceiling, determined the final value. The trace must say so.
+    """
+
+    def _res(self):
+        return _evaluate(
+            [
+                _slot(1, position=60, min_mode=True, sensor_name="Floor"),
+                _slot(2, position_max=40, sensor_name="Ceiling"),
+            ],
+            winner=_StubWinner(80),
+        )
+
+    def test_position_is_the_floor(self) -> None:
+        """Value unchanged from the floor-wins rule."""
+        assert self._res().position == 60
+
+    def test_move_is_attributed_to_the_floor(self) -> None:
+        """A floor-wins step names the floor; it is not a ceiling lower."""
+        codes = _codes(self._res())
+        assert ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING in codes
+        assert ReasonCode.REGISTRY_CEILING_LOWERED not in codes
+
+    def test_floor_step_names_only_the_floor_not_a_joined_label(self) -> None:
+        """The joined-label bug must not resurface — the label is just the floor."""
+        params = _step(
+            self._res(), ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING
+        ).reason_payload.params
+        assert params["label"] == "Floor"
+        assert params["to_pos"] == 60
+        assert params["ceiling_pos"] == 40
+        assert params["from_pos"] == 80
+
+    def test_floor_is_not_reported_inactive(self) -> None:
+        """The floor produced the value — it cannot also be 'inactive'."""
+        assert ReasonCode.REGISTRY_FLOOR_INACTIVE not in _codes(self._res())
+
+    def test_beaten_ceiling_reads_overridden_not_inactive(self) -> None:
+        """The cover ended up above the ceiling — 'below ceiling' would be a lie."""
+        codes = _codes(self._res())
+        assert ReasonCode.REGISTRY_CEILING_OVERRIDDEN in codes
+        assert ReasonCode.REGISTRY_CEILING_INACTIVE not in codes
+
+    def test_overridden_ceiling_names_the_final_position(self) -> None:
+        params = _step(
+            self._res(), ReasonCode.REGISTRY_CEILING_OVERRIDDEN
+        ).reason_payload.params
+        assert params["ceiling_pos"] == 40
+        assert params["to_pos"] == 60
+
+
 class TestFixedPositionOutranksCeiling:
     """An explicit position keeps its claim; position_max needs min_mode (#5)."""
 

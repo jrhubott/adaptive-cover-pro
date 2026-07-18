@@ -2290,7 +2290,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     if _pos is not None
                     else L["custom.no_position_claim"]
                 )
-                cp_min = L["fragments.as_minimum"] if _is_min else ""
+                # "(as minimum)" only when there is a floor to apply: a min_mode
+                # toggle with no stored position contributes no floor (the
+                # derived mode is a lone MAX), so the fragment would be a phantom
+                # (audit finding D). Mirrors the pipeline's derived-mode logic.
+                cp_min = (
+                    L["fragments.as_minimum"] if (_is_min and _pos is not None) else ""
+                )
                 # A lone position_max on a FIXED-position slot is ignored — the
                 # exact position keeps its claim (audit finding 5), so only
                 # surface the ceiling when it actually applies (min-mode range,

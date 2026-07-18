@@ -68,7 +68,9 @@
     "ceiling_lowered": "Obergrenze abgesenkter Gewinner von {from_pos}% zu {to_pos}% durch {label}",
     "ceiling_inactive": "Obergrenze {ceiling_pos}% inaktiv (Gewinner {winner_pos}% unter Obergrenze)",
     "ceiling_overridden": "Obergrenze {ceiling_pos}% überschrieben — eine Untergrenze hat die Abdeckung auf {to_pos}% angehoben",
+    "floor_overrides_ceiling": "Untergrenze auf {to_pos}% angehoben über Obergrenze {ceiling_pos}% durch {label} (Gewinner war {from_pos}%)",
     "tilt_bound_active": "Neigungsgrenze {low_label}–{high_label} aktiv durch {label}; wartet auf die aufgelöste Neigung",
+    "tilt_bound_inactive": "Neigungsgrenze {low_label}–{high_label} inaktiv durch {label}; aufgelöste Neigung {tilt}% bereits innerhalb",
     "tilt_clamped": "Neigung begrenzt von {from_tilt}% auf {to_tilt}% durch {label}"
   },
   "builder": {

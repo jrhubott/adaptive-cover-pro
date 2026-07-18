@@ -149,9 +149,17 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.REGISTRY_CEILING_OVERRIDDEN: (
         "ceiling {ceiling_pos}% overridden — a floor raised the cover to {to_pos}%"
     ),
+    ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING: (
+        "floor raised to {to_pos}% over ceiling {ceiling_pos}% by {label} "
+        "(winner was {from_pos}%)"
+    ),
     ReasonCode.REGISTRY_TILT_BOUND_ACTIVE: (
         "tilt bound {low_label}–{high_label} active by {label}; "
         "awaiting the resolved tilt"
+    ),
+    ReasonCode.REGISTRY_TILT_BOUND_INACTIVE: (
+        "tilt bound {low_label}–{high_label} inactive by {label}; "
+        "resolved tilt {tilt}% already within"
     ),
     ReasonCode.REGISTRY_TILT_CLAMPED: (
         "tilt clamped from {from_tilt}% to {to_tilt}% by {label}"
