@@ -66,7 +66,7 @@
     "tilt_applied": "nur Neigung: Lamellen-Winkel fest bei {tilt}% durch {label}; Position gesteuert durch {handler}",
     "tilt_deferred": "nur Neigung {tilt}% verschoben — {handler} hat bereits Neigung {winner_tilt}% gesetzt",
     "ceiling_lowered": "Obergrenze abgesenkter Gewinner von {from_pos}% zu {to_pos}% durch {label}",
-    "ceiling_inactive": "Obergrenze {ceiling_pos}% inaktiv (Gewinner {winner_pos}% unter Obergrenze)",
+    "ceiling_inactive": "Obergrenze {ceiling_pos}% inaktiv (Endposition {to_pos}% auf oder unter Obergrenze)",
     "ceiling_overridden": "Obergrenze {ceiling_pos}% überschrieben — eine Untergrenze hat die Abdeckung auf {to_pos}% angehoben",
     "floor_overrides_ceiling": "Untergrenze auf {to_pos}% angehoben über Obergrenze {ceiling_pos}% durch {label} (Gewinner war {from_pos}%)",
     "tilt_bound_active": "Neigungsgrenze {low_label}–{high_label} aktiv durch {label}; wartet auf die aufgelöste Neigung",

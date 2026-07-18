@@ -144,7 +144,7 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
         "ceiling lowered winner from {from_pos}% to {to_pos}% by {label}"
     ),
     ReasonCode.REGISTRY_CEILING_INACTIVE: (
-        "ceiling {ceiling_pos}% inactive (winner {winner_pos}% below ceiling)"
+        "ceiling {ceiling_pos}% inactive (resolved {to_pos}% at or below ceiling)"
     ),
     ReasonCode.REGISTRY_CEILING_OVERRIDDEN: (
         "ceiling {ceiling_pos}% overridden — a floor raised the cover to {to_pos}%"

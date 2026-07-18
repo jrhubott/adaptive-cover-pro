@@ -66,7 +66,7 @@
     "tilt_applied": "tilt-only: slat angle fixed at {tilt}% by {label}; position driven by {handler}",
     "tilt_deferred": "tilt-only {tilt}% deferred — {handler} already set tilt {winner_tilt}%",
     "ceiling_lowered": "ceiling lowered winner from {from_pos}% to {to_pos}% by {label}",
-    "ceiling_inactive": "ceiling {ceiling_pos}% inactive (winner {winner_pos}% below ceiling)",
+    "ceiling_inactive": "ceiling {ceiling_pos}% inactive (resolved {to_pos}% at or below ceiling)",
     "ceiling_overridden": "ceiling {ceiling_pos}% overridden — a floor raised the cover to {to_pos}%",
     "floor_overrides_ceiling": "floor raised to {to_pos}% over ceiling {ceiling_pos}% by {label} (winner was {from_pos}%)",
     "tilt_bound_active": "tilt bound {low_label}–{high_label} active by {label}; awaiting the resolved tilt",

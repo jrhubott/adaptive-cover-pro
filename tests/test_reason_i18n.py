@@ -274,8 +274,8 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
     ),
     (
         ReasonCode.REGISTRY_CEILING_INACTIVE,
-        {"ceiling_pos": 60, "winner_pos": 40},
-        "ceiling 60% inactive (winner 40% below ceiling)",
+        {"ceiling_pos": 60, "to_pos": 40},
+        "ceiling 60% inactive (resolved 40% at or below ceiling)",
     ),
     (
         ReasonCode.REGISTRY_CEILING_OVERRIDDEN,

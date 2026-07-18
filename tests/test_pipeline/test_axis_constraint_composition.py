@@ -731,3 +731,91 @@ class TestFixedPositionOutranksCeiling:
             winner=_StubWinner(90),
         )
         assert res.position == 50
+
+
+# ---------------------------------------------------------------------------
+# Third-round audit: inactive-step payloads must reflect the FINAL value
+# ---------------------------------------------------------------------------
+
+
+class TestOutComposedTiltBoundInactivePayload:
+    """Finding i: an out-composed tilt bound's inactive step must report the
+    FINAL (post-clamp) tilt, not the pre-clamp winner tilt.
+
+    Slot 1 tilt_min 30, slot 2 tilt_min 50, winner tilt 10 → final tilt 50
+    (max-of-mins; slot 2 binds). Slot 1's non-binding inactive step must say the
+    resolved tilt is 50 — which genuinely *is* within [30, —]. The pre-clamp 10
+    is a false 'already within' claim: 10 is below 30 and is not the final tilt.
+    """
+
+    def _res(self):
+        return _evaluate(
+            [
+                _slot(1, tilt_min=30, sensor_name="Sensor 1"),
+                _slot(2, tilt_min=50, sensor_name="Sensor 2"),
+            ],
+            winner=_StubWinner(50, tilt=10),
+        )
+
+    def test_value_unchanged(self) -> None:
+        """This is a trace bug: the final tilt is still 50."""
+        assert self._res().tilt == 50
+
+    def test_inactive_step_reports_the_final_tilt(self) -> None:
+        """The non-binding bound's payload carries the resolved tilt, not 10."""
+        step = _step(self._res(), ReasonCode.REGISTRY_TILT_BOUND_INACTIVE)
+        assert step.reason_payload.params["label"] == "Sensor 1"
+        assert step.reason_payload.params["tilt"] == 50
+
+    def test_stale_number_variant_reports_the_clamped_tilt(self) -> None:
+        """A tilt_max clamps 75→40; the inactive tilt_min must report 40, not 75."""
+        res = _evaluate(
+            [
+                _slot(1, tilt_min=20, sensor_name="Min"),
+                _slot(2, tilt_max=40, sensor_name="Max"),
+            ],
+            winner=_StubWinner(50, tilt=75),
+        )
+        assert res.tilt == 40  # value unchanged
+        step = _step(res, ReasonCode.REGISTRY_TILT_BOUND_INACTIVE)
+        assert step.reason_payload.params["label"] == "Min"
+        assert step.reason_payload.params["tilt"] == 40
+
+
+class TestOutComposedCeilingInactivePayload:
+    """Finding ii: a ceiling ABOVE the winner, out-composed by a lower ceiling,
+    must not claim the winner is 'below' it.
+
+    Ceilings 40 and 70, winner 80 → final 40 (min-of-maxes; C40 binds). C70's
+    inactive step must read truthfully relative to the resolved position (40 is
+    at or below 70) — not 'winner 80% below ceiling 70%', which is a lie: the
+    winner (80) sits *above* the 70 ceiling, and 80 is not the resolved value.
+    """
+
+    def _res(self):
+        return _evaluate(
+            [
+                _slot(1, position_max=40, sensor_name="Ceiling 40"),
+                _slot(2, position_max=70, sensor_name="Ceiling 70"),
+            ],
+            winner=_StubWinner(80),
+        )
+
+    def test_value_unchanged(self) -> None:
+        """This is a trace bug: the cover still resolves to 40."""
+        assert self._res().position == 40
+
+    def test_inactive_ceiling_reports_the_resolved_position(self) -> None:
+        """The payload carries the resolved position (40), not the winner (80)."""
+        params = _step(
+            self._res(), ReasonCode.REGISTRY_CEILING_INACTIVE
+        ).reason_payload.params
+        assert params["ceiling_pos"] == 70
+        assert params["to_pos"] == 40
+        assert "winner_pos" not in params
+
+    def test_inactive_ceiling_text_is_truthful(self) -> None:
+        """The rendered text never claims the above-ceiling winner is below it."""
+        text = _step(self._res(), ReasonCode.REGISTRY_CEILING_INACTIVE).reason
+        assert "80" not in text
+        assert "40" in text

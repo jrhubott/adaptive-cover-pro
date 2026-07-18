@@ -96,6 +96,14 @@ def _inactive_position_steps(
     the floor won the conflict (``floor_wins``) it sits above that ceiling, so
     the ceiling was outranked, not idle — the honest wording says so (audit
     findings 7 / C).
+
+    An inactive ceiling reports the *resolved* position, not the winner's: a
+    ceiling out-composed by a lower one sits above the winner (winner 80,
+    ceilings 40 + 70 → resolved 40), so 'winner 80% below ceiling 70%' is a
+    lie. The resolved position is always at or below every non-binding ceiling
+    (it is at or below the lowest, binding one), so it reads truthfully in both
+    the out-composed case and the classic winner-already-below case where the
+    resolved position equals the winner's (audit finding ii).
     """
     steps: list[DecisionStep] = []
     for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_POSITION, binding):
@@ -120,7 +128,7 @@ def _inactive_position_steps(
             else:
                 code, params = (
                     ReasonCode.REGISTRY_CEILING_INACTIVE,
-                    {"ceiling_pos": c.high, "winner_pos": winner_pos},
+                    {"ceiling_pos": c.high, "to_pos": final_pos},
                 )
             steps.append(
                 DecisionStep(
@@ -134,7 +142,7 @@ def _inactive_position_steps(
 
 
 def _inactive_tilt_steps(
-    constraints: list, *, resolved_tilt: int, binding
+    constraints: list, *, final_tilt: int, binding
 ) -> list[DecisionStep]:
     """Explain every tilt bound that was active but did not bind.
 
@@ -144,6 +152,12 @@ def _inactive_tilt_steps(
     the trace (audit findings A / B). ``binding`` is the one bound that actually
     clamped (None when the tilt was already within every bound); it is skipped
     by identity, exactly as the position pass skips its binding constraint.
+
+    ``final_tilt`` is the tilt *after* the axis clamp (equal to the pre-clamp
+    tilt when nothing clamped). A stricter same-direction bound may have moved
+    the tilt, so an out-composed bound must report the value the cover actually
+    settled on — reporting the pre-clamp tilt renders a false 'already within'
+    claim when the tilt was really clamped elsewhere (audit finding i).
     """
     steps: list[DecisionStep] = []
     for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_TILT, binding):
@@ -157,7 +171,7 @@ def _inactive_tilt_steps(
                         "low_label": bound_label(c.low),
                         "high_label": bound_label(c.high),
                         "label": c.label,
-                        "tilt": resolved_tilt,
+                        "tilt": final_tilt,
                     },
                 ),
                 position=None,
@@ -535,7 +549,7 @@ class PipelineRegistry:
                 trace.extend(
                     _inactive_tilt_steps(
                         constraints,
-                        resolved_tilt=resolved_tilt,
+                        final_tilt=bounded_tilt,
                         binding=tilt_binding,
                     )
                 )
