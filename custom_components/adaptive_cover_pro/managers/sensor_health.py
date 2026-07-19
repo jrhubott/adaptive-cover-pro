@@ -8,9 +8,13 @@ do not nag the user before a genuinely dead sensor is flagged.
 
 The manager is deliberately entity-agnostic: wiring a new sensor is a single
 ``update_watch`` call with its own ``issue_key`` and ``translation_key`` — no
-per-sensor branching here (no-duplication rule). This PR wires only the
-effective indoor temperature entity, but motion/wind/humidity could register
-the same way later.
+per-sensor branching here (no-duplication rule). It now wires the effective
+indoor temperature entity, the controlled covers, and ``sun.sun``.
+
+The debounce/raise/clear/shutdown machinery lives on the shared
+:class:`~.common.debounced_repair._DebouncedRepairBase` so the config-predicate
+sibling (:class:`~.repair.RepairManager`) reuses the exact same lifecycle
+rather than copying it.
 
 Side-effect ownership: this is a manager (it holds per-instance state and
 orchestrates the Repair lifecycle). The resolution *read* stays in the
@@ -23,10 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from homeassistant.helpers import issue_registry as ir
-
 from ..const import DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS
-from .common import TimeoutController
+from .common.debounced_repair import _DebouncedRepairBase
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -46,7 +48,7 @@ class _Watch:
     placeholders: dict[str, str] = field(default_factory=dict)
 
 
-class SensorHealthManager:
+class SensorHealthManager(_DebouncedRepairBase):
     """Raise/clear informational Repairs for unhealthy watched sensors."""
 
     def __init__(
@@ -58,13 +60,8 @@ class SensorHealthManager:
         debounce_seconds: float = DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS,
     ) -> None:
         """Bind the manager to hass and the integration domain."""
-        self._hass = hass
-        self._logger = logger
-        self._domain = domain
-        self._debounce = debounce_seconds
+        super().__init__(hass, logger, domain=domain, debounce_seconds=debounce_seconds)
         self._watched: dict[str, _Watch] = {}
-        self._timers: dict[str, TimeoutController] = {}
-        self._active: set[str] = set()
 
     # -- registration -------------------------------------------------------
 
@@ -98,7 +95,12 @@ class SensorHealthManager:
             if self._is_healthy(watch.entity_id):
                 self._recover(issue_key)
             else:
-                self._schedule(issue_key, watch)
+                self._schedule(
+                    issue_key,
+                    watch.translation_key,
+                    watch.placeholders,
+                    still_unhealthy=lambda w=watch: not self._is_healthy(w.entity_id),
+                )
 
     def _is_healthy(self, entity_id: str) -> bool:
         """Return True iff the watched entity has a real (non-null) state."""
@@ -107,56 +109,8 @@ class SensorHealthManager:
             return False
         return state.state not in _UNHEALTHY_STATES
 
-    # -- lifecycle ----------------------------------------------------------
-
-    def _schedule(self, issue_key: str, watch: _Watch) -> None:
-        """Start (once) the debounce timer that will raise the Repair."""
-        if issue_key in self._active:
-            return  # already raised — nothing to debounce
-        timer = self._timers.get(issue_key)
-        if timer is not None and timer.is_running:
-            return  # debounce already in flight
-        timer = TimeoutController(self._logger, label=f"sensor health {issue_key}")
-        self._timers[issue_key] = timer
-        timer.start(self._debounce, lambda: self._raise(issue_key, watch))
-
-    async def _raise(self, issue_key: str, watch: _Watch) -> None:
-        """Raise the Repair — but only if still unhealthy at expiry."""
-        if self._is_healthy(watch.entity_id):
-            return
-        ir.async_create_issue(
-            self._hass,
-            self._domain,
-            issue_key,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=watch.translation_key,
-            translation_placeholders=watch.placeholders,
-        )
-        self._active.add(issue_key)
-
-    def _recover(self, issue_key: str) -> None:
-        """Cancel any pending debounce and clear an active Repair."""
-        self._cancel_timer(issue_key)
-        self._delete_issue(issue_key)
-
     def _unwatch(self, issue_key: str) -> None:
         """Stop watching a key and clear its timer + Repair."""
         self._watched.pop(issue_key, None)
         self._cancel_timer(issue_key)
         self._delete_issue(issue_key)
-
-    def _cancel_timer(self, issue_key: str) -> None:
-        timer = self._timers.pop(issue_key, None)
-        if timer is not None:
-            timer.cancel()
-
-    def _delete_issue(self, issue_key: str) -> None:
-        if issue_key in self._active:
-            ir.async_delete_issue(self._hass, self._domain, issue_key)
-            self._active.discard(issue_key)
-
-    def shutdown(self) -> None:
-        """Cancel all in-flight debounce timers (on reload / unload)."""
-        for issue_key in list(self._timers):
-            self._cancel_timer(issue_key)

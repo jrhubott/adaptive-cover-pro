@@ -19,7 +19,11 @@ from custom_components.adaptive_cover_pro.managers.sensor_health import (
 
 pytestmark = pytest.mark.unit
 
-_MOD = "custom_components.adaptive_cover_pro.managers.sensor_health"
+# ``ir.async_create_issue`` / ``ir.async_delete_issue`` are resolved in the
+# module where ``_raise`` / ``_delete_issue`` are DEFINED — the shared
+# ``debounced_repair`` base, not ``sensor_health`` — so the patch anchor lives
+# there after the lifecycle extraction.
+_MOD = "custom_components.adaptive_cover_pro.managers.common.debounced_repair"
 _ISSUE_KEY = "temp_sensor_unavailable_entry1"
 _TRANSLATION_KEY = "temp_sensor_unavailable"
 

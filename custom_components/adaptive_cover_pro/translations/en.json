@@ -4,6 +4,22 @@
     "temp_sensor_unavailable": {
       "title": "Indoor temperature sensor unavailable",
       "description": "The indoor temperature sensor `{entity_id}` used by climate mode on **{name}** has been unavailable for a while. Climate decisions may be running without a current indoor reading. Check that the sensor's device is online, or set a different sensor (or turn off area auto-resolution) in the cover's Temperature & Climate options."
+    },
+    "cover_unavailable": {
+      "title": "Controlled cover unavailable",
+      "description": "The cover `{entity_id}` controlled by **{name}** has been unavailable for a while. Adaptive Cover Pro cannot read its position or send it commands. Check that the cover's device is online, or remove it from the cover's entity list if it is no longer in use."
+    },
+    "sun_unavailable": {
+      "title": "Sun integration unavailable",
+      "description": "The `sun.sun` entity used by **{name}** has been unavailable for a while. Sun tracking cannot run without the sun's position, so covers are falling back to their default position. Check that Home Assistant's Sun integration is set up and your location is configured."
+    },
+    "config_position_envelope": {
+      "title": "Position limits are contradictory",
+      "description": "The position limits configured on **{name}** are inconsistent: the minimum ({min}) is above the maximum ({max}), or a custom position is pinned outside that range. Covers may be clamped to an unexpected position. Review the minimum/maximum position and custom-position settings in the cover's options."
+    },
+    "config_time_window": {
+      "title": "Operational time window is inverted",
+      "description": "The operational time window on **{name}** starts at {start}, which is after its end at {end}. The window never opens, so automatic sun tracking will not run. Review the start and end times in the cover's options."
     }
   },
   "config": {

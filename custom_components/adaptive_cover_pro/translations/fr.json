@@ -4,6 +4,22 @@
     "temp_sensor_unavailable": {
       "title": "Capteur de température intérieure indisponible",
       "description": "Le capteur de température intérieure `{entity_id}` utilisé par le mode climatique sur **{name}** est indisponible depuis un moment. Les décisions climatiques s'exécutent peut-être sans relevé intérieur à jour. Vérifiez que l'appareil du capteur est en ligne, ou choisissez un autre capteur (ou désactivez la résolution automatique depuis la zone) dans les options Température et Climat de la couverture."
+    },
+    "cover_unavailable": {
+      "title": "Store contrôlé indisponible",
+      "description": "Le store `{entity_id}` contrôlé par **{name}** est indisponible depuis un certain temps. Adaptive Cover Pro ne peut pas lire sa position ou lui envoyer des commandes. Vérifiez que l'appareil du store est en ligne, ou supprimez-le de la liste des entités du store s'il n'est plus utilisé."
+    },
+    "sun_unavailable": {
+      "title": "Intégration Soleil indisponible",
+      "description": "L'entité `sun.sun` utilisée par **{name}** est indisponible depuis un certain temps. Le suivi du soleil ne peut pas fonctionner sans la position du soleil, donc les stores reviennent à leur position par défaut. Vérifiez que l'intégration Soleil de Home Assistant est configurée et que votre localisation est définie."
+    },
+    "config_position_envelope": {
+      "title": "Les limites de position sont contradictoires",
+      "description": "Les limites de position configurées sur **{name}** sont incohérentes : le minimum ({min}) est supérieur au maximum ({max}), ou une position personnalisée est fixée en dehors de cette plage. Les stores peuvent être limités à une position inattendue. Vérifiez les paramètres de position minimale/maximale et de position personnalisée dans les options du store."
+    },
+    "config_time_window": {
+      "title": "La fenêtre temporelle opérationnelle est inversée",
+      "description": "La fenêtre temporelle opérationnelle sur **{name}** commence à {start}, ce qui est après sa fin à {end}. La fenêtre ne s'ouvre jamais, donc le suivi automatique du soleil ne s'exécutera pas. Vérifiez les heures de début et de fin dans les options de la store."
     }
   },
   "config": {

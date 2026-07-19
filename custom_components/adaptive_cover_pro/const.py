@@ -730,6 +730,14 @@ DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA = True
 # Repair issue id (issue_registry) raised when the effective indoor temperature
 # sensor stays unavailable/missing beyond the debounce window (issue #786).
 ISSUE_TEMP_SENSOR_UNAVAILABLE = "temp_sensor_unavailable"
+# Non-sensor health-check Repair ids (issue #975), all informational
+# (is_fixable=False, WARNING, auto-clear on recovery) and debounced on the same
+# DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS window. Per-config-entry namespaced at
+# raise time (`{id}_{entry_id}` — A1 also appends the cover entity_id).
+ISSUE_COVER_UNAVAILABLE = "cover_unavailable"  # a controlled cover is unavailable
+ISSUE_SUN_UNAVAILABLE = "sun_unavailable"  # sun.sun is unavailable/missing
+ISSUE_CONFIG_POSITION_ENVELOPE = "config_position_envelope"  # min>max or slot outside
+ISSUE_CONFIG_TIME_WINDOW = "config_time_window"  # start >= end
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0

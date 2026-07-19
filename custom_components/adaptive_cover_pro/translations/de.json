@@ -4,6 +4,22 @@
     "temp_sensor_unavailable": {
       "title": "Innentemperatursensor nicht verfügbar",
       "description": "Der vom Klimamodus auf **{name}** verwendete Innentemperatursensor `{entity_id}` ist seit einiger Zeit nicht verfügbar. Klimaentscheidungen laufen möglicherweise ohne aktuellen Innenmesswert. Prüfe, ob das Gerät des Sensors online ist, oder wähle einen anderen Sensor (oder deaktiviere die automatische Ermittlung aus dem Bereich) in den Temperatur- & Klimaoptionen der Abdeckung."
+    },
+    "cover_unavailable": {
+      "title": "Gesteuerte Beschattung nicht verfügbar",
+      "description": "Die Beschattung `{entity_id}` gesteuert von **{name}** ist seit längerer Zeit nicht verfügbar. Adaptive Cover Pro kann ihre Position nicht auslesen oder Befehle senden. Überprüfen Sie, dass das Gerät der Beschattung online ist, oder entfernen Sie sie aus der Geräteliste, falls sie nicht mehr in Verwendung ist."
+    },
+    "sun_unavailable": {
+      "title": "Sonnen-Integration nicht verfügbar",
+      "description": "Die `sun.sun`-Entity verwendet von **{name}** ist seit längerer Zeit nicht verfügbar. Die Sonnenverfolgung kann ohne die Sonnenposition nicht ausgeführt werden, daher fallen Beschattungen auf ihre Standardposition zurück. Überprüfen Sie, dass Home Assistants Sonnen-Integration konfiguriert ist und Ihr Standort festgelegt wurde."
+    },
+    "config_position_envelope": {
+      "title": "Positionierungsgrenzen sind widersprüchlich",
+      "description": "Die auf **{name}** konfigurierten Positionierungsgrenzen sind inkonsistent: Das Minimum ({min}) liegt über dem Maximum ({max}), oder eine benutzerdefinierte Position befindet sich außerhalb dieses Bereichs. Beschattungen können auf eine unerwartete Position begrenzt werden. Überprüfen Sie die Einstellungen für Mindest- und Höchstposition sowie benutzerdefinierte Positionen in den Optionen der Beschattung."
+    },
+    "config_time_window": {
+      "title": "Betriebszeitfenster ist invertiert",
+      "description": "Das Betriebszeitfenster auf **{name}** beginnt um {start}, was nach seinem Ende um {end} liegt. Das Fenster öffnet sich nie, daher wird die automatische Sonnenverfolgung nicht ausgeführt. Überprüfen Sie die Start- und Endzeiten in den Optionen der Beschattung."
     }
   },
   "config": {
