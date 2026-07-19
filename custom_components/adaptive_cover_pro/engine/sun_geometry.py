@@ -5,7 +5,7 @@ Extracted from AdaptiveGeneralCover to enable standalone testing and reuse.
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from math import atan, degrees, radians, tan
+from math import atan, ceil, degrees, radians, tan
 
 import pandas as pd
 
@@ -77,12 +77,17 @@ def fov_from_reveal(width_m: float, depth_m: float) -> int:
     blocks nothing, so the FOV is the full hemisphere (the default half-angle).
     The result is clamped to the configured FOV range and rounded to an integer
     because ``fov_left``/``fov_right`` are stored as integer degrees.
+
+    Ceiling (not nearest-integer) rounding is intentional: rounding down would
+    shorten the active tracking window, causing the cover to open while the sun
+    is still geometrically entering the reveal.  A 1° over-estimate keeps the
+    cover active marginally longer — the conservative side of the error.
     """
     if depth_m <= 0 or width_m <= 0:
         return DEFAULT_FOV_LEFT
     deg = degrees(atan(width_m / depth_m))
     lo, hi = OPTION_RANGES[CONF_FOV_LEFT]
-    return int(round(min(max(deg, lo), hi)))
+    return int(ceil(min(max(deg, lo), hi)))
 
 
 def computed_fov_line(
