@@ -80,7 +80,9 @@ class _DebouncedRepairBase:
         timer = self._timers.get(issue_key)
         if timer is not None and timer.is_running:
             return  # debounce already in flight
-        timer = TimeoutController(self._logger, label=f"debounced repair {issue_key}")
+        timer = TimeoutController(
+            self._logger, label=f"debounced repair {issue_key}", hass=self._hass
+        )
         self._timers[issue_key] = timer
         timer.start(
             self._debounce,

@@ -37,6 +37,12 @@ def _make_hass(state):
     """Mock hass whose states.get returns ``state`` (a mock or None)."""
     hass = MagicMock()
     hass.states.get.return_value = state
+    # The debounce timer is now spawned via async_create_background_task so HA
+    # tracks and cancels it (issue #975 lingering-task fix); make the double
+    # create a real task so a single _drain() still fires the debounce.
+    hass.async_create_background_task = (
+        lambda coro, name=None, eager_start=True: asyncio.create_task(coro)
+    )
     return hass
 
 

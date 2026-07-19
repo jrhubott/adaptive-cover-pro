@@ -37,13 +37,27 @@ async def _drain():
         await asyncio.sleep(0)
 
 
+def _bg_hass():
+    """Mock hass whose async_create_background_task creates a real task.
+
+    The debounce timer is now spawned via HA's tracked-task helper (issue #975
+    lingering-task fix), so the double must return a real asyncio task for
+    ``_drain()`` to fire the debounce.
+    """
+    hass = MagicMock()
+    hass.async_create_background_task = (
+        lambda coro, name=None, eager_start=True: asyncio.create_task(coro)
+    )
+    return hass
+
+
 class TestRepairManager:
     """Raise-on-sustained-incoherence, clear-on-fix, debounce, shutdown."""
 
     async def test_predicate_raises_when_unhealthy_past_debounce(self, logger):
         """An incoherent config held past debounce raises the informational Repair."""
         mgr = RepairManager(
-            MagicMock(), logger, domain="adaptive_cover_pro", debounce_seconds=0
+            _bg_hass(), logger, domain="adaptive_cover_pro", debounce_seconds=0
         )
         mgr.update_predicate(
             _ISSUE_KEY,
@@ -63,7 +77,7 @@ class TestRepairManager:
     async def test_predicate_cleared_when_healthy(self, logger):
         """A raised Repair is deleted once the predicate turns coherent."""
         mgr = RepairManager(
-            MagicMock(), logger, domain="adaptive_cover_pro", debounce_seconds=0
+            _bg_hass(), logger, domain="adaptive_cover_pro", debounce_seconds=0
         )
         mgr.update_predicate(_ISSUE_KEY, True, translation_key=_TRANSLATION_KEY)
         with (
@@ -79,7 +93,7 @@ class TestRepairManager:
     async def test_predicate_fixed_before_expiry_suppressed(self, logger):
         """Fixed before the debounce elapses → no Repair (debounce gate)."""
         mgr = RepairManager(
-            MagicMock(), logger, domain="adaptive_cover_pro", debounce_seconds=100
+            _bg_hass(), logger, domain="adaptive_cover_pro", debounce_seconds=100
         )
         mgr.update_predicate(_ISSUE_KEY, True, translation_key=_TRANSLATION_KEY)
         with (
@@ -95,7 +109,7 @@ class TestRepairManager:
     async def test_shutdown_cancels(self, logger):
         """``shutdown`` cancels an in-flight predicate debounce."""
         mgr = RepairManager(
-            MagicMock(), logger, domain="adaptive_cover_pro", debounce_seconds=100
+            _bg_hass(), logger, domain="adaptive_cover_pro", debounce_seconds=100
         )
         mgr.update_predicate(_ISSUE_KEY, True, translation_key=_TRANSLATION_KEY)
         with patch(f"{_MOD}.ir.async_create_issue") as create:
@@ -113,7 +127,7 @@ class TestRepairManager:
         restart.
         """
         mgr = RepairManager(
-            MagicMock(), logger, domain="adaptive_cover_pro", debounce_seconds=0
+            _bg_hass(), logger, domain="adaptive_cover_pro", debounce_seconds=0
         )
         mgr.update_predicate(_ISSUE_KEY, False, translation_key=_TRANSLATION_KEY)
         with patch(f"{_MOD}.ir.async_delete_issue") as delete:

@@ -35,6 +35,20 @@ async def _drain():
         await asyncio.sleep(0)
 
 
+def _bg_hass():
+    """Mock hass whose async_create_background_task creates a real task.
+
+    The debounce timer is now spawned via HA's tracked-task helper (issue #975
+    lingering-task fix), so the double must return a real asyncio task for
+    ``_drain()`` to fire the debounce.
+    """
+    hass = MagicMock()
+    hass.async_create_background_task = (
+        lambda coro, name=None, eager_start=True: asyncio.create_task(coro)
+    )
+    return hass
+
+
 class _Probe(_DebouncedRepairBase):
     """Trivial concrete subclass — the base carries all behavior under test."""
 
@@ -44,7 +58,7 @@ class TestDebouncedRepairBase:
 
     async def test_schedule_debounces_once_and_raises(self, logger):
         """A single debounce raises exactly one informational Repair."""
-        hass = MagicMock()
+        hass = _bg_hass()
         probe = _Probe(hass, logger, domain="adaptive_cover_pro", debounce_seconds=0)
         with patch(f"{_MOD}.ir.async_create_issue") as create:
             probe._schedule("k1", "tk", {"name": "x"}, still_unhealthy=lambda: True)
@@ -58,7 +72,7 @@ class TestDebouncedRepairBase:
 
     async def test_cancel_before_expiry_suppresses_raise(self, logger):
         """If ``still_unhealthy`` flips False before expiry, no Repair is raised."""
-        hass = MagicMock()
+        hass = _bg_hass()
         probe = _Probe(hass, logger, domain="adaptive_cover_pro", debounce_seconds=0)
         unhealthy = True
         with patch(f"{_MOD}.ir.async_create_issue") as create:
@@ -69,7 +83,7 @@ class TestDebouncedRepairBase:
 
     async def test_shutdown_cancels_inflight_timers(self, logger):
         """``shutdown`` cancels a pending debounce so it never raises."""
-        hass = MagicMock()
+        hass = _bg_hass()
         probe = _Probe(hass, logger, domain="adaptive_cover_pro", debounce_seconds=100)
         with patch(f"{_MOD}.ir.async_create_issue") as create:
             probe._schedule("k1", "tk", {}, still_unhealthy=lambda: True)
@@ -86,7 +100,7 @@ class TestDebouncedRepairBase:
         (``async_delete_issue`` is idempotent) so the stale Repair does not
         persist until an HA restart.
         """
-        hass = MagicMock()
+        hass = _bg_hass()
         # Prior lifetime raised the Repair; the registry now carries it.
         prior = _Probe(hass, logger, domain="adaptive_cover_pro", debounce_seconds=0)
         with patch(f"{_MOD}.ir.async_create_issue"):

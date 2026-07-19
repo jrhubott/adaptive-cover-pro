@@ -340,6 +340,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
 
+    # Register cleanup for the health-check debounce timers (issues #786, #975).
+    # Their shutdown lives only inside coordinator.async_shutdown, which is not
+    # wired to unload, so an unhealthy condition (e.g. sun.sun missing) would
+    # otherwise leak a 900s TimeoutController task across every reload/unload.
+    entry.async_on_unload(coordinator._sensor_health.shutdown)
+    entry.async_on_unload(coordinator._repair.shutdown)
+
     # Register cleanup for the periodic position-forecast recompute timer
     # (scheduled in async_config_entry_first_refresh — see issue #437). Wrap
     # in a closure because the unsub handle isn't created until after this

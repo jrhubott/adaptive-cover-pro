@@ -67,6 +67,12 @@ class _Hass:
     def __init__(self, mapping: dict[str, str]) -> None:
         self.states = _States(mapping)
 
+    def async_create_background_task(self, coro, name=None, eager_start=True):
+        # Mirror HA's tracked-task helper so the debounce timer (now spawned
+        # via async_create_background_task for leak-free cleanup) runs under
+        # the test event loop and a single _drain() fires it.
+        return asyncio.create_task(coro)
+
 
 async def _drain():
     for _ in range(4):
