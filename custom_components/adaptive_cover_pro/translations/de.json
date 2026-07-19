@@ -15,7 +15,7 @@
     },
     "config_position_envelope": {
       "title": "Positionierungsgrenzen sind widersprüchlich",
-      "description": "Die auf **{name}** konfigurierten Positionierungsgrenzen sind inkonsistent: Das Minimum ({min}) liegt über dem Maximum ({max}), oder eine benutzerdefinierte Position befindet sich außerhalb dieses Bereichs. Beschattungen können auf eine unerwartete Position begrenzt werden. Überprüfen Sie die Einstellungen für Mindest- und Höchstposition sowie benutzerdefinierte Positionen in den Optionen der Beschattung."
+      "description": "Die auf **{name}** konfigurierten Positionierungsgrenzen sind inkonsistent: Das Minimum ({min}) liegt über dem Maximum ({max}), oder eine benutzerdefinierte Position ist außerhalb dieses Bereichs festgelegt und würde diese Grenzen außer Kraft setzen. Überprüfen Sie die Einstellungen für Mindest- und Höchstposition sowie benutzerdefinierte Positionen in den Optionen der Beschattung."
     },
     "config_time_window": {
       "title": "Betriebszeitfenster ist invertiert",
