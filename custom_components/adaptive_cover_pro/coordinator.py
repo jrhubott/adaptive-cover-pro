@@ -31,6 +31,7 @@ try:
 except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -378,6 +379,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Namespaced cover-availability watch keys currently registered, so a
         # cover dropped from config gets unwatched (its Repair cleared) next cycle.
         self._cover_issue_keys: set[str] = set()
+        # One-shot: the first health-check cycle of this lifetime sweeps the issue
+        # registry for A1 Repairs orphaned by a prior lifetime (removing a cover
+        # reloads the entry, so a cross-lifetime orphan is in neither the fresh
+        # ``desired`` set nor the in-lifetime unwatch loop). Mirrors the base's
+        # ``_reconciled`` first-pass philosophy — see _evaluate_health_checks.
+        self._a1_orphans_swept = False
         # Override pipeline — custom position handlers are created per-slot so
         # each can carry an independent priority configured by the user.
         self._pipeline = self._build_pipeline()
@@ -1523,6 +1530,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
             self._sensor_health.evaluate()
             self._repair.evaluate()
+
+            # A1 cross-lifetime orphan sweep (issue #975 audit). The primary fix
+            # for a cover_unavailable Repair is REMOVING the cover, which reloads
+            # the config entry → a fresh coordinator with an empty
+            # ``_cover_issue_keys``. The removed cover's key is in neither
+            # ``desired`` (recomputed above) nor the in-lifetime unwatch loop, so
+            # its Repair would orphan until an HA restart. Once per lifetime,
+            # enumerate this integration's issues and delete any A1 Repair for
+            # this entry that is no longer desired. Runs last (inside the single
+            # fail-open guard) so a registry hiccup can never skip A1/B1/B2. The
+            # ``desired``-membership filter is critical: a still-configured but
+            # unavailable cover IS in ``desired`` (it is watched), so its valid
+            # warning is preserved rather than flapped on every restart.
+            if not self._a1_orphans_swept:
+                a1_prefix = f"{ISSUE_COVER_UNAVAILABLE}_{self.config_entry.entry_id}_"
+                registry = ir.async_get(self.hass)
+                for reg_domain, issue_id in list(registry.issues):
+                    if (
+                        reg_domain == DOMAIN
+                        and issue_id.startswith(a1_prefix)
+                        and issue_id not in self._cover_issue_keys
+                    ):
+                        ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                self._a1_orphans_swept = True
         except Exception:  # noqa: BLE001 — health check must never break the cycle
             self.logger.debug("Health-check evaluation failed", exc_info=True)
 

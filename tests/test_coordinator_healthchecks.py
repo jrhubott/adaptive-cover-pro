@@ -46,6 +46,7 @@ from custom_components.adaptive_cover_pro.managers.sensor_health import (
 pytestmark = pytest.mark.unit
 
 _BASE = "custom_components.adaptive_cover_pro.managers.common.debounced_repair"
+_COORD = "custom_components.adaptive_cover_pro.coordinator"
 _ENTRY = "entry1"
 
 
@@ -103,6 +104,7 @@ def _make_coord(
     coord._envelope_issue_key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"
     coord._time_window_issue_key = f"{ISSUE_CONFIG_TIME_WINDOW}_{_ENTRY}"
     coord._cover_issue_keys = set()
+    coord._a1_orphans_swept = False
     coord._resolved_options = options or {}
     return coord
 
@@ -165,6 +167,111 @@ async def test_a1_stale_cover_is_unwatched_and_cleared():
         call.args[2] for call in delete.call_args_list
     }
     assert coord._cover_issue_keys == set()
+
+
+# --- A1: cross-lifetime orphan sweep (issue #975 audit) --------------------
+
+
+def _sweep_run(coord, options, registry):
+    """Run one health-check cycle with the coordinator issue registry patched.
+
+    Patches ``ir`` in both the debounced-repair module (raise/clear of live
+    Repairs) and the coordinator module (the one-time orphan sweep, which calls
+    ``ir.async_get`` + ``ir.async_delete_issue`` directly).
+    """
+    with (
+        patch(f"{_BASE}.ir.async_create_issue"),
+        patch(f"{_BASE}.ir.async_delete_issue"),
+        patch(f"{_COORD}.ir.async_get", return_value=registry) as reg_get,
+        patch(f"{_COORD}.ir.async_delete_issue") as coord_delete,
+    ):
+        coord._evaluate_health_checks(options)
+        return reg_get, coord_delete
+
+
+def _swept_keys(coord_delete) -> set[str]:
+    """Issue ids the coordinator sweep deleted (3rd positional arg)."""
+    return {call.args[2] for call in coord_delete.call_args_list}
+
+
+async def test_a1_orphan_cleared_on_reload_after_cover_removed():
+    """A Repair for a cover no longer configured is swept once per lifetime.
+
+    Removing a cover (the fix path for a cover_unavailable Repair) reloads the
+    config entry → fresh coordinator with an empty ``_cover_issue_keys``. The
+    removed cover's key is in neither ``desired`` nor the in-lifetime unwatch
+    loop, so only the registry sweep can clear it.
+    """
+    orphan = f"{ISSUE_COVER_UNAVAILABLE}_{_ENTRY}_cover.old"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.current": "open"},
+        entities=["cover.current"],  # cover.old was removed from config
+    )
+    registry = SimpleNamespace(issues={(DOMAIN, orphan): object()})
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    assert orphan in _swept_keys(coord_delete)
+
+
+async def test_a1_configured_unavailable_cover_not_swept():
+    """A still-configured but unavailable cover keeps its Repair (in ``desired``).
+
+    Sweeping its key would clear a valid warning and force a debounce re-raise
+    flap on every restart.
+    """
+    key = f"{ISSUE_COVER_UNAVAILABLE}_{_ENTRY}_cover.a"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "unavailable"},
+        entities=["cover.a"],  # still configured, just unavailable
+    )
+    registry = SimpleNamespace(issues={(DOMAIN, key): object()})
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    assert key not in _swept_keys(coord_delete)
+
+
+async def test_a1_orphan_sweep_runs_once_per_lifetime():
+    """The registry enumeration fires a single time per coordinator lifetime."""
+    orphan = f"{ISSUE_COVER_UNAVAILABLE}_{_ENTRY}_cover.old"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.current": "open"},
+        entities=["cover.current"],
+    )
+    registry = SimpleNamespace(issues={(DOMAIN, orphan): object()})
+    reg_get, _coord_delete = _sweep_run(coord, {}, registry)
+    _sweep_run(coord, {}, registry)  # second cycle: sweep already done
+    await _drain()
+    assert reg_get.call_count == 1
+
+
+async def test_a1_sweep_ignores_other_entry_and_domain():
+    """The sweep only touches this entry's A1 prefix under this integration.
+
+    ``other_entry`` (a different config entry) and ``other_domain`` (a different
+    integration) share the A1 shape but must survive. Both issue ids are never
+    watched, so their absence from the delete calls is attributable to the
+    sweep's prefix/domain filter alone (nothing else would delete them).
+    """
+    orphan = f"{ISSUE_COVER_UNAVAILABLE}_{_ENTRY}_cover.old"
+    other_entry = f"{ISSUE_COVER_UNAVAILABLE}_entryOTHER_cover.old"
+    other_domain_id = f"{ISSUE_COVER_UNAVAILABLE}_{_ENTRY}_cover.zzz"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.current": "open"},
+        entities=["cover.current"],
+    )
+    registry = SimpleNamespace(
+        issues={
+            (DOMAIN, orphan): object(),
+            (DOMAIN, other_entry): object(),
+            ("other_domain", other_domain_id): object(),
+        }
+    )
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    swept = _swept_keys(coord_delete)
+    assert orphan in swept
+    assert other_entry not in swept
+    assert other_domain_id not in swept
 
 
 # --- C1: sun.sun availability ----------------------------------------------
