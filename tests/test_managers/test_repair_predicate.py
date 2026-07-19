@@ -103,3 +103,20 @@ class TestRepairManager:
             mgr.shutdown()
             await _drain()
         create.assert_not_called()
+
+    async def test_orphan_cleared_on_fresh_instance(self, logger):
+        """A predicate healthy on a fresh manager clears a Repair from a prior lifetime.
+
+        The options-flow fix reloads the entry → a new RepairManager with an
+        empty ``_active`` set. Evaluating the (now coherent) predicate must still
+        reconcile the registry once so the stale Repair clears without an HA
+        restart.
+        """
+        mgr = RepairManager(
+            MagicMock(), logger, domain="adaptive_cover_pro", debounce_seconds=0
+        )
+        mgr.update_predicate(_ISSUE_KEY, False, translation_key=_TRANSLATION_KEY)
+        with patch(f"{_MOD}.ir.async_delete_issue") as delete:
+            mgr.evaluate()  # healthy on a brand-new instance (empty _active)
+        delete.assert_called_once()
+        assert delete.call_args.args[2] == _ISSUE_KEY

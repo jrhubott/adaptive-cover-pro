@@ -191,6 +191,29 @@ async def test_b1_inverted_envelope_raises():
     assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in _raised_keys(create)
 
 
+def _envelope_call(create_mock):
+    """Return the ir.async_create_issue call that raised the envelope Repair."""
+    key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"
+    for call in create_mock.call_args_list:
+        if call.args[2] == key:
+            return call
+    return None
+
+
+async def test_b1_placeholders_render_as_int():
+    """min/max placeholders render as plain ints even when HA stores floats."""
+    coord = _make_coord(entities=[])
+    # NumberSelector hands back floats — the Repair text must not read "80.0".
+    create, _delete = await _run(
+        coord, {CONF_MIN_POSITION: 80.0, CONF_MAX_POSITION: 20.0}
+    )
+    call = _envelope_call(create)
+    assert call is not None
+    placeholders = call.kwargs["translation_placeholders"]
+    assert placeholders["min"] == "80"
+    assert placeholders["max"] == "20"
+
+
 async def test_b1_pinned_slot_outside_envelope_raises():
     slot = CUSTOM_POSITION_SLOTS[1]
     options = {
@@ -202,6 +225,57 @@ async def test_b1_pinned_slot_outside_envelope_raises():
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
     assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in _raised_keys(create)
+
+
+async def test_b1_use_my_slot_outside_envelope_no_raise():
+    """A ``use_my`` slot routes to the hardware My preset — its stored position
+    is ignored, so it cannot conflict with the envelope.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 80,  # outside, but not the delivered position
+        slot["use_my"]: True,
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+
+
+async def test_b1_tilt_only_slot_outside_envelope_no_raise():
+    """A ``tilt_only`` slot fixes only the slat angle; solar drives position, so
+    the stored position value is not a fixed-position claim.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 80,
+        slot["tilt_only"]: True,
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+
+
+async def test_b1_nonfixed_mode_slot_outside_envelope_no_raise():
+    """A non-FIXED constraint-mode slot (here a ``min_mode`` floor) composes as a
+    constraint and never overrides the envelope with an exact position.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 80,  # a FLOOR (min_mode), not an exact position
+        slot["min_mode"]: True,
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
 
 
 async def test_b1_safety_slot_ignored():

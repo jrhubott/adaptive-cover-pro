@@ -76,3 +76,29 @@ class TestDebouncedRepairBase:
             probe.shutdown()
             await _drain()
         create.assert_not_called()
+
+    async def test_orphaned_issue_cleared_after_reload(self, logger):
+        """A Repair raised in a prior lifetime clears when a fresh instance is healthy.
+
+        The main fix path (options flow) reloads the config entry → a brand-new
+        manager whose in-memory ``_active`` set is empty. A healthy ``_recover``
+        in that fresh lifetime must still reconcile the issue registry once
+        (``async_delete_issue`` is idempotent) so the stale Repair does not
+        persist until an HA restart.
+        """
+        hass = MagicMock()
+        # Prior lifetime raised the Repair; the registry now carries it.
+        prior = _Probe(hass, logger, domain="adaptive_cover_pro", debounce_seconds=0)
+        with patch(f"{_MOD}.ir.async_create_issue"):
+            prior._schedule("k1", "tk", {}, still_unhealthy=lambda: True)
+            await _drain()
+        # New lifetime: empty state, the condition is already healthy.
+        fresh = _Probe(hass, logger, domain="adaptive_cover_pro", debounce_seconds=0)
+        with patch(f"{_MOD}.ir.async_delete_issue") as delete:
+            fresh._recover("k1")
+        delete.assert_called_once()
+        assert delete.call_args.args[2] == "k1"
+        # Reconciled once per lifetime: a second healthy pass is a no-op.
+        with patch(f"{_MOD}.ir.async_delete_issue") as delete2:
+            fresh._recover("k1")
+        delete2.assert_not_called()

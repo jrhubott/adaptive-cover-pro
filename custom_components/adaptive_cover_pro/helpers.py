@@ -17,6 +17,7 @@ from .const import (
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CUSTOM_POSITION_SLOTS,
+    DEFAULT_CUSTOM_POSITION_TILT_ONLY,
 )
 from .templates import is_template_string
 
@@ -146,6 +147,46 @@ def custom_position_slot_configured(
         options.get(slot_keys[sub]) is not None for sub in CUSTOM_POSITION_CLAIM_KEYS
     )
     return has_trigger and has_claim
+
+
+def custom_position_slot_delivers_fixed_position(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> bool:
+    """Return True when a slot would deliver an exact (FIXED) cover-position claim.
+
+    Single source of truth for "does this custom-position slot pin the position
+    axis to a stored value?", shared by the pipeline handler's position-axis
+    determination and the B1 position-envelope health check (issue #975). A slot
+    pins an exact position only when it is neither ``use_my`` (routes to the
+    hardware My preset, ignoring the stored position) nor ``tilt_only`` (fixes the
+    slat angle and lets solar drive the carriage) and its position mode resolves
+    to ``FIXED``. Every other mode — a floor (``min_mode``), a ceiling/range, or
+    no position claim — composes as a constraint that the min/max envelope clamps,
+    so it can never contradict the envelope with an out-of-range exact value.
+
+    Reuses :attr:`CustomPositionSensorState.position_mode` — the same derivation
+    the handler and axis-constraint composer use — so B1 and the pipeline agree.
+    """
+    from .const import AxisConstraintMode
+    from .pipeline.types import CustomPositionSensorState
+
+    if bool(options.get(slot_keys["use_my"], False)):
+        return False
+    raw_pos = options.get(slot_keys["position"])
+    raw_pos_max = options.get(slot_keys["position_max"])
+    state = CustomPositionSensorState(
+        entity_ids=(),
+        is_on=False,
+        position=int(raw_pos) if raw_pos is not None else None,
+        priority=0,
+        min_mode=bool(options.get(slot_keys["min_mode"], False)),
+        use_my=False,
+        tilt_only=bool(
+            options.get(slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY)
+        ),
+        position_max=int(raw_pos_max) if raw_pos_max is not None else None,
+    )
+    return state.position_mode is AxisConstraintMode.FIXED
 
 
 def custom_position_slot_name(

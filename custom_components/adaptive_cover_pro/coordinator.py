@@ -35,9 +35,10 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .config_types import RuntimeConfig
+from .config_types import CoverConfig, RuntimeConfig
 from .helpers import (
     compute_effective_default,
+    custom_position_slot_delivers_fixed_position,
     custom_position_slot_sensors,
     get_datetime_from_str,
     get_safe_state,
@@ -77,8 +78,6 @@ from .const import (
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_OVERRIDE_STRATEGY,
     CONF_MANUAL_THRESHOLD,
-    CONF_MAX_POSITION,
-    CONF_MIN_POSITION,
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_RETURN_SUNSET,
@@ -1493,9 +1492,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
             self._cover_issue_keys = desired
 
-            # B1 — position-envelope coherence.
-            min_pos = self._min_position(options)
-            max_pos = self._max_position(options)
+            # B1 — position-envelope coherence. Consume the canonical min/max
+            # resolution from CoverConfig (single source of truth) instead of
+            # re-deriving the defaults here, and render the placeholders as plain
+            # ints so a HA NumberSelector float doesn't surface as "80.0".
+            cover_cfg = CoverConfig.from_options(options)
+            min_pos = int(cover_cfg.min_pos)
+            max_pos = int(cover_cfg.max_pos)
             self._repair.update_predicate(
                 self._envelope_issue_key,
                 self._position_envelope_incoherent(options, min_pos, max_pos),
@@ -1524,28 +1527,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Health-check evaluation failed", exc_info=True)
 
     @staticmethod
-    def _min_position(options: dict) -> int:
-        """Effective minimum position (0 when unset) — mirrors RuntimeConfig."""
-        return options.get(CONF_MIN_POSITION) or 0
-
-    @staticmethod
-    def _max_position(options: dict) -> int:
-        """Effective maximum position (100 when unset) — mirrors RuntimeConfig.
-
-        No ``or`` fallback: an explicit 0 ("always closed", #806) must survive.
-        """
-        value = options.get(CONF_MAX_POSITION)
-        return 100 if value is None else int(value)
-
-    @staticmethod
     def _position_envelope_incoherent(
         options: dict, min_pos: int, max_pos: int
     ) -> bool:
         """Whether the position envelope is self-contradictory (issue #975, B1).
 
-        True when ``min > max`` or any enabled, non-safety custom-position slot is
-        pinned outside ``[min, max]``. Cover-type-agnostic: loops the slots
-        generically, no branching on cover type or capabilities.
+        True when ``min > max`` or an enabled, non-safety slot that would deliver
+        an exact (FIXED) cover position pins it outside ``[min, max]``. Slots that
+        never deliver a fixed position claim — ``use_my``, tilt-only, or a
+        non-FIXED constraint mode (floor / ceiling / range) — are exempt: they
+        compose as constraints the envelope clamps and cannot conflict with it.
+        Cover-type-agnostic: loops the slots generically and delegates the
+        fixed-position determination to the shared helper (same seam the pipeline
+        handler uses), with no branching on cover type or capabilities.
         """
         if min_pos > max_pos:
             return True
@@ -1557,9 +1551,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             if priority == CUSTOM_POSITION_SAFETY_PRIORITY:
                 continue  # safety slots command outside the envelope by design
+            if not custom_position_slot_delivers_fixed_position(options, slot_keys):
+                continue  # only exact-position slots can contradict the envelope
             position = options.get(slot_keys["position"])
-            if position is None:
-                continue  # slot has no pinned position to check
             if position < min_pos or position > max_pos:
                 return True
         return False

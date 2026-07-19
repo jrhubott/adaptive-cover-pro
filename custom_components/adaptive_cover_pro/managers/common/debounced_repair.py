@@ -52,6 +52,13 @@ class _DebouncedRepairBase:
         self._debounce = debounce_seconds
         self._timers: dict[str, TimeoutController] = {}
         self._active: set[str] = set()
+        # Keys whose registry state this manager lifetime has already reconciled.
+        # The primary fix path (options flow) reloads the config entry, so a
+        # Repair raised in a prior lifetime is invisible to this instance's
+        # ``_active`` set. The first healthy clear for a key therefore attempts a
+        # delete unconditionally (idempotent) to sweep any orphan, then records
+        # the key here so subsequent healthy cycles skip the redundant no-op.
+        self._reconciled: set[str] = set()
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -102,6 +109,7 @@ class _DebouncedRepairBase:
             translation_placeholders=placeholders,
         )
         self._active.add(issue_key)
+        self._reconciled.add(issue_key)
 
     def _recover(self, issue_key: str) -> None:
         """Cancel any pending debounce and clear an active Repair."""
@@ -114,9 +122,14 @@ class _DebouncedRepairBase:
             timer.cancel()
 
     def _delete_issue(self, issue_key: str) -> None:
-        if issue_key in self._active:
+        # Clear when we know it is active, OR on the first healthy pass of this
+        # lifetime to sweep a stale orphan left by a prior lifetime (config-entry
+        # reload dropped the ``_active`` set). ``async_delete_issue`` is a no-op
+        # when the issue is absent, so the extra first-pass call is harmless.
+        if issue_key in self._active or issue_key not in self._reconciled:
             ir.async_delete_issue(self._hass, self._domain, issue_key)
             self._active.discard(issue_key)
+            self._reconciled.add(issue_key)
 
     def shutdown(self) -> None:
         """Cancel all in-flight debounce timers (on reload / unload)."""
