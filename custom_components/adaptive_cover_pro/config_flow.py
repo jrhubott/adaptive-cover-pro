@@ -2239,9 +2239,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mo_parts.append(L["manual.ignore_intermediate"])
     if config.get(CONF_MANUAL_IGNORE_EXTERNAL):
         mo_parts.append(L["manual.ignore_external"])
-    input_entities = config.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES)
-    if input_entities:
-        mo_parts.append(L["manual.input_entities"].format(count=len(input_entities)))
+    input_entities = config.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES) or []
+    input_count = len(input_entities) + (
+        1 if is_template_string(config.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE)) else 0
+    )
+    if input_count:
+        mo_parts.append(L["manual.input_entities"].format(count=input_count))
     transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
     if (
         transit_timeout is not None

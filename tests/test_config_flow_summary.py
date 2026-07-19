@@ -1401,6 +1401,36 @@ def test_manual_override_input_entities_omitted_when_unset():
     assert "input-sensor override" not in summary
 
 
+def test_manual_override_input_template_only_counts_one():
+    """A template-only manual-input trigger shows the part with count 1 (#974)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+    )
+
+    cfg = {CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: "{{ true }}"}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    mo_line = next((ln for ln in summary.splitlines() if "Manual override" in ln), None)
+    assert mo_line is not None
+    assert "input-sensor override: 1 sensor(s)" in mo_line
+
+
+def test_manual_override_input_template_adds_to_sensor_count():
+    """Input sensors + a template count together (#974)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+    )
+
+    cfg = {
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.a"],
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: "{{ true }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    mo_line = next((ln for ln in summary.splitlines() if "Manual override" in ln), None)
+    assert mo_line is not None
+    assert "input-sensor override: 2 sensor(s)" in mo_line
+
+
 # ---------------------------------------------------------------------------
 # Section 2: Motion Timeout
 # ---------------------------------------------------------------------------

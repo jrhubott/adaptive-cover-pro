@@ -300,6 +300,39 @@ async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) ->
     ), f"_last_update_success_time must be None or datetime, got {type(val)}"
 
 
+async def test_manual_override_input_template_initialized_in_init(
+    hass: HomeAssistant,
+) -> None:
+    """Regression (#974): the input-template attr exists right after __init__.
+
+    The manual-override input-template tracker is registered during setup,
+    with awaits before the first _update_options runs. If its handler fires in
+    that window it reads self.manual_override_input_template — which is only
+    assigned in _update_options. Without an __init__ default that read raises
+    AttributeError and breaks setup/reload. This constructs the coordinator
+    directly (no _update_options) and asserts the attribute already exists.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "MOIT Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="moit_01",
+        title="MOIT Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    # Attribute must exist before _update_options ever runs, defaulting to None.
+    assert coordinator.manual_override_input_template is None
+
+
 # ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------

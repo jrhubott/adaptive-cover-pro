@@ -2139,7 +2139,7 @@ class GroupState(StrEnum):
 # ``BUILDING_PROFILE_SENSOR_KEYS`` is the set of option keys a Building Profile
 # owns and copies into each linked cover. Threshold/reaction keys, presence,
 # and the sunrise/sunset OFFSETS are deliberately excluded — they stay per-cover.
-# The four ``*_template_mode`` keys are profile-owned (moved from per-cover in
+# The five ``*_template_mode`` keys are profile-owned (moved from per-cover in
 # issue #720): they render in the profile screen, are copied to linked covers,
 # and are hidden on the per-cover weather/light/behavior forms.
 

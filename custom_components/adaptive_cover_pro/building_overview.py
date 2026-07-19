@@ -156,7 +156,7 @@ _SENSOR_LABELS: dict[str, str] = {
 }
 
 # Shared-sensor keys shown in the "Shared sensors" listing, in display order.
-# The four *_template_mode combine-mode keys live in BUILDING_PROFILE_SENSOR_KEYS
+# The five *_template_mode combine-mode keys live in BUILDING_PROFILE_SENSOR_KEYS
 # but are toggles, not sensors — they are excluded from these views.
 _SHARED_DISPLAY_KEYS: tuple[str, ...] = (
     CONF_WEATHER_ENTITY,

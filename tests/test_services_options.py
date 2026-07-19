@@ -1552,6 +1552,64 @@ class TestSetWeatherSafety:
             "binary_sensor.new2",
         ]
 
+    def test_severe_template_validator_and_section(self):
+        """The severe template pair validates and lives in the weather section (#974)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+            TemplateCombineMode,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_WEATHER_SAFETY,
+        )
+
+        # Both keys have validators, matching the raining/windy template pair.
+        assert CONF_WEATHER_SEVERE_TEMPLATE in FIELD_VALIDATORS
+        assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in FIELD_VALIDATORS
+        # template_or_none: None (clear) and a Jinja template both pass.
+        FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE](None)
+        FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE]("{{ is_state('x', 'on') }}")
+        # mode: every combine-mode value and None pass; junk is rejected.
+        for mode in TemplateCombineMode:
+            FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE_MODE](mode.value)
+        FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE_MODE](None)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE_MODE]("xor")
+        # Section membership so set_cover_options / set_weather_safety accept them.
+        assert CONF_WEATHER_SEVERE_TEMPLATE in _SECTION_WEATHER_SAFETY
+        assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in _SECTION_WEATHER_SAFETY
+
+    async def test_updates_severe_template(self, hass: HomeAssistant):
+        """set_weather_safety persists the severe template pair (#974)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+            TemplateCombineMode,
+        )
+
+        await _setup(hass, entry_id="ws_sev_tpl_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_weather_safety",
+                {
+                    CONF_WEATHER_SEVERE_TEMPLATE: "{{ is_state('binary_sensor.s', 'on') }}",
+                    CONF_WEATHER_SEVERE_TEMPLATE_MODE: TemplateCombineMode.OR.value,
+                },
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert (
+            new_opts[CONF_WEATHER_SEVERE_TEMPLATE]
+            == "{{ is_state('binary_sensor.s', 'on') }}"
+        )
+        assert (
+            new_opts[CONF_WEATHER_SEVERE_TEMPLATE_MODE] == TemplateCombineMode.OR.value
+        )
+
 
 class TestSetSunTracking:
     """Integration tests for set_sun_tracking service."""

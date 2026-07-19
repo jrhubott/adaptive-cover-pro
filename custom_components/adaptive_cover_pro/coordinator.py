@@ -308,6 +308,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # AttributeError if they reference this attribute before _update_options
         # runs for the first time.  The refresh path overwrites this each cycle.
         self.entities = self.config_entry.options.get(CONF_ENTITIES, [])
+        # Initialised here so the manual-override input-template handler
+        # (registered as a template tracker during setup, with awaits before
+        # the first _update_options) never hits an AttributeError if it fires
+        # before _update_options assigns the real value (issue #974).
+        self.manual_override_input_template: str | None = None
         # Cover engine object — populated at start of each update cycle
         self._cover_data = None
 
