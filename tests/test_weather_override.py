@@ -494,6 +494,101 @@ async def test_recover_on_restart_not_called_on_subsequent_refresh():
     ), "_recover_weather_override_on_restart must NOT run when first_refresh=False"
 
 
+# --- Addition 1: severe-weather condition template (issue #974) ---
+
+
+def _make_severe_mgr(
+    hass,
+    *,
+    severe_sensors=None,
+    severe_template=None,
+    severe_template_mode="or",
+    enabled=True,
+):
+    """Build a real WeatherManager with only the severe path configured."""
+    mgr = WeatherManager(hass=hass, logger=MagicMock())
+    mgr.update_config(
+        wind_speed_sensor=None,
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=severe_sensors or [],
+        timeout_seconds=300,
+        severe_template=severe_template,
+        severe_template_mode=severe_template_mode,
+        enabled=enabled,
+    )
+    return mgr
+
+
+@pytest.mark.asyncio
+async def test_severe_template_only_activates(hass):
+    """A truthy severe template with no companion sensor engages the override."""
+    mgr = _make_severe_mgr(hass, severe_template="{{ true }}")
+    assert mgr.is_any_condition_active is True
+    assert "severe_weather" in mgr.active_conditions
+
+
+@pytest.mark.asyncio
+async def test_severe_template_and_mode_gates_on_sensor(hass):
+    """AND mode: truthy template alone is inactive; a live sensor unlocks it."""
+    hass.states.async_set("binary_sensor.hail", "off")
+    await hass.async_block_till_done()
+    mgr = _make_severe_mgr(
+        hass,
+        severe_sensors=["binary_sensor.hail"],
+        severe_template="{{ true }}",
+        severe_template_mode="and",
+    )
+    # Template truthy + all sensors off → AND gate blocks.
+    assert mgr.is_any_condition_active is False
+
+    hass.states.async_set("binary_sensor.hail", "on")
+    await hass.async_block_till_done()
+    # Template truthy + one sensor on → AND satisfied.
+    assert mgr.is_any_condition_active is True
+
+
+@pytest.mark.asyncio
+async def test_severe_broken_template_falls_open_to_sensors(hass):
+    """A broken template gives no opinion; the sensor list alone decides."""
+    hass.states.async_set("binary_sensor.hail", "on")
+    await hass.async_block_till_done()
+    mgr = _make_severe_mgr(
+        hass,
+        severe_sensors=["binary_sensor.hail"],
+        severe_template="{{ 1 / 0 }}",
+    )
+    # Broken template → no opinion → the "on" sensor drives the result.
+    assert mgr.is_any_condition_active is True
+
+    hass.states.async_set("binary_sensor.hail", "off")
+    await hass.async_block_till_done()
+    assert mgr.is_any_condition_active is False
+
+
+@pytest.mark.asyncio
+async def test_severe_template_in_condition_templates(hass):
+    """The severe template joins condition_templates for live tracking."""
+    mgr = _make_severe_mgr(hass, severe_template="{{ is_state('x', 'on') }}")
+    assert "{{ is_state('x', 'on') }}" in mgr.condition_templates
+
+
+@pytest.mark.asyncio
+async def test_severe_template_only_is_feature_configured(hass):
+    """A template-only severe source counts as configured when enabled."""
+    mgr = _make_severe_mgr(hass, severe_template="{{ true }}")
+    assert mgr.is_feature_configured is True
+    # Disabled master toggle overrides even a configured template source.
+    mgr_off = _make_severe_mgr(hass, severe_template="{{ true }}", enabled=False)
+    assert mgr_off.is_feature_configured is False
+
+
 # --- weather_override_schema: conditional retraction-picker inclusion ---
 
 
@@ -505,6 +600,7 @@ _RETRACTION_PICKER_KEYS = (
     "weather_is_raining_template",
     "weather_is_windy_sensor",
     "weather_is_windy_template",
+    "weather_severe_template",
     "weather_severe_sensors",
 )
 
@@ -533,3 +629,65 @@ def test_schema_always_includes_retraction_pickers():
     for always in _ALWAYS_PRESENT_KEYS:
         assert always in keys, always
     assert "show_weather_retraction" not in keys
+
+
+# --- Addition 1 (Step 3): severe template schema / specs / sync wiring (#974) ---
+
+
+def test_severe_template_selectors_in_weather_schema():
+    """The severe template gets a TemplateSelector + combine-mode SelectSelector."""
+    from homeassistant.helpers import selector
+
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+    )
+
+    schema = weather_override_schema().schema
+    by_key = {str(marker.schema): marker for marker in schema}
+    assert CONF_WEATHER_SEVERE_TEMPLATE in by_key
+    assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in by_key
+    assert isinstance(
+        schema[by_key[CONF_WEATHER_SEVERE_TEMPLATE]], selector.TemplateSelector
+    )
+    assert isinstance(
+        schema[by_key[CONF_WEATHER_SEVERE_TEMPLATE_MODE]], selector.SelectSelector
+    )
+
+
+def test_severe_template_in_optional_keys():
+    """The clearable template key is stripped on a clear (issue #323 pattern)."""
+    from custom_components.adaptive_cover_pro import config_flow as cf
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_SEVERE_TEMPLATE
+
+    assert CONF_WEATHER_SEVERE_TEMPLATE in cf._WEATHER_OVERRIDE_OPTIONAL_KEYS
+
+
+def test_severe_template_keys_in_sensor_key_set():
+    """Both severe template keys join the profile-owned sensor key set."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+        WEATHER_OVERRIDE_SENSOR_KEYS,
+    )
+
+    assert CONF_WEATHER_SEVERE_TEMPLATE in WEATHER_OVERRIDE_SENSOR_KEYS
+    assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in WEATHER_OVERRIDE_SENSOR_KEYS
+
+
+def test_severe_template_in_building_profile_schema():
+    """The Building Profile sensor schema exposes the severe template + mode."""
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        building_profile_sensors_schema,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+    )
+
+    keys = _schema_keys(building_profile_sensors_schema())
+    assert CONF_WEATHER_SEVERE_TEMPLATE in keys
+    assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in keys

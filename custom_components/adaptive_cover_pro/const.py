@@ -1070,6 +1070,13 @@ CONF_WEATHER_IS_RAINING_TEMPLATE_MODE = "weather_is_raining_template_mode"
 CONF_WEATHER_IS_WINDY_TEMPLATE = "weather_is_windy_template"  # truthy = windy
 CONF_WEATHER_IS_WINDY_TEMPLATE_MODE = "weather_is_windy_template_mode"
 CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"  # severe-weather list
+# Optional Jinja condition template + combine mode for the severe-weather
+# override (issue #974): truthy = severe. Folds with the severe sensor list via
+# TemplateCombineMode (OR default). A template-only override (no companion
+# sensors) engages and reacts the instant the template flips, tracked via
+# async_track_template_result. Mode reuses DEFAULT_TEMPLATE_COMBINE_MODE.
+CONF_WEATHER_SEVERE_TEMPLATE = "weather_severe_template"  # truthy = severe
+CONF_WEATHER_SEVERE_TEMPLATE_MODE = "weather_severe_template_mode"
 # Position commanded during weather override (range 0-100).
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
 # If True, weather override is only enforced as a min position.
@@ -1177,6 +1184,11 @@ CONF_MANUAL_IGNORE_EXTERNAL = "manual_ignore_external"
 # input (e.g. Shelly binary_sensor.*_cover_input_0) act as the manual-override
 # trigger instead of inferring intent from cover state/position changes.
 CONF_MANUAL_OVERRIDE_INPUT_ENTITIES = "manual_override_input_entities"
+# Optional Jinja condition template whose truthy render engages manual override
+# on every cover in the instance (issue #974). Edge-triggered like the input
+# entities above — engage-on-truthy, no combine mode and no companion sensor,
+# tracked via async_track_template_result. Empty = feature off.
+CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE = "manual_override_input_template"
 # Which manual-override detection strategy to use. Maps to a registered
 # OverrideDetector via managers.manual_override.get_detector. Changing this
 # selects a different detection pattern; takes effect on config-entry reload.
@@ -2154,6 +2166,8 @@ WEATHER_OVERRIDE_SENSOR_KEYS = frozenset(
         CONF_WEATHER_IS_WINDY_SENSOR,
         CONF_WEATHER_IS_WINDY_TEMPLATE,
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         CONF_WEATHER_SEVERE_SENSORS,
     }
 )

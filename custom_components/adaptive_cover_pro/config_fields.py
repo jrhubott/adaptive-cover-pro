@@ -188,6 +188,8 @@ from .const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE,
     CONF_WEATHER_STATE,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -1406,6 +1408,11 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         SECTION_WEATHER_OVERRIDE,
     ),
+    *_condition_template_specs(
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+        SECTION_WEATHER_OVERRIDE,
+    ),
     FieldSpec(
         CONF_WEATHER_SEVERE_SENSORS,
         SECTION_WEATHER_OVERRIDE,
@@ -2056,6 +2063,21 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
 OPTION_RANGES: dict[str, tuple[float, float]] = _build_option_ranges()
 
 
+# Template-support audit (issue #974). The condition-template surface was
+# extended to the severe-weather override and the manual-override input trigger.
+# Deliberately EXCLUDED from template support, and why:
+#   - Position outputs (override/custom/sunset/cloudy positions, tilt targets):
+#     engine outputs, not conditions — no truthy/threshold semantics.
+#   - Timeouts / hold-times / transit / post-settle: durations, not conditions.
+#   - Delta / economy / endpoint gates and structural toggles: control-shape
+#     flags, no condition semantics to template.
+#   - Geometry (azimuth, FOV, distances, slat depth, angles): physical config.
+#   - ``weather_state``: already subsumed by ``is_sunny_template``.
+# DEFERRED to a follow-up issue: min_elevation / max_elevation as a
+# number-or-template (a numeric TEMPLATABLE flavour, not a boolean condition) —
+# it touches sensor/overview/diagnostics/export display surfaces the two #974
+# additions do not, so it is scoped out here.
+#
 #: Threshold fields that accept a Home Assistant Jinja2 template (rendered to a
 #: number once per coordinator cycle) in place of a fixed value (issue #577).
 #: Single source consumed by the config-flow selector builder

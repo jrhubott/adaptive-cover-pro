@@ -622,6 +622,11 @@ class WeatherSlice:
     is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
     is_windy_template: str | None = None
     is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    # Optional severe-weather condition template + combine mode (issue #974).
+    # Folds with the severe sensor list; a template-only config engages the
+    # instant the template flips (tracked via async_track_template_result).
+    severe_template: str | None = None
+    severe_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
     # Master on/off toggle for the whole weather override (issue #719). When
     # False the manager ignores every configured sensor/template. Defaults OFF
     # for new covers; pre-existing covers are migrated to True (v3.5 → v3.6).
@@ -688,6 +693,9 @@ class ManualOverrideSlice:
     # Input binary sensors whose off→on edge engages manual override on every
     # cover in the instance (issue #688). Empty = feature off.
     input_entities: list[str]
+    # Optional Jinja template whose truthy render engages manual override on
+    # every cover (issue #974). Edge-triggered, no combine mode. None = off.
+    input_template: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -746,6 +754,7 @@ class RuntimeConfig:
             CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MANUAL_OVERRIDE_DURATION,
             CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+            CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MAX_COVERAGE_STEPS,
@@ -779,6 +788,8 @@ class RuntimeConfig:
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_SEVERE_SENSORS,
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
             CONF_WEATHER_TIMEOUT,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -853,6 +864,7 @@ class RuntimeConfig:
                 duration=options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2},
                 ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
                 input_entities=options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []),
+                input_template=options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
             ),
             time_window=TimeWindowSlice(
                 start_time=options.get(CONF_START_TIME),
@@ -912,6 +924,10 @@ class RuntimeConfig:
                     CONF_WEATHER_IS_WINDY_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
                 ),
                 severe_sensors=options.get(CONF_WEATHER_SEVERE_SENSORS, []),
+                severe_template=options.get(CONF_WEATHER_SEVERE_TEMPLATE),
+                severe_template_mode=options.get(
+                    CONF_WEATHER_SEVERE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
                 timeout_seconds=options.get(
                     CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT
                 ),

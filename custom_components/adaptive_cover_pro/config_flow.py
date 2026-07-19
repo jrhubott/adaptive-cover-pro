@@ -122,6 +122,7 @@ from .const import (
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
@@ -200,6 +201,8 @@ from .const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE,
     CONF_WEATHER_STATE,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -822,6 +825,7 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, default=[]
         ): _binary_on_selector(multiple=True),
+        vol.Optional(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE): selector.TemplateSelector(),
         vol.Optional(
             CONF_TRANSIT_TIMEOUT,
             default=DEFAULT_TRANSIT_TIMEOUT_SECONDS,
@@ -965,6 +969,7 @@ _WEATHER_OVERRIDE_OPTIONAL_KEYS: list[str] = [
     CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE,
 ]
 
 
@@ -1946,6 +1951,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             config.get(CONF_WEATHER_IS_WINDY_SENSOR),
             is_template_string(config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)),
             is_template_string(config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)),
+            is_template_string(config.get(CONF_WEATHER_SEVERE_TEMPLATE)),
             bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
         ]
     )
@@ -2167,6 +2173,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)
         )
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
+        severe_count = len(severe) + (
+            1 if is_template_string(config.get(CONF_WEATHER_SEVERE_TEMPLATE)) else 0
+        )
         if wind_sensor and wind_thresh is not None:
             wind_part = L["weather.wind"].format(
                 thresh=_thresh_display(wind_thresh, placeholder=_ph)
@@ -2186,8 +2195,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             wx_parts.append(L["weather.is_raining"])
         if is_wind:
             wx_parts.append(L["weather.is_windy"])
-        if severe:
-            wx_parts.append(L["weather.severe"].format(count=len(severe)))
+        if severe_count:
+            wx_parts.append(L["weather.severe"].format(count=severe_count))
         wx_condition = (
             L["weather.condition_join"].join(wx_parts)
             if wx_parts
@@ -3236,6 +3245,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_IGNORE_INTERMEDIATE,
             CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+            CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
             CONF_TRANSIT_TIMEOUT,
         }
     ),
@@ -3323,6 +3333,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_TIMEOUT,
             CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
             CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         }
     ),
     # Canonical membership lives in const.WEATHER_OVERRIDE_SENSOR_KEYS so the
@@ -3345,6 +3356,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_IS_WINDY_SENSOR,
             CONF_WEATHER_IS_WINDY_TEMPLATE,
             CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
             CONF_WEATHER_SEVERE_SENSORS,
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
@@ -4882,7 +4895,9 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         """Manage manual override options."""
         if user_input is not None:
-            self.optional_entities([CONF_MANUAL_THRESHOLD], user_input)
+            self.optional_entities(
+                [CONF_MANUAL_THRESHOLD, CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE], user_input
+            )
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(

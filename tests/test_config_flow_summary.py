@@ -1477,6 +1477,32 @@ def test_weather_override_binary_sensors_shown():
     assert "severe weather" in summary
 
 
+def test_weather_override_severe_template_only_counts_one():
+    """A template-only severe source shows the severe part with count 1 (#974)."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_SEVERE_TEMPLATE
+
+    cfg = {
+        CONF_WEATHER_SEVERE_TEMPLATE: "{{ true }}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Weather safety" in summary
+    assert "1 severe weather sensor" in summary
+
+
+def test_weather_override_severe_template_adds_to_sensor_count():
+    """Severe sensors + a template count together (#974)."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_SEVERE_TEMPLATE
+
+    cfg = {
+        CONF_WEATHER_SEVERE_SENSORS: ["binary_sensor.hail"],
+        CONF_WEATHER_SEVERE_TEMPLATE: "{{ true }}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "2 severe weather sensor" in summary
+
+
 # --- Master toggle warning (issue #719) ---
 
 _WX_DISABLED_PHRASE = "turned OFF — weather overrides are ignored"

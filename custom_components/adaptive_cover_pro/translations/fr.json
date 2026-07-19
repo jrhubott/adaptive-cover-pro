@@ -199,7 +199,8 @@
           "weather_rain_sensor": "Capteur de taux de pluie",
           "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
           "weather_wind_direction_sensor": "Capteur de direction du vent (optionnel)",
-          "weather_wind_speed_sensor": "Capteur de vitesse du vent"
+          "weather_wind_speed_sensor": "Capteur de vitesse du vent",
+          "weather_severe_template": "Modèle d'intempéries (optionnel)"
         },
         "data_description": {
           "name": "Un nom convivial pour ce profil de bâtiment.",
@@ -221,7 +222,8 @@
           "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
-          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent."
+          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent.",
+          "weather_severe_template": "Modèle Jinja2 facultatif de Home Assistant qui détermine si des intempéries sont présentes (grêle, gel, orage, etc.). Quand il se rend vrai (on/true/1), la dérogation s'active. Il se combine avec les capteurs d'intempéries ci-dessus (OR ou AND) via le paramètre « Logique du modèle d'intempéries » sur l'écran Dérogation météorologique par protection. Il peut fonctionner seul sans capteurs et réagit à l'instant où le modèle bascule. Un modèle vide ou qui échoue à se rendre n'exprime aucun avis (pas de rétractation). Laissez vide pour désactiver."
         }
       },
       "create_group": {
@@ -484,7 +486,8 @@
           "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
           "transit_timeout": "Délai de transit (secondes)",
           "manual_ignore_external": "Engager uniquement la dérogation manuelle via les commandes Adaptive Cover Pro",
-          "manual_override_input_entities": "Capteurs d'entrée qui déclenchent une dérogation manuelle"
+          "manual_override_input_entities": "Capteurs d'entrée qui déclenchent une dérogation manuelle",
+          "manual_override_input_template": "Modèle d'entrée qui déclenche la dérogation manuelle (optionnel)"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
@@ -493,7 +496,8 @@
           "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
           "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes.",
           "manual_ignore_external": "Lorsque activé, seuls les changements de position envoyés via l'entité proxy Adaptive Cover Pro ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle. Les changements de position d'autres sources (autres automatisations, la carte de protection Home Assistant par défaut, les télécommandes physiques ou RF) sont ignorés et le contrôle automatique continue sans interruption. Utile lorsque vous conduisez la protection uniquement via ACP lui-même et souhaitez que les changements d'état externes bruyants ne mettent pas l'automatisation en pause. Par défaut : désactivé.",
-          "manual_override_input_entities": "Capteurs binaires (ou commutateurs/input_booleans) dont la transition passage à ON déclenche une dérogation manuelle sur chaque store de cette instance. Destiné à un commutateur mural physique câblé à une entrée (par ex. un Shelly 2PM exposant binary_sensor.*_cover_input_0) : l'appuyer suspend le contrôle automatique pour la durée de la dérogation au lieu de déduire un mouvement manuel de la position du store. Combiner avec « Engager la dérogation manuelle uniquement à partir des commandes Adaptive Cover Pro » pour faire de ces capteurs le seul déclencheur de dérogation. Par défaut : aucun."
+          "manual_override_input_entities": "Capteurs binaires (ou commutateurs/input_booleans) dont la transition passage à ON déclenche une dérogation manuelle sur chaque store de cette instance. Destiné à un commutateur mural physique câblé à une entrée (par ex. un Shelly 2PM exposant binary_sensor.*_cover_input_0) : l'appuyer suspend le contrôle automatique pour la durée de la dérogation au lieu de déduire un mouvement manuel de la position du store. Combiner avec « Engager la dérogation manuelle uniquement à partir des commandes Adaptive Cover Pro » pour faire de ces capteurs le seul déclencheur de dérogation. Par défaut : aucun.",
+          "manual_override_input_template": "Modèle Jinja2 facultatif de Home Assistant dont le rendu vrai (on/true/1) active la dérogation manuelle sur tous les stores de cette instance — l'équivalent modèle des capteurs d'entrée ci-dessus. C'est un déclenchement sur front montant : la dérogation s'active à l'instant où le résultat rendu bascule à vrai, et il n'y a PAS de mode de combinaison ni de capteur compagnon — il agit seul. Un résultat faux, ou un modèle qui est vide ou échoue à se rendre, ne fait rien (il ne relâche jamais une dérogation seul — la durée configurée le fait). Exemple : un modèle qui retourne vrai tant qu'un helper input_boolean est activé, ou quand un événement de bouton distant se déclenche. Laissez vide pour désactiver."
         }
       },
       "custom_position": {
@@ -541,7 +545,9 @@
           "weather_is_raining_template_mode": "Logique du modèle Is Raining",
           "weather_is_windy_template": "Modèle Is Windy (optionnel)",
           "weather_is_windy_template_mode": "Logique du modèle Is Windy",
-          "weather_enabled": "Activer la dérogation météo"
+          "weather_enabled": "Activer la dérogation météo",
+          "weather_severe_template": "Modèle d'intempéries (optionnel)",
+          "weather_severe_template_mode": "Logique du modèle d'intempéries"
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
@@ -561,7 +567,9 @@
           "weather_is_raining_template_mode": "Comment le modèle Is Raining se combine avec le capteur binaire Is Raining ci-dessus. « OU » (par défaut) — pluie lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — pluie uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Raining est défini ci-dessus.",
           "weather_is_windy_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il fait du vent. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Windy ci-dessus (OU ou ET) est définie par la « logique du modèle Is Windy » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « venteux » d'un seuil de vitesse du vent numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
           "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus.",
-          "weather_enabled": "Interrupteur principal pour les dérogations de sécurité météo (vent, pluie, conditions sévères). Lorsqu'il est désactivé, les capteurs météo configurés sont ignorés. Les protections existantes gardent cette option activée après la mise à jour ; les nouvelles protections commencent désactivées."
+          "weather_enabled": "Interrupteur principal pour les dérogations de sécurité météo (vent, pluie, conditions sévères). Lorsqu'il est désactivé, les capteurs météo configurés sont ignorés. Les protections existantes gardent cette option activée après la mise à jour ; les nouvelles protections commencent désactivées.",
+          "weather_severe_template": "Modèle Jinja2 facultatif de Home Assistant qui détermine si des intempéries sont présentes (grêle, gel, orage, etc.). Quand il se rend vrai (on/true/1), la dérogation s'active. La manière dont il se combine avec les capteurs d'intempéries ci-dessus (OR ou AND) est définie par « Logique du modèle d'intempéries » ci-dessous. Il peut fonctionner seul sans capteurs et réagit à l'instant où le modèle bascule. Exemple : dériver « grave » de la condition de prévision d'une entité météorologique. Un modèle vide ou qui échoue à se rendre n'exprime aucun avis (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_severe_template_mode": "Comment le modèle d'intempéries se combine avec les capteurs d'intempéries ci-dessus. « OR » (par défaut) — grave quand le modèle est vrai OU quand n'importe quel capteur est ON. « AND » — grave uniquement quand le modèle est vrai ET qu'au moins un capteur est ON. Sans capteurs configurés, le modèle seul décide dans les deux modes. N'a d'effet que quand un modèle d'intempéries est défini ci-dessus."
         }
       },
       "weather": {
@@ -816,7 +824,8 @@
           "weather_rain_sensor": "Capteur de taux de pluie",
           "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
           "weather_wind_direction_sensor": "Capteur de direction du vent (optionnel)",
-          "weather_wind_speed_sensor": "Capteur de vitesse du vent"
+          "weather_wind_speed_sensor": "Capteur de vitesse du vent",
+          "weather_severe_template": "Modèle d'intempéries (optionnel)"
         },
         "data_description": {
           "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 % (par ex. d'une intégration météo). Quand la valeur atteint le seuil, le contrôle de l'éblouissement est supprimé et le store revient à sa position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
@@ -837,7 +846,8 @@
           "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_wind_direction_sensor": "Optionnel : ne déclenchez la dérogation vent que quand le vent souffle vers l'azimut de cette fenêtre (dans la tolérance de direction). Laissez vide pour déclencher uniquement sur la vitesse du vent indépendamment de la direction.",
-          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent."
+          "weather_wind_speed_sensor": "Capteur numérique signalant la vitesse du vent. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer la vitesse du vent.",
+          "weather_severe_template": "Modèle Jinja2 facultatif de Home Assistant qui détermine si des intempéries sont présentes (grêle, gel, orage, etc.). Laissez vide pour désactiver."
         }
       },
       "profile_overview": {

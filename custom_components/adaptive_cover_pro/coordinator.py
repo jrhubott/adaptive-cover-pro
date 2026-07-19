@@ -137,7 +137,7 @@ from .pipeline.floors import effective_floor, gather_active_floors
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
 from .pipeline.types import CustomPositionSensorState, GroupIntent
-from .templates import TemplateResolver
+from .templates import TemplateResolver, render_condition_or_none
 from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -1143,7 +1143,40 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             "Manual override input %s edge off→on — engaging override on all covers",
             data["entity_id"],
         )
-        self.manager.engage_manual_override_from_external(reason="input_sensor")
+        await self._engage_override_from_input("input_sensor")
+
+    async def async_check_manual_override_input_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Engage manual override when the input *template* renders truthy (#974).
+
+        The template counterpart to the input-sensor edge path: routed from
+        ``async_track_template_result``, it fires whenever the rendered result
+        changes and engages on the rising edge only (a truthy render). It is a
+        single engage-on-truthy trigger — there is NO combine mode and NO
+        companion sensor to fold with, so a falsy result or a broken/empty
+        template ("no opinion" → ``None``) does nothing. Live state always wins:
+        the template is re-rendered here rather than trusting the tracked value.
+        """
+        if (
+            render_condition_or_none(self.hass, self.manual_override_input_template)
+            is not True
+        ):
+            return
+        self.logger.debug(
+            "Manual override input template rendered truthy — engaging override on all covers"
+        )
+        await self._engage_override_from_input("input_template")
+
+    async def _engage_override_from_input(self, reason: str) -> None:
+        """Engage manual override on every cover, then refresh once.
+
+        The shared body of both input-trigger paths — the off→on sensor edge
+        (``input_sensor``) and the truthy template render (``input_template``,
+        #974). Both are rising-edge triggers with no combine semantics, so they
+        share one engage-and-refresh implementation rather than mirroring it.
+        """
+        self.manager.engage_manual_override_from_external(reason=reason)
         self.state_change = True
         await self.async_refresh()
 
@@ -2727,6 +2760,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # async_setup_entry on every reload; this mirror is the single canonical
         # coordinator-side read of the option.
         self.manual_override_input_entities = rc.manual_override.input_entities
+        # Per-cycle snapshot of the optional input template (issue #974). The HA
+        # template subscription is (re)registered in async_setup_entry on every
+        # reload; the template-change handler re-renders this live to engage on
+        # the truthy edge.
+        self.manual_override_input_template = rc.manual_override.input_template
         self.manual_threshold = rc.tracking.manual_threshold
         # Mirror the reconciliation tolerance coordinator-side so the cover
         # state-change handler can lower the override-detection threshold when
@@ -2791,6 +2829,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             is_raining_template_mode=rc.weather.is_raining_template_mode,
             is_windy_template=rc.weather.is_windy_template,
             is_windy_template_mode=rc.weather.is_windy_template_mode,
+            severe_template=rc.weather.severe_template,
+            severe_template_mode=rc.weather.severe_template_mode,
             severe_sensors=rc.weather.severe_sensors,
             timeout_seconds=rc.weather.timeout_seconds,
             enabled=rc.weather.enabled,

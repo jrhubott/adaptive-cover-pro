@@ -35,6 +35,7 @@ from .const import (
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
+    CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
     CONF_MOTION_TEMPLATE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
@@ -50,6 +51,7 @@ from .const import (
     CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_WIDTH,
@@ -262,6 +264,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
             )
         )
 
+    # Register the optional manual-override input template (issue #974). The
+    # template counterpart to the input sensors above: tracking the rendered
+    # result engages manual override the instant the template flips truthy, with
+    # sensor-grade immediacy and no polling.
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
+        coordinator.async_check_manual_override_input_template_change,
+        "Manual override input template",
+    )
+
     # Register the optional occupancy template (issue #577 follow-up). Tracking
     # the rendered result means the cover reacts the instant the template flips
     # truthy — same immediacy as a motion sensor, no polling. Re-registered on
@@ -316,6 +330,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     for _weather_template in [
         entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
         entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+        entry.options.get(CONF_WEATHER_SEVERE_TEMPLATE),
     ]:
         _register_template_tracker(
             hass,

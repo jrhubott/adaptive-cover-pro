@@ -100,6 +100,8 @@ from .const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE,
     CONF_WEATHER_STATE,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -505,6 +507,10 @@ def weather_override_schema(
             CONF_WEATHER_IS_WINDY_TEMPLATE,
             CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         ),
+        **_condition_template_schema(
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+        ),
         vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): binary_on_selector(
             multiple=True
         ),
@@ -654,6 +660,8 @@ def building_profile_sensors_schema() -> vol.Schema:
         CONF_WEATHER_IS_WINDY_SENSOR: binary_on_selector(),
         CONF_WEATHER_IS_WINDY_TEMPLATE: selector.TemplateSelector(),
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE: _template_combine_mode_selector(),
+        CONF_WEATHER_SEVERE_TEMPLATE: selector.TemplateSelector(),
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE: _template_combine_mode_selector(),
         CONF_WEATHER_SEVERE_SENSORS: binary_on_selector(multiple=True),
         # Outside temperature
         CONF_OUTSIDETEMP_ENTITY: numeric_selector(),

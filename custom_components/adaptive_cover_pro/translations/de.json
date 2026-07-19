@@ -199,7 +199,8 @@
           "weather_rain_sensor": "Regenrate-Sensor",
           "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
-          "weather_wind_speed_sensor": "Windgeschwindigkeitssensor"
+          "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
+          "weather_severe_template": "Unwetter-Vorlage (optional)"
         },
         "data_description": {
           "name": "Ein sprechender Name für dieses Gebäudeprofil.",
@@ -221,7 +222,8 @@
           "weather_rain_sensor": "Numerischer Sensor, der Niederschlagsrate meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
           "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
-          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren."
+          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
+          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Wenn sie wahr (on/true/1) erbracht wird, wird die Übersteuerung aktiviert. Sie kombiniert mit den Unwetter-Sensoren oben (OR oder AND) über die Einstellung „Unwetter-Vorlage-Logik“ auf dem Bildschirm „Weather Override“ pro Beschattung; sie kann eigenständig ohne Sensoren funktionieren und reagiert sofort, wenn sich die Vorlage ändert. Eine Vorlage, die leer ist oder nicht erbracht werden kann, gibt keine Meinung ab (kein Rückzug). Leer lassen zum Deaktivieren."
         }
       },
       "create_group": {
@@ -484,7 +486,8 @@
           "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)",
           "transit_timeout": "Transitzeit-Timeout (Sekunden)",
           "manual_ignore_external": "Manuelle Übersteuerung nur durch Adaptive Cover Pro-Befehle aktivieren",
-          "manual_override_input_entities": "Eingangssensoren, die Manuelle Übersteuerung auslösen"
+          "manual_override_input_entities": "Eingangssensoren, die Manuelle Übersteuerung auslösen",
+          "manual_override_input_template": "Input-Vorlage, die manuelle Übersteuerung auslöst (optional)"
         },
         "data_description": {
           "manual_override_duration": "Wie lange (in Minuten) die automatische Steuerung nach manueller Anpassung pausiert werden soll. Wenn Sie die Beschattung manuell verschieben, wird die automatische Steuerung unterbrochen. Typische Werte: 10-15 min (kurze Pause, bald zur Verfolgung zurückkehren), 30 min (mittlere Pause, ausgewogen), 60-120 min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort zur automatischen Steuerung zurückkehren - nicht empfohlen). Ermöglicht Ihnen die Kontrolle, wenn Sie sie wünschen, und setzt die Automatisierung später fort.",
@@ -493,7 +496,8 @@
           "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um die Übersteuerungserkennung von Übergangspositionen zu verhindern, während die Beschattung zu Ihrer Zielposition wechselt. Nützlich, wenn Ihre Beschattung während der Bewegung viele Zwischenwerte meldet.",
           "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden.",
           "manual_ignore_external": "Wenn aktiviert, werden nur Positionsänderungen, die über die Adaptive Cover Pro Proxy-Entität oder den Dienst adaptive_cover_pro.set_position gesendet werden, die manuelle Übersteuerung aktivieren. Positionsänderungen aus anderen Quellen (andere Automationen, die Standard-Home Assistant-Beschattungskarte, physische oder RF-Fernbedienungen) werden ignoriert und die automatische Steuerung läuft ungestört weiter. Praktisch, wenn Sie die Beschattung nur über ACP selbst steuern und möchten, dass laute externe Statusänderungen die Automation nicht unterbrechen. Standard: aus.",
-          "manual_override_input_entities": "Binärsensoren (oder Schalter/input_booleans), deren Off-zu-On-Übergang Manuelle Übersteuerung in jeder Beschattung dieser Instanz auslöst. Gedacht für einen physischen Wandschalter, der mit einem Eingangssensor verdrahtet ist (z. B. ein Shelly 2PM, das binary_sensor.*_cover_input_0 bereitstellt): Das Drücken setzt die automatische Steuerung für die Übersteuerungsdauer aus, anstatt eine manuelle Bewegung aus der Position der Beschattung abzuleiten. Kombinieren Sie mit \"Manuelle Übersteuerung nur von Adaptive Cover Pro-Befehlen auslösen\", um diese Sensoren zum einzigen Übersteuerungsauslöser zu machen. Standard: keine."
+          "manual_override_input_entities": "Binärsensoren (oder Schalter/input_booleans), deren Off-zu-On-Übergang Manuelle Übersteuerung in jeder Beschattung dieser Instanz auslöst. Gedacht für einen physischen Wandschalter, der mit einem Eingangssensor verdrahtet ist (z. B. ein Shelly 2PM, das binary_sensor.*_cover_input_0 bereitstellt): Das Drücken setzt die automatische Steuerung für die Übersteuerungsdauer aus, anstatt eine manuelle Bewegung aus der Position der Beschattung abzuleiten. Kombinieren Sie mit \"Manuelle Übersteuerung nur von Adaptive Cover Pro-Befehlen auslösen\", um diese Sensoren zum einzigen Übersteuerungsauslöser zu machen. Standard: keine.",
+          "manual_override_input_template": "Optionale Home Assistant Jinja2-Vorlage, deren wahre Erbringung (on/true/1) manuelle Übersteuerung für jede Beschattung in dieser Instanz aktiviert – das Vorlagen-Äquivalent der Input-Sensoren oben. Es ist ein flankengesteuerter Auslöser (steigende Flanke): Die Übersteuerung wird aktiviert, sobald das erbrachte Ergebnis wahr wird, und es gibt KEINEN Kombinationsmodus und keinen begleitenden Sensor – sie agiert eigenständig. Ein falsches Ergebnis oder eine Vorlage, die leer ist oder nicht erbracht werden kann, bewirkt nichts (sie gibt nie von selbst eine Übersteuerung auf – die konfigurierte Dauer tut das). Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist, oder wenn ein Remote-Button-Ereignis auslöst. Leer lassen zum Deaktivieren."
         }
       },
       "custom_position": {
@@ -541,7 +545,9 @@
           "weather_is_raining_template_mode": "Logik der Vorlage \"Is Raining\"",
           "weather_is_windy_template": "Vorlage \"Is Windy\" (optional)",
           "weather_is_windy_template_mode": "Logik der Vorlage \"Is Windy\"",
-          "weather_enabled": "Wetter-Übersteuerung aktivieren"
+          "weather_enabled": "Wetter-Übersteuerung aktivieren",
+          "weather_severe_template": "Unwetter-Vorlage (optional)",
+          "weather_severe_template_mode": "Unwetter-Vorlage-Logik"
         },
         "data_description": {
           "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetterübersteuerung Beschattungen weiterhin zur konfigurierten Position bewegen, auch wenn der Schalter für automatische Steuerung ausgeschaltet ist. Dies stellt sicher, dass der Schutz vor Wind, Regen und schwerem Wetter unabhängig vom Automatisierungsstatus immer aktiv ist. Deaktivieren Sie dies nur, wenn die Wetterübersteuerung dem Schalter für automatische Steuerung folgen soll.",
@@ -561,7 +567,9 @@
           "weather_is_raining_template_mode": "Wie die Vorlage \"Is Raining\" sich mit dem Binärsensor \"Is Raining\" oben kombiniert. \"OR\" (Standard) – regnet, wenn die Vorlage wahr ist ODER der Sensor eingeschaltet ist. \"AND\" – regnet nur, wenn die Vorlage wahr ist UND der Sensor eingeschaltet ist. Ohne einen konfigurierten Sensor entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Is Raining\" festgelegt ist.",
           "weather_is_windy_template": "Optionale Home-Assistant-Jinja2-Vorlage, die entscheidet, ob es windig ist. Wenn sie als wahr (on/true/1) ausgewertet wird, wird die Übersteuerung aktiviert. Wie sie sich mit dem Binärsensor \"Is Windy\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Is Windy'\" unten definiert; sie kann auch ohne Sensor allein verwendet werden und reagiert sofort auf den Wechsel der Vorlage. Beispiel: Leiten Sie \"windig\" aus einem numerischen Windgeschwindigkeit-Schwellenwert ab. Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht (kein Widerrufen). Lassen Sie leer, um zu deaktivieren.",
           "weather_is_windy_template_mode": "Wie die Vorlage \"Is Windy\" sich mit dem Binärsensor \"Is Windy\" oben kombiniert. \"OR\" (Standard) – windig, wenn die Vorlage wahr ist ODER der Sensor eingeschaltet ist. \"AND\" – windig nur, wenn die Vorlage wahr ist UND der Sensor eingeschaltet ist. Ohne einen konfigurierten Sensor entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Is Windy\" festgelegt ist.",
-          "weather_enabled": "Hauptschalter für Wetter-Sicherheitsübersteuerungen (Wind, Regen, extreme Bedingungen). Wenn deaktiviert, werden die konfigurierten Wettersensoren ignoriert. Bestehende Beschattungen behalten diese Einstellung nach dem Update; neue Beschattungen starten deaktiviert."
+          "weather_enabled": "Hauptschalter für Wetter-Sicherheitsübersteuerungen (Wind, Regen, extreme Bedingungen). Wenn deaktiviert, werden die konfigurierten Wettersensoren ignoriert. Bestehende Beschattungen behalten diese Einstellung nach dem Update; neue Beschattungen starten deaktiviert.",
+          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Wenn sie wahr (on/true/1) erbracht wird, wird die Übersteuerung aktiviert. Wie sie mit den Unwetter-Sensoren oben (OR oder AND) kombiniert, wird durch die „Unwetter-Vorlage-Logik“ unten eingestellt; sie kann eigenständig ohne Sensoren funktionieren und reagiert sofort, wenn sich die Vorlage ändert. Beispiel: ‘schwerwiegend’ aus der Vorhersage-Bedingung einer Wetter-Entität ableiten. Eine Vorlage, die leer ist oder nicht erbracht werden kann, gibt keine Meinung ab (kein Rückzug). Leer lassen zum Deaktivieren.",
+          "weather_severe_template_mode": "Wie die Unwetter-Vorlage mit den Unwetter-Sensoren oben kombiniert. 'OR' (Standard) – schwerwiegend, wenn die Vorlage wahr ist ODER ein Sensor EIN ist. 'AND' – schwerwiegend nur, wenn die Vorlage wahr ist UND mindestens ein Sensor EIN ist. Ohne konfigurierte Sensoren entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Unwetter-Vorlage eingestellt ist."
         }
       },
       "weather": {
@@ -816,7 +824,8 @@
           "weather_rain_sensor": "Regenrate-Sensor",
           "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
-          "weather_wind_speed_sensor": "Windgeschwindigkeitssensor"
+          "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
+          "weather_severe_template": "Unwetter-Vorlage (optional)"
         },
         "data_description": {
           "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100 % meldet (z. B. von einer Wetterintegrationen). Wenn der Wert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
@@ -837,7 +846,8 @@
           "weather_rain_sensor": "Numerischer Sensor, der Niederschlagsrate meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
           "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
-          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren."
+          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
+          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Leer lassen zum Deaktivieren."
         }
       },
       "profile_overview": {
