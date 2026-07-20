@@ -1328,8 +1328,21 @@ class CoverCommandService:
         # reason to hold the carriage still — it is not a reason to also
         # starve the tilt axis, which owns its own independent min-delta and
         # suppression gates downstream (VenetianPolicy/DualAxisSequencer).
+        # sun_just_appeared re-confirms position even at the same numeric target
+        # (feedback-poor covers, mid-range tracking) — but NOT when the target is
+        # a hard mechanical endpoint the cover already physically occupies.
+        # Re-sending close_cover/open_cover there is a true no-op on single-axis
+        # covers and actively disturbs a coupled venetian's slats (issue #985).
+        # The force_endpoint channel above already excludes the at-mechanical-stop
+        # case via _is_at_mechanical_stop; mirror it here. No-feedback covers
+        # (HA state unknown) are NOT at a mechanical stop, so their re-confirm is
+        # preserved (issue #779).
+        sun_reconfirm = context.sun_just_appeared and not (
+            position in (POSITION_CLOSED, POSITION_OPEN)
+            and self._is_at_mechanical_stop(state_obj, position)
+        )
         if (
-            not context.sun_just_appeared
+            not sun_reconfirm
             and not force_endpoint
             and not context.user_command
             and (

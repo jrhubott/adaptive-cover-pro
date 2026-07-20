@@ -1405,6 +1405,41 @@ async def test_sun_just_appeared_false_enforces_delta(svc, mock_hass):
     assert reason == "delta_too_small"
 
 
+@pytest.mark.asyncio
+async def test_sun_just_appeared_no_resend_at_mechanical_stop(svc, mock_hass):
+    """Issue #985: sun_just_appeared must NOT re-fire an endpoint command the
+    cover already occupies (state=closed, target=0). Re-sending close_cover there
+    is a no-op on single-axis covers and disturbs a venetian's slats. The tilt
+    axis is still serviced via the same-position skip branch.
+    """
+    _patch_position(svc, 0)  # carriage already at 0
+    state = MagicMock()
+    state.state = "closed"  # STATE_CLOSED -> _is_at_mechanical_stop True
+    mock_hass.states.get.return_value = state
+    svc._service_secondary_axis = AsyncMock()  # spy: tilt must still get a turn
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "solar",
+            context=_ctx(
+                min_change=1,
+                special_positions=[0, 100, 50],
+                sun_just_appeared=True,
+            ),
+        )
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+    svc._service_secondary_axis.assert_awaited_once()
+
+
 # ------------------------------------------------------------------ #
 # Force override release — end-to-end gate behavior (#177)
 # ------------------------------------------------------------------ #
