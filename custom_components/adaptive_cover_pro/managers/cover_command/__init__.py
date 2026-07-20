@@ -1093,8 +1093,21 @@ class CoverCommandService:
         # covers are all handled by the one routing source of truth. Delta/time
         # gates and reconciliation deliberately keep reading the real (unknown)
         # _current — this fallback is scoped to the same-position gate only.
+        # sun_just_appeared re-confirms position even at the same numeric target
+        # (feedback-poor covers, mid-range tracking) — but NOT when the target is
+        # a hard mechanical endpoint the cover already physically occupies.
+        # Re-sending close_cover/open_cover there is a true no-op on single-axis
+        # covers and actively disturbs a coupled venetian's slats (issue #985).
+        # The force_endpoint channel above already excludes the at-mechanical-stop
+        # case via _is_at_mechanical_stop; mirror it here. No-feedback covers
+        # (HA state unknown) are NOT at a mechanical stop, so their re-confirm is
+        # preserved (issue #779).
+        sun_reconfirm = context.sun_just_appeared and not (
+            position in (POSITION_CLOSED, POSITION_OPEN)
+            and self._is_at_mechanical_stop(state_obj, position)
+        )
         if (
-            not context.sun_just_appeared
+            not sun_reconfirm
             and not force_endpoint
             and (
                 (
