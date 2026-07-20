@@ -14,6 +14,7 @@ import datetime as dt
 import logging
 
 import pytest
+from freezegun import freeze_time
 
 from custom_components.adaptive_cover_pro.const import BLANK_TIME
 from custom_components.adaptive_cover_pro.managers.time_window import TimeWindowManager
@@ -83,6 +84,12 @@ def test_unset_start_resolves_to_none(mgr):
     assert mgr.resolved_start_time is None
 
 
+# Freeze to inside the 08:00-18:00 window: ``is_active`` is
+# ``before_end_time and after_start_time and ...``, which short-circuits before
+# ``after_start_time`` (the property that populates ``_cached_start_time``) when
+# the wall clock is past the end time. Without a fixed clock this test passes
+# only when it happens to run mid-window and fails on any evening CI run.
+@freeze_time("2026-07-19 10:00:00")
 def test_resolved_start_matches_value_is_active_uses(mgr):
     """``resolved_start_time`` equals the cached start ``is_active`` compares."""
     mgr.update_config(

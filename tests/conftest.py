@@ -5,6 +5,19 @@
 # load our custom integration from the local ``custom_components/`` directory.
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
+# --- HA / pytest-homeassistant-custom-component compatibility shim ---
+# PHCC's ``disable_http_server`` fixture runs
+# ``patch("homeassistant.components.http.start_http_server_and_save_config")``
+# with no ``create=True``. That symbol only exists in a narrow band of HA
+# releases, so on the HA versions our CI matrix installs (min / stable / dev)
+# the patch raises AttributeError and every test using the ``hass`` fixture
+# errors at setup. Pre-create a harmless stub when HA lacks the symbol so the
+# patch target exists; when HA already defines it we leave the real one alone.
+import homeassistant.components.http as _ha_http
+
+if not hasattr(_ha_http, "start_http_server_and_save_config"):
+    _ha_http.start_http_server_and_save_config = lambda *args, **kwargs: None
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
