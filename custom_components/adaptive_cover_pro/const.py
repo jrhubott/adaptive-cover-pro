@@ -1785,6 +1785,43 @@ class ReasonCode(StrEnum):
     SKIP_NOT_ACTIVE = "skip.not_active"
 
 
+class TriageCode(StrEnum):
+    """Stable identifiers for every diagnostics-triage finding (issue #970).
+
+    Each value is the join key into the ``troubleshoot_i18n/`` template bundle
+    (mirrors :class:`ReasonCode` + the ``reason_i18n/`` mechanism): a triage
+    rule emits a ``Reason(code, params)`` and both the integration's troubleshoot
+    step and the config summary render the English template — or the Lovelace
+    card localizes the same code+params into the user's language.
+
+    These are FROZEN identifiers; do not rename without updating both
+    ``troubleshoot_i18n/*.json`` and ``troubleshoot_i18n._TRIAGE_TEMPLATES_EN``.
+    """
+
+    # -- rule 1: a safety-priority custom position bypasses every gate (#711/#716)
+    CUSTOM_SAFETY_BYPASS = "triage.custom_safety_bypass"
+    # -- rule 2: a higher-priority handler out-ran the solar handler
+    HIGHER_PRIORITY_WON = "triage.higher_priority_won"
+    # -- rule 3: the active-window schedule looks misconfigured
+    TIME_WINDOW_SUSPECT = "triage.time_window_suspect"
+    # -- rule 4: climate mode on but the inside temperature is unavailable
+    CLIMATE_TEMP_NONE = "triage.climate_temp_none"
+    # -- rule 5: summer + presence but the blind never closes
+    SUMMER_WONT_CLOSE = "triage.summer_wont_close"
+    # -- rule 6: climate mode on with presence defaulting to always-present
+    PRESENCE_DEFAULTS_TRUE = "triage.presence_defaults_true"
+    # -- rule 7: more than one cloud/low-light input — OR semantics may surprise
+    CLOUD_OR_SEMANTICS = "triage.cloud_or_semantics"
+    # -- rule 8a: a configured cover is not ready (unavailable) — CONFIG side
+    COVER_NOT_READY = "triage.cover_not_ready"
+    # -- rule 8b: a configured sensor/cover entity is unavailable — RUNTIME side
+    ENTITY_UNAVAILABLE = "triage.entity_unavailable"
+    # -- rule 9: a min-position floor is bypassed by a lower fixed position
+    MIN_FLOOR_BYPASSED = "triage.min_floor_bypassed"
+    # -- rule 10: enable_min_position reads backwards (False = always enforce)
+    ENABLE_MIN_BACKWARDS = "triage.enable_min_backwards"
+
+
 # =============================================================================
 # 24. Geometric Accuracy (calc engine)
 # =============================================================================

@@ -1,0 +1,15 @@
+{
+  "triage": {
+    "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates.",
+    "higher_priority_won": "ℹ️ The {winner} handler outranks solar tracking and won this cycle, so solar never set a position. Lower-priority handlers that did not run: {skipped}. Adjust the handler priorities if solar should win.",
+    "time_window_suspect": "⚠️ The active-window schedule looks off (start {start}, end {end}); the cover may never track. Review the start and end times.",
+    "climate_temp_none": "⚠️ Climate mode is on but the inside temperature is unavailable, so climate decisions cannot run. Check the configured temperature sensor.",
+    "summer_wont_close": "⚠️ It is summer with presence detected and the blind is not transparent, yet the climate handler did not close it. Review the summer close conditions and temperature thresholds.",
+    "presence_defaults_true": "ℹ️ Climate mode is on but no presence entity or template is set, so presence defaults to always-present. Add a presence sensor if occupancy should gate climate control.",
+    "cloud_or_semantics": "ℹ️ More than one low-light input is configured ({inputs}); they combine with OR, so any one of them tripping suppresses tracking. Currently tripped: {tripped}.",
+    "cover_not_ready": "⚠️ {eid}: not ready (unavailable)",
+    "entity_unavailable": "⚠️ {eid} is unavailable — the integration cannot read its state. Check the device or the sensor.",
+    "min_floor_bypassed": "⚠️ A minimum position of {min}% is set, but these fall below it: {offenders}. They are raised to the floor (or the floor is ignored) — reconcile the values.",
+    "enable_min_backwards": "ℹ️ Minimum position {min}% is set but 'enforce minimum only while sun tracking' is off, so the floor applies at all times (the flag reads backwards). Confirm that is intended."
+  }
+}
