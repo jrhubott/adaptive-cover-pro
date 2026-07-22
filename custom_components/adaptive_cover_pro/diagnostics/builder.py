@@ -46,6 +46,7 @@ class SensorSource:
     entity_id: Any  # str | list | None — the raw option value
     source: str
     state: str
+    unit_of_measurement: str | None = None  # issue #969 (rule 14)
 
 
 # ---------------------------------------------------------------------------
@@ -654,6 +655,9 @@ class DiagnosticsBuilder:
                 "entity_id": ctx.temp_sensor_entity_id,
                 "source": ctx.temp_sensor_source,
                 "area_id": ctx.temp_sensor_area_id,
+                "unit_of_measurement": DiagnosticsBuilder._read_unit_of_measurement(
+                    ctx.hass, ctx.temp_sensor_entity_id
+                ),
             }
 
         result = ctx.pipeline_result
@@ -1028,6 +1032,7 @@ class DiagnosticsBuilder:
                 entity_id=entity_id,
                 source=source,
                 state=cls._classify_sensor_state(ctx.hass, entity_id),
+                unit_of_measurement=cls._read_unit_of_measurement(ctx.hass, entity_id),
             )
             bucket.append(asdict(descriptor))
 
@@ -1074,6 +1079,21 @@ class DiagnosticsBuilder:
             if state is not None and state.state not in _UNAVAILABLE_HA_STATES:
                 return _SENSOR_STATE_AVAILABLE
         return _SENSOR_STATE_UNAVAILABLE
+
+    @staticmethod
+    def _read_unit_of_measurement(hass: Any, entity_id: Any) -> str | None:
+        """Return a scalar entity's ``unit_of_measurement`` attribute, or None.
+
+        None when hass is absent, entity_id is falsy, or entity_id is a list
+        (the multi-entity gate/severe-sensor keys have no single unit to
+        report). ``getattr`` guards state stand-ins lacking ``.attributes``.
+        """
+        if hass is None or not entity_id or isinstance(entity_id, list):
+            return None
+        state = hass.states.get(entity_id)
+        if state is None:
+            return None
+        return getattr(state, "attributes", {}).get("unit_of_measurement")
 
     @staticmethod
     def _templated_thresholds(ctx: DiagnosticContext) -> dict:
