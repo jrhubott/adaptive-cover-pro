@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from ..const import DOMAIN
 from ..diagnostics import _sanitize
+from ..diagnostics.resolve import read_from_coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,21 +69,18 @@ async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
 
     entries: dict[str, dict] = {}
     for entry_id, coord in coords_by_entry.items():
-        diag: dict | None = None
-
-        if coord.data is not None:
-            diag = coord.data.diagnostics
+        # Read-only resolution (prefers coord.data, else a live build) — never an
+        # update cycle. Unified with the download path via diagnostics.resolve.
+        read = read_from_coordinator(coord)
+        if read.error is not None:
+            _LOGGER.warning(
+                "get_diagnostics: could not build diagnostics for %s: %s",
+                entry_id,
+                read.error,
+            )
+            diag: dict | None = {"error": read.error}
         else:
-            # First refresh hasn't completed yet — try a live build
-            try:
-                diag = coord.build_diagnostic_data()
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.warning(
-                    "get_diagnostics: could not build diagnostics for %s: %s",
-                    entry_id,
-                    exc,
-                )
-                diag = {"error": f"diagnostics_unavailable: {exc!r}"}
+            diag = read.payload
 
         last_success_time = coord._last_update_success_time  # noqa: SLF001
         entries[entry_id] = {
