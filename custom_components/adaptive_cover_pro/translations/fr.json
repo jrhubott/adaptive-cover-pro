@@ -288,6 +288,7 @@
           "motion_override": "🚶 Détection d'occupation",
           "weather_override": "🌧️ Dérogation météo",
           "summary": "📋 Résumé de la configuration",
+          "troubleshoot": "🩺 Troubleshoot",
           "sync": "🔄 Copier vers d'autres stores",
           "debug": "🔍 Débogage et diagnostics",
           "done": "✅ Enregistrer et fermer",
@@ -658,6 +659,22 @@
       "summary": {
         "title": "Résumé de la configuration",
         "description": "{summary}"
+      },
+      "troubleshoot": {
+        "title": "Troubleshoot",
+        "description": "{report}",
+        "menu_options": {
+          "custom_position": "🎯 Custom Positions",
+          "pipeline_priorities": "🔀 Handler Priorities",
+          "automation": "⏱️ Movement & Schedule",
+          "temperature_climate": "🌡️ Temperature & Climate",
+          "light_cloud": "☁️ Weather, Light & Cloud",
+          "cover_entities": "🪟 Covers & Device",
+          "profile_sensors": "📡 Shared Sensors",
+          "position": "📊 Position Settings",
+          "troubleshoot": "🔁 Re-check",
+          "init": "⬅️ Back to menu"
+        }
       },
       "debug": {
         "title": "Débogage et diagnostics",

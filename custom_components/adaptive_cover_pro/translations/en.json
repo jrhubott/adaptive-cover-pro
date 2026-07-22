@@ -290,6 +290,7 @@
           "weather_override": "🌧️ Weather Override",
           "pipeline_priorities": "🔀 Handler Priorities",
           "summary": "📋 Configuration Summary",
+          "troubleshoot": "🩺 Troubleshoot",
           "sync": "🔄 Copy to Other Covers",
           "debug": "🔍 Debug & Diagnostics",
           "done": "✅ Save & Close",
@@ -710,6 +711,22 @@
       "summary": {
         "title": "Configuration Summary",
         "description": "{summary}"
+      },
+      "troubleshoot": {
+        "title": "Troubleshoot",
+        "description": "{report}",
+        "menu_options": {
+          "custom_position": "🎯 Custom Positions",
+          "pipeline_priorities": "🔀 Handler Priorities",
+          "automation": "⏱️ Movement & Schedule",
+          "temperature_climate": "🌡️ Temperature & Climate",
+          "light_cloud": "☁️ Weather, Light & Cloud",
+          "cover_entities": "🪟 Covers & Device",
+          "profile_sensors": "📡 Shared Sensors",
+          "position": "📊 Position Settings",
+          "troubleshoot": "🔁 Re-check",
+          "init": "⬅️ Back to menu"
+        }
       },
       "debug": {
         "title": "Debug & Diagnostics",

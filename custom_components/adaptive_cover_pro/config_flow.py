@@ -4282,6 +4282,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return f"{name} ({suffix} {counter})"
 
 
+# Server-rendered wrapper lines for the read-only Troubleshoot step (issue
+# #970). The per-finding bullets are translated via the troubleshoot_i18n
+# bundle; these two "envelope" states are not finding codes, so they are not in
+# that bundle (its parity lock is strictly TriageCode-keyed) and stay here.
+_TROUBLESHOOT_NO_ISSUES = (
+    "✅ No configuration or runtime issues detected — everything looks correctly "
+    "set up."
+)
+_TROUBLESHOOT_UNAVAILABLE = (
+    "ℹ️ Diagnostics aren't available yet for this cover — it may not have "
+    "completed a first update cycle. Re-check once it has run at least once."
+)
+
+
 class OptionsFlowHandler(OptionsFlow):
     """Options to adjust parameters."""
 
@@ -4433,7 +4447,10 @@ class OptionsFlowHandler(OptionsFlow):
 
         # ── Admin ────────────────────────────────────────────────────
         keys.append("sync")  # Multi-cover management
-        keys.extend(["summary", "debug", "done"])
+        # "troubleshoot" is a read-only diagnostics surface (issue #970) — it
+        # sits with the other read-only/diagnostic entries (summary, debug) and
+        # is offered on the cover menu ONLY (never the profile or group menus).
+        keys.extend(["summary", "troubleshoot", "debug", "done"])
 
         # Use a list so HA translates labels client-side using the user's language preference.
         # Icons are embedded directly in each translation string (e.g. "🪟 Covers & Device").
@@ -4458,6 +4475,58 @@ class OptionsFlowHandler(OptionsFlow):
                 "coffee_url": "https://www.buymeacoffee.com/jrhubott",
                 "profile_line": _profile_line,
             },
+        )
+
+    async def async_step_troubleshoot(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Read-only diagnostics triage for this cover (issue #970, Phase 1).
+
+        Resolves diagnostics WITHOUT running an update cycle — it never calls
+        ``async_refresh`` (which runs the full pipeline and can move a cover).
+        Options, per-entity capabilities, and the resolved payload are folded
+        into one view, the triage engine runs, and the findings render as a
+        bullet report into ``description_placeholders``. The menu routes each
+        finding's ``fix_step`` to the options step that fixes it (deduped,
+        first-seen order), then a re-check (``troubleshoot``) and a back
+        (``init``) entry — a list so HA translates labels client-side (#227).
+        """
+        from .diagnostics import resolve
+        from .diagnostics.triage import render_report, run_triage
+        from .troubleshoot_i18n import load_troubleshoot_labels
+
+        read = resolve.read_diagnostics(self.hass, self._config_entry.entry_id)
+        cap_map, _ = _check_cover_capabilities(
+            self.options, self.sensor_type, self.hass
+        )
+        view: dict[str, Any] = {
+            "options": dict(self.options),
+            "capabilities": cap_map,
+            **(read.payload or {}),
+        }
+        findings = run_triage(view)
+
+        labels = await self.hass.async_add_executor_job(
+            load_troubleshoot_labels,
+            _resolve_summary_language(self.hass, self.context),
+        )
+
+        if read.source == "unavailable":
+            report = _TROUBLESHOOT_UNAVAILABLE
+        elif findings:
+            report = render_report(findings, labels)
+        else:
+            report = _TROUBLESHOOT_NO_ISSUES
+
+        menu_options = [
+            *dict.fromkeys(f.fix_step for f in findings if f.fix_step),
+            "troubleshoot",
+            "init",
+        ]
+        return self.async_show_menu(  # type: ignore[return-value]
+            step_id="troubleshoot",
+            menu_options=menu_options,
+            description_placeholders={"report": report},
         )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):

@@ -443,19 +443,21 @@ def test_rule10_near_miss_no_floor() -> None:
 # Step 4 — meta-test over the whole table
 # ---------------------------------------------------------------------------
 
-# TODO chunk 4: derive from OptionsFlowHandler reflection (real options steps).
-_EXPECTED_FIX_STEPS: frozenset[str] = frozenset(
-    {
-        "custom_position",
-        "pipeline_priorities",
-        "automation",
-        "temperature_climate",
-        "light_cloud",
-        "cover_entities",
-        "profile_sensors",
-        "position",
-    }
-)
+
+def _real_options_steps() -> frozenset[str]:
+    """Return the real ``async_step_*`` ids on ``OptionsFlowHandler``.
+
+    Imported inside the helper so the HA-dependent ``config_flow`` module is not
+    pulled in at collection time (mirrors how other tests defer that import).
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    return frozenset(
+        name.removeprefix("async_step_")
+        for name in dir(OptionsFlowHandler)
+        if name.startswith("async_step_")
+    )
+
 
 _WIKI_RE = re.compile(r"^[A-Za-z0-9-]+#[a-z0-9-]+$")
 
@@ -480,7 +482,7 @@ def test_rule_template_exists_in_code_defaults_and_en_json(rule) -> None:
 
 @pytest.mark.parametrize("rule", TRIAGE_RULES, ids=lambda r: r.code)
 def test_rule_fix_step_is_real(rule) -> None:
-    assert rule.fix_step is None or rule.fix_step in _EXPECTED_FIX_STEPS
+    assert rule.fix_step is None or rule.fix_step in _real_options_steps()
 
 
 @pytest.mark.parametrize("rule", TRIAGE_RULES, ids=lambda r: r.code)
