@@ -99,6 +99,7 @@ from .const import (
     DOMAIN,
     ISSUE_CONFIG_POSITION_ENVELOPE,
     ISSUE_CONFIG_TIME_WINDOW,
+    ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_UNAVAILABLE,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -384,6 +385,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Namespaced cover-availability watch keys currently registered, so a
         # cover dropped from config gets unwatched (its Repair cleared) next cycle.
         self._cover_issue_keys: set[str] = set()
+        # A2 (issue #990): per-entity "commanded but not reaching target" Repair
+        # keys currently tracked, so a cover dropped from config gets its
+        # predicate cleared next cycle (symmetric with _cover_issue_keys).
+        self._a2_issue_keys: set[str] = set()
         # One-shot: the first health-check cycle of this lifetime sweeps the issue
         # registry for A1 Repairs orphaned by a prior lifetime (removing a cover
         # reloads the entry, so a cross-lifetime orphan is in neither the fresh
@@ -1566,31 +1571,68 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 },
             )
 
+            # A2 — commanded-but-unreached (issue #990). Per-entity like A1;
+            # predicate-shaped like B1/B2, so it rides the same RepairManager.
+            # is_target_unreached is read-only and False while a cover is still
+            # moving (waiting) or under manual override, so a slow cover / a
+            # user move never trips. Clear any stale key for a cover dropped
+            # since last cycle (symmetric unwatch).
+            # Per-entity guard (issue #990 audit): the A2 block runs BEFORE
+            # ``evaluate()``, so a predicate that raises every cycle would abort
+            # the whole try and silently starve A1/B1/B2/C1 (they'd be watched
+            # but never evaluated/cleared). Wrap each ``is_target_unreached``
+            # call so one entity's exception only skips that entity — the loop
+            # and the downstream ``evaluate()``/orphan-sweep still complete. The
+            # outer fail-open guard stays as belt-and-suspenders.
+            a2_desired: set[str] = set()
+            for eid in self.entities:
+                try:
+                    unreached = self._cmd_svc.is_target_unreached(eid)
+                except Exception:  # noqa: BLE001 — one entity must not starve the rest
+                    self.logger.debug(
+                        "A2 predicate failed for %s; skipping", eid, exc_info=True
+                    )
+                    continue
+                key = f"{ISSUE_COVER_NOT_MOVING}_{self.config_entry.entry_id}_{eid}"
+                a2_desired.add(key)
+                self._repair.update_predicate(
+                    key,
+                    unreached,
+                    translation_key=ISSUE_COVER_NOT_MOVING,
+                    placeholders={"entity_id": eid, "name": name},
+                )
+            for stale in self._a2_issue_keys - a2_desired:
+                self._repair.clear_predicate(stale)
+            self._a2_issue_keys = a2_desired
+
             self._sensor_health.evaluate()
             self._repair.evaluate()
 
-            # A1 cross-lifetime orphan sweep (issue #975 audit). The primary fix
-            # for a cover_unavailable Repair is REMOVING the cover, which reloads
-            # the config entry → a fresh coordinator with an empty
-            # ``_cover_issue_keys``. The removed cover's key is in neither
-            # ``desired`` (recomputed above) nor the in-lifetime unwatch loop, so
-            # its Repair would orphan until an HA restart. Once per lifetime,
-            # enumerate this integration's issues and delete any A1 Repair for
-            # this entry that is no longer desired. Runs last (inside the single
-            # fail-open guard) so a registry hiccup can never skip A1/B1/B2. The
-            # ``desired``-membership filter is critical: a still-configured but
-            # unavailable cover IS in ``desired`` (it is watched), so its valid
-            # warning is preserved rather than flapped on every restart.
+            # Per-cover cross-lifetime orphan sweep (issue #975 audit, extended
+            # for A2 in #990). The primary fix for a per-cover Repair is REMOVING
+            # the cover, which reloads the config entry → a fresh coordinator with
+            # empty ``_cover_issue_keys`` / ``_a2_issue_keys``. The removed cover's
+            # key is in neither the recomputed ``desired`` sets nor the in-lifetime
+            # unwatch loops, so its Repair would orphan until an HA restart. Once
+            # per lifetime, enumerate this integration's issues and delete any A1
+            # (cover_unavailable) or A2 (cover_not_moving) Repair for this entry
+            # that is no longer desired. Runs last (inside the single fail-open
+            # guard) so a registry hiccup can never skip A1/B1/B2/A2. The
+            # membership filter is critical: a still-configured cover IS in its
+            # desired set, so its valid warning is preserved rather than flapped.
             if not self._a1_orphans_swept:
-                a1_prefix = f"{ISSUE_COVER_UNAVAILABLE}_{self.config_entry.entry_id}_"
+                entry_id = self.config_entry.entry_id
+                sweeps = (
+                    (f"{ISSUE_COVER_UNAVAILABLE}_{entry_id}_", self._cover_issue_keys),
+                    (f"{ISSUE_COVER_NOT_MOVING}_{entry_id}_", self._a2_issue_keys),
+                )
                 registry = ir.async_get(self.hass)
                 for reg_domain, issue_id in list(registry.issues):
-                    if (
-                        reg_domain == DOMAIN
-                        and issue_id.startswith(a1_prefix)
-                        and issue_id not in self._cover_issue_keys
-                    ):
-                        ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                    if reg_domain != DOMAIN:
+                        continue
+                    for prefix, desired_keys in sweeps:
+                        if issue_id.startswith(prefix) and issue_id not in desired_keys:
+                            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 self._a1_orphans_swept = True
         except Exception:  # noqa: BLE001 — health check must never break the cycle
             self.logger.debug("Health-check evaluation failed", exc_info=True)

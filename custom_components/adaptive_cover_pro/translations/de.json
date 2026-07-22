@@ -20,6 +20,10 @@
     "config_time_window": {
       "title": "Betriebszeitfenster ist invertiert",
       "description": "Das Betriebszeitfenster auf **{name}** beginnt um {start}, was nach seinem Ende um {end} liegt. Das Fenster öffnet sich nie, daher wird die automatische Sonnenverfolgung nicht ausgeführt. Überprüfen Sie die Start- und Endzeiten in den Optionen der Beschattung."
+    },
+    "cover_not_moving": {
+      "title": "Gesteuerte Beschattung erreicht Position nicht",
+      "description": "Adaptive Cover Pro hat eine Position an die Beschattung `{entity_id}` gesteuert von **{name}** gesendet, doch diese hat die Position seit längerer Zeit nicht erreicht. Der Motor könnte festsitzen, das Gerät könnte offline sein, oder die Beschattung könnte sich nicht physisch bewegen. Überprüfen Sie, dass das Gerät der Beschattung online ist und auf manuelle Befehle reagiert."
     }
   },
   "config": {

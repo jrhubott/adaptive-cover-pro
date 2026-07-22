@@ -1641,6 +1641,60 @@ class CoverCommandService:
 
         return False
 
+    def is_target_unreached(self, entity_id: str) -> bool:
+        """Read-only A2 predicate: True iff a commanded cover has settled off-target.
+
+        True when a target is set, the cover is no longer ``waiting`` (its
+        transit / grace window elapsed — a still-moving cover returns False),
+        the entity is not under manual override, its position reads, and it is
+        outside tolerance of the target. Reuses :meth:`_at_target` (the exact
+        seam :meth:`check_target_reached` uses — no re-derived tolerance).
+
+        NO side effects — never clears ``waiting`` or resets ``retry_count``,
+        and uses :meth:`_get` (the non-inserting accessor) so polling an
+        unknown entity does not pollute ``_state``. Called every cycle from the
+        coordinator health path (issue #990).
+
+        Two quiet-cases (issue #990 audit):
+
+        * Dry-run: ``_prepare_service_call`` sets ``target``/``waiting`` BEFORE
+          the dry-run gate returns, so the flags reflect a simulated command,
+          not a real one. Never nag about a cover ACP never actually commanded.
+        * Unverifiable surface: a cover that cannot report the granular axis it
+          was commanded on can only ever report an endpoint (0/100), so a
+          non-endpoint ("My" preset) target can never register as reached. We
+          cannot verify "unreached" there, so stay quiet. Gates on the *default
+          axis* the position read and command routing resolve via
+          :meth:`CoverTypePolicy.select_default_axis` (honouring the tilt
+          fallback) — NOT the primary position axis — so a blind/venetian
+          driven through ``set_cover_tilt_position`` (``has_set_position=False,
+          has_set_tilt_position=True``) reads a granular ``current_tilt_position``
+          and stays verifiable. Never a cover-type branch.
+        """
+        if self._dry_run:
+            return False
+        s = self._get(entity_id)
+        if s.target is None or s.waiting:
+            return False
+        if entity_id in self._manual_override_entities:
+            return False
+        actual = self._get_current_position(entity_id)
+        if actual is None:  # unreadable → A1 owns availability; A2 stays quiet
+            return False
+        caps = self.get_cover_capabilities(entity_id)
+        # Gate on the SAME capability signal the position read/command routing
+        # uses — the default axis's capability key (which honours the tilt
+        # fallback) — so "can this cover verify a granular target?" is answered
+        # consistently with how it is read and commanded. A cover that cannot
+        # report the axis it was commanded on can only surface an endpoint.
+        axis = self._policy.select_default_axis(caps)
+        if not caps_get(caps, axis.capability_key, default=True) and s.target not in (
+            POSITION_CLOSED,
+            POSITION_OPEN,
+        ):
+            return False
+        return not self._at_target(actual, s.target)
+
     # ------------------------------------------------------------------ #
     # Reconciliation timer
     # ------------------------------------------------------------------ #

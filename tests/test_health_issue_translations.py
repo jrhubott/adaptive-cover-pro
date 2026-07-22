@@ -30,6 +30,7 @@ _HEALTH_ISSUES = {
     "sun_unavailable": {"{name}"},
     "config_position_envelope": {"{name}", "{min}", "{max}"},
     "config_time_window": {"{name}", "{start}", "{end}"},
+    "cover_not_moving": {"{name}", "{entity_id}"},
 }
 
 
