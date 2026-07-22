@@ -223,7 +223,8 @@
     "venetian": "Jalousie (Zwei-Achsen)",
     "roof_window": "Dachfenster",
     "sliding_curtain": "Schiebevorhang",
-    "louvered_roof": "Lamellendach"
+    "louvered_roof": "Lamellendach",
+    "day_night_shade": "Tag/Nacht-Rollo"
   },
   "geometry": {
     "window": {

@@ -223,7 +223,8 @@
     "venetian": "Venetian Blind (Dual-Axis)",
     "roof_window": "Roof Window",
     "sliding_curtain": "Sliding Curtain",
-    "louvered_roof": "Louvered Roof"
+    "louvered_roof": "Louvered Roof",
+    "day_night_shade": "Day/Night Shade"
   },
   "axes": {
     "position": "Position",

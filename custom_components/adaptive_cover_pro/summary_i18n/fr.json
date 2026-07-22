@@ -223,7 +223,8 @@
     "venetian": "Store vénitien (deux axes)",
     "roof_window": "Fenêtre de toit",
     "sliding_curtain": "Rideau coulissant",
-    "louvered_roof": "Toit à lames"
+    "louvered_roof": "Toit à lames",
+    "day_night_shade": "Store jour/nuit"
   },
   "geometry": {
     "window": {

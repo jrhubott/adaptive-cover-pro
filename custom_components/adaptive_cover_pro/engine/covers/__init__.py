@@ -1,6 +1,7 @@
 """Cover calculation engines."""
 
 from .base import AdaptiveGeneralCover
+from .day_night_shade import DayNightShadeCalculation
 from .horizontal import AdaptiveHorizontalCover
 from .louvered_roof import AdaptiveLouveredRoofCover
 from .oscillating import AdaptiveOscillatingCover
@@ -19,6 +20,7 @@ __all__ = [
     "AdaptiveSlidingCurtainCover",
     "AdaptiveTiltCover",
     "AdaptiveVerticalCover",
+    "DayNightShadeCalculation",
     "DualAxisResult",
     "VenetianCoverCalculation",
 ]

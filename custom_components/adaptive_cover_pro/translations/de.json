@@ -109,7 +109,10 @@
           "tilt_safety_margin": "Neigungs-Sicherheitsmarge",
           "tilt_mode": "Neigungsmodus",
           "tilt_angle_0": "Neigungswinkel bei 0%",
-          "tilt_angle_100": "Neigungswinkel bei 100%"
+          "tilt_angle_100": "Neigungswinkel bei 100%",
+          "day_night_opacity_sheer": "Deckkraft Sheer-Stoff (%)",
+          "day_night_opacity_blackout": "Deckkraft Verdunkelungsstoff (%)",
+          "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -157,7 +160,10 @@
           "tilt_safety_margin": "Zusätzlicher Lamellen-Schließmargen für Sonnenlicht am Rand des Sichtbereichs bei Neigungs-Abdeckungen, 0,0–1,0. Skaliert die automatische, winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, aber in Schließrichtung der Lamellen. Standard 0,0 behält den exakten Streifwinkel (heutiges Verhalten) bei; erhöhen Sie bis 1,0, um die Lamellen bei extremen Sonnenwinkeln etwas stärker zu schließen, damit kein direktes Sonnenlicht hindurchdringt. Bevorzugen Sie dies gegenüber einer Senkung der maximalen Lamellenneigung, die eine pauschale globale Obergrenze darstellt.",
           "tilt_mode": "Wie der Neigungsprozentsatz auf den Lamellenwinkel abgebildet wird. **Einfache Richtung** (0% = geschlossen / 100% = offen): Die Lamellen drehen sich in nur eine Richtung. **Bidirektional** (0% = geschlossen / 50% = offen / 100% = geschlossen): Die Lamellen öffnen sich bei 50% und schließen sich in beide Richtungen. **Winkel angeben**: Legen Sie den exakten Rohlamellenwinkel bei 0% und 100% Neigung unten fest, für Hardware, deren Bewegungsbereich keiner der Voreinstellungen entspricht.",
           "tilt_angle_0": "Rohlamellenwinkel, wenn die Beschattung 0% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
-          "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist."
+          "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
+          "day_night_opacity_sheer": "Wie viel Licht der lichtdurchlässige **Sheer-Stoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung und zur Entscheidung verwendet, wann die heiße Sommersonne den Verdunkelungsstoff benötigt. Standard 30 (leichte Voile).",
+          "day_night_opacity_blackout": "Wie viel Licht der undurchsichtige **Verdunkelungsstoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung verwendet. Standard 100 (vollständig undurchsichtig).",
+          "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten."
         }
       },
       "duplicate_select": {
@@ -373,7 +379,10 @@
           "tilt_safety_margin": "Neigungs-Sicherheitsmarge",
           "tilt_mode": "Neigungsmodus",
           "tilt_angle_0": "Neigungswinkel bei 0%",
-          "tilt_angle_100": "Neigungswinkel bei 100%"
+          "tilt_angle_100": "Neigungswinkel bei 100%",
+          "day_night_opacity_sheer": "Deckkraft Sheer-Stoff (%)",
+          "day_night_opacity_blackout": "Deckkraft Verdunkelungsstoff (%)",
+          "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -421,7 +430,10 @@
           "tilt_safety_margin": "Zusätzlicher Lamellen-Schließmargen für Sonnenlicht am Rand des Sichtbereichs bei Neigungs-Abdeckungen, 0,0–1,0. Skaliert die automatische, winkelabhängige Geometriemarge, die die vertikale Achse bereits anwendet, aber in Schließrichtung der Lamellen. Standard 0,0 behält den exakten Streifwinkel (heutiges Verhalten) bei; erhöhen Sie bis 1,0, um die Lamellen bei extremen Sonnenwinkeln etwas stärker zu schließen, damit kein direktes Sonnenlicht hindurchdringt. Bevorzugen Sie dies gegenüber einer Senkung der maximalen Lamellenneigung, die eine pauschale globale Obergrenze darstellt.",
           "tilt_mode": "Wie der Neigungsprozentsatz auf den Lamellenwinkel abgebildet wird. **Einfache Richtung** (0% = geschlossen / 100% = offen): Die Lamellen drehen sich in nur eine Richtung. **Bidirektional** (0% = geschlossen / 50% = offen / 100% = geschlossen): Die Lamellen öffnen sich bei 50% und schließen sich in beide Richtungen. **Winkel angeben**: Legen Sie den exakten Rohlamellenwinkel bei 0% und 100% Neigung unten fest, für Hardware, deren Bewegungsbereich keiner der Voreinstellungen entspricht.",
           "tilt_angle_0": "Rohlamellenwinkel, wenn die Beschattung 0% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
-          "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist."
+          "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
+          "day_night_opacity_sheer": "Wie viel Licht der lichtdurchlässige **Sheer-Stoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung und zur Entscheidung verwendet, wann die heiße Sommersonne den Verdunkelungsstoff benötigt. Standard 30 (leichte Voile).",
+          "day_night_opacity_blackout": "Wie viel Licht der undurchsichtige **Verdunkelungsstoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung verwendet. Standard 100 (vollständig undurchsichtig).",
+          "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten."
         }
       },
       "sun_tracking": {
@@ -1179,7 +1191,8 @@
         "cover_oscillating_awning": "Gelenkarmmarkise (drop-arm)",
         "cover_roof_window": "Dachfenster",
         "cover_sliding_curtain": "Schiebevorhang (horizontal)",
-        "cover_louvered_roof": "Lamellendach"
+        "cover_louvered_roof": "Lamellendach",
+        "cover_day_night_shade": "Tag/Nacht-Rollo (Doppelstoff)"
       }
     },
     "tilt_mode": {

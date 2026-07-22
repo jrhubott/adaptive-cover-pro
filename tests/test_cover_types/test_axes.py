@@ -49,6 +49,7 @@ ALL_COVER_TYPES = [
     "cover_roof_window",
     "cover_sliding_curtain",
     "cover_louvered_roof",
+    "cover_day_night_shade",
 ]
 
 
@@ -162,6 +163,7 @@ class TestPolicyAxesDeclarations:
             ("cover_tilt", (AXIS_NAME_TILT,)),
             ("cover_venetian", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
             ("cover_louvered_roof", (AXIS_NAME_TILT,)),
+            ("cover_day_night_shade", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
         ],
     )
     def test_axes_declaration(self, cover_type, expected_axis_names):
@@ -175,6 +177,7 @@ class TestPolicyAxesDeclarations:
             "cover_tilt",
             "cover_venetian",
             "cover_louvered_roof",
+            "cover_day_night_shade",
         ):
             assert get_policy(cover_type).axes[0].open_blocks_sun is False
 
@@ -232,6 +235,7 @@ class TestForecastSecondaryAxesHook:
                 "cover_roof_window": AXIS_NAME_POSITION,
                 "cover_sliding_curtain": AXIS_NAME_POSITION,
                 "cover_louvered_roof": AXIS_NAME_TILT,
+                "cover_day_night_shade": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -246,6 +250,8 @@ class TestForecastSecondaryAxesHook:
                 "cover_sliding_curtain": AXIS_NAME_POSITION,
                 # louvered roof is a tilt-axis type like cover_tilt.
                 "cover_louvered_roof": AXIS_NAME_TILT,
+                # day/night shade routes its primary (position) axis.
+                "cover_day_night_shade": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -261,6 +267,8 @@ class TestForecastSecondaryAxesHook:
                 "cover_roof_window": AXIS_NAME_TILT,
                 "cover_sliding_curtain": AXIS_NAME_TILT,
                 "cover_louvered_roof": AXIS_NAME_TILT,
+                # Tilt-only fallback routes a dual-axis type to TILT too.
+                "cover_day_night_shade": AXIS_NAME_TILT,
             },
         ),
     ],
@@ -321,6 +329,7 @@ class TestPositionForIntent:
             ("cover_tilt", POSITION_OPEN, POSITION_CLOSED),
             ("cover_venetian", POSITION_OPEN, POSITION_CLOSED),
             ("cover_louvered_roof", POSITION_OPEN, POSITION_CLOSED),
+            ("cover_day_night_shade", POSITION_OPEN, POSITION_CLOSED),
         ],
     )
     def test_intent_map(self, cover_type, sun_through_value, sun_blocked_value):
@@ -561,6 +570,7 @@ def test_is_in_tilt_suppression_uniform_signature(cover_type: str) -> None:
         ("cover_tilt", False),
         ("cover_venetian", False),
         ("cover_louvered_roof", False),
+        ("cover_day_night_shade", False),
     ],
 )
 def test_supports_return_to_default_switch(cover_type: str, expected: bool) -> None:
@@ -738,6 +748,7 @@ def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
         ("cover_tilt", False),
         ("cover_venetian", True),
         ("cover_louvered_roof", False),
+        ("cover_day_night_shade", True),
     ],
 )
 def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
@@ -759,6 +770,7 @@ def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
         ("cover_tilt", False),
         ("cover_venetian", True),
         ("cover_louvered_roof", False),
+        ("cover_day_night_shade", True),
     ],
 )
 def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
@@ -780,6 +792,7 @@ def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
         ("cover_tilt", "Configuration-Tilt"),
         ("cover_venetian", "Venetian-Blinds"),
         ("cover_louvered_roof", "Configuration-Louvered-Roof"),
+        ("cover_day_night_shade", "Configuration-Day-Night-Shade"),
     ],
 )
 def test_wiki_anchor(cover_type: str, anchor: str) -> None:
@@ -800,6 +813,7 @@ def test_wiki_anchor(cover_type: str, anchor: str) -> None:
         ("cover_tilt", False),
         ("cover_venetian", True),
         ("cover_louvered_roof", False),
+        ("cover_day_night_shade", False),
     ],
 )
 def test_drift_reset_option_is_venetian_only(cover_type: str, expected: bool) -> None:
@@ -862,6 +876,12 @@ class TestLiftTravelMetres:
         svc = self._fake_config_service()
         assert get_policy("cover_louvered_roof").lift_travel_metres(svc, {}) is None
 
+    @pytest.mark.unit
+    def test_day_night_shade_returns_window_height(self) -> None:
+        # Dual-axis type with a real lift (carriage) axis — reads h_win.
+        svc = self._fake_config_service(h_win=1.9)
+        assert get_policy("cover_day_night_shade").lift_travel_metres(svc, {}) == 1.9
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
@@ -872,6 +892,7 @@ class TestLiftTravelMetres:
         ("cover_tilt", "Venetian / Tilt Blind"),
         ("cover_venetian", "Venetian Blind (Dual-Axis)"),
         ("cover_louvered_roof", "Louvered Roof"),
+        ("cover_day_night_shade", "Day/Night Shade"),
     ],
 )
 def test_display_label(cover_type: str, label: str) -> None:
