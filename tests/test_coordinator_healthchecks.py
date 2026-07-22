@@ -32,6 +32,7 @@ from custom_components.adaptive_cover_pro.const import (
     ISSUE_CONFIG_POSITION_ENVELOPE,
     ISSUE_CONFIG_TIME_WINDOW,
     ISSUE_COVER_NOT_MOVING,
+    ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -39,6 +40,7 @@ from custom_components.adaptive_cover_pro.const import (
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.repair import RepairManager
 from custom_components.adaptive_cover_pro.managers.sensor_health import (
     SensorHealthManager,
@@ -52,8 +54,14 @@ _ENTRY = "entry1"
 
 
 class _State:
-    def __init__(self, state: str) -> None:
+    def __init__(self, state: str, attributes: dict | None = None) -> None:
         self.state = state
+        # A3 (issue #991) reads capabilities via ``check_cover_features``, which
+        # touches ``state.attributes``. Default to an empty dict so the real
+        # helper returns optimistic (position-only, no-tilt) defaults for a
+        # readable cover rather than raising — A3 tests patch the helper directly
+        # when they need specific capabilities.
+        self.attributes = attributes if attributes is not None else {}
 
 
 class _States:
@@ -89,6 +97,7 @@ def _make_coord(
     start: dt.datetime | None = None,
     end: dt.datetime | None = None,
     debounce: float = 0,
+    policy=None,
 ):
     """Build a minimal coordinator stub wired for _evaluate_health_checks."""
     hass = _Hass(states if states is not None else {"sun.sun": "above_horizon"})
@@ -118,6 +127,12 @@ def _make_coord(
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.is_target_unreached.return_value = False
     coord._a2_issue_keys = set()
+    # A3 (issue #991): the active cover-type policy answers the tilt-capability
+    # contradiction predicate. Default to a NON-tilt policy (blind) so the
+    # A1/A2/B/C tests never see a spurious A3 Repair; A3 tests pass a
+    # tilt-declaring policy explicitly.
+    coord._policy = policy if policy is not None else get_policy("cover_blind")
+    coord._a3_issue_keys = set()
     coord._resolved_options = options or {}
     return coord
 
@@ -644,3 +659,190 @@ async def test_a2_configured_stuck_cover_not_swept():
     _reg_get, coord_delete = _sweep_run(coord, {}, registry)
     await _drain()
     assert key not in _swept_keys(coord_delete)
+
+
+# --- A3: tilt cover type bound to a non-tilt-capable device (issue #991) -----
+#
+# A3 is a config-vs-hardware coherence check: a tilt-declaring cover type
+# (venetian / tilt / louvered_roof) bound to a cover whose supported_features
+# lacks set_tilt_position can never honour its tilt behaviour. Predicate-shaped
+# like B1/B2 and per-entity like A1/A2, so it rides the same RepairManager. The
+# contradiction test lives on the policy (``tilt_capability_contradiction``);
+# the coordinator reads RAW capabilities via ``check_cover_features`` (None when
+# a cover is still loading) so an unreadable cover never false-fires. Open/close
+# only covers are OUT of scope and must never raise.
+
+# Capability dicts as ``check_cover_features`` returns them (helper shape).
+_NO_TILT = {"has_set_position": True, "has_set_tilt_position": False}
+_WITH_TILT = {"has_set_position": True, "has_set_tilt_position": True}
+_OPEN_CLOSE_ONLY = {"has_open": True, "has_close": True}
+
+
+async def test_a3_raises_for_tilt_type_without_set_tilt_position():
+    """A tilt-declaring type on a device lacking set_tilt_position raises."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        create, _delete = await _run(coord, {})
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" in _raised_keys(create)
+
+
+async def test_a3_no_raise_for_open_close_only_cover():
+    """A blind/awning (no declared tilt axis) never raises A3, even open/close only."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )  # default policy = blind (no tilt axis)
+    with patch(f"{_COORD}.check_cover_features", return_value=_OPEN_CLOSE_ONLY):
+        create, _delete = await _run(coord, {})
+    assert (
+        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    )
+
+
+async def test_a3_no_raise_for_tilt_type_with_set_tilt_position():
+    """A tilt-declaring type on a tilt-capable device is coherent — no raise."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    with patch(f"{_COORD}.check_cover_features", return_value=_WITH_TILT):
+        create, _delete = await _run(coord, {})
+    assert (
+        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    )
+
+
+async def test_a3_no_false_fire_on_unknown_caps():
+    """An unreadable cover (``check_cover_features`` → None) never raises A3.
+
+    ``check_cover_features`` returns None while a cover is still loading /
+    unavailable. Reading the masked ``read_single_capabilities`` would surface
+    has_set_tilt_position=False and false-fire; reading the raw helper and
+    skipping None does not. The skipped cover is also NOT tracked, so the stale
+    loop can't act on a key it never added.
+    """
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    key = f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a"
+    with patch(f"{_COORD}.check_cover_features", return_value=None):
+        create, _delete = await _run(coord, {})
+    assert key not in _raised_keys(create)
+    assert key not in coord._a3_issue_keys
+
+
+async def test_a3_does_not_raise_before_debounce():
+    """A single contradictory cycle under a long debounce does not raise."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+        debounce=100,
+    )
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        create, _delete = await _run(coord, {})
+    assert (
+        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    )
+    coord._repair.shutdown()  # cancel the in-flight (long) debounce timer
+
+
+async def test_a3_clears_on_recovery():
+    """Once the device gains tilt support, the A3 Repair is deleted."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    key = f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a"
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        await _run(coord, {})  # cycle 1: raise
+    with patch(f"{_COORD}.check_cover_features", return_value=_WITH_TILT):
+        _create, delete = await _run(coord, {})  # cycle 2: recovered
+    assert key in {call.args[2] for call in delete.call_args_list}
+
+
+async def test_a3_stale_key_cleared_when_cover_removed():
+    """A cover dropped from config has its A3 predicate cleared (in-lifetime)."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    key = f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a"
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        await _run(coord, {})  # cycle 1: cover.a tracked
+    assert key in coord._a3_issue_keys
+    coord.entities = []
+    _create, delete = await _run(coord, {})  # cycle 2: cover removed
+    assert key in {call.args[2] for call in delete.call_args_list}
+    assert coord._a3_issue_keys == set()
+
+
+async def test_a3_orphan_cleared_on_reload_after_cover_removed():
+    """An A3 Repair for a cover no longer configured is swept once per lifetime."""
+    orphan = f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.old"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.current": "open"},
+        entities=["cover.current"],
+        policy=get_policy("cover_venetian"),
+    )
+    registry = SimpleNamespace(issues={(DOMAIN, orphan): object()})
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    assert orphan in _swept_keys(coord_delete)
+
+
+async def test_a3_configured_contradiction_not_swept():
+    """A still-configured contradictory cover keeps its A3 Repair (in ``a3_desired``)."""
+    key = f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    registry = SimpleNamespace(issues={(DOMAIN, key): object()})
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    assert key not in _swept_keys(coord_delete)
+
+
+async def test_a3_fail_open_on_predicate_exception():
+    """A raising A3 predicate must not starve A1/A2/B/C1 (mirrors the A2 audit).
+
+    The per-entity capability-read + predicate call has its own narrow guard, so
+    an entity whose read explodes is skipped — the A3 loop still finishes,
+    ``evaluate()`` runs, and a concurrently-unhealthy C1 (``sun.sun``
+    unavailable) Repair STILL raises. The outer fail-open guard stays as
+    belt-and-suspenders, but this per-entity guard preserves the design
+    guarantee.
+    """
+    coord = _make_coord(
+        states={"sun.sun": "unavailable", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=get_policy("cover_venetian"),
+    )
+    coord.logger = MagicMock()
+    with (
+        patch(f"{_BASE}.ir.async_create_issue") as create,
+        patch(f"{_BASE}.ir.async_delete_issue"),
+        patch(f"{_COORD}.ir.async_get", return_value=SimpleNamespace(issues={})),
+        patch(f"{_COORD}.ir.async_delete_issue"),
+        patch(f"{_COORD}.check_cover_features", side_effect=RuntimeError("boom")),
+    ):
+        # Must not raise — the per-entity guard swallows the read/predicate error.
+        coord._evaluate_health_checks({})
+        await _drain()
+    # C1 still evaluated despite the A3 read blowing up: sun_unavailable raises.
+    assert f"{ISSUE_SUN_UNAVAILABLE}_{_ENTRY}" in _raised_keys(create)
+    # The per-entity guard logged the skip exactly once.
+    coord.logger.debug.assert_called_once()
+    assert "A3 predicate failed" in coord.logger.debug.call_args.args[0]
+    assert coord.logger.debug.call_args.args[1] == "cover.a"

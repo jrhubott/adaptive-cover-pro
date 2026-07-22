@@ -24,6 +24,10 @@
     "cover_not_moving": {
       "title": "Store ne parvient pas à atteindre la position commandée",
       "description": "Adaptive Cover Pro a envoyé une position au store `{entity_id}` contrôlé par **{name}**, mais il n'a pas atteint cette position depuis un certain temps. Le moteur peut être bloqué, l'appareil peut être hors ligne, ou le store peut ne pas se déplacer physiquement. Vérifiez que l'appareil du store est en ligne et qu'il répond quand vous le commandez manuellement."
+    },
+    "cover_tilt_unsupported": {
+      "title": "La protection ne peut pas s'incliner",
+      "description": "**{name}** est configuré en tant que type de protection capable d'inclinaison, mais la protection `{entity_id}` n'annonce pas le contrôle d'inclinaison (set_tilt_position). Les positions d'inclinaison ne peuvent pas lui être appliquées. Sélectionnez une entité de protection qui prend en charge l'inclinaison, ou changez le type de protection pour un qui n'utilise pas l'inclinaison."
     }
   },
   "config": {

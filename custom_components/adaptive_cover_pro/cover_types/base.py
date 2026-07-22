@@ -627,6 +627,26 @@ class CoverTypePolicy(ABC):
             return TILT_AXIS
         return primary
 
+    def tilt_capability_contradiction(self, caps: Any) -> bool:
+        """Whether this cover type drives a tilt axis the device can't (#991, A3).
+
+        True when the policy declares a tilt axis (``capability_key ==
+        CAP_HAS_SET_TILT_POSITION``) that ``caps`` cannot drive. The tilt axis
+        has no ``drive_fallbacks``, so ``is_drivable`` reduces to "native tilt
+        present" — a tilt-declaring type (tilt / louvered_roof / venetian) bound
+        to a cover lacking ``set_tilt_position`` returns ``True``; a
+        position-only cover reached via ``open_cover`` / ``close_cover`` never
+        declares a tilt axis, so it stays ``False`` (issue #991's out-of-scope
+        carve-out). Single source of truth behind the cover-type boundary for
+        the runtime A3 Repair, so the coordinator never branches on cover type
+        or a hardcoded capability literal. Liskov-safe base default — no
+        subclass override needed.
+        """
+        return any(
+            a.capability_key == CAP_HAS_SET_TILT_POSITION and not a.is_drivable(caps)
+            for a in self.axes
+        )
+
     def supported_axes(self, caps: Any) -> tuple[CoverAxis, ...]:
         """Return the declared axes this entity's capabilities actually expose.
 

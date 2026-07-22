@@ -24,6 +24,10 @@
     "cover_not_moving": {
       "title": "Cover not reaching commanded position",
       "description": "Adaptive Cover Pro sent a position to the cover `{entity_id}` controlled by **{name}**, but it has not reached that position for a while. The motor may be stuck, the device may be offline, or the cover may not physically move. Check that the cover's device is online and that it responds when you command it manually."
+    },
+    "cover_tilt_unsupported": {
+      "title": "Cover cannot tilt",
+      "description": "**{name}** is configured as a tilt-capable cover type, but the cover `{entity_id}` does not advertise tilt control (set_tilt_position). Tilt positions cannot be applied to it. Pick a cover entity that supports tilt, or change the cover type to one that does not use tilt."
     }
   },
   "config": {

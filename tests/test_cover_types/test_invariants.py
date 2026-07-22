@@ -172,6 +172,48 @@ def test_axes_tuple_non_empty(policy: CoverTypePolicy) -> None:
     assert len(policy.axes) >= 1
 
 
+@pytest.mark.unit
+def test_tilt_capability_contradiction_contract(policy: CoverTypePolicy) -> None:
+    """A3 (#991): the predicate fires iff a declared tilt axis can't be driven.
+
+    ``tilt_capability_contradiction`` is the single source of truth the A3
+    runtime Repair consults — True means "this cover type drives a tilt axis the
+    bound device can't honour". The Liskov-safe base default derives the answer
+    from ``self.axes`` alone, so every registered policy and stub satisfies it
+    without an override:
+
+    * a tilt-declaring type (tilt / louvered_roof / venetian) on a device that
+      lacks ``set_tilt_position`` → contradiction;
+    * any type on a fully-capable device → never a contradiction;
+    * a position-only cover reached via open/close (no ``set_tilt_position``) is
+      explicitly OUT of scope — it only trips for a *declared* tilt axis, so a
+      blind/awning never fires.
+    """
+    from custom_components.adaptive_cover_pro.cover_types.base import (
+        CAP_HAS_CLOSE,
+        CAP_HAS_OPEN,
+    )
+
+    has_tilt_axis = any(
+        a.capability_key == CAP_HAS_SET_TILT_POSITION for a in policy.axes
+    )
+
+    # Device advertises position but NOT tilt → contradiction iff a tilt axis
+    # is declared by this cover type.
+    no_tilt = {CAP_HAS_SET_POSITION: True, CAP_HAS_SET_TILT_POSITION: False}
+    assert policy.tilt_capability_contradiction(no_tilt) is has_tilt_axis
+
+    # Fully-capable device → never a contradiction, for any cover type.
+    full = {CAP_HAS_SET_POSITION: True, CAP_HAS_SET_TILT_POSITION: True}
+    assert policy.tilt_capability_contradiction(full) is False
+
+    # Open/close-only position cover (no set_position, no set_tilt_position):
+    # the position axis is drivable via the open/close fallback, so only a
+    # declared tilt axis can contradict — proving the out-of-scope carve-out.
+    open_close = {CAP_HAS_OPEN: True, CAP_HAS_CLOSE: True}
+    assert policy.tilt_capability_contradiction(open_close) is has_tilt_axis
+
+
 # ---- Discovery descriptors (issue #725) ---------------------------------- #
 
 

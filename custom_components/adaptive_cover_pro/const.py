@@ -807,6 +807,9 @@ ISSUE_CONFIG_TIME_WINDOW = "config_time_window"  # start >= end
 ISSUE_COVER_NOT_MOVING = (
     "cover_not_moving"  # commanded but not reaching target (issue #990)
 )
+ISSUE_COVER_TILT_UNSUPPORTED = (
+    "cover_tilt_unsupported"  # tilt cover type bound to a non-tilt device (issue #991)
+)
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0

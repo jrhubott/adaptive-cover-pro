@@ -24,6 +24,10 @@
     "cover_not_moving": {
       "title": "Gesteuerte Beschattung erreicht Position nicht",
       "description": "Adaptive Cover Pro hat eine Position an die Beschattung `{entity_id}` gesteuert von **{name}** gesendet, doch diese hat die Position seit längerer Zeit nicht erreicht. Der Motor könnte festsitzen, das Gerät könnte offline sein, oder die Beschattung könnte sich nicht physisch bewegen. Überprüfen Sie, dass das Gerät der Beschattung online ist und auf manuelle Befehle reagiert."
+    },
+    "cover_tilt_unsupported": {
+      "title": "Neigung wird nicht unterstützt",
+      "description": "**{name}** ist als neigungsfähiger Beschattungstyp konfiguriert, aber die Beschattung `{entity_id}` bietet keine Neigungssteuerung an (set_tilt_position). Neigungspositionen können nicht angewendet werden. Wählen Sie eine Beschattungsentität, die Neigung unterstützt, oder ändern Sie den Beschattungstyp in einen ohne Neigung."
     }
   },
   "config": {
