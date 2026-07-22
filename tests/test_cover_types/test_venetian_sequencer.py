@@ -707,9 +707,9 @@ class TestPostTiltRebase:
             "cover.x", position_target=0, tilt_target=80, reason="solar"
         )
         set_cmd_pos.assert_not_called()
-        # Tilt is still attempted — fix scope is rebase only.
-        assert seq.last_tilt_target("cover.x") == 80
-        assert hass.services.async_call.call_count == 1
+        # A failed position settle must defer tilt until a later confirmed move.
+        assert seq.last_tilt_target("cover.x") is None
+        assert hass.services.async_call.call_count == 0
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,7 @@ from ...const import (
     VENETIAN_POSITION_SETTLE_POLL_SECONDS,
     VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS,
     VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
+    VENETIAN_POSITION_SETTLE_CONFIRMATION_SAMPLES,
     VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_POST_SETTLE_MODE_ENTITY_STATE,
     VENETIAN_POST_TILT_REBASE_DELAY_SECONDS,
@@ -204,6 +205,7 @@ class DualAxisSequencer:
         # returns, and lazy-written from ``is_in_suppression_with_cap`` when
         # the cap query observes a settled state with no stamp yet.
         self._settled_at: dict[str, dt.datetime] = {}
+        self._sequence_epochs: dict[str, int] = {}
         self._tilt_targets: dict[str, int] = {}
         # Entities whose last stored target has been verified against the
         # actuator. Dedup at _send_tilt_command only fires when the target
@@ -329,6 +331,7 @@ class DualAxisSequencer:
         publish-lag tail into a new command, letting a user touch on the
         next cycle get swallowed as motor drift.
         """
+        self._sequence_epochs[entity_id] = self._sequence_epochs.get(entity_id, 0) + 1
         self._suppression_at[entity_id] = dt.datetime.now(dt.UTC)
         self._settled_at.pop(entity_id, None)
 
@@ -603,13 +606,39 @@ class DualAxisSequencer:
         non-solar tilt from accumulating drift when scope is ``sun_tracking_only``.
         Defaults to True so existing callers preserve today's behaviour.
         """
+        sequence_epoch = self._sequence_epochs.get(entity_id, 0)
         settled, _last = await self._wait_for_position_settle(
             entity_id, position_target
         )
+        if sequence_epoch != self._sequence_epochs.get(entity_id, 0):
+            self._record_event(
+                "tilt_command_aborted",
+                entity_id=entity_id,
+                reason="position_target_changed",
+                position_target=position_target,
+            )
+            return
+        if not settled:
+            self._record_event(
+                "tilt_command_deferred",
+                entity_id=entity_id,
+                reason=_REBASE_SKIP_SETTLE_FAILED,
+                position_target=position_target,
+                tilt_target=tilt_target,
+            )
+            return
         if self._post_settle_mode == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE:
             await self._wait_for_stationary(entity_id)
         else:
             await asyncio.sleep(self._post_settle_hold_seconds)
+        if sequence_epoch != self._sequence_epochs.get(entity_id, 0):
+            self._record_event(
+                "tilt_command_aborted",
+                entity_id=entity_id,
+                reason="position_target_changed",
+                position_target=position_target,
+            )
+            return
         # The window protects the position-axis settle + tilt-induced back-drive.
         # Only the position-sequence path owns this stamp; tilt-only sends from
         # update_tilt_only must not extend it (issue #33 follow-on).
@@ -1151,6 +1180,7 @@ class DualAxisSequencer:
         )
         last_position: int | None = None
         unchanged_samples = 0
+        in_tolerance_samples = 0
         motion_observed = False
 
         while dt.datetime.now(dt.UTC) < deadline:
@@ -1170,8 +1200,19 @@ class DualAxisSequencer:
                 # the cover has actually stopped before declaring settle —
                 # some actuators briefly transit through the target position
                 # while still in a "closing"/"opening" state.
-                if self._get_state is None or not is_moving:
+                if self._get_state is None:
                     return True, current
+                if not is_moving:
+                    in_tolerance_samples += 1
+                    if (
+                        in_tolerance_samples
+                        >= VENETIAN_POSITION_SETTLE_CONFIRMATION_SAMPLES
+                    ):
+                        return True, current
+                else:
+                    in_tolerance_samples = 0
+            else:
+                in_tolerance_samples = 0
 
             if last_position is not None and current == last_position:
                 if is_moving:
