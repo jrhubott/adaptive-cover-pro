@@ -112,7 +112,8 @@
           "tilt_angle_100": "Neigungswinkel bei 100%",
           "day_night_opacity_sheer": "Deckkraft Sheer-Stoff (%)",
           "day_night_opacity_blackout": "Deckkraft Verdunkelungsstoff (%)",
-          "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)"
+          "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)",
+          "day_night_control_model": "Kontrollmodell"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -163,7 +164,8 @@
           "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
           "day_night_opacity_sheer": "Wie viel Licht der lichtdurchlässige **Sheer-Stoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung und zur Entscheidung verwendet, wann die heiße Sommersonne den Verdunkelungsstoff benötigt. Standard 30 (leichte Voile).",
           "day_night_opacity_blackout": "Wie viel Licht der undurchsichtige **Verdunkelungsstoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung verwendet. Standard 100 (vollständig undurchsichtig).",
-          "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten."
+          "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten.",
+          "day_night_control_model": "Wie das abstrakte Abdeckungs- + Stoff-Paar auf Ihre physische Rollo abgebildet wird. **Position + Neigung** (Standard): Das Rollo steuert `set_position` für die Abdeckung und `set_tilt_position` für die Sheer-/Verdunkelungsstoff-Mischung — für Hardware mit zwei Achsen. **Geteilter Bereich**: ein einachsiges Rollo, dessen Positionsbereich beide kodiert — die untere Hälfte (0–50%) wählt den Verdunkelungsstoff, die obere Hälfte (50–100%) den Sheer-Stoff — für Hardware mit nur einem Motor."
         }
       },
       "duplicate_select": {
@@ -382,7 +384,8 @@
           "tilt_angle_100": "Neigungswinkel bei 100%",
           "day_night_opacity_sheer": "Deckkraft Sheer-Stoff (%)",
           "day_night_opacity_blackout": "Deckkraft Verdunkelungsstoff (%)",
-          "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)"
+          "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)",
+          "day_night_control_model": "Kontrollmodell"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -433,7 +436,8 @@
           "tilt_angle_100": "Rohlamellenwinkel, wenn die Beschattung 100% Neigung anzeigt: 0° = nach unten geschlossen, 90° = horizontal, 180° = nach oben geschlossen. Wird nur verwendet, wenn der Neigungsmodus auf Winkel angeben gesetzt ist.",
           "day_night_opacity_sheer": "Wie viel Licht der lichtdurchlässige **Sheer-Stoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung und zur Entscheidung verwendet, wann die heiße Sommersonne den Verdunkelungsstoff benötigt. Standard 30 (leichte Voile).",
           "day_night_opacity_blackout": "Wie viel Licht der undurchsichtige **Verdunkelungsstoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung verwendet. Standard 100 (vollständig undurchsichtig).",
-          "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten."
+          "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten.",
+          "day_night_control_model": "Wie das abstrakte Abdeckungs- + Stoff-Paar auf Ihre physische Rollo abgebildet wird. **Position + Neigung** (Standard): Das Rollo steuert `set_position` für die Abdeckung und `set_tilt_position` für die Sheer-/Verdunkelungsstoff-Mischung — für Hardware mit zwei Achsen. **Geteilter Bereich**: ein einachsiges Rollo, dessen Positionsbereich beide kodiert — die untere Hälfte (0–50%) wählt den Verdunkelungsstoff, die obere Hälfte (50–100%) den Sheer-Stoff — für Hardware mit nur einem Motor."
         }
       },
       "sun_tracking": {
@@ -1307,6 +1311,12 @@
       "options": {
         "fixed_delay": "Feste Verzögerung",
         "entity_state": "Entitätszustand"
+      }
+    },
+    "day_night_control_model": {
+      "options": {
+        "position_tilt": "Position + Neigung (zweiachsig)",
+        "split_range": "Geteilter Bereich (einachsig)"
       }
     }
   },

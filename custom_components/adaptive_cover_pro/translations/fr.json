@@ -112,7 +112,8 @@
           "tilt_angle_100": "Angle d'inclinaison à 100%",
           "day_night_opacity_sheer": "Opacité du Tissu Voile (%)",
           "day_night_opacity_blackout": "Opacité du Tissu Occultant (%)",
-          "day_night_blackout_threshold": "Seuil d'Activation du Tissu Occultant (%)"
+          "day_night_blackout_threshold": "Seuil d'Activation du Tissu Occultant (%)",
+          "day_night_control_model": "Modèle de contrôle"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -163,7 +164,8 @@
           "tilt_angle_100": "Angle brut de la lamelle quand le store signale 100% d'inclinaison : 0° = fermé vers le bas, 90° = horizontal, 180° = fermé vers le haut. Utilisé uniquement lorsque le mode d'inclinaison est défini sur Spécifier les angles.",
           "day_night_opacity_sheer": "Quantité de lumière bloquée par le tissu **voile** léger (0–100%). Utilisé uniquement pour estimer le filtrage et décider quand le soleil d'été intense nécessite le tissu occultant. Par défaut 30 (un voile léger).",
           "day_night_opacity_blackout": "Quantité de lumière bloquée par le tissu **occultant** opaque (0–100%). Utilisé uniquement pour l'estimation du filtrage. Par défaut 100 (totalement opaque).",
-          "day_night_blackout_threshold": "Lorsque le soleil est dans la fenêtre de suivi pendant l'été et que l'opacité du tissu voile est **inférieure** à cette valeur, le store passe au tissu occultant pour bloquer la chaleur. Par défaut 65. Augmentez pour atteindre l'occultant plus tôt ; diminuez pour garder le voile plus longtemps."
+          "day_night_blackout_threshold": "Lorsque le soleil est dans la fenêtre de suivi pendant l'été et que l'opacité du tissu voile est **inférieure** à cette valeur, le store passe au tissu occultant pour bloquer la chaleur. Par défaut 65. Augmentez pour atteindre l'occultant plus tôt ; diminuez pour garder le voile plus longtemps.",
+          "day_night_control_model": "Comment la paire abstraite couverture + tissu s'applique à votre store physique. **Position + inclinaison** (par défaut) : le store utilise set_position pour la couverture et set_tilt_position pour le mélange de tissu translucide/occultant — pour le matériel exposant les deux axes. **Plage fractionnée** : un store à un seul axe dont la plage de position encode les deux — la moitié inférieure (0–50 %) sélectionne le tissu occultant, la moitié supérieure (50–100 %) le tissu translucide — pour le matériel avec un seul moteur."
         }
       },
       "duplicate_select": {
@@ -382,7 +384,8 @@
           "tilt_angle_100": "Angle d'inclinaison à 100%",
           "day_night_opacity_sheer": "Opacité du Tissu Voile (%)",
           "day_night_opacity_blackout": "Opacité du Tissu Occultant (%)",
-          "day_night_blackout_threshold": "Seuil d'Activation du Tissu Occultant (%)"
+          "day_night_blackout_threshold": "Seuil d'Activation du Tissu Occultant (%)",
+          "day_night_control_model": "Modèle de contrôle"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -433,7 +436,8 @@
           "tilt_angle_100": "Angle brut de la lamelle quand le store signale 100% d'inclinaison : 0° = fermé vers le bas, 90° = horizontal, 180° = fermé vers le haut. Utilisé uniquement lorsque le mode d'inclinaison est défini sur Spécifier les angles.",
           "day_night_opacity_sheer": "Quantité de lumière bloquée par le tissu **voile** léger (0–100%). Utilisé uniquement pour estimer le filtrage et décider quand le soleil d'été intense nécessite le tissu occultant. Par défaut 30 (un voile léger).",
           "day_night_opacity_blackout": "Quantité de lumière bloquée par le tissu **occultant** opaque (0–100%). Utilisé uniquement pour l'estimation du filtrage. Par défaut 100 (totalement opaque).",
-          "day_night_blackout_threshold": "Lorsque le soleil est dans la fenêtre de suivi pendant l'été et que l'opacité du tissu voile est **inférieure** à cette valeur, le store passe au tissu occultant pour bloquer la chaleur. Par défaut 65. Augmentez pour atteindre l'occultant plus tôt ; diminuez pour garder le voile plus longtemps."
+          "day_night_blackout_threshold": "Lorsque le soleil est dans la fenêtre de suivi pendant l'été et que l'opacité du tissu voile est **inférieure** à cette valeur, le store passe au tissu occultant pour bloquer la chaleur. Par défaut 65. Augmentez pour atteindre l'occultant plus tôt ; diminuez pour garder le voile plus longtemps.",
+          "day_night_control_model": "Comment la paire abstraite couverture + tissu s'applique à votre store physique. **Position + inclinaison** (par défaut) : le store utilise set_position pour la couverture et set_tilt_position pour le mélange de tissu translucide/occultant — pour le matériel exposant les deux axes. **Plage fractionnée** : un store à un seul axe dont la plage de position encode les deux — la moitié inférieure (0–50 %) sélectionne le tissu occultant, la moitié supérieure (50–100 %) le tissu translucide — pour le matériel avec un seul moteur."
         }
       },
       "sun_tracking": {
@@ -1307,6 +1311,12 @@
       "options": {
         "fixed_delay": "Délai fixe",
         "entity_state": "État de l'entité"
+      }
+    },
+    "day_night_control_model": {
+      "options": {
+        "position_tilt": "Position + inclinaison (à deux axes)",
+        "split_range": "Plage fractionnée (à un seul axe)"
       }
     }
   },

@@ -220,6 +220,22 @@ CONF_DAY_NIGHT_BLACKOUT_THRESHOLD = "day_night_blackout_threshold"  # engage %
 DEFAULT_DAY_NIGHT_OPACITY_SHEER = 30  # % — a light-filtering voile
 DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT = 100  # % — fully opaque
 DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD = 65  # % — below this, hot sun → blackout
+# Day/Night control model — how the abstract (position, fabric-blend) pair maps
+# onto the physical HA entity (#993, Model B). ``position_tilt`` (default): drive
+# BOTH ``set_cover_position`` and ``set_cover_tilt_position``, the blend riding
+# the tilt axis (Model A). ``split_range``: a single-axis cover whose position
+# range encodes both coverage AND fabric — the blackout fabric lives in the lower
+# half (0–50 %) and the sheer fabric in the upper half (50–100 %), so no tilt axis
+# is driven. ``DAY_NIGHT_SPLIT_MIDPOINT`` is that 0/100 fabric boundary.
+CONF_DAY_NIGHT_CONTROL_MODEL = "day_night_control_model"
+DAY_NIGHT_MODEL_POSITION_TILT = "position_tilt"  # dual-axis (Model A)
+DAY_NIGHT_MODEL_SPLIT_RANGE = "split_range"  # single-axis split range (Model B)
+DEFAULT_DAY_NIGHT_CONTROL_MODEL = DAY_NIGHT_MODEL_POSITION_TILT
+DAY_NIGHT_CONTROL_MODELS = (
+    DAY_NIGHT_MODEL_POSITION_TILT,
+    DAY_NIGHT_MODEL_SPLIT_RANGE,
+)
+DAY_NIGHT_SPLIT_MIDPOINT = 50  # % — split-range fabric boundary (blackout below)
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default

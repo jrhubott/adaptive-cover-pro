@@ -17,8 +17,12 @@ from homeassistant.const import SERVICE_SET_COVER_POSITION
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
+    CONF_HEIGHT_WIN,
+    DAY_NIGHT_MODEL_POSITION_TILT,
+    DAY_NIGHT_MODEL_SPLIT_RANGE,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
@@ -635,3 +639,303 @@ def test_picker_label_present_in_en_translations() -> None:
 def test_axis_names_are_position_then_blend() -> None:
     policy = get_policy("cover_day_night_shade")
     assert tuple(a.name for a in policy.axes) == (AXIS_NAME_POSITION, AXIS_NAME_TILT)
+
+
+# ===========================================================================
+# PHASE B — Model B: split position range
+# ===========================================================================
+# ---------------------------------------------------------------------------
+# Step 14 — control-model option registered
+# ---------------------------------------------------------------------------
+
+
+def test_control_model_option_registered() -> None:
+    """CONF_DAY_NIGHT_CONTROL_MODEL validates the two model values; default position_tilt."""
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAY_NIGHT_CONTROL_MODEL,
+        DAY_NIGHT_MODEL_POSITION_TILT,
+        DAY_NIGHT_MODEL_SPLIT_RANGE,
+        DAY_NIGHT_SPLIT_MIDPOINT,
+        DEFAULT_DAY_NIGHT_CONTROL_MODEL,
+    )
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        FIELD_VALIDATORS,
+    )
+
+    assert DAY_NIGHT_MODEL_POSITION_TILT == "position_tilt"
+    assert DAY_NIGHT_MODEL_SPLIT_RANGE == "split_range"
+    assert DEFAULT_DAY_NIGHT_CONTROL_MODEL == DAY_NIGHT_MODEL_POSITION_TILT
+    assert DAY_NIGHT_SPLIT_MIDPOINT == 50
+
+    validator = FIELD_VALIDATORS[CONF_DAY_NIGHT_CONTROL_MODEL]
+    assert validator(DAY_NIGHT_MODEL_POSITION_TILT) == DAY_NIGHT_MODEL_POSITION_TILT
+    assert validator(DAY_NIGHT_MODEL_SPLIT_RANGE) == DAY_NIGHT_MODEL_SPLIT_RANGE
+    with pytest.raises(vol.Invalid):
+        validator("bogus")
+
+
+# ---------------------------------------------------------------------------
+# Step 15 — the split-range wire mapping seam
+# ---------------------------------------------------------------------------
+
+
+class TestSplitRangeWire:
+    """``_split_range_wire`` folds (position, blend) into one physical position."""
+
+    @pytest.mark.parametrize(
+        ("position", "blend", "expected"),
+        [
+            # Sheer half (blend >= 50): wire = 50 + position/2.
+            (40, 100, 70),
+            (0, 100, 50),
+            # Blackout half (blend < 50): wire = position/2.
+            (40, 0, 20),
+            (0, 0, 0),
+            # Fully open carriage collapses to a single physical endpoint.
+            (100, 100, 100),
+            (100, 0, 100),
+            # Boundary: blend == 50 counts as the sheer half.
+            (40, 50, 70),
+        ],
+    )
+    def test_wire_matrix(self, position: int, blend: int, expected: int) -> None:
+        policy = DayNightShadePolicy()
+        assert policy._split_range_wire(position, blend) == expected
+
+
+# ---------------------------------------------------------------------------
+# Step 16 — model-gated post_pipeline_resolve + dispatch hooks
+# ---------------------------------------------------------------------------
+
+
+def _split_kw(**overrides):
+    opts = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+    opts.update(overrides.pop("options", {}))
+    return _resolve_kwargs(options=opts, **overrides)
+
+
+class TestSplitRangeResolve:
+    """``split_range`` rewrites position to the wire; the dispatch hooks no-op."""
+
+    def test_engine_blend_rewrites_position_to_wire(self) -> None:
+        policy = DayNightShadePolicy()
+        result = PipelineResult(
+            position=40, control_method=ControlMethod.SOLAR, reason="solar"
+        )
+        out = policy.post_pipeline_resolve(result, cover=_solar_cover(), **_split_kw())
+        # Sheer (100) selected → wire = 50 + 40/2 = 70; abstract blend stays.
+        assert out.tilt == DAY_NIGHT_SHEER
+        assert out.position == 70
+        assert any(s.handler == "day_night_split_range" for s in out.decision_trace)
+        assert policy._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE
+
+    def test_handler_blend_also_rewrites_position(self) -> None:
+        policy = DayNightShadePolicy()
+        result = PipelineResult(
+            position=40,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            reason="custom",
+            tilt=0,
+        )
+        out = policy.post_pipeline_resolve(result, cover=_solar_cover(), **_split_kw())
+        assert out.tilt == 0  # abstract blend kept
+        assert out.position == 20  # blackout half: 40/2
+        assert any(s.handler == "day_night_split_range" for s in out.decision_trace)
+
+    def test_cleared_blend_leaves_position_untouched(self) -> None:
+        # No fabric decision (MANUAL) → no wire rewrite; a split-range cover's
+        # manual position is already in wire space.
+        policy = DayNightShadePolicy()
+        result = PipelineResult(
+            position=60, control_method=ControlMethod.MANUAL, reason="manual"
+        )
+        out = policy.post_pipeline_resolve(result, cover=None, **_split_kw())
+        assert out.tilt is None
+        assert out.position == 60
+        assert not any(s.handler == "day_night_split_range" for s in out.decision_trace)
+        assert policy._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE
+
+    def test_position_context_overrides_omits_tilt(self) -> None:
+        policy = DayNightShadePolicy()
+        policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+        result = MagicMock()
+        result.tilt = 100
+        result.position = 70
+        assert "tilt" not in policy.position_context_overrides(result)
+
+    def test_secondary_axis_check_none(self) -> None:
+        policy = DayNightShadePolicy()
+        policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+        result = MagicMock()
+        result.tilt = 100
+        assert policy.secondary_axis_check(result, cmd_svc=MagicMock()) is None
+
+    @pytest.mark.asyncio
+    async def test_after_position_command_noop(self) -> None:
+        policy = _make_policy_with_seq()
+        policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+        await policy.after_position_command(
+            cmd_svc=MagicMock(),
+            entity_id="cover.dn_x",
+            service=SERVICE_SET_COVER_POSITION,
+            position=70,
+            context=_ctx(policy, tilt=100),
+            reason="solar",
+        )
+        policy._sequencer.run_sequence.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_before_position_command_noop(self) -> None:
+        policy = _make_policy_with_seq()
+        policy._sequencer._send_tilt_command = AsyncMock()
+        policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+        await policy.before_position_command(
+            cmd_svc=MagicMock(),
+            entity_id="cover.dn_x",
+            service=SERVICE_SET_COVER_POSITION,
+            position=70,
+            context=_ctx(policy, tilt=100),
+            reason="solar",
+        )
+        policy._sequencer._send_tilt_command.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_maybe_update_tilt_only_noop(self) -> None:
+        policy = _make_policy_with_seq()
+        policy._last_blend = 100
+        policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+        await policy.maybe_update_tilt_only(
+            "cover.dn_x", current_position=0, context=MagicMock(), reason="solar"
+        )
+        policy._sequencer.update_tilt_only.assert_not_awaited()
+
+    def test_position_tilt_byte_identical_to_phase_a(self) -> None:
+        # Default model (position_tilt): position unchanged, blend on the tilt
+        # axis, NO split-range trace step, dispatch stays dual-axis.
+        policy = DayNightShadePolicy()
+        result = PipelineResult(
+            position=50, control_method=ControlMethod.SOLAR, reason="solar"
+        )
+        out = policy.post_pipeline_resolve(
+            result, cover=_solar_cover(), **_resolve_kwargs()
+        )
+        assert out.position == 50
+        assert out.tilt == DAY_NIGHT_SHEER
+        assert not any(s.handler == "day_night_split_range" for s in out.decision_trace)
+        assert policy._control_model == DAY_NIGHT_MODEL_POSITION_TILT
+        # Dual-axis dispatch still threads the blend.
+        assert policy.position_context_overrides(out)["tilt"] == DAY_NIGHT_SHEER
+
+
+# ---------------------------------------------------------------------------
+# Step 17 — model-aware capability warnings
+# ---------------------------------------------------------------------------
+
+
+class TestCapabilityWarningsPerModel:
+    """``capability_warnings_for_options`` relaxes the tilt requirement in Model B."""
+
+    def test_split_range_warns_only_on_missing_set_position(self) -> None:
+        policy = DayNightShadePolicy()
+        opts = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+        # Missing tilt but has set_position → no warning (single-axis is fine).
+        assert (
+            policy.capability_warnings_for_options(
+                {"cover.a": {"has_set_position": True, "has_set_tilt_position": False}},
+                opts,
+            )
+            == []
+        )
+        # Missing set_position → still warns.
+        warn = policy.capability_warnings_for_options(
+            {"cover.b": {"has_set_position": False, "has_set_tilt_position": True}},
+            opts,
+        )
+        assert any("set_position" in w for w in warn)
+
+    def test_position_tilt_requires_both_axes(self) -> None:
+        policy = DayNightShadePolicy()
+        opts = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_POSITION_TILT}
+        warn = policy.capability_warnings_for_options(
+            {"cover.a": {"has_set_position": True, "has_set_tilt_position": False}},
+            opts,
+        )
+        assert any("set_tilt_position" in w for w in warn)
+
+    def test_default_options_require_both_axes(self) -> None:
+        # No control model in options → default position_tilt → both required.
+        policy = DayNightShadePolicy()
+        warn = policy.capability_warnings_for_options(
+            {"cover.a": {"has_set_position": True, "has_set_tilt_position": False}},
+            {},
+        )
+        assert any("set_tilt_position" in w for w in warn)
+
+    def test_default_matches_plain_cover_capability_warnings(self) -> None:
+        # The additive hook with empty options must equal the plain method
+        # (the base-contract guarantee, checked here for the overriding policy).
+        policy = DayNightShadePolicy()
+        known = {"cover.a": {"has_set_position": False, "has_set_tilt_position": False}}
+        assert policy.capability_warnings_for_options(
+            known, {}
+        ) == policy.cover_capability_warnings(known)
+
+
+# ---------------------------------------------------------------------------
+# Step 18 — control-model select in the geometry schema + summary + labels
+# ---------------------------------------------------------------------------
+
+
+class TestControlModelSchemaAndSummary:
+    """The control-model select renders in the geometry schema + config summary."""
+
+    def test_geometry_schema_has_control_model_select(self) -> None:
+        import voluptuous as vol
+
+        schema = DayNightShadePolicy().geometry_schema()
+        keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
+        assert CONF_DAY_NIGHT_CONTROL_MODEL in keys
+        # Defaults to the dual-axis model.
+        out = schema({})
+        assert out[CONF_DAY_NIGHT_CONTROL_MODEL] == DAY_NIGHT_MODEL_POSITION_TILT
+
+    def test_geometry_schema_accepts_split_range(self) -> None:
+        schema = DayNightShadePolicy().geometry_schema()
+        out = schema({CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE})
+        assert out[CONF_DAY_NIGHT_CONTROL_MODEL] == DAY_NIGHT_MODEL_SPLIT_RANGE
+
+    def test_summary_renders_default_model(self) -> None:
+        lines = DayNightShadePolicy().summary_geometry_lines({CONF_HEIGHT_WIN: 2.0})
+        assert any("position and tilt" in line for line in lines)
+
+    def test_summary_renders_split_range_model(self) -> None:
+        lines = DayNightShadePolicy().summary_geometry_lines(
+            {
+                CONF_HEIGHT_WIN: 2.0,
+                CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE,
+            }
+        )
+        assert any("split range" in line for line in lines)
+
+
+def test_control_model_selector_labels_in_en_translations() -> None:
+    import json
+    import pathlib
+
+    en = json.loads(
+        (
+            pathlib.Path(__file__).resolve().parent.parent.parent
+            / "custom_components"
+            / "adaptive_cover_pro"
+            / "translations"
+            / "en.json"
+        ).read_text(encoding="utf-8")
+    )
+    options = en["selector"]["day_night_control_model"]["options"]
+    assert options[DAY_NIGHT_MODEL_POSITION_TILT]
+    assert options[DAY_NIGHT_MODEL_SPLIT_RANGE]
+    # Field label present in both config + options flows (geometry step).
+    assert en["config"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_CONTROL_MODEL]
+    assert en["options"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_CONTROL_MODEL]

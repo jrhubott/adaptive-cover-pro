@@ -31,9 +31,15 @@ from homeassistant.helpers import selector
 from ...config_types import DayNightShadeConfig
 from ...const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
+    DAY_NIGHT_CONTROL_MODELS,
+    DAY_NIGHT_MODEL_POSITION_TILT,
+    DAY_NIGHT_MODEL_SPLIT_RANGE,
+    DAY_NIGHT_SPLIT_MIDPOINT,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    DEFAULT_DAY_NIGHT_CONTROL_MODEL,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
     POSITION_CLOSED,
@@ -49,7 +55,7 @@ from ...managers.manual_override import SecondaryAxisCheck
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from .._helpers import window_dimensions_lines
-from .._summary_labels import COVER_TYPE_LABELS_EN
+from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
@@ -99,6 +105,22 @@ def _pct_slider() -> selector.NumberSelector:
     )
 
 
+def _control_model_select() -> selector.SelectSelector:
+    """Return the translated control-model dropdown (Model A vs Model B).
+
+    Mirrors the venetian mode select: a bare ``vol.In`` renders raw enum values
+    untranslated, so a ``translation_key`` + a ``selector.day_night_control_model``
+    options block is used instead.
+    """
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(DAY_NIGHT_CONTROL_MODELS),
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="day_night_control_model",
+        )
+    )
+
+
 def geometry_day_night_shade_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Vertical window geometry plus the three fabric sliders. ``hass=None`` → metric."""
     return geometry_vertical_schema(hass).extend(
@@ -115,6 +137,10 @@ def geometry_day_night_shade_schema(hass: HomeAssistant | None = None) -> vol.Sc
                 CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
                 default=DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
             ): _pct_slider(),
+            vol.Optional(
+                CONF_DAY_NIGHT_CONTROL_MODEL,
+                default=DEFAULT_DAY_NIGHT_CONTROL_MODEL,
+            ): _control_model_select(),
         }
     )
 
@@ -149,6 +175,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
         self._last_blend: int | None = None
         self._schedule_refresh_after: Any | None = None
+        # Per-instance control model (Model A vs B). Read from options and cached
+        # once per cycle in ``post_pipeline_resolve`` so the downstream dispatch
+        # hooks — which don't receive ``options`` — can gate on it. Defaults to
+        # the dual-axis Model A so an un-resolved cycle behaves like Phase A.
+        self._control_model: str = DEFAULT_DAY_NIGHT_CONTROL_MODEL
 
     # ---- Identity / labels -------------------------------------------- #
 
@@ -206,35 +237,80 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     def summary_geometry_lines(
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
-        """Render the window-dimensions block for the config summary."""
-        return window_dimensions_lines(config, labels)
+        """Render the window-dimensions block plus the control-model line."""
+        lines = window_dimensions_lines(config, labels)
+        L = {**GEOMETRY_LABELS_EN, **(labels or {})}
+        model = config.get(
+            CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL
+        )
+        model_label = {
+            DAY_NIGHT_MODEL_POSITION_TILT: L["geometry.day_night.model_position_tilt"],
+            DAY_NIGHT_MODEL_SPLIT_RANGE: L["geometry.day_night.model_split_range"],
+        }.get(model, model)
+        lines.append(L["geometry.slat.mode"].format(v=model_label))
+        return lines
 
-    def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
-        """Require both ``set_position`` and ``set_tilt_position`` on every entity."""
+    def _missing_axis_warnings(
+        self, known: dict[str, dict], *, require_tilt: bool
+    ) -> list[str]:
+        """Warn about covers missing the axes this control model needs.
+
+        Single source for both the default (dual-axis, Model A) requirement and
+        the split-range (single-axis, Model B) relaxation — the ``require_tilt``
+        flag is the only difference, so the warning-building logic isn't
+        duplicated (CODING_GUIDELINES.md "No Code Duplication").
+        """
+        both = "day/night shade requires both set_position and set_tilt_position."
+        pos_tail = (
+            both
+            if require_tilt
+            else "a split-range day/night shade requires set_position."
+        )
         warnings: list[str] = []
         missing_pos = [
             eid
             for eid, caps in known.items()
             if not caps_get(caps, CAP_HAS_SET_POSITION)
         ]
-        missing_tilt = [
-            eid
-            for eid, caps in known.items()
-            if not caps_get(caps, CAP_HAS_SET_TILT_POSITION)
-        ]
         if missing_pos:
             warnings.append(
                 "⚠️ Configured as day/night shade but "
                 f"{', '.join(missing_pos)} does not support set_position — "
-                "day/night shade requires both set_position and set_tilt_position."
+                f"{pos_tail}"
             )
-        if missing_tilt:
-            warnings.append(
-                "⚠️ Configured as day/night shade but "
-                f"{', '.join(missing_tilt)} does not support set_tilt_position — "
-                "day/night shade requires both set_position and set_tilt_position."
-            )
+        if require_tilt:
+            missing_tilt = [
+                eid
+                for eid, caps in known.items()
+                if not caps_get(caps, CAP_HAS_SET_TILT_POSITION)
+            ]
+            if missing_tilt:
+                warnings.append(
+                    "⚠️ Configured as day/night shade but "
+                    f"{', '.join(missing_tilt)} does not support set_tilt_position — "
+                    f"{both}"
+                )
         return warnings
+
+    def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
+        """Require both ``set_position`` and ``set_tilt_position`` on every entity.
+
+        The option-free default assumes the dual-axis Model A; the option-aware
+        :meth:`capability_warnings_for_options` relaxes the tilt requirement for
+        the single-axis split-range model.
+        """
+        return self._missing_axis_warnings(known, require_tilt=True)
+
+    def capability_warnings_for_options(
+        self, known: dict[str, dict], options: dict
+    ) -> list[str]:
+        """Relax the tilt requirement when the split-range control model is set."""
+        model = str(
+            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
+        )
+        return self._missing_axis_warnings(
+            known, require_tilt=model != DAY_NIGHT_MODEL_SPLIT_RANGE
+        )
 
     def lift_travel_metres(
         self,
@@ -311,6 +387,30 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Forget the last resolved blend so tilt-only cycles don't replay it."""
         self._last_blend = None
 
+    # ---- Split-range wire mapping (Model B) --------------------------- #
+
+    def _split_range_wire(self, position: int, blend: int) -> int:
+        """Fold the abstract ``(position, blend)`` pair into one physical position.
+
+        Model B (``split_range``) drives a SINGLE physical axis whose 0–100 %
+        travel is split into two fabric halves: the blackout fabric occupies the
+        lower half ``0``–``DAY_NIGHT_SPLIT_MIDPOINT`` and the sheer fabric the
+        upper half ``DAY_NIGHT_SPLIT_MIDPOINT``–``100``. The abstract coverage
+        ``position`` scales into whichever half the blend selects (sheer when
+        ``blend >= DAY_NIGHT_SPLIT_MIDPOINT``, blackout below it), so half the
+        physical travel encodes coverage and the split encodes fabric.
+
+        A fully-open carriage (``position == POSITION_OPEN``) means "no coverage
+        at all", which maps to the single physical fully-open endpoint regardless
+        of the (now irrelevant) fabric choice.
+        """
+        if position == POSITION_OPEN:
+            return POSITION_OPEN
+        half = round(position / 2)
+        if blend >= DAY_NIGHT_SPLIT_MIDPOINT:
+            return DAY_NIGHT_SPLIT_MIDPOINT + half
+        return half
+
     def forecast_secondary_axes(
         self,
         *,
@@ -360,10 +460,80 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         options: dict,
         cover: AdaptiveGeneralCover | None = None,
     ) -> PipelineResult:
-        """Fill the fabric blend that pairs with the pipeline-resolved position."""
+        """Resolve the fabric blend, then map it onto the configured control model.
+
+        The blend resolution (:meth:`_resolve_blend`) is model-independent and
+        byte-identical to Model A. The per-instance control model is cached here
+        from ``options`` — the downstream dispatch hooks don't receive
+        ``options``, so they read the cached value. In ``split_range`` (Model B)
+        a single physical axis encodes BOTH coverage and fabric, so the resolved
+        blend is folded into ``result.position`` via :meth:`_split_range_wire`
+        while the abstract blend is kept on ``result.tilt`` for the Target Tilt
+        sensor / forecast / diagnostics. In ``position_tilt`` (Model A, default)
+        the resolved result passes straight through.
+        """
         if result is None:
             return result
 
+        self._control_model = str(
+            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
+        )
+        resolved = self._resolve_blend(
+            result,
+            logger=logger,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            sun_data=sun_data,
+            config=config,
+            config_service=config_service,
+            options=options,
+            cover=cover,
+        )
+        if (
+            self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE
+            and resolved.tilt is not None
+        ):
+            return self._apply_split_range(resolved)
+        return resolved
+
+    def _apply_split_range(self, resolved: PipelineResult) -> PipelineResult:
+        """Fold the abstract ``(position, blend)`` pair into the split-range wire.
+
+        Keeps the abstract blend on ``result.tilt`` (the diagnostic/forecast Target
+        Tilt value) and rewrites ``result.position`` to the single physical
+        position that encodes both. Records the fold as a terminal
+        ``day_night_split_range`` trace step.
+        """
+        wire = self._split_range_wire(resolved.position, resolved.tilt)
+        trace = list(resolved.decision_trace)
+        trace.append(
+            DecisionStep(
+                handler="day_night_split_range",
+                matched=True,
+                reason=(
+                    f"split-range wire {wire}% "
+                    f"(coverage {resolved.position}%, blend {resolved.tilt}%)"
+                ),
+                position=wire,
+                tilt=resolved.tilt,
+            )
+        )
+        return replace(resolved, position=wire, decision_trace=trace)
+
+    def _resolve_blend(
+        self,
+        result: PipelineResult,
+        *,
+        logger,
+        sol_azi: float,
+        sol_elev: float,
+        sun_data,
+        config,
+        config_service: ConfigurationService,
+        options: dict,
+        cover: AdaptiveGeneralCover | None = None,
+    ) -> PipelineResult:
+        """Fill the fabric blend that pairs with the pipeline-resolved position."""
         # Handler-supplied blend is explicit user intent — honor it unconditionally
         # (custom-position slots, default/sunset tilt via custom_position_includes_tilt).
         if result.tilt is not None:
@@ -459,7 +629,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
     def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
         """Thread the resolved blend into ``PositionContext.tilt``."""
-        if result is None or result.tilt is None:
+        if result is None:
+            return {}
+        # Model B drives a single physical axis whose position is already the
+        # split-range wire — no tilt to thread, but the wire's own endpoints
+        # (0/100) should still force open/close for seating (issue #897).
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            return {
+                "full_endpoint_target": result.position
+                in (POSITION_CLOSED, POSITION_OPEN)
+            }
+        if result.tilt is None:
             return {}
         overrides: dict[str, Any] = {"tilt": result.tilt}
         if self.targets_full_mechanical_endpoint(result):
@@ -519,6 +699,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self, result: PipelineResult, cmd_svc
     ) -> SecondaryAxisCheck | None:
         """Build the per-cycle blend-axis manual-override check."""
+        # Model B is single-axis — no secondary (blend) axis to check.
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            return None
         if result is None or result.tilt is None:
             return None
         return SecondaryAxisCheck(
@@ -537,6 +720,8 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         reason: str,
     ) -> None:
         """Send a blend-only update when the position axis won't fire this cycle."""
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            return
         if self._sequencer is None or self._last_blend is None:
             return
         if self._sequencer.is_in_suppression(entity_id):
@@ -564,6 +749,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         before the carriage starts opening lets the actuator settle the blend
         into the target rather than reasserting a cached value mid-travel.
         """
+        # Model B has no separate blend axis to pre-send — the wire position
+        # carries everything on the single carriage move.
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            return
         if service not in _POSITION_AXIS_SERVICES:
             return
         seq = self._sequencer
@@ -595,6 +784,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         reason: str,
     ) -> None:
         """Run the dual-axis sequence after a successful ``set_cover_position``."""
+        # Model B is single-axis — the carriage move is complete, nothing to
+        # sequence afterward.
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            return
         if service not in _POSITION_AXIS_SERVICES:
             return
         seq = self._sequencer

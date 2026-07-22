@@ -283,6 +283,10 @@
       "width": "{v}m Fensterbreite",
       "shade_area": "Beschattungsbereich ({x1}, {y1})–({x2}, {y2}) m",
       "binary": "Binär öffnen/schließen (kein Beschattungsbereich)"
+    },
+    "day_night": {
+      "model_position_tilt": "position und neigung (zweiachsig)",
+      "model_split_range": "geteilter bereich (einachsig)"
     }
   },
   "group": {

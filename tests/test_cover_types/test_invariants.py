@@ -56,6 +56,17 @@ def test_cover_capability_warnings_returns_list(policy: CoverTypePolicy) -> None
 
 
 @pytest.mark.unit
+def test_capability_warnings_for_options_matches_plain_by_default(
+    policy: CoverTypePolicy,
+) -> None:
+    """The additive per-options hook defaults to the plain warnings (Liskov)."""
+    known = {"cover.x": {"has_set_position": False, "has_set_tilt_position": False}}
+    assert policy.capability_warnings_for_options(
+        known, {}
+    ) == policy.cover_capability_warnings(known)
+
+
+@pytest.mark.unit
 def test_disallowed_geometry_fields_returns_list(policy: CoverTypePolicy) -> None:
     """``options_service.validate_options_patch`` iterates this — never None."""
     result = policy.disallowed_geometry_fields(

@@ -898,6 +898,21 @@ class CoverTypePolicy(ABC):
         """
         return []
 
+    def capability_warnings_for_options(
+        self, known: dict[str, dict], options: dict
+    ) -> list[str]:  # noqa: ARG002
+        """Options-aware capability warnings for the bound covers.
+
+        Additive extension of :meth:`cover_capability_warnings` for cover types
+        whose capability requirement depends on a per-instance option (e.g. a
+        day/night shade's control model relaxes the tilt requirement in its
+        single-axis split-range mode). The Liskov-safe default delegates to
+        :meth:`cover_capability_warnings`, so every other policy is unchanged —
+        the single ``config_flow._check_cover_capabilities`` call site can move
+        to this hook without touching any existing behaviour.
+        """
+        return self.cover_capability_warnings(known)
+
     def glare_zones_config(self, config_service, options: dict) -> Any | None:
         """Return a ``GlareZonesConfig`` for this cover, or ``None``.
 

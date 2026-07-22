@@ -116,6 +116,10 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
         "drift-reset every {threshold}% accumulated tilt (via {direction})"
     ),
     "geometry.venetian.drift_reset_scope_solar": "sun-tracking commands only",
+    # Day/Night shade control model (#993, Model B). Rendered via the shared
+    # "mode: {v}" slat-mode line with one of these two model names as the value.
+    "geometry.day_night.model_position_tilt": "position and tilt (dual axis)",
+    "geometry.day_night.model_split_range": "split range (single axis)",
     # Computed-FOV read-only line (blind + venetian Measurements mode, #565).
     "geometry.fov.computed": (
         "Computed acceptance angle ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"
