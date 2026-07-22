@@ -131,15 +131,18 @@ class TestRepairManager:
         )
         mgr.update_predicate(_ISSUE_KEY, True, translation_key=_TRANSLATION_KEY)
         with (
-            patch(f"{_MOD}.ir.async_create_issue"),
+            patch(f"{_MOD}.ir.async_create_issue") as create,
             patch(f"{_MOD}.ir.async_delete_issue") as delete,
         ):
             mgr.evaluate()  # raise
             await _drain()
+            create.reset_mock()  # ignore the first-raise call; watch for a RE-raise
             mgr.clear_predicate(_ISSUE_KEY)
             # A later evaluate must not re-raise — the predicate was popped.
             mgr.evaluate()
             await _drain()
+            # Explicit: the dropped predicate produces no new Repair.
+            create.assert_not_called()
         assert _ISSUE_KEY in {call.args[2] for call in delete.call_args_list}
         assert _ISSUE_KEY not in mgr._predicates
 

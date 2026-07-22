@@ -566,11 +566,15 @@ async def test_a2_no_false_positive_on_slow_cover():
 
 
 async def test_a2_fail_open_on_predicate_exception():
-    """A raising A2 predicate is swallowed by the single fail-open guard.
+    """A raising A2 predicate must not starve A1/B1/B2/C1 (issue #990 audit).
 
-    The A2 block sits inside the same ``try/except`` as A1/B1/B2/C1, so a
-    predicate that explodes must never propagate out of
-    ``_evaluate_health_checks`` and break the update cycle.
+    The per-entity ``is_target_unreached`` call has its own narrow guard, so an
+    entity whose predicate explodes is skipped — the A2 loop still finishes,
+    ``evaluate()`` runs, and a concurrently-unhealthy C1 (``sun.sun``
+    unavailable) Repair STILL raises. Without the per-entity guard the exception
+    would abort the try before ``evaluate()`` and silently block every other
+    check. The outer fail-open guard stays as belt-and-suspenders, but this
+    per-entity guard is what preserves the original design guarantee.
     """
     coord = _make_coord(
         states={"sun.sun": "unavailable", "cover.a": "open"},
@@ -582,16 +586,21 @@ async def test_a2_fail_open_on_predicate_exception():
     # the A2 predicate — otherwise the sweep's async_get would trip the guard on
     # the mock hass and mask whether A2 is actually inside it.
     with (
-        patch(f"{_BASE}.ir.async_create_issue"),
+        patch(f"{_BASE}.ir.async_create_issue") as create,
         patch(f"{_BASE}.ir.async_delete_issue"),
         patch(f"{_COORD}.ir.async_get", return_value=SimpleNamespace(issues={})),
         patch(f"{_COORD}.ir.async_delete_issue"),
     ):
-        # Must not raise — the fail-open guard catches it and logs.
+        # Must not raise — the per-entity guard swallows the predicate exception.
         coord._evaluate_health_checks({})
         await _drain()
+    # C1 still evaluated despite the A2 predicate blowing up: the sun_unavailable
+    # Repair still raises. This is the original design guarantee.
+    assert f"{ISSUE_SUN_UNAVAILABLE}_{_ENTRY}" in _raised_keys(create)
+    # The per-entity guard logged the skip exactly once (debug logged once).
     coord.logger.debug.assert_called_once()
-    assert "Health-check evaluation failed" in coord.logger.debug.call_args.args[0]
+    assert "A2 predicate failed" in coord.logger.debug.call_args.args[0]
+    assert coord.logger.debug.call_args.args[1] == "cover.a"
 
 
 async def test_a2_stale_key_cleared_when_cover_removed():

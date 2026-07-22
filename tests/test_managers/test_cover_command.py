@@ -2255,3 +2255,43 @@ def test_is_target_unreached_has_no_side_effects(cmd_svc):
     with patch.object(cmd_svc, "_get_current_position", return_value=0):
         cmd_svc.is_target_unreached("cover.unknown")
     assert "cover.unknown" not in cmd_svc._state
+
+
+def test_is_target_unreached_false_in_dry_run(cmd_svc):
+    """Dry-run never sends commands, so a simulated target must never nag (#990 audit).
+
+    ``_prepare_service_call`` sets ``target``/``waiting``/``sent_at`` BEFORE the
+    dry-run gate returns, so in dry-run the predicate would otherwise go True for
+    a cover ACP never actually commanded. The early dry-run guard prevents that.
+    """
+    cmd_svc.dry_run = True
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_for_my_preset_on_open_close_only_cover(cmd_svc):
+    """An intermediate ("My") target on an open/close-only cover is unverifiable (#990 audit).
+
+    An open/close-only cover (no granular position axis) can only ever report an
+    endpoint (0/100), so a My-preset target (1–99) can never register as
+    reached — the predicate would go permanently True against a healthy cover.
+    The guard returns False for a non-endpoint target on that surface. Reuses the
+    exact capability signal the position read uses (``position_axis_supported``).
+    """
+    s = cmd_svc.state("cover.x")
+    s.target = 50  # My preset — not an endpoint
+    s.waiting = False
+    open_close_only = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    with (
+        patch.object(cmd_svc, "get_cover_capabilities", return_value=open_close_only),
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+    ):
+        assert cmd_svc.is_target_unreached("cover.x") is False

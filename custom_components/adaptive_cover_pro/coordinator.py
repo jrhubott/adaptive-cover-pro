@@ -1577,13 +1577,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # moving (waiting) or under manual override, so a slow cover / a
             # user move never trips. Clear any stale key for a cover dropped
             # since last cycle (symmetric unwatch).
+            # Per-entity guard (issue #990 audit): the A2 block runs BEFORE
+            # ``evaluate()``, so a predicate that raises every cycle would abort
+            # the whole try and silently starve A1/B1/B2/C1 (they'd be watched
+            # but never evaluated/cleared). Wrap each ``is_target_unreached``
+            # call so one entity's exception only skips that entity — the loop
+            # and the downstream ``evaluate()``/orphan-sweep still complete. The
+            # outer fail-open guard stays as belt-and-suspenders.
             a2_desired: set[str] = set()
             for eid in self.entities:
+                try:
+                    unreached = self._cmd_svc.is_target_unreached(eid)
+                except Exception:  # noqa: BLE001 — one entity must not starve the rest
+                    self.logger.debug(
+                        "A2 predicate failed for %s; skipping", eid, exc_info=True
+                    )
+                    continue
                 key = f"{ISSUE_COVER_NOT_MOVING}_{self.config_entry.entry_id}_{eid}"
                 a2_desired.add(key)
                 self._repair.update_predicate(
                     key,
-                    self._cmd_svc.is_target_unreached(eid),
+                    unreached,
                     translation_key=ISSUE_COVER_NOT_MOVING,
                     placeholders={"entity_id": eid, "name": name},
                 )
