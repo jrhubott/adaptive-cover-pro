@@ -31,6 +31,7 @@ from custom_components.adaptive_cover_pro.const import (
     DOMAIN,
     ISSUE_CONFIG_POSITION_ENVELOPE,
     ISSUE_CONFIG_TIME_WINDOW,
+    ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_UNAVAILABLE,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -111,6 +112,12 @@ def _make_coord(
     coord._time_window_issue_key = f"{ISSUE_CONFIG_TIME_WINDOW}_{_ENTRY}"
     coord._cover_issue_keys = set()
     coord._a1_orphans_swept = False
+    # A2 (issue #990): the command service supplies the per-entity
+    # "commanded but not reached" predicate. Default False so A1/B1/B2/C1
+    # tests see no spurious A2 Repairs; A2 tests override the return value.
+    coord._cmd_svc = MagicMock()
+    coord._cmd_svc.is_target_unreached.return_value = False
+    coord._a2_issue_keys = set()
     coord._resolved_options = options or {}
     return coord
 
@@ -503,3 +510,128 @@ async def test_shutdown_cancels_both_managers():
         await coord.async_shutdown()
         await _drain()
     create.assert_not_called()
+
+
+# --- A2: commanded-but-unreached (issue #990) ------------------------------
+
+
+async def test_a2_raises_when_cover_stuck_past_debounce():
+    """A settled off-target cover raises cover_not_moving after the debounce."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )
+    coord._cmd_svc.is_target_unreached.side_effect = lambda eid: eid == "cover.a"
+    create, _delete = await _run(coord, {})
+    assert f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.a" in _raised_keys(create)
+
+
+async def test_a2_does_not_raise_before_debounce():
+    """A single stuck cycle under a long debounce does not raise (debounce gate)."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        debounce=100,
+    )
+    coord._cmd_svc.is_target_unreached.return_value = True
+    create, _delete = await _run(coord, {})
+    assert f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    coord._repair.shutdown()  # cancel the in-flight (long) debounce timer
+
+
+async def test_a2_clears_on_recovery():
+    """Once the cover reaches target, the A2 Repair is deleted."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )
+    key = f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.a"
+    coord._cmd_svc.is_target_unreached.return_value = True
+    await _run(coord, {})  # cycle 1: raise
+    coord._cmd_svc.is_target_unreached.return_value = False
+    _create, delete = await _run(coord, {})  # cycle 2: recovered
+    assert key in {call.args[2] for call in delete.call_args_list}
+
+
+async def test_a2_no_false_positive_on_slow_cover():
+    """A cover whose predicate stays False (still moving) never raises."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )
+    coord._cmd_svc.is_target_unreached.return_value = False
+    create, _delete = await _run(coord, {})
+    await _run(coord, {})
+    assert f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.a" not in _raised_keys(create)
+
+
+async def test_a2_fail_open_on_predicate_exception():
+    """A raising A2 predicate is swallowed by the single fail-open guard.
+
+    The A2 block sits inside the same ``try/except`` as A1/B1/B2/C1, so a
+    predicate that explodes must never propagate out of
+    ``_evaluate_health_checks`` and break the update cycle.
+    """
+    coord = _make_coord(
+        states={"sun.sun": "unavailable", "cover.a": "open"},
+        entities=["cover.a"],
+    )
+    coord.logger = MagicMock()
+    coord._cmd_svc.is_target_unreached.side_effect = RuntimeError("boom")
+    # Patch the orphan-sweep registry read too, so the ONLY exception source is
+    # the A2 predicate — otherwise the sweep's async_get would trip the guard on
+    # the mock hass and mask whether A2 is actually inside it.
+    with (
+        patch(f"{_BASE}.ir.async_create_issue"),
+        patch(f"{_BASE}.ir.async_delete_issue"),
+        patch(f"{_COORD}.ir.async_get", return_value=SimpleNamespace(issues={})),
+        patch(f"{_COORD}.ir.async_delete_issue"),
+    ):
+        # Must not raise — the fail-open guard catches it and logs.
+        coord._evaluate_health_checks({})
+        await _drain()
+    coord.logger.debug.assert_called_once()
+    assert "Health-check evaluation failed" in coord.logger.debug.call_args.args[0]
+
+
+async def test_a2_stale_key_cleared_when_cover_removed():
+    """A cover dropped from config has its A2 predicate cleared (in-lifetime)."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )
+    key = f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.a"
+    coord._cmd_svc.is_target_unreached.return_value = True
+    await _run(coord, {})  # cycle 1: cover.a tracked
+    assert key in coord._a2_issue_keys
+    coord.entities = []
+    _create, delete = await _run(coord, {})  # cycle 2: cover removed
+    assert key in {call.args[2] for call in delete.call_args_list}
+    assert coord._a2_issue_keys == set()
+
+
+async def test_a2_orphan_cleared_on_reload_after_cover_removed():
+    """An A2 Repair for a cover no longer configured is swept once per lifetime."""
+    orphan = f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.old"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.current": "open"},
+        entities=["cover.current"],
+    )
+    registry = SimpleNamespace(issues={(DOMAIN, orphan): object()})
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    assert orphan in _swept_keys(coord_delete)
+
+
+async def test_a2_configured_stuck_cover_not_swept():
+    """A still-configured stuck cover keeps its A2 Repair (in ``a2_desired``)."""
+    key = f"{ISSUE_COVER_NOT_MOVING}_{_ENTRY}_cover.a"
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )
+    coord._cmd_svc.is_target_unreached.return_value = True
+    registry = SimpleNamespace(issues={(DOMAIN, key): object()})
+    _reg_get, coord_delete = _sweep_run(coord, {}, registry)
+    await _drain()
+    assert key not in _swept_keys(coord_delete)

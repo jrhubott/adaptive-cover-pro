@@ -2173,3 +2173,85 @@ async def test_apply_position_repeated_my_preset_suppressed_when_current_unknown
 
     assert (outcome2, reason2) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
+
+
+# --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---
+# Issue #990. Read-only predicate the coordinator polls each cycle to raise the
+# cover_not_moving Repair. True iff a target is set, the cover has settled
+# (not waiting), it is not under manual override, its position reads, and it is
+# outside tolerance of the target. Reuses _at_target; must have NO side effects.
+
+
+def test_is_target_unreached_true_when_settled_offtarget(cmd_svc):
+    """A settled cover far from its commanded target is unreached."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is True
+
+
+def test_is_target_unreached_false_while_waiting(cmd_svc):
+    """A cover still in transit (waiting) is not flagged — slow-cover guard."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = True
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_under_manual_override(cmd_svc):
+    """A cover the user moved (manual override) is not flagged."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    cmd_svc.manual_override_entities = {"cover.x"}
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_when_position_unreadable(cmd_svc):
+    """An unreadable position defers to A1 (cover_unavailable) — no double-nag."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    with patch.object(cmd_svc, "_get_current_position", return_value=None):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_when_at_target(cmd_svc):
+    """A cover within tolerance of its target is reached (clear-on-recovery)."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    # Default tolerance is 3% — 51 is within tolerance of 50.
+    with patch.object(cmd_svc, "_get_current_position", return_value=51):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_when_no_target(cmd_svc):
+    """No commanded target → nothing to be unreached."""
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_has_no_side_effects(cmd_svc):
+    """The predicate never mutates waiting/retry_count/target and never inserts.
+
+    Locks the StateClassifier / reconciliation invariants (#147/#172/#186/
+    #271/#285/#518): a read-only health poll must not clear waiting, reset
+    retry_count, or pollute _state with an empty record for an unknown entity.
+    """
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    s.retry_count = 2
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        cmd_svc.is_target_unreached("cover.x")
+    assert s.waiting is False
+    assert s.retry_count == 2
+    assert s.target == 50
+    # An unknown entity must not insert a new state record (uses _get, not state).
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        cmd_svc.is_target_unreached("cover.unknown")
+    assert "cover.unknown" not in cmd_svc._state

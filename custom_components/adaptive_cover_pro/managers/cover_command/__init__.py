@@ -1641,6 +1641,30 @@ class CoverCommandService:
 
         return False
 
+    def is_target_unreached(self, entity_id: str) -> bool:
+        """Read-only A2 predicate: True iff a commanded cover has settled off-target.
+
+        True when a target is set, the cover is no longer ``waiting`` (its
+        transit / grace window elapsed — a still-moving cover returns False),
+        the entity is not under manual override, its position reads, and it is
+        outside tolerance of the target. Reuses :meth:`_at_target` (the exact
+        seam :meth:`check_target_reached` uses — no re-derived tolerance).
+
+        NO side effects — never clears ``waiting`` or resets ``retry_count``,
+        and uses :meth:`_get` (the non-inserting accessor) so polling an
+        unknown entity does not pollute ``_state``. Called every cycle from the
+        coordinator health path (issue #990).
+        """
+        s = self._get(entity_id)
+        if s.target is None or s.waiting:
+            return False
+        if entity_id in self._manual_override_entities:
+            return False
+        actual = self._get_current_position(entity_id)
+        if actual is None:  # unreadable → A1 owns availability; A2 stays quiet
+            return False
+        return not self._at_target(actual, s.target)
+
     # ------------------------------------------------------------------ #
     # Reconciliation timer
     # ------------------------------------------------------------------ #

@@ -738,6 +738,9 @@ ISSUE_COVER_UNAVAILABLE = "cover_unavailable"  # a controlled cover is unavailab
 ISSUE_SUN_UNAVAILABLE = "sun_unavailable"  # sun.sun is unavailable/missing
 ISSUE_CONFIG_POSITION_ENVELOPE = "config_position_envelope"  # min>max or slot outside
 ISSUE_CONFIG_TIME_WINDOW = "config_time_window"  # start >= end
+ISSUE_COVER_NOT_MOVING = (
+    "cover_not_moving"  # commanded but not reaching target (issue #990)
+)
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0

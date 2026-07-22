@@ -20,6 +20,10 @@
     "config_time_window": {
       "title": "La fenêtre temporelle opérationnelle est inversée",
       "description": "La fenêtre temporelle opérationnelle sur **{name}** commence à {start}, ce qui est après sa fin à {end}. La fenêtre ne s'ouvre jamais, donc le suivi automatique du soleil ne s'exécutera pas. Vérifiez les heures de début et de fin dans les options du store."
+    },
+    "cover_not_moving": {
+      "title": "Store ne parvient pas à atteindre la position commandée",
+      "description": "Adaptive Cover Pro a envoyé une position au store `{entity_id}` contrôlé par **{name}**, mais il n'a pas atteint cette position depuis un certain temps. Le moteur peut être bloqué, l'appareil peut être hors ligne, ou le store peut ne pas se déplacer physiquement. Vérifiez que l'appareil du store est en ligne et qu'il répond quand vous le commandez manuellement."
     }
   },
   "config": {

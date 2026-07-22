@@ -20,6 +20,10 @@
     "config_time_window": {
       "title": "Operational time window is inverted",
       "description": "The operational time window on **{name}** starts at {start}, which is after its end at {end}. The window never opens, so automatic sun tracking will not run. Review the start and end times in the cover's options."
+    },
+    "cover_not_moving": {
+      "title": "Cover not reaching commanded position",
+      "description": "Adaptive Cover Pro sent a position to the cover `{entity_id}` controlled by **{name}**, but it has not reached that position for a while. The motor may be stuck, the device may be offline, or the cover may not physically move. Check that the cover's device is online and that it responds when you command it manually."
     }
   },
   "config": {

@@ -62,6 +62,18 @@ class RepairManager(_DebouncedRepairBase):
             placeholders=placeholders,
         )
 
+    def clear_predicate(self, issue_key: str) -> None:
+        """Drop a per-entity predicate and clear its timer + Repair.
+
+        Symmetric unwatch for per-entity keys (issue #990 A2): when a cover is
+        removed from config its stored predicate must be popped so a later
+        ``evaluate`` cannot re-raise it, and any active Repair cleared. Reuses
+        the base ``_recover`` (cancel timer + delete issue) — no duplicated
+        clear logic.
+        """
+        self._predicates.pop(issue_key, None)
+        self._recover(issue_key)
+
     # -- per-cycle evaluation ----------------------------------------------
 
     def evaluate(self) -> None:
