@@ -493,6 +493,56 @@ class LouveredRoofConfig:
 
 
 @dataclass
+class DayNightShadeConfig:
+    """Configuration specific to day/night dual-fabric shades (#993, Model A).
+
+    A day/night shade stacks two fabrics on one carriage — a light-filtering
+    ``sheer`` band and an opaque ``blackout`` band. The blend axis (rides
+    ``result.tilt``) is the share of the covered band that is sheer: 100 = all
+    sheer, 0 = all blackout.
+
+    ``opacity_sheer`` / ``opacity_blackout`` are the fabrics' light-blocking
+    percentages, consumed ONLY as the filtering-estimate input and the
+    fabric-choice decision — never as hard coverage gates. ``blackout_threshold``
+    is the sheer-opacity below which summer direct sun escalates the fabric
+    choice from sheer to blackout.
+    """
+
+    opacity_sheer: int = 30
+    opacity_blackout: int = 100
+    blackout_threshold: int = 65
+
+    @classmethod
+    def from_options(cls, options: dict) -> DayNightShadeConfig:
+        """Build from a config-entry options dict, applying defaults."""
+        from .const import (
+            CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+            CONF_DAY_NIGHT_OPACITY_SHEER,
+            DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
+            DEFAULT_DAY_NIGHT_OPACITY_SHEER,
+        )
+
+        def _int_or(key: str, default: int) -> int:
+            value = options.get(key)
+            return int(value) if value is not None else default
+
+        return cls(
+            opacity_sheer=_int_or(
+                CONF_DAY_NIGHT_OPACITY_SHEER, DEFAULT_DAY_NIGHT_OPACITY_SHEER
+            ),
+            opacity_blackout=_int_or(
+                CONF_DAY_NIGHT_OPACITY_BLACKOUT, DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT
+            ),
+            blackout_threshold=_int_or(
+                CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+                DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            ),
+        )
+
+
+@dataclass
 class TiltConfig:
     """Configuration specific to tilt/venetian blinds."""
 

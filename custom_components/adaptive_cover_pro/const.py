@@ -206,6 +206,47 @@ DEFAULT_MAX_SLAT_ANGLE = 0  # 0 sentinel → tilt mode's 90/180
 # reference rig (17 cm deep, 15 cm apart → 0.88 spacing ratio), in canonical cm.
 DEFAULT_LOUVERED_SLAT_DEPTH_CM = 17.0  # CONF_TILT_DEPTH default for louvered roofs
 DEFAULT_LOUVERED_SLAT_DISTANCE_CM = 15.0  # CONF_TILT_DISTANCE default, louvered roofs
+# Day/Night shade (#993, Model A) — a single HA entity carrying two stacked
+# fabrics (a light-filtering "sheer" band and an opaque "blackout" band). The
+# blend axis rides ``result.tilt``: 100 = all sheer (light-filtering fully
+# deployed), 0 = all blackout. ``opacity_sheer`` / ``opacity_blackout`` are the
+# fabrics' light-blocking percentages, consumed ONLY as the filtering-estimate
+# input and the blackout-engage decision — never as hard coverage gates.
+# ``blackout_threshold`` is the sheer-opacity below which summer direct sun
+# escalates the fabric choice from sheer to blackout.
+CONF_DAY_NIGHT_OPACITY_SHEER = "day_night_opacity_sheer"  # sheer fabric opacity %
+CONF_DAY_NIGHT_OPACITY_BLACKOUT = "day_night_opacity_blackout"  # blackout opacity %
+CONF_DAY_NIGHT_BLACKOUT_THRESHOLD = "day_night_blackout_threshold"  # engage %
+DEFAULT_DAY_NIGHT_OPACITY_SHEER = 30  # % — a light-filtering voile
+DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT = 100  # % — fully opaque
+DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD = 65  # % — below this, hot sun → blackout
+# Day/Night control model — how the abstract (position, fabric-blend) pair maps
+# onto the physical HA entity (#993, Model B). ``position_tilt`` (default): drive
+# BOTH ``set_cover_position`` and ``set_cover_tilt_position``, the blend riding
+# the tilt axis (Model A). ``split_range``: a single-axis cover whose position
+# range encodes both coverage AND fabric — the blackout fabric lives in the lower
+# half (0–50 %) and the sheer fabric in the upper half (50–100 %), so no tilt axis
+# is driven. ``DAY_NIGHT_SPLIT_MIDPOINT`` is that 0/100 fabric boundary.
+CONF_DAY_NIGHT_CONTROL_MODEL = "day_night_control_model"
+DAY_NIGHT_MODEL_POSITION_TILT = "position_tilt"  # dual-axis (Model A)
+DAY_NIGHT_MODEL_SPLIT_RANGE = "split_range"  # single-axis split range (Model B)
+# Model C: two separate HA cover entities — a bottom rail (the primary /
+# total-coverage position) and a middle rail. Both are ``set_cover_position``
+# axes; the abstract fabric blend is folded into the middle rail's absolute
+# position at dispatch (``CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY`` names it). The
+# no-pass invariant guarantees the middle rail never drops below the bottom
+# rail (open-percent space). Implements the awning/TDBU absolute-rail model.
+DAY_NIGHT_MODEL_DUAL_ENTITY = "dual_entity"  # two cover.* rail entities (Model C)
+DEFAULT_DAY_NIGHT_CONTROL_MODEL = DAY_NIGHT_MODEL_POSITION_TILT
+DAY_NIGHT_CONTROL_MODELS = (
+    DAY_NIGHT_MODEL_POSITION_TILT,
+    DAY_NIGHT_MODEL_SPLIT_RANGE,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
+)
+DAY_NIGHT_SPLIT_MIDPOINT = 50  # % — split-range fabric boundary (blackout below)
+# Model C middle-rail entity: which of the instance's cover entities is the
+# middle rail (the other configured cover is the bottom rail / primary).
+CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -1882,6 +1923,9 @@ _RANGE_CUSTOM_POSITION = (0, 100)  # per-slot custom position, percent
 _RANGE_CUSTOM_PRIORITY = (1, 100)  # per-slot custom priority (100 = safety)
 _RANGE_HANDLER_PRIORITY = (1, 99)  # built-in handler priority (100 reserved=safety)
 _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
+# Day/Night shade (#993): fabric opacity + blackout-engage threshold, all percent.
+_RANGE_DAY_NIGHT_OPACITY = (0, 100)
+_RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD = (0, 100)
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
@@ -2031,6 +2075,7 @@ class CoverType(StrEnum):
     ROOF_WINDOW = "cover_roof_window"
     SLIDING_CURTAIN = "cover_sliding_curtain"
     LOUVERED_ROOF = "cover_louvered_roof"
+    DAY_NIGHT_SHADE = "cover_day_night_shade"
     # Virtual entry type — not a physical cover. Holds shared building-level
     # sensor entity IDs that linked covers copy into their own options. Its
     # policy registers no platforms (``controls_cover = False``).
@@ -2058,6 +2103,7 @@ class CoverType(StrEnum):
             self.ROOF_WINDOW: "Roof Window",
             self.SLIDING_CURTAIN: "Sliding Curtain",
             self.LOUVERED_ROOF: "Louvered Roof",
+            self.DAY_NIGHT_SHADE: "Day/Night Shade",
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
         }[self]

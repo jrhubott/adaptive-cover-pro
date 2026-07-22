@@ -375,8 +375,20 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     ctx = self.coordinator._build_position_context(
                         entity, options, force=True, bypass_auto_control=True
                     )
+                    # Per-entity remap keeps this broadcast return-to-default
+                    # loop consistent with the other dispatch seams: a Model C
+                    # day/night middle rail is remapped polymorphically via
+                    # ``_entity_target`` (identity for every other type). This
+                    # loop NEVER inverts the raw default, so the remap must
+                    # un-invert in open-percent space (``inverted=False``), not
+                    # the cached main-pipeline flag (#993).
                     await self.coordinator._cmd_svc.apply_position(
-                        entity, default_position, "auto_control_off", context=ctx
+                        entity,
+                        self.coordinator._entity_target(
+                            entity, default_position, inverted=False
+                        ),
+                        "auto_control_off",
+                        context=ctx,
                     )
 
         await self.coordinator.async_refresh()

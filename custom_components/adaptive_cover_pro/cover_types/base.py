@@ -435,6 +435,35 @@ class CoverTypePolicy(ABC):
         """Return a manual-override secondary-axis check, or ``None``."""
         return None
 
+    def resolve_entity_target(
+        self,
+        entity_id: str,  # noqa: ARG002
+        position: int,
+        *,
+        inverted: bool | None = None,  # noqa: ARG002
+    ) -> int:
+        """Adjust the dispatched position for one specific entity.
+
+        The coordinator resolves a single ``position`` per update cycle, then
+        sends it to every bound entity. A cover type that drives *several*
+        physical entities to *different* positions from that one resolved value
+        overrides this hook (the Model C day/night shade remaps its middle-rail
+        entity while the bottom rail passes through unchanged). The Liskov-safe
+        default is identity, so the coordinator dispatch seam asks this
+        polymorphic hook rather than branching on the cover type — every other
+        cover type keeps sending the resolved position verbatim.
+
+        ``inverted`` names the inversion space of the supplied ``position`` so a
+        remapping policy can un-invert it correctly. ``None`` (the default and
+        the only value the identity implementation ever needs) means "use the
+        policy's own cached per-cycle decision" — the main pipeline dispatch
+        path. The broadcast dispatch seams (sunset-window transition,
+        end-time-default, auto-control-off return) dispatch in a space that may
+        diverge from that cached flag, so they pass an explicit ``True``/``False``
+        (#993). Backward-compatible: every non-remapping policy ignores it.
+        """
+        return position
+
     def attach(self, **kwargs: Any) -> None:
         """Bind late-resolved dependencies (cmd_svc, grace_mgr, …).
 
@@ -897,6 +926,21 @@ class CoverTypePolicy(ABC):
         overrides to express its dual-axis capability requirement.
         """
         return []
+
+    def capability_warnings_for_options(
+        self, known: dict[str, dict], options: dict
+    ) -> list[str]:  # noqa: ARG002
+        """Options-aware capability warnings for the bound covers.
+
+        Additive extension of :meth:`cover_capability_warnings` for cover types
+        whose capability requirement depends on a per-instance option (e.g. a
+        day/night shade's control model relaxes the tilt requirement in its
+        single-axis split-range mode). The Liskov-safe default delegates to
+        :meth:`cover_capability_warnings`, so every other policy is unchanged —
+        the single ``config_flow._check_cover_capabilities`` call site can move
+        to this hook without touching any existing behaviour.
+        """
+        return self.cover_capability_warnings(known)
 
     def glare_zones_config(self, config_service, options: dict) -> Any | None:
         """Return a ``GlareZonesConfig`` for this cover, or ``None``.

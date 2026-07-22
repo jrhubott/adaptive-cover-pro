@@ -32,6 +32,12 @@ def _make_coordinator_with_skip_command(*, skip_command: bool, position: int = 4
     cmd_svc.record_skipped_action = MagicMock()
     coord._cmd_svc = cmd_svc
 
+    # The real coordinator always carries a policy (set in __init__); the
+    # per-entity dispatch seam delegates to it. A blind policy is identity.
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord._policy = get_policy("cover_blind")
+
     return coord
 
 

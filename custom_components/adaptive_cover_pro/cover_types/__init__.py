@@ -22,6 +22,7 @@ from .sliding_curtain import SlidingCurtainPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
 from .louvered_roof import LouveredRoofPolicy
+from .day_night_shade import DayNightShadePolicy
 
 # Virtual entry types — imported LAST so they sort to the bottom of
 # registry-derived menus (``SENSOR_TYPE_MENU`` follows registration order).
@@ -60,6 +61,7 @@ __all__ = [
     "BlindPolicy",
     "BuildingProfilePolicy",
     "CoverTypePolicy",
+    "DayNightShadePolicy",
     "GroupPolicy",
     "LouveredRoofPolicy",
     "OscillatingAwningPolicy",

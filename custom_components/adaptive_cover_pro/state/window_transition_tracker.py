@@ -51,6 +51,7 @@ BuildContextFn = Callable[[str, dict], "PositionContext"]
 ApplyPositionFn = Callable[..., Awaitable[Any]]
 RefreshFn = Callable[[], Awaitable[Any]]
 IsCoverManualFn = Callable[[str], bool]
+EntityTargetFn = Callable[[str, int], int]
 
 
 class WindowTransitionTracker:
@@ -136,6 +137,7 @@ class WindowTransitionTracker:
         build_position_context: BuildContextFn,
         apply_position: ApplyPositionFn,
         refresh: RefreshFn,
+        entity_target: EntityTargetFn | None = None,
     ) -> None:
         """Detect False→True transition of the astronomical sunset window.
 
@@ -202,7 +204,16 @@ class WindowTransitionTracker:
             if is_cover_manual(cover_entity):
                 continue
             ctx = build_position_context(cover_entity, options)
+            # Per-entity remap keeps this broadcast seam consistent with the
+            # other dispatch paths: a Model C day/night middle rail is remapped
+            # here too, polymorphically via ``entity_target`` — every other
+            # cover type's hook is identity (#993).
+            target = (
+                entity_target(cover_entity, pos_to_send)
+                if entity_target is not None
+                else pos_to_send
+            )
             await apply_position(
-                cover_entity, pos_to_send, "sunset_window_opened", context=ctx
+                cover_entity, target, "sunset_window_opened", context=ctx
             )
         await refresh()

@@ -1248,7 +1248,9 @@ def _check_cover_capabilities(
             )
 
         if sensor_type is not None:
-            warnings.extend(get_policy(sensor_type).cover_capability_warnings(known))
+            warnings.extend(
+                get_policy(sensor_type).capability_warnings_for_options(known, config)
+            )
 
         min_pos_val = config.get(CONF_MIN_POSITION)
         max_pos_val = config.get(CONF_MAX_POSITION)

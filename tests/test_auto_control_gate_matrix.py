@@ -149,6 +149,12 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     manager.is_cover_manual.return_value = False
     coord.manager = manager
 
+    # The real coordinator always carries a policy (set in __init__); the
+    # per-entity dispatch seam delegates to it. A blind policy is identity.
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord._policy = get_policy("cover_blind")
+
     return coord
 
 

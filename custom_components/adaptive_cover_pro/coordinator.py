@@ -2151,7 +2151,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 },
             )
             return None
-        return await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
+        return await self._cmd_svc.apply_position(
+            cover, self._entity_target(cover, state), reason, context=ctx
+        )
+
+    def _entity_target(
+        self, cover: str, state: int, *, inverted: bool | None = None
+    ) -> int:
+        """Per-entity dispatch target for this cover (identity for most types).
+
+        The pipeline resolves ONE position per cycle, which is then sent to
+        every bound entity. A cover type that drives several physical entities
+        to different positions from that one value — the Model C day/night
+        shade with a separate middle-rail entity — remaps here via its
+        polymorphic ``resolve_entity_target`` hook. Every other cover type's
+        hook is identity, so this seam never branches on the cover type.
+
+        ``inverted`` names the inversion space of ``state`` so a remapping
+        policy un-inverts it correctly. The main pipeline path leaves it
+        ``None`` (the policy reuses its cached per-cycle decision that mirrors
+        ``coordinator.state``); the broadcast seams that dispatch in a divergent
+        space pass their own explicit value (#993).
+        """
+        return self._policy.resolve_entity_target(cover, state, inverted=inverted)
 
     def set_group_intent(self, group_id: str, intent: GroupIntent | None) -> None:
         """Store or remove one cover-group's live intent for this member.
@@ -2327,7 +2349,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 cover, options, force=True, sun_just_appeared=sun_just_appeared
             )
             outcome, _ = await self._cmd_svc.apply_position(
-                cover, state, trigger, context=ctx
+                cover, self._entity_target(cover, state), trigger, context=ctx
             )
             if outcome == "sent":
                 sent.add(cover)
@@ -3757,7 +3779,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             for cover_entity in self.entities:
                 ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
-                    cover_entity, pos_to_send, "end_time_default", context=ctx
+                    cover_entity,
+                    # ``pos_to_send`` was inverted iff inverse-state is
+                    # configured (unconditional of bypass/floor-clamp/interp), so
+                    # the middle-rail remap must un-invert in THAT space, not the
+                    # cached main-pipeline flag (#993).
+                    self._entity_target(
+                        cover_entity, pos_to_send, inverted=self._inverse_state
+                    ),
+                    "end_time_default",
+                    context=ctx,
                 )
             # Trigger a normal refresh so sensor state and diagnostics update
             await self.async_refresh()
@@ -3909,6 +3940,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             apply_position=self._cmd_svc.apply_position,
             refresh=self.async_refresh,
+            # The tracker inverts the sunset position iff inverse-state is
+            # configured (unconditional), so bind that same space into the
+            # middle-rail remap — not the cached main-pipeline flag (#993).
+            entity_target=lambda c, p: self._entity_target(
+                c, p, inverted=self._inverse_state
+            ),
         )
 
     def _check_sun_validity_transition(self) -> bool:

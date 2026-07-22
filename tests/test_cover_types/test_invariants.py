@@ -56,6 +56,17 @@ def test_cover_capability_warnings_returns_list(policy: CoverTypePolicy) -> None
 
 
 @pytest.mark.unit
+def test_capability_warnings_for_options_matches_plain_by_default(
+    policy: CoverTypePolicy,
+) -> None:
+    """The additive per-options hook defaults to the plain warnings (Liskov)."""
+    known = {"cover.x": {"has_set_position": False, "has_set_tilt_position": False}}
+    assert policy.capability_warnings_for_options(
+        known, {}
+    ) == policy.cover_capability_warnings(known)
+
+
+@pytest.mark.unit
 def test_disallowed_geometry_fields_returns_list(policy: CoverTypePolicy) -> None:
     """``options_service.validate_options_patch`` iterates this — never None."""
     result = policy.disallowed_geometry_fields(
@@ -115,6 +126,21 @@ def test_targets_full_mechanical_endpoint_returns_bool(policy: CoverTypePolicy) 
 
     result = PipelineResult(position=0, control_method=ControlMethod.SOLAR, reason="t")
     assert isinstance(policy.targets_full_mechanical_endpoint(result), bool)
+
+
+@pytest.mark.unit
+def test_resolve_entity_target_identity_default(policy: CoverTypePolicy) -> None:
+    """Every policy leaves a per-entity target unchanged by default (Model C hook).
+
+    ``resolve_entity_target`` is the coordinator dispatch seam that lets a
+    dual-rail day/night shade drive its two entities to different positions
+    from one resolved state. Every other cover type — and an un-resolved
+    day/night cycle — must return the position unchanged so the polymorphic
+    hook is a safe identity at every dispatch site.
+    """
+    assert policy.resolve_entity_target("cover.x", 57) == 57
+    assert policy.resolve_entity_target("cover.y", 0) == 0
+    assert policy.resolve_entity_target("cover.z", 100) == 100
 
 
 @pytest.mark.unit

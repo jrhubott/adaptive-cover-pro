@@ -57,6 +57,11 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
+    CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+    CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+    CONF_DAY_NIGHT_OPACITY_SHEER,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
@@ -1871,6 +1876,41 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_SLIDING_POINT_Y,
+    ),
+    # Day/Night shade fabric opacity + blackout-engage threshold (#993). Dynamic
+    # sliders are built by the policy's geometry_schema; these specs single-source
+    # the bounds / validator entries for OPTION_RANGES + FIELD_VALIDATORS.
+    FieldSpec(
+        CONF_DAY_NIGHT_OPACITY_SHEER,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_DAY_NIGHT_OPACITY,
+    ),
+    FieldSpec(
+        CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_DAY_NIGHT_OPACITY,
+    ),
+    FieldSpec(
+        CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    ),
+    FieldSpec(
+        CONF_DAY_NIGHT_CONTROL_MODEL,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.DAY_NIGHT_CONTROL_MODELS,
+    ),
+    # Model C middle-rail entity picker (a single cover entity). Rendered by the
+    # day/night geometry schema; single-sources its validator entry here.
+    FieldSpec(
+        CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+        SECTION_GEOMETRY,
+        ValidatorKind.ENTITY,
+        make_selector=_entity("cover"),
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

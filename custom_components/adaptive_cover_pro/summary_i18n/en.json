@@ -223,7 +223,8 @@
     "venetian": "Venetian Blind (Dual-Axis)",
     "roof_window": "Roof Window",
     "sliding_curtain": "Sliding Curtain",
-    "louvered_roof": "Louvered Roof"
+    "louvered_roof": "Louvered Roof",
+    "day_night_shade": "Day/Night Shade"
   },
   "axes": {
     "position": "Position",
@@ -283,6 +284,11 @@
       "backrotate_lag": "back-rotate publish lag {lag}s",
       "drift_reset": "drift-reset every {threshold}% accumulated tilt (via {direction})",
       "drift_reset_scope_solar": "sun-tracking commands only"
+    },
+    "day_night": {
+      "model_position_tilt": "position and tilt (dual axis)",
+      "model_split_range": "split range (single axis)",
+      "model_dual_entity": "two rail entities (dual entity)"
     },
     "fov": {
       "computed": "Computed acceptance angle ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"

@@ -109,7 +109,12 @@
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate sun acceptance angle from measurements",
           "fov_left": "Sun acceptance angle — left",
-          "fov_right": "Sun acceptance angle — right"
+          "fov_right": "Sun acceptance angle — right",
+          "day_night_opacity_sheer": "Sheer Fabric Opacity (%)",
+          "day_night_opacity_blackout": "Blackout Fabric Opacity (%)",
+          "day_night_blackout_threshold": "Blackout Engage Threshold (%)",
+          "day_night_control_model": "Control Model",
+          "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -157,7 +162,12 @@
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right sun acceptance angle from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth above, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with the right-side angle, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with the left-side angle, this defines the horizontal tracking zone."
+          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with the left-side angle, this defines the horizontal tracking zone.",
+          "day_night_opacity_sheer": "How much light the light-filtering **sheer** fabric blocks (0–100%). Used only to estimate filtering and to decide when hot summer sun needs the blackout fabric instead. Default 30 (a light voile).",
+          "day_night_opacity_blackout": "How much light the opaque **blackout** fabric blocks (0–100%). Used only for the filtering estimate. Default 100 (fully opaque).",
+          "day_night_blackout_threshold": "When the sun is in the tracking window during summer and the sheer fabric's opacity is **below** this value, the shade escalates to the blackout fabric to block the heat. Default 65. Raise it to reach for blackout sooner; lower it to keep the sheer fabric longer.",
+          "day_night_control_model": "How the abstract coverage + fabric pair maps onto your physical cover. **Position + tilt** (default): the shade drives set_position for coverage and set_tilt_position for the sheer/blackout fabric blend — for hardware exposing both axes. **Split range**: a single-axis cover whose position range encodes both — the lower half (0–50%) selects the blackout fabric, the upper half (50–100%) the sheer fabric — for hardware with only one motor. **Two rail entities**: two separate cover entities — a bottom rail and a middle rail — where the fabric blend folds into the middle rail's absolute position.",
+          "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail."
         }
       },
       "duplicate_select": {
@@ -395,7 +405,12 @@
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate sun acceptance angle from measurements",
           "fov_left": "Sun acceptance angle — left",
-          "fov_right": "Sun acceptance angle — right"
+          "fov_right": "Sun acceptance angle — right",
+          "day_night_opacity_sheer": "Sheer Fabric Opacity (%)",
+          "day_night_opacity_blackout": "Blackout Fabric Opacity (%)",
+          "day_night_blackout_threshold": "Blackout Engage Threshold (%)",
+          "day_night_control_model": "Control Model",
+          "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -443,7 +458,12 @@
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right sun acceptance angle from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth above, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with the right-side angle, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with the left-side angle, this defines the horizontal tracking zone."
+          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with the left-side angle, this defines the horizontal tracking zone.",
+          "day_night_opacity_sheer": "How much light the light-filtering **sheer** fabric blocks (0–100%). Used only to estimate filtering and to decide when hot summer sun needs the blackout fabric instead. Default 30 (a light voile).",
+          "day_night_opacity_blackout": "How much light the opaque **blackout** fabric blocks (0–100%). Used only for the filtering estimate. Default 100 (fully opaque).",
+          "day_night_blackout_threshold": "When the sun is in the tracking window during summer and the sheer fabric's opacity is **below** this value, the shade escalates to the blackout fabric to block the heat. Default 65. Raise it to reach for blackout sooner; lower it to keep the sheer fabric longer.",
+          "day_night_control_model": "How the abstract coverage + fabric pair maps onto your physical cover. **Position + tilt** (default): the shade drives set_position for coverage and set_tilt_position for the sheer/blackout fabric blend — for hardware exposing both axes. **Split range**: a single-axis cover whose position range encodes both — the lower half (0–50%) selects the blackout fabric, the upper half (50–100%) the sheer fabric — for hardware with only one motor. **Two rail entities**: two separate cover entities — a bottom rail and a middle rail — where the fabric blend folds into the middle rail's absolute position.",
+          "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail."
         }
       },
       "sun_tracking": {
@@ -1179,7 +1199,8 @@
         "cover_oscillating_awning": "Oscillating awning (drop-arm)",
         "cover_roof_window": "Roof window",
         "cover_sliding_curtain": "Sliding curtain (horizontal)",
-        "cover_louvered_roof": "Louvered roof"
+        "cover_louvered_roof": "Louvered roof",
+        "cover_day_night_shade": "Day/night shade (dual-fabric)"
       }
     },
     "tilt_mode": {
@@ -1270,6 +1291,13 @@
       "options": {
         "position_and_tilt": "Position and tilt",
         "tilt_only": "Tilt only"
+      }
+    },
+    "day_night_control_model": {
+      "options": {
+        "position_tilt": "Position + tilt (dual axis)",
+        "split_range": "Split range (single axis)",
+        "dual_entity": "Two rail entities (dual entity)"
       }
     },
     "venetian_tilt_reset_direction": {
