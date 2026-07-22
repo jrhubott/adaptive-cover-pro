@@ -452,6 +452,24 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """
         return self._control_model == DAY_NIGHT_MODEL_POSITION_TILT
 
+    def tilt_capability_contradiction(self, caps: Any) -> bool:
+        """Report an A3 tilt contradiction only when the model needs a tilt axis.
+
+        The static ``axes`` declaration always lists ``TILT_AXIS``, but only
+        Model A (``position_tilt``) drives a *physical* tilt axis. The
+        single-carriage models — ``split_range`` and ``dual_entity`` — need only
+        ``set_position``, so a position-only cover is their intended, supported
+        hardware: reporting a contradiction there would raise a
+        ``cover_tilt_unsupported`` Repair that never clears (#991). Gated on the
+        same ``_drives_dual_axis`` model predicate as every other blend-axis
+        hook, so runtime A3 and the config-time ``require_tilt`` warning agree on
+        one source of truth. Kept behind the cover-type boundary — the
+        coordinator never branches on model here.
+        """
+        if not self._drives_dual_axis():
+            return False
+        return super().tilt_capability_contradiction(caps)
+
     # ---- Split-range wire mapping (Model B) --------------------------- #
 
     def _split_range_wire(self, position: int, blend: int) -> int:

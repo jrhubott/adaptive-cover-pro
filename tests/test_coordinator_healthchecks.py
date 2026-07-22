@@ -28,6 +28,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MIN_POSITION,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
+    DAY_NIGHT_MODEL_SPLIT_RANGE,
     DOMAIN,
     ISSUE_CONFIG_POSITION_ENVELOPE,
     ISSUE_CONFIG_TIME_WINDOW,
@@ -715,6 +717,67 @@ async def test_a3_no_raise_for_tilt_type_with_set_tilt_position():
     assert (
         f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
     )
+
+
+async def test_a3_no_raise_for_day_night_split_range_on_position_only_cover():
+    """A Model B (split_range) day/night shade needs only set_position (#991).
+
+    The day/night policy statically declares a tilt axis, but the single-carriage
+    split-range model drives only the carriage. A position-only cover is its
+    intended, supported hardware, so A3 must NOT raise a cover_tilt_unsupported
+    Repair that could never clear.
+    """
+    policy = get_policy("cover_day_night_shade")
+    policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=policy,
+    )
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        create, _delete = await _run(coord, {})
+    assert (
+        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    )
+
+
+async def test_a3_no_raise_for_day_night_dual_entity_on_position_only_cover():
+    """A Model C (dual_entity) day/night shade needs only set_position (#991).
+
+    Same single-carriage relaxation as split-range: the blend folds into a
+    second entity's position axis, never a physical tilt axis, so a position-only
+    cover is coherent and must not raise A3.
+    """
+    policy = get_policy("cover_day_night_shade")
+    policy._control_model = DAY_NIGHT_MODEL_DUAL_ENTITY
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=policy,
+    )
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        create, _delete = await _run(coord, {})
+    assert (
+        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    )
+
+
+async def test_a3_raises_for_day_night_model_a_on_position_only_cover():
+    """A Model A (position_tilt) day/night shade DOES need a physical tilt axis.
+
+    The dual-axis model drives the fabric blend on a real tilt axis, so binding
+    it to a position-only cover is a genuine contradiction that must raise A3 —
+    the model-aware override relaxes B/C without masking A.
+    """
+    policy = get_policy("cover_day_night_shade")  # default model = position_tilt (A)
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+        policy=policy,
+    )
+    with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
+        create, _delete = await _run(coord, {})
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" in _raised_keys(create)
 
 
 async def test_a3_no_false_fire_on_unknown_caps():

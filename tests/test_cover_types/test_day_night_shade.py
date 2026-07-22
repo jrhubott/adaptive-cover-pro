@@ -38,6 +38,8 @@ from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     AXIS_NAME_POSITION,
     AXIS_NAME_TILT,
+    CAP_HAS_SET_POSITION,
+    CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
     TILT_AXIS,
 )
@@ -830,6 +832,54 @@ class TestSplitRangeResolve:
         assert policy._control_model == DAY_NIGHT_MODEL_POSITION_TILT
         # Dual-axis dispatch still threads the blend.
         assert policy.position_context_overrides(out)["tilt"] == DAY_NIGHT_SHEER
+
+
+# ---------------------------------------------------------------------------
+# Step 17 — model-aware A3 tilt-capability contradiction (#991)
+# ---------------------------------------------------------------------------
+
+
+class TestTiltCapabilityContradiction:
+    """A3 (#991): only Model A physically drives a tilt (blend) axis.
+
+    The static ``axes = (POSITION_AXIS, TILT_AXIS)`` declaration is shared by all
+    three control models, but only Model A (``position_tilt``) actually drives a
+    physical tilt axis. Models B (``split_range``) and C (``dual_entity``) are
+    single-carriage, position-only models — a position-only cover is their
+    intended, supported hardware — so binding one to such a cover must NOT report
+    a contradiction (which would raise a ``cover_tilt_unsupported`` Repair that
+    never clears). Mirrors the config-time ``require_tilt`` gate.
+    """
+
+    _NO_TILT = {CAP_HAS_SET_POSITION: True, CAP_HAS_SET_TILT_POSITION: False}
+    _WITH_TILT = {CAP_HAS_SET_POSITION: True, CAP_HAS_SET_TILT_POSITION: True}
+
+    def test_model_a_position_only_caps_is_contradiction(self) -> None:
+        policy = DayNightShadePolicy()
+        policy._control_model = DAY_NIGHT_MODEL_POSITION_TILT
+        assert policy.tilt_capability_contradiction(self._NO_TILT) is True
+
+    def test_model_a_tilt_capable_caps_no_contradiction(self) -> None:
+        policy = DayNightShadePolicy()
+        policy._control_model = DAY_NIGHT_MODEL_POSITION_TILT
+        assert policy.tilt_capability_contradiction(self._WITH_TILT) is False
+
+    def test_model_b_split_range_position_only_no_contradiction(self) -> None:
+        policy = DayNightShadePolicy()
+        policy._control_model = DAY_NIGHT_MODEL_SPLIT_RANGE
+        assert policy.tilt_capability_contradiction(self._NO_TILT) is False
+
+    def test_model_c_dual_entity_position_only_no_contradiction(self) -> None:
+        policy = DayNightShadePolicy()
+        policy._control_model = DAY_NIGHT_MODEL_DUAL_ENTITY
+        assert policy.tilt_capability_contradiction(self._NO_TILT) is False
+
+    def test_default_model_is_a_and_contradicts_position_only(self) -> None:
+        # A freshly-constructed policy defaults to the dual-axis Model A, so a
+        # position-only cover is a genuine contradiction until options relax it.
+        policy = DayNightShadePolicy()
+        assert policy._control_model == DAY_NIGHT_MODEL_POSITION_TILT
+        assert policy.tilt_capability_contradiction(self._NO_TILT) is True
 
 
 # ---------------------------------------------------------------------------
