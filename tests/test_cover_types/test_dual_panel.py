@@ -222,31 +222,42 @@ def _opts(*, triggers=None, front: str | None = _FRONT, inverse: bool = False) -
     return opts
 
 
+def _sunset_cover(sunset_valid: bool):
+    """Minimal cover stub exposing ``sunset_valid`` (the privacy-window signal)."""
+    cover = MagicMock()
+    cover.sunset_valid = sunset_valid
+    return cover
+
+
 def _resolve(
     policy: DualPanelPolicy,
     *,
     control_method: ControlMethod = ControlMethod.SOLAR,
     position: int = 40,
-    is_sunset_active: bool = False,
+    sunset_valid: bool = False,
     bypass: bool = False,
+    floor_clamp: bool = False,
+    interp: bool = False,
     sol_elev: float = 45.0,
     triggers=None,
     front: str | None = _FRONT,
     inverse: bool = False,
 ) -> PipelineResult:
     """Run ``post_pipeline_resolve`` so the per-cycle dispatch cache is set."""
-    kw = _resolve_kwargs(
-        options=_opts(triggers=triggers, front=front, inverse=inverse),
-        sol_elev=sol_elev,
-    )
+    opts = _opts(triggers=triggers, front=front, inverse=inverse)
+    if interp:
+        from custom_components.adaptive_cover_pro.const import CONF_INTERP
+
+        opts[CONF_INTERP] = True
+    kw = _resolve_kwargs(options=opts, sol_elev=sol_elev)
     result = PipelineResult(
         position=position,
         control_method=control_method,
         reason="test",
-        is_sunset_active=is_sunset_active,
         bypass_auto_control=bypass,
+        floor_clamp_applied=floor_clamp,
     )
-    return policy.post_pipeline_resolve(result, cover=None, **kw)
+    return policy.post_pipeline_resolve(result, cover=_sunset_cover(sunset_valid), **kw)
 
 
 class TestResolveFrontPassThrough:
@@ -288,12 +299,14 @@ class TestResolveBackDeployDecision:
         _resolve(policy2, sol_elev=10.0, triggers=["night"])
         assert policy2.resolve_entity_target(_BACK, 40) == POSITION_OPEN
 
-    def test_privacy_uses_is_sunset_active(self) -> None:
+    def test_privacy_uses_sunset_window(self) -> None:
+        # Privacy fires on the astronomical sunset WINDOW (cover.sunset_valid),
+        # independent of whether a sunset_position is configured (#996 Finding 2).
         policy = DualPanelPolicy()
-        _resolve(policy, is_sunset_active=True, triggers=["privacy"])
+        _resolve(policy, sunset_valid=True, triggers=["privacy"])
         assert policy.resolve_entity_target(_BACK, 40) == POSITION_CLOSED
         policy2 = DualPanelPolicy()
-        _resolve(policy2, is_sunset_active=False, triggers=["privacy"])
+        _resolve(policy2, sunset_valid=False, triggers=["privacy"])
         assert policy2.resolve_entity_target(_BACK, 40) == POSITION_OPEN
 
     def test_empty_trigger_set_never_deploys(self) -> None:
@@ -302,7 +315,7 @@ class TestResolveBackDeployDecision:
         _resolve(
             policy,
             control_method=ControlMethod.SUMMER,
-            is_sunset_active=True,
+            sunset_valid=True,
             sol_elev=-5.0,
             triggers=[],
         )
@@ -327,6 +340,19 @@ class TestResolveNoFrontConfigured:
             front=None,
         )
         # Even a would-be back entity passes through untouched.
+        assert policy.resolve_entity_target(_BACK, 40) == 40
+        assert policy.resolve_entity_target(_FRONT, 40) == 40
+
+    def test_empty_string_front_is_identity_for_all(self) -> None:
+        # A stored empty-string front must degrade to identity, not flip every
+        # entity to the blackout substitution (#996 Finding 6).
+        policy = DualPanelPolicy()
+        _resolve(
+            policy,
+            control_method=ControlMethod.SUMMER,
+            triggers=["heat"],
+            front="",
+        )
         assert policy.resolve_entity_target(_BACK, 40) == 40
         assert policy.resolve_entity_target(_FRONT, 40) == 40
 
@@ -401,6 +427,174 @@ class TestResolveInverseState:
         assert inv.resolve_entity_target(_BACK, 40, inverted=False) == POSITION_CLOSED
 
 
+class TestResolveInverseIndependentOfClamp:
+    """The back's inverse wire-space is device semantics only (#996 Finding 1).
+
+    The back target is an ABSOLUTE SUBSTITUTION (open/closed), not a transform
+    of the front's dispatched value, so its wire space must NOT depend on whether
+    the front's value was floor-clamped. Inverse-state alone decides it.
+    """
+
+    def test_deploy_inverse_on_floor_clamp_stays_inverted(self) -> None:
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            inverse_state,
+        )
+
+        policy = DualPanelPolicy()
+        _resolve(
+            policy,
+            control_method=ControlMethod.SUMMER,
+            triggers=["heat"],
+            inverse=True,
+            floor_clamp=True,
+        )
+        # Deployed → device physically CLOSED → wire inverse_state(CLOSED)=100.
+        # The floor clamp on the FRONT must not un-invert the back's blackout.
+        assert policy.resolve_entity_target(_BACK, 40) == inverse_state(POSITION_CLOSED)
+
+    def test_retract_inverse_on_floor_clamp_stays_inverted(self) -> None:
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            inverse_state,
+        )
+
+        policy = DualPanelPolicy()
+        _resolve(
+            policy,
+            control_method=ControlMethod.SOLAR,
+            triggers=["heat"],
+            inverse=True,
+            floor_clamp=True,
+        )
+        # Retracted → device physically OPEN → wire inverse_state(OPEN)=0.
+        assert policy.resolve_entity_target(_BACK, 40) == inverse_state(POSITION_OPEN)
+
+    def test_non_clamp_matches_clamp(self) -> None:
+        """Clamp and non-clamp cycles produce the SAME back wire target."""
+        clamp = DualPanelPolicy()
+        _resolve(
+            clamp,
+            control_method=ControlMethod.SUMMER,
+            triggers=["heat"],
+            inverse=True,
+            floor_clamp=True,
+        )
+        plain = DualPanelPolicy()
+        _resolve(
+            plain,
+            control_method=ControlMethod.SUMMER,
+            triggers=["heat"],
+            inverse=True,
+            floor_clamp=False,
+        )
+        assert clamp.resolve_entity_target(_BACK, 40) == plain.resolve_entity_target(
+            _BACK, 40
+        )
+
+    def test_inverse_off_floor_clamp_is_canonical(self) -> None:
+        policy = DualPanelPolicy()
+        _resolve(
+            policy,
+            control_method=ControlMethod.SUMMER,
+            triggers=["heat"],
+            inverse=False,
+            floor_clamp=True,
+        )
+        assert policy.resolve_entity_target(_BACK, 40) == POSITION_CLOSED
+
+
+class TestResolveInterpolation:
+    """With interpolation on the back endpoints go through the calibration curve.
+
+    Interpolation and inverse-state are mutually exclusive at dispatch (the
+    coordinator ignores inverse under interp), so the back must interpolate its
+    canonical 0/100 rather than send raw values that could overdrive a
+    narrower-calibrated device (#996 Finding 5).
+    """
+
+    def _interp_opts(self, base: dict) -> dict:
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_INTERP_END,
+            CONF_INTERP_START,
+        )
+
+        # A device whose physical travel is calibrated to 10..90 %.
+        base[CONF_INTERP_START] = 10
+        base[CONF_INTERP_END] = 90
+        return base
+
+    def test_back_deploy_is_interpolated(self) -> None:
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_INTERP,
+            CONF_INTERP_END,
+            CONF_INTERP_START,
+        )
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
+        )
+
+        policy = DualPanelPolicy()
+        opts = _opts(triggers=["heat"], front=_FRONT)
+        opts[CONF_INTERP] = True
+        opts[CONF_INTERP_START] = 10
+        opts[CONF_INTERP_END] = 90
+        kw = _resolve_kwargs(options=opts)
+        result = PipelineResult(
+            position=40, control_method=ControlMethod.SUMMER, reason="t"
+        )
+        policy.post_pipeline_resolve(result, cover=_sunset_cover(False), **kw)
+        expected = int(round(interpolate_position(POSITION_CLOSED, 10, 90, None, None)))
+        assert policy.resolve_entity_target(_BACK, 40) == expected
+        # Overdrive guard: not the raw canonical 0.
+        assert policy.resolve_entity_target(_BACK, 40) != POSITION_CLOSED
+
+    def test_back_retract_is_interpolated(self) -> None:
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_INTERP,
+            CONF_INTERP_END,
+            CONF_INTERP_START,
+        )
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
+        )
+
+        policy = DualPanelPolicy()
+        opts = _opts(triggers=["heat"], front=_FRONT)
+        opts[CONF_INTERP] = True
+        opts[CONF_INTERP_START] = 10
+        opts[CONF_INTERP_END] = 90
+        kw = _resolve_kwargs(options=opts)
+        result = PipelineResult(
+            position=40, control_method=ControlMethod.SOLAR, reason="t"
+        )
+        policy.post_pipeline_resolve(result, cover=_sunset_cover(False), **kw)
+        expected = int(round(interpolate_position(POSITION_OPEN, 10, 90, None, None)))
+        assert policy.resolve_entity_target(_BACK, 40) == expected
+
+    def test_interp_wins_over_inverse(self) -> None:
+        """Under interp the back is interpolated, not inverted (matches state)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_INTERP,
+            CONF_INTERP_END,
+            CONF_INTERP_START,
+        )
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
+        )
+
+        policy = DualPanelPolicy()
+        opts = _opts(triggers=["heat"], front=_FRONT, inverse=True)
+        opts[CONF_INTERP] = True
+        opts[CONF_INTERP_START] = 10
+        opts[CONF_INTERP_END] = 90
+        kw = _resolve_kwargs(options=opts)
+        result = PipelineResult(
+            position=40, control_method=ControlMethod.SUMMER, reason="t"
+        )
+        policy.post_pipeline_resolve(result, cover=_sunset_cover(False), **kw)
+        expected = int(round(interpolate_position(POSITION_CLOSED, 10, 90, None, None)))
+        assert policy.resolve_entity_target(_BACK, 40) == expected
+
+
 class TestResolveBypassCycle:
     """A safety/bypass cycle passes every entity through untouched."""
 
@@ -440,6 +634,24 @@ class TestResolveDecisionTrace:
         # Position / tilt are left unchanged by the resolve.
         assert out.position == 40
         assert out.tilt is None
+
+    def test_no_trace_step_when_no_front_configured(self) -> None:
+        # The back decision is never applied without a front, so no trace step
+        # should appear for a cycle that can't dispatch it (#996 Finding 8).
+        policy = DualPanelPolicy()
+        out = _resolve(
+            policy, control_method=ControlMethod.SUMMER, triggers=["heat"], front=None
+        )
+        assert [s for s in out.decision_trace if s.handler == "dual_panel_back"] == []
+
+    def test_no_trace_step_on_bypass_cycle(self) -> None:
+        # A safety/bypass winner overwrites every entity — the back is never
+        # substituted, so no dual_panel_back step should be recorded.
+        policy = DualPanelPolicy()
+        out = _resolve(
+            policy, control_method=ControlMethod.SUMMER, triggers=["heat"], bypass=True
+        )
+        assert [s for s in out.decision_trace if s.handler == "dual_panel_back"] == []
 
 
 # ---------------------------------------------------------------------------

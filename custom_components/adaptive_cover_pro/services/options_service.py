@@ -51,6 +51,8 @@ from ..const import (
     CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
+    CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+    CONF_DUAL_PANEL_FRONT_ENTITY,
     CONF_DEVICE_ID,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
@@ -166,6 +168,7 @@ from ..const import (
     CONF_VENETIAN_TILT_SKIP_MODE,
     CONF_VENETIAN_TILT_TRANSFORM,
     DAY_NIGHT_CONTROL_MODELS,
+    DUAL_PANEL_BLACKOUT_TRIGGERS,
     SLIDING_SLIDE_DIRECTIONS,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
@@ -344,6 +347,28 @@ def _select_v(*options: str):
     return vol.Any(None, vol.In(list(options)))
 
 
+def _list_subset_v(*options: str):
+    """Validate ``None`` or a list whose members are all within *options*.
+
+    Used for multi-select literal sets (e.g. the dual-panel blackout triggers) —
+    an empty list is valid (nothing selected); any member outside the allowed
+    set raises ``vol.Invalid``.
+    """
+    allowed = set(options)
+
+    def _validate(value):
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise vol.Invalid("expected a list")
+        bad = [item for item in value if item not in allowed]
+        if bad:
+            raise vol.Invalid(f"unknown option(s): {', '.join(map(str, bad))}")
+        return value
+
+    return _validate
+
+
 # Maps option key → validator callable. Used by validate_options_patch and set_option.
 # Numeric ranges live in ``const.OPTION_RANGES`` (single source of truth shared
 # with config_flow.py); ``_range(key)`` reads from there. Per-slot custom-position
@@ -381,6 +406,9 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD: _range(CONF_DAY_NIGHT_BLACKOUT_THRESHOLD),
     CONF_DAY_NIGHT_CONTROL_MODEL: _select_v(*DAY_NIGHT_CONTROL_MODELS),
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _entity_v(),
+    # Geometry — dual-panel shade (#996)
+    CONF_DUAL_PANEL_FRONT_ENTITY: _entity_v(),
+    CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: _list_subset_v(*DUAL_PANEL_BLACKOUT_TRIGGERS),
     # Geometry — tilt/venetian
     CONF_TILT_DEPTH: _range(CONF_TILT_DEPTH),
     CONF_TILT_DISTANCE: _range(CONF_TILT_DISTANCE),
@@ -851,6 +879,15 @@ _SECTION_GEOMETRY_DAY_NIGHT = frozenset(
         CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     }
 )
+_SECTION_GEOMETRY_DUAL_PANEL = frozenset(
+    {
+        # Both have FIELD_VALIDATORS entries, so they must be service-settable
+        # too (else the validators are dead code and the keys silently dropped) —
+        # mirrors the day/night middle-rail wiring (#996 Finding 3).
+        CONF_DUAL_PANEL_FRONT_ENTITY,
+        CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+    }
+)
 _SECTION_GEOMETRY_ALL = (
     _SECTION_GEOMETRY_VERTICAL
     | _SECTION_GEOMETRY_AWNING
@@ -859,6 +896,7 @@ _SECTION_GEOMETRY_ALL = (
     | _SECTION_GEOMETRY_ROOF
     | _SECTION_GEOMETRY_SLIDING
     | _SECTION_GEOMETRY_DAY_NIGHT
+    | _SECTION_GEOMETRY_DUAL_PANEL
 )
 
 _SECTION_VENETIAN = frozenset(

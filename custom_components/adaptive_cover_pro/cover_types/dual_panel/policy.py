@@ -41,6 +41,7 @@ from ...engine.covers import AdaptiveVerticalCover
 from ...engine.covers.layered import blackout_should_deploy, compute_layered
 from ...managers.manual_override import inverse_state
 from ...pipeline.types import DecisionStep
+from ...position_utils import interpolate_position
 from .._helpers import window_dimensions_lines
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
@@ -124,14 +125,22 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         # Cached once per cycle by ``post_pipeline_resolve`` because the
         # coordinator dispatch seam receives no ``options`` and no pipeline
         # result. ``_front_entity`` names the sheer panel; ``_deploy_back``
-        # records the blackout decision; ``_back_inverse`` mirrors whether
-        # ``coordinator.state`` actually inverted the dispatched value this
-        # cycle; ``_back_bypass`` records a safety/bypass cycle in which every
-        # entity passes through untouched.
+        # records the blackout decision; ``_back_inverse`` records whether the
+        # back's absolute open/closed target must be inverted into the device's
+        # wire space (device inverse semantics only); ``_back_interp`` +
+        # ``_interp_*`` carry the interpolation calibration curve so the back's
+        # canonical endpoints go through the same mapping as the front;
+        # ``_back_bypass`` records a safety/bypass cycle in which every entity
+        # passes through untouched.
         self._front_entity: str | None = None
         self._deploy_back: bool = False
         self._back_inverse: bool = False
         self._back_bypass: bool = False
+        self._back_interp: bool = False
+        self._interp_start: Any = None
+        self._interp_end: Any = None
+        self._interp_list: Any = None
+        self._interp_list_new: Any = None
 
     # ---- Identity / labels -------------------------------------------- #
 
@@ -273,20 +282,27 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
     # ---- Dual-panel dispatch seam (per-cycle cache + resolve) --------- #
 
     def _derive_active_triggers(
-        self, result: PipelineResult, sol_elev: float
+        self, result: PipelineResult, sol_elev: float, *, sunset_valid: bool
     ) -> tuple[str, ...]:
         """Map the pipeline result onto the currently-active blackout triggers.
 
         ``heat`` fires on a climate summer / extreme-heat full block; ``privacy``
-        fires inside the sunset window; ``night`` fires when the sun is below the
-        horizon. The configured subset (``blackout_should_deploy``) then decides
-        whether any of these actually deploys the back — this method only reports
-        what is happening, never what the user opted into.
+        fires inside the astronomical sunset WINDOW; ``night`` fires when the sun
+        is below the horizon. The configured subset (``blackout_should_deploy``)
+        then decides whether any of these actually deploys the back — this method
+        only reports what is happening, never what the user opted into.
+
+        ``sunset_valid`` is the cover's own astronomical sunset/sunrise-window
+        flag (``AdaptiveGeneralCover.sunset_valid``), which is TRUE inside the
+        window regardless of whether a ``sunset_position`` is configured — unlike
+        ``result.is_sunset_active``, which is hard-False without a sunset
+        position (#996 Finding 2). Privacy therefore means "the sunset window is
+        active" as the option description promises.
         """
         active: list[str] = []
         if result.control_method in _HEAT_METHODS:
             active.append(DUAL_PANEL_TRIGGER_HEAT)
-        if result.is_sunset_active:
+        if sunset_valid:
             active.append(DUAL_PANEL_TRIGGER_PRIVACY)
         if sol_elev < 0:
             active.append(DUAL_PANEL_TRIGGER_NIGHT)
@@ -303,21 +319,28 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         config,  # noqa: ARG002
         config_service: ConfigurationService,  # noqa: ARG002
         options: dict,
-        cover: AdaptiveGeneralCover | None = None,  # noqa: ARG002
+        cover: AdaptiveGeneralCover | None = None,
     ) -> PipelineResult:
         """Cache the per-cycle dual-panel dispatch state; leave position/tilt as-is.
 
         The coordinator dispatch seam (``resolve_entity_target``) receives no
         ``options`` and no pipeline result, so the front-entity designator, the
-        blackout deploy decision, the inverse-state flag, and the bypass flag are
-        stashed here once per cycle. The front panel keeps the pipeline's
-        adaptive position untouched — only the back panel's target is substituted
-        at dispatch — so this hook does not rewrite ``result.position``.
+        blackout deploy decision, the inverse-state flag, the interpolation
+        calibration curve, and the bypass flag are stashed here once per cycle.
+        The front panel keeps the pipeline's adaptive position untouched — only
+        the back panel's target is substituted at dispatch — so this hook does
+        not rewrite ``result.position``.
         """
         if result is None:
             return result
 
-        active = self._derive_active_triggers(result, sol_elev)
+        # Privacy keys on the cover's own astronomical sunset WINDOW, not on
+        # ``result.is_sunset_active`` (which needs a sunset_position) — #996
+        # Finding 2. No cover object → no window signal.
+        sunset_valid = bool(getattr(cover, "sunset_valid", False))
+        active = self._derive_active_triggers(
+            result, sol_elev, sunset_valid=sunset_valid
+        )
         configured = options.get(
             CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
             list(DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS),
@@ -325,7 +348,16 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         self._front_entity = options.get(CONF_DUAL_PANEL_FRONT_ENTITY)
         self._deploy_back = blackout_should_deploy(active, configured)
         self._back_bypass = result.bypass_auto_control
-        self._back_inverse = self._resolve_inverse(result, options)
+        self._cache_inverse_and_interp(options)
+
+        # The back decision is only APPLIED on cycles where a front is designated
+        # AND the safety/bypass path isn't overwriting every entity. Recording a
+        # ``dual_panel_back`` step on an inapplicable cycle (no front, or a bypass
+        # winner) would show a decision in the trace that never reaches a cover —
+        # so skip it there (#996 Finding 8).
+        back_applies = bool(self._front_entity) and not self._back_bypass
+        if not back_applies:
+            return result
 
         trace = list(result.decision_trace)
         trace.append(
@@ -344,26 +376,39 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
 
         return replace(result, decision_trace=trace)
 
-    @staticmethod
-    def _resolve_inverse(result: PipelineResult, options: dict) -> bool:
-        """Mirror whether ``coordinator.state`` actually inverted this cycle.
+    def _cache_inverse_and_interp(self, options: dict) -> None:
+        """Cache the back's wire-space transform (inverse XOR interpolation).
 
-        ``state`` returns ``result.position`` RAW (no inverse) on the
-        safety/bypass path, for a floor-clamped winner, and under interpolation;
-        so the back panel must invert its open/closed target in exactly the same
-        cases the primary dispatch did — never merely when inverse-state is
-        configured. Byte-identical to the day/night Model C ``_cache_dual_entity``
-        inverse rule (#993).
+        The back target is an ABSOLUTE SUBSTITUTION (canonical open/closed), NOT
+        a transform of the front's dispatched value, so its wire space depends
+        ONLY on the device's inverse semantics and the instance's interpolation
+        calibration — NEVER on whether the front's value was bypass- or
+        floor-clamped (#996 Finding 1). This deliberately DIVERGES from the
+        day/night Model C middle-rail rule, whose target IS derived from the
+        front's dispatched value and so must mirror ``coordinator.state``'s
+        clamp/bypass short-circuits.
+
+        Interpolation and inverse-state are mutually exclusive at dispatch — the
+        coordinator ignores inverse-state under interpolation — so the back
+        interpolates its canonical 0/100 through the same curve as the front when
+        interp is on (#996 Finding 5), and inverts otherwise.
         """
-        from ...const import CONF_INTERP
-
-        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
-        use_interp = bool(options.get(CONF_INTERP, False))
-        return (
-            inverse_cfg
-            and not use_interp
-            and not (result.bypass_auto_control or result.floor_clamp_applied)
+        from ...const import (
+            CONF_INTERP,
+            CONF_INTERP_END,
+            CONF_INTERP_LIST,
+            CONF_INTERP_LIST_NEW,
+            CONF_INTERP_START,
         )
+
+        use_interp = bool(options.get(CONF_INTERP, False))
+        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
+        self._back_interp = use_interp
+        self._back_inverse = inverse_cfg and not use_interp
+        self._interp_start = options.get(CONF_INTERP_START)
+        self._interp_end = options.get(CONF_INTERP_END)
+        self._interp_list = options.get(CONF_INTERP_LIST)
+        self._interp_list_new = options.get(CONF_INTERP_LIST_NEW)
 
     def resolve_entity_target(
         self, entity_id: str, position: int, *, inverted: bool | None = None
@@ -378,11 +423,14 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         (identity for all); a safety/bypass cycle also passes every entity
         through untouched so the safety winner is never overwritten.
 
-        ``inverted`` names the wire value's inversion space: ``None`` reuses the
-        cached per-cycle decision (the main dispatch path); the broadcast seams
-        pass an explicit ``True``/``False`` for their own divergent space.
+        ``inverted`` names the wire value's inversion space: ``None`` (the main
+        dispatch path) applies the cached per-cycle transform — interpolation
+        through the calibration curve when configured, else inverse-state per the
+        device semantics. A broadcast seam passes an explicit ``True``/``False``
+        for its own inversion space; those seams dispatch their absolute default
+        un-interpolated, so the back mirrors exactly the inversion they applied.
         """
-        if self._front_entity is None or self._back_bypass:
+        if not self._front_entity or self._back_bypass:
             return position
         if entity_id == self._front_entity:
             return position
@@ -392,5 +440,22 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
             open_position=POSITION_OPEN,
             closed_position=POSITION_CLOSED,
         )
-        inverse = self._back_inverse if inverted is None else inverted
-        return inverse_state(layered.back) if inverse else layered.back
+        back = layered.back
+        if inverted is None:
+            # Main dispatch path — interpolation XOR inverse, matching how
+            # ``coordinator.state`` transforms the front's value this cycle.
+            if self._back_interp:
+                return int(
+                    round(
+                        interpolate_position(
+                            back,
+                            self._interp_start,
+                            self._interp_end,
+                            self._interp_list,
+                            self._interp_list_new,
+                        )
+                    )
+                )
+            return inverse_state(back) if self._back_inverse else back
+        # Broadcast seam — mirror the seam's own (un-interpolated) inversion.
+        return inverse_state(back) if inverted else back

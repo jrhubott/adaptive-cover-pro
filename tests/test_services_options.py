@@ -1876,6 +1876,77 @@ class TestSetGeometry:
         )
         assert patch_out == {CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail"}
 
+    def test_set_geometry_accepts_dual_panel_front_entity(self):
+        # The dual-panel front-entity designator has a FIELD_VALIDATORS entry, so
+        # the set_geometry section list must include it too (#996 Finding 3).
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_FRONT_ENTITY,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+            _build_patch,
+        )
+
+        patch_out = _build_patch(
+            {CONF_DUAL_PANEL_FRONT_ENTITY: "cover.front_sheer"},
+            _SECTION_GEOMETRY_ALL,
+        )
+        assert patch_out == {CONF_DUAL_PANEL_FRONT_ENTITY: "cover.front_sheer"}
+
+    def test_set_geometry_accepts_dual_panel_blackout_triggers(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+            _build_patch,
+        )
+
+        patch_out = _build_patch(
+            {CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["heat", "night"]},
+            _SECTION_GEOMETRY_ALL,
+        )
+        assert patch_out == {CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["heat", "night"]}
+
+    def test_dual_panel_front_entity_validator_accepts_string_and_none(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_FRONT_ENTITY,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_DUAL_PANEL_FRONT_ENTITY]
+        assert v("cover.front") == "cover.front"
+        assert v(None) is None
+
+    def test_dual_panel_triggers_validator_accepts_subset(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_DUAL_PANEL_BLACKOUT_TRIGGERS]
+        assert v(["heat", "privacy", "night"]) == ["heat", "privacy", "night"]
+        assert v([]) == []
+        assert v(None) is None
+
+    def test_dual_panel_triggers_validator_rejects_unknown_member(self):
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_DUAL_PANEL_BLACKOUT_TRIGGERS]
+        with pytest.raises(vol.Invalid):
+            v(["heat", "bogus"])
+
 
 class TestSetOption:
     """Integration tests for generic set_option service."""

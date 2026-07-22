@@ -62,9 +62,12 @@ def compute_layered(
 
     ``front`` is the already-resolved sheer position (the adaptive sun-tracking
     value). The back is ``closed_position`` when the blackout deploys, else
-    ``open_position``. Callers pass the open/closed values already mapped into
-    the dispatched coordinate space (inverse-state applied), so this function
-    stays free of any cover-direction semantics.
+    ``open_position``. Callers pass the CANONICAL open/closed endpoints
+    (``POSITION_OPEN`` / ``POSITION_CLOSED``); this function only *selects*
+    between them and applies no cover-direction semantics. The owning policy
+    maps the chosen endpoint into the device's wire space afterward —
+    interpolation through the calibration curve, or inverse-state — so no
+    wire-space transform is baked in here.
     """
     back = closed_position if deploy_blackout else open_position
     return LayeredResult(front=front, back=back)
