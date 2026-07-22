@@ -288,7 +288,7 @@
           "motion_override": "🚶 Détection d'occupation",
           "weather_override": "🌧️ Dérogation météo",
           "summary": "📋 Résumé de la configuration",
-          "troubleshoot": "🩺 Troubleshoot",
+          "troubleshoot": "🩺 Dépannage",
           "sync": "🔄 Copier vers d'autres stores",
           "debug": "🔍 Débogage et diagnostics",
           "done": "✅ Enregistrer et fermer",
@@ -661,19 +661,19 @@
         "description": "{summary}"
       },
       "troubleshoot": {
-        "title": "Troubleshoot",
+        "title": "Dépannage",
         "description": "{report}",
         "menu_options": {
-          "custom_position": "🎯 Custom Positions",
-          "pipeline_priorities": "🔀 Handler Priorities",
-          "automation": "⏱️ Movement & Schedule",
-          "temperature_climate": "🌡️ Temperature & Climate",
-          "light_cloud": "☁️ Weather, Light & Cloud",
-          "cover_entities": "🪟 Covers & Device",
-          "profile_sensors": "📡 Shared Sensors",
-          "position": "📊 Position Settings",
-          "troubleshoot": "🔁 Re-check",
-          "init": "⬅️ Back to menu"
+          "custom_position": "🎯 Positions personnalisées",
+          "pipeline_priorities": "🔀 Priorités des gestionnaires",
+          "automation": "⏱️ Mouvement & horaires",
+          "temperature_climate": "🌡️ Température et climat",
+          "light_cloud": "☁️ Météo, lumière & nuages",
+          "cover_entities": "🪟 Stores et appareil",
+          "profile_sensors": "📡 Capteurs partagés",
+          "position": "📊 Paramètres de position",
+          "troubleshoot": "🔁 Vérifier à nouveau",
+          "init": "⬅️ Retour au menu"
         }
       },
       "debug": {

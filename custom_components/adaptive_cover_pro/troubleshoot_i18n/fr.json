@@ -1,15 +1,15 @@
 {
   "triage": {
-    "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates.",
-    "higher_priority_won": "ℹ️ The {winner} handler outranks solar tracking and won this cycle, so solar never set a position. Lower-priority handlers that did not run: {skipped}. Adjust the handler priorities if solar should win.",
-    "time_window_suspect": "⚠️ The active-window schedule looks off (start {start}, end {end}); the cover may never track. Review the start and end times.",
-    "climate_temp_none": "⚠️ Climate mode is on but the inside temperature is unavailable, so climate decisions cannot run. Check the configured temperature sensor.",
-    "summer_wont_close": "⚠️ It is summer with presence detected and the blind is not transparent, yet the climate handler did not close it. Review the summer close conditions and temperature thresholds.",
-    "presence_defaults_true": "ℹ️ Climate mode is on but no presence entity or template is set, so presence defaults to always-present. Add a presence sensor if occupancy should gate climate control.",
-    "cloud_or_semantics": "ℹ️ More than one low-light input is configured ({inputs}); they combine with OR, so any one of them tripping suppresses tracking. Currently tripped: {tripped}.",
-    "cover_not_ready": "⚠️ {eid}: not ready (unavailable)",
-    "entity_unavailable": "⚠️ {eid} is unavailable — the integration cannot read its state. Check the device or the sensor.",
-    "min_floor_bypassed": "⚠️ A minimum position of {min}% is set, but these fall below it: {offenders}. They are raised to the floor (or the floor is ignored) — reconcile the values.",
-    "enable_min_backwards": "ℹ️ Minimum position {min}% is set but 'enforce minimum only while sun tracking' is off, so the floor applies at all times (the flag reads backwards). Confirm that is intended."
+    "custom_safety_bypass": "⚠️ L'emplacement personnalisé #{slot} est à la priorité de sécurité ({safety}) — il contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin, pour que le store puisse se déplacer même quand le contrôle automatique est DÉSACTIVÉ et en dehors de votre horaire. Réduisez sa priorité en dessous de {safety} pour qu'elle respecte ces seuils.",
+    "higher_priority_won": "ℹ️ Le gestionnaire {winner} a une priorité plus élevée que le suivi solaire et a gagné ce cycle, le solaire n'a donc pas défini de position. Gestionnaires de priorité inférieure qui n'ont pas fonctionné : {skipped}. Ajustez les priorités des gestionnaires si le suivi solaire devrait gagner.",
+    "time_window_suspect": "⚠️ L'horaire de la fenêtre active semble incorrect (début {start}, fin {end}) ; le store peut ne jamais suivre. Vérifiez les heures de début et de fin.",
+    "climate_temp_none": "⚠️ Le mode climatique est activé mais la température intérieure n'est pas disponible, les décisions climatiques ne peuvent donc pas fonctionner. Vérifiez le capteur de température configuré.",
+    "summer_wont_close": "⚠️ C'est l'été avec présence détectée et le store n'est pas transparent, mais le gestionnaire climatique ne l'a pas fermé. Vérifiez les conditions de fermeture estivale et les seuils de température.",
+    "presence_defaults_true": "ℹ️ Le mode climatique est activé mais aucune entité ou modèle de présence n'est configuré, la présence est donc définie par défaut sur toujours-présent. Ajoutez un détecteur de mouvement si l'occupation devrait contrôler le mode climatique.",
+    "cloud_or_semantics": "ℹ️ Plus d'une entrée de faible lumière est configurée ({inputs}) ; elles se combinent avec OU, donc n'importe laquelle d'entre elles déclenchée supprime le suivi. Actuellement déclenchées : {tripped}.",
+    "cover_not_ready": "⚠️ {eid} : non prêt (indisponible)",
+    "entity_unavailable": "⚠️ {eid} est indisponible — l'intégration ne peut pas lire son état. Vérifiez l'appareil ou le capteur.",
+    "min_floor_bypassed": "⚠️ Une position minimale de {min}% est définie, mais ceux-ci sont en dessous : {offenders}. Ils sont portés au plancher (ou le plancher est ignoré) — réconciliez les valeurs.",
+    "enable_min_backwards": "ℹ️ La position minimale {min}% est définie mais « imposer le minimum uniquement pendant le suivi solaire » est désactivée, le plancher s'applique donc à tout moment (l'indicateur se lit à l'envers). Confirmez que c'est intentionnel."
   }
 }

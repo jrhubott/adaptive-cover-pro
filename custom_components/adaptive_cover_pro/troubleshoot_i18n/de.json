@@ -1,15 +1,15 @@
 {
   "triage": {
-    "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates.",
-    "higher_priority_won": "ℹ️ The {winner} handler outranks solar tracking and won this cycle, so solar never set a position. Lower-priority handlers that did not run: {skipped}. Adjust the handler priorities if solar should win.",
-    "time_window_suspect": "⚠️ The active-window schedule looks off (start {start}, end {end}); the cover may never track. Review the start and end times.",
-    "climate_temp_none": "⚠️ Climate mode is on but the inside temperature is unavailable, so climate decisions cannot run. Check the configured temperature sensor.",
-    "summer_wont_close": "⚠️ It is summer with presence detected and the blind is not transparent, yet the climate handler did not close it. Review the summer close conditions and temperature thresholds.",
-    "presence_defaults_true": "ℹ️ Climate mode is on but no presence entity or template is set, so presence defaults to always-present. Add a presence sensor if occupancy should gate climate control.",
-    "cloud_or_semantics": "ℹ️ More than one low-light input is configured ({inputs}); they combine with OR, so any one of them tripping suppresses tracking. Currently tripped: {tripped}.",
-    "cover_not_ready": "⚠️ {eid}: not ready (unavailable)",
-    "entity_unavailable": "⚠️ {eid} is unavailable — the integration cannot read its state. Check the device or the sensor.",
-    "min_floor_bypassed": "⚠️ A minimum position of {min}% is set, but these fall below it: {offenders}. They are raised to the floor (or the floor is ignored) — reconcile the values.",
-    "enable_min_backwards": "ℹ️ Minimum position {min}% is set but 'enforce minimum only while sun tracking' is off, so the floor applies at all times (the flag reads backwards). Confirm that is intended."
+    "custom_safety_bypass": "⚠️ Benutzerdefiniert #{slot} hat Sicherheitspriorität ({safety}) – umgeht den Schalter für die automatische Steuerung, die manuelle Übersteuerung und das Start-/Endzeitfenster, kann die Beschattung also auch dann bewegen, wenn die automatische Steuerung AUS ist und außerhalb Ihres Zeitplans. Senken Sie seine Priorität unter {safety}, um diese Gates einzuhalten.",
+    "higher_priority_won": "ℹ️ Der Handler {winner} überschattet die Sonnenstandsverfolgung und hat diesen Zyklus gewonnen, weshalb die Sonnenstandsverfolgung keine Position gesetzt hat. Handler mit niedrigerer Priorität, die nicht ausgeführt wurden: {skipped}. Passen Sie die Handler-Prioritäten an, wenn die Sonnenstandsverfolgung gewinnen soll.",
+    "time_window_suspect": "⚠️ Der Zeitplan für das aktive Fenster sieht falsch aus (Start {start}, Ende {end}); die Beschattung verfolgt möglicherweise niemals. Überprüfen Sie die Start- und Endzeiten.",
+    "climate_temp_none": "⚠️ Der Klimamodus ist eingeschaltet, aber die Innentemperatur ist nicht verfügbar, daher können keine Klimaentscheidungen getroffen werden. Überprüfen Sie den konfigurierten Temperatursensor.",
+    "summer_wont_close": "⚠️ Es ist Sommer mit erkannter Anwesenheit und die Jalousie ist nicht transparent, aber der Klimahandler hat sie nicht geschlossen. Überprüfen Sie die Sommereinstellungen zum Schließen und Temperaturschwellwerte.",
+    "presence_defaults_true": "ℹ️ Der Klimamodus ist eingeschaltet, aber es ist keine Anwesenheitsentität oder Vorlage eingestellt, daher wird die Anwesenheit auf \"immer vorhanden\" gesetzt. Fügen Sie einen Anwesenheitssensor hinzu, wenn die Belegung die Klimakontrolle steuern soll.",
+    "cloud_or_semantics": "ℹ️ Es sind mehrere Lichtsensoren konfiguriert ({inputs}); sie werden mit ODER kombiniert, sodass jedes Auslösen eines von ihnen die Verfolgung unterdrückt. Aktuell ausgelöst: {tripped}.",
+    "cover_not_ready": "⚠️ {eid}: nicht verfügbar",
+    "entity_unavailable": "⚠️ {eid} ist nicht verfügbar – die Integration kann seinen Status nicht lesen. Überprüfen Sie das Gerät oder den Sensor.",
+    "min_floor_bypassed": "⚠️ Eine Mindestposition von {min}% ist eingestellt, aber diese fallen darunter: {offenders}. Sie werden auf den Mindeststand angehoben (oder der Mindeststand wird ignoriert) – gleichen Sie die Werte ab.",
+    "enable_min_backwards": "ℹ️ Mindestposition {min}% ist eingestellt, aber \"Mindestposition nur während Sonnenstandsverfolgung erzwingen\" ist aus, also gilt der Mindeststand zu allen Zeiten (die Flagge liest sich rückwärts). Bestätigen Sie, dass dies beabsichtigt ist."
   }
 }

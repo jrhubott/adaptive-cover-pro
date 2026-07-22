@@ -288,7 +288,7 @@
           "motion_override": "🚶 Belegungserkennung",
           "weather_override": "🌧️ Wetter-Übersteuerung",
           "summary": "📋 Konfigurationszusammenfassung",
-          "troubleshoot": "🩺 Troubleshoot",
+          "troubleshoot": "🩺 Fehlerbehebung",
           "sync": "🔄 In andere Beschattungen kopieren",
           "debug": "🔍 Debug und Diagnose",
           "done": "✅ Speichern und schließen",
@@ -661,19 +661,19 @@
         "description": "{summary}"
       },
       "troubleshoot": {
-        "title": "Troubleshoot",
+        "title": "Fehlerbehebung",
         "description": "{report}",
         "menu_options": {
-          "custom_position": "🎯 Custom Positions",
-          "pipeline_priorities": "🔀 Handler Priorities",
-          "automation": "⏱️ Movement & Schedule",
-          "temperature_climate": "🌡️ Temperature & Climate",
-          "light_cloud": "☁️ Weather, Light & Cloud",
-          "cover_entities": "🪟 Covers & Device",
-          "profile_sensors": "📡 Shared Sensors",
-          "position": "📊 Position Settings",
-          "troubleshoot": "🔁 Re-check",
-          "init": "⬅️ Back to menu"
+          "custom_position": "🎯 Benutzerdefinierte Positionen",
+          "pipeline_priorities": "🔀 Handler-Prioritäten",
+          "automation": "⏱️ Bewegung & Zeitplan",
+          "temperature_climate": "🌡️ Temperatur und Klima",
+          "light_cloud": "☁️ Wetter, Licht & Wolken",
+          "cover_entities": "🪟 Beschattungen & Gerät",
+          "profile_sensors": "📡 Gemeinsame Sensoren",
+          "position": "📊 Positionseinstellungen",
+          "troubleshoot": "🔁 Erneut prüfen",
+          "init": "⬅️ Zurück zum Menü"
         }
       },
       "debug": {
