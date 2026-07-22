@@ -15,8 +15,6 @@ category in the HA translation schema, so the data is loaded directly.
 
 from __future__ import annotations
 
-import json
-import string
 from pathlib import Path
 
 import pytest
@@ -36,6 +34,7 @@ from custom_components.adaptive_cover_pro.cover_types._summary_labels import (
     COVER_TYPE_LABELS_EN,
     GEOMETRY_LABELS_EN,
 )
+from tests._helpers import i18n_parity
 
 pytestmark = pytest.mark.unit
 
@@ -91,7 +90,9 @@ def test_load_summary_labels_overlays_translated_bundle() -> None:
     """A translated bundle (de) overrides the English defaults key-for-key, and
     keys absent from the bundle fall back to English.
     """
-    de_bundle = _config_summary_flat(_load_json("de.json"))
+    de_bundle = i18n_parity.flatten(
+        i18n_parity.load_bundle(SUMMARY_I18N_DIR, "de.json")
+    )
     labels = _load_summary_labels_sync("de")
 
     # Every translated key overrides the English default with the bundle value.
@@ -183,47 +184,19 @@ def test_resolve_summary_language_falls_back_to_english_when_nothing_available()
 # ---------------------------------------------------------------------------
 
 
-def _placeholder_fields(template: str) -> set[str]:
-    """Return the set of named ``{field}`` placeholders in a format template,
-    normalizing literal ``{{`` / ``}}`` braces away first.
-    """
-    # Remove escaped literal braces so they don't parse as fields.
-    stripped = template.replace("{{", "").replace("}}", "")
-    return {
-        field_name
-        for _, field_name, _, _ in string.Formatter().parse(stripped)
-        if field_name
-    }
-
-
-def _config_summary_flat(data: dict) -> dict[str, str]:
-    """Return a summary-label bundle flattened to dotted keys."""
-    out: dict[str, str] = {}
-
-    def _walk(node: object, prefix: str) -> None:
-        if isinstance(node, dict):
-            for k, v in node.items():
-                _walk(v, f"{prefix}.{k}" if prefix else k)
-        elif isinstance(node, str):
-            out[prefix] = node
-
-    _walk(data, "")
-    return out
+_SUMMARY_CODE_DEFAULTS = {
+    **_SUMMARY_LABELS_EN,
+    **COVER_TYPE_LABELS_EN,
+    **GEOMETRY_LABELS_EN,
+    **AXIS_LABELS_EN,
+}
 
 
 def test_summary_i18n_key_parity_de_fr() -> None:
     """de/fr bundles must expose the IDENTICAL key set as en — else a summary
     line silently falls back to English.
     """
-    en = _config_summary_flat(_load_json("en.json"))
-    assert en, "en.json bundle must not be empty"
-    for lang in ("de", "fr"):
-        target = _config_summary_flat(_load_json(f"{lang}.json"))
-        assert set(target) == set(en), (
-            f"{lang}.json key-set differs from en.json:\n"
-            f"  missing: {sorted(set(en) - set(target))[:10]}\n"
-            f"  extra:   {sorted(set(target) - set(en))[:10]}"
-        )
+    i18n_parity.assert_key_parity(SUMMARY_I18N_DIR)
 
 
 def test_summary_i18n_en_matches_code_defaults() -> None:
@@ -233,37 +206,11 @@ def test_summary_i18n_en_matches_code_defaults() -> None:
     ``GEOMETRY_LABELS_EN``. The English runtime output is driven by those code
     dicts; the bundle exists as the translation source + drift guard.
     """
-    en = _config_summary_flat(_load_json("en.json"))
-    assert en == {
-        **_SUMMARY_LABELS_EN,
-        **COVER_TYPE_LABELS_EN,
-        **GEOMETRY_LABELS_EN,
-        **AXIS_LABELS_EN,
-    }
+    i18n_parity.assert_en_matches_defaults(SUMMARY_I18N_DIR, _SUMMARY_CODE_DEFAULTS)
 
 
 def test_config_summary_placeholder_parity_de_fr() -> None:
     """For every label key, de/fr must expose the IDENTICAL set of {field}
     placeholders as en — else HA silently drops the translated key.
     """
-    en = _config_summary_flat(_load_json("en.json"))
-    assert en, "en.json bundle must not be empty"
-    for lang in ("de", "fr"):
-        target = _config_summary_flat(_load_json(f"{lang}.json"))
-        for key, en_value in en.items():
-            assert key in target, f"{lang}.json missing label key {key!r}"
-            en_fields = _placeholder_fields(en_value)
-            tgt_fields = _placeholder_fields(target[key])
-            assert (
-                en_fields == tgt_fields
-            ), f"{lang}.json[{key}] placeholder set {tgt_fields} != en {en_fields}"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _load_json(name: str) -> dict:
-    with (SUMMARY_I18N_DIR / name).open(encoding="utf-8") as fh:
-        return json.load(fh)
+    i18n_parity.assert_placeholder_parity(SUMMARY_I18N_DIR)

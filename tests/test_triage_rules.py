@@ -22,8 +22,10 @@ from custom_components.adaptive_cover_pro.diagnostics.triage import (
     Severity,
     run_triage,
 )
+from custom_components.adaptive_cover_pro.reason_i18n import Reason, render
 from custom_components.adaptive_cover_pro.troubleshoot_i18n import (
     _TRIAGE_TEMPLATES_EN,
+    load_troubleshoot_labels,
 )
 from tests._helpers import i18n_parity
 
@@ -535,4 +537,34 @@ def test_config_rules_are_deterministic_without_runtime() -> None:
     # And the same via the full table (only= filters mixed/runtime rows out).
     assert run_triage(full, only=RuleInput.CONFIG) == run_triage(
         config_only, only=RuleInput.CONFIG
+    )
+
+
+# ---------------------------------------------------------------------------
+# Summary-migration byte-identity lock (issue #970, Step 8). The config summary
+# renders these two CONFIG findings via reason_i18n.render (NOT render_report),
+# so the rendered English MUST byte-match the legacy hand-written strings the
+# migration replaces — guarded end-to-end by tests/test_config_flow_summary.py.
+# ---------------------------------------------------------------------------
+
+
+def test_custom_safety_bypass_renders_byte_identical_to_legacy_summary() -> None:
+    reason = Reason(
+        TriageCode.CUSTOM_SAFETY_BYPASS,
+        {"slot": 5, "safety": CUSTOM_POSITION_SAFETY_PRIORITY},
+    )
+    assert render(reason, load_troubleshoot_labels("en")) == (
+        "⚠️ Custom #5 is at safety priority (100) — it bypasses the "
+        "automatic-control toggle, manual override, and the start/end time "
+        "window, so it can move the cover even when automatic control is OFF "
+        "and outside your schedule. Lower its priority below 100 to make it "
+        "respect those gates."
+    )
+
+
+def test_cover_not_ready_renders_byte_identical_to_legacy_summary() -> None:
+    reason = Reason(TriageCode.COVER_NOT_READY, {"eid": "cover.x"})
+    assert (
+        render(reason, load_troubleshoot_labels("en"))
+        == "⚠️ cover.x: not ready (unavailable)"
     )

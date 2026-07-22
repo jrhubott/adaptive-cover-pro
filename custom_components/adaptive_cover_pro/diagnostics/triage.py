@@ -176,28 +176,20 @@ def run_triage(
 # Renderer (minimal; reuses reason_i18n.render, never a second formatter)
 # ---------------------------------------------------------------------------
 
-_SEVERITY_ICON: dict[Severity, str] = {
-    Severity.CRITICAL: "🛑",
-    Severity.WARNING: "⚠️",
-    Severity.INFO: "ℹ️",
-}
-
 
 def render_report(
     findings: Iterable[Finding], labels: Mapping[str, str] | None = None
 ) -> str:
     """Render ``findings`` as a bullet list, one line per finding.
 
-    Each bullet is a severity icon + the reason rendered through
+    Each bullet is a plain ``- `` marker plus the reason rendered through
     :func:`..reason_i18n.render` against ``labels`` (the troubleshoot bundle,
-    or English when ``None``). Deliberately minimal — the troubleshoot step
-    owns richer presentation; this exists so both surfaces share one renderer.
+    or English when ``None``). No severity icon is prepended — every triage
+    template already leads with its own severity emoji, so prepending one here
+    would double it. Deliberately minimal — the troubleshoot step owns richer
+    presentation; this exists so both surfaces share one renderer.
     """
-    lines = []
-    for finding in findings:
-        icon = _SEVERITY_ICON.get(finding.severity, "")
-        lines.append(f"{icon} {render(finding.reason, labels)}".strip())
-    return "\n".join(lines)
+    return "\n".join(f"- {render(finding.reason, labels)}" for finding in findings)
 
 
 # ---------------------------------------------------------------------------

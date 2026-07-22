@@ -215,8 +215,10 @@ def test_render_report_empty_is_empty_string() -> None:
     assert render_report([]) == ""
 
 
-def test_render_report_one_line_per_finding_with_icon() -> None:
-    # An unknown code renders (via reason_i18n) to the code string itself.
+def test_render_report_one_bullet_per_finding() -> None:
+    # An unknown code renders (via reason_i18n) to the code string itself. The
+    # report uses a plain bullet marker and never prepends a severity icon — the
+    # template text carries its own leading emoji (see the double-icon test).
     findings = [
         Finding(Reason("triage.aaa"), Severity.WARNING, None),
         Finding(Reason("triage.bbb"), Severity.INFO, None),
@@ -224,11 +226,21 @@ def test_render_report_one_line_per_finding_with_icon() -> None:
     report = render_report(findings)
     lines = report.split("\n")
     assert len(lines) == 2
-    assert lines[0].startswith("⚠️") and lines[0].endswith("triage.aaa")
-    assert lines[1].startswith("ℹ️") and lines[1].endswith("triage.bbb")
+    assert lines[0] == "- triage.aaa"
+    assert lines[1] == "- triage.bbb"
 
 
 def test_render_report_uses_supplied_labels() -> None:
     labels = {"triage.aaa": "hello {who}"}
     findings = [Finding(Reason("triage.aaa", {"who": "world"}), Severity.INFO, None)]
-    assert render_report(findings, labels) == "ℹ️ hello world"
+    assert render_report(findings, labels) == "- hello world"
+
+
+def test_render_report_does_not_double_severity_icon() -> None:
+    # A real triage template already leads with its own severity emoji;
+    # render_report must NOT prepend a second one (the Chunk 3 double-icon bug).
+    labels = {"triage.warn": "⚠️ something is wrong"}
+    findings = [Finding(Reason("triage.warn"), Severity.WARNING, None)]
+    report = render_report(findings, labels)
+    assert report == "- ⚠️ something is wrong"
+    assert "⚠️ ⚠️" not in report
