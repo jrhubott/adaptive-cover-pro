@@ -594,7 +594,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         )
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 
-    def resolve_entity_target(self, entity_id: str, position: int) -> int:
+    def resolve_entity_target(
+        self, entity_id: str, position: int, *, inverted: bool | None = None
+    ) -> int:
         """Remap the middle-rail entity's absolute position (Model C only).
 
         The bottom rail (primary) and every non-middle entity pass through
@@ -603,10 +605,20 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         where ``P`` is the bottom rail's coverage and ``blend`` the sheer share
         (100 = all sheer → middle coincides with the bottom rail; 0 = all
         blackout → middle fully open). The dispatched ``position`` is already in
-        wire space (post inverse-state), so it is un-inverted to open-percent,
-        remapped, no-pass-clamped (``M >= P``), then re-inverted — keeping both
-        rails inverting identically. A cleared blend (or any non-dual-entity
-        model) is identity.
+        wire space, so it is un-inverted to open-percent, remapped,
+        no-pass-clamped (``M >= P``), then re-inverted — keeping both rails
+        inverting identically. A cleared blend (or any non-dual-entity model) is
+        identity.
+
+        ``inverted`` states the wire value's inversion space explicitly. The
+        main pipeline dispatch caches its inversion decision in
+        ``_dual_entity_inverse`` (mirroring ``coordinator.state``) and passes
+        ``None`` here to reuse it. The broadcast seams dispatch in a divergent
+        space — the sunset/end-time loops invert iff inverse-state is CONFIGURED
+        (unconditional of bypass/floor-clamp/interp), the auto-off return loop
+        never inverts — so each passes its own explicit ``True``/``False``.
+        Reusing the cached flag there would un-invert with the wrong assumption
+        and cross the bottom rail physically (#993).
         """
         if (
             self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY
@@ -615,7 +627,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         ):
             return position
         blend = self._dual_entity_blend
-        inverse = self._dual_entity_inverse
+        inverse = self._dual_entity_inverse if inverted is None else inverted
         p_open = inverse_state(position) if inverse else position
         m_open = round(
             POSITION_OPEN - blend * (POSITION_OPEN - p_open) / DAY_NIGHT_SHEER

@@ -337,6 +337,95 @@ class TestDualEntityInverseConsistency:
         assert phys(middle) >= phys(position)
 
 
+class TestBroadcastSeamInverseSpace:
+    """The middle-rail remap honors the SEAM's explicit inversion space (#993).
+
+    ``resolve_entity_target`` accepts an explicit ``inverted`` per dispatch so
+    the three broadcast seams — which dispatch in a DIFFERENT inversion space
+    than the cached main-pipeline flag — remap the middle rail correctly. The
+    cached flag is deliberately primed to DIVERGE from the seam's space; the
+    explicit ``inverted`` argument must win.
+    """
+
+    def test_explicit_inverted_overrides_diverging_cached_flag(self) -> None:
+        # Cache the main-pipeline flag as False (floor-clamped inverse cycle),
+        # then dispatch a value the sunset/end-time seam produced in INVERTED
+        # space (wire 100 for logical 0). The seam passes inverted=True; the
+        # middle rail must un-invert 100 → open 0 → wire 0 (physically OPEN),
+        # NOT reuse the cached False.
+        policy = DayNightShadePolicy()
+        _cache_dual(policy, position=30, blend=0, inverse=True, floor_clamp=True)
+        assert policy._dual_entity_inverse is False  # cached main-path space
+        wire = policy.resolve_entity_target(_MIDDLE, 100, inverted=True)
+        assert inverse_state(wire) == 100  # open-space fully open
+
+    def test_explicit_not_inverted_overrides_diverging_cached_flag(self) -> None:
+        # Cache the main-pipeline flag as True (plain inverse cycle), then
+        # dispatch a raw open-space value the auto-off seam produced (never
+        # inverts). The seam passes inverted=False; the middle rail must remap
+        # in open space (default 60, blend 50 → 80), NOT reuse the cached True.
+        policy = DayNightShadePolicy()
+        _cache_dual(policy, position=60, blend=50, inverse=True)
+        assert policy._dual_entity_inverse is True  # cached main-path space
+        assert policy.resolve_entity_target(_MIDDLE, 60, inverted=False) == 80
+
+    def test_inverted_none_falls_back_to_cached_flag(self) -> None:
+        # The main pipeline path passes no explicit space, so inverted=None must
+        # preserve the existing cached-flag behavior byte-for-byte.
+        policy = DayNightShadePolicy()
+        _cache_dual(policy, position=40, blend=50, inverse=False)
+        assert policy.resolve_entity_target(
+            _MIDDLE, 40
+        ) == policy.resolve_entity_target(_MIDDLE, 40, inverted=None)
+        assert policy.resolve_entity_target(_MIDDLE, 40) == 70
+
+    @pytest.mark.parametrize("cached_true", [False, True])
+    @pytest.mark.parametrize("seam_inverted", [False, True])
+    @pytest.mark.parametrize("logical_pos", [0, 30, 60, 100])
+    @pytest.mark.parametrize("blend", [0, 40, 100])
+    def test_no_pass_holds_across_seam_spaces(
+        self,
+        cached_true: bool,
+        seam_inverted: bool,
+        logical_pos: int,
+        blend: int,
+    ) -> None:
+        # Regardless of the cached main-pipeline flag, when a broadcast seam
+        # states its own inversion via ``inverted`` the middle rail must never
+        # physically pass below the bottom rail. The seam's wire value is the
+        # logical position mapped into its OWN inversion space.
+        policy = DayNightShadePolicy()
+        if cached_true:
+            _cache_dual(policy, position=logical_pos, blend=blend, inverse=True)
+        else:
+            _cache_dual(
+                policy,
+                position=logical_pos,
+                blend=blend,
+                inverse=True,
+                floor_clamp=True,
+            )
+
+        bottom_wire = inverse_state(logical_pos) if seam_inverted else logical_pos
+        middle_wire = policy.resolve_entity_target(
+            _MIDDLE, bottom_wire, inverted=seam_inverted
+        )
+
+        def open_space(v: int) -> int:
+            return inverse_state(v) if seam_inverted else v
+
+        assert open_space(middle_wire) >= open_space(bottom_wire)
+
+    def test_audit_repro_sunset_100_blend_50_no_cross(self) -> None:
+        # sunset_pos=100 (fully open), blend 50, inverse ON. The seam sends wire
+        # inverse_state(100)=0; the middle must stay physically >= the bottom
+        # rail (open-space 100), never drop to open-space 50 (the buggy cross).
+        policy = DayNightShadePolicy()
+        _cache_dual(policy, position=100, blend=50, inverse=True, floor_clamp=True)
+        middle_wire = policy.resolve_entity_target(_MIDDLE, 0, inverted=True)
+        assert inverse_state(middle_wire) >= 100
+
+
 # ---------------------------------------------------------------------------
 # LOW — dual-entity capability warning names the dual-entity model
 # ---------------------------------------------------------------------------

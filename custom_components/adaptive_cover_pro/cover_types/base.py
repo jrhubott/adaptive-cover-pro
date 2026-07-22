@@ -439,6 +439,8 @@ class CoverTypePolicy(ABC):
         self,
         entity_id: str,  # noqa: ARG002
         position: int,
+        *,
+        inverted: bool | None = None,  # noqa: ARG002
     ) -> int:
         """Adjust the dispatched position for one specific entity.
 
@@ -450,6 +452,15 @@ class CoverTypePolicy(ABC):
         default is identity, so the coordinator dispatch seam asks this
         polymorphic hook rather than branching on the cover type — every other
         cover type keeps sending the resolved position verbatim.
+
+        ``inverted`` names the inversion space of the supplied ``position`` so a
+        remapping policy can un-invert it correctly. ``None`` (the default and
+        the only value the identity implementation ever needs) means "use the
+        policy's own cached per-cycle decision" — the main pipeline dispatch
+        path. The broadcast dispatch seams (sunset-window transition,
+        end-time-default, auto-control-off return) dispatch in a space that may
+        diverge from that cached flag, so they pass an explicit ``True``/``False``
+        (#993). Backward-compatible: every non-remapping policy ignores it.
         """
         return position
 

@@ -47,7 +47,7 @@ def _make_coord_with_real_cmd_svc(hass):
     coord.async_refresh = AsyncMock()
     # The return-to-default loop routes each target through the polymorphic
     # ``_entity_target`` (identity for every non-dual-entity cover type).
-    coord._entity_target = lambda _entity, position: position
+    coord._entity_target = lambda _entity, position, *, inverted=None: position
 
     cmd_svc = CoverCommandService(
         hass=hass,
