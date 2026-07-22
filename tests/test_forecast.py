@@ -75,6 +75,7 @@ def _make_cover_factory(*, solar_valid: bool, percentage: int = 40):
         cover = MagicMock()
         cover.direct_sun_valid = solar_valid
         cover.calculate_percentage = MagicMock(return_value=percentage)
+        cover.calculate_raw_percentage = MagicMock(return_value=float(percentage))
         return cover
 
     return factory
@@ -250,6 +251,9 @@ class _EvalTimeCover:
     def calculate_percentage(self) -> int:
         return 40
 
+    def calculate_raw_percentage(self) -> float:
+        return 40.0
+
 
 class TestForecastEvaluatesPerSampleTime:
     """Regression for #516: per-sample sunset gate, not wall-clock now."""
@@ -350,6 +354,7 @@ class TestBuildForecastEvents:
             cover = MagicMock()
             cover.direct_sun_valid = toggle_points[0] <= idx < toggle_points[1]
             cover.calculate_percentage = MagicMock(return_value=50)
+            cover.calculate_raw_percentage = MagicMock(return_value=50.0)
             return cover
 
         # Silence linters: factory + tick variables are intentionally unused.
@@ -394,6 +399,7 @@ class TestBuildForecastEvents:
             cover = MagicMock()
             cover.direct_sun_valid = azi >= crossing_idx
             cover.calculate_percentage = MagicMock(return_value=50)
+            cover.calculate_raw_percentage = MagicMock(return_value=50.0)
             return cover
 
         f = build_forecast(
@@ -565,6 +571,7 @@ def _solar_cover_factory(percentage):
         cover = MagicMock()
         cover.direct_sun_valid = True
         cover.calculate_percentage = MagicMock(return_value=percentage)
+        cover.calculate_raw_percentage = MagicMock(return_value=float(percentage))
         return cover
 
     return factory
@@ -774,6 +781,7 @@ class TestForecastMatchesLivePipeline:
         live_cover = MagicMock()
         live_cover.config = config
         live_cover.calculate_percentage = MagicMock(return_value=10)
+        live_cover.calculate_raw_percentage = MagicMock(return_value=10.0)
         snapshot = make_snapshot_for_cover(live_cover)
         live = compute_solar_position(snapshot)
 

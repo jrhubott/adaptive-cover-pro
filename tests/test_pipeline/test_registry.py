@@ -79,6 +79,9 @@ def _make_climate_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None

@@ -4,7 +4,7 @@ These module-level functions eliminate copy-paste of the most repeated
 patterns across pipeline handlers:
 
 - ``apply_snapshot_limits``    — apply position limits using config from the snapshot
-- ``compute_solar_position``   — calculate_percentage() + floor-at-1 + limits
+- ``compute_solar_position``   — calculate_raw_percentage() + floor-at-1 + limits
 - ``compute_default_position`` — default_position + limits (sun not in FOV)
 
 Floor-mode composition (the former ``apply_minimum_mode`` semantic) now
@@ -15,6 +15,7 @@ registry — see issue #463.
 from __future__ import annotations
 
 import dataclasses
+import math
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -133,7 +134,11 @@ def solar_position_from_geometry(
     Snapshot-free single source of truth for the solar branch, shared by the
     live pipeline (:func:`compute_solar_position`) and the forecast:
 
-    1. Calls ``cover.calculate_percentage()`` (pure geometry), rounded.
+    1. Calls ``cover.calculate_raw_percentage()`` (pure geometry, unrounded float).
+       Rounds toward full coverage (issue #978): floor() for blinds/tilt/venetian
+       (0%=closed=full coverage), ceil() for awnings (100%=extended=full coverage).
+       Requires *policy* to determine the coverage direction; falls back to
+       round() when policy is None.
     2. Optionally quantizes into the configured number of discrete coverage
        levels (movement minimization — opt-in, rounds toward coverage).
     3. Floors at ``SOLAR_TRACKING_FLOOR_PCT`` (1 %) so open/close-only covers
@@ -148,12 +153,21 @@ def solar_position_from_geometry(
         Sun-tracked position (0–100; >= 1 only when ``floor_active``), limited.
 
     """
-    state = int(round(cover.calculate_percentage()))
+    pct = cover.calculate_raw_percentage()
+    if policy is not None:
+        # full_coverage_at_zero=True means 0% = closed = full coverage (blind/tilt/venetian)
+        # → round DOWN (floor) toward 0 to keep more coverage.
+        # full_coverage_at_zero=False means 100% = extended = full coverage (awning)
+        # → round UP (ceil) toward 100 to keep more coverage.
+        full_coverage_at_zero = not policy.axes[0].open_blocks_sun
+        state = math.floor(pct) if full_coverage_at_zero else math.ceil(pct)
+    else:
+        state = int(round(pct))
     if minimize_movements and policy is not None:
         state = PositionConverter.quantize_to_coverage_steps(
             state,
             max_coverage_steps,
-            full_coverage_at_zero=not policy.axes[0].open_blocks_sun,
+            full_coverage_at_zero=full_coverage_at_zero,
         )
     state = solar_floor(state, floor_active=floor_active)
     return apply_config_limits(state, config, sun_valid=True)

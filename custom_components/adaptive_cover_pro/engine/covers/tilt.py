@@ -344,6 +344,25 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         return self._apply_tilt_axis_limits(pct)
 
+    def calculate_raw_percentage(self) -> float:
+        """Unrounded tilt fraction for directional rounding (issue #978).
+
+        Mirrors :meth:`calculate_percentage` but skips the ``round()`` inside
+        ``PositionConverter.to_percentage`` on the legacy/custom-max path, so
+        :func:`pipeline.helpers.solar_position_from_geometry` sees the true
+        fraction instead of an already-rounded value (which would neutralise the
+        floor/ceil direction signal). The specify-angles path already yields an
+        unrounded percentage — and populates the diagnostics trace — so it is
+        reused as-is. ``_apply_tilt_axis_limits`` returns the exact float at the
+        default band and only rounds when the band actually moves the tilt,
+        matching :meth:`calculate_percentage`.
+        """
+        if self._is_specify_angles():
+            return self.calculate_percentage()
+        position = self.calculate_position()
+        pct = (float(position) / self._effective_max_degrees()) * 100.0
+        return self._apply_tilt_axis_limits(pct)
+
     def _apply_tilt_axis_limits(self, pct: float) -> float:
         """Clamp the sun-derived tilt % to the configured tilt-axis band.
 

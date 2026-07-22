@@ -132,7 +132,7 @@ class TestVenetianCoverCalculation:
         )
 
         result = calc.calculate_dual()
-        expected_position = round(standalone.calculate_percentage())
+        expected_position = math.floor(standalone.calculate_raw_percentage())
         assert result.position == expected_position
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")

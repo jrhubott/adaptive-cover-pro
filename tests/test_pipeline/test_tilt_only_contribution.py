@@ -85,6 +85,7 @@ def _solar_cover(*, calculate_percentage_return: float = 50.0) -> MagicMock:
         spec=[
             "direct_sun_valid",
             "calculate_percentage",
+            "calculate_raw_percentage",
             "distance",
             "gamma",
             "config",
@@ -99,6 +100,9 @@ def _solar_cover(*, calculate_percentage_return: float = 50.0) -> MagicMock:
     )
     cover.direct_sun_valid = True
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.distance = 3.0
     cover.gamma = 0.0
     config = MagicMock()

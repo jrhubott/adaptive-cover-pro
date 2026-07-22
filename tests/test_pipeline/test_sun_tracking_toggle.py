@@ -148,6 +148,7 @@ def test_sun_tracking_disabled_pipeline_allows_glare_zone_to_win():
     cover.gamma = 0.0
     cover.sol_elev = 45.0
     cover.calculate_percentage = MagicMock(return_value=25.0)
+    cover.calculate_raw_percentage = MagicMock(return_value=25.0)
     cover.config = MagicMock()
     cover.config.min_pos = None
     cover.config.max_pos = None

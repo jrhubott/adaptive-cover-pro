@@ -74,7 +74,7 @@ class VenetianCoverCalculation:
             DualAxisResult with position (0-100) and tilt (0-100)
 
         """
-        position = round(self._vertical.calculate_percentage())
+        position = math.floor(self._vertical.calculate_raw_percentage())
         return DualAxisResult(position=position, tilt=self._compute_tilt())
 
     def tilt_for_position(self, position: int) -> int:

@@ -844,6 +844,10 @@ class TestClimateCoverState:
             mock_dsv.return_value = True
             tilt_cover_instance.tilt_degrees = 90
             tilt_cover_instance.calculate_percentage = MagicMock(return_value=50.0)
+            # The solar branch reads the unrounded geometry via
+            # ``calculate_raw_percentage`` (issue #978); keep it consistent with
+            # the mocked percentage so the floor()-toward-coverage step yields 50.
+            tilt_cover_instance.calculate_raw_percentage = MagicMock(return_value=50.0)
 
             climate_data = _make_climate(
                 inside_temperature="18.0",  # Below temp_low (20) = winter

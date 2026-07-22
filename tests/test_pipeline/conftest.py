@@ -30,6 +30,7 @@ def _make_mock_cover(
         spec=[
             "direct_sun_valid",
             "calculate_percentage",
+            "calculate_raw_percentage",
             "distance",
             "gamma",
             "config",
@@ -44,6 +45,9 @@ def _make_mock_cover(
     )
     cover.direct_sun_valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.distance = distance
     cover.gamma = gamma
     if config is None:

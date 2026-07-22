@@ -274,3 +274,19 @@ class AdaptiveGeneralCover(ABC):
     @abstractmethod
     def calculate_percentage(self) -> int:
         """Calculate percentage from position."""
+
+    def calculate_raw_percentage(self) -> float:
+        """Raw geometry percentage before final integer rounding (issue #978).
+
+        Default delegates to ``calculate_percentage()``. That is only correct
+        for subclasses whose ``calculate_percentage`` already returns an
+        unrounded float — oscillating (arc solve) and the sliding curtain
+        (continuous interval solve). Subclasses that round internally override
+        this to expose the unrounded fraction: vertical and horizontal round via
+        ``PositionConverter.to_percentage``; tilt rounds on its legacy/custom-max
+        path. Exposing the raw fraction lets
+        :func:`pipeline.helpers.solar_position_from_geometry` apply directional
+        (conservative) rounding without the pre-rounding neutralising the
+        direction signal.
+        """
+        return float(self.calculate_percentage())

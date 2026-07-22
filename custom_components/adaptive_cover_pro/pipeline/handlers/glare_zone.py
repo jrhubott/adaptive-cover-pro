@@ -9,6 +9,7 @@ Thanks to @ZamenWolk for identifying this in GitHub issue #213.
 from __future__ import annotations
 
 import logging
+import math
 
 from ...cover_types import get_policy
 from ...engine.covers.vertical import (
@@ -110,8 +111,8 @@ class GlareZoneHandler(OverrideHandler):
             # shadow from SolarHandler's normal calculation. No override needed.
             return None
 
-        state = int(
-            round(cover.calculate_percentage(effective_distance_override=min_distance))
+        state = math.floor(
+            cover.calculate_raw_percentage(effective_distance_override=min_distance)
         )
         state = solar_floor(state, floor_active=snapshot.solar_floor_active)
         # ``sun_valid`` follows the live tracking state: the sun-only limits

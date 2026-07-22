@@ -159,6 +159,7 @@ class TestCloudSuppressionHandler:
         cover.direct_sun_valid = True  # sun is geometrically in FOV
         cover.valid = True
         cover.calculate_percentage = MagicMock(return_value=15.0)
+        cover.calculate_raw_percentage = MagicMock(return_value=15.0)
         cover.logger = MagicMock()
         config = MagicMock()
         config.min_pos = None

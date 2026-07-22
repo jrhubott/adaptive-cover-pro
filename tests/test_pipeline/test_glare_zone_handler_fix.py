@@ -49,6 +49,9 @@ def _make_vertical_cover(
     cover.gamma = gamma
     cover.sol_elev = sol_elev
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.config = MagicMock()
     cover.config.min_pos = None
     cover.config.max_pos = None
@@ -180,12 +183,11 @@ class TestMinDistanceUsedNotMax:
         )
         result = handler.evaluate(snap)
         assert result is not None
-        # The handler must have called calculate_percentage with the CLOSEST
+        # The handler must have called calculate_raw_percentage with the CLOSEST
         # zone distance (0.5m), not the farthest (2.0m).
-        # Note: calculate_percentage is called twice — once by the handler with
-        # effective_distance_override, and once by compute_raw_calculated_position
-        # without it. Check the first call.
-        first_call = cover.calculate_percentage.call_args_list[0]
+        # Note: calculate_raw_percentage is called once by the handler with
+        # effective_distance_override. Check the first call.
+        first_call = cover.calculate_raw_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
         assert (
             override == 0.5
@@ -246,6 +248,6 @@ class TestMixedZonesAboveAndBelowBase:
         result = handler.evaluate(snap)
         assert result is not None
         # Must use the closest zone (0.5m) for the override
-        first_call = cover.calculate_percentage.call_args_list[0]
+        first_call = cover.calculate_raw_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
         assert override == 0.5

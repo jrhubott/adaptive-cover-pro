@@ -122,7 +122,9 @@ def _snapshot(*, calc_pct, minimize, steps, open_blocks_sun=False):
     policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=open_blocks_sun)])
     return SimpleNamespace(
         cover=SimpleNamespace(
-            direct_sun_valid=True, calculate_percentage=lambda: calc_pct
+            direct_sun_valid=True,
+            calculate_percentage=lambda: int(round(calc_pct)),
+            calculate_raw_percentage=lambda: calc_pct,
         ),
         config=config,
         policy=policy,

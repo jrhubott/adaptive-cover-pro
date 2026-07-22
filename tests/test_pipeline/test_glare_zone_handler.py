@@ -47,6 +47,9 @@ def _make_vertical_cover(
     cover.gamma = gamma
     cover.sol_elev = sol_elev
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.config = MagicMock()
     cover.config.min_pos = None
     cover.config.max_pos = None
@@ -978,7 +981,7 @@ class TestGlareZoneLargeRadius:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.GLARE_ZONE
-        first_call = cover.calculate_percentage.call_args_list[0]
+        first_call = cover.calculate_raw_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
         assert override == pytest.approx(0.10, abs=0.01)
 
@@ -1034,7 +1037,7 @@ class TestGlareZoneRegressionMaxVsMin:
         )
         result = self.handler.evaluate(snap)
         assert result is not None
-        first_call = cover.calculate_percentage.call_args_list[0]
+        first_call = cover.calculate_raw_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
         assert override == pytest.approx(0.5, abs=0.01), (
             f"Expected 0.5 m (closest zone), got {override} — "

@@ -158,3 +158,12 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
         return PositionConverter.to_percentage(
             self.calculate_position(), self.awn_length
         )
+
+    def calculate_raw_percentage(self) -> float:
+        """Unrounded geometry fraction for directional rounding (issue #978).
+
+        Bypasses the ``round()`` inside ``PositionConverter.to_percentage`` so
+        that :func:`pipeline.helpers.solar_position_from_geometry` can apply
+        ``floor()`` / ``ceil()`` / ``round()`` as configured.
+        """
+        return (float(self.calculate_position()) / self.awn_length) * 100.0

@@ -77,6 +77,7 @@ def _make_blind_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=60.0)
+    cover.calculate_raw_percentage = MagicMock(return_value=60.0)
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -93,6 +94,7 @@ def _make_awning_cover(direct_sun_valid=True):
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=60.0)
+    cover.calculate_raw_percentage = MagicMock(return_value=60.0)
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -1092,6 +1094,7 @@ def _make_tilt_mode2_cover(*, gamma_deg: float, valid: bool, min_pos: int):
     cover.direct_sun_valid = valid
     cover.valid = valid
     cover.calculate_percentage = MagicMock(return_value=50.0)
+    cover.calculate_raw_percentage = MagicMock(return_value=50.0)
     cover.calculate_position = MagicMock(return_value=90.0)
     cover.gamma = gamma_deg  # SunGeometry.gamma is in degrees
     cover.beta = 0.0
