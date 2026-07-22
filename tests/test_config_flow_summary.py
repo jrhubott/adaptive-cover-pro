@@ -31,6 +31,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_DISTANCE,
+    CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+    CONF_DUAL_PANEL_FRONT_ENTITY,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
@@ -544,6 +546,26 @@ def test_geometry_roof_window_ridge_height_omitted_when_zero():
     cfg = {CONF_ROOF_PITCH: 40, CONF_ROOF_HEIGHT_ABOVE: 0.0}
     summary = _build_config_summary(cfg, CoverType.ROOF_WINDOW)
     assert "roof above window" not in summary
+
+
+def test_geometry_dual_panel_shows_front_entity_and_triggers():
+    """Dual-panel summary renders the front-panel designator + trigger list (#996)."""
+    cfg = {
+        CONF_HEIGHT_WIN: 2.0,
+        CONF_DISTANCE: 0.5,
+        CONF_DUAL_PANEL_FRONT_ENTITY: "cover.sheer_front",
+        CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["heat", "night"],
+    }
+    summary = _build_config_summary(cfg, CoverType.DUAL_PANEL)
+    assert "front (sheer) panel: cover.sheer_front" in summary
+    assert "blackout deploys on: heat, night" in summary
+
+
+def test_geometry_dual_panel_shows_no_triggers_when_empty():
+    """With no triggers configured the summary says so (back never deploys)."""
+    cfg = {CONF_HEIGHT_WIN: 2.0, CONF_DISTANCE: 0.5}
+    summary = _build_config_summary(cfg, CoverType.DUAL_PANEL)
+    assert "blackout deploys on: no triggers" in summary
 
 
 # ---------------------------------------------------------------------------

@@ -247,6 +247,31 @@ DAY_NIGHT_SPLIT_MIDPOINT = 50  # % — split-range fabric boundary (blackout bel
 # Model C middle-rail entity: which of the instance's cover entities is the
 # middle rail (the other configured cover is the bottom rail / primary).
 CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
+
+# --- Dual-panel shade (#996) ------------------------------------------------
+# Two INDEPENDENT HA shade entities over one window: a sheer FRONT that
+# sun-tracks like a plain vertical blind, and a blackout BACK that deploys only
+# when one of the configured triggers is active. ``CONF_DUAL_PANEL_FRONT_ENTITY``
+# names which of the instance's covers is the front/sheer one (the remainder is
+# the back/blackout); ``CONF_DUAL_PANEL_BLACKOUT_TRIGGERS`` is the user-selected
+# subset of the trigger set that drives the blackout. Unlike day/night Model C
+# the two panels are NOT coupled — there is no ``M >= P`` no-pass invariant.
+CONF_DUAL_PANEL_FRONT_ENTITY = "dual_panel_front_entity"
+CONF_DUAL_PANEL_BLACKOUT_TRIGGERS = "dual_panel_blackout_triggers"
+# The three conditions that can deploy the blackout back. ``heat`` fires on a
+# climate summer / extreme-heat full block; ``privacy`` fires in the sunset
+# window; ``night`` fires when the sun is below the horizon.
+DUAL_PANEL_TRIGGER_HEAT = "heat"
+DUAL_PANEL_TRIGGER_PRIVACY = "privacy"
+DUAL_PANEL_TRIGGER_NIGHT = "night"
+DUAL_PANEL_BLACKOUT_TRIGGERS = (
+    DUAL_PANEL_TRIGGER_HEAT,
+    DUAL_PANEL_TRIGGER_PRIVACY,
+    DUAL_PANEL_TRIGGER_NIGHT,
+)
+# Default: no trigger selected → the back never deploys until the user opts in.
+DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS: tuple[str, ...] = ()
+
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -2076,6 +2101,7 @@ class CoverType(StrEnum):
     SLIDING_CURTAIN = "cover_sliding_curtain"
     LOUVERED_ROOF = "cover_louvered_roof"
     DAY_NIGHT_SHADE = "cover_day_night_shade"
+    DUAL_PANEL = "cover_dual_panel"
     # Virtual entry type — not a physical cover. Holds shared building-level
     # sensor entity IDs that linked covers copy into their own options. Its
     # policy registers no platforms (``controls_cover = False``).
@@ -2104,6 +2130,7 @@ class CoverType(StrEnum):
             self.SLIDING_CURTAIN: "Sliding Curtain",
             self.LOUVERED_ROOF: "Louvered Roof",
             self.DAY_NIGHT_SHADE: "Day/Night Shade",
+            self.DUAL_PANEL: "Dual Panel Shade",
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
         }[self]

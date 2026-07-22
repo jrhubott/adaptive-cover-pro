@@ -50,6 +50,7 @@ ALL_COVER_TYPES = [
     "cover_sliding_curtain",
     "cover_louvered_roof",
     "cover_day_night_shade",
+    "cover_dual_panel",
 ]
 
 
@@ -164,6 +165,7 @@ class TestPolicyAxesDeclarations:
             ("cover_venetian", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
             ("cover_louvered_roof", (AXIS_NAME_TILT,)),
             ("cover_day_night_shade", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
+            ("cover_dual_panel", (AXIS_NAME_POSITION,)),
         ],
     )
     def test_axes_declaration(self, cover_type, expected_axis_names):
@@ -178,6 +180,7 @@ class TestPolicyAxesDeclarations:
             "cover_venetian",
             "cover_louvered_roof",
             "cover_day_night_shade",
+            "cover_dual_panel",
         ):
             assert get_policy(cover_type).axes[0].open_blocks_sun is False
 
@@ -196,7 +199,13 @@ class TestForecastSecondaryAxesHook:
     @pytest.mark.unit
     @pytest.mark.parametrize(
         "cover_type",
-        ["cover_blind", "cover_awning", "cover_tilt", "cover_louvered_roof"],
+        [
+            "cover_blind",
+            "cover_awning",
+            "cover_tilt",
+            "cover_louvered_roof",
+            "cover_dual_panel",
+        ],
     )
     def test_single_axis_policy_returns_no_secondary_axes(self, cover_type):
         from unittest.mock import MagicMock
@@ -236,6 +245,7 @@ class TestForecastSecondaryAxesHook:
                 "cover_sliding_curtain": AXIS_NAME_POSITION,
                 "cover_louvered_roof": AXIS_NAME_TILT,
                 "cover_day_night_shade": AXIS_NAME_POSITION,
+                "cover_dual_panel": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -252,6 +262,8 @@ class TestForecastSecondaryAxesHook:
                 "cover_louvered_roof": AXIS_NAME_TILT,
                 # day/night shade routes its primary (position) axis.
                 "cover_day_night_shade": AXIS_NAME_POSITION,
+                # dual-panel routes its primary (position) axis too.
+                "cover_dual_panel": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -269,6 +281,8 @@ class TestForecastSecondaryAxesHook:
                 "cover_louvered_roof": AXIS_NAME_TILT,
                 # Tilt-only fallback routes a dual-axis type to TILT too.
                 "cover_day_night_shade": AXIS_NAME_TILT,
+                # Tilt-only fallback routes the position-axis dual-panel to TILT.
+                "cover_dual_panel": AXIS_NAME_TILT,
             },
         ),
     ],
@@ -330,6 +344,7 @@ class TestPositionForIntent:
             ("cover_venetian", POSITION_OPEN, POSITION_CLOSED),
             ("cover_louvered_roof", POSITION_OPEN, POSITION_CLOSED),
             ("cover_day_night_shade", POSITION_OPEN, POSITION_CLOSED),
+            ("cover_dual_panel", POSITION_OPEN, POSITION_CLOSED),
         ],
     )
     def test_intent_map(self, cover_type, sun_through_value, sun_blocked_value):
@@ -571,6 +586,7 @@ def test_is_in_tilt_suppression_uniform_signature(cover_type: str) -> None:
         ("cover_venetian", False),
         ("cover_louvered_roof", False),
         ("cover_day_night_shade", False),
+        ("cover_dual_panel", True),
     ],
 )
 def test_supports_return_to_default_switch(cover_type: str, expected: bool) -> None:
@@ -749,6 +765,7 @@ def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
         ("cover_venetian", True),
         ("cover_louvered_roof", False),
         ("cover_day_night_shade", True),
+        ("cover_dual_panel", False),
     ],
 )
 def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
@@ -771,6 +788,7 @@ def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
         ("cover_venetian", True),
         ("cover_louvered_roof", False),
         ("cover_day_night_shade", True),
+        ("cover_dual_panel", False),
     ],
 )
 def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
@@ -793,6 +811,7 @@ def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
         ("cover_venetian", "Venetian-Blinds"),
         ("cover_louvered_roof", "Configuration-Louvered-Roof"),
         ("cover_day_night_shade", "Configuration-Day-Night-Shade"),
+        ("cover_dual_panel", "Configuration-Dual-Panel"),
     ],
 )
 def test_wiki_anchor(cover_type: str, anchor: str) -> None:
@@ -814,6 +833,7 @@ def test_wiki_anchor(cover_type: str, anchor: str) -> None:
         ("cover_venetian", True),
         ("cover_louvered_roof", False),
         ("cover_day_night_shade", False),
+        ("cover_dual_panel", False),
     ],
 )
 def test_drift_reset_option_is_venetian_only(cover_type: str, expected: bool) -> None:
@@ -882,6 +902,12 @@ class TestLiftTravelMetres:
         svc = self._fake_config_service(h_win=1.9)
         assert get_policy("cover_day_night_shade").lift_travel_metres(svc, {}) == 1.9
 
+    @pytest.mark.unit
+    def test_dual_panel_returns_window_height(self) -> None:
+        # The front sheer panel travels the configured window height.
+        svc = self._fake_config_service(h_win=2.2)
+        assert get_policy("cover_dual_panel").lift_travel_metres(svc, {}) == 2.2
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
@@ -893,6 +919,7 @@ class TestLiftTravelMetres:
         ("cover_venetian", "Venetian Blind (Dual-Axis)"),
         ("cover_louvered_roof", "Louvered Roof"),
         ("cover_day_night_shade", "Day/Night Shade"),
+        ("cover_dual_panel", "Dual Panel Shade"),
     ],
 )
 def test_display_label(cover_type: str, label: str) -> None:
