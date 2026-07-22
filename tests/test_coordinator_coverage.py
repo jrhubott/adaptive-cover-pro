@@ -546,6 +546,13 @@ async def test_window_close_sends_reposition_when_auto_control_on():
     ):
         time_mgr = MagicMock()
 
+        # The real coordinator always carries a policy (set in __init__); the
+        # per-entity dispatch seam (_entity_target) delegates to it. A blind
+        # policy remaps nothing (identity) so the end-time default is unchanged.
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        coord._policy = get_policy("cover_blind")
+
         async def _invoke_happy(track_end_time, refresh_callback, on_window_open=None):
             await refresh_callback()
 

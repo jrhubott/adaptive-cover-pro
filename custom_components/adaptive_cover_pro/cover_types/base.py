@@ -435,6 +435,24 @@ class CoverTypePolicy(ABC):
         """Return a manual-override secondary-axis check, or ``None``."""
         return None
 
+    def resolve_entity_target(
+        self,
+        entity_id: str,  # noqa: ARG002
+        position: int,
+    ) -> int:
+        """Adjust the dispatched position for one specific entity.
+
+        The coordinator resolves a single ``position`` per update cycle, then
+        sends it to every bound entity. A cover type that drives *several*
+        physical entities to *different* positions from that one resolved value
+        overrides this hook (the Model C day/night shade remaps its middle-rail
+        entity while the bottom rail passes through unchanged). The Liskov-safe
+        default is identity, so the coordinator dispatch seam asks this
+        polymorphic hook rather than branching on the cover type — every other
+        cover type keeps sending the resolved position verbatim.
+        """
+        return position
+
     def attach(self, **kwargs: Any) -> None:
         """Bind late-resolved dependencies (cmd_svc, grace_mgr, …).
 

@@ -51,6 +51,8 @@ def _make_coordinator(
     coordinator._cmd_svc.apply_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
+    # The per-entity dispatch seam is identity for a blind (no rail remap).
+    coordinator._entity_target = lambda cover, state: state
     return coordinator
 
 

@@ -286,7 +286,8 @@
     },
     "day_night": {
       "model_position_tilt": "position und neigung (zweiachsig)",
-      "model_split_range": "geteilter bereich (einachsig)"
+      "model_split_range": "geteilter bereich (einachsig)",
+      "model_dual_entity": "zwei Schienen-Entitäten (Doppelentität)"
     }
   },
   "group": {

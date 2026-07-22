@@ -59,6 +59,7 @@ from .const import (
     CONF_CLOUDY_POSITION,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
     CONF_DEBUG_CATEGORIES,
@@ -1902,6 +1903,14 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.SELECT,
         select_options=const.DAY_NIGHT_CONTROL_MODELS,
+    ),
+    # Model C middle-rail entity picker (a single cover entity). Rendered by the
+    # day/night geometry schema; single-sources its validator entry here.
+    FieldSpec(
+        CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+        SECTION_GEOMETRY,
+        ValidatorKind.ENTITY,
+        make_selector=_entity("cover"),
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

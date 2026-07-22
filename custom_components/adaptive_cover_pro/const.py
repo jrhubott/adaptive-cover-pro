@@ -230,12 +230,23 @@ DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD = 65  # % — below this, hot sun → black
 CONF_DAY_NIGHT_CONTROL_MODEL = "day_night_control_model"
 DAY_NIGHT_MODEL_POSITION_TILT = "position_tilt"  # dual-axis (Model A)
 DAY_NIGHT_MODEL_SPLIT_RANGE = "split_range"  # single-axis split range (Model B)
+# Model C: two separate HA cover entities — a bottom rail (the primary /
+# total-coverage position) and a middle rail. Both are ``set_cover_position``
+# axes; the abstract fabric blend is folded into the middle rail's absolute
+# position at dispatch (``CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY`` names it). The
+# no-pass invariant guarantees the middle rail never drops below the bottom
+# rail (open-percent space). Implements the awning/TDBU absolute-rail model.
+DAY_NIGHT_MODEL_DUAL_ENTITY = "dual_entity"  # two cover.* rail entities (Model C)
 DEFAULT_DAY_NIGHT_CONTROL_MODEL = DAY_NIGHT_MODEL_POSITION_TILT
 DAY_NIGHT_CONTROL_MODELS = (
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
 )
 DAY_NIGHT_SPLIT_MIDPOINT = 50  # % — split-range fabric boundary (blackout below)
+# Model C middle-rail entity: which of the instance's cover entities is the
+# middle rail (the other configured cover is the bottom rail / primary).
+CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default

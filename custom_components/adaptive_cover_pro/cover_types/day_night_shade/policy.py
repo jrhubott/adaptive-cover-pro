@@ -32,9 +32,12 @@ from ...config_types import DayNightShadeConfig
 from ...const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
+    CONF_INVERSE_STATE,
     DAY_NIGHT_CONTROL_MODELS,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
     DAY_NIGHT_SPLIT_MIDPOINT,
@@ -49,9 +52,10 @@ from ...const import (
 from ...engine.covers import AdaptiveVerticalCover, DayNightShadeCalculation
 from ...engine.covers.day_night_shade import (
     DAY_NIGHT_BLACKOUT,
+    DAY_NIGHT_SHEER,
     FabricSelection,
 )
-from ...managers.manual_override import SecondaryAxisCheck
+from ...managers.manual_override import SecondaryAxisCheck, inverse_state
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from .._helpers import window_dimensions_lines
@@ -121,6 +125,11 @@ def _control_model_select() -> selector.SelectSelector:
     )
 
 
+def _middle_rail_select() -> selector.EntitySelector:
+    """Return a single-cover entity picker for the Model C middle rail."""
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="cover"))
+
+
 def geometry_day_night_shade_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Vertical window geometry plus the three fabric sliders. ``hass=None`` → metric."""
     return geometry_vertical_schema(hass).extend(
@@ -141,6 +150,12 @@ def geometry_day_night_shade_schema(hass: HomeAssistant | None = None) -> vol.Sc
                 CONF_DAY_NIGHT_CONTROL_MODEL,
                 default=DEFAULT_DAY_NIGHT_CONTROL_MODEL,
             ): _control_model_select(),
+            # Model C: which of the instance's cover entities is the middle rail
+            # (the other is the bottom rail / primary). Only relevant when the
+            # control model is ``dual_entity``; inert otherwise, like the model
+            # select itself. Optional with no default so an un-set value is
+            # simply absent from options.
+            vol.Optional(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY): _middle_rail_select(),
         }
     )
 
@@ -180,6 +195,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # hooks — which don't receive ``options`` — can gate on it. Defaults to
         # the dual-axis Model A so an un-resolved cycle behaves like Phase A.
         self._control_model: str = DEFAULT_DAY_NIGHT_CONTROL_MODEL
+        # Model C (dual_entity) dispatch cache, filled in ``post_pipeline_resolve``
+        # and read by ``resolve_entity_target`` at the coordinator dispatch seam
+        # (which receives no ``options``). The blend folds into the middle rail's
+        # absolute position; the inverse flag keeps both rails inverting
+        # identically; the role map records which entity is the middle rail.
+        self._dual_entity_blend: int | None = None
+        self._dual_entity_inverse: bool = False
+        self._dual_entity_middle_rail: str | None = None
 
     # ---- Identity / labels -------------------------------------------- #
 
@@ -246,6 +269,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         model_label = {
             DAY_NIGHT_MODEL_POSITION_TILT: L["geometry.day_night.model_position_tilt"],
             DAY_NIGHT_MODEL_SPLIT_RANGE: L["geometry.day_night.model_split_range"],
+            DAY_NIGHT_MODEL_DUAL_ENTITY: L["geometry.day_night.model_dual_entity"],
         }.get(model, model)
         lines.append(L["geometry.slat.mode"].format(v=model_label))
         return lines
@@ -304,13 +328,29 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     def capability_warnings_for_options(
         self, known: dict[str, dict], options: dict
     ) -> list[str]:
-        """Relax the tilt requirement when the split-range control model is set."""
+        """Warn per the control model's axis requirement + Model C's rail map.
+
+        Only the dual-axis Model A requires ``set_tilt_position``; both
+        single-carriage models (``split_range``, ``dual_entity``) need only
+        ``set_position``. Model C additionally binds a second rail entity, so it
+        warns when ``CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY`` names an entity that is
+        not among the instance's configured covers (a typo / stale pick).
+        """
         model = str(
             options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
         )
-        return self._missing_axis_warnings(
-            known, require_tilt=model != DAY_NIGHT_MODEL_SPLIT_RANGE
+        warnings = self._missing_axis_warnings(
+            known, require_tilt=model == DAY_NIGHT_MODEL_POSITION_TILT
         )
+        if model == DAY_NIGHT_MODEL_DUAL_ENTITY:
+            middle = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+            if middle and middle not in known:
+                warnings.append(
+                    "⚠️ Configured as a dual-entity day/night shade but the "
+                    f"middle-rail entity {middle} is not one of this instance's "
+                    "covers — add it to the cover list or pick a configured cover."
+                )
+        return warnings
 
     def lift_travel_metres(
         self,
@@ -386,6 +426,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     def _clear_last_blend(self) -> None:
         """Forget the last resolved blend so tilt-only cycles don't replay it."""
         self._last_blend = None
+
+    def _drives_dual_axis(self) -> bool:
+        """Whether the current model drives a physical blend (tilt) axis.
+
+        Only Model A (``position_tilt``) runs the ``DualAxisSequencer`` and the
+        tilt-first / tilt-only / secondary-axis machinery. Both single-carriage
+        models — ``split_range`` (one axis encodes coverage AND fabric) and
+        ``dual_entity`` (the blend folds into a second entity's *position* axis,
+        never a tilt axis) — leave the sequencer hooks inert. Single source for
+        that gate so the hooks don't each enumerate the position-only models.
+        """
+        return self._control_model == DAY_NIGHT_MODEL_POSITION_TILT
 
     # ---- Split-range wire mapping (Model B) --------------------------- #
 
@@ -494,7 +546,53 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             and resolved.tilt is not None
         ):
             return self._apply_split_range(resolved)
+        if self._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY:
+            self._cache_dual_entity(resolved, options)
         return resolved
+
+    def _cache_dual_entity(self, resolved: PipelineResult, options: dict) -> None:
+        """Cache the Model C dispatch state for ``resolve_entity_target``.
+
+        The coordinator dispatch seam receives no ``options`` and no pipeline
+        result, so the resolved blend, the inverse-state flag, and the
+        middle-rail role map are stashed here once per cycle. The abstract blend
+        stays on ``resolved.tilt`` (kept for the Target Tilt sensor / forecast /
+        diagnostics) — Model C folds it into the middle rail's absolute position
+        at dispatch rather than driving a physical tilt axis.
+        """
+        self._dual_entity_blend = resolved.tilt
+        self._dual_entity_inverse = bool(options.get(CONF_INVERSE_STATE, False))
+        self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+
+    def resolve_entity_target(self, entity_id: str, position: int) -> int:
+        """Remap the middle-rail entity's absolute position (Model C only).
+
+        The bottom rail (primary) and every non-middle entity pass through
+        unchanged; only the configured middle rail is remapped. The middle rail
+        sits at ``M = 100 - blend * (100 - P) / 100`` in OPEN-percent space,
+        where ``P`` is the bottom rail's coverage and ``blend`` the sheer share
+        (100 = all sheer → middle coincides with the bottom rail; 0 = all
+        blackout → middle fully open). The dispatched ``position`` is already in
+        wire space (post inverse-state), so it is un-inverted to open-percent,
+        remapped, no-pass-clamped (``M >= P``), then re-inverted — keeping both
+        rails inverting identically. A cleared blend (or any non-dual-entity
+        model) is identity.
+        """
+        if (
+            self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY
+            or self._dual_entity_blend is None
+            or entity_id != self._dual_entity_middle_rail
+        ):
+            return position
+        blend = self._dual_entity_blend
+        inverse = self._dual_entity_inverse
+        p_open = inverse_state(position) if inverse else position
+        m_open = round(
+            POSITION_OPEN - blend * (POSITION_OPEN - p_open) / DAY_NIGHT_SHEER
+        )
+        # Belt-and-braces no-pass clamp (the arithmetic already guarantees it).
+        m_open = max(m_open, p_open)
+        return inverse_state(m_open) if inverse else m_open
 
     def _apply_split_range(self, resolved: PipelineResult) -> PipelineResult:
         """Fold the abstract ``(position, blend)`` pair into the split-range wire.
@@ -631,10 +729,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Thread the resolved blend into ``PositionContext.tilt``."""
         if result is None:
             return {}
-        # Model B drives a single physical axis whose position is already the
-        # split-range wire — no tilt to thread, but the wire's own endpoints
-        # (0/100) should still force open/close for seating (issue #897).
-        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+        # Single-carriage models (B split-range, C dual-entity) drive a position
+        # axis directly — no tilt to thread — but the primary position's own
+        # endpoints (0/100) should still force open/close for seating (#897).
+        if not self._drives_dual_axis():
             return {
                 "full_endpoint_target": result.position
                 in (POSITION_CLOSED, POSITION_OPEN)
@@ -699,8 +797,8 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self, result: PipelineResult, cmd_svc
     ) -> SecondaryAxisCheck | None:
         """Build the per-cycle blend-axis manual-override check."""
-        # Model B is single-axis — no secondary (blend) axis to check.
-        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+        # Single-carriage models (B, C) have no physical blend axis to check.
+        if not self._drives_dual_axis():
             return None
         if result is None or result.tilt is None:
             return None
@@ -720,7 +818,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         reason: str,
     ) -> None:
         """Send a blend-only update when the position axis won't fire this cycle."""
-        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+        if not self._drives_dual_axis():
             return
         if self._sequencer is None or self._last_blend is None:
             return
@@ -749,9 +847,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         before the carriage starts opening lets the actuator settle the blend
         into the target rather than reasserting a cached value mid-travel.
         """
-        # Model B has no separate blend axis to pre-send — the wire position
-        # carries everything on the single carriage move.
-        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+        # Single-carriage models (B, C) have no separate blend axis to pre-send
+        # — the position command carries everything on one carriage move.
+        if not self._drives_dual_axis():
             return
         if service not in _POSITION_AXIS_SERVICES:
             return
@@ -784,9 +882,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         reason: str,
     ) -> None:
         """Run the dual-axis sequence after a successful ``set_cover_position``."""
-        # Model B is single-axis — the carriage move is complete, nothing to
-        # sequence afterward.
-        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+        # Single-carriage models (B, C) — the carriage move is complete, there
+        # is no blend axis to sequence afterward.
+        if not self._drives_dual_axis():
             return
         if service not in _POSITION_AXIS_SERVICES:
             return

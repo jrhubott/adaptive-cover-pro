@@ -287,7 +287,8 @@
     },
     "day_night": {
       "model_position_tilt": "position and tilt (dual axis)",
-      "model_split_range": "split range (single axis)"
+      "model_split_range": "split range (single axis)",
+      "model_dual_entity": "two rail entities (dual entity)"
     },
     "fov": {
       "computed": "Computed acceptance angle ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"

@@ -120,6 +120,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     # "mode: {v}" slat-mode line with one of these two model names as the value.
     "geometry.day_night.model_position_tilt": "position and tilt (dual axis)",
     "geometry.day_night.model_split_range": "split range (single axis)",
+    "geometry.day_night.model_dual_entity": "two rail entities (dual entity)",
     # Computed-FOV read-only line (blind + venetian Measurements mode, #565).
     "geometry.fov.computed": (
         "Computed acceptance angle ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"

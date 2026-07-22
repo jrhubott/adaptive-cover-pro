@@ -129,6 +129,21 @@ def test_targets_full_mechanical_endpoint_returns_bool(policy: CoverTypePolicy) 
 
 
 @pytest.mark.unit
+def test_resolve_entity_target_identity_default(policy: CoverTypePolicy) -> None:
+    """Every policy leaves a per-entity target unchanged by default (Model C hook).
+
+    ``resolve_entity_target`` is the coordinator dispatch seam that lets a
+    dual-rail day/night shade drive its two entities to different positions
+    from one resolved state. Every other cover type — and an un-resolved
+    day/night cycle — must return the position unchanged so the polymorphic
+    hook is a safe identity at every dispatch site.
+    """
+    assert policy.resolve_entity_target("cover.x", 57) == 57
+    assert policy.resolve_entity_target("cover.y", 0) == 0
+    assert policy.resolve_entity_target("cover.z", 100) == 100
+
+
+@pytest.mark.unit
 def test_position_for_intent_returns_open_or_closed(policy: CoverTypePolicy) -> None:
     """``position_for_intent`` returns 0 or 100, and the two intents differ."""
     pos_through = policy.position_for_intent(sun_through=True)

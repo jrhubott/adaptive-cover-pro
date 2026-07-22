@@ -2151,7 +2151,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 },
             )
             return None
-        return await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
+        return await self._cmd_svc.apply_position(
+            cover, self._entity_target(cover, state), reason, context=ctx
+        )
+
+    def _entity_target(self, cover: str, state: int) -> int:
+        """Per-entity dispatch target for this cover (identity for most types).
+
+        The pipeline resolves ONE position per cycle, which is then sent to
+        every bound entity. A cover type that drives several physical entities
+        to different positions from that one value — the Model C day/night
+        shade with a separate middle-rail entity — remaps here via its
+        polymorphic ``resolve_entity_target`` hook. Every other cover type's
+        hook is identity, so this seam never branches on the cover type.
+        """
+        return self._policy.resolve_entity_target(cover, state)
 
     def set_group_intent(self, group_id: str, intent: GroupIntent | None) -> None:
         """Store or remove one cover-group's live intent for this member.
@@ -2327,7 +2341,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 cover, options, force=True, sun_just_appeared=sun_just_appeared
             )
             outcome, _ = await self._cmd_svc.apply_position(
-                cover, state, trigger, context=ctx
+                cover, self._entity_target(cover, state), trigger, context=ctx
             )
             if outcome == "sent":
                 sent.add(cover)
@@ -3757,7 +3771,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             for cover_entity in self.entities:
                 ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
-                    cover_entity, pos_to_send, "end_time_default", context=ctx
+                    cover_entity,
+                    self._entity_target(cover_entity, pos_to_send),
+                    "end_time_default",
+                    context=ctx,
                 )
             # Trigger a normal refresh so sensor state and diagnostics update
             await self.async_refresh()

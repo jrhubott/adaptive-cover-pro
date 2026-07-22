@@ -18,9 +18,12 @@ from homeassistant.const import SERVICE_SET_COVER_POSITION
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
     CONF_HEIGHT_WIN,
+    CONF_INVERSE_STATE,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
@@ -939,3 +942,254 @@ def test_control_model_selector_labels_in_en_translations() -> None:
     # Field label present in both config + options flows (geometry step).
     assert en["config"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_CONTROL_MODEL]
     assert en["options"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_CONTROL_MODEL]
+
+
+# ===========================================================================
+# PHASE C — Model C: two rail entities (dual_entity)
+# ===========================================================================
+# ---------------------------------------------------------------------------
+# Step 21 — dual-entity middle-rail mapping
+# ---------------------------------------------------------------------------
+
+_MIDDLE = "cover.middle_rail"
+_BOTTOM = "cover.bottom_rail"
+
+
+def _dual_opts(*, middle: str = _MIDDLE, inverse: bool = False) -> dict:
+    opts = {
+        CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+        CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: middle,
+    }
+    if inverse:
+        opts[CONF_INVERSE_STATE] = True
+    return opts
+
+
+def _resolve_dual(
+    policy: DayNightShadePolicy,
+    *,
+    position: int,
+    blend: int | None,
+    inverse: bool = False,
+    middle: str = _MIDDLE,
+) -> PipelineResult:
+    """Run a dual_entity ``post_pipeline_resolve`` so the mapping cache is set.
+
+    A handler-supplied blend is honored verbatim, so ``blend`` lands on
+    ``result.tilt`` and is cached for :meth:`resolve_entity_target`. ``None``
+    exercises the cleared-blend path (MANUAL control method).
+    """
+    kw = _resolve_kwargs(options=_dual_opts(middle=middle, inverse=inverse))
+    if blend is None:
+        result = PipelineResult(
+            position=position, control_method=ControlMethod.MANUAL, reason="manual"
+        )
+    else:
+        result = PipelineResult(
+            position=position,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            reason="custom",
+            tilt=blend,
+        )
+    return policy.post_pipeline_resolve(result, cover=None, **kw)
+
+
+class TestDualEntityMapping:
+    """``resolve_entity_target`` remaps the middle rail; the bottom rail passes."""
+
+    @pytest.mark.parametrize(
+        ("position", "blend", "expected_middle"),
+        [
+            # blend 100 (all sheer): middle coincides with the bottom rail.
+            (40, 100, 40),
+            (0, 100, 0),
+            # blend 0 (all blackout): middle fully open.
+            (40, 0, 100),
+            (0, 0, 100),
+            # blend 50, P=40 → M = 100 - 50*(100-40)/100 = 70.
+            (40, 50, 70),
+        ],
+    )
+    def test_middle_rail_mapping(
+        self, position: int, blend: int, expected_middle: int
+    ) -> None:
+        policy = DayNightShadePolicy()
+        _resolve_dual(policy, position=position, blend=blend)
+        assert policy.resolve_entity_target(_MIDDLE, position) == expected_middle
+
+    def test_bottom_rail_passes_through(self) -> None:
+        policy = DayNightShadePolicy()
+        _resolve_dual(policy, position=40, blend=50)
+        # The primary (bottom) rail is never remapped.
+        assert policy.resolve_entity_target(_BOTTOM, 40) == 40
+
+    def test_unknown_entity_passes_through(self) -> None:
+        policy = DayNightShadePolicy()
+        _resolve_dual(policy, position=40, blend=50)
+        assert policy.resolve_entity_target("cover.some_other", 40) == 40
+
+    def test_blend_none_is_identity(self) -> None:
+        policy = DayNightShadePolicy()
+        _resolve_dual(policy, position=60, blend=None)
+        # No fabric decision this cycle → middle rail follows the primary.
+        assert policy.resolve_entity_target(_MIDDLE, 60) == 60
+
+    def test_non_dual_entity_model_is_identity(self) -> None:
+        # A position_tilt (Model A) cycle must never remap any entity.
+        policy = DayNightShadePolicy()
+        kw = _resolve_kwargs()
+        result = PipelineResult(
+            position=40,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            reason="custom",
+            tilt=50,
+        )
+        policy.post_pipeline_resolve(result, cover=None, **kw)
+        assert policy.resolve_entity_target(_MIDDLE, 40) == 40
+
+    @pytest.mark.parametrize("position", range(0, 101, 10))
+    @pytest.mark.parametrize("blend", range(0, 101, 10))
+    def test_no_pass_invariant_middle_ge_bottom(
+        self, position: int, blend: int
+    ) -> None:
+        # No-pass: the middle rail never drops below the bottom rail (open %).
+        policy = DayNightShadePolicy()
+        _resolve_dual(policy, position=position, blend=blend)
+        assert policy.resolve_entity_target(_MIDDLE, position) >= position
+
+    def test_inverse_state_round_trip(self) -> None:
+        # With inverse state on, the wire value must un-invert to the same
+        # open-percent middle-rail position the non-inverse mapping produces.
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            inverse_state,
+        )
+
+        p_open, blend = 40, 50
+        plain = DayNightShadePolicy()
+        _resolve_dual(plain, position=p_open, blend=blend)
+        open_middle = plain.resolve_entity_target(_MIDDLE, p_open)
+
+        inv = DayNightShadePolicy()
+        wire_p = inverse_state(p_open)  # bottom rail wire value
+        _resolve_dual(inv, position=wire_p, blend=blend, inverse=True)
+        wire_middle = inv.resolve_entity_target(_MIDDLE, wire_p)
+
+        assert inverse_state(wire_middle) == open_middle
+        # And the no-pass invariant still holds in wire space (inverted order).
+        assert wire_middle <= wire_p
+
+
+# ---------------------------------------------------------------------------
+# Step 24 — dual-entity capability warnings + middle-rail picker
+# ---------------------------------------------------------------------------
+
+
+class TestDualEntityCapabilityWarnings:
+    """``dual_entity`` needs set_position on each rail, no tilt, a valid middle."""
+
+    def test_warns_on_missing_set_position_per_rail(self) -> None:
+        policy = DayNightShadePolicy()
+        opts = {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _MIDDLE,
+        }
+        warn = policy.capability_warnings_for_options(
+            {
+                _BOTTOM: {"has_set_position": True, "has_set_tilt_position": False},
+                _MIDDLE: {"has_set_position": False, "has_set_tilt_position": False},
+            },
+            opts,
+        )
+        assert any("set_position" in w and _MIDDLE in w for w in warn)
+
+    def test_requires_no_tilt(self) -> None:
+        # Both rails have set_position but no tilt → no warning (Model C is a
+        # pair of position axes, never a tilt axis).
+        policy = DayNightShadePolicy()
+        opts = {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _MIDDLE,
+        }
+        warn = policy.capability_warnings_for_options(
+            {
+                _BOTTOM: {"has_set_position": True, "has_set_tilt_position": False},
+                _MIDDLE: {"has_set_position": True, "has_set_tilt_position": False},
+            },
+            opts,
+        )
+        assert not any("set_tilt_position" in w for w in warn)
+
+    def test_warns_when_middle_rail_not_among_covers(self) -> None:
+        policy = DayNightShadePolicy()
+        opts = {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.not_configured",
+        }
+        warn = policy.capability_warnings_for_options(
+            {
+                _BOTTOM: {"has_set_position": True, "has_set_tilt_position": True},
+                _MIDDLE: {"has_set_position": True, "has_set_tilt_position": True},
+            },
+            opts,
+        )
+        assert any("cover.not_configured" in w for w in warn)
+
+    def test_no_middle_warning_when_middle_is_a_configured_cover(self) -> None:
+        policy = DayNightShadePolicy()
+        opts = {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _MIDDLE,
+        }
+        warn = policy.capability_warnings_for_options(
+            {
+                _BOTTOM: {"has_set_position": True, "has_set_tilt_position": True},
+                _MIDDLE: {"has_set_position": True, "has_set_tilt_position": True},
+            },
+            opts,
+        )
+        assert warn == []
+
+
+def test_geometry_schema_has_middle_rail_picker() -> None:
+    import voluptuous as vol
+
+    schema = DayNightShadePolicy().geometry_schema()
+    keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
+    assert CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY in keys
+
+
+def test_live_option_keys_include_dual_entity_keys() -> None:
+    keys = DayNightShadePolicy().live_option_keys()
+    assert CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY in keys
+
+
+def test_summary_renders_dual_entity_model() -> None:
+    lines = DayNightShadePolicy().summary_geometry_lines(
+        {
+            CONF_HEIGHT_WIN: 2.0,
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+        }
+    )
+    assert any("two rail" in line for line in lines)
+
+
+def test_dual_entity_labels_present_in_en_translations() -> None:
+    import json
+    import pathlib
+
+    en = json.loads(
+        (
+            pathlib.Path(__file__).resolve().parent.parent.parent
+            / "custom_components"
+            / "adaptive_cover_pro"
+            / "translations"
+            / "en.json"
+        ).read_text(encoding="utf-8")
+    )
+    # The third control-model value label.
+    assert en["selector"]["day_night_control_model"]["options"][
+        DAY_NIGHT_MODEL_DUAL_ENTITY
+    ]
+    # The middle-rail field label in both config + options geometry steps.
+    assert en["config"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY]
+    assert en["options"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY]
