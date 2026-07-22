@@ -31,6 +31,7 @@ _HEALTH_ISSUES = {
     "config_position_envelope": {"{name}", "{min}", "{max}"},
     "config_time_window": {"{name}", "{start}", "{end}"},
     "cover_not_moving": {"{name}", "{entity_id}"},
+    "cover_tilt_unsupported": {"{name}", "{entity_id}"},
 }
 
 

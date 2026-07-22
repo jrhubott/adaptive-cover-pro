@@ -38,6 +38,7 @@ from homeassistant.util import dt as dt_util
 
 from .config_types import CoverConfig, RuntimeConfig
 from .helpers import (
+    check_cover_features,
     compute_effective_default,
     custom_position_slot_delivers_fixed_position,
     custom_position_slot_sensors,
@@ -100,6 +101,7 @@ from .const import (
     ISSUE_CONFIG_POSITION_ENVELOPE,
     ISSUE_CONFIG_TIME_WINDOW,
     ISSUE_COVER_NOT_MOVING,
+    ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -389,6 +391,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # keys currently tracked, so a cover dropped from config gets its
         # predicate cleared next cycle (symmetric with _cover_issue_keys).
         self._a2_issue_keys: set[str] = set()
+        # A3 (issue #991): per-entity "tilt cover type on a non-tilt device"
+        # Repair keys currently tracked, cleared symmetrically when a cover is
+        # dropped from config (same shape as _a2_issue_keys).
+        self._a3_issue_keys: set[str] = set()
         # One-shot: the first health-check cycle of this lifetime sweeps the issue
         # registry for A1 Repairs orphaned by a prior lifetime (removing a cover
         # reloads the entry, so a cross-lifetime orphan is in neither the fresh
@@ -1605,26 +1611,69 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self._repair.clear_predicate(stale)
             self._a2_issue_keys = a2_desired
 
+            # A3 — tilt cover type on a non-tilt-capable device (issue #991).
+            # Per-entity like A1/A2; predicate-shaped like B1/B2. The "is this a
+            # tilt contradiction?" decision lives on the policy
+            # (``tilt_capability_contradiction``) so the coordinator never
+            # branches on cover type or a hardcoded capability literal. Read RAW
+            # ``check_cover_features`` (None-preserving) rather than the masked
+            # ``read_single_capabilities`` — a still-loading cover reads None,
+            # and skipping it avoids a false contradiction (mirrors B2's "only
+            # fire when the reading is real"). Same per-entity guard as A2 so one
+            # entity's read/predicate blow-up can't starve the rest before
+            # ``evaluate()``.
+            a3_desired: set[str] = set()
+            for eid in self.entities:
+                try:
+                    caps = check_cover_features(self.hass, eid)
+                    if caps is None:
+                        continue  # unreadable → don't claim a contradiction
+                    contradiction = self._policy.tilt_capability_contradiction(caps)
+                except Exception:  # noqa: BLE001 — one entity must not starve the rest
+                    self.logger.debug(
+                        "A3 predicate failed for %s; skipping", eid, exc_info=True
+                    )
+                    continue
+                key = (
+                    f"{ISSUE_COVER_TILT_UNSUPPORTED}_{self.config_entry.entry_id}_{eid}"
+                )
+                a3_desired.add(key)
+                self._repair.update_predicate(
+                    key,
+                    contradiction,
+                    translation_key=ISSUE_COVER_TILT_UNSUPPORTED,
+                    placeholders={"entity_id": eid, "name": name},
+                )
+            for stale in self._a3_issue_keys - a3_desired:
+                self._repair.clear_predicate(stale)
+            self._a3_issue_keys = a3_desired
+
             self._sensor_health.evaluate()
             self._repair.evaluate()
 
             # Per-cover cross-lifetime orphan sweep (issue #975 audit, extended
-            # for A2 in #990). The primary fix for a per-cover Repair is REMOVING
-            # the cover, which reloads the config entry → a fresh coordinator with
-            # empty ``_cover_issue_keys`` / ``_a2_issue_keys``. The removed cover's
-            # key is in neither the recomputed ``desired`` sets nor the in-lifetime
-            # unwatch loops, so its Repair would orphan until an HA restart. Once
-            # per lifetime, enumerate this integration's issues and delete any A1
-            # (cover_unavailable) or A2 (cover_not_moving) Repair for this entry
-            # that is no longer desired. Runs last (inside the single fail-open
-            # guard) so a registry hiccup can never skip A1/B1/B2/A2. The
-            # membership filter is critical: a still-configured cover IS in its
-            # desired set, so its valid warning is preserved rather than flapped.
+            # for A2 in #990, A3 in #991). The primary fix for a per-cover Repair
+            # is REMOVING the cover, which reloads the config entry → a fresh
+            # coordinator with empty ``_cover_issue_keys`` / ``_a2_issue_keys`` /
+            # ``_a3_issue_keys``. The removed cover's key is in neither the
+            # recomputed ``desired`` sets nor the in-lifetime unwatch loops, so
+            # its Repair would orphan until an HA restart. Once per lifetime,
+            # enumerate this integration's issues and delete any A1
+            # (cover_unavailable), A2 (cover_not_moving), or A3
+            # (cover_tilt_unsupported) Repair for this entry that is no longer
+            # desired. Runs last (inside the single fail-open guard) so a registry
+            # hiccup can never skip A1/A2/A3/B1/B2. The membership filter is
+            # critical: a still-configured cover IS in its desired set, so its
+            # valid warning is preserved rather than flapped.
             if not self._a1_orphans_swept:
                 entry_id = self.config_entry.entry_id
                 sweeps = (
                     (f"{ISSUE_COVER_UNAVAILABLE}_{entry_id}_", self._cover_issue_keys),
                     (f"{ISSUE_COVER_NOT_MOVING}_{entry_id}_", self._a2_issue_keys),
+                    (
+                        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{entry_id}_",
+                        self._a3_issue_keys,
+                    ),
                 )
                 registry = ir.async_get(self.hass)
                 for reg_domain, issue_id in list(registry.issues):
