@@ -224,7 +224,8 @@
     "roof_window": "Roof Window",
     "sliding_curtain": "Sliding Curtain",
     "louvered_roof": "Louvered Roof",
-    "day_night_shade": "Day/Night Shade"
+    "day_night_shade": "Day/Night Shade",
+    "dual_panel": "Dual Panel Shade"
   },
   "axes": {
     "position": "Position",
@@ -289,6 +290,11 @@
       "model_position_tilt": "position and tilt (dual axis)",
       "model_split_range": "split range (single axis)",
       "model_dual_entity": "two rail entities (dual entity)"
+    },
+    "dual_panel": {
+      "front_entity": "front (sheer) panel: {v}",
+      "triggers": "blackout deploys on: {v}",
+      "none": "no triggers"
     },
     "fov": {
       "computed": "Computed acceptance angle ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"

@@ -114,7 +114,9 @@
           "day_night_opacity_blackout": "Blackout Fabric Opacity (%)",
           "day_night_blackout_threshold": "Blackout Engage Threshold (%)",
           "day_night_control_model": "Control Model",
-          "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)"
+          "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)",
+          "dual_panel_front_entity": "Front (Sheer) Panel Entity",
+          "dual_panel_blackout_triggers": "Blackout Deploy Triggers"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -167,7 +169,9 @@
           "day_night_opacity_blackout": "How much light the opaque **blackout** fabric blocks (0–100%). Used only for the filtering estimate. Default 100 (fully opaque).",
           "day_night_blackout_threshold": "When the sun is in the tracking window during summer and the sheer fabric's opacity is **below** this value, the shade escalates to the blackout fabric to block the heat. Default 65. Raise it to reach for blackout sooner; lower it to keep the sheer fabric longer.",
           "day_night_control_model": "How the abstract coverage + fabric pair maps onto your physical cover. **Position + tilt** (default): the shade drives set_position for coverage and set_tilt_position for the sheer/blackout fabric blend — for hardware exposing both axes. **Split range**: a single-axis cover whose position range encodes both — the lower half (0–50%) selects the blackout fabric, the upper half (50–100%) the sheer fabric — for hardware with only one motor. **Two rail entities**: two separate cover entities — a bottom rail and a middle rail — where the fabric blend folds into the middle rail's absolute position.",
-          "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail."
+          "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail.",
+          "dual_panel_front_entity": "Which of this instance's covers is the **front / sheer** panel. It sun-tracks like a plain vertical blind. Every other configured cover is the **back / blackout** panel. Leave unset to run as a plain vertical blind.",
+          "dual_panel_blackout_triggers": "When the back **blackout** panel deploys (closes). **Heat**: a climate summer / extreme-heat full block. **Privacy**: the sunset window. **Night**: the sun is below the horizon. Select any combination — the back retracts (opens) whenever none of the selected triggers is active. The two panels are independent (no no-pass coupling)."
         }
       },
       "duplicate_select": {
@@ -410,7 +414,9 @@
           "day_night_opacity_blackout": "Blackout Fabric Opacity (%)",
           "day_night_blackout_threshold": "Blackout Engage Threshold (%)",
           "day_night_control_model": "Control Model",
-          "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)"
+          "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)",
+          "dual_panel_front_entity": "Front (Sheer) Panel Entity",
+          "dual_panel_blackout_triggers": "Blackout Deploy Triggers"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -463,7 +469,9 @@
           "day_night_opacity_blackout": "How much light the opaque **blackout** fabric blocks (0–100%). Used only for the filtering estimate. Default 100 (fully opaque).",
           "day_night_blackout_threshold": "When the sun is in the tracking window during summer and the sheer fabric's opacity is **below** this value, the shade escalates to the blackout fabric to block the heat. Default 65. Raise it to reach for blackout sooner; lower it to keep the sheer fabric longer.",
           "day_night_control_model": "How the abstract coverage + fabric pair maps onto your physical cover. **Position + tilt** (default): the shade drives set_position for coverage and set_tilt_position for the sheer/blackout fabric blend — for hardware exposing both axes. **Split range**: a single-axis cover whose position range encodes both — the lower half (0–50%) selects the blackout fabric, the upper half (50–100%) the sheer fabric — for hardware with only one motor. **Two rail entities**: two separate cover entities — a bottom rail and a middle rail — where the fabric blend folds into the middle rail's absolute position.",
-          "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail."
+          "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail.",
+          "dual_panel_front_entity": "Which of this instance's covers is the **front / sheer** panel. It sun-tracks like a plain vertical blind. Every other configured cover is the **back / blackout** panel. Leave unset to run as a plain vertical blind.",
+          "dual_panel_blackout_triggers": "When the back **blackout** panel deploys (closes). **Heat**: a climate summer / extreme-heat full block. **Privacy**: the sunset window. **Night**: the sun is below the horizon. Select any combination — the back retracts (opens) whenever none of the selected triggers is active. The two panels are independent (no no-pass coupling)."
         }
       },
       "sun_tracking": {
@@ -1200,7 +1208,15 @@
         "cover_roof_window": "Roof window",
         "cover_sliding_curtain": "Sliding curtain (horizontal)",
         "cover_louvered_roof": "Louvered roof",
-        "cover_day_night_shade": "Day/night shade (dual-fabric)"
+        "cover_day_night_shade": "Day/night shade (dual-fabric)",
+        "cover_dual_panel": "Dual panel (sheer + blackout)"
+      }
+    },
+    "dual_panel_blackout_triggers": {
+      "options": {
+        "heat": "Heat (climate summer / extreme heat)",
+        "privacy": "Privacy (sunset window)",
+        "night": "Night (sun below the horizon)"
       }
     },
     "tilt_mode": {

@@ -55,6 +55,7 @@ COVER_TYPE_LABELS_EN: dict[str, str] = {
     "cover_types.sliding_curtain": "Sliding Curtain",
     "cover_types.louvered_roof": "Louvered Roof",
     "cover_types.day_night_shade": "Day/Night Shade",
+    "cover_types.dual_panel": "Dual Panel Shade",
 }
 
 # --- Geometry / physical-dimension templates (namespace config_summary.geometry.*)
@@ -121,6 +122,11 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.day_night.model_position_tilt": "position and tilt (dual axis)",
     "geometry.day_night.model_split_range": "split range (single axis)",
     "geometry.day_night.model_dual_entity": "two rail entities (dual entity)",
+    # Dual-panel shade (#996): the front/sheer designator + the blackout
+    # trigger list rendered on the config summary.
+    "geometry.dual_panel.front_entity": "front (sheer) panel: {v}",
+    "geometry.dual_panel.triggers": "blackout deploys on: {v}",
+    "geometry.dual_panel.none": "no triggers",
     # Computed-FOV read-only line (blind + venetian Measurements mode, #565).
     "geometry.fov.computed": (
         "Computed acceptance angle ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"

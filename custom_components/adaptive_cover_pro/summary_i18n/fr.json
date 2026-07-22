@@ -224,7 +224,8 @@
     "roof_window": "Fenêtre de toit",
     "sliding_curtain": "Rideau coulissant",
     "louvered_roof": "Toit à lames",
-    "day_night_shade": "Store jour/nuit"
+    "day_night_shade": "Store jour/nuit",
+    "dual_panel": "Store à double panneau"
   },
   "geometry": {
     "window": {
@@ -288,6 +289,11 @@
       "model_position_tilt": "position et inclinaison (à deux axes)",
       "model_split_range": "plage fractionnée (à un seul axe)",
       "model_dual_entity": "deux entités de rail (double entité)"
+    },
+    "dual_panel": {
+      "front_entity": "panneau avant (voile) : {v}",
+      "triggers": "l'occultant se déploie sur : {v}",
+      "none": "aucun déclencheur"
     }
   },
   "group": {

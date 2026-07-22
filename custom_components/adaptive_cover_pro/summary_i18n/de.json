@@ -224,7 +224,8 @@
     "roof_window": "Dachfenster",
     "sliding_curtain": "Schiebevorhang",
     "louvered_roof": "Lamellendach",
-    "day_night_shade": "Tag/Nacht-Rollo"
+    "day_night_shade": "Tag/Nacht-Rollo",
+    "dual_panel": "Doppelpaneel-Beschattung"
   },
   "geometry": {
     "window": {
@@ -288,6 +289,11 @@
       "model_position_tilt": "position und neigung (zweiachsig)",
       "model_split_range": "geteilter bereich (einachsig)",
       "model_dual_entity": "zwei Schienen-Entitäten (Doppelentität)"
+    },
+    "dual_panel": {
+      "front_entity": "transparentes Frontpaneel: {v}",
+      "triggers": "Verdunkelung schließt bei: {v}",
+      "none": "keine Auslöser"
     }
   },
   "group": {
