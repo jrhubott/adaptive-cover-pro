@@ -114,7 +114,9 @@
           "day_night_opacity_blackout": "Deckkraft Verdunkelungsstoff (%)",
           "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)",
           "day_night_control_model": "Kontrollmodell",
-          "day_night_middle_rail_entity": "Mittlere Schiene-Entität (Doppelentitäts-Modell)"
+          "day_night_middle_rail_entity": "Mittlere Schiene-Entität (Doppelentitäts-Modell)",
+          "dual_panel_front_entity": "Transparentes Frontpaneel",
+          "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -167,7 +169,9 @@
           "day_night_opacity_blackout": "Wie viel Licht der undurchsichtige **Verdunkelungsstoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung verwendet. Standard 100 (vollständig undurchsichtig).",
           "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten.",
           "day_night_control_model": "Wie das abstrakte Coverage + Stoff-Paar auf Ihre physische Beschattung abgebildet wird. **Position + Neigung** (Standard): Die Beschattung steuert set_position für die Abdeckung und set_tilt_position für die Sheer/Verdunkelung-Mischung — für Hardware, die beide Achsen freilegt. **Geteilter Bereich**: Eine einachsige Beschattung, deren Positionsbereich beide kodiert — die untere Hälfte (0–50%) wählt den Verdunkelungsstoff, die obere Hälfte (50–100%) den Sheer-Stoff — für Hardware mit nur einem Motor. **Zwei Schienen-Entitäten**: zwei separate Beschattungs-Entitäten — eine untere Schiene und eine mittlere Schiene — wobei die Stoff-Mischung in die absolute Position der mittleren Schiene eingefaltet wird.",
-          "day_night_middle_rail_entity": "Nur für das **Zwei Schienen-Entitäten**-Modell: Welche Beschattung dieser Instanz ist die mittlere Schiene. Die andere konfigurierte Beschattung ist die untere Schiene. Die mittlere Schiene wird garantiert nicht unter die untere Schiene fallen."
+          "day_night_middle_rail_entity": "Nur für das **Zwei Schienen-Entitäten**-Modell: Welche Beschattung dieser Instanz ist die mittlere Schiene. Die andere konfigurierte Beschattung ist die untere Schiene. Die mittlere Schiene wird garantiert nicht unter die untere Schiene fallen.",
+          "dual_panel_front_entity": "Welches der Covers dieser Instanz ist das **transparente Frontpaneel**. Es folgt der Sonne wie eine normale Jalousie. Alle anderen konfigurierten Covers sind das **Verdunkelungspaneel**. Lassen Sie diesen Wert leer, um als normale Jalousie zu funktionieren.",
+          "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig."
         }
       },
       "duplicate_select": {
@@ -388,7 +392,9 @@
           "day_night_opacity_blackout": "Deckkraft Verdunkelungsstoff (%)",
           "day_night_blackout_threshold": "Verdunkelungs-Aktivierungsschwellenwert (%)",
           "day_night_control_model": "Kontrollmodell",
-          "day_night_middle_rail_entity": "Mittlere Schiene-Entität (Doppelentitäts-Modell)"
+          "day_night_middle_rail_entity": "Mittlere Schiene-Entität (Doppelentitäts-Modell)",
+          "dual_panel_front_entity": "Transparentes Frontpaneel",
+          "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -441,7 +447,9 @@
           "day_night_opacity_blackout": "Wie viel Licht der undurchsichtige **Verdunkelungsstoff** blockiert (0–100 %). Wird nur zur Abschätzung der Filterung verwendet. Standard 100 (vollständig undurchsichtig).",
           "day_night_blackout_threshold": "Wenn die Sonne während des Sommers im Nachführfenster ist und die Deckkraft des Sheer-Stoffs **unter** diesem Wert liegt, eskaliert das Rollo auf den Verdunkelungsstoff, um die Wärme zu blockieren. Standard 65. Erhöhen Sie es, um früher zur Verdunkelung zu greifen; verringern Sie es, um den Sheer-Stoff länger zu behalten.",
           "day_night_control_model": "Wie das abstrakte Coverage + Stoff-Paar auf Ihre physische Beschattung abgebildet wird. **Position + Neigung** (Standard): Die Beschattung steuert set_position für die Abdeckung und set_tilt_position für die Sheer/Verdunkelung-Mischung — für Hardware, die beide Achsen freilegt. **Geteilter Bereich**: Eine einachsige Beschattung, deren Positionsbereich beide kodiert — die untere Hälfte (0–50%) wählt den Verdunkelungsstoff, die obere Hälfte (50–100%) den Sheer-Stoff — für Hardware mit nur einem Motor. **Zwei Schienen-Entitäten**: zwei separate Beschattungs-Entitäten — eine untere Schiene und eine mittlere Schiene — wobei die Stoff-Mischung in die absolute Position der mittleren Schiene eingefaltet wird.",
-          "day_night_middle_rail_entity": "Nur für das **Zwei Schienen-Entitäten**-Modell: Welche Beschattung dieser Instanz ist die mittlere Schiene. Die andere konfigurierte Beschattung ist die untere Schiene. Die mittlere Schiene wird garantiert nicht unter die untere Schiene fallen."
+          "day_night_middle_rail_entity": "Nur für das **Zwei Schienen-Entitäten**-Modell: Welche Beschattung dieser Instanz ist die mittlere Schiene. Die andere konfigurierte Beschattung ist die untere Schiene. Die mittlere Schiene wird garantiert nicht unter die untere Schiene fallen.",
+          "dual_panel_front_entity": "Welches der Covers dieser Instanz ist das **transparente Frontpaneel**. Es folgt der Sonne wie eine normale Jalousie. Alle anderen konfigurierten Covers sind das **Verdunkelungspaneel**. Lassen Sie diesen Wert leer, um als normale Jalousie zu funktionieren.",
+          "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig."
         }
       },
       "sun_tracking": {
@@ -1200,7 +1208,8 @@
         "cover_roof_window": "Dachfenster",
         "cover_sliding_curtain": "Schiebevorhang (horizontal)",
         "cover_louvered_roof": "Lamellendach",
-        "cover_day_night_shade": "Tag/Nacht-Rollo (Doppelstoff)"
+        "cover_day_night_shade": "Tag/Nacht-Rollo (Doppelstoff)",
+        "cover_dual_panel": "Doppelpaneel (transparent + Verdunkelung)"
       }
     },
     "tilt_mode": {
@@ -1322,6 +1331,13 @@
         "position_tilt": "Position + Neigung (zweiachsig)",
         "split_range": "Geteilter Bereich (einachsig)",
         "dual_entity": "Zwei Schienen-Entitäten (Doppelentität)"
+      }
+    },
+    "dual_panel_blackout_triggers": {
+      "options": {
+        "heat": "Wärme (Klima-Sommer / extreme Hitze)",
+        "privacy": "Datenschutz (Sonnenuntergangsfenster)",
+        "night": "Nacht (Sonne unter dem Horizont)"
       }
     }
   },
