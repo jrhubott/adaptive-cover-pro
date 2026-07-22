@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 import types
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -227,3 +227,64 @@ async def test_manual_override_per_rail() -> None:
 
     assert manager.is_cover_manual(_MIDDLE) is True
     assert manager.is_cover_manual(_BOTTOM) is False
+
+
+# ---------------------------------------------------------------------------
+# Broadcast dispatch seam — astronomical-sunset transition remaps the middle rail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sunset_window_transition_remaps_middle_rail() -> None:
+    """The astronomical-sunset broadcast seam must remap the Model C middle rail.
+
+    ``WindowTransitionTracker.check_sunset_window`` fans one sunset position out
+    to every cover; a dual-entity instance must feed the middle rail its
+    ``entity_target``-remapped value, consistent with the other dispatch seams —
+    polymorphically, with no cover-type branch in the tracker.
+    """
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    calls: dict[str, int] = {}
+
+    async def _apply_position(entity_id, position, reason, context=None):
+        calls[entity_id] = position
+
+    # Middle rail is opened 30% above the bottom rail's sunset position.
+    def _entity_target(entity_id: str, position: int) -> int:
+        return position + 30 if entity_id == _MIDDLE else position
+
+    is_sunset = {"value": False}
+    tracker = WindowTransitionTracker(
+        MagicMock(),
+        MagicMock(),
+        event_buffer=MagicMock(),
+        effective_default_fn=lambda _opts: (60, is_sunset["value"]),
+    )
+
+    common = {
+        "track_end_time": True,
+        "automatic_control": True,
+        "sunset_pos_cfg": 60,
+        "options": {},
+        "inverse_state_enabled": False,
+        "entities": [_BOTTOM, _MIDDLE],
+        "is_cover_manual": lambda _eid: False,
+        "build_position_context": lambda _c, _o: MagicMock(),
+        "apply_position": _apply_position,
+        "refresh": AsyncMock(),
+        "entity_target": _entity_target,
+    }
+
+    # First call seeds the prior state (no dispatch).
+    await tracker.check_sunset_window(**common)
+    assert calls == {}
+
+    # Window opens False→True → dispatch, with the middle rail remapped.
+    is_sunset["value"] = True
+    await tracker.check_sunset_window(**common)
+
+    assert calls[_BOTTOM] == 60
+    assert calls[_MIDDLE] == 90

@@ -45,6 +45,9 @@ def _make_coord_with_real_cmd_svc(hass):
     coord.manager.manual_controlled = []
     coord.config_entry.options = {"default_height": 60}
     coord.async_refresh = AsyncMock()
+    # The return-to-default loop routes each target through the polymorphic
+    # ``_entity_target`` (identity for every non-dual-entity cover type).
+    coord._entity_target = lambda _entity, position: position
 
     cmd_svc = CoverCommandService(
         hass=hass,

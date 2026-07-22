@@ -846,6 +846,9 @@ _SECTION_GEOMETRY_DAY_NIGHT = frozenset(
         CONF_DAY_NIGHT_OPACITY_BLACKOUT,
         CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
         CONF_DAY_NIGHT_CONTROL_MODEL,
+        # Model C middle-rail entity — has a FIELD_VALIDATORS entry, so it must
+        # be service-settable too (else the validator is dead code) (#993).
+        CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     }
 )
 _SECTION_GEOMETRY_ALL = (

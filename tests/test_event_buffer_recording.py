@@ -503,6 +503,11 @@ class TestSunsetWindowOpenedEvent:
         coord.automatic_control = True
         coord._track_end_time = True
         coord._inverse_state = False
+        # Dispatch routes each target through the polymorphic ``_entity_target``
+        # → ``policy.resolve_entity_target`` (identity for non-dual-entity types).
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        coord._policy = get_policy("cover_blind")
 
         entities = [MagicMock()]
         coord.entities = entities

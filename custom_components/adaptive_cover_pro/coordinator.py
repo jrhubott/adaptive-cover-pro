@@ -3926,6 +3926,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             apply_position=self._cmd_svc.apply_position,
             refresh=self.async_refresh,
+            entity_target=self._entity_target,
         )
 
     def _check_sun_validity_transition(self) -> bool:

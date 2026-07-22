@@ -1858,6 +1858,24 @@ class TestSetGeometry:
         new_opts = mock_update.call_args[1]["options"]
         assert new_opts["length_awning"] == 3.5
 
+    def test_set_geometry_accepts_day_night_middle_rail(self):
+        # The middle-rail entity has a FIELD_VALIDATORS entry; the set_geometry
+        # section list must include it too, or the validator is dead code and
+        # the key is silently dropped (issue #993 deep-audit LOW).
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+            _build_patch,
+        )
+
+        patch_out = _build_patch(
+            {CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail"},
+            _SECTION_GEOMETRY_ALL,
+        )
+        assert patch_out == {CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail"}
+
 
 class TestSetOption:
     """Integration tests for generic set_option service."""

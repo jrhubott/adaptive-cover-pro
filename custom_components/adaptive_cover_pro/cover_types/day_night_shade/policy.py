@@ -35,6 +35,7 @@ from ...const import (
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
+    CONF_INTERP,
     CONF_INVERSE_STATE,
     DAY_NIGHT_CONTROL_MODELS,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
@@ -275,20 +276,27 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         return lines
 
     def _missing_axis_warnings(
-        self, known: dict[str, dict], *, require_tilt: bool
+        self,
+        known: dict[str, dict],
+        *,
+        require_tilt: bool,
+        single_axis_label: str = "split-range",
     ) -> list[str]:
         """Warn about covers missing the axes this control model needs.
 
         Single source for both the default (dual-axis, Model A) requirement and
-        the split-range (single-axis, Model B) relaxation — the ``require_tilt``
-        flag is the only difference, so the warning-building logic isn't
-        duplicated (CODING_GUIDELINES.md "No Code Duplication").
+        the single-carriage (split-range / dual-entity) relaxation — the
+        ``require_tilt`` flag is the only behavioural difference, so the
+        warning-building logic isn't duplicated (CODING_GUIDELINES.md "No Code
+        Duplication"). ``single_axis_label`` names the model in the
+        set_position tail so a dual-entity shade isn't mislabelled as
+        split-range (only consulted when ``require_tilt`` is False).
         """
         both = "day/night shade requires both set_position and set_tilt_position."
         pos_tail = (
             both
             if require_tilt
-            else "a split-range day/night shade requires set_position."
+            else f"a {single_axis_label} day/night shade requires set_position."
         )
         warnings: list[str] = []
         missing_pos = [
@@ -339,8 +347,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         model = str(
             options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
         )
+        single_axis_label = (
+            "dual-entity" if model == DAY_NIGHT_MODEL_DUAL_ENTITY else "split-range"
+        )
         warnings = self._missing_axis_warnings(
-            known, require_tilt=model == DAY_NIGHT_MODEL_POSITION_TILT
+            known,
+            require_tilt=model == DAY_NIGHT_MODEL_POSITION_TILT,
+            single_axis_label=single_axis_label,
         )
         if model == DAY_NIGHT_MODEL_DUAL_ENTITY:
             middle = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
@@ -559,9 +572,26 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         stays on ``resolved.tilt`` (kept for the Target Tilt sensor / forecast /
         diagnostics) — Model C folds it into the middle rail's absolute position
         at dispatch rather than driving a physical tilt axis.
+
+        The cached ``_dual_entity_inverse`` flag records whether inversion was
+        ACTUALLY applied to the dispatched value this cycle — mirroring
+        ``coordinator.state`` exactly — not merely whether inverse-state is
+        configured. ``state`` returns ``result.position`` RAW (no inverse) on
+        the safety/bypass path, for a floor-clamped winner, and under
+        interpolation; if the middle-rail remap un-inverted a value that was
+        never inverted, it would drive the rail to the wrong physical position
+        (bottom raw 30 → middle physical 0 instead of fully open). Keeping the
+        flag in the dispatched value's OWN space is what preserves the physical
+        no-pass invariant regardless of inverse / bypass / clamp (#993).
         """
         self._dual_entity_blend = resolved.tilt
-        self._dual_entity_inverse = bool(options.get(CONF_INVERSE_STATE, False))
+        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
+        use_interp = bool(options.get(CONF_INTERP, False))
+        self._dual_entity_inverse = (
+            inverse_cfg
+            and not use_interp
+            and not (resolved.bypass_auto_control or resolved.floor_clamp_applied)
+        )
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 
     def resolve_entity_target(self, entity_id: str, position: int) -> int:
@@ -661,6 +691,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             allow_sheer_in_summer = True
         elif method in _CLIMATE_METHODS:
             allow_sheer_in_summer = False
+            if method == ControlMethod.EXTREME_HEAT:
+                # EXTREME_HEAT blocks extreme OUTDOOR heat and fires in any
+                # season on the outdoor temperature alone — so it forces the
+                # blackout fabric even with an AC-cool interior (is_summer
+                # False). Presenting is_summer=True to the (unconditional,
+                # allow_sheer_in_summer=False) climate selector yields blackout
+                # without duplicating the fabric-choice arithmetic (#993).
+                is_summer = True
         else:
             self._clear_last_blend()
             return replace(result, tilt=None)
@@ -814,15 +852,46 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         entity_id: str,
         *,
         current_position: int | None,
-        context: Any,  # noqa: ARG002
+        context: Any,
         reason: str,
     ) -> None:
-        """Send a blend-only update when the position axis won't fire this cycle."""
+        """Send a blend-only update when the position axis won't fire this cycle.
+
+        A blend update that lands inside the prior sequence's back-rotate
+        suppression window cannot send yet, but it must NOT be dropped (#756):
+        it is recorded pending and a single refresh is scheduled at suppression
+        expiry so it fires promptly rather than waiting for the next unrelated
+        tracked-entity change. ``has_pending_secondary_axis`` keeps the
+        coordinator re-attempting dispatch meanwhile. A forced handler
+        transition (``context.force`` — e.g. ``custom_position_released``) is
+        new handler intent, not motor back-rotate drift, so it bypasses the
+        deferral and sends immediately — but only once the carriage has stopped
+        moving, preserving the mid-travel guard (#770). Mirrors venetian.
+        """
         if not self._drives_dual_axis():
             return
         if self._sequencer is None or self._last_blend is None:
             return
         if self._sequencer.is_in_suppression(entity_id):
+            if context.force and not self._sequencer.is_carriage_moving(entity_id):
+                await self._sequencer.update_tilt_only(
+                    entity_id,
+                    tilt_target=self._last_blend,
+                    current_position=current_position,
+                    reason=reason,
+                    force=True,
+                )
+                return
+            self._sequencer.record_pending_tilt(
+                entity_id,
+                tilt_target=self._last_blend,
+                current_position=current_position,
+                reason=reason,
+            )
+            if self._schedule_refresh_after is not None:
+                remaining = self._sequencer.suppression_remaining_seconds(entity_id)
+                if remaining is not None:
+                    self._schedule_refresh_after(remaining)
             return
         await self._sequencer.update_tilt_only(
             entity_id,
@@ -830,6 +899,42 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             current_position=current_position,
             reason=reason,
         )
+
+    def has_pending_secondary_axis(self, entity_id: str) -> bool:
+        """Return True while a deferred blend-only update is queued (#756)."""
+        if self._sequencer is None:
+            return False
+        return self._sequencer.has_pending_tilt(entity_id)
+
+    async def apply_user_tilt(
+        self,
+        entity_id: str,
+        *,
+        tilt: int,
+        reason: str,
+    ) -> bool:
+        """Drive a user-requested fabric blend on the BLEND axis only (#684).
+
+        A day/night Model A shade is dual-axis: the ``set_tilt`` service / the
+        ``set_axes`` tilt axis / the proxy tilt slider set the fabric blend
+        (sheer↔blackout) WITHOUT moving the carriage. Mirrors venetian — read
+        the current carriage position purely as the sequencer's pairing
+        reference (never commanded) and force the send so a user re-requesting
+        the current blend still fires. Single-carriage models (B split-range,
+        C dual-entity) have no independent blend axis, so they return
+        not-handled and the coordinator falls back to the position path.
+        """
+        if not self._drives_dual_axis() or self._sequencer is None:
+            return False
+        current_position = self._sequencer._get_current_position(entity_id)
+        await self._sequencer.update_tilt_only(
+            entity_id,
+            tilt_target=tilt,
+            current_position=current_position,
+            reason=reason,
+            force=True,
+        )
+        return True
 
     async def before_position_command(
         self,
