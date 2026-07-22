@@ -738,7 +738,47 @@ class TestClimateDiagnostics:
             "entity_id": "sensor.bedroom_temp",
             "source": "area",
             "area_id": "area_bedroom",
+            "unit_of_measurement": None,
         }
+
+    def test_temp_sensor_includes_unit_of_measurement(
+        self, builder: DiagnosticsBuilder
+    ):
+        """temp_sensor carries the resolved entity's unit_of_measurement (#969)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        state = SimpleNamespace(state="21.5", attributes={"unit_of_measurement": "°C"})
+        hass = SimpleNamespace(
+            states=SimpleNamespace(get=lambda entity_id: state),
+        )
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                hass=hass,
+                temp_sensor_entity_id="sensor.bedroom_temp",
+                temp_sensor_source="area",
+                temp_sensor_area_id="area_bedroom",
+            )
+        )
+        assert diag["temp_sensor"]["unit_of_measurement"] == "°C"
+
+    def test_temp_sensor_unit_of_measurement_none_without_hass(
+        self, builder: DiagnosticsBuilder
+    ):
+        """No hass on the context -> unit_of_measurement resolves to None (#969)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                temp_sensor_entity_id="sensor.bedroom_temp",
+                temp_sensor_source="area",
+                temp_sensor_area_id="area_bedroom",
+            )
+        )
+        assert diag["temp_sensor"]["unit_of_measurement"] is None
 
     def test_temperature_details_include_outside_temp_source(
         self, builder: DiagnosticsBuilder

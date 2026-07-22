@@ -19,6 +19,7 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_DAYTIME_GATE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
@@ -51,6 +52,10 @@ class _FakeConfigEntries:
 
 def _state(value: str) -> SimpleNamespace:
     return SimpleNamespace(state=value)
+
+
+def _state_with_unit(value: str, unit: str) -> SimpleNamespace:
+    return SimpleNamespace(state=value, attributes={"unit_of_measurement": unit})
 
 
 def _entry(entry_id: str, options: dict) -> SimpleNamespace:
@@ -140,6 +145,34 @@ def test_linked_emits_two_subsections(builder: DiagnosticsBuilder):
     # Profile-sourced keys do not also appear in the local block.
     assert CONF_LUX_ENTITY not in local
     assert CONF_OUTSIDETEMP_ENTITY not in local
+
+
+def test_sensor_source_entries_carry_unit_of_measurement(builder: DiagnosticsBuilder):
+    """Each shared-sensor entry carries the live entity's unit_of_measurement (#969).
+
+    Configured scalar entity -> the real unit. Not-configured key -> None.
+    List-valued key (gate/severe sensors) -> None, since there is no single
+    unit to report for a multi-entity key.
+    """
+    cover_options = {
+        CONF_OUTSIDETEMP_ENTITY: "sensor.outside_temp",
+        CONF_DAYTIME_GATE_SENSORS: ["binary_sensor.gate_a", "binary_sensor.gate_b"],
+    }
+    hass = _make_hass(
+        {"sensor.outside_temp": _state_with_unit("21.5", "°C")},
+        [],
+    )
+    ctx = _base_ctx(config_options=cover_options, hass=hass)
+    diag, _ = builder.build(ctx)
+
+    local = _by_key(diag["local_sensors"])
+
+    # Configured scalar entity with a real state -> unit surfaces.
+    assert local[CONF_OUTSIDETEMP_ENTITY]["unit_of_measurement"] == "°C"
+    # Not-configured key -> no unit.
+    assert local[CONF_CLOUD_COVERAGE_ENTITY]["unit_of_measurement"] is None
+    # List-valued key -> no single unit to report.
+    assert local[CONF_DAYTIME_GATE_SENSORS]["unit_of_measurement"] is None
 
 
 def test_linked_override_source(builder: DiagnosticsBuilder):
