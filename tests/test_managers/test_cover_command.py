@@ -2295,3 +2295,27 @@ def test_is_target_unreached_false_for_my_preset_on_open_close_only_cover(cmd_sv
         patch.object(cmd_svc, "_get_current_position", return_value=100),
     ):
         assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_true_for_tilt_fallback_cover_off_target(cmd_svc):
+    """A tilt-fallback cover off its granular target is verifiable — A2 must fire (#990 re-audit).
+
+    A blind/venetian configured ``has_set_position=False, has_set_tilt_position=True``
+    routes commands to ``set_cover_tilt_position`` with a granular target (1–99) and
+    reads a granular ``current_tilt_position`` — so an intermediate ("My") target IS
+    verifiable, unlike a genuinely open/close-only cover. The guard must gate on the
+    default axis actually read/commanded (tilt here), not the primary position axis,
+    or it wrongly silences A2 for this healthy-but-stuck cover.
+    """
+    s = cmd_svc.state("cover.x")
+    s.target = 50  # granular My preset — verifiable on the tilt axis
+    s.waiting = False
+    tilt_fallback = {
+        "has_set_position": False,
+        "has_set_tilt_position": True,
+    }
+    with (
+        patch.object(cmd_svc, "get_cover_capabilities", return_value=tilt_fallback),
+        patch.object(cmd_svc, "_get_current_position", return_value=0),
+    ):
+        assert cmd_svc.is_target_unreached("cover.x") is True

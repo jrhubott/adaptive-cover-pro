@@ -1660,12 +1660,16 @@ class CoverCommandService:
         * Dry-run: ``_prepare_service_call`` sets ``target``/``waiting`` BEFORE
           the dry-run gate returns, so the flags reflect a simulated command,
           not a real one. Never nag about a cover ACP never actually commanded.
-        * Open/close-only surface: such a cover can only ever report an endpoint
-          (0/100), so a non-endpoint ("My" preset) target can never register as
-          reached. We cannot verify "unreached" there, so stay quiet — reusing
-          the exact capability signal the position read uses
-          (:meth:`CoverTypePolicy.position_axis_supported`), never a cover-type
-          branch.
+        * Unverifiable surface: a cover that cannot report the granular axis it
+          was commanded on can only ever report an endpoint (0/100), so a
+          non-endpoint ("My" preset) target can never register as reached. We
+          cannot verify "unreached" there, so stay quiet. Gates on the *default
+          axis* the position read and command routing resolve via
+          :meth:`CoverTypePolicy.select_default_axis` (honouring the tilt
+          fallback) — NOT the primary position axis — so a blind/venetian
+          driven through ``set_cover_tilt_position`` (``has_set_position=False,
+          has_set_tilt_position=True``) reads a granular ``current_tilt_position``
+          and stays verifiable. Never a cover-type branch.
         """
         if self._dry_run:
             return False
@@ -1678,7 +1682,13 @@ class CoverCommandService:
         if actual is None:  # unreadable → A1 owns availability; A2 stays quiet
             return False
         caps = self.get_cover_capabilities(entity_id)
-        if not self._policy.position_axis_supported(caps) and s.target not in (
+        # Gate on the SAME capability signal the position read/command routing
+        # uses — the default axis's capability key (which honours the tilt
+        # fallback) — so "can this cover verify a granular target?" is answered
+        # consistently with how it is read and commanded. A cover that cannot
+        # report the axis it was commanded on can only surface an endpoint.
+        axis = self._policy.select_default_axis(caps)
+        if not caps_get(caps, axis.capability_key, default=True) and s.target not in (
             POSITION_CLOSED,
             POSITION_OPEN,
         ):
