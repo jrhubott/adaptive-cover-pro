@@ -22,9 +22,11 @@
     "azimuth_fov_mismatch": "⚠️ The sun is above the horizon but outside this window's field of view, so only the default handler ran and no sun tracking happened. Check the window azimuth and FOV if the sun should be reaching this window.",
     "endpoint_chase": "⚠️ {entity} gave up reaching its target of {target}% after {retry_count} retries — it keeps settling short of the commanded position. Check the cover's travel calibration or position feedback.",
     "cover_feature_mismatch": "🛑 {entity} does not support the {axis} axis this cover type needs, so the integration cannot drive it correctly. Pick a cover that exposes the {axis} axis, or choose a cover type that matches this entity.",
-    "skip_service_call_failed": "🛑 The last command to {entity} was skipped {age_minutes} minutes ago because the service call failed. Check the cover integration and the HA log for the underlying error.",
-    "skip_no_capable_service": "🛑 The last command to {entity} was skipped {age_minutes} minutes ago because no capable service was found to move it. The entity may not expose the position or open/close services the integration needs.",
-    "skip_cover_unavailable": "⚠️ The last command to {entity} was skipped {age_minutes} minutes ago because the cover was unavailable. Check the device — it was offline when the integration tried to move it.",
-    "stale_version": "⚠️ A newer release is available: you are on {current} but {latest} has shipped. Update the integration through HACS to pick up the latest fixes."
+    "skip_service_call_failed": "🛑 The last command to {entity} was skipped{when} because the service call failed. Check the cover integration and the HA log for the underlying error.",
+    "skip_no_capable_service": "🛑 The last command to {entity} was skipped{when} because no capable service was found to move it. The entity may not expose the position or open/close services the integration needs.",
+    "skip_cover_unavailable": "⚠️ The last command to {entity} was skipped{when} because the cover was unavailable. Check the device — it was offline when the integration tried to move it.",
+    "skip_age": " {age_minutes} minutes ago",
+    "stale_version": "⚠️ A newer release is available: you are on {current} but {latest} has shipped. Update the integration through HACS to pick up the latest fixes.",
+    "mixed_temp_units": "🛑 The inside temperature sensor reports {inside_unit} but the outside temperature sensor reports {outside_unit}. Adaptive Cover Pro does not convert between units, so climate comparisons will be wrong. Set both temperature sensors to the same unit."
   }
 }

@@ -36,13 +36,16 @@ from ..const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MIN_POSITION,
     CONF_ENABLE_POSITION_MATCHING,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_END_TIME,
     CONF_IRRADIANCE_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_LUX_ENTITY,
+    CONF_MANUAL_OVERRIDE_PRIORITY,
     CONF_MAX_ELEVATION,
     CONF_MIN_POSITION,
+    CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_START_ENTITY,
@@ -78,11 +81,20 @@ _DEFAULT_HANDLER = "default"
 # Home Assistant and this one may not; see module docstring).
 _CLAIM_KEYS: tuple[str, ...] = ("position", "position_max", "tilt_min", "tilt_max")
 
-# The built-in manual-override handler's default priority (80). Named here rather
-# than imported from ``pipeline.handlers`` because that module pulls Home
-# Assistant; this module stays HA-free. A custom slot whose priority sits
-# strictly between this and the safety ceiling (100) wins over a manual override.
+# The built-in manual-override handler's default priority (80 —
+# ``ManualOverrideHandler.priority``). Named here rather than imported from
+# ``pipeline.handlers`` because that module pulls Home Assistant; this module
+# stays HA-free. Used only as the FALLBACK when the user has not set
+# ``manual_override_priority``; the rule reads the configured value first. A
+# custom slot whose priority sits strictly between the effective manual priority
+# and the safety ceiling (100) wins over a manual override.
 _MANUAL_OVERRIDE_PRIORITY = 80
+
+# Fragment TriageCodes: they carry a template but NO rule row — they render only
+# as nested params of another finding's template (the skip "N minutes ago" clause
+# is spliced into the three skip templates). Mirrors ReasonCode's FRAGMENT_*
+# members; excluded from the rule-table bijection lock.
+_TRIAGE_FRAGMENT_CODES: frozenset[str] = frozenset({TriageCode.SKIP_AGE})
 
 # A shaded distance below this (metres) makes the geometry near-binary: the
 # projected shade sweeps the window over so short a throw that the position
@@ -619,16 +631,17 @@ def _check_custom_above_manual(data: Mapping) -> Iterable[Mapping]:
     options = _get(data, "options")
     if not isinstance(options, Mapping):
         return
+    # Read the user's configured manual-override priority; fall back to the
+    # built-in default (80) only when unset, so a user who raised or lowered it
+    # is honoured rather than compared against a hardcoded 80.
+    manual = options.get(CONF_MANUAL_OVERRIDE_PRIORITY)
+    manual = int(manual) if isinstance(manual, int) else _MANUAL_OVERRIDE_PRIORITY
     for num, keys in _iter_custom_slots(options):
         priority = int(
             options.get(keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
         )
-        if _MANUAL_OVERRIDE_PRIORITY < priority < CUSTOM_POSITION_SAFETY_PRIORITY:
-            yield {
-                "slot": num,
-                "priority": priority,
-                "manual": _MANUAL_OVERRIDE_PRIORITY,
-            }
+        if manual < priority < CUSTOM_POSITION_SAFETY_PRIORITY:
+            yield {"slot": num, "priority": priority, "manual": manual}
 
 
 def _glare_zone_min_distance(zone_y: float, radius: float) -> float:
@@ -650,6 +663,12 @@ def _check_glare_zone_unreachable(data: Mapping) -> Iterable[Mapping]:
         return
     if not options.get(CONF_ENABLE_GLARE_ZONES):
         return
+    # The glare handler's "beyond shaded distance" short-circuit only runs while
+    # sun tracking is enabled (default True); with tracking off the zone can
+    # still act against the default position, so an unreachable zone is not a
+    # fault. Gate the finding on the same flag (finding 5).
+    if not options.get(CONF_ENABLE_SUN_TRACKING, True):
+        return
     distance = options.get(CONF_DISTANCE)
     if not isinstance(distance, int | float) or isinstance(distance, bool):
         return
@@ -665,7 +684,9 @@ def _check_glare_zone_unreachable(data: Mapping) -> Iterable[Mapping]:
             continue
         reach = _glare_zone_min_distance(zone_y, radius)
         if reach > distance:
-            yield {"zone": name, "reach": reach, "distance": distance}
+            # Round the reach for display so float subtraction noise
+            # (0.9000000000000004) renders as a clean 0.9 m (finding 9).
+            yield {"zone": name, "reach": round(reach, 2), "distance": distance}
 
 
 def _check_position_matching_off(data: Mapping) -> Iterable[Mapping]:
@@ -760,18 +781,19 @@ def _age_minutes(iso_a: object, iso_b: object) -> float | None:
     """Return whole-minute age from ISO ``iso_a`` to ISO ``iso_b``, or None.
 
     Single source of truth for "how long ago" arithmetic across the skip rules
-    (§197). Both inputs are ISO-8601 strings from the payload; any parse failure
-    or non-string yields ``None`` rather than raising, so a finding still renders
-    without an age rather than breaking triage.
+    (§197). Both inputs are ISO-8601 strings from the payload; ANY failure —
+    a non-string, an unparseable value, or a mixed aware/naive subtraction that
+    raises ``TypeError`` — yields ``None`` rather than raising, so a finding
+    still renders (without an age) instead of vanishing from the report.
     """
     if not isinstance(iso_a, str) or not isinstance(iso_b, str):
         return None
     try:
         start = datetime.fromisoformat(iso_a)
         end = datetime.fromisoformat(iso_b)
-    except ValueError:
+        return round((end - start).total_seconds() / 60, 1)
+    except (TypeError, ValueError):
         return None
-    return round((end - start).total_seconds() / 60, 1)
 
 
 def _skip_reason_check(
@@ -781,38 +803,81 @@ def _skip_reason_check(
 
     One factory backs all three rule-20 skip rows (§55) — each row differs only
     in the reason it matches and its severity. The yielded params carry the
-    skipped entity and, when ``age`` is set, ``age_minutes`` derived purely from
-    ``last_skipped_action.timestamp`` vs ``data_window.captured_at``.
+    skipped entity plus a ``when`` clause: when ``age`` is set AND a skip age is
+    derivable, ``when`` is a nested :class:`~..reason_i18n.Reason` fragment
+    (:data:`TriageCode.SKIP_AGE`) rendering the localized "N minutes ago" text
+    and ``age_minutes`` carries the raw number; when the age is unknown, ``when``
+    is an empty string and no ``age_minutes`` key is emitted, so the template
+    renders cleanly without an age clause (never "None minutes ago").
     """
 
     def _check(data: Mapping) -> Iterable[Mapping]:
         skipped = _get(data, "last_skipped_action")
         if not isinstance(skipped, Mapping) or skipped.get("reason") != reason:
             return
-        params: dict = {"entity": skipped.get("entity_id")}
+        params: dict = {"entity": skipped.get("entity_id"), "when": ""}
         if age:
-            params["age_minutes"] = _age_minutes(
+            minutes = _age_minutes(
                 skipped.get("timestamp"), _get(data, "data_window.captured_at")
             )
+            if minutes is not None:
+                params["age_minutes"] = minutes
+                params["when"] = Reason(TriageCode.SKIP_AGE, {"age_minutes": minutes})
         yield params
 
     return _check
 
 
-def _calver_tuple(version: object) -> tuple[int, ...] | None:
-    """Parse a CalVer/SemVer ``Year.Month.Patch`` string to an int tuple, or None.
+def _calver_tuple(version: object) -> tuple[int, int, int] | None:
+    """Parse a CalVer/SemVer ``Year.Month.Patch`` string to a 3-int tuple, or None.
 
-    Splits on ``.`` and converts each dotted segment to an int, so ``"2026.8.0"``
-    → ``(2026, 8, 0)`` for a plain tuple comparison. A non-string or any
-    non-integer segment (a beta suffix, empty, ``"garbage"``) yields ``None`` so
-    the rule simply produces no finding rather than raising.
+    Splits on ``.``, converts each dotted segment to an int, and normalizes to
+    exactly three segments (missing trailing segments padded with 0, extras
+    dropped) so ``"2026.8"`` and ``"2026.8.0"`` compare EQUAL rather than the
+    shorter one reading as older. A non-string or any non-integer segment (a beta
+    suffix, empty, ``"garbage"``) yields ``None`` so the rule simply produces no
+    finding rather than raising.
     """
     if not isinstance(version, str):
         return None
     try:
-        return tuple(int(part) for part in version.split("."))
+        parts = [int(part) for part in version.split(".")]
     except ValueError:
         return None
+    parts = (parts + [0, 0, 0])[:3]
+    return (parts[0], parts[1], parts[2])
+
+
+def _check_mixed_temp_units(data: Mapping) -> Iterable[Mapping]:
+    """Rule 14 — the inside and outside temperature sensors report unlike units.
+
+    The inside sensor's unit is emitted at ``temp_sensor.unit_of_measurement``
+    (builder.py); the outside sensor rides in ``local_sensors`` /
+    ``building_profile_sensors`` as the ``SensorSource`` descriptor keyed
+    ``outside_temp`` (``CONF_OUTSIDETEMP_ENTITY``). Adaptive Cover Pro does not
+    convert between units, so a °F-vs-°C pair makes every climate comparison
+    wrong. Only the temperature descriptors are compared — a lux/irradiance unit
+    is never a temperature mismatch. Every read goes through ``_get`` so absent
+    keys yield nothing (Phase 0, issue #969).
+    """
+    inside_unit = _get(data, "temp_sensor.unit_of_measurement")
+    if not isinstance(inside_unit, str):
+        return
+    outside_unit: str | None = None
+    for section in ("local_sensors", "building_profile_sensors"):
+        sensors = _get(data, section)
+        if not isinstance(sensors, list):
+            continue
+        for descriptor in sensors:
+            if (
+                isinstance(descriptor, Mapping)
+                and descriptor.get("key") == CONF_OUTSIDETEMP_ENTITY
+            ):
+                unit = descriptor.get("unit_of_measurement")
+                if isinstance(unit, str):
+                    outside_unit = unit
+    if outside_unit is not None and outside_unit != inside_unit:
+        yield {"inside_unit": inside_unit, "outside_unit": outside_unit}
 
 
 def _check_stale_version(data: Mapping) -> Iterable[Mapping]:
@@ -1061,6 +1126,15 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         wiki="Troubleshooting-Findings#skip-cover-unavailable",
         issues=(972,),
         check=_skip_reason_check("cover_unavailable"),
+    ),
+    TriageRule(
+        code=TriageCode.MIXED_TEMP_UNITS,
+        severity=Severity.CRITICAL,
+        inputs=RuleInput.RUNTIME,
+        fix_step="temperature_climate",
+        wiki="Troubleshooting-Findings#mixed-temp-units",
+        issues=(969, 972),
+        check=_check_mixed_temp_units,
     ),
     TriageRule(
         code=TriageCode.STALE_VERSION,

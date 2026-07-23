@@ -22,9 +22,11 @@
     "azimuth_fov_mismatch": "⚠️ Die Sonne steht über dem Horizont, aber außerhalb des Sichtfelds dieses Fensters, sodass nur der Standard-Handler lief und keine Sonnenstandsverfolgung stattfand. Überprüfen Sie den Fensterazimut und das Sichtfeld, wenn die Sonne dieses Fenster erreichen sollte.",
     "endpoint_chase": "⚠️ {entity} hat es aufgegeben, sein Ziel von {target}% nach {retry_count} Versuchen zu erreichen – es bleibt immer wieder kurz vor der befohlenen Position stehen. Überprüfen Sie die Fahrwegskalibrierung oder die Positionsrückmeldung der Beschattung.",
     "cover_feature_mismatch": "🛑 {entity} unterstützt die von diesem Beschattungstyp benötigte Achse {axis} nicht, sodass die Integration sie nicht korrekt ansteuern kann. Wählen Sie eine Beschattung, die die Achse {axis} bereitstellt, oder wählen Sie einen Beschattungstyp, der zu dieser Entität passt.",
-    "skip_service_call_failed": "🛑 Der letzte Befehl an {entity} wurde vor {age_minutes} Minuten übersprungen, weil der Serviceaufruf fehlschlug. Überprüfen Sie die Beschattungsintegration und das HA-Protokoll auf den zugrunde liegenden Fehler.",
-    "skip_no_capable_service": "🛑 Der letzte Befehl an {entity} wurde vor {age_minutes} Minuten übersprungen, weil kein geeigneter Dienst gefunden wurde, um sie zu bewegen. Die Entität stellt möglicherweise nicht die Positions- oder Öffnen/Schließen-Dienste bereit, die die Integration benötigt.",
-    "skip_cover_unavailable": "⚠️ Der letzte Befehl an {entity} wurde vor {age_minutes} Minuten übersprungen, weil die Beschattung nicht verfügbar war. Überprüfen Sie das Gerät – es war offline, als die Integration versuchte, es zu bewegen.",
-    "stale_version": "⚠️ Eine neuere Version ist verfügbar: Sie nutzen {current}, aber {latest} ist erschienen. Aktualisieren Sie die Integration über HACS, um die neuesten Fehlerbehebungen zu erhalten."
+    "skip_service_call_failed": "🛑 Der letzte Befehl an {entity} wurde übersprungen{when}, weil der Serviceaufruf fehlschlug. Überprüfen Sie die Beschattungsintegration und das HA-Protokoll auf den zugrunde liegenden Fehler.",
+    "skip_no_capable_service": "🛑 Der letzte Befehl an {entity} wurde übersprungen{when}, weil kein geeigneter Dienst gefunden wurde, um sie zu bewegen. Die Entität stellt möglicherweise nicht die Positions- oder Öffnen/Schließen-Dienste bereit, die die Integration benötigt.",
+    "skip_cover_unavailable": "⚠️ Der letzte Befehl an {entity} wurde übersprungen{when}, weil die Beschattung nicht verfügbar war. Überprüfen Sie das Gerät – es war offline, als die Integration versuchte, es zu bewegen.",
+    "skip_age": " vor {age_minutes} Minuten",
+    "stale_version": "⚠️ Eine neuere Version ist verfügbar: Sie nutzen {current}, aber {latest} ist erschienen. Aktualisieren Sie die Integration über HACS, um die neuesten Fehlerbehebungen zu erhalten.",
+    "mixed_temp_units": "🛑 Der Innentemperatursensor meldet {inside_unit}, aber der Außentemperatursensor meldet {outside_unit}. Adaptive Cover Pro rechnet nicht zwischen Einheiten um, daher werden Klimavergleiche falsch. Stellen Sie beide Temperatursensoren auf dieselbe Einheit ein."
   }
 }

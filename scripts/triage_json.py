@@ -63,8 +63,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
 
-    with open(args.path, encoding="utf-8") as fh:
-        doc = json.load(fh)
+    try:
+        with open(args.path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        print(f"error: file not found: {args.path}", file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as exc:
+        print(f"error: {args.path} is not valid JSON: {exc}", file=sys.stderr)
+        return 1
 
     view = build_offline_view(doc, latest_version=args.latest_version)
     findings = run_triage(view)

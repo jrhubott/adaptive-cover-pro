@@ -264,3 +264,66 @@ def test_benign_skip_reason_produces_no_skip_finding_on_real_output():
     diag, _ = DiagnosticsBuilder().build(_base_ctx(last_skipped_action=skipped))
     findings = run_triage({"options": {}, **diag})
     assert not any(f.reason.code.startswith("triage.skip_") for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# (viii) rule 14 MIXED_TEMP_UNITS fires on real inside/outside unit descriptors
+# ---------------------------------------------------------------------------
+
+
+def _units_hass(units):
+    """Return a hass stand-in whose states report the given per-entity units."""
+
+    def get(eid):
+        if eid in units:
+            return SimpleNamespace(
+                state="21.0", attributes={"unit_of_measurement": units[eid]}
+            )
+        return None
+
+    return SimpleNamespace(states=SimpleNamespace(get=get))
+
+
+def test_mixed_temp_units_fires_on_real_builder_output():
+    """Different inside (°F) / outside (°C) units → MIXED_TEMP_UNITS.
+
+    Proves rule 14's key paths — ``temp_sensor.unit_of_measurement`` for the
+    inside sensor (builder.py:658) and the ``outside_temp`` SensorSource
+    descriptor's ``unit_of_measurement`` in ``local_sensors`` (builder.py:1035)
+    — match what the builder actually emits.
+    """
+    hass = _units_hass({"sensor.inside_temp": "°F", "sensor.outdoor_temp": "°C"})
+    diag, _ = DiagnosticsBuilder().build(
+        _base_ctx(
+            hass=hass,
+            temp_sensor_entity_id="sensor.inside_temp",
+            temp_sensor_source="area",
+            temp_sensor_area_id="area_x",
+            config_options={CONF_OUTSIDETEMP_ENTITY: "sensor.outdoor_temp"},
+        )
+    )
+
+    # Sanity: the builder emitted the exact keys/values the rule reads.
+    assert diag["temp_sensor"]["unit_of_measurement"] == "°F"
+    assert any(
+        d.get("key") == "outside_temp" and d.get("unit_of_measurement") == "°C"
+        for d in diag["local_sensors"]
+    )
+
+    findings = run_triage({"options": {}, **diag})
+    assert TriageCode.MIXED_TEMP_UNITS in _codes(findings)
+
+
+def test_mixed_temp_units_does_not_fire_when_units_match():
+    hass = _units_hass({"sensor.inside_temp": "°C", "sensor.outdoor_temp": "°C"})
+    diag, _ = DiagnosticsBuilder().build(
+        _base_ctx(
+            hass=hass,
+            temp_sensor_entity_id="sensor.inside_temp",
+            temp_sensor_source="area",
+            temp_sensor_area_id="area_x",
+            config_options={CONF_OUTSIDETEMP_ENTITY: "sensor.outdoor_temp"},
+        )
+    )
+    findings = run_triage({"options": {}, **diag})
+    assert TriageCode.MIXED_TEMP_UNITS not in _codes(findings)

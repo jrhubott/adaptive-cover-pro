@@ -585,6 +585,36 @@ def test_rule22_near_miss_unconfigured_slot() -> None:
     assert _fire(TriageCode.CUSTOM_ABOVE_MANUAL, view) == []
 
 
+def test_rule22_uses_configured_manual_priority_high() -> None:
+    # A user who raised manual override to 95 means a slot at 90 no longer wins
+    # over it — the rule must read the configured priority, not the hardcoded 80.
+    view = {
+        "options": {
+            "custom_position_sensor_1": "binary_sensor.t",
+            "custom_position_1": 40,
+            "custom_position_priority_1": 90,
+            "manual_override_priority": 95,
+        }
+    }
+    assert _fire(TriageCode.CUSTOM_ABOVE_MANUAL, view) == []
+
+
+def test_rule22_uses_configured_manual_priority_low() -> None:
+    # A user who lowered manual override to 60 means a slot at 70 now outranks it
+    # — the rule fires and reports the configured manual priority as {manual}.
+    view = {
+        "options": {
+            "custom_position_sensor_1": "binary_sensor.t",
+            "custom_position_1": 40,
+            "custom_position_priority_1": 70,
+            "manual_override_priority": 60,
+        }
+    }
+    findings = _fire(TriageCode.CUSTOM_ABOVE_MANUAL, view)
+    assert len(findings) == 1
+    assert dict(findings[0].reason.params) == {"slot": 1, "priority": 70, "manual": 60}
+
+
 # ---------------------------------------------------------------------------
 # Rule 12 — GLARE_ZONE_NEVER_FIRES (step 9, per-zone)
 # ---------------------------------------------------------------------------
@@ -646,6 +676,53 @@ def test_rule12_near_miss_unnamed_zone() -> None:
         }
     }
     assert _fire(TriageCode.GLARE_ZONE_NEVER_FIRES, view) == []
+
+
+def test_rule12_near_miss_sun_tracking_disabled() -> None:
+    # The glare handler's beyond-distance short-circuit only runs while sun
+    # tracking is enabled; with tracking off the zone can still act against the
+    # default position, so an unreachable zone is not a fault (finding 5).
+    view = {
+        "options": {
+            "enable_sun_tracking": False,
+            "enable_glare_zones": True,
+            "glare_zone_1_name": "Desk",
+            "glare_zone_1_y": 3.0,
+            "glare_zone_1_radius": 0.3,
+            "distance_shaded_area": 1.0,
+        }
+    }
+    assert _fire(TriageCode.GLARE_ZONE_NEVER_FIRES, view) == []
+
+
+def test_rule12_fires_with_sun_tracking_enabled() -> None:
+    view = {
+        "options": {
+            "enable_sun_tracking": True,
+            "enable_glare_zones": True,
+            "glare_zone_1_name": "Desk",
+            "glare_zone_1_y": 3.0,
+            "glare_zone_1_radius": 0.3,
+            "distance_shaded_area": 1.0,
+        }
+    }
+    assert len(_fire(TriageCode.GLARE_ZONE_NEVER_FIRES, view)) == 1
+
+
+def test_rule12_reach_is_rounded_for_display() -> None:
+    # Float subtraction can yield 0.9000000000000004; the rendered reach must be
+    # a clean 0.9, not the full binary-noise expansion (finding 9).
+    view = {
+        "options": {
+            "enable_glare_zones": True,
+            "glare_zone_1_name": "Desk",
+            "glare_zone_1_y": 3.0,
+            "glare_zone_1_radius": 2.1,
+            "distance_shaded_area": 0.5,
+        }
+    }
+    params = dict(_fire(TriageCode.GLARE_ZONE_NEVER_FIRES, view)[0].reason.params)
+    assert params["reach"] == 0.9
 
 
 # ---------------------------------------------------------------------------
@@ -941,12 +1018,54 @@ def test_rule20_benign_reasons_produce_no_finding() -> None:
 
 
 def test_rule20_age_none_when_timestamps_missing() -> None:
+    # When no skip timestamp is known the finding must render WITHOUT an age
+    # clause — never "None minutes ago" and never a literal "{age_minutes}"
+    # placeholder (finding 3). The check drops the age key and splices an empty
+    # {age} clause instead.
     view = {
         "last_skipped_action": {"entity_id": "cover.a", "reason": "service_call_failed"}
     }
     findings = _fire(TriageCode.SKIP_SERVICE_CALL_FAILED, view)
     assert len(findings) == 1
-    assert dict(findings[0].reason.params)["age_minutes"] is None
+    params = dict(findings[0].reason.params)
+    assert "age_minutes" not in params
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "None" not in rendered
+    assert "{age" not in rendered
+    assert rendered == (
+        "🛑 The last command to cover.a was skipped because the service call "
+        "failed. Check the cover integration and the HA log for the underlying "
+        "error."
+    )
+
+
+def test_rule20_age_none_on_mixed_aware_naive_timestamps() -> None:
+    # An aware skip timestamp with a naive captured_at (or vice versa) makes the
+    # subtraction raise TypeError; the finding must still emit with no age clause
+    # rather than vanishing entirely (finding 4 — _age_minutes never raises).
+    view = {
+        "last_skipped_action": {
+            "entity_id": "cover.a",
+            "reason": "service_call_failed",
+            "timestamp": "2026-07-22T10:00:00+00:00",
+        },
+        "data_window": {"captured_at": "2026-07-22T10:30:00"},
+    }
+    findings = _fire(TriageCode.SKIP_SERVICE_CALL_FAILED, view)
+    assert len(findings) == 1
+    params = dict(findings[0].reason.params)
+    assert "age_minutes" not in params
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "None" not in rendered
+
+
+def test_rule20_age_rendered_inline_when_known() -> None:
+    findings = _fire(
+        TriageCode.SKIP_SERVICE_CALL_FAILED, _skip_view("service_call_failed")
+    )
+    rendered = render(findings[0].reason, load_troubleshoot_labels("en"))
+    assert "30.0 minutes ago" in rendered
+    assert "None" not in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -994,6 +1113,99 @@ def test_rule24_near_miss_latest_older() -> None:
 def test_rule24_unparseable_never_raises_no_finding() -> None:
     view = {"latest_version": "garbage", "meta": {"integration_version": "2026.7.0"}}
     assert _fire(TriageCode.STALE_VERSION, view) == []
+
+
+def test_rule24_near_miss_unequal_length_equal_version() -> None:
+    # "2026.8" and "2026.8.0" are the same release — a missing patch segment must
+    # normalize to 0, not read as "older" and fire a spurious update nag
+    # (finding 7).
+    view = {"latest_version": "2026.8", "meta": {"integration_version": "2026.8.0"}}
+    assert _fire(TriageCode.STALE_VERSION, view) == []
+    view = {"latest_version": "2026.8.0", "meta": {"integration_version": "2026.8"}}
+    assert _fire(TriageCode.STALE_VERSION, view) == []
+
+
+def test_rule24_fires_across_unequal_length_when_newer() -> None:
+    view = {"latest_version": "2026.9", "meta": {"integration_version": "2026.8.0"}}
+    assert len(_fire(TriageCode.STALE_VERSION, view)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Rule 14 — MIXED_TEMP_UNITS (RUNTIME)
+# ---------------------------------------------------------------------------
+
+
+def _mixed_units_view(inside_unit, outside_unit) -> dict:
+    return {
+        "temp_sensor": {
+            "entity_id": "sensor.inside",
+            "unit_of_measurement": inside_unit,
+        },
+        "local_sensors": [
+            {
+                "key": "outside_temp",
+                "entity_id": "sensor.outside",
+                "unit_of_measurement": outside_unit,
+            }
+        ],
+    }
+
+
+def test_rule14_fires_when_inside_and_outside_units_differ() -> None:
+    findings = _fire(TriageCode.MIXED_TEMP_UNITS, _mixed_units_view("°F", "°C"))
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.CRITICAL
+    assert findings[0].fix_step == "temperature_climate"
+    assert dict(findings[0].reason.params) == {
+        "inside_unit": "°F",
+        "outside_unit": "°C",
+    }
+
+
+def test_rule14_near_miss_matching_units() -> None:
+    assert _fire(TriageCode.MIXED_TEMP_UNITS, _mixed_units_view("°C", "°C")) == []
+
+
+def test_rule14_near_miss_only_inside_unit_present() -> None:
+    view = {"temp_sensor": {"unit_of_measurement": "°C"}}
+    assert _fire(TriageCode.MIXED_TEMP_UNITS, view) == []
+
+
+def test_rule14_near_miss_outside_unit_missing() -> None:
+    view = {
+        "temp_sensor": {"unit_of_measurement": "°C"},
+        "local_sensors": [{"key": "outside_temp", "entity_id": "sensor.outside"}],
+    }
+    assert _fire(TriageCode.MIXED_TEMP_UNITS, view) == []
+
+
+def test_rule14_near_miss_keys_absent() -> None:
+    assert _fire(TriageCode.MIXED_TEMP_UNITS, {}) == []
+
+
+def test_rule14_reads_outside_unit_from_building_profile_sensors() -> None:
+    view = {
+        "temp_sensor": {"unit_of_measurement": "°F"},
+        "building_profile_sensors": [
+            {"key": "outside_temp", "unit_of_measurement": "°C"}
+        ],
+    }
+    findings = _fire(TriageCode.MIXED_TEMP_UNITS, view)
+    assert len(findings) == 1
+    assert dict(findings[0].reason.params) == {
+        "inside_unit": "°F",
+        "outside_unit": "°C",
+    }
+
+
+def test_rule14_ignores_non_temperature_local_sensors() -> None:
+    # A lux sensor reporting "lx" is not a temperature-unit mismatch — only the
+    # outside_temp descriptor is compared against the inside temperature unit.
+    view = {
+        "temp_sensor": {"unit_of_measurement": "°C"},
+        "local_sensors": [{"key": "lux", "unit_of_measurement": "lx"}],
+    }
+    assert _fire(TriageCode.MIXED_TEMP_UNITS, view) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1058,7 +1270,16 @@ def test_rule_codes_are_unique() -> None:
 
 
 def test_rule_table_covers_every_triage_code() -> None:
-    assert {rule.code for rule in TRIAGE_RULES} == {c.value for c in TriageCode}
+    # Every TriageCode maps to exactly one rule EXCEPT the fragment codes, which
+    # are nested render-only clauses (e.g. the skip "N minutes ago" suffix) with
+    # a template but no rule row — mirrors ReasonCode's FRAGMENT_* members.
+    from custom_components.adaptive_cover_pro.diagnostics.triage import (
+        _TRIAGE_FRAGMENT_CODES,
+    )
+
+    assert {rule.code for rule in TRIAGE_RULES} == {c.value for c in TriageCode} - {
+        str(c) for c in _TRIAGE_FRAGMENT_CODES
+    }
 
 
 @pytest.mark.parametrize("rule", TRIAGE_RULES, ids=lambda r: r.code)

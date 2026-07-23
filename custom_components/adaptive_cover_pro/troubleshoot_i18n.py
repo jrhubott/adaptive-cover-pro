@@ -162,28 +162,39 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         "the integration cannot drive it correctly. Pick a cover that exposes the "
         "{axis} axis, or choose a cover type that matches this entity."
     ),
-    # Rule 20a
+    # Rule 20a — ``{when}`` is the optional localized age clause (SKIP_AGE) or "".
     TriageCode.SKIP_SERVICE_CALL_FAILED: (
-        "🛑 The last command to {entity} was skipped {age_minutes} minutes ago "
-        "because the service call failed. Check the cover integration and the HA "
-        "log for the underlying error."
+        "🛑 The last command to {entity} was skipped{when} because the service "
+        "call failed. Check the cover integration and the HA log for the "
+        "underlying error."
     ),
     # Rule 20b
     TriageCode.SKIP_NO_CAPABLE_SERVICE: (
-        "🛑 The last command to {entity} was skipped {age_minutes} minutes ago "
-        "because no capable service was found to move it. The entity may not "
-        "expose the position or open/close services the integration needs."
+        "🛑 The last command to {entity} was skipped{when} because no capable "
+        "service was found to move it. The entity may not expose the position or "
+        "open/close services the integration needs."
     ),
     # Rule 20c
     TriageCode.SKIP_COVER_UNAVAILABLE: (
-        "⚠️ The last command to {entity} was skipped {age_minutes} minutes ago "
-        "because the cover was unavailable. Check the device — it was offline "
-        "when the integration tried to move it."
+        "⚠️ The last command to {entity} was skipped{when} because the cover was "
+        "unavailable. Check the device — it was offline when the integration "
+        "tried to move it."
     ),
+    # Fragment (not a rule) — the localized age clause spliced into the skip
+    # templates above via their ``{when}`` param. Leads with a space so it slots
+    # in after "skipped"; absent when the skip age is unknown.
+    TriageCode.SKIP_AGE: " {age_minutes} minutes ago",
     # Rule 24
     TriageCode.STALE_VERSION: (
         "⚠️ A newer release is available: you are on {current} but {latest} has "
         "shipped. Update the integration through HACS to pick up the latest fixes."
+    ),
+    # Rule 14
+    TriageCode.MIXED_TEMP_UNITS: (
+        "🛑 The inside temperature sensor reports {inside_unit} but the outside "
+        "temperature sensor reports {outside_unit}. Adaptive Cover Pro does not "
+        "convert between units, so climate comparisons will be wrong. Set both "
+        "temperature sensors to the same unit."
     ),
 }
 

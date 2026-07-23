@@ -1850,6 +1850,13 @@ class TriageCode(StrEnum):
     SKIP_COVER_UNAVAILABLE = "triage.skip_cover_unavailable"
     # -- rule 24: a newer integration release is available (CalVer compare)
     STALE_VERSION = "triage.stale_version"
+    # -- rule 14: inside/outside temperature sensors report different units
+    MIXED_TEMP_UNITS = "triage.mixed_temp_units"
+    # -- fragment (NOT a rule): the localized "N minutes ago" clause the three
+    # skip findings splice in when a skip timestamp is known. Rendered only as a
+    # nested param of the skip templates, never emitted as a top-level finding —
+    # so it has a template but no rule row (mirrors ReasonCode's FRAGMENT_*).
+    SKIP_AGE = "triage.skip_age"
 
 
 # =============================================================================
