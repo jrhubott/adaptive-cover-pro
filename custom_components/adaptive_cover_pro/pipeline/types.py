@@ -48,6 +48,8 @@ class CustomPositionSensorState:
     entity_ids: tuple[str, ...]
     # Slot activation: OR across the sensors, folded with the optional
     # condition template via templates.combine_with_mode() at snapshot time.
+    # On an *invalid* read (``is_valid`` False) this carries the last-valid
+    # activation held across the transient (issue #1005), not the current read.
     is_on: bool
     position: int
     priority: int
@@ -75,6 +77,14 @@ class CustomPositionSensorState:
     active_entity_ids: tuple[str, ...] = ()
     # Rendered condition-template result. None = no template configured.
     template_active: bool | None = None
+
+    # Whether this cycle's read was usable (issue #1005). True when at least one
+    # bound sensor reported a non-invalid state (not unavailable/unknown/missing)
+    # OR a condition template rendered an opinion. False = no usable input this
+    # cycle, in which case ``is_on`` / ``active_entity_ids`` are HELD to the last
+    # valid read so a transient sensor blip does not fire a false release edge.
+    # Default True so every pre-#1005 construction path stays a valid read.
+    is_valid: bool = True
 
 
 @dataclass(frozen=True)

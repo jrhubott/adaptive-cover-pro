@@ -177,9 +177,9 @@ def test_read_custom_position_sensors_template_only_slot():
         first_slot_keys["template"]: "{{ is_state('sun.sun', 'above_horizon') }}",
         first_slot_keys["position"]: 42,
     }
-    # render_condition needs a working hass; mock it at the builder's import site.
+    # render_condition_or_none needs a working hass; mock at the builder's import site.
     with patch(
-        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition",
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition_or_none",
         return_value=True,
     ):
         out = builder.read_custom_position_sensors(opts)
@@ -203,7 +203,7 @@ def test_read_custom_position_sensors_template_false_keeps_slot_off():
         first_slot_keys["position"]: 42,
     }
     with patch(
-        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition",
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition_or_none",
         return_value=False,
     ):
         out = builder.read_custom_position_sensors(opts)
