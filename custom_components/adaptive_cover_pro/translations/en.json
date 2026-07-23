@@ -722,7 +722,6 @@
           "temperature_climate": "🌡️ Temperature & Climate",
           "light_cloud": "☁️ Weather, Light & Cloud",
           "cover_entities": "🪟 Covers & Device",
-          "profile_sensors": "📡 Shared Sensors",
           "position": "📊 Position Settings",
           "troubleshoot": "🔁 Re-check",
           "init": "⬅️ Back to menu"

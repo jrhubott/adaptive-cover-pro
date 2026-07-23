@@ -670,7 +670,6 @@
           "temperature_climate": "🌡️ Température et climat",
           "light_cloud": "☁️ Météo, lumière & nuages",
           "cover_entities": "🪟 Stores et appareil",
-          "profile_sensors": "📡 Capteurs partagés",
           "position": "📊 Paramètres de position",
           "troubleshoot": "🔁 Vérifier à nouveau",
           "init": "⬅️ Retour au menu"
