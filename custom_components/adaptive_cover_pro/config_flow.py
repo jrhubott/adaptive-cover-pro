@@ -5026,8 +5026,9 @@ class OptionsFlowHandler(OptionsFlow):
         """Edit the cover-group membership rosters (issue #790).
 
         Same one page as the create flow: ACP members first, generic covers
-        below. Saves on submit, mirroring ``profile_sensors``. Sanitization
-        drops duplicates, the group itself, and generic entities owned by a
+        below. Submitting returns to the group menu (issue #1003) — only
+        ``async_step_done`` saves and closes the dialog. Sanitization drops
+        duplicates, the group itself, and generic entities owned by a
         selected ACP member.
         """
         if user_input is not None:
@@ -5051,7 +5052,7 @@ class OptionsFlowHandler(OptionsFlow):
                     for member, scenes in opt_out.items()
                     if member in roster
                 }
-            return self.async_create_entry(title="", data=self.options)
+            return await self.async_step_init()
 
         schema = vol.Schema(
             _group_membership_schema_dict(
@@ -5092,7 +5093,7 @@ class OptionsFlowHandler(OptionsFlow):
                 if member_id in member_ids:
                     opt_out.setdefault(member_id, []).append(scene_value)
             self.options[CONF_GROUP_MEMBER_OPT_OUT] = opt_out
-            return self.async_create_entry(title="", data=self.options)
+            return await self.async_step_init()
 
         stagger_spec = config_fields.FIELD_SPECS[CONF_GROUP_STAGGER_DELAY]
         stagger_marker, stagger_selector = stagger_spec.to_marker(
@@ -5142,7 +5143,7 @@ class OptionsFlowHandler(OptionsFlow):
         """
         if user_input is not None:
             self.options.update(user_input)
-            return self.async_create_entry(title="", data=self.options)
+            return await self.async_step_init()
 
         schema = vol.Schema(
             {
@@ -5177,12 +5178,14 @@ class OptionsFlowHandler(OptionsFlow):
         """Edit the shared building-level sensor IDs on a Building Profile entry.
 
         This is the only options step for a profile: it exposes exactly the
-        ``BUILDING_PROFILE_SENSOR_KEYS`` pickers and saves on submit.  Mirrors
-        the create-flow's ``async_step_create_building_profile`` sensor section.
+        ``BUILDING_PROFILE_SENSOR_KEYS`` pickers.  Mirrors the create-flow's
+        ``async_step_create_building_profile`` sensor section.  Submitting
+        returns to the profile menu (issue #1003) — only ``async_step_done``
+        actually saves and closes the dialog.
         """
         if user_input is not None:
             self.options.update(user_input)
-            return self.async_create_entry(title="", data=self.options)
+            return await self.async_step_init()
 
         schema = building_profile_sensors_schema()
         return self.async_show_form(

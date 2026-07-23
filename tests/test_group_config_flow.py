@@ -215,9 +215,10 @@ async def test_group_membership_step_saves_sanitized(hass: HomeAssistant) -> Non
         }
     )
 
-    assert result["type"] == "create_entry"
-    assert result["data"][CONF_MEMBER_ENTRIES] == ["cover_a"]
-    assert result["data"][CONF_MEMBER_COVERS] == ["cover.generic"]
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert flow.options[CONF_MEMBER_ENTRIES] == ["cover_a"]
+    assert flow.options[CONF_MEMBER_COVERS] == ["cover.generic"]
 
 
 async def test_cover_entries_excludes_groups(hass: HomeAssistant) -> None:
@@ -275,10 +276,11 @@ async def test_group_arbitration_step_saves_stagger_and_opt_out(
             "scene_opt_outs": [f"cover_a|{GroupScene.PRIVACY}"],
         }
     )
-    assert result["type"] == "create_entry"
-    assert result["data"][CONF_GROUP_STAGGER_DELAY] == 2.5
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert flow.options[CONF_GROUP_STAGGER_DELAY] == 2.5
     # Only members with opt-outs are stored.
-    assert result["data"][CONF_GROUP_MEMBER_OPT_OUT] == {
+    assert flow.options[CONF_GROUP_MEMBER_OPT_OUT] == {
         "cover_a": [str(GroupScene.PRIVACY)]
     }
 
@@ -313,8 +315,9 @@ async def test_membership_save_prunes_opt_out_of_removed_members(
         {CONF_MEMBER_ENTRIES: ["cover_a"], CONF_MEMBER_COVERS: []}
     )
 
-    assert result["type"] == "create_entry"
-    assert result["data"][CONF_GROUP_MEMBER_OPT_OUT] == {
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert flow.options[CONF_GROUP_MEMBER_OPT_OUT] == {
         "cover_a": [str(GroupScene.PRIVACY)]
     }
 
@@ -367,9 +370,10 @@ async def test_group_entities_step_saves_toggles(hass: HomeAssistant) -> None:
             CONF_GROUP_ENABLE_WHO_WON_SENSOR: False,
         }
     )
-    assert result["type"] == "create_entry"
-    assert result["data"][CONF_GROUP_ENABLE_COVER_ENTITY] is True
-    assert result["data"][CONF_GROUP_ENABLE_STATE_SENSOR] is False
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert flow.options[CONF_GROUP_ENABLE_COVER_ENTITY] is True
+    assert flow.options[CONF_GROUP_ENABLE_STATE_SENSOR] is False
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +413,8 @@ async def test_membership_step_updates_and_clears_area(hass: HomeAssistant) -> N
     result = await flow.async_step_group_membership(
         {CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: [], CONF_GROUP_AREA: "new_area"}
     )
-    assert result["data"][CONF_GROUP_AREA] == "new_area"
+    assert result["type"] == "menu"
+    assert flow.options[CONF_GROUP_AREA] == "new_area"
 
     # Clearing the picker removes the area source entirely.
     flow2 = OptionsFlowHandler(hass.config_entries.async_get_entry("group_1"))
@@ -417,4 +422,4 @@ async def test_membership_step_updates_and_clears_area(hass: HomeAssistant) -> N
     result = await flow2.async_step_group_membership(
         {CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: []}
     )
-    assert CONF_GROUP_AREA not in result["data"]
+    assert CONF_GROUP_AREA not in flow2.options
