@@ -4,6 +4,25 @@ Co-located so the single-source-of-truth threshold helper sits next to both
 of its consumers — the position-delta detector
 (:mod:`.position_delta`) and the secondary-axis check below — without
 creating an import cycle through the manager.
+
+Dispatched-value anchoring rule (issue #1006)
+---------------------------------------------
+The manual-override gate correlates an incoming cover state change with "this
+is ACP's own movement" by comparing the actuator feedback against the value ACP
+last DISPATCHED for that axis — never a mutable per-cycle value that a
+mid-transit handler reevaluation may have changed after the command was sent:
+
+* Position axis — ``our_state`` derives from the recorded command target
+  (``CoverCommandService.get_target``), written only by the dispatch chokepoint
+  ``_prepare_service_call``. A reevaluation that sends no replacement command
+  leaves it intact.
+* Secondary (tilt) axis — ``SecondaryAxisCheck.expected`` is anchored by the
+  owning policy to its last dispatched value (venetian:
+  ``sequencer.last_tilt_target``) rather than the reevaluated ``result.tilt``.
+
+Both read sites express the same concept; keep them in sync so an in-flight
+movement whose expected target/tilt was recomputed mid-transit is not orphaned
+and misclassified as a manual move.
 """
 
 from __future__ import annotations

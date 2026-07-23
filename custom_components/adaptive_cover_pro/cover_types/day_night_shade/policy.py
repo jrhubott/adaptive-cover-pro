@@ -862,9 +862,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         )
 
     def secondary_axis_check(
-        self, result: PipelineResult, cmd_svc
+        self, result: PipelineResult, cmd_svc, entity_id: str | None = None
     ) -> SecondaryAxisCheck | None:
-        """Build the per-cycle blend-axis manual-override check."""
+        """Build the per-cycle blend-axis manual-override check.
+
+        ``entity_id`` (issue #1006) is accepted for signature parity with the
+        base hook; the day/night shade blend axis has no dispatched-value store
+        to anchor against, so it keeps sourcing ``expected`` from ``result``.
+        """
         # Single-carriage models (B, C) have no physical blend axis to check.
         if not self._drives_dual_axis():
             return None

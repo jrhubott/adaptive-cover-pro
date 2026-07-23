@@ -1059,13 +1059,25 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         return self._grace_mgr.is_in_command_grace_period(entity_id)
 
     def secondary_axis_check(
-        self, result: PipelineResult, cmd_svc
+        self, result: PipelineResult, cmd_svc, entity_id: str | None = None
     ) -> SecondaryAxisCheck | None:
         """Build the per-cycle tilt-axis manual-override check.
 
         Returns ``None`` when no tilt has been resolved (e.g. on a refresh
         where the engine couldn't compute one); otherwise carries the
         expected tilt and the suppression callback into manual_override.
+
+        Issue #1006: the ``expected`` tilt is anchored to the value ACP last
+        DISPATCHED for this entity (``sequencer.last_tilt_target``), not the
+        ``result.tilt`` of the current cycle. A handler reevaluation mid-transit
+        can recompute a different tilt without sending any replacement command;
+        binding ``expected`` to the reevaluated value made the actuator's
+        end-of-travel arrival at the still-commanded tilt read as a manual move.
+        Anchoring to the dispatched tilt is the same rule the position axis
+        already follows via its recorded target — see the module comment in
+        ``managers/manual_override/secondary_axis.py``. Falls back to
+        ``result.tilt`` when no dispatched tilt is stored yet (first command,
+        or a non-attached policy in tests).
 
         The suppression callback is the same predicate
         :meth:`primary_axis_suppression` exposes for the position axis
@@ -1084,8 +1096,14 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         if result is None or result.tilt is None:
             return None
 
+        expected = result.tilt
+        if self._sequencer is not None and entity_id is not None:
+            dispatched = self._sequencer.last_tilt_target(entity_id)
+            if dispatched is not None:
+                expected = dispatched
+
         return SecondaryAxisCheck(
-            expected=result.tilt,
+            expected=expected,
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
