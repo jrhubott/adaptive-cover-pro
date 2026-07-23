@@ -288,6 +288,7 @@
           "motion_override": "🚶 Belegungserkennung",
           "weather_override": "🌧️ Wetter-Übersteuerung",
           "summary": "📋 Konfigurationszusammenfassung",
+          "troubleshoot": "🩺 Fehlerbehebung",
           "sync": "🔄 In andere Beschattungen kopieren",
           "debug": "🔍 Debug und Diagnose",
           "done": "✅ Speichern und schließen",
@@ -658,6 +659,21 @@
       "summary": {
         "title": "Konfigurationszusammenfassung",
         "description": "{summary}"
+      },
+      "troubleshoot": {
+        "title": "Fehlerbehebung",
+        "description": "{report}",
+        "menu_options": {
+          "custom_position": "🎯 Benutzerdefinierte Positionen",
+          "pipeline_priorities": "🔀 Handler-Prioritäten",
+          "automation": "⏱️ Bewegung & Zeitplan",
+          "temperature_climate": "🌡️ Temperatur und Klima",
+          "light_cloud": "☁️ Wetter, Licht & Wolken",
+          "cover_entities": "🪟 Beschattungen & Gerät",
+          "position": "📊 Positionseinstellungen",
+          "troubleshoot": "🔁 Erneut prüfen",
+          "init": "⬅️ Zurück zum Menü"
+        }
       },
       "debug": {
         "title": "Debug & Diagnose",

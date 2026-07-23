@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import string
 from pathlib import Path
 
 import pytest
@@ -33,6 +32,7 @@ from custom_components.adaptive_cover_pro.reason_i18n import (
     render,
     render_en,
 )
+from tests._helpers import i18n_parity
 
 pytestmark = pytest.mark.unit
 
@@ -501,66 +501,17 @@ def test_reason_params_default_is_empty_mapping() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _flat(data: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-
-    def _walk(node: object, prefix: str) -> None:
-        if isinstance(node, dict):
-            for k, v in node.items():
-                _walk(v, f"{prefix}.{k}" if prefix else k)
-        elif isinstance(node, str):
-            out[prefix] = node
-
-    _walk(data, "")
-    return out
-
-
-def _load_json(name: str) -> dict:
-    with (REASON_I18N_DIR / name).open(encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _placeholders(template: str) -> set[tuple[str, str | None, str | None]]:
-    """Return the (field, format_spec, conversion) placeholder tuples.
-
-    Includes the format spec (e.g. ``.2f``) so a DE/FR template that drops a
-    numeric format is caught, not just a renamed field.
-    """
-    stripped = template.replace("{{", "").replace("}}", "")
-    return {
-        (field, spec, conv)
-        for _, field, spec, conv in string.Formatter().parse(stripped)
-        if field
-    }
-
-
 def test_reason_i18n_en_matches_code_defaults() -> None:
     """Flattened ``reason_i18n/en.json`` == ``_REASON_TEMPLATES_EN`` byte-for-byte."""
-    assert _flat(_load_json("en.json")) == _REASON_TEMPLATES_EN
+    i18n_parity.assert_en_matches_defaults(REASON_I18N_DIR, _REASON_TEMPLATES_EN)
 
 
 def test_reason_i18n_key_parity_de_fr() -> None:
-    en = _flat(_load_json("en.json"))
-    assert en, "en.json must not be empty"
-    for lang in ("de", "fr"):
-        target = _flat(_load_json(f"{lang}.json"))
-        assert set(target) == set(en), (
-            f"{lang}.json key-set differs from en.json:\n"
-            f"  missing: {sorted(set(en) - set(target))[:10]}\n"
-            f"  extra:   {sorted(set(target) - set(en))[:10]}"
-        )
+    i18n_parity.assert_key_parity(REASON_I18N_DIR)
 
 
 def test_reason_placeholder_parity_de_fr() -> None:
-    en = _flat(_load_json("en.json"))
-    for lang in ("de", "fr"):
-        target = _flat(_load_json(f"{lang}.json"))
-        for key, en_value in en.items():
-            assert key in target, f"{lang}.json missing key {key!r}"
-            assert _placeholders(en_value) == _placeholders(target[key]), (
-                f"{lang}.json[{key}] placeholders {_placeholders(target[key])} "
-                f"!= en {_placeholders(en_value)}"
-            )
+    i18n_parity.assert_placeholder_parity(REASON_I18N_DIR)
 
 
 # ---------------------------------------------------------------------------

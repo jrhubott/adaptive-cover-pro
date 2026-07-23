@@ -244,6 +244,7 @@ from .const import (
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
+from .troubleshoot_i18n import load_troubleshoot_labels
 from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
@@ -1204,16 +1205,36 @@ def _check_cover_capabilities(
 
     from .helpers import check_cover_features
 
-    cap_map: dict[str, dict[str, bool] | None] = {}
     warnings: list[str] = []
 
     from .cover_types.base import CAP_HAS_SET_POSITION, caps_get
 
+    # The "not ready (unavailable)" line (rule 8a) is rendered from the shared
+    # triage engine so the summary and troubleshoot surfaces share one rule and
+    # one string (issue #970). Build the capability map up front, then index the
+    # COVER_NOT_READY findings by entity so the per-entity warning loop below
+    # keeps its exact ordering (and its interleaving with the open/close-only and
+    # assumed_state lines). Rendered in English to match the legacy raw f-string,
+    # which was hardcoded English regardless of the summary language.
+    from .const import TriageCode
+    from .diagnostics.triage import RuleInput, run_triage
+    from .reason_i18n import render
+    from .troubleshoot_i18n import load_troubleshoot_labels
+
+    cap_map: dict[str, dict[str, bool] | None] = {
+        eid: check_cover_features(hass, eid) for eid in entities
+    }
+    _not_ready = {
+        f.reason.params["eid"]: f
+        for f in run_triage({"capabilities": cap_map}, only=RuleInput.CONFIG)
+        if f.reason.code == TriageCode.COVER_NOT_READY
+    }
+    _triage_labels = load_troubleshoot_labels("en")
+
     for eid in entities:
-        caps = check_cover_features(hass, eid)
-        cap_map[eid] = caps
+        caps = cap_map[eid]
         if caps is None:
-            warnings.append(f"⚠️ {eid}: not ready (unavailable)")
+            warnings.append(render(_not_ready[eid].reason, _triage_labels))
         else:
             if not caps_get(caps, CAP_HAS_SET_POSITION):
                 warnings.append(
@@ -1506,13 +1527,9 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are "
         "configured — the template alone activates the slot."
     ),
-    "warnings.custom_safety_bypass": (
-        "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the "
-        "automatic-control toggle, manual override, and the start/end time "
-        "window, so it can move the cover even when automatic control is OFF "
-        "and outside your schedule. Lower its priority below {safety} to make "
-        "it respect those gates."
-    ),
+    # NOTE: the safety-priority bypass warning moved to the shared triage engine
+    # (``troubleshoot_i18n`` bundle, ``TriageCode.CUSTOM_SAFETY_BYPASS``) so the
+    # summary and troubleshoot surfaces share one rule + one string (issue #970).
     # --- Motion (75) ---
     "rules.motion": (
         "🚶 Occupancy: if no occupancy for {motion_timeout}s ({sources}) → {action}"
@@ -1904,6 +1921,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     hass: HomeAssistant | None = None,
     sun_times: dict | None = None,
     labels: dict[str, str] | None = None,
+    troubleshoot_labels: dict[str, str] | None = None,
 ) -> str:
     """Build a narrative summary of the current configuration.
 
@@ -1918,8 +1936,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     ``labels`` maps the summary's dotted keys to translated templates. When
     ``None`` (unit tests, no hass) the English defaults in ``_SUMMARY_LABELS_EN``
     are used, so the output is byte-identical to the pre-i18n strings.
+
+    ``troubleshoot_labels`` maps the shared triage-engine ``TriageCode`` keys to
+    translated templates for the findings the summary renders through the engine
+    (issue #970 — the custom-position safety-bypass warning). ``None`` uses the
+    English defaults, keeping the English summary byte-identical.
     """
     L = labels or _SUMMARY_LABELS_EN
+    # English triage templates via the public loader (I/O-free for "en" —
+    # ``load_bundle_overlay`` short-circuits, so this is the same dict of English
+    # defaults, no file read). Avoids importing the private ``_TRIAGE_TEMPLATES_EN``.
+    TL = troubleshoot_labels or load_troubleshoot_labels("en")
 
     # Cover groups render their own compact summary — a group has no cover
     # chain, geometry, or handler ladder (issue #790).
@@ -2266,6 +2293,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # its own sortable block; its warnings are folded in (issue #923) so they
     # travel with the slot's line through the priority sort instead of clumping
     # after every slot in separate passes.
+    #
+    # The safety-priority bypass warning (issue #711/#716) is rendered from the
+    # shared triage engine so the summary and troubleshoot surfaces share one
+    # CONFIG rule + one string (issue #970). Run the CONFIG rules once and index
+    # the CUSTOM_SAFETY_BYPASS findings by slot; the per-slot loop below renders
+    # the matching finding in place, byte-identically to the legacy string.
+    from .const import TriageCode
+    from .diagnostics.triage import RuleInput, run_triage
+    from .reason_i18n import render
+
+    _safety_findings = {
+        f.reason.params["slot"]: f
+        for f in run_triage({"options": config}, only=RuleInput.CONFIG)
+        if f.reason.code == TriageCode.CUSTOM_SAFETY_BYPASS
+    }
     if has_custom_position:
         for (
             _slot,
@@ -2372,12 +2414,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
+            # Rendered from the shared triage engine (issue #970); the finding is
+            # present for exactly the slots this guard fires on (a configured
+            # slot at or above safety priority — the loop only visits configured
+            # slots, so ``_has_trigger`` is always True here).
             if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY and _has_trigger:
-                _sub(
-                    L["warnings.custom_safety_bypass"].format(
-                        slot=_slot, safety=CUSTOM_POSITION_SAFETY_PRIORITY
-                    )
-                )
+                # Defensive .get: the finding is present for exactly the slots
+                # this guard fires on today, so this renders byte-identically —
+                # but should the triage slot-gate ever drift from the summary's
+                # (both are hand-copies of the helpers), a missing finding is
+                # skipped rather than raising KeyError in the summary. Drift is
+                # locked out by tests/test_triage_rules.py's parity tests.
+                _safety_finding = _safety_findings.get(_slot)
+                if _safety_finding is not None:
+                    _sub(render(_safety_finding.reason, TL))
             # Footgun warning: AND combine mode with no sensors — the template
             # gates nothing and the slot degenerates to template-only OR.
             if _slot in _and_no_sensor_slots:
@@ -4078,12 +4128,21 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Show a read-only summary of all collected configuration before creating the entry."""
         if user_input is not None:
             return await self.async_step_update()
+        from .troubleshoot_i18n import load_troubleshoot_labels
+
         sun_times = await _compute_todays_sun_times(self.hass, self.config)
-        labels = await _load_summary_labels(
-            self.hass, _resolve_summary_language(self.hass, self.context)
+        _language = _resolve_summary_language(self.hass, self.context)
+        labels = await _load_summary_labels(self.hass, _language)
+        troubleshoot_labels = await self.hass.async_add_executor_job(
+            load_troubleshoot_labels, _language
         )
         summary_text = _build_config_summary(
-            self.config, self.type_blind, self.hass, sun_times, labels=labels
+            self.config,
+            self.type_blind,
+            self.hass,
+            sun_times,
+            labels=labels,
+            troubleshoot_labels=troubleshoot_labels,
         )
         return self.async_show_form(
             step_id="summary",
@@ -4282,6 +4341,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return f"{name} ({suffix} {counter})"
 
 
+# Server-rendered wrapper lines for the read-only Troubleshoot step (issue
+# #970). The per-finding bullets are translated via the troubleshoot_i18n
+# bundle; these two "envelope" states are not finding codes, so they are not in
+# that bundle (its parity lock is strictly TriageCode-keyed) and stay here.
+_TROUBLESHOOT_NO_ISSUES = (
+    "✅ No configuration or runtime issues detected — everything looks correctly "
+    "set up."
+)
+_TROUBLESHOOT_UNAVAILABLE = (
+    "ℹ️ Diagnostics aren't available yet for this cover — it may not have "
+    "completed a first update cycle. Re-check once it has run at least once."
+)
+
+
 class OptionsFlowHandler(OptionsFlow):
     """Options to adjust parameters."""
 
@@ -4433,7 +4506,10 @@ class OptionsFlowHandler(OptionsFlow):
 
         # ── Admin ────────────────────────────────────────────────────
         keys.append("sync")  # Multi-cover management
-        keys.extend(["summary", "debug", "done"])
+        # "troubleshoot" is a read-only diagnostics surface (issue #970) — it
+        # sits with the other read-only/diagnostic entries (summary, debug) and
+        # is offered on the cover menu ONLY (never the profile or group menus).
+        keys.extend(["summary", "troubleshoot", "debug", "done"])
 
         # Use a list so HA translates labels client-side using the user's language preference.
         # Icons are embedded directly in each translation string (e.g. "🪟 Covers & Device").
@@ -4458,6 +4534,68 @@ class OptionsFlowHandler(OptionsFlow):
                 "coffee_url": "https://www.buymeacoffee.com/jrhubott",
                 "profile_line": _profile_line,
             },
+        )
+
+    async def async_step_troubleshoot(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Read-only diagnostics triage for this cover (issue #970, Phase 1).
+
+        Resolves diagnostics WITHOUT running an update cycle — it never calls
+        ``async_refresh`` (which runs the full pipeline and can move a cover).
+        Options, per-entity capabilities, and the resolved payload are folded
+        into one view, the triage engine runs, and the findings render as a
+        bullet report into ``description_placeholders``. The menu routes each
+        finding's ``fix_step`` to the options step that fixes it (deduped,
+        first-seen order), then a re-check (``troubleshoot``) and a back
+        (``init``) entry — a list so HA translates labels client-side (#227).
+        """
+        from .diagnostics import resolve
+        from .diagnostics.triage import RuleInput, render_report, run_triage
+        from .troubleshoot_i18n import load_troubleshoot_labels
+
+        read = resolve.read_diagnostics(self.hass, self._config_entry.entry_id)
+        cap_map, _ = _check_cover_capabilities(
+            self.options, self.sensor_type, self.hass
+        )
+        view: dict[str, Any] = {
+            "options": dict(self.options),
+            "capabilities": cap_map,
+            **(read.payload or {}),
+        }
+        # When diagnostics are unavailable there is no runtime payload, so only
+        # the CONFIG rules can run (they read options + capabilities alone). Run
+        # just those so every fix route in the menu corresponds to a finding the
+        # user actually sees in the report — never a route for an unshown,
+        # never-evaluated runtime finding (issue #970, MINOR 3).
+        unavailable = read.source == "unavailable"
+        findings = run_triage(view, only=RuleInput.CONFIG if unavailable else None)
+
+        labels = await self.hass.async_add_executor_job(
+            load_troubleshoot_labels,
+            _resolve_summary_language(self.hass, self.context),
+        )
+
+        if unavailable:
+            # Lead with the note that runtime checks need diagnostics, then list
+            # any config findings that could still be evaluated.
+            report = _TROUBLESHOOT_UNAVAILABLE
+            if findings:
+                report = f"{report}\n\n{render_report(findings, labels)}"
+        elif findings:
+            report = render_report(findings, labels)
+        else:
+            report = _TROUBLESHOOT_NO_ISSUES
+
+        menu_options = [
+            *dict.fromkeys(f.fix_step for f in findings if f.fix_step),
+            "troubleshoot",
+            "init",
+        ]
+        return self.async_show_menu(  # type: ignore[return-value]
+            step_id="troubleshoot",
+            menu_options=menu_options,
+            description_placeholders={"report": report},
         )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
@@ -5567,12 +5705,21 @@ class OptionsFlowHandler(OptionsFlow):
         """Show a read-only summary of the current configuration."""
         if user_input is not None:
             return await self.async_step_init()
+        from .troubleshoot_i18n import load_troubleshoot_labels
+
         sun_times = await _compute_todays_sun_times(self.hass, self.options)
-        labels = await _load_summary_labels(
-            self.hass, _resolve_summary_language(self.hass, self.context)
+        _language = _resolve_summary_language(self.hass, self.context)
+        labels = await _load_summary_labels(self.hass, _language)
+        troubleshoot_labels = await self.hass.async_add_executor_job(
+            load_troubleshoot_labels, _language
         )
         summary_text = _build_config_summary(
-            self.options, self.sensor_type, self.hass, sun_times, labels=labels
+            self.options,
+            self.sensor_type,
+            self.hass,
+            sun_times,
+            labels=labels,
+            troubleshoot_labels=troubleshoot_labels,
         )
         return self.async_show_form(
             step_id="summary",
