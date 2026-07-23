@@ -137,6 +137,8 @@ class CustomPositionSensorState:
     entity_ids: tuple[str, ...]
     # Slot activation: OR across the sensors, folded with the optional
     # condition template via templates.combine_with_mode() at snapshot time.
+    # On an *invalid* read (``is_valid`` False) this carries the last-valid
+    # activation held across the transient (issue #1005), not the current read.
     is_on: bool
     # The slot's position claim, in pre-inversion canonical space. ``None`` =
     # the slot makes no position claim — a constraint-only slot (e.g. trigger →
@@ -186,6 +188,14 @@ class CustomPositionSensorState:
     position_max: int | None = None
     tilt_min: int | None = None
     tilt_max: int | None = None
+
+    # Whether this cycle's read was usable (issue #1005). True when at least one
+    # bound sensor reported a non-invalid state (not unavailable/unknown/missing)
+    # OR a condition template rendered an opinion. False = no usable input this
+    # cycle, in which case ``is_on`` / ``active_entity_ids`` are HELD to the last
+    # valid read so a transient sensor blip does not fire a false release edge.
+    # Default True so every pre-#1005 construction path stays a valid read.
+    is_valid: bool = True
 
     @property
     def position_mode(self) -> AxisConstraintMode:
