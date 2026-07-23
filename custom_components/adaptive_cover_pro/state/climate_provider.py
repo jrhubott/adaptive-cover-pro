@@ -16,7 +16,7 @@ from ..engine.climate_crossings import (
     winter_crossing,
 )
 from ..helpers import get_domain, get_safe_state, is_entity_active, state_attr
-from ..templates import fold_condition_template
+from ..templates import fold_condition_template, is_template_string
 from .area_resolver import AreaSensorResolver
 
 if TYPE_CHECKING:
@@ -85,6 +85,10 @@ class ClimateProvider:
         self._hass = hass
         self._logger = logger
         self._area_resolver = AreaSensorResolver(hass)
+        # Last authoritative is_sunny opinion, held across a transient invalid
+        # sensor/template read so a blip cannot substitute a lower-authority
+        # weather fallback (issue #1014; mirrors #1010's custom-position hold).
+        self._last_valid_is_sunny: bool | None = None
 
     def read(
         self,
@@ -356,9 +360,15 @@ class ClimateProvider:
         sensor's on/off state and the rendered template combine via
         ``is_sunny_template_mode`` (issue #639). A sensor that is
         unavailable/unknown and a template that is empty or fails to render are
-        each treated as "no opinion": when NEITHER source is authoritative the
-        code falls through to the weather-entity logic so a stale source cannot
-        strand the integration in a fixed state.
+        each treated as "no opinion" this cycle. When a source is configured
+        and a PRIOR cycle produced an authoritative opinion, that opinion is
+        HELD across the transient invalid read instead of falling through to
+        weather (issue #1014 — mirrors #1010's custom-position hold: a
+        transient invalid read must not be read as a lower-authority signal).
+        Only when a configured source has never yet produced an opinion, or no
+        source is configured at all, does the code fall through to the
+        weather-entity logic — preserving the original "stale source cannot
+        strand the integration" intent for that first-ever-invalid case.
         """
         sensor_state = (
             get_safe_state(self._hass, is_sunny_sensor) if is_sunny_sensor else None
@@ -378,7 +388,17 @@ class ClimateProvider:
                 is_sunny_template,
                 combined,
             )
+            self._last_valid_is_sunny = combined
             return combined
+        configured = bool(is_sunny_sensor) or is_template_string(is_sunny_template)
+        if configured and self._last_valid_is_sunny is not None:
+            self._logger.debug(
+                "is_sunny(): sensor=%r template=%r invalid — holding last-valid %s",
+                is_sunny_sensor,
+                is_sunny_template,
+                self._last_valid_is_sunny,
+            )
+            return self._last_valid_is_sunny
         if is_sunny_sensor:
             self._logger.debug(
                 "is_sunny(): sensor %s unavailable (%r) — falling through to weather",

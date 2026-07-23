@@ -544,6 +544,114 @@ class TestSunnySensor:
 
 
 # ---------------------------------------------------------------------------
+# is_sunny transient-invalid HOLD (issue #1014) — mirrors #1010's pattern: a
+# transient unavailable/unknown/missing read on a configured, previously-valid
+# source must hold the last opinion instead of falling through to weather.
+# ---------------------------------------------------------------------------
+
+
+class TestSunnyTransientHold:
+    """A configured sensor that was valid must HOLD across a transient blip."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("invalid_value", ["unavailable", "unknown", None])
+    def test_transient_unavailable_sensor_holds_last_valid_off(
+        self, provider, mock_hass, invalid_value
+    ):
+        """Sensor off → valid False; sensor blips invalid → HELD False, not weather True."""
+        states = {
+            "binary_sensor.sunny": _mock_state("binary_sensor.sunny", "off"),
+            "weather.home": _mock_state("weather.home", "sunny"),
+        }
+        mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+        # Cycle 1: sensor off → valid, authoritative.
+        readings1 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings1.is_sunny is False
+
+        # Cycle 2: sensor transiently invalid → HELD to the last-valid False,
+        # NOT the weather fall-through (which would report sunny → True).
+        if invalid_value is None:
+            states.pop("binary_sensor.sunny", None)
+        else:
+            states["binary_sensor.sunny"] = _mock_state(
+                "binary_sensor.sunny", invalid_value
+            )
+        readings2 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings2.is_sunny is False  # fails today: weather fallback → True
+
+    @pytest.mark.unit
+    def test_valid_off_after_transient_hold_still_releases(self, provider, mock_hass):
+        """A genuine off read after a held transient still reports off."""
+        states = {
+            "binary_sensor.sunny": _mock_state("binary_sensor.sunny", "off"),
+            "weather.home": _mock_state("weather.home", "sunny"),
+        }
+        mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        states["binary_sensor.sunny"] = _mock_state(
+            "binary_sensor.sunny", "unavailable"
+        )
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+
+        states["binary_sensor.sunny"] = _mock_state("binary_sensor.sunny", "off")
+        readings3 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings3.is_sunny is False
+
+    @pytest.mark.unit
+    def test_off_to_on_still_releases(self, provider, mock_hass):
+        """After holding off across a blip, a genuine on read must flip True."""
+        states = {
+            "binary_sensor.sunny": _mock_state("binary_sensor.sunny", "off"),
+            "weather.home": _mock_state("weather.home", "rainy"),
+        }
+        mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        states["binary_sensor.sunny"] = _mock_state(
+            "binary_sensor.sunny", "unavailable"
+        )
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+
+        states["binary_sensor.sunny"] = _mock_state("binary_sensor.sunny", "on")
+        readings3 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings3.is_sunny is True
+
+
+# ---------------------------------------------------------------------------
 # is_sunny condition template (issue #639) — needs a real hass to render Jinja
 # ---------------------------------------------------------------------------
 
@@ -644,6 +752,60 @@ class TestSunnyTemplate:
             is_sunny_template="just text",
         )
         assert readings.is_sunny is False
+
+
+class TestSunnyTemplateTransientHold:
+    """A template-only source that was valid must HOLD across a render failure."""
+
+    async def test_transient_template_failure_holds_last_valid(self, hass):
+        """Template renders True, then fails, then renders True again.
+
+        Weather is configured to a NON-sunny condition so the pre-fix
+        fall-through and the fixed hold produce visibly different results:
+        the buggy fall-through would report False (weather rainy) on the
+        middle cycle, while the fix must hold the last-valid True.
+        """
+        hass.states.async_set("weather.home", "rainy")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+
+        sunny_template = "{{ states('sensor.elev') | float > 10 }}"
+        render_results = iter([True, None, True])
+
+        def fake_render(_hass, template_str):
+            # Only intercept the is_sunny template read; a bare call also
+            # runs for the (unused) presence template each cycle and must
+            # keep returning None like the real function does for "no
+            # template configured", not consume our side-effect sequence.
+            if template_str == sunny_template:
+                return next(render_results)
+            return None
+
+        with patch(
+            "custom_components.adaptive_cover_pro.templates.render_condition_or_none",
+            side_effect=fake_render,
+        ):
+            readings1 = p.read(
+                weather_entity="weather.home",
+                weather_condition=["sunny"],
+                is_sunny_template=sunny_template,
+            )
+            readings2 = p.read(
+                weather_entity="weather.home",
+                weather_condition=["sunny"],
+                is_sunny_template=sunny_template,
+            )
+            readings3 = p.read(
+                weather_entity="weather.home",
+                weather_condition=["sunny"],
+                is_sunny_template=sunny_template,
+            )
+
+        assert readings1.is_sunny is True
+        assert (
+            readings2.is_sunny is True
+        )  # fails today: falls through to weather → False
+        assert readings3.is_sunny is True
 
 
 # ---------------------------------------------------------------------------
