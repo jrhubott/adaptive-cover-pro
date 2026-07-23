@@ -4554,6 +4554,8 @@ class OptionsFlowHandler(OptionsFlow):
         from .diagnostics.triage import RuleInput, render_report, run_triage
         from .troubleshoot_i18n import load_troubleshoot_labels
 
+        from .cover_types import get_policy
+
         read = resolve.read_diagnostics(self.hass, self._config_entry.entry_id)
         cap_map, _ = _check_cover_capabilities(
             self.options, self.sensor_type, self.hass
@@ -4561,6 +4563,11 @@ class OptionsFlowHandler(OptionsFlow):
         view: dict[str, Any] = {
             "options": dict(self.options),
             "capabilities": cap_map,
+            # Policy-derived capability requirements for rule 13
+            # (COVER_FEATURE_MISMATCH): the triage engine reads these as plain
+            # data so it never branches on the cover-type string (§ cover-type
+            # boundary). Folded in here at the HA boundary where get_policy lives.
+            "axis_requirements": get_policy(self.sensor_type).axis_requirements(),
             **(read.payload or {}),
         }
         # When diagnostics are unavailable there is no runtime payload, so only

@@ -1820,6 +1820,36 @@ class TriageCode(StrEnum):
     MIN_FLOOR_BYPASSED = "triage.min_floor_bypassed"
     # -- rule 10: enable_min_position reads backwards (False = always enforce)
     ENABLE_MIN_BACKWARDS = "triage.enable_min_backwards"
+    # -- rule 15: a low max_elevation truncates the sun-tracking window
+    TRACKING_WINDOW_TRUNCATED = "triage.tracking_window_truncated"
+    # -- rule 16: a near-zero shaded distance makes the position near-binary
+    GEOMETRY_NEAR_BINARY = "triage.geometry_near_binary"
+    # -- rule 19: a special default (0/100) with a wide delta bypasses fine moves
+    SPECIAL_POSITION_DELTA_BYPASS = "triage.special_position_delta_bypass"
+    # -- rule 22: a custom slot outranks manual override (but is not safety)
+    CUSTOM_ABOVE_MANUAL = "triage.custom_above_manual"
+    # -- rule 12: a glare zone sits beyond the shaded distance so it never fires
+    GLARE_ZONE_NEVER_FIRES = "triage.glare_zone_never_fires"
+    # -- rule 23: position matching is off while a manual override holds
+    POSITION_MATCHING_OFF = "triage.position_matching_off"
+    # -- rule 17: dry-run mode is still enabled, so commands are logged not sent
+    DRY_RUN_LEFT_ON = "triage.dry_run_left_on"
+    # -- rule 21: automatic control is off, so overrides are blocked from acting
+    OVERRIDE_BLOCKED_AUTO_OFF = "triage.override_blocked_auto_off"
+    # -- rule 11: sun is up but outside the FOV and only the default handler ran
+    AZIMUTH_FOV_MISMATCH = "triage.azimuth_fov_mismatch"
+    # -- rule 18: a cover gave up chasing its target after repeated retries
+    ENDPOINT_CHASE = "triage.endpoint_chase"
+    # -- rule 13: a bound cover lacks a capability its cover type requires
+    COVER_FEATURE_MISMATCH = "triage.cover_feature_mismatch"
+    # -- rule 20a: the last cover command was skipped because the call failed
+    SKIP_SERVICE_CALL_FAILED = "triage.skip_service_call_failed"
+    # -- rule 20b: the last cover command found no capable service to call
+    SKIP_NO_CAPABLE_SERVICE = "triage.skip_no_capable_service"
+    # -- rule 20c: the last cover command was skipped because the cover is down
+    SKIP_COVER_UNAVAILABLE = "triage.skip_cover_unavailable"
+    # -- rule 24: a newer integration release is available (CalVer compare)
+    STALE_VERSION = "triage.stale_version"
 
 
 # =============================================================================

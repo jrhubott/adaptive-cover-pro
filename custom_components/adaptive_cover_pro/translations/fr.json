@@ -671,6 +671,11 @@
           "light_cloud": "☁️ Météo, lumière & nuages",
           "cover_entities": "🪟 Stores et appareil",
           "position": "📊 Paramètres de position",
+          "sun_tracking": "☀️ Suivi du soleil",
+          "geometry": "📐 Géométrie du store",
+          "behavior": "🎛️ Comportement & minuterie",
+          "glare_zones": "🔆 Zones d'éblouissement",
+          "debug": "🔍 Débogage et diagnostics",
           "troubleshoot": "🔁 Vérifier à nouveau",
           "init": "⬅️ Retour au menu"
         }

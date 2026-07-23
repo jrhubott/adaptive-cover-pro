@@ -10,6 +10,21 @@
     "cover_not_ready": "⚠️ {eid}: not ready (unavailable)",
     "entity_unavailable": "⚠️ {eid} is unavailable — the integration cannot read its state. Check the device or the sensor.",
     "min_floor_bypassed": "⚠️ A minimum position of {min}% is set, but these fall below it: {offenders}. They are raised to the floor (or the floor is ignored) — reconcile the values.",
-    "enable_min_backwards": "ℹ️ Minimum position {min}% is set but 'enforce minimum only while sun tracking' is off, so the floor applies at all times (the flag reads backwards). Confirm that is intended."
+    "enable_min_backwards": "ℹ️ Minimum position {min}% is set but 'enforce minimum only while sun tracking' is off, so the floor applies at all times (the flag reads backwards). Confirm that is intended.",
+    "tracking_window_truncated": "⚠️ Maximum tracking elevation is {max_elevation}°, so sun tracking stops once the sun climbs above it — a low value truncates the active window. Raise it if the cover should keep tracking a higher sun.",
+    "geometry_near_binary": "ℹ️ The shaded distance is only {distance} m, so the shade sweeps the window in just a couple of steps and the position is nearly all-or-nothing. Increase the shaded distance if you want finer positions.",
+    "special_position_delta_bypass": "ℹ️ The default position is a special {default}% with a movement delta of {delta}% — fine intermediate moves below the delta are skipped, so the cover jumps between endpoints. Lower the delta for smoother steps.",
+    "custom_above_manual": "ℹ️ Custom #{slot} has priority {priority}, above manual override ({manual}), so it overrides a manual move without acting as a safety slot. Lower it below {manual} if a manual override should win.",
+    "glare_zone_never_fires": "⚠️ Glare zone '{zone}' reaches to {reach} m from the window but the shaded distance is only {distance} m, so the zone is always beyond reach and never triggers. Move the zone closer or increase the shaded distance.",
+    "position_matching_off": "ℹ️ A manual override is active and position matching is off, so the integration will not clear the override when the cover returns to the calculated position. Enable position matching if it should self-clear.",
+    "dry_run_left_on": "⚠️ Dry-run mode is on: commands are logged but never sent, so the cover never actually moves. Turn dry-run off in the debug options once you are done testing.",
+    "override_blocked_auto_off": "ℹ️ Automatic control is off for this cover, so the integration will not move it and overrides cannot act. Turn automatic control back on when you want tracking to resume.",
+    "azimuth_fov_mismatch": "⚠️ The sun is above the horizon but outside this window's field of view, so only the default handler ran and no sun tracking happened. Check the window azimuth and FOV if the sun should be reaching this window.",
+    "endpoint_chase": "⚠️ {entity} gave up reaching its target of {target}% after {retry_count} retries — it keeps settling short of the commanded position. Check the cover's travel calibration or position feedback.",
+    "cover_feature_mismatch": "🛑 {entity} does not support the {axis} axis this cover type needs, so the integration cannot drive it correctly. Pick a cover that exposes the {axis} axis, or choose a cover type that matches this entity.",
+    "skip_service_call_failed": "🛑 The last command to {entity} was skipped {age_minutes} minutes ago because the service call failed. Check the cover integration and the HA log for the underlying error.",
+    "skip_no_capable_service": "🛑 The last command to {entity} was skipped {age_minutes} minutes ago because no capable service was found to move it. The entity may not expose the position or open/close services the integration needs.",
+    "skip_cover_unavailable": "⚠️ The last command to {entity} was skipped {age_minutes} minutes ago because the cover was unavailable. Check the device — it was offline when the integration tried to move it.",
+    "stale_version": "⚠️ A newer release is available: you are on {current} but {latest} has shipped. Update the integration through HACS to pick up the latest fixes."
   }
 }

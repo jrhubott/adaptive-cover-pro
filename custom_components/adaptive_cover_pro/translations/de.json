@@ -671,6 +671,11 @@
           "light_cloud": "☁️ Wetter, Licht & Wolken",
           "cover_entities": "🪟 Beschattungen & Gerät",
           "position": "📊 Positionseinstellungen",
+          "sun_tracking": "☀️ Sonnenverfolgung",
+          "geometry": "📐 Beschattungsgeometrie",
+          "behavior": "🎛️ Verhalten & Timing",
+          "glare_zones": "🔆 Blendungszonen",
+          "debug": "🔍 Debug und Diagnose",
           "troubleshoot": "🔁 Erneut prüfen",
           "init": "⬅️ Zurück zum Menü"
         }

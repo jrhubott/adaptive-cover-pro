@@ -24,17 +24,24 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum, Flag, auto
 
 from ..const import (
     BLANK_TIME,
     CONF_CLIMATE_MODE,
+    CONF_DEFAULT_HEIGHT,
+    CONF_DELTA_POSITION,
+    CONF_DISTANCE,
+    CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MIN_POSITION,
+    CONF_ENABLE_POSITION_MATCHING,
     CONF_END_TIME,
     CONF_IRRADIANCE_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_LUX_ENTITY,
+    CONF_MAX_ELEVATION,
     CONF_MIN_POSITION,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -46,6 +53,10 @@ from ..const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    GLARE_ZONE_SLOTS,
+    POSITION_CLOSED,
+    POSITION_OPEN,
+    ControlStatus,
     TriageCode,
 )
 from ..reason_i18n import Reason, render
@@ -59,11 +70,28 @@ _LOGGER = logging.getLogger(__name__)
 # stays HA-free. These are handler identifiers, NOT cover-type strings.
 _SOLAR_HANDLER = "solar"
 _CLIMATE_HANDLER = "climate"
+# The chain-floor handler (priority 0): when it wins, nothing above it matched.
+_DEFAULT_HANDLER = "default"
 
 # Sub-keys of a custom-position slot that count as an axis claim (mirrors
 # ``helpers.CUSTOM_POSITION_CLAIM_KEYS`` — duplicated because that module imports
 # Home Assistant and this one may not; see module docstring).
 _CLAIM_KEYS: tuple[str, ...] = ("position", "position_max", "tilt_min", "tilt_max")
+
+# The built-in manual-override handler's default priority (80). Named here rather
+# than imported from ``pipeline.handlers`` because that module pulls Home
+# Assistant; this module stays HA-free. A custom slot whose priority sits
+# strictly between this and the safety ceiling (100) wins over a manual override.
+_MANUAL_OVERRIDE_PRIORITY = 80
+
+# A shaded distance below this (metres) makes the geometry near-binary: the
+# projected shade sweeps the window over so short a throw that the position
+# resolves to only a couple of discrete steps (issue #972, rule 16).
+_NEAR_BINARY_DISTANCE_M = 0.75
+
+# A movement-hysteresis delta wider than this (%) is "wide" for rule 19 — a
+# special 0/100 default paired with it means fine intermediate moves are gated.
+_WIDE_DELTA_PCT = 5
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +203,39 @@ def run_triage(
 
 
 # ---------------------------------------------------------------------------
+# Offline adapter — map a downloaded diagnostics JSON to a triage view
+# ---------------------------------------------------------------------------
+
+
+def build_offline_view(doc: Mapping, *, latest_version: str | None = None) -> dict:
+    """Fold a downloaded diagnostics document into a :func:`run_triage` view.
+
+    Lets the offline entry points (``scripts/triage_json.py``, the
+    ``acp-diagnose`` skill) run the SAME engine as the in-product troubleshoot
+    step, so a gap in one is a gap in both. ``doc`` is either the raw diagnostics
+    download (``{"config_options": ..., "diagnostics": ...}``) or HA's wrapped
+    form (``{"data": {...}}``) — the envelope is unwrapped when present. Missing
+    keys degrade to empty rather than raising.
+
+    Offline seam: the download carries neither per-entity ``capabilities`` nor
+    the policy-derived ``axis_requirements`` (both are built live in the config
+    flow), so rules 8a (COVER_NOT_READY) and 13 (COVER_FEATURE_MISMATCH) cannot
+    fire offline — only their runtime counterpart 8b does. Rule 24 (STALE_VERSION)
+    needs ``latest_version`` injected here; without it, it never fires.
+    """
+    inner = doc.get("data") if isinstance(doc.get("data"), Mapping) else doc
+    options = inner.get("config_options")
+    diagnostics = inner.get("diagnostics")
+    view: dict = {
+        "options": dict(options) if isinstance(options, Mapping) else {},
+        **(dict(diagnostics) if isinstance(diagnostics, Mapping) else {}),
+    }
+    if latest_version is not None:
+        view["latest_version"] = latest_version
+    return view
+
+
+# ---------------------------------------------------------------------------
 # Renderer (minimal; reuses reason_i18n.render, never a second formatter)
 # ---------------------------------------------------------------------------
 
@@ -256,6 +317,25 @@ def _trace_step(data: Mapping, handler: str) -> Mapping | None:
     return None
 
 
+def _matched_winner(data: Mapping) -> Mapping | None:
+    """Return the ``decision_trace`` step that won (``matched is True``), or None.
+
+    Shared by rules 2 and 11 — the single place that scans the trace for the
+    handler that actually decided the cycle, so both agree on "who won".
+    """
+    trace = _get(data, "decision_trace")
+    if not isinstance(trace, list):
+        return None
+    return next(
+        (
+            step
+            for step in trace
+            if isinstance(step, Mapping) and step.get("matched") is True
+        ),
+        None,
+    )
+
+
 def _handler_priority(data: Mapping, handler: str) -> int | None:
     """Return the effective priority of ``handler`` from ``handler_priorities``."""
     value = _get(data, f"handler_priorities.{handler}.priority")
@@ -282,17 +362,7 @@ def _check_custom_safety_bypass(data: Mapping) -> Iterable[Mapping]:
 
 def _check_higher_priority_won(data: Mapping) -> Iterable[Mapping]:
     """Rule 2 — a handler above solar won the cycle; solar never had a say."""
-    trace = _get(data, "decision_trace")
-    if not isinstance(trace, list):
-        return
-    winner = next(
-        (
-            step
-            for step in trace
-            if isinstance(step, Mapping) and step.get("matched") is True
-        ),
-        None,
-    )
+    winner = _matched_winner(data)
     if winner is None:
         return
     winner_name = winner.get("handler")
@@ -502,6 +572,260 @@ def _check_enable_min_backwards(data: Mapping) -> Iterable[Mapping]:
 
 
 # ---------------------------------------------------------------------------
+# Backfill rule checks (rows 11–24)
+# ---------------------------------------------------------------------------
+
+
+def _check_tracking_window_truncated(data: Mapping) -> Iterable[Mapping]:
+    """Rule 15 — a low ``max_elevation`` truncates the sun-tracking window."""
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    max_elev = options.get(CONF_MAX_ELEVATION)
+    if isinstance(max_elev, int | float) and not isinstance(max_elev, bool):
+        if max_elev <= 25:
+            yield {"max_elevation": max_elev}
+
+
+def _check_geometry_near_binary(data: Mapping) -> Iterable[Mapping]:
+    """Rule 16 — a near-zero shaded distance makes the position near-binary."""
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    distance = options.get(CONF_DISTANCE)
+    if isinstance(distance, int | float) and not isinstance(distance, bool):
+        if distance < _NEAR_BINARY_DISTANCE_M:
+            yield {"distance": distance}
+
+
+def _check_special_pos_delta(data: Mapping) -> Iterable[Mapping]:
+    """Rule 19 — a special 0/100 default with a wide delta gates fine moves."""
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    default = options.get(CONF_DEFAULT_HEIGHT)
+    delta = options.get(CONF_DELTA_POSITION)
+    if (
+        default in (POSITION_CLOSED, POSITION_OPEN)
+        and isinstance(delta, int | float)
+        and not isinstance(delta, bool)
+        and delta > _WIDE_DELTA_PCT
+    ):
+        yield {"default": default, "delta": delta}
+
+
+def _check_custom_above_manual(data: Mapping) -> Iterable[Mapping]:
+    """Rule 22 — a configured custom slot outranks manual override (not safety)."""
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    for num, keys in _iter_custom_slots(options):
+        priority = int(
+            options.get(keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
+        )
+        if _MANUAL_OVERRIDE_PRIORITY < priority < CUSTOM_POSITION_SAFETY_PRIORITY:
+            yield {
+                "slot": num,
+                "priority": priority,
+                "manual": _MANUAL_OVERRIDE_PRIORITY,
+            }
+
+
+def _glare_zone_min_distance(zone_y: float, radius: float) -> float:
+    """Return the nearest window-distance a glare zone can still shade.
+
+    A zone centred ``zone_y`` metres from the window with radius ``radius``
+    reaches to ``zone_y - radius`` at its closest edge. The glare handler can
+    only act on a zone whose near edge falls within the configured shaded
+    distance, so this is the single formula both the fires-check and the
+    rendered ``reach`` param derive from (§197).
+    """
+    return zone_y - radius
+
+
+def _check_glare_zone_unreachable(data: Mapping) -> Iterable[Mapping]:
+    """Rule 12 — a configured glare zone sits beyond the shaded distance."""
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    if not options.get(CONF_ENABLE_GLARE_ZONES):
+        return
+    distance = options.get(CONF_DISTANCE)
+    if not isinstance(distance, int | float) or isinstance(distance, bool):
+        return
+    for keys in GLARE_ZONE_SLOTS.values():
+        name = options.get(keys["name"])
+        if not name:
+            continue
+        zone_y = options.get(keys["y"])
+        radius = options.get(keys["radius"])
+        if not isinstance(zone_y, int | float) or isinstance(zone_y, bool):
+            continue
+        if not isinstance(radius, int | float) or isinstance(radius, bool):
+            continue
+        reach = _glare_zone_min_distance(zone_y, radius)
+        if reach > distance:
+            yield {"zone": name, "reach": reach, "distance": distance}
+
+
+def _check_position_matching_off(data: Mapping) -> Iterable[Mapping]:
+    """Rule 23 — position matching is off while a manual override holds."""
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    if (
+        _get(data, "control_status") == ControlStatus.MANUAL_OVERRIDE
+        and options.get(CONF_ENABLE_POSITION_MATCHING) is False
+    ):
+        yield {}
+
+
+def _check_dry_run(data: Mapping) -> Iterable[Mapping]:
+    """Rule 17 — dry-run mode is still on, so commands are logged not sent."""
+    if _get(data, "debug_config.dry_run") is True:
+        yield {}
+
+
+def _check_override_blocked_auto_off(data: Mapping) -> Iterable[Mapping]:
+    """Rule 21 — automatic control is off, so overrides cannot act."""
+    if _get(data, "control_status") == ControlStatus.AUTOMATIC_CONTROL_OFF:
+        yield {}
+
+
+def _check_azimuth_fov_mismatch(data: Mapping) -> Iterable[Mapping]:
+    """Rule 11 — sun is up but outside the FOV and only the default handler ran."""
+    if _get(data, "sun_validity.in_fov") is not False:
+        return
+    if _get(data, "sun_validity.valid_elevation") is not True:
+        return
+    winner = _matched_winner(data)
+    if winner is not None and winner.get("handler") == _DEFAULT_HANDLER:
+        yield {}
+
+
+def _cap_satisfied(caps: Mapping, requirement: Mapping) -> bool:
+    """Whether ``caps`` can drive the axis named by ``requirement``.
+
+    True when the native capability flag is set, or when any fallback group is
+    fully satisfied (position via open/close). Mirrors ``CoverAxis.is_drivable``
+    without importing it (that path pulls Home Assistant). The capability keys
+    are read straight from the ``requirement`` data — no ``has_*`` literal and no
+    cover-type string appears here, keeping this module clear of the cover-type
+    boundary (CODING_GUIDELINES § "Cover Type Abstraction").
+    """
+    if caps.get(requirement["capability"]):
+        return True
+    return any(
+        all(caps.get(cap) for cap in group)
+        for group in requirement.get("fallbacks") or ()
+    )
+
+
+def _check_cover_feature_mismatch(data: Mapping) -> Iterable[Mapping]:
+    """Rule 13 — a bound cover lacks a capability its cover type requires.
+
+    Reads the policy-derived ``axis_requirements`` (folded into the view at the
+    HA boundary) against each entity's ``capabilities``. A cover with ``None``
+    caps is unavailable — rule 8a owns that — so it is skipped here.
+    """
+    requirements = _get(data, "axis_requirements") or ()
+    capabilities = _get(data, "capabilities") or {}
+    if not isinstance(capabilities, Mapping):
+        return
+    for eid, caps in capabilities.items():
+        if not isinstance(caps, Mapping):
+            continue
+        for requirement in requirements:
+            if not isinstance(requirement, Mapping):
+                continue
+            if not _cap_satisfied(caps, requirement):
+                yield {"entity": eid, "axis": requirement["axis"]}
+
+
+def _check_endpoint_chase(data: Mapping) -> Iterable[Mapping]:
+    """Rule 18 — a cover gave up chasing its target after repeated retries."""
+    commands = _get(data, "cover_commands")
+    if not isinstance(commands, Mapping):
+        return
+    for eid, state in commands.items():
+        if isinstance(state, Mapping) and state.get("gave_up") is True:
+            yield {
+                "entity": eid,
+                "retry_count": state.get("retry_count"),
+                "target": state.get("target_call"),
+            }
+
+
+def _age_minutes(iso_a: object, iso_b: object) -> float | None:
+    """Return whole-minute age from ISO ``iso_a`` to ISO ``iso_b``, or None.
+
+    Single source of truth for "how long ago" arithmetic across the skip rules
+    (§197). Both inputs are ISO-8601 strings from the payload; any parse failure
+    or non-string yields ``None`` rather than raising, so a finding still renders
+    without an age rather than breaking triage.
+    """
+    if not isinstance(iso_a, str) or not isinstance(iso_b, str):
+        return None
+    try:
+        start = datetime.fromisoformat(iso_a)
+        end = datetime.fromisoformat(iso_b)
+    except ValueError:
+        return None
+    return round((end - start).total_seconds() / 60, 1)
+
+
+def _skip_reason_check(
+    reason: str, *, age: bool = True
+) -> Callable[[Mapping], Iterable[Mapping]]:
+    """Build a check firing when ``last_skipped_action.reason`` equals ``reason``.
+
+    One factory backs all three rule-20 skip rows (§55) — each row differs only
+    in the reason it matches and its severity. The yielded params carry the
+    skipped entity and, when ``age`` is set, ``age_minutes`` derived purely from
+    ``last_skipped_action.timestamp`` vs ``data_window.captured_at``.
+    """
+
+    def _check(data: Mapping) -> Iterable[Mapping]:
+        skipped = _get(data, "last_skipped_action")
+        if not isinstance(skipped, Mapping) or skipped.get("reason") != reason:
+            return
+        params: dict = {"entity": skipped.get("entity_id")}
+        if age:
+            params["age_minutes"] = _age_minutes(
+                skipped.get("timestamp"), _get(data, "data_window.captured_at")
+            )
+        yield params
+
+    return _check
+
+
+def _calver_tuple(version: object) -> tuple[int, ...] | None:
+    """Parse a CalVer/SemVer ``Year.Month.Patch`` string to an int tuple, or None.
+
+    Splits on ``.`` and converts each dotted segment to an int, so ``"2026.8.0"``
+    → ``(2026, 8, 0)`` for a plain tuple comparison. A non-string or any
+    non-integer segment (a beta suffix, empty, ``"garbage"``) yields ``None`` so
+    the rule simply produces no finding rather than raising.
+    """
+    if not isinstance(version, str):
+        return None
+    try:
+        return tuple(int(part) for part in version.split("."))
+    except ValueError:
+        return None
+
+
+def _check_stale_version(data: Mapping) -> Iterable[Mapping]:
+    """Rule 24 — a newer integration release is available (CalVer compare)."""
+    latest_raw = _get(data, "latest_version")
+    current_raw = _get(data, "meta.integration_version")
+    latest = _calver_tuple(latest_raw)
+    current = _calver_tuple(current_raw)
+    if latest is not None and current is not None and latest > current:
+        yield {"latest": latest_raw, "current": current_raw}
+
+
+# ---------------------------------------------------------------------------
 # The rule table
 # ---------------------------------------------------------------------------
 
@@ -511,7 +835,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.WARNING,
         inputs=RuleInput.CONFIG,
         fix_step="custom_position",
-        wiki="Configuration-Custom-Positions#safety-priority",
+        wiki="Troubleshooting-Findings#custom-safety-bypass",
         issues=(711, 716),
         check=_check_custom_safety_bypass,
     ),
@@ -520,7 +844,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.INFO,
         inputs=RuleInput.RUNTIME,
         fix_step="pipeline_priorities",
-        wiki="Pipeline-Priorities#priority-order",
+        wiki="Troubleshooting-Findings#higher-priority-won",
         issues=(953,),
         check=_check_higher_priority_won,
     ),
@@ -529,7 +853,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.WARNING,
         inputs=RuleInput.CONFIG,
         fix_step="automation",
-        wiki="Configuration-Common#time-window",
+        wiki="Troubleshooting-Findings#time-window-suspect",
         issues=(953,),
         check=_check_time_window_suspect,
     ),
@@ -538,7 +862,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.WARNING,
         inputs=RuleInput.RUNTIME,
         fix_step="temperature_climate",
-        wiki="Configuration-Climate#temperature-sensor",
+        wiki="Troubleshooting-Findings#climate-temp-none",
         issues=(953,),
         check=_check_climate_temp_none,
     ),
@@ -547,7 +871,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.WARNING,
         inputs=RuleInput.CONFIG | RuleInput.RUNTIME,
         fix_step="temperature_climate",
-        wiki="Configuration-Climate#summer-close",
+        wiki="Troubleshooting-Findings#summer-wont-close",
         issues=(953,),
         check=_check_summer_wont_close,
     ),
@@ -556,7 +880,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.INFO,
         inputs=RuleInput.CONFIG,
         fix_step="temperature_climate",
-        wiki="Configuration-Climate#presence",
+        wiki="Troubleshooting-Findings#presence-defaults-true",
         issues=(953,),
         check=_check_presence_defaults_true,
     ),
@@ -565,7 +889,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.INFO,
         inputs=RuleInput.CONFIG | RuleInput.RUNTIME,
         fix_step="light_cloud",
-        wiki="Configuration-Common#cloud-suppression",
+        wiki="Troubleshooting-Findings#cloud-or-semantics",
         issues=(953,),
         check=_check_cloud_or_semantics,
     ),
@@ -574,7 +898,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.WARNING,
         inputs=RuleInput.CONFIG,
         fix_step="cover_entities",
-        wiki="Troubleshooting#cover-not-ready",
+        wiki="Troubleshooting-Findings#cover-not-ready",
         issues=(953,),
         check=_check_cover_not_ready,
     ),
@@ -588,7 +912,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         # fix_step from its menu, so nothing broken is routed.
         inputs=RuleInput.RUNTIME,
         fix_step=None,
-        wiki="Troubleshooting#unavailable-entities",
+        wiki="Troubleshooting-Findings#entity-unavailable",
         issues=(549, 953),
         check=_check_entity_unavailable,
     ),
@@ -597,7 +921,7 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.WARNING,
         inputs=RuleInput.CONFIG,
         fix_step="position",
-        wiki="Configuration-Common#min-position",
+        wiki="Troubleshooting-Findings#min-floor-bypassed",
         issues=(953,),
         check=_check_min_floor_bypassed,
     ),
@@ -606,8 +930,147 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         severity=Severity.INFO,
         inputs=RuleInput.CONFIG,
         fix_step="position",
-        wiki="Configuration-Common#enable-min-position",
+        wiki="Troubleshooting-Findings#enable-min-backwards",
         issues=(953,),
         check=_check_enable_min_backwards,
+    ),
+    TriageRule(
+        code=TriageCode.TRACKING_WINDOW_TRUNCATED,
+        severity=Severity.WARNING,
+        inputs=RuleInput.CONFIG,
+        fix_step="sun_tracking",
+        wiki="Troubleshooting-Findings#tracking-window-truncated",
+        issues=(972,),
+        check=_check_tracking_window_truncated,
+    ),
+    TriageRule(
+        code=TriageCode.GEOMETRY_NEAR_BINARY,
+        severity=Severity.INFO,
+        inputs=RuleInput.CONFIG,
+        fix_step="geometry",
+        wiki="Troubleshooting-Findings#geometry-near-binary",
+        issues=(972,),
+        check=_check_geometry_near_binary,
+    ),
+    TriageRule(
+        code=TriageCode.SPECIAL_POSITION_DELTA_BYPASS,
+        severity=Severity.INFO,
+        inputs=RuleInput.CONFIG,
+        fix_step="behavior",
+        wiki="Troubleshooting-Findings#special-position-delta-bypass",
+        issues=(972,),
+        check=_check_special_pos_delta,
+    ),
+    TriageRule(
+        code=TriageCode.CUSTOM_ABOVE_MANUAL,
+        severity=Severity.INFO,
+        inputs=RuleInput.CONFIG,
+        fix_step="custom_position",
+        wiki="Troubleshooting-Findings#custom-above-manual",
+        issues=(972,),
+        check=_check_custom_above_manual,
+    ),
+    TriageRule(
+        code=TriageCode.GLARE_ZONE_NEVER_FIRES,
+        severity=Severity.WARNING,
+        inputs=RuleInput.CONFIG,
+        fix_step="glare_zones",
+        wiki="Troubleshooting-Findings#glare-zone-never-fires",
+        issues=(972,),
+        check=_check_glare_zone_unreachable,
+    ),
+    TriageRule(
+        code=TriageCode.POSITION_MATCHING_OFF,
+        severity=Severity.INFO,
+        inputs=RuleInput.CONFIG | RuleInput.RUNTIME,
+        fix_step="position",
+        wiki="Troubleshooting-Findings#position-matching-off",
+        issues=(972,),
+        check=_check_position_matching_off,
+    ),
+    TriageRule(
+        code=TriageCode.DRY_RUN_LEFT_ON,
+        severity=Severity.WARNING,
+        inputs=RuleInput.RUNTIME,
+        fix_step="debug",
+        wiki="Troubleshooting-Findings#dry-run-left-on",
+        issues=(972,),
+        check=_check_dry_run,
+    ),
+    TriageRule(
+        code=TriageCode.OVERRIDE_BLOCKED_AUTO_OFF,
+        severity=Severity.INFO,
+        # No fix_step: automatic control being off is a deliberate user toggle,
+        # not a misconfiguration — the finding is purely informational.
+        inputs=RuleInput.RUNTIME,
+        fix_step=None,
+        wiki="Troubleshooting-Findings#override-blocked-auto-off",
+        issues=(972,),
+        check=_check_override_blocked_auto_off,
+    ),
+    TriageRule(
+        code=TriageCode.AZIMUTH_FOV_MISMATCH,
+        severity=Severity.WARNING,
+        inputs=RuleInput.RUNTIME,
+        fix_step="geometry",
+        wiki="Troubleshooting-Findings#azimuth-fov-mismatch",
+        issues=(972,),
+        check=_check_azimuth_fov_mismatch,
+    ),
+    TriageRule(
+        code=TriageCode.ENDPOINT_CHASE,
+        severity=Severity.WARNING,
+        inputs=RuleInput.RUNTIME,
+        fix_step="position",
+        wiki="Troubleshooting-Findings#endpoint-chase",
+        issues=(972,),
+        check=_check_endpoint_chase,
+    ),
+    TriageRule(
+        code=TriageCode.COVER_FEATURE_MISMATCH,
+        severity=Severity.CRITICAL,
+        inputs=RuleInput.CONFIG,
+        fix_step="cover_entities",
+        wiki="Troubleshooting-Findings#cover-feature-mismatch",
+        issues=(972,),
+        check=_check_cover_feature_mismatch,
+    ),
+    TriageRule(
+        code=TriageCode.SKIP_SERVICE_CALL_FAILED,
+        severity=Severity.CRITICAL,
+        inputs=RuleInput.RUNTIME,
+        fix_step="cover_entities",
+        wiki="Troubleshooting-Findings#skip-service-call-failed",
+        issues=(972,),
+        check=_skip_reason_check("service_call_failed"),
+    ),
+    TriageRule(
+        code=TriageCode.SKIP_NO_CAPABLE_SERVICE,
+        severity=Severity.CRITICAL,
+        inputs=RuleInput.RUNTIME,
+        fix_step="cover_entities",
+        wiki="Troubleshooting-Findings#skip-no-capable-service",
+        issues=(972,),
+        check=_skip_reason_check("no_capable_service"),
+    ),
+    TriageRule(
+        code=TriageCode.SKIP_COVER_UNAVAILABLE,
+        severity=Severity.WARNING,
+        inputs=RuleInput.RUNTIME,
+        fix_step="cover_entities",
+        wiki="Troubleshooting-Findings#skip-cover-unavailable",
+        issues=(972,),
+        check=_skip_reason_check("cover_unavailable"),
+    ),
+    TriageRule(
+        code=TriageCode.STALE_VERSION,
+        severity=Severity.WARNING,
+        # No fix_step: updating the integration is an HA/HACS action, not an
+        # options-flow step, so the finding is informational.
+        inputs=RuleInput.RUNTIME,
+        fix_step=None,
+        wiki="Troubleshooting-Findings#stale-version",
+        issues=(972,),
+        check=_check_stale_version,
     ),
 )
