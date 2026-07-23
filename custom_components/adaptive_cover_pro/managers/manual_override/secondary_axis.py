@@ -4,6 +4,31 @@ Co-located so the single-source-of-truth threshold helper sits next to both
 of its consumers — the position-delta detector
 (:mod:`.position_delta`) and the secondary-axis check below — without
 creating an import cycle through the manager.
+
+Dispatched-value anchoring rule (issue #1006)
+---------------------------------------------
+The manual-override gate correlates an incoming cover state change with "this
+is ACP's own movement" by comparing the actuator feedback against the value ACP
+last DISPATCHED for that axis — never a mutable per-cycle value that a
+mid-transit handler reevaluation may have changed after the command was sent:
+
+* Position axis — ``our_state`` derives from the recorded command target
+  (``CoverCommandService.get_target``), written only by the dispatch chokepoint
+  ``_prepare_service_call``. A reevaluation that sends no replacement command
+  leaves it intact.
+* Secondary (tilt/blend) axis — ``SecondaryAxisCheck.expected`` is anchored to
+  the last dispatched value via the single shared rule
+  :func:`resolve_dispatched_secondary_expected`. Every multi-axis policy
+  (venetian tilt, day/night-shade blend — both driving the same
+  ``DualAxisSequencer`` and its ``last_tilt_target`` store) delegates to that
+  one helper rather than mirroring the rule. When no value has been dispatched
+  the helper returns ``None`` and the check yields NO delta-based manual
+  detection on this axis — ACP has no commanded reference to police, so a
+  reevaluated ``result.tilt`` must not stand in for one.
+
+Both read sites express the same concept; the shared helper keeps them in sync
+so an in-flight movement whose expected target/tilt was recomputed mid-transit
+is not orphaned and misclassified as a manual move.
 """
 
 from __future__ import annotations
@@ -13,6 +38,41 @@ from collections.abc import Callable
 from typing import Any
 
 from ...const import POSITION_TOLERANCE_PERCENT
+
+
+def resolve_dispatched_secondary_expected(
+    sequencer: Any, entity_id: str | None, result: Any
+) -> int | None:
+    """Resolve a secondary-axis ``expected`` anchored to ACP's last DISPATCHED value.
+
+    Single source of the issue #1006 anchoring rule, shared by every multi-axis
+    policy's ``secondary_axis_check`` (venetian tilt, day/night-shade blend) so
+    the rule lives in exactly one place. Returns:
+
+    * the value ACP last DISPATCHED for this entity
+      (``sequencer.last_tilt_target(entity_id)``) — the value the actuator is
+      actually travelling toward — when ACP has a per-entity command context and
+      has dispatched an independent secondary-axis command;
+    * ``None`` when ACP has a per-entity context but NO dispatched value is
+      stored (suppress mode never sent an independent tilt, an HA restart, a
+      drift-verify pop, or an Auto-Control off→on ``clear_tilt_targets``). ACP
+      has no commanded reference to police, so the caller must build a check that
+      yields NO independent manual-detection on this axis rather than falling
+      back to the mutable per-cycle ``result.tilt`` — a mid-transit handler
+      reevaluation can change ``result.tilt`` without sending a replacement
+      command, and comparing the actuator's end-of-travel arrival against that
+      recomputed value is exactly the #1006 miscorrelation;
+    * ``result.tilt`` only when there is no per-entity context at all
+      (``entity_id`` or ``sequencer`` is ``None`` — the direct-delta unit paths
+      that predate the anchor and hand-feed the expected value).
+
+    This mirrors the position axis, whose ``our_state`` derives from the recorded
+    command target written only by the dispatch chokepoint — never re-anchored by
+    a reevaluation that sends nothing.
+    """
+    if entity_id is not None and sequencer is not None:
+        return sequencer.last_tilt_target(entity_id)
+    return result.tilt
 
 
 def effective_manual_threshold(user_threshold: int | None) -> int:
@@ -69,7 +129,11 @@ class SecondaryAxisCheck:
     a target-return publish consumes it (#930).
     """
 
-    expected: int
+    # ``None`` (issue #1006) means ACP has no DISPATCHED value to police on this
+    # axis (empty anchor): the value-based ``excursion_match`` still runs, but no
+    # delta-based manual detection may fire — a mid-transit reevaluation must not
+    # be able to assert an expectation ACP never commanded.
+    expected: int | None
     attribute: str  # e.g. "current_tilt_position"
     label: str  # e.g. "tilt" — flavours the rejection-reason text
     suppression: Callable[[str, float], bool] | None = None
@@ -140,6 +204,15 @@ class SecondaryAxisCheck:
                     ),
                 },
             )
+
+        # Issue #1006: with no DISPATCHED anchor there is no commanded value to
+        # police on this axis. The value-based excursion check above has already
+        # run (so #927 suppression is unaffected); skip all delta-based detection
+        # so an in-flight movement whose expected value was recomputed mid-transit
+        # (and never re-dispatched) cannot be misread as a manual move. The
+        # position axis, which carries its own recorded target, still runs.
+        if self.expected is None:
+            return SecondaryAxisResult()
 
         delta = abs(self.expected - new_value)
 

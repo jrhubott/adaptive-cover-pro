@@ -81,7 +81,10 @@ from ...const import (
     VENETIAN_TILT_TRANSFORM_CLAMP,
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
-from ...managers.manual_override import SecondaryAxisCheck
+from ...managers.manual_override import (
+    SecondaryAxisCheck,
+    resolve_dispatched_secondary_expected,
+)
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from ...position_utils import PositionConverter
@@ -1059,13 +1062,25 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         return self._grace_mgr.is_in_command_grace_period(entity_id)
 
     def secondary_axis_check(
-        self, result: PipelineResult, cmd_svc
+        self, result: PipelineResult, cmd_svc, entity_id: str | None = None
     ) -> SecondaryAxisCheck | None:
         """Build the per-cycle tilt-axis manual-override check.
 
         Returns ``None`` when no tilt has been resolved (e.g. on a refresh
         where the engine couldn't compute one); otherwise carries the
         expected tilt and the suppression callback into manual_override.
+
+        Issue #1006: the ``expected`` tilt is anchored to the value ACP last
+        DISPATCHED for this entity via the shared
+        :func:`resolve_dispatched_secondary_expected` rule (day/night-shade's
+        blend axis delegates to the same helper). A handler reevaluation
+        mid-transit can recompute a different tilt without sending any
+        replacement command; binding ``expected`` to the reevaluated value made
+        the actuator's end-of-travel arrival at the still-commanded tilt read as
+        a manual move. When ACP has no dispatched tilt stored (suppress mode, HA
+        restart, drift-verify pop, Auto-Control off→on) the helper returns
+        ``None`` and the check yields no independent tilt manual-detection — the
+        value-based ``excursion_match`` below (issue #927) still runs.
 
         The suppression callback is the same predicate
         :meth:`primary_axis_suppression` exposes for the position axis
@@ -1085,7 +1100,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return None
 
         return SecondaryAxisCheck(
-            expected=result.tilt,
+            expected=resolve_dispatched_secondary_expected(
+                self._sequencer, entity_id, result
+            ),
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,

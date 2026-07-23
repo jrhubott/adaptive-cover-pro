@@ -56,7 +56,11 @@ from ...engine.covers.day_night_shade import (
     DAY_NIGHT_SHEER,
     FabricSelection,
 )
-from ...managers.manual_override import SecondaryAxisCheck, inverse_state
+from ...managers.manual_override import (
+    SecondaryAxisCheck,
+    inverse_state,
+    resolve_dispatched_secondary_expected,
+)
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from .._helpers import window_dimensions_lines
@@ -862,16 +866,28 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         )
 
     def secondary_axis_check(
-        self, result: PipelineResult, cmd_svc
+        self, result: PipelineResult, cmd_svc, entity_id: str | None = None
     ) -> SecondaryAxisCheck | None:
-        """Build the per-cycle blend-axis manual-override check."""
+        """Build the per-cycle blend-axis manual-override check.
+
+        Issue #1006: Model A drives its blend axis through the SAME
+        ``DualAxisSequencer`` (and the same ``_tilt_targets`` store) venetian
+        uses, so ``expected`` is anchored to the value ACP last DISPATCHED via
+        the shared :func:`resolve_dispatched_secondary_expected` rule — never the
+        mutable per-cycle ``result.tilt`` a mid-transit reevaluation may have
+        changed. When no blend has been dispatched (empty anchor) the helper
+        returns ``None`` and the check yields no independent blend
+        manual-detection. ``entity_id`` carries the per-entity anchor context.
+        """
         # Single-carriage models (B, C) have no physical blend axis to check.
         if not self._drives_dual_axis():
             return None
         if result is None or result.tilt is None:
             return None
         return SecondaryAxisCheck(
-            expected=result.tilt,
+            expected=resolve_dispatched_secondary_expected(
+                self._sequencer, entity_id, result
+            ),
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
