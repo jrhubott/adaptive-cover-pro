@@ -2101,8 +2101,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     else min(self.manual_threshold, self._position_tolerance)
                 )
 
+            # Issue #1006: pass entity_id so a multi-axis policy can anchor the
+            # secondary-axis expected value to what ACP last DISPATCHED for THIS
+            # entity, not the mutable per-cycle pipeline result a mid-transit
+            # reevaluation may have changed.
             secondary_axis_check = (
-                self._policy.secondary_axis_check(self._pipeline_result, self._cmd_svc)
+                self._policy.secondary_axis_check(
+                    self._pipeline_result, self._cmd_svc, entity_id
+                )
                 if self._pipeline_result is not None
                 else None
             )

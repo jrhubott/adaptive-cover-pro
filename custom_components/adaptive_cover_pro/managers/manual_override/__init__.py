@@ -24,6 +24,7 @@ from .secondary_axis import (
     SecondaryAxisCheck,
     SecondaryAxisResult,
     effective_manual_threshold,
+    resolve_dispatched_secondary_expected,
 )
 from .time_window import TimeWindowDetector
 
@@ -46,4 +47,5 @@ __all__ = [
     "effective_manual_threshold",
     "get_detector",
     "inverse_state",
+    "resolve_dispatched_secondary_expected",
 ]
