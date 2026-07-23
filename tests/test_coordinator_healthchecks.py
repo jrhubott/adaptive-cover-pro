@@ -700,8 +700,8 @@ async def test_a3_no_raise_for_open_close_only_cover():
     )  # default policy = blind (no tilt axis)
     with patch(f"{_COORD}.check_cover_features", return_value=_OPEN_CLOSE_ONLY):
         create, _delete = await _run(coord, {})
-    assert (
-        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(
+        create
     )
 
 
@@ -714,8 +714,8 @@ async def test_a3_no_raise_for_tilt_type_with_set_tilt_position():
     )
     with patch(f"{_COORD}.check_cover_features", return_value=_WITH_TILT):
         create, _delete = await _run(coord, {})
-    assert (
-        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(
+        create
     )
 
 
@@ -736,8 +736,8 @@ async def test_a3_no_raise_for_day_night_split_range_on_position_only_cover():
     )
     with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
         create, _delete = await _run(coord, {})
-    assert (
-        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(
+        create
     )
 
 
@@ -757,8 +757,8 @@ async def test_a3_no_raise_for_day_night_dual_entity_on_position_only_cover():
     )
     with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
         create, _delete = await _run(coord, {})
-    assert (
-        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(
+        create
     )
 
 
@@ -811,8 +811,8 @@ async def test_a3_does_not_raise_before_debounce():
     )
     with patch(f"{_COORD}.check_cover_features", return_value=_NO_TILT):
         create, _delete = await _run(coord, {})
-    assert (
-        f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(create)
+    assert f"{ISSUE_COVER_TILT_UNSUPPORTED}_{_ENTRY}_cover.a" not in _raised_keys(
+        create
     )
     coord._repair.shutdown()  # cancel the in-flight (long) debounce timer
 
