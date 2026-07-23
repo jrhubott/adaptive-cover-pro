@@ -130,14 +130,15 @@ async def test_troubleshoot_returns_menu_with_findings_and_back_options(
     hass: HomeAssistant,
 ) -> None:
     # Options fire rules 1 (custom_position), 3 (automation), 9 (position) and
-    # 10 (position) — proving fix_step order preservation + dedup.
+    # 10 (position) — proving fix_step order preservation + dedup. Rule 3 needs a
+    # genuinely-suspect window (inverted start>end), not the BLANK_TIME sentinel.
     options = {
         CONF_ENTITIES: [],
         "custom_position_sensor_1": "binary_sensor.t",
         "custom_position_1": 5,
         "custom_position_priority_1": CUSTOM_POSITION_SAFETY_PRIORITY,
-        "start_time": "00:00:00",
-        "end_time": "20:00:00",
+        "start_time": "21:00:00",
+        "end_time": "08:00:00",
         "min_position": 40,
         "enable_min_position": False,
     }
@@ -191,6 +192,22 @@ async def test_troubleshoot_diagnostics_unavailable_is_graceful(
     report = result["description_placeholders"]["report"]
     assert report.strip()
     assert result["menu_options"] == ["troubleshoot", "init"]
+
+
+async def test_troubleshoot_unavailable_still_shows_config_findings(
+    hass: HomeAssistant,
+) -> None:
+    # Diagnostics unavailable (no coordinator) but a CONFIG issue exists: the
+    # finding is rendered in the report AND its fix route appears in the menu —
+    # never a menu route for an unshown finding (issue #970, MINOR 3).
+    options = {CONF_ENTITIES: [], "enable_min_position": False, "min_position": 40}
+    flow, entry = _cover_flow(hass, options)
+    with patch(_SERVICES_COVER_COORDINATORS, return_value={}):
+        result = await flow.async_step_troubleshoot()
+    report = result["description_placeholders"]["report"]
+    assert "Diagnostics aren't available" in report  # the runtime-needs-diag note
+    assert "Minimum position 40%" in report  # the CONFIG finding is rendered
+    assert result["menu_options"] == ["position", "troubleshoot", "init"]
 
 
 async def test_troubleshoot_never_calls_async_refresh(

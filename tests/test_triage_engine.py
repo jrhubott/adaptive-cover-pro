@@ -230,6 +230,18 @@ def test_render_report_one_bullet_per_finding() -> None:
     assert lines[1] == "- triage.bbb"
 
 
+def test_render_report_no_labels_renders_english_not_raw_codes() -> None:
+    # With no labels, a real triage finding must render its English troubleshoot
+    # prose — NOT the raw "triage.*" code (reason_i18n's own English table has no
+    # triage codes, so a naive None-label render would leak the code string).
+    from custom_components.adaptive_cover_pro.const import TriageCode
+
+    findings = [Finding(Reason(TriageCode.CLIMATE_TEMP_NONE), Severity.WARNING, None)]
+    report = render_report(findings)
+    assert report.startswith("- ⚠️ Climate mode is on")
+    assert TriageCode.CLIMATE_TEMP_NONE.value not in report
+
+
 def test_render_report_uses_supplied_labels() -> None:
     labels = {"triage.aaa": "hello {who}"}
     findings = [Finding(Reason("triage.aaa", {"who": "world"}), Severity.INFO, None)]

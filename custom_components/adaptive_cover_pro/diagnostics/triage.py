@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from enum import Enum, Flag, auto
 
 from ..const import (
+    BLANK_TIME,
     CONF_CLIMATE_MODE,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_TIME,
@@ -48,6 +49,7 @@ from ..const import (
     TriageCode,
 )
 from ..reason_i18n import Reason, render
+from ..troubleshoot_i18n import load_troubleshoot_labels
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -183,13 +185,18 @@ def render_report(
     """Render ``findings`` as a bullet list, one line per finding.
 
     Each bullet is a plain ``- `` marker plus the reason rendered through
-    :func:`..reason_i18n.render` against ``labels`` (the troubleshoot bundle,
-    or English when ``None``). No severity icon is prepended — every triage
-    template already leads with its own severity emoji, so prepending one here
-    would double it. Deliberately minimal — the troubleshoot step owns richer
-    presentation; this exists so both surfaces share one renderer.
+    :func:`..reason_i18n.render` against ``labels`` (a translated troubleshoot
+    bundle). When ``labels`` is ``None`` the English troubleshoot templates
+    (:func:`..troubleshoot_i18n.load_troubleshoot_labels` for ``"en"`` — I/O-free)
+    are used, so a triage finding renders its English prose rather than the raw
+    ``triage.*`` code string (``reason_i18n``'s own English table has no triage
+    codes). No severity icon is prepended — every triage template already leads
+    with its own severity emoji, so prepending one here would double it.
+    Deliberately minimal — the troubleshoot step owns richer presentation; this
+    exists so both surfaces share one renderer.
     """
-    return "\n".join(f"- {render(finding.reason, labels)}" for finding in findings)
+    active = labels if labels is not None else load_troubleshoot_labels("en")
+    return "\n".join(f"- {render(finding.reason, active)}" for finding in findings)
 
 
 # ---------------------------------------------------------------------------
@@ -313,24 +320,37 @@ def _check_higher_priority_won(data: Mapping) -> Iterable[Mapping]:
 
 
 def _check_time_window_suspect(data: Mapping) -> Iterable[Mapping]:
-    """Rule 3 — the active-window schedule looks misconfigured."""
+    """Rule 3 — the active-window schedule looks misconfigured.
+
+    Two genuinely-suspect signals: a start bound driven by a sun sensor
+    (``sensor.sun_next_*``), or an inverted window (start after end) with *real*
+    clock times. ``BLANK_TIME`` (``"00:00:00"``) is the UNSET / all-day sentinel
+    — a legacy entry carrying it tracks all day legitimately, so it is never
+    flagged on its own nor treated as a real bound in the start>end comparison
+    (issue #970, MINOR 6).
+    """
     options = _get(data, "options")
     if not isinstance(options, Mapping):
         return
     start_entity = options.get(CONF_START_ENTITY)
     start_time = options.get(CONF_START_TIME)
     end_time = options.get(CONF_END_TIME)
-    suspect = (
-        (isinstance(start_entity, str) and start_entity.startswith("sensor.sun_next_"))
-        or start_time == "00:00:00"
-        or (
-            isinstance(start_time, str)
-            and isinstance(end_time, str)
-            and start_time > end_time
-        )
+
+    sun_sensor_start = isinstance(start_entity, str) and start_entity.startswith(
+        "sensor.sun_next_"
     )
-    if suspect:
-        yield {"start": start_entity or start_time, "end": end_time}
+    real_start = isinstance(start_time, str) and start_time != BLANK_TIME
+    real_end = isinstance(end_time, str) and end_time != BLANK_TIME
+    inverted = real_start and real_end and start_time > end_time
+
+    if not (sun_sensor_start or inverted):
+        return
+
+    # MINOR 8: never render "end None" — fall back to the all-day sentinel when
+    # the end bound is unset/missing so the message stays sensible.
+    start_display = start_entity if sun_sensor_start else start_time
+    end_display = end_time if real_end else BLANK_TIME
+    yield {"start": start_display, "end": end_display}
 
 
 def _check_climate_temp_none(data: Mapping) -> Iterable[Mapping]:
@@ -561,8 +581,13 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
     TriageRule(
         code=TriageCode.ENTITY_UNAVAILABLE,
         severity=Severity.WARNING,
+        # No fix_step: an unavailable entity is an HA-side condition (the entity
+        # itself is down) and 8b fires for heterogeneous entities — local
+        # sensors AND cover entities — so no single ACP options step fixes it.
+        # The finding names the entity; the troubleshoot step drops a None
+        # fix_step from its menu, so nothing broken is routed.
         inputs=RuleInput.RUNTIME,
-        fix_step="profile_sensors",
+        fix_step=None,
         wiki="Troubleshooting#unavailable-entities",
         issues=(549, 953),
         check=_check_entity_unavailable,

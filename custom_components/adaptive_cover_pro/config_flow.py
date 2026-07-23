@@ -244,7 +244,7 @@ from .const import (
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
-from .troubleshoot_i18n import _TRIAGE_TEMPLATES_EN
+from .troubleshoot_i18n import load_troubleshoot_labels
 from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
@@ -1943,7 +1943,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     English defaults, keeping the English summary byte-identical.
     """
     L = labels or _SUMMARY_LABELS_EN
-    TL = troubleshoot_labels or _TRIAGE_TEMPLATES_EN
+    # English triage templates via the public loader (I/O-free for "en" —
+    # ``load_bundle_overlay`` short-circuits, so this is the same dict of English
+    # defaults, no file read). Avoids importing the private ``_TRIAGE_TEMPLATES_EN``.
+    TL = troubleshoot_labels or load_troubleshoot_labels("en")
 
     # Cover groups render their own compact summary — a group has no cover
     # chain, geometry, or handler ladder (issue #790).
@@ -2416,7 +2419,15 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             # slot at or above safety priority — the loop only visits configured
             # slots, so ``_has_trigger`` is always True here).
             if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY and _has_trigger:
-                _sub(render(_safety_findings[_slot].reason, TL))
+                # Defensive .get: the finding is present for exactly the slots
+                # this guard fires on today, so this renders byte-identically —
+                # but should the triage slot-gate ever drift from the summary's
+                # (both are hand-copies of the helpers), a missing finding is
+                # skipped rather than raising KeyError in the summary. Drift is
+                # locked out by tests/test_triage_rules.py's parity tests.
+                _safety_finding = _safety_findings.get(_slot)
+                if _safety_finding is not None:
+                    _sub(render(_safety_finding.reason, TL))
             # Footgun warning: AND combine mode with no sensors — the template
             # gates nothing and the slot degenerates to template-only OR.
             if _slot in _and_no_sensor_slots:
@@ -4540,7 +4551,7 @@ class OptionsFlowHandler(OptionsFlow):
         (``init``) entry — a list so HA translates labels client-side (#227).
         """
         from .diagnostics import resolve
-        from .diagnostics.triage import render_report, run_triage
+        from .diagnostics.triage import RuleInput, render_report, run_triage
         from .troubleshoot_i18n import load_troubleshoot_labels
 
         read = resolve.read_diagnostics(self.hass, self._config_entry.entry_id)
@@ -4552,15 +4563,25 @@ class OptionsFlowHandler(OptionsFlow):
             "capabilities": cap_map,
             **(read.payload or {}),
         }
-        findings = run_triage(view)
+        # When diagnostics are unavailable there is no runtime payload, so only
+        # the CONFIG rules can run (they read options + capabilities alone). Run
+        # just those so every fix route in the menu corresponds to a finding the
+        # user actually sees in the report — never a route for an unshown,
+        # never-evaluated runtime finding (issue #970, MINOR 3).
+        unavailable = read.source == "unavailable"
+        findings = run_triage(view, only=RuleInput.CONFIG if unavailable else None)
 
         labels = await self.hass.async_add_executor_job(
             load_troubleshoot_labels,
             _resolve_summary_language(self.hass, self.context),
         )
 
-        if read.source == "unavailable":
+        if unavailable:
+            # Lead with the note that runtime checks need diagnostics, then list
+            # any config findings that could still be evaluated.
             report = _TROUBLESHOOT_UNAVAILABLE
+            if findings:
+                report = f"{report}\n\n{render_report(findings, labels)}"
         elif findings:
             report = render_report(findings, labels)
         else:
