@@ -351,7 +351,7 @@ async def test_cover_save_records_profile_override(hass: HomeAssistant) -> None:
 async def test_building_profile_options_flow_saves_sensors(
     hass: HomeAssistant,
 ) -> None:
-    """Submitting the profile_sensors step saves options and closes the flow."""
+    """Submitting profile_sensors returns to the menu; Done persists it (#1003)."""
     profile = MockConfigEntry(
         domain=DOMAIN,
         data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
@@ -364,10 +364,19 @@ async def test_building_profile_options_flow_saves_sensors(
     flow = OptionsFlowHandler(profile)
     flow.hass = hass
 
-    # Submitting sensor data must produce create_entry (save).
+    # Submitting sensor data returns to the profile menu, not create_entry —
+    # the dialog must stay open so the user can navigate or pick "done".
     result = await flow.async_step_profile_sensors({CONF_LUX_ENTITY: "sensor.new_lux"})
-    assert result["type"] == "create_entry"
-    assert result["data"][CONF_LUX_ENTITY] == "sensor.new_lux"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    # The edit is held in-memory but not yet written to the config entry.
+    assert flow.options[CONF_LUX_ENTITY] == "sensor.new_lux"
+    assert CONF_LUX_ENTITY not in profile.options
+
+    # Only explicitly picking "done" persists the change.
+    result2 = await flow.async_step_done()
+    assert result2["type"] == "create_entry"
+    assert result2["data"][CONF_LUX_ENTITY] == "sensor.new_lux"
 
 
 # ---------------------------------------------------------------------------
