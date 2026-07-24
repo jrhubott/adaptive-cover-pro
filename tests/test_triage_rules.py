@@ -438,6 +438,44 @@ def test_rule8b_ignores_non_entity_cover_key() -> None:
     assert _params(_fire(TriageCode.ENTITY_UNAVAILABLE, view)) == [{"eid": "cover.a"}]
 
 
+def test_rule8b_list_valued_entity_id_yields_one_finding_per_member() -> None:
+    """A list-valued ``entity_id`` (e.g. ``weather_severe_sensors`` /
+    ``daytime_gate_sensors``) with ``state: "unavailable"`` yields one finding
+    per member entity id, not zero.
+
+    ``_classify_sensor_state`` only reports ``"unavailable"`` for a list
+    descriptor when EVERY member is down, so each member genuinely is
+    unavailable and deserves its own finding — closing the audit gap where
+    ``_is_entity_id`` (scalar-only) rejected the list outright and silently
+    dropped multi-sensor descriptors after the #1017 fix.
+    """
+    view = {
+        "local_sensors": [
+            {
+                "entity_id": ["sensor.severe_a", "sensor.severe_b"],
+                "state": "unavailable",
+            },
+        ],
+    }
+    assert _params(_fire(TriageCode.ENTITY_UNAVAILABLE, view)) == [
+        {"eid": "sensor.severe_a"},
+        {"eid": "sensor.severe_b"},
+    ]
+
+
+def test_rule8b_list_valued_entity_id_skips_non_entity_members() -> None:
+    """Within a list-valued descriptor, only entity-id-shaped members fire."""
+    view = {
+        "local_sensors": [
+            {
+                "entity_id": ["sensor.ok", "or"],
+                "state": "unavailable",
+            },
+        ],
+    }
+    assert _params(_fire(TriageCode.ENTITY_UNAVAILABLE, view)) == [{"eid": "sensor.ok"}]
+
+
 # ---------------------------------------------------------------------------
 # Rule 9 — MIN_FLOOR_BYPASSED
 # ---------------------------------------------------------------------------

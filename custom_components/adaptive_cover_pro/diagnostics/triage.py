@@ -538,17 +538,32 @@ def _check_cover_not_ready(data: Mapping) -> Iterable[Mapping]:
 
 
 def _check_entity_unavailable(data: Mapping) -> Iterable[Mapping]:
-    """Rule 8b — a configured sensor or cover entity is currently unavailable."""
+    """Rule 8b — a configured sensor or cover entity is currently unavailable.
+
+    A sensor-source descriptor's ``entity_id`` is either a scalar (single
+    entity) or a LIST (``weather_severe_sensors``/``daytime_gate_sensors`` —
+    multiple sensors combined into one logical source). The builder only marks
+    such a descriptor ``"unavailable"`` when EVERY member is down, so once that
+    state is reached every list member is genuinely unavailable and gets its
+    own finding — one per entity, same as the scalar case.
+    """
     for section in ("local_sensors", "building_profile_sensors"):
         sensors = _get(data, section)
-        if isinstance(sensors, list):
-            for descriptor in sensors:
-                if (
-                    isinstance(descriptor, Mapping)
-                    and descriptor.get("state") == "unavailable"
-                    and _is_entity_id(descriptor.get("entity_id"))
-                ):
-                    yield {"eid": descriptor["entity_id"]}
+        if not isinstance(sensors, list):
+            continue
+        for descriptor in sensors:
+            if (
+                not isinstance(descriptor, Mapping)
+                or descriptor.get("state") != "unavailable"
+            ):
+                continue
+            eid = descriptor.get("entity_id")
+            if isinstance(eid, list):
+                for member in eid:
+                    if _is_entity_id(member):
+                        yield {"eid": member}
+            elif _is_entity_id(eid):
+                yield {"eid": eid}
     covers = _get(data, "covers")
     if isinstance(covers, Mapping):
         for eid, cover in covers.items():
