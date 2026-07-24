@@ -282,6 +282,18 @@ def _is_template(value: object) -> bool:
     return isinstance(value, str) and ("{{" in value or "{%" in value)
 
 
+def _is_entity_id(value: object) -> bool:
+    """Return True when ``value`` looks like an HA entity_id (``domain.object_id``).
+
+    A non-entity scalar — e.g. a ``TemplateCombineMode`` value like ``"or"``
+    mistakenly surfacing as a sensor-source ``entity_id`` — must never be
+    reported as an unavailable entity (issue #1017 defense-in-depth). Shared by
+    both the sensors and covers paths of rule 8b and by rule 8a's capabilities
+    path, so the "looks like an entity id" test lives in exactly one place.
+    """
+    return isinstance(value, str) and "." in value
+
+
 def _slot_sensors(options: Mapping, keys: Mapping[str, str]) -> list[str]:
     """Return a custom-position slot's trigger sensors (mirrors helpers.py)."""
     sensors = options.get(keys["sensors"])
@@ -521,26 +533,45 @@ def _check_cover_not_ready(data: Mapping) -> Iterable[Mapping]:
     if not isinstance(capabilities, Mapping):
         return
     for eid, caps in capabilities.items():
-        if caps is None:
+        if caps is None and _is_entity_id(eid):
             yield {"eid": eid}
 
 
 def _check_entity_unavailable(data: Mapping) -> Iterable[Mapping]:
-    """Rule 8b — a configured sensor or cover entity is currently unavailable."""
+    """Rule 8b — a configured sensor or cover entity is currently unavailable.
+
+    A sensor-source descriptor's ``entity_id`` is either a scalar (single
+    entity) or a LIST (``weather_severe_sensors``/``daytime_gate_sensors`` —
+    multiple sensors combined into one logical source). The builder only marks
+    such a descriptor ``"unavailable"`` when EVERY member is down, so once that
+    state is reached every list member is genuinely unavailable and gets its
+    own finding — one per entity, same as the scalar case.
+    """
     for section in ("local_sensors", "building_profile_sensors"):
         sensors = _get(data, section)
-        if isinstance(sensors, list):
-            for descriptor in sensors:
-                if (
-                    isinstance(descriptor, Mapping)
-                    and descriptor.get("state") == "unavailable"
-                    and descriptor.get("entity_id")
-                ):
-                    yield {"eid": descriptor["entity_id"]}
+        if not isinstance(sensors, list):
+            continue
+        for descriptor in sensors:
+            if (
+                not isinstance(descriptor, Mapping)
+                or descriptor.get("state") != "unavailable"
+            ):
+                continue
+            eid = descriptor.get("entity_id")
+            if isinstance(eid, list):
+                for member in eid:
+                    if _is_entity_id(member):
+                        yield {"eid": member}
+            elif _is_entity_id(eid):
+                yield {"eid": eid}
     covers = _get(data, "covers")
     if isinstance(covers, Mapping):
         for eid, cover in covers.items():
-            if isinstance(cover, Mapping) and cover.get("available") is False:
+            if (
+                isinstance(cover, Mapping)
+                and cover.get("available") is False
+                and _is_entity_id(eid)
+            ):
                 yield {"eid": eid}
 
 

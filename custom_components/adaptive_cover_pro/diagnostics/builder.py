@@ -997,7 +997,7 @@ class DiagnosticsBuilder:
     def _build_sensor_sources(cls, ctx: DiagnosticContext) -> dict:
         """Build the two shared-sensor source/state subsections (issue #693, Q3).
 
-        Every key in ``BUILDING_PROFILE_SENSOR_KEYS`` is classified per cover via
+        Every key in ``BUILDING_PROFILE_ENTITY_KEYS`` is classified per cover via
         the three-way ``classify_profile_sensor_source``: ``"profile"`` (inherited
         from the profile), ``"override"`` (profile defines it but the cover
         overrides it locally), or ``"local"`` (profile leaves it blank, cover keeps
@@ -1012,7 +1012,7 @@ class DiagnosticsBuilder:
         flat ``configuration`` dict is untouched so current consumers keep
         working.
         """
-        from ..const import BUILDING_PROFILE_SENSOR_KEYS, CONF_BUILDING_PROFILE_ID
+        from ..const import BUILDING_PROFILE_ENTITY_KEYS, CONF_BUILDING_PROFILE_ID
         from ..profile_link import classify_profile_sensor_source
 
         options = ctx.config_options or {}
@@ -1022,7 +1022,7 @@ class DiagnosticsBuilder:
 
         profile_block: list[dict] = []
         local_block: list[dict] = []
-        for key in sorted(BUILDING_PROFILE_SENSOR_KEYS):
+        for key in sorted(BUILDING_PROFILE_ENTITY_KEYS):
             source, entity_id = classify_profile_sensor_source(
                 key, options, profile_options
             )
