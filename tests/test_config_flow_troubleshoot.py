@@ -220,6 +220,38 @@ async def test_troubleshoot_never_calls_async_refresh(
     coord.async_refresh.assert_not_called()
 
 
+async def test_troubleshoot_view_carries_policy_axis_requirements(
+    hass: HomeAssistant,
+) -> None:
+    # Rule 13 (COVER_FEATURE_MISMATCH) reads a policy-derived ``axis_requirements``
+    # field folded into the view at the HA boundary — NOT a cover-type string in
+    # the triage engine. Prove the troubleshoot step actually injects it.
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    flow, entry = _cover_flow(hass, {CONF_ENTITIES: []})
+    coord = _spy_coordinator()
+    captured: dict = {}
+
+    def _spy_run_triage(view, **kwargs):
+        captured["view"] = view
+        return []
+
+    with (
+        patch(_SERVICES_COVER_COORDINATORS, return_value={entry.entry_id: coord}),
+        patch(
+            "custom_components.adaptive_cover_pro.diagnostics.triage.run_triage",
+            side_effect=_spy_run_triage,
+        ),
+    ):
+        await flow.async_step_troubleshoot()
+
+    assert "axis_requirements" in captured["view"]
+    assert (
+        captured["view"]["axis_requirements"]
+        == get_policy(CoverType.BLIND).axis_requirements()
+    )
+
+
 # ---------------------------------------------------------------------------
 # en.json label coverage — every emittable menu option has a label
 # ---------------------------------------------------------------------------

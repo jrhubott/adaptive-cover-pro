@@ -723,6 +723,11 @@
           "light_cloud": "☁️ Weather, Light & Cloud",
           "cover_entities": "🪟 Covers & Device",
           "position": "📊 Position Settings",
+          "sun_tracking": "☀️ Sun Tracking",
+          "geometry": "📐 Cover Geometry",
+          "behavior": "🎛️ Behaviour & Timing",
+          "glare_zones": "🔆 Glare Zones",
+          "debug": "🔍 Debug & Diagnostics",
           "troubleshoot": "🔁 Re-check",
           "init": "⬅️ Back to menu"
         }

@@ -96,6 +96,106 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         "tracking' is off, so the floor applies at all times (the flag reads "
         "backwards). Confirm that is intended."
     ),
+    # Rule 15
+    TriageCode.TRACKING_WINDOW_TRUNCATED: (
+        "⚠️ Maximum tracking elevation is {max_elevation}°, so sun tracking stops "
+        "once the sun climbs above it — a low value truncates the active window. "
+        "Raise it if the cover should keep tracking a higher sun."
+    ),
+    # Rule 16
+    TriageCode.GEOMETRY_NEAR_BINARY: (
+        "ℹ️ The shaded distance is only {distance} m, so the shade sweeps the "
+        "window in just a couple of steps and the position is nearly all-or-"
+        "nothing. Increase the shaded distance if you want finer positions."
+    ),
+    # Rule 19
+    TriageCode.SPECIAL_POSITION_DELTA_BYPASS: (
+        "ℹ️ The default position is a special {default}% with a movement delta of "
+        "{delta}% — fine intermediate moves below the delta are skipped, so the "
+        "cover jumps between endpoints. Lower the delta for smoother steps."
+    ),
+    # Rule 22
+    TriageCode.CUSTOM_ABOVE_MANUAL: (
+        "ℹ️ Custom #{slot} has priority {priority}, above manual override "
+        "({manual}), so it overrides a manual move without acting as a safety "
+        "slot. Lower it below {manual} if a manual override should win."
+    ),
+    # Rule 12
+    TriageCode.GLARE_ZONE_NEVER_FIRES: (
+        "⚠️ Glare zone '{zone}' reaches to {reach} m from the window but the "
+        "shaded distance is only {distance} m, so the zone is always beyond reach "
+        "and never triggers. Move the zone closer or increase the shaded distance."
+    ),
+    # Rule 23
+    TriageCode.POSITION_MATCHING_OFF: (
+        "ℹ️ A manual override is active and position matching is off, so the "
+        "integration will not clear the override when the cover returns to the "
+        "calculated position. Enable position matching if it should self-clear."
+    ),
+    # Rule 17
+    TriageCode.DRY_RUN_LEFT_ON: (
+        "⚠️ Dry-run mode is on: commands are logged but never sent, so the cover "
+        "never actually moves. Turn dry-run off in the debug options once you are "
+        "done testing."
+    ),
+    # Rule 21
+    TriageCode.OVERRIDE_BLOCKED_AUTO_OFF: (
+        "ℹ️ Automatic control is off for this cover, so the integration will not "
+        "move it and overrides cannot act. Turn automatic control back on when you "
+        "want tracking to resume."
+    ),
+    # Rule 11
+    TriageCode.AZIMUTH_FOV_MISMATCH: (
+        "⚠️ The sun is above the horizon but outside this window's field of view, "
+        "so only the default handler ran and no sun tracking happened. Check the "
+        "window azimuth and FOV if the sun should be reaching this window."
+    ),
+    # Rule 18
+    TriageCode.ENDPOINT_CHASE: (
+        "⚠️ {entity} gave up reaching its target of {target}% after {retry_count} "
+        "retries — it keeps settling short of the commanded position. Check the "
+        "cover's travel calibration or position feedback."
+    ),
+    # Rule 13
+    TriageCode.COVER_FEATURE_MISMATCH: (
+        "🛑 {entity} does not support the {axis} axis this cover type needs, so "
+        "the integration cannot drive it correctly. Pick a cover that exposes the "
+        "{axis} axis, or choose a cover type that matches this entity."
+    ),
+    # Rule 20a — ``{when}`` is the optional localized age clause (SKIP_AGE) or "".
+    TriageCode.SKIP_SERVICE_CALL_FAILED: (
+        "🛑 The last command to {entity} was skipped{when} because the service "
+        "call failed. Check the cover integration and the HA log for the "
+        "underlying error."
+    ),
+    # Rule 20b
+    TriageCode.SKIP_NO_CAPABLE_SERVICE: (
+        "🛑 The last command to {entity} was skipped{when} because no capable "
+        "service was found to move it. The entity may not expose the position or "
+        "open/close services the integration needs."
+    ),
+    # Rule 20c
+    TriageCode.SKIP_COVER_UNAVAILABLE: (
+        "⚠️ The last command to {entity} was skipped{when} because the cover was "
+        "unavailable. Check the device — it was offline when the integration "
+        "tried to move it."
+    ),
+    # Fragment (not a rule) — the localized age clause spliced into the skip
+    # templates above via their ``{when}`` param. Leads with a space so it slots
+    # in after "skipped"; absent when the skip age is unknown.
+    TriageCode.SKIP_AGE: " {age_minutes} minutes ago",
+    # Rule 24
+    TriageCode.STALE_VERSION: (
+        "⚠️ A newer release is available: you are on {current} but {latest} has "
+        "shipped. Update the integration through HACS to pick up the latest fixes."
+    ),
+    # Rule 14
+    TriageCode.MIXED_TEMP_UNITS: (
+        "🛑 The inside temperature sensor reports {inside_unit} but the outside "
+        "temperature sensor reports {outside_unit}. Adaptive Cover Pro does not "
+        "convert between units, so climate comparisons will be wrong. Set both "
+        "temperature sensors to the same unit."
+    ),
 }
 
 

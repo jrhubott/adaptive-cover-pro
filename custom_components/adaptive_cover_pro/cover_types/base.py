@@ -618,6 +618,26 @@ class CoverTypePolicy(ABC):
 
     # ---- Axis routing -------------------------------------------------- #
 
+    def axis_requirements(self) -> tuple[dict[str, Any], ...]:
+        """Serialise each declared axis as a capability requirement (issue #972).
+
+        One ``{"axis", "capability", "fallbacks"}`` dict per axis, projected off
+        the existing ``axes`` / ``CoverAxis`` data. The diagnostics-triage engine
+        (which is Home-Assistant-free and must never branch on the cover-type
+        string) reads this to flag a cover whose entity lacks a required
+        capability: the capability key and its OR-of-ANDs ``fallbacks`` travel as
+        plain data, so no ``has_*`` literal or cover-type comparison leaks into
+        ``diagnostics/triage.py``. A fifth cover type is covered automatically.
+        """
+        return tuple(
+            {
+                "axis": axis.name,
+                "capability": axis.capability_key,
+                "fallbacks": axis.drive_fallbacks,
+            }
+            for axis in self.axes
+        )
+
     def select_default_axis(self, caps: Any) -> CoverAxis:
         """Pick the axis ``CoverCommandService`` should target for this entity.
 

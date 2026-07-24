@@ -27,6 +27,8 @@ from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     AXIS_NAME_POSITION,
     AXIS_NAME_TILT,
+    CAP_HAS_CLOSE,
+    CAP_HAS_OPEN,
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
@@ -187,6 +189,65 @@ class TestPolicyAxesDeclarations:
     @pytest.mark.unit
     def test_awning_treats_open_as_sun_blocked(self):
         assert get_policy("cover_awning").axes[0].open_blocks_sun is True
+
+
+class TestAxisRequirements:
+    """The serialisable ``axis_requirements()`` projection (issue #972, rule 13).
+
+    Folds each declared axis into a ``{"axis","capability","fallbacks"}`` dict so
+    the HA-free triage engine can flag a cover whose entity lacks a required
+    capability — without the triage module ever seeing a cover-type string or a
+    hardcoded ``has_*`` literal (the capability keys travel as data).
+    """
+
+    @pytest.mark.unit
+    def test_blind_position_requirement_with_open_close_fallback(self):
+        reqs = get_policy("cover_blind").axis_requirements()
+        assert reqs == (
+            {
+                "axis": AXIS_NAME_POSITION,
+                "capability": CAP_HAS_SET_POSITION,
+                "fallbacks": ((CAP_HAS_OPEN, CAP_HAS_CLOSE),),
+            },
+        )
+
+    @pytest.mark.unit
+    def test_tilt_requirement_has_no_fallback(self):
+        reqs = get_policy("cover_tilt").axis_requirements()
+        assert reqs == (
+            {
+                "axis": AXIS_NAME_TILT,
+                "capability": CAP_HAS_SET_TILT_POSITION,
+                "fallbacks": (),
+            },
+        )
+
+    @pytest.mark.unit
+    def test_venetian_serialises_both_axes_in_order(self):
+        reqs = get_policy("cover_venetian").axis_requirements()
+        assert [r["axis"] for r in reqs] == [AXIS_NAME_POSITION, AXIS_NAME_TILT]
+        assert [r["capability"] for r in reqs] == [
+            CAP_HAS_SET_POSITION,
+            CAP_HAS_SET_TILT_POSITION,
+        ]
+
+    @pytest.mark.unit
+    def test_requirements_match_declared_axes(self):
+        for cover_type in (
+            "cover_blind",
+            "cover_awning",
+            "cover_tilt",
+            "cover_venetian",
+            "cover_louvered_roof",
+            "cover_day_night_shade",
+            "cover_dual_panel",
+        ):
+            policy = get_policy(cover_type)
+            reqs = policy.axis_requirements()
+            assert tuple(r["axis"] for r in reqs) == tuple(a.name for a in policy.axes)
+            for req, axis in zip(reqs, policy.axes):
+                assert req["capability"] == axis.capability_key
+                assert req["fallbacks"] == axis.drive_fallbacks
 
 
 class TestForecastSecondaryAxesHook:
