@@ -2340,6 +2340,17 @@ BUILDING_PROFILE_SENSOR_KEYS = (
     )
 )
 
+# Entity-valued subset of the shared keys — the sensor-source diagnostics
+# blocks catalogue only these. Template bodies (``*_template``) and combine
+# modes (``*_template_mode``, a TemplateCombineMode scalar like "or"/"and")
+# are config, not entities; cataloguing their values as entity_ids made the
+# Troubleshoot step flag them as unavailable sensors (issue #1017).
+BUILDING_PROFILE_ENTITY_KEYS = frozenset(
+    k
+    for k in BUILDING_PROFILE_SENSOR_KEYS
+    if not (k.endswith("_template") or k.endswith("_template_mode"))
+)
+
 
 class TiltMode(StrEnum):
     """Tilt mode for venetian blinds (slat travel range)."""

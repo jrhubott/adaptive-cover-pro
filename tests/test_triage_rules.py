@@ -365,6 +365,14 @@ def test_rule8a_near_miss_all_ready() -> None:
     assert _fire(TriageCode.COVER_NOT_READY, view) == []
 
 
+def test_rule8a_ignores_non_entity_capability_key() -> None:
+    """A bogus non-entity capabilities key (e.g. a stray combine-mode scalar)
+    must not be reported as an unready cover (#1017 defense-in-depth).
+    """
+    view = {"capabilities": {"or": None, "cover.a": None}}
+    assert _params(_fire(TriageCode.COVER_NOT_READY, view)) == [{"eid": "cover.a"}]
+
+
 # ---------------------------------------------------------------------------
 # Rule 8b — ENTITY_UNAVAILABLE (per-entity)
 # ---------------------------------------------------------------------------
@@ -401,6 +409,33 @@ def test_rule8b_near_miss_all_available() -> None:
         "covers": {"cover.b": {"available": True}},
     }
     assert _fire(TriageCode.ENTITY_UNAVAILABLE, view) == []
+
+
+def test_rule8b_ignores_non_entity_sensor_descriptor() -> None:
+    """A ``*_template_mode`` scalar (e.g. "or") is not an entity_id (#1017).
+
+    Defense-in-depth: even if a non-entity value slips into a sensor-source
+    descriptor, rule 8b must not treat it as an unavailable entity — but a
+    genuine unavailable entity on the same view still fires.
+    """
+    view = {
+        "local_sensors": [
+            {"entity_id": "or", "state": "unavailable"},
+            {"entity_id": "sensor.x", "state": "unavailable"},
+        ],
+    }
+    assert _params(_fire(TriageCode.ENTITY_UNAVAILABLE, view)) == [{"eid": "sensor.x"}]
+
+
+def test_rule8b_ignores_non_entity_cover_key() -> None:
+    """The covers-path key must also look like an entity_id before firing."""
+    view = {
+        "covers": {
+            "or": {"available": False},
+            "cover.a": {"available": False},
+        },
+    }
+    assert _params(_fire(TriageCode.ENTITY_UNAVAILABLE, view)) == [{"eid": "cover.a"}]
 
 
 # ---------------------------------------------------------------------------
