@@ -337,6 +337,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self._make_detector_config(self.config_entry.options),
             ),
         )
+        # Populate the manager's cover set at construction so the manual-override
+        # restore callback (fires during platform setup, before first_refresh) sees
+        # the configured covers instead of an empty set (issue #1019).
+        self.manager.add_covers(self.entities)
         self.ignore_intermediate_states = self.config_entry.options.get(
             CONF_MANUAL_IGNORE_INTERMEDIATE, False
         )
