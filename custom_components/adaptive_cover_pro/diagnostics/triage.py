@@ -635,7 +635,11 @@ def _check_custom_above_manual(data: Mapping) -> Iterable[Mapping]:
     # built-in default (80) only when unset, so a user who raised or lowered it
     # is honoured rather than compared against a hardcoded 80.
     manual = options.get(CONF_MANUAL_OVERRIDE_PRIORITY)
-    manual = int(manual) if isinstance(manual, int) else _MANUAL_OVERRIDE_PRIORITY
+    manual = (
+        int(manual)
+        if isinstance(manual, int | float) and not isinstance(manual, bool)
+        else _MANUAL_OVERRIDE_PRIORITY
+    )
     for num, keys in _iter_custom_slots(options):
         priority = int(
             options.get(keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY

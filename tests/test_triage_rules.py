@@ -615,6 +615,37 @@ def test_rule22_uses_configured_manual_priority_low() -> None:
     assert dict(findings[0].reason.params) == {"slot": 1, "priority": 70, "manual": 60}
 
 
+def test_rule22_float_manual_priority_high_does_not_fire() -> None:
+    # HA's NumberSelector stores manual_override_priority as a float (95.0). A
+    # slot at 90 does NOT outrank a real manual priority of 95, so nothing fires
+    # — the read must be float-tolerant, not fall back to the hardcoded 80.
+    view = {
+        "options": {
+            "custom_position_sensor_1": "binary_sensor.t",
+            "custom_position_1": 40,
+            "custom_position_priority_1": 90.0,
+            "manual_override_priority": 95.0,
+        }
+    }
+    assert _fire(TriageCode.CUSTOM_ABOVE_MANUAL, view) == []
+
+
+def test_rule22_float_manual_priority_low_fires_with_int_manual() -> None:
+    # A float-stored manual priority of 60.0 is outranked by a slot at 70.0; the
+    # rule fires and reports {manual} as the int 60 (not the hardcoded 80).
+    view = {
+        "options": {
+            "custom_position_sensor_1": "binary_sensor.t",
+            "custom_position_1": 40,
+            "custom_position_priority_1": 70.0,
+            "manual_override_priority": 60.0,
+        }
+    }
+    findings = _fire(TriageCode.CUSTOM_ABOVE_MANUAL, view)
+    assert len(findings) == 1
+    assert dict(findings[0].reason.params) == {"slot": 1, "priority": 70, "manual": 60}
+
+
 # ---------------------------------------------------------------------------
 # Rule 12 — GLARE_ZONE_NEVER_FIRES (step 9, per-zone)
 # ---------------------------------------------------------------------------

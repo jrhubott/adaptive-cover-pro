@@ -69,6 +69,9 @@ def main(argv: list[str]) -> int:
     except FileNotFoundError:
         print(f"error: file not found: {args.path}", file=sys.stderr)
         return 1
+    except OSError as exc:
+        print(f"error: cannot read {args.path}: {exc}", file=sys.stderr)
+        return 1
     except json.JSONDecodeError as exc:
         print(f"error: {args.path} is not valid JSON: {exc}", file=sys.stderr)
         return 1
