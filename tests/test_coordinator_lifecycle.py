@@ -333,6 +333,39 @@ async def test_manual_override_input_template_initialized_in_init(
     assert coordinator.manual_override_input_template is None
 
 
+async def test_manager_covers_populated_at_init_for_restore(
+    hass: HomeAssistant,
+) -> None:
+    """Regression (#1019): manager.covers is populated at __init__ so the
+    RestoreEntity manual-override restore (runs during platform setup, before
+    first_refresh) sees the configured covers instead of an empty set.
+
+    Without this, `_ManualOverrideEndSensor._restore_from_attributes` filters
+    every restored override out via its `eid not in manager.covers` guard,
+    silently discarding manual overrides across a Home Assistant restart.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Restore Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="restore_01",
+        title="Restore Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    # Before the fix this is empty (covers only added during first_refresh),
+    # so the restore guard drops every override.
+    assert "cover.test_blind" in coordinator.manager.covers
+
+
 # ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------
