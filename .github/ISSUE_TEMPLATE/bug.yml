@@ -13,6 +13,10 @@ body:
     attributes:
       label: Checklist
       options:
+        - label: I have run the built-in **Troubleshoot** step (cover options → Troubleshoot) and reviewed its findings. See [Troubleshooting Findings](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting-Findings).
+          required: true
+        - label: This is an issue with the **integration**, not the companion Dashboard Card. Card bugs belong in the [Adaptive Cover Pro Card issue tracker](https://github.com/jrhubott/adaptive-cover-pro-card/issues/new/choose).
+          required: true
         - label: I have worked through the [Troubleshooting wiki page](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) and my issue is not covered there.
           required: true
         - label: I have confirmed I am running the [latest release](https://github.com/jrhubott/adaptive-cover-pro/releases/latest).
