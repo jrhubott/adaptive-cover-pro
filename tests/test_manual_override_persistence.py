@@ -97,16 +97,20 @@ def test_restore_from_attributes_populates_manager_state():
     assert abs((actual_started_at - expected_started_at).total_seconds()) < 1
 
 
-def test_restore_from_attributes_triggers_ha_state_write():
-    """async_write_ha_state is called after a successful restore."""
+def test_restore_from_attributes_returns_true_on_successful_restore():
+    """A successful restore returns True so the base writes HA state once.
+
+    The write side-effect moved to _ACPRestorableDiagnosticSensor.async_added_to_hass,
+    which calls async_write_ha_state() iff _restore_from_attributes returns True.
+    """
     eid = "cover.living_room"
     manager = _make_manager(covers={eid})
     sensor = _make_sensor(manager)
 
     expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=30)
-    sensor._restore_from_attributes({eid: expiry.isoformat()})
+    result = sensor._restore_from_attributes({eid: expiry.isoformat()})
 
-    assert sensor._write_ha_state_called is True
+    assert result is True
 
 
 # ---------------------------------------------------------------------------
@@ -128,16 +132,16 @@ def test_restore_from_attributes_drops_expired_entries():
     assert eid not in manager.manual_control_time
 
 
-def test_restore_from_attributes_does_not_write_ha_state_when_nothing_restored():
-    """No valid restores → async_write_ha_state is not called."""
+def test_restore_from_attributes_returns_false_when_nothing_restored():
+    """No valid restores → returns False so the base does not write HA state."""
     eid = "cover.bedroom"
     manager = _make_manager(covers={eid})
     sensor = _make_sensor(manager)
 
     expiry = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)
-    sensor._restore_from_attributes({eid: expiry.isoformat()})
+    result = sensor._restore_from_attributes({eid: expiry.isoformat()})
 
-    assert sensor._write_ha_state_called is False
+    assert result is False
 
 
 # ---------------------------------------------------------------------------

@@ -250,31 +250,37 @@ class _ACPDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
 class _ACPRestorableDiagnosticSensor(_ACPDiagnosticSensor, RestoreEntity):
     """Diagnostic sensor that restores a per_entity attrs dict on startup.
 
-    Used by `manual_override_end_time` to repopulate the manual-override
-    manager after HA reboots. Subclasses must implement `_restore_from_attributes`.
+    Used by `manual_override_end_time` (manual-override expiry) and
+    `position_verification` (command target, issue #1022) to repopulate manager
+    state after an HA reboot / ACP reload. Subclasses implement
+    `_restore_from_attributes` and return whether anything was restored; the
+    base writes HA state exactly once when they do.
     """
 
     async def async_added_to_hass(self) -> None:
-        """Restore prior per_entity expiry dict, if any."""
+        """Restore the prior per_entity attrs dict, if any."""
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last is None:
             return
         per_entity = (last.attributes or {}).get("per_entity") or {}
-        self._restore_from_attributes(per_entity)
+        if self._restore_from_attributes(per_entity):
+            self.async_write_ha_state()
 
-    def _restore_from_attributes(self, per_entity: Mapping[str, str]) -> None:
-        """Override in subclass to consume the restored per_entity dict."""
+    def _restore_from_attributes(self, per_entity: Mapping[str, Any]) -> bool:
+        """Consume the restored per_entity dict; return True if anything restored."""
+        return False
 
 
 class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
     """Concrete: rehydrate manual-override manager from per_entity expiry dict."""
 
-    def _restore_from_attributes(self, per_entity: Mapping[str, str]) -> None:
+    def _restore_from_attributes(self, per_entity: Mapping[str, Any]) -> bool:
         """Push prior per-entity expiry timestamps back into the manager.
 
         per_entity maps cover entity_id → ISO-8601 UTC expiry string.
         Entries that are expired or not in the current cover set are dropped.
+        Returns True if at least one entity was restored.
         """
         now = dt.datetime.now(dt.UTC)
         manager = self.coordinator.manager
@@ -298,8 +304,42 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
             )
             restored_any = True
 
-        if restored_any:
-            self.async_write_ha_state()
+        return restored_any
+
+
+class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
+    """Concrete: rehydrate the command-target store after an ACP reload (#1022).
+
+    The `per_entity` attribute carries each cover's positioning diagnostics dict
+    (which includes its last commanded ``target``). Restoring the target rebuilds
+    ``has_recorded_target=True`` post-reload so a context-less remote move is
+    detected through the fully-guarded normal path.
+    """
+
+    def _restore_from_attributes(self, per_entity: Mapping[str, Any]) -> bool:
+        """Seed each cover's last commanded target back into CoverCommandService.
+
+        per_entity maps cover entity_id → its diagnostics dict. Entries not in
+        the current cover set, or whose ``target`` is None, are skipped. Each
+        surviving target is delegated to ``CoverCommandService.restore_target``,
+        which only seeds it when the cover still rests there (guards #187) and
+        never tags a safety target or dispatches a command. Returns True if any
+        target was restored.
+        """
+        cmd_svc = self.coordinator._cmd_svc  # noqa: SLF001
+        entities = self.coordinator.entities
+        restored_any = False
+
+        for eid, diag in per_entity.items():
+            if eid not in entities:
+                continue
+            target = diag.get("target") if isinstance(diag, dict) else None
+            if target is None:
+                continue
+            if cmd_svc.restore_target(eid, target):
+                restored_any = True
+
+        return restored_any
 
 
 # ---------------------------------------------------------------------------
@@ -1324,6 +1364,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
 # Specs that need a non-default class (RestoreEntity hooks etc.).
 _SPEC_OVERRIDES: dict[str, type[_ACPDiagnosticSensor]] = {
     "manual_override_end_time": _ManualOverrideEndSensor,
+    "position_verification": _PositionVerificationSensor,
 }
 
 
@@ -1539,7 +1580,7 @@ AdaptiveCoverManualOverrideEndSensor = _make_legacy_alias(
 AdaptiveCoverPositionVerificationSensor = _make_legacy_alias(
     "AdaptiveCoverPositionVerificationSensor",
     "position_verification",
-    _ACPDiagnosticSensor,
+    _PositionVerificationSensor,
 )
 AdaptiveCoverMotionStatusSensor = _make_legacy_alias(
     "AdaptiveCoverMotionStatusSensor", "motion_status", _ACPDiagnosticSensor
