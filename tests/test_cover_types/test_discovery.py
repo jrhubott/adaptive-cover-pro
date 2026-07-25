@@ -178,17 +178,26 @@ def test_describe_inverted_defaults_false_without_options(cover_type: str) -> No
 def test_describe_inverted_parametrized(cover_type: str) -> None:
     """Every descriptor's ``inverted`` equals the shared predicate for that axis.
 
-    With inverse_state + inverse_tilt + interpolation all on, the position axes
-    report False (interpolation suppresses position inversion) and the tilt axes
-    report True (tilt inversion is never interpolation-gated).
+    With inverse_state + inverse_tilt + interpolation all on, every PRIMARY axis
+    reports False — it is configured through ``inverse_state``, which
+    interpolation suppresses — and a SECONDARY tilt axis reports True, because
+    ``inverse_tilt`` is never interpolation-gated.
+
+    The primary/secondary split is what matters, not the axis name: a tilt-only
+    cover's tilt axis is its primary axis and carries position-axis config
+    semantics (``inverse_state`` + interpolation), while venetian's and the
+    day/night shade's second axis carries the separately-configured
+    ``inverse_tilt``.
     """
     policy = get_policy(cover_type)
     desc = policy.describe(caps=_FULL_CAPS, options=_INVERSE_OPTIONS)
 
     assert len(desc.axes) == len(policy.axes)
-    for axis, descriptor in zip(policy.axes, desc.axes, strict=True):
+    for index, (axis, descriptor) in enumerate(
+        zip(policy.axes, desc.axes, strict=True)
+    ):
         assert descriptor.inverted == axis_inverted(axis, _INVERSE_OPTIONS)
-        if descriptor.id == AXIS_NAME_TILT:
+        if descriptor.id == AXIS_NAME_TILT and index > 0:
             assert descriptor.inverted is True
         else:
             assert descriptor.inverted is False

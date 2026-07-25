@@ -13,6 +13,7 @@ overrides everything.
 
 from __future__ import annotations
 
+import dataclasses
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -193,6 +194,31 @@ TILT_AXIS = CoverAxis(
     label_key="axes.tilt",
     inversion_option_key=CONF_INVERSE_TILT,
     interpolatable=False,
+)
+
+# The tilt axis as a cover's PRIMARY (and only) axis — tilt-only types such as
+# ``cover_tilt`` and ``cover_louvered_roof``. Identical to ``TILT_AXIS`` in
+# every HA-facing respect (same service, same attributes, same capability), and
+# differs only in the two config-semantics fields:
+#
+#   * ``inversion_option_key`` — ``inverse_tilt`` is offered by the venetian
+#     geometry schema alone, so a tilt-only instance can never set it. What it
+#     IS configured with is ``inverse_state``, the shared position-schema option
+#     every cover type gets. ``TILT_AXIS``'s ``inverse_tilt`` is correct only
+#     for the SECOND axis of a venetian / day-night shade, where the option is
+#     real and separately configured.
+#   * ``interpolatable`` — a single-axis cover runs its one axis through the
+#     calibration curve like any other, and ``coordinator._to_cover_frame``
+#     treats interpolation and inverse-state as mutually exclusive there.
+#     Interpolation suppresses inversion on the second axis of a venetian only
+#     because the sequencer's ``_to_wire`` reads ``inverse_tilt`` raw.
+#
+# Derived with ``dataclasses.replace`` so the shared ``TILT_AXIS`` singleton
+# stays the single definition of the tilt axis's HA contract.
+TILT_AXIS_PRIMARY = dataclasses.replace(
+    TILT_AXIS,
+    inversion_option_key=CONF_INVERSE_STATE,
+    interpolatable=True,
 )
 
 
@@ -696,7 +722,12 @@ class CoverTypePolicy(ABC):
         primary = self.axes[0]
         is_tilt_default = primary.name == AXIS_NAME_TILT
         if should_use_tilt(is_tilt_default, caps if caps is not None else {}):
-            return TILT_AXIS
+            # A tilt-primary policy returns its OWN axis object: it declares
+            # ``TILT_AXIS_PRIMARY``, which matches the shared singleton on every
+            # HA-facing field but carries primary-axis config semantics. Handing
+            # back ``TILT_AXIS`` would give callers an axis that disagrees with
+            # ``self.axes[0]`` about which option inverts it.
+            return primary if is_tilt_default else TILT_AXIS
         return primary
 
     def tilt_capability_contradiction(self, caps: Any) -> bool:

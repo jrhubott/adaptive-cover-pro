@@ -15,6 +15,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
     inverse_state,
@@ -24,7 +26,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INVERSE_STATE,
     ControlMethod,
 )
-from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY, get_policy
 from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
     MotionTimeoutHandler,
 )
@@ -58,6 +60,7 @@ def _make_coordinator(
     end_value=None,
     normal_list=None,
     new_list=None,
+    cover_type: str = "cover_blind",
 ) -> MagicMock:
     """Build a minimal mock coordinator with the attributes used by `state` property."""
     coordinator = MagicMock(spec=AdaptiveDataUpdateCoordinator)
@@ -80,7 +83,7 @@ def _make_coordinator(
             CONF_INTERP: use_interpolation,
         }
     )
-    coordinator._policy = get_policy("cover_blind")
+    coordinator._policy = get_policy(cover_type)
     coordinator.position_axis_inverted = (
         AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coordinator)
     )
@@ -385,3 +388,62 @@ class TestMotionHoldRoundTripsUnderInverse:
         coord = _make_coordinator(pipeline_result=result, inverse_state_enabled=False)
 
         assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30
+
+
+# ---------------------------------------------------------------------------
+# ``inverse_state`` applies to every cover type, not just the position-axis ones
+# ---------------------------------------------------------------------------
+
+# Derived from the registry so a new cover type is covered without an edit here.
+_COVER_TYPES_WITH_AXES = sorted(
+    cover_type for cover_type, cls in POLICY_REGISTRY.items() if cls.axes
+)
+
+
+class TestInverseStateAppliesToEveryCoverType:
+    """``coordinator.state`` honours ``inverse_state`` whatever the cover type.
+
+    ``inverse_state`` is a shared position-schema option every instance can set,
+    and ``coordinator.position_axis_inverted`` derives the answer from
+    ``policy.axes[0]``. A tilt-only cover (``cover_tilt``,
+    ``cover_louvered_roof``) whose only axis is the tilt axis must invert
+    exactly like a blind — it is configured with ``inverse_state`` and never
+    with ``inverse_tilt``.
+    """
+
+    @pytest.mark.parametrize("cover_type", _COVER_TYPES_WITH_AXES)
+    def test_solar_30_becomes_70(self, cover_type: str) -> None:
+        result = _make_pipeline_result(position=30, control_method=ControlMethod.SOLAR)
+        coord = _make_coordinator(
+            pipeline_result=result,
+            inverse_state_enabled=True,
+            cover_type=cover_type,
+        )
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 70
+
+    @pytest.mark.parametrize("cover_type", _COVER_TYPES_WITH_AXES)
+    def test_no_inversion_when_flag_off(self, cover_type: str) -> None:
+        result = _make_pipeline_result(position=30, control_method=ControlMethod.SOLAR)
+        coord = _make_coordinator(
+            pipeline_result=result,
+            inverse_state_enabled=False,
+            cover_type=cover_type,
+        )
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30
+
+    @pytest.mark.parametrize("cover_type", _COVER_TYPES_WITH_AXES)
+    def test_interpolation_suppresses_inversion(self, cover_type: str) -> None:
+        result = _make_pipeline_result(position=0, control_method=ControlMethod.SOLAR)
+        coord = _make_coordinator(
+            pipeline_result=result,
+            inverse_state_enabled=True,
+            use_interpolation=True,
+            start_value=20,
+            end_value=80,
+            cover_type=cover_type,
+        )
+
+        # Interpolated to 20; inverse NOT applied (would have given 80).
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 20

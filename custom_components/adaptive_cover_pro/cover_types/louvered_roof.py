@@ -37,7 +37,7 @@ from ..unit_system import slat_default
 from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
-    TILT_AXIS,
+    TILT_AXIS_PRIMARY,
     CoverAxis,
     CoverTypePolicy,
     caps_get,
@@ -105,7 +105,9 @@ class LouveredRoofPolicy(CoverTypePolicy, register=True):
     """Cover that rotates slats in a horizontal/pitched roof plane (louvered roof)."""
 
     cover_type = "cover_louvered_roof"
-    axes: ClassVar[tuple[CoverAxis, ...]] = (TILT_AXIS,)
+    # Tilt is this type's only axis, so it carries primary-axis config
+    # semantics (``inverse_state`` + interpolation) — see ``TILT_AXIS_PRIMARY``.
+    axes: ClassVar[tuple[CoverAxis, ...]] = (TILT_AXIS_PRIMARY,)
 
     def wiki_anchor(self) -> str:
         """Louvered-roof geometry page."""

@@ -23,7 +23,7 @@ from custom_components.adaptive_cover_pro.const import (
     POSITION_CLOSED,
     POSITION_OPEN,
 )
-from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY, get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     AXIS_NAME_POSITION,
     AXIS_NAME_TILT,
@@ -353,6 +353,15 @@ def caps_scenario(request):
     return request.param
 
 
+# Cover types whose PRIMARY axis is the tilt axis. Derived from the registry so
+# a new tilt-only cover type is picked up without an edit here.
+_TILT_PRIMARY_COVER_TYPES = sorted(
+    cover_type
+    for cover_type, cls in POLICY_REGISTRY.items()
+    if cls.axes and cls.axes[0].name == AXIS_NAME_TILT
+)
+
+
 class TestSelectDefaultAxis:
     """``select_default_axis`` matches the legacy ``should_use_tilt`` rule."""
 
@@ -385,6 +394,26 @@ class TestSelectDefaultAxis:
         policy = get_policy(cover_type)
         axis = policy.select_default_axis(None)
         assert axis.name == policy.axes[0].name
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _TILT_PRIMARY_COVER_TYPES)
+    def test_tilt_primary_returns_the_policys_own_axis(self, cover_type):
+        """A tilt-primary policy routes to its OWN axis object, not ``TILT_AXIS``.
+
+        ``cover_tilt`` / ``cover_louvered_roof`` declare ``TILT_AXIS_PRIMARY``,
+        which agrees with the shared ``TILT_AXIS`` on every HA-facing field but
+        differs on config semantics (``inverse_state`` + interpolatable, because
+        tilt is their only axis). Returning the shared singleton would hand
+        callers an axis that disagrees with ``policy.axes[0]`` about how the
+        instance is configured — the exact split ``axis_inverted`` reads.
+        """
+        policy = get_policy(cover_type)
+        for caps in (
+            {"has_set_position": True, "has_set_tilt_position": True},
+            {"has_set_position": False, "has_set_tilt_position": True},
+            None,
+        ):
+            assert policy.select_default_axis(caps) is policy.axes[0]
 
 
 # ---------------------------------------------------------------------------
