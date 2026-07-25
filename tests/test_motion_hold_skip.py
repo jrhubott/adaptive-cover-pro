@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
+    MotionTimeoutHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
@@ -71,3 +74,58 @@ async def test_dispatch_to_cover_calls_apply_position_when_skip_command_false():
         "cover.test", 42, "solar", context=ctx
     )
     coord._cmd_svc.record_skipped_action.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# hold_position emits a LOGICAL target (issue #1028)
+# ---------------------------------------------------------------------------
+
+
+def _hold_result(*, current: int, inverted: bool) -> PipelineResult:
+    """Run MotionTimeoutHandler in hold_position mode over a held read."""
+    from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+
+    snap = make_snapshot(
+        motion_control_enabled=True,
+        motion_timeout_active=True,
+        motion_timeout_mode="hold_position",
+        in_time_window=True,
+        direct_sun_valid=True,
+        current_cover_position=current,
+        position_axis_inverted=inverted,
+    )
+    result = MotionTimeoutHandler().evaluate(snap)
+    assert result is not None
+    return result
+
+
+@pytest.mark.unit
+def test_hold_position_converts_cover_read_to_logical_when_inverted():
+    """``current_cover_position`` is a raw cover read; the result must be logical.
+
+    ``coordinator.state`` inverts a non-bypass winner's position, so a raw
+    cover-frame read placed in ``PipelineResult.position`` would be inverted a
+    second time and publish a target that contradicts the cover (#1028).
+    """
+    result = _hold_result(current=30, inverted=True)
+    assert result.position == 70
+    # The raw read stays available for the reason payload / diagnostics.
+    assert result.reason_payload.params["held"] == 30
+
+
+@pytest.mark.unit
+def test_hold_position_passes_through_when_not_inverted():
+    """Without inversion the held read is already logical — no conversion."""
+    result = _hold_result(current=30, inverted=False)
+    assert result.position == 30
+    assert result.reason_payload.params["held"] == 30
+
+
+@pytest.mark.unit
+def test_hold_position_does_not_set_bypass_auto_control():
+    """``bypass_auto_control`` also means "apply when auto control is OFF".
+
+    A motion hold must not acquire that semantic just to dodge the inversion —
+    the frame conversion is the correct lever (#1028).
+    """
+    assert _hold_result(current=30, inverted=True).bypass_auto_control is False

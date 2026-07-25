@@ -381,7 +381,16 @@ class PipelineSnapshot:
 
     # Mean of current entity positions (int-rounded). None when no entity reports a
     # numeric position. Read by MotionTimeoutHandler in hold_position mode only.
+    # This is a RAW cover-frame read — see position_axis_inverted below.
     current_cover_position: int | None = None
+
+    # Whether the position axis is effectively inverted for this install
+    # (inverse-state configured and not suppressed by interpolation, per
+    # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
+    # such as ``current_cover_position`` into ``PipelineResult.position`` must
+    # convert it to the logical frame first, because ``coordinator.state``
+    # inverts every non-bypass winner on the way out (issue #1028).
+    position_axis_inverted: bool = False
 
     # The CoverTypePolicy chosen at coordinator startup. Handlers should consult
     # this for cover-type-aware decisions (axis routing, intent → position

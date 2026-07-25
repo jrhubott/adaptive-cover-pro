@@ -48,6 +48,7 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod
+from .managers.manual_override import inverse_state
 from .managers.manual_override.expiry import (
     expiry_for_started_at,
     started_at_for_expiry,
@@ -367,10 +368,14 @@ def _compute_distance_attrs(
 ) -> dict[str, Any] | None:
     """Build target_distance / actual_distances / distance_unit, or None to skip.
 
-    Translates the published position percentage into a physical distance using
-    the policy's lift-axis travel range. Inverse-agnostic: 100% always maps to
-    the full configured dimension regardless of inverse_state, since the value
-    is literal arithmetic on what the sensor publishes.
+    Translates a position percentage into a physical distance using the policy's
+    lift-axis travel range. A distance is a physical quantity, so it is always
+    computed on the LOGICAL frame (issue #1028): on an inverse-state instance the
+    percentages reaching this helper are cover-frame values, and doing literal
+    arithmetic on them reports the physical opposite — a fully-extended 3 m awning
+    sitting at cover-frame 0 would claim 0.00 m of extension. Converting first
+    means 100 % of physical travel is reported for a physically extended cover,
+    whichever frame the underlying number arrived in.
     """
     options = coordinator.config_entry.options
     dim_m = coordinator._policy.lift_travel_metres(  # noqa: SLF001
@@ -383,19 +388,20 @@ def _compute_distance_attrs(
     except (TypeError, ValueError):
         return None
     hass = coordinator.hass
+    inverted = coordinator.position_axis_inverted
+
+    def _display_distance(pct: float) -> float:
+        """Physical travel for *pct*, rebased onto the logical frame if needed."""
+        logical = inverse_state(pct) if inverted else pct
+        return round(to_display_length(dim_m * logical / 100.0, hass), 2)
+
     attrs: dict[str, Any] = {
-        "target_distance": round(
-            to_display_length(dim_m * target_pct / 100.0, hass), 2
-        ),
+        "target_distance": _display_distance(target_pct),
         "distance_unit": length_display_unit(hass),
     }
     if snapshot and snapshot.cover_positions:
         attrs["actual_distances"] = {
-            eid: (
-                None
-                if pos is None
-                else round(to_display_length(dim_m * pos / 100.0, hass), 2)
-            )
+            eid: (None if pos is None else _display_distance(pos))
             for eid, pos in snapshot.cover_positions.items()
         }
     return attrs
@@ -415,8 +421,9 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         if position_explanation is not None:
             attrs["position_explanation"] = position_explanation
         attrs["raw_calculated_position"] = diagnostics.get("calculated_position")
-        # Pre-interpolation logical target (issue #911); the companion card shows
-        # this as the primary position, demoting the interpolated `state`.
+        # Pre-interpolation target in the logical (HA-convention) frame on every
+        # cycle (issues #911, #1028); the companion card shows this as the
+        # primary position, demoting the motor-frame `state`.
         attrs["linear_position"] = diagnostics.get("linear_position")
         calc_details = diagnostics.get("calculation_details")
         if calc_details:
@@ -440,6 +447,18 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
     if snapshot and snapshot.cover_positions:
         actual_positions = dict(snapshot.cover_positions)
         attrs["actual_positions"] = actual_positions
+
+        # Logical-frame sibling of actual_positions (issue #1028). The raw dict
+        # above stays in the cover's own frame — the delta gates, the assumed
+        # position surface (#888) and the command-target restore (#1022) all
+        # depend on that — so the flipped view ships alongside it instead of
+        # replacing it, letting a consumer put an actual and `linear_position`
+        # on one scale. Identity when the axis is not effectively inverted.
+        inverted = s.coordinator.position_axis_inverted
+        attrs["linear_actual_positions"] = {
+            eid: (inverse_state(pos) if inverted and pos is not None else pos)
+            for eid, pos in actual_positions.items()
+        }
 
         # all_at_target: True when every cover with a known position is within
         # tolerance of the coordinator's current target position.
@@ -1210,7 +1229,12 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         attrs_fn=_cover_position_attrs,
         diagnostic=False,
         unrecorded_attributes=frozenset(
-            {"actual_positions", "actual_distances", "position_explanation"}
+            {
+                "actual_positions",
+                "linear_actual_positions",
+                "actual_distances",
+                "position_explanation",
+            }
         ),
     ),
     _SensorSpec(

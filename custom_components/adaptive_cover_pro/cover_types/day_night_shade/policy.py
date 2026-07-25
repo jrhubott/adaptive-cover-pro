@@ -35,8 +35,6 @@ from ...const import (
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
-    CONF_INTERP,
-    CONF_INVERSE_STATE,
     DAY_NIGHT_CONTROL_MODELS,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
@@ -72,6 +70,7 @@ from ..base import (
     TILT_AXIS,
     CoverAxis,
     CoverTypePolicy,
+    axis_inverted,
     caps_get,
 )
 from ..blind import VERTICAL_LENGTH_KEYS, geometry_vertical_schema
@@ -607,12 +606,8 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         no-pass invariant regardless of inverse / bypass / clamp (#993).
         """
         self._dual_entity_blend = resolved.tilt
-        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
-        use_interp = bool(options.get(CONF_INTERP, False))
-        self._dual_entity_inverse = (
-            inverse_cfg
-            and not use_interp
-            and not (resolved.bypass_auto_control or resolved.floor_clamp_applied)
+        self._dual_entity_inverse = axis_inverted(self.axes[0], options) and not (
+            resolved.bypass_auto_control or resolved.floor_clamp_applied
         )
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 

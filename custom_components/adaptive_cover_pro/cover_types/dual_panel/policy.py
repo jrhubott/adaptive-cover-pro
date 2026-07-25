@@ -27,7 +27,6 @@ from homeassistant.helpers import selector
 from ...const import (
     CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
     CONF_DUAL_PANEL_FRONT_ENTITY,
-    CONF_INVERSE_STATE,
     DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS,
     DUAL_PANEL_BLACKOUT_TRIGGERS,
     DUAL_PANEL_TRIGGER_HEAT,
@@ -49,6 +48,7 @@ from ..base import (
     POSITION_AXIS,
     CoverAxis,
     CoverTypePolicy,
+    axis_inverted,
     caps_get,
 )
 from ..blind import VERTICAL_LENGTH_KEYS, geometry_vertical_schema
@@ -402,9 +402,8 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         )
 
         use_interp = bool(options.get(CONF_INTERP, False))
-        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
         self._back_interp = use_interp
-        self._back_inverse = inverse_cfg and not use_interp
+        self._back_inverse = axis_inverted(self.axes[0], options)
         self._interp_start = options.get(CONF_INTERP_START)
         self._interp_end = options.get(CONF_INTERP_END)
         self._interp_list = options.get(CONF_INTERP_LIST)

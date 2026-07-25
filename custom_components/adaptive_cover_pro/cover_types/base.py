@@ -14,6 +14,7 @@ overrides everything.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -28,6 +29,9 @@ from homeassistant.helpers import selector
 from ..const import (
     ATTR_POSITION,
     ATTR_TILT_POSITION,
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    CONF_INVERSE_TILT,
     POSITION_CLOSED,
     POSITION_OPEN,
     GroupScene,
@@ -112,6 +116,12 @@ class CoverAxis:
     tilt axis has no fallback, so it stays drivable only with native tilt. This
     keeps the axis model — not a cover-type string check — the single source of
     truth for "can this axis be driven" (#886).
+
+    ``inversion_option_key`` and ``interpolatable`` encode which config option
+    reverses this axis and whether interpolation suppresses that reversal —
+    the two inputs ``axis_inverted`` needs (#1028). Both carry safe defaults so
+    existing construction sites and Liskov-conformant stub policies are
+    unaffected.
     """
 
     name: str
@@ -125,6 +135,8 @@ class CoverAxis:
     value_max: int = AXIS_VALUE_MAX
     unit: str = AXIS_VALUE_UNIT
     drive_fallbacks: tuple[tuple[str, ...], ...] = ()
+    inversion_option_key: str = CONF_INVERSE_STATE
+    interpolatable: bool = True
 
     def is_drivable(self, caps: Any) -> bool:
         """Whether the integration can drive this axis on an entity with *caps*.
@@ -179,7 +191,32 @@ TILT_AXIS = CoverAxis(
     capability_key=CAP_HAS_SET_TILT_POSITION,
     open_blocks_sun=False,
     label_key="axes.tilt",
+    inversion_option_key=CONF_INVERSE_TILT,
+    interpolatable=False,
 )
+
+
+def axis_inverted(axis: CoverAxis, options: Mapping[str, Any] | None) -> bool:
+    """Whether *axis* is effectively reversed for the install described by *options*.
+
+    Single source of truth for the "is this axis inverted right now" question
+    (#1028). Derived at read time from ``config_entry.options`` — never cached
+    on an instance — so it cannot drift from the config the way the three
+    hand-written copies of this formula did.
+
+    An axis is inverted when its ``inversion_option_key`` is set AND the
+    inversion is not suppressed by interpolation. Position inversion IS
+    suppressed (``coordinator.state`` logs the combination as unsupported and
+    skips it); tilt inversion is not, because the venetian sequencer's
+    ``_to_wire`` reads ``inverse_tilt`` directly and never consults the
+    calibration curve. ``interpolatable`` on the axis carries that asymmetry
+    so no caller has to know which axis it is holding.
+    """
+    if not options:
+        return False
+    if not options.get(axis.inversion_option_key):
+        return False
+    return not (axis.interpolatable and bool(options.get(CONF_INTERP)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +228,11 @@ class AxisDescriptor:
     service, the companion Lovelace card) needs to render and drive an axis
     without knowing the cover type — plus ``supported``, the per-install
     rollup of whether the bound cover(s) actually expose the axis.
+
+    ``inverted`` (#1028) states whether this install reverses the axis, so a
+    consumer reading a raw cover attribute knows which frame it is in without
+    guessing from the config. Defaults to ``False`` so a caller that describes
+    an axis without options is unaffected.
     """
 
     id: str
@@ -204,6 +246,7 @@ class AxisDescriptor:
     service_attr: str
     open_blocks_sun: bool
     supported: bool
+    inverted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -693,12 +736,16 @@ class CoverTypePolicy(ABC):
         axis: CoverAxis,
         caps: Any = None,
         labels: dict[str, str] | None = None,
+        *,
+        options: Mapping[str, Any] | None = None,
     ) -> AxisDescriptor:
         """Project one ``CoverAxis`` to a serialisable ``AxisDescriptor``.
 
         ``labels`` overlays translated ``axes.*`` strings on the English base;
         ``None`` keeps English (back-compat). ``supported`` reflects whether
-        *caps* expose the axis.
+        *caps* expose the axis. ``options`` are this entry's config options —
+        the only thing that can answer ``inverted`` — and default to ``None``
+        so the Liskov contract for a partial fifth-cover-type policy holds.
         """
         label = {**AXIS_LABELS_EN, **(labels or {})}.get(axis.label_key, axis.label_key)
         return AxisDescriptor(
@@ -713,12 +760,15 @@ class CoverTypePolicy(ABC):
             service_attr=axis.service_attr,
             open_blocks_sun=axis.open_blocks_sun,
             supported=axis.is_drivable(caps),
+            inverted=axis_inverted(axis, options),
         )
 
     def describe(
         self,
         caps: Any = None,
         labels: dict[str, str] | None = None,
+        *,
+        options: Mapping[str, Any] | None = None,
     ) -> CoverDescriptor:
         """Assemble the self-discovery descriptor for this cover type (#725).
 
@@ -731,7 +781,9 @@ class CoverTypePolicy(ABC):
         return CoverDescriptor(
             cover_type=self.cover_type,
             cover_label=self.display_label(labels),
-            axes=tuple(self.describe_axis(a, caps, labels) for a in self.axes),
+            axes=tuple(
+                self.describe_axis(a, caps, labels, options=options) for a in self.axes
+            ),
         )
 
     def position_axis_supported(self, caps: Any) -> bool:

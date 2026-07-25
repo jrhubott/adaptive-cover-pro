@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    CONF_INVERSE_TILT,
+)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
+    AXIS_NAME_TILT,
     AxisDescriptor,
     CoverDescriptor,
+    axis_inverted,
 )
 
 from .test_axes import ALL_COVER_TYPES
@@ -146,3 +153,42 @@ def test_tilt_axis_has_no_open_close_fallback() -> None:
     }
     supported = policy.supported_axes(caps)
     assert tuple(a.name for a in supported) == ("position",)
+
+
+# ---------------------------------------------------------------------------
+# Per-axis `inverted` metadata (issue #1028)
+# ---------------------------------------------------------------------------
+
+
+_INVERSE_OPTIONS = {
+    CONF_INVERSE_STATE: True,
+    CONF_INVERSE_TILT: True,
+    CONF_INTERP: True,
+}
+
+
+@pytest.mark.parametrize("cover_type", ALL_COVER_TYPES)
+def test_describe_inverted_defaults_false_without_options(cover_type: str) -> None:
+    """``options`` is optional (Liskov-safe): omitting it means "not inverted"."""
+    desc = get_policy(cover_type).describe(caps=_FULL_CAPS)
+    assert all(axis.inverted is False for axis in desc.axes)
+
+
+@pytest.mark.parametrize("cover_type", ALL_COVER_TYPES)
+def test_describe_inverted_parametrized(cover_type: str) -> None:
+    """Every descriptor's ``inverted`` equals the shared predicate for that axis.
+
+    With inverse_state + inverse_tilt + interpolation all on, the position axes
+    report False (interpolation suppresses position inversion) and the tilt axes
+    report True (tilt inversion is never interpolation-gated).
+    """
+    policy = get_policy(cover_type)
+    desc = policy.describe(caps=_FULL_CAPS, options=_INVERSE_OPTIONS)
+
+    assert len(desc.axes) == len(policy.axes)
+    for axis, descriptor in zip(policy.axes, desc.axes, strict=True):
+        assert descriptor.inverted == axis_inverted(axis, _INVERSE_OPTIONS)
+        if descriptor.id == AXIS_NAME_TILT:
+            assert descriptor.inverted is True
+        else:
+            assert descriptor.inverted is False

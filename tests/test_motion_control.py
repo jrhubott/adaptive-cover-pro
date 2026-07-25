@@ -609,6 +609,7 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     coordinator.logger = MagicMock()
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
     coordinator._pipeline_bypasses_auto_control = False
 
     # Mock property access for direct checks in state property
@@ -638,6 +639,7 @@ def test_state_property_safety_custom_position_precedence():
     coordinator.logger = MagicMock()
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
 
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
 

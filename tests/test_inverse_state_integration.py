@@ -12,13 +12,22 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
     inverse_state,
 )
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    ControlMethod,
+)
+from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
+    MotionTimeoutHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
@@ -61,6 +70,20 @@ def _make_coordinator(
     coordinator.normal_list = normal_list
     coordinator.new_list = new_list
     coordinator.logger = MagicMock()
+    # `state` asks the coordinator's own `position_axis_inverted` property, which
+    # derives the answer from the entry options (#1028). Give the mock real
+    # options + policy and evaluate the real property so the fixture never
+    # hand-rolls the formula it is meant to exercise.
+    coordinator.config_entry = SimpleNamespace(
+        options={
+            CONF_INVERSE_STATE: inverse_state_enabled,
+            CONF_INTERP: use_interpolation,
+        }
+    )
+    coordinator._policy = get_policy("cover_blind")
+    coordinator.position_axis_inverted = (
+        AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coordinator)
+    )
     return coordinator
 
 
@@ -316,3 +339,43 @@ class TestInterpolationAndInverseStateConflict:
             "inverse" in msg.lower() and "interpolation" in msg.lower()
             for msg in logged
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #1028: a motion hold must not be inverted into a contradictory target
+# ---------------------------------------------------------------------------
+
+
+class TestMotionHoldRoundTripsUnderInverse:
+    """The published target for a motion hold equals the cover's actual position."""
+
+    @staticmethod
+    def _hold_result(*, current: int, inverted: bool) -> PipelineResult:
+        from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+
+        snap = make_snapshot(
+            motion_control_enabled=True,
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=current,
+            position_axis_inverted=inverted,
+        )
+        result = MotionTimeoutHandler().evaluate(snap)
+        assert result is not None
+        return result
+
+    def test_hold_at_30_publishes_30_under_inverse(self):
+        """Cover physically at 30 → published state 30, not 100 - 30."""
+        result = self._hold_result(current=30, inverted=True)
+        coord = _make_coordinator(pipeline_result=result, inverse_state_enabled=True)
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30
+
+    def test_hold_at_30_publishes_30_without_inverse(self):
+        """Unchanged on a non-inverted install."""
+        result = self._hold_result(current=30, inverted=False)
+        coord = _make_coordinator(pipeline_result=result, inverse_state_enabled=False)
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30

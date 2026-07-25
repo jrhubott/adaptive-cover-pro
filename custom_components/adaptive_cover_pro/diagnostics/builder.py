@@ -21,6 +21,7 @@ from ..const import (
     ReasonCode,
     SunState,
 )
+from ..managers.manual_override import inverse_state
 from ..reason_i18n import Reason, render
 
 # Sensor state classifications (issue #693, Q3).
@@ -89,6 +90,11 @@ class DiagnosticContext:
     switch_mode: bool = False
     inverse_state: bool = False
     use_interpolation: bool = False
+    # Whether the position axis is EFFECTIVELY inverted this cycle — i.e.
+    # inverse-state is configured and interpolation is not suppressing it
+    # (issue #1028). Not the same as ``inverse_state`` above, which is the raw
+    # config flag. Defaults False so contexts built without it are unaffected.
+    position_axis_inverted: bool = False
     final_state: int = 0  # coordinator.state (after interpolation/inverse)
 
     # Solar-tracking-only forecast for the rest of today (issue #437 cache).
@@ -442,6 +448,23 @@ class DiagnosticsBuilder:
         diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
         return diagnostics
 
+    @staticmethod
+    def _logical_position(ctx: DiagnosticContext) -> int:
+        """Return the winner's position in the logical frame (issue #1028).
+
+        Mirrors ``coordinator.state``'s short-circuit: a bypass or floor-clamped
+        winner is returned to the cover verbatim, so on an inverted install its
+        position is a cover-frame value and must be flipped to become logical.
+        Every other winner's position is already logical.
+        """
+        result = ctx.pipeline_result
+        if result is None:
+            return 0
+        cover_frame = result.bypass_auto_control or result.floor_clamp_applied
+        if cover_frame and ctx.position_axis_inverted:
+            return inverse_state(result.position)
+        return result.position
+
     @classmethod
     def _build_position_base(cls, ctx: DiagnosticContext) -> dict:
         """Build calculated position, control status/reason, optional flags, and explanation."""
@@ -449,10 +472,18 @@ class DiagnosticsBuilder:
         result = ctx.pipeline_result
         raw_pos = result.raw_calculated_position if result is not None else 0
         diagnostics["calculated_position"] = raw_pos
-        # Pre-interpolation logical target (issue #911): the position the pipeline
-        # decided, before interpolation maps it onto the motor curve. Equals the
-        # interpolated motor value when interpolation is off.
-        diagnostics["linear_position"] = result.position if result is not None else 0
+        # Pre-interpolation target in the LOGICAL (HA-convention) frame on every
+        # cycle (issues #911, #1028): the position the pipeline decided, before
+        # interpolation maps it onto the motor curve.
+        #
+        # It equals the motor value ``coordinator.state`` publishes only when
+        # neither interpolation nor inverse-state is in play. Bypass and
+        # floor-clamped winners short-circuit ``coordinator.state``, so their
+        # position is already in the cover's frame — flip those back so the
+        # field's frame does not depend on which handler won. Under
+        # interpolation such a value passes through in the motor frame; mapping
+        # a motor value back onto the linear scale is #925's scope.
+        diagnostics["linear_position"] = cls._logical_position(ctx)
 
         if result is not None and result.climate_state is not None:
             diagnostics["calculated_position_climate"] = result.climate_state

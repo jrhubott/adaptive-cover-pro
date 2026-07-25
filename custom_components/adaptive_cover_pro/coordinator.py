@@ -52,6 +52,7 @@ from .cover_types.base import (
     AXIS_NAME_POSITION,
     AXIS_NAME_TILT,
     CoverDescriptor,
+    axis_inverted,
     caps_get,
 )
 from .services.configuration_service import ConfigurationService
@@ -2180,12 +2181,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._pipeline_result is not None and self._pipeline_result.skip_command:
             result = self._pipeline_result
             label = _HOLD_SKIP_LABEL.get(result.control_method, "hold")
-            # Motion holds carry the physical position in ``position`` and leave
+            # Motion holds carry the held position in ``position`` and leave
             # held_position None; manual holds keep ``position`` as the would-be
             # shadow and put the physical position in held_position.  Prefer
             # held_position when present so the recorded value is the true
-            # physical position for both (byte-identical to the old behaviour
-            # for motion, which has held_position None).
+            # physical position for a manual hold.
+            #
+            # Frame note (#1028): a motion hold's ``position`` is the held read
+            # expressed in the LOGICAL frame, so on an inverse-state instance
+            # this extras value is logical while ``would_be_position`` (=
+            # ``state``) carries the cover-frame equivalent. Both describe the
+            # same physical place.
             held = (
                 result.held_position
                 if result.held_position is not None
@@ -3378,7 +3384,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             for key in keys
         }
-        return self._policy.describe(caps=rolled, labels=labels)
+        return self._policy.describe(
+            caps=rolled, labels=labels, options=self.config_entry.options
+        )
 
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
@@ -3469,6 +3477,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             switch_mode=self._toggles.switch_mode,
             inverse_state=self._inverse_state,
             use_interpolation=self._use_interpolation,
+            position_axis_inverted=self.position_axis_inverted,
             final_state=self.state,
             config_options=dict(self.config_entry.options),
             resolved_options=dict(self._resolved_options),
@@ -3551,6 +3560,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         }
 
     @property
+    def position_axis_inverted(self) -> bool:
+        """Whether the primary (position) axis is effectively inverted this cycle.
+
+        Read-time derivation from ``config_entry.options`` via the shared
+        ``axis_inverted`` predicate (#1028) — the single source of truth for
+        "``inverse_state`` is configured AND interpolation is not suppressing
+        it". Every read-side consumer (``state``, the diagnostics builder, the
+        sensor's logical-frame attributes) delegates here instead of rewriting
+        the formula.
+        """
+        return axis_inverted(self._policy.axes[0], self.config_entry.options)
+
+    @property
     def state(self) -> int:
         """Final cover position after pipeline, interpolation, and inverse_state transforms.
 
@@ -3590,7 +3612,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._inverse_state and self._use_interpolation:
             self.logger.info("Inverse state is not supported with interpolation")
 
-        if self._inverse_state and not self._use_interpolation:
+        if self.position_axis_inverted:
             state = inverse_state(state)
 
         # interpolate_position() returns numpy float64; inverse_state() returns int.

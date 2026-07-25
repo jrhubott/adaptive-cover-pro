@@ -76,6 +76,7 @@ def _make_pr(
     configured_sunset_pos: int | None = None,
     configured_cloudy_pos: int | None = None,
     bypass_auto_control: bool = False,
+    floor_clamp_applied: bool = False,
     is_safety: bool = False,
     tilt: int | None = None,
     tilt_only_slot: int | None = None,
@@ -95,6 +96,7 @@ def _make_pr(
         configured_sunset_pos=configured_sunset_pos,
         configured_cloudy_pos=configured_cloudy_pos,
         bypass_auto_control=bypass_auto_control,
+        floor_clamp_applied=floor_clamp_applied,
         is_safety=is_safety,
         tilt=tilt,
         tilt_only_slot=tilt_only_slot,
@@ -1855,6 +1857,63 @@ class TestLinearPosition:
         """Bypass winners still carry linear_position."""
         diag, _ = builder.build(
             _base_ctx(pipeline_result=_make_pr(position=10, bypass_auto_control=True))
+        )
+        assert diag["linear_position"] == 10
+
+    def test_bypass_winner_normalized_to_logical_under_inverse(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A bypass winner carries a cover-frame value — publish it as logical.
+
+        ``coordinator.state`` returns a bypass winner's position verbatim, so
+        on an inverted install that number is already in the cover's frame.
+        ``linear_position`` claims the logical frame, so it must be flipped
+        back (issue #1028).
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=10, bypass_auto_control=True),
+                position_axis_inverted=True,
+            )
+        )
+        assert diag["linear_position"] == 90
+
+    def test_floor_clamp_winner_normalized_to_logical_under_inverse(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Floor-clamped winners take the same short-circuit as bypass (#469)."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=25, floor_clamp_applied=True),
+                position_axis_inverted=True,
+            )
+        )
+        assert diag["linear_position"] == 75
+
+    def test_solar_winner_unchanged_under_inverse(self, builder: DiagnosticsBuilder):
+        """An ordinary winner's position is already logical — never touch it."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=40),
+                position_axis_inverted=True,
+            )
+        )
+        assert diag["linear_position"] == 40
+
+    def test_interpolation_bypass_winner_passes_through(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Under interpolation the bypass value is a motor value — pass it through.
+
+        ``position_axis_inverted`` is False whenever interpolation is on, so no
+        flip happens; un-interpolating a motor value is #925's scope.
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=10, bypass_auto_control=True),
+                use_interpolation=True,
+                position_axis_inverted=False,
+            )
         )
         assert diag["linear_position"] == 10
 

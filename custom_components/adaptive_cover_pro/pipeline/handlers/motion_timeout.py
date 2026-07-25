@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...const import ControlMethod, ReasonCode
+from ...managers.manual_override import inverse_state
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_default_position, compute_raw_calculated_position
@@ -38,9 +39,26 @@ class MotionTimeoutHandler(OverrideHandler):
             and snapshot.current_cover_position is not None
         ):
             held = snapshot.current_cover_position
+            # ``held`` is a RAW cover-frame read, but ``PipelineResult.position``
+            # is a logical-frame field: ``coordinator.state`` inverts every
+            # non-bypass winner on the way out, so handing the raw value over
+            # would invert it a second time and publish a target that
+            # contradicts where the cover actually is (issue #1028).
+            #
+            # Setting ``bypass_auto_control=True`` would also dodge that
+            # inversion, but that flag additionally means "apply even when
+            # automatic control is OFF" — the wrong semantic for a motion hold.
+            # Convert the frame instead and leave the flag alone.
+            #
+            # Known limitation (#925 territory, not fixed here): under
+            # interpolation ``coordinator.state`` re-interpolates the held motor
+            # read, so the published target still drifts. Pre-existing.
             return PipelineResult(
-                position=held,
+                position=(
+                    inverse_state(held) if snapshot.position_axis_inverted else held
+                ),
                 control_method=ControlMethod.MOTION,
+                # The raw read stays in the reason payload / diagnostics.
                 reason_payload=Reason(ReasonCode.OCCUPANCY_HOLDING, {"held": held}),
                 skip_command=True,
                 raw_calculated_position=compute_raw_calculated_position(snapshot),
