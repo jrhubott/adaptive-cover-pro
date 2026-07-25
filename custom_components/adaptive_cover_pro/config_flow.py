@@ -4421,12 +4421,14 @@ class OptionsFlowHandler(OptionsFlow):
         """Edit the shared building-level sensor IDs on a Building Profile entry.
 
         This is the only options step for a profile: it exposes exactly the
-        ``BUILDING_PROFILE_SENSOR_KEYS`` pickers and saves on submit.  Mirrors
-        the create-flow's ``async_step_create_building_profile`` sensor section.
+        ``BUILDING_PROFILE_SENSOR_KEYS`` pickers.  Mirrors the create-flow's
+        ``async_step_create_building_profile`` sensor section.  Submitting
+        returns to the profile menu (issue #1003) — only ``async_step_done``
+        actually saves and closes the dialog.
         """
         if user_input is not None:
             self.options.update(user_input)
-            return self.async_create_entry(title="", data=self.options)
+            return await self.async_step_init()
 
         schema = building_profile_sensors_schema()
         return self.async_show_form(
