@@ -326,6 +326,49 @@ class CoverCommandService:
         """Set the commanded target position. ``None`` clears the target."""
         self.state(entity_id).target = position
 
+    def restore_target(self, entity_id: str, target: int | None) -> bool:
+        """Rehydrate a persisted command target after an ACP reload (issue #1022).
+
+        The command-target store is rebuilt empty on every setup, so after a
+        reload ``get_target`` returns ``None`` and the coordinator computes
+        ``has_recorded_target=False``. A context-less remote move on a cover that
+        is resting on its last commanded position is then forced through the
+        guard-less no-target rescue branch instead of the fully-guarded normal
+        detection path. Seeding the persisted target back in restores
+        ``has_recorded_target=True``.
+
+        Guards, mirroring the #1019/#1021 restore discipline:
+        - never clobber a target already set live this session;
+        - only accept an int-able target within 0–100;
+        - only seed when the cover is STILL resting on that target (within the
+          existing tolerance SSOT, :meth:`_at_target`), so reconciliation issues
+          no command on setup (guards #187);
+        - route through the :meth:`set_target` chokepoint — no parallel write;
+        - never tag a safety target and never dispatch a command.
+
+        Returns True only when a target was restored.
+        """
+        if self.has_target(entity_id):
+            return False  # never clobber a live command target
+        try:
+            target_int = int(target)
+        except (TypeError, ValueError):
+            return False
+        if not 0 <= target_int <= 100:
+            return False
+        actual = self._get_current_position(entity_id)
+        if actual is None or not self._at_target(actual, target_int):
+            return False
+        self.set_target(entity_id, target_int)
+        self._logger.debug(
+            "CoverCommandService: restored command target %s%% for %s "
+            "(resting at %s%%) after reload",
+            target_int,
+            entity_id,
+            actual,
+        )
+        return True
+
     def iter_targets(self) -> Iterator[tuple[str, int]]:
         """Yield (entity_id, target) for every entity with a recorded target."""
         for eid, s in list(self._state.items()):
