@@ -284,8 +284,17 @@ class CoverTypePolicy(ABC):
         """Extra kwargs for ``PositionContext``. Default: empty."""
         return {}
 
-    def secondary_axis_check(self, result: PipelineResult, cmd_svc) -> Any | None:
-        """Return a manual-override secondary-axis check, or ``None``."""
+    def secondary_axis_check(
+        self, result: PipelineResult, cmd_svc, entity_id: str | None = None
+    ) -> Any | None:
+        """Return a manual-override secondary-axis check, or ``None``.
+
+        ``entity_id`` (issue #1006) lets a multi-axis policy anchor the check's
+        expected value to the value ACP last DISPATCHED for that entity rather
+        than the mutable per-cycle ``result`` — see the module rule in
+        ``managers/manual_override/secondary_axis.py``. Additive with a safe
+        default so single-axis policies and legacy 2-arg callers are unaffected.
+        """
         return None
 
     def attach(self, **kwargs: Any) -> None:

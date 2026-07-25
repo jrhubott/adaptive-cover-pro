@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
-from homeassistant.const import ATTR_FRIENDLY_NAME
+from homeassistant.const import ATTR_FRIENDLY_NAME, STATE_ON
 
 from ..const import (
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -89,8 +89,13 @@ from ..helpers import (
     compute_effective_default,
     custom_position_slot_configured,
     custom_position_slot_sensors,
+    get_safe_state,
 )
-from ..templates import combine_with_mode, is_template_string, render_condition
+from ..templates import (
+    combine_with_mode,
+    is_template_string,
+    render_condition_or_none,
+)
 from .types import (
     ClimateOptions,
     CustomPositionSensorState,
@@ -143,6 +148,14 @@ class PipelineSnapshotBuilder:
         self._toggles = toggles
         self._policy = policy
         self._config_service = config_service
+        # Last VALID per-slot read, keyed by slot number (issue #1005). Written
+        # only on a valid read; on an invalid read (transient unavailable /
+        # unknown / missing sensor) the slot's activation is held to this so a
+        # blip does not fire a false release edge. Per-instance state living on
+        # the one builder the coordinator owns, so both per-cycle callers
+        # (build() and the coordinator release-edge stamp) share it and agree.
+        # A config-entry reload constructs a fresh builder, clearing it.
+        self._last_valid_custom_position: dict[int, CustomPositionSensorState] = {}
 
     # ---- HA reads ---------------------------------------------------------
 
@@ -217,18 +230,30 @@ class PipelineSnapshotBuilder:
             if not (custom_position_slot_configured(options, slot_keys) and enabled):
                 continue
             sensors = custom_position_slot_sensors(options, slot_keys)
+            # Raw state objects are kept only for friendly-name labelling.
+            # Activation and validity read through get_safe_state so a
+            # transient unavailable/unknown/missing sensor is distinguished
+            # from a valid ``off`` (issue #1005) — get_safe_state returns None
+            # for any state in helpers._INVALID_STATES or a missing entity.
             states = {s: self._hass.states.get(s) for s in sensors}
-            states_on = {
-                s: bool(state and state.state == "on") for s, state in states.items()
-            }
+            safe_states = {s: get_safe_state(self._hass, s) for s in sensors}
+            states_on = {s: v == STATE_ON for s, v in safe_states.items()}
             active = tuple(s for s, on in states_on.items() if on)
             sensors_on = bool(active)
+            # The slot has a usable sensor input this cycle when at least one
+            # bound sensor reported a non-invalid value.
+            sensors_valid = any(v is not None for v in safe_states.values())
 
             template = options.get(slot_keys["template"])
             has_template = is_template_string(template)
-            template_active = (
-                render_condition(self._hass, template) if has_template else None
+            # Tri-state render: None = no template OR the template failed to
+            # render (no opinion). A rendered opinion is both the activation
+            # signal and a valid input for the slot.
+            template_opinion = (
+                render_condition_or_none(self._hass, template) if has_template else None
             )
+            template_active = bool(template_opinion) if has_template else None
+            template_valid = template_opinion is not None
             mode = (
                 options.get(slot_keys["template_mode"]) or DEFAULT_TEMPLATE_COMBINE_MODE
             )
@@ -239,6 +264,18 @@ class PipelineSnapshotBuilder:
                 has_template=has_template,
                 has_others=bool(sensors),
             )
+
+            # A read is valid when any usable input (sensor or template) spoke
+            # this cycle. On an invalid read, hold the last valid activation so
+            # a transient blip neither deactivates the pipeline handler nor
+            # fires a false release edge in the coordinator (issue #1005). A
+            # first-ever invalid read has no prior state → is_on stays False.
+            is_valid = sensors_valid or template_valid
+            if not is_valid:
+                held = self._last_valid_custom_position.get(slot)
+                if held is not None:
+                    is_on = held.is_on
+                    active = held.active_entity_ids
 
             # Friendly name of the first active sensor (else the first sensor)
             # so diagnostics label the slot by what actually triggered it.
@@ -268,22 +305,27 @@ class PipelineSnapshotBuilder:
             if tilt_only:
                 min_mode = False
                 use_my = False
-            result.append(
-                CustomPositionSensorState(
-                    entity_ids=tuple(sensors),
-                    is_on=is_on,
-                    position=int(options.get(slot_keys["position"])),
-                    priority=priority,
-                    min_mode=min_mode,
-                    use_my=use_my,
-                    tilt=tilt,
-                    tilt_only=tilt_only,
-                    sensor_name=sensor_name,
-                    slot=slot,
-                    active_entity_ids=active,
-                    template_active=template_active,
-                )
+            state = CustomPositionSensorState(
+                entity_ids=tuple(sensors),
+                is_on=is_on,
+                position=int(options.get(slot_keys["position"])),
+                priority=priority,
+                min_mode=min_mode,
+                use_my=use_my,
+                tilt=tilt,
+                tilt_only=tilt_only,
+                sensor_name=sensor_name,
+                slot=slot,
+                active_entity_ids=active,
+                template_active=template_active,
+                is_valid=is_valid,
             )
+            # Remember the last valid read so the next invalid read can hold it.
+            # Written only on a valid read → idempotent across the two same-cycle
+            # callers (same value both times).
+            if is_valid:
+                self._last_valid_custom_position[slot] = state
+            result.append(state)
         return result
 
     # ---- Pure assembly ----------------------------------------------------
