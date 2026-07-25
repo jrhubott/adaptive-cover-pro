@@ -326,6 +326,15 @@ CONF_HEIGHT_AWNING = "height_awning"  # mount height above ground, metres
 CONF_LENGTH_AWNING = "length_awning"  # extension length, metres (0.3-6.0)
 CONF_AWNING_ANGLE = "angle"  # tilt from horizontal, degrees (0-45)
 
+# Awning shade strategy (issue #1025). "window" (default) computes the overhang
+# projection that shades the window glass; "area" keeps the awning fully extended
+# across the whole field of view (patio / area shading), retracting only when the
+# sun leaves the FOV entirely.
+CONF_AWNING_SHADE_MODE = "awning_shade_mode"
+AWNING_SHADE_MODE_WINDOW = "window"  # shade the window glass (overhang projection)
+AWNING_SHADE_MODE_AREA = "area"  # keep fully extended over the area in front
+DEFAULT_AWNING_SHADE_MODE = AWNING_SHADE_MODE_WINDOW
+
 # Oscillating (drop-arm / pivoting) awning geometry. Unlike the fixed-angle
 # awning, the arm sweeps through an arc as it opens, so the fabric angle is a
 # function of the open percentage rather than a configured constant. See #412.

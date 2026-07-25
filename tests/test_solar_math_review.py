@@ -1,7 +1,7 @@
 """Tests for solar math review findings.
 
 Covers gaps identified in the 2026-04-12 solar code review:
-- Horizontal awning division-by-zero guard (sin_c < 1e-6)
+- Horizontal awning overhang projection (issue #1025 corrected math)
 - Tilt cover negative discriminant
 - solar_times() method
 - Non-zero sill_height
@@ -581,17 +581,17 @@ class TestTiltSpecifyAngles:
 
 
 # ===========================================================================
-# 6. Horizontal awning division-by-zero guard
+# 6. Horizontal awning overhang projection (issue #1025)
 # ===========================================================================
 
 
 class TestHorizontalDivisionByZeroGuard:
-    """Horizontal awning geometry.
+    """Horizontal awning overhang projection (issue #1025).
 
-    The formula is: c_angle = awn_angle_conf + sol_elev (derived from the law-of-sines
-    triangle). c_angle is always in [0°, 180°] for physical inputs, so length is always
-    non-negative and no clipping to zero occurs in normal operation.  The guard triggers
-    when c_angle ≈ 0° (both angles near 0°) or ≈ 180° (both near 90°).
+    Window mode projects ``L = h_win / (sin β + cos β · tan α / cos γ) − distance``,
+    clipped to ``[0, awn_length]``. The projection is well-conditioned for the
+    physical fixed-awning domain (``β`` ∈ [0, 45°], sun above horizon and in front
+    of the plane) and decays smoothly to 0 as ``|γ| → 90°``.
     """
 
     @pytest.mark.unit
@@ -622,28 +622,20 @@ class TestHorizontalDivisionByZeroGuard:
         assert 0.0 <= pct <= 100.0
 
     @pytest.mark.unit
-    def test_guard_returns_full_extension_when_sin_c_near_zero(
-        self, mock_sun_data, mock_logger
-    ):
-        """When sin(c_angle) < 1e-6, the guard returns full awn_length (safe fallback)."""
-        from unittest.mock import patch
-        import numpy as np
-        import custom_components.adaptive_cover_pro.engine.covers.horizontal as horiz_mod
-
+    def test_retracts_when_sun_behind_plane(self, mock_sun_data, mock_logger):
+        """Retract fully when cos γ ≤ 0 (|γ| ≥ 90°) — sun behind the window plane."""
+        # sol_azi offset 100° from win_azi (180) → |gamma| = 100° → cos γ < 0.
         cover = build_horizontal_cover(
-            **_common_kwargs(mock_sun_data, mock_logger, sol_elev=45.0),
+            **_common_kwargs(mock_sun_data, mock_logger, sol_elev=45.0, sol_azi=280.0),
+            win_azi=180,
+            fov_left=137,
+            fov_right=137,
             h_win=2.0,
             distance=0.5,
             awn_length=3.0,
             awn_angle=45.0,
         )
-        # Patch sin to return near-zero regardless of argument, triggering the guard
-        with patch.object(horiz_mod, "sin", return_value=np.float64(1e-8)):
-            result = cover.calculate_position()
-
-        assert result == pytest.approx(
-            3.0
-        ), f"Guard should return full extension 3.0m, got {result}"
+        assert cover.calculate_position() == 0.0
 
     @pytest.mark.unit
     def test_extension_increases_with_larger_gap(self, mock_sun_data, mock_logger):

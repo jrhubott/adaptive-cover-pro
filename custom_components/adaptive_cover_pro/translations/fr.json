@@ -120,7 +120,8 @@
           "day_night_control_model": "Modèle de contrôle",
           "day_night_middle_rail_entity": "Entité du Rail Central (modèle double entité)",
           "dual_panel_front_entity": "Entité du panneau avant (voile)",
-          "dual_panel_blackout_triggers": "Déclencheurs du déploiement de l'occultant"
+          "dual_panel_blackout_triggers": "Déclencheurs du déploiement de l'occultant",
+          "awning_shade_mode": "Mode Store Banne"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -175,7 +176,8 @@
           "day_night_control_model": "Comment la paire abstraite couverture + tissu se mappe sur votre store physique. **Position + inclinaison** (par défaut) : la store commande set_position pour la couverture et set_tilt_position pour le mélange de tissu voile/occultant — pour le matériel exposant les deux axes. **Plage partagée** : une store monaxe dont la plage de position encode les deux — la moitié inférieure (0–50%) sélectionne le tissu occultant, la moitié supérieure (50–100%) le tissu voile — pour le matériel avec un seul moteur. **Deux entités de rail** : deux entités de store distinctes — un rail inférieur et un rail central — où le mélange de tissu se replie dans la position absolue du rail central.",
           "day_night_middle_rail_entity": "Pour le modèle **Deux entités de rail** uniquement : laquelle des stores configurées de cette instance est le rail central. L'autre store configurée est le rail inférieur. Le rail central est garanti de ne jamais descendre en dessous du rail inférieur.",
           "dual_panel_front_entity": "Quel store de cette instance est le panneau **avant / voile**. Il suit le soleil comme un store vertical simple. Tous les autres stores configurés sont le panneau **arrière / occultant**. Laissez non défini pour fonctionner comme un store vertical simple.",
-          "dual_panel_blackout_triggers": "Quand le panneau **occultant** arrière se déploie (se ferme). **Chaleur** : un été climatique / blocage total chaleur extrême. **Confidentialité** : la fenêtre du coucher du soleil. **Nuit** : le soleil est sous l'horizon. Sélectionnez n'importe quelle combinaison — l'arrière se rétracte (s'ouvre) chaque fois qu'aucun des déclencheurs sélectionnés n'est actif. Les deux panneaux sont indépendants (aucun couplage no-pass)."
+          "dual_panel_blackout_triggers": "Quand le panneau **occultant** arrière se déploie (se ferme). **Chaleur** : un été climatique / blocage total chaleur extrême. **Confidentialité** : la fenêtre du coucher du soleil. **Nuit** : le soleil est sous l'horizon. Sélectionnez n'importe quelle combinaison — l'arrière se rétracte (s'ouvre) chaque fois qu'aucun des déclencheurs sélectionnés n'est actif. Les deux panneaux sont indépendants (aucun couplage no-pass).",
+          "awning_shade_mode": "Détermine si la store banne protège la vitre de la fenêtre ou toute la zone devant elle. **Ombrager la vitre** (par défaut) : déployez juste assez pour garder le soleil direct loin de la fenêtre, se rétractant à mesure que le soleil se déplace vers le côté de la fenêtre — idéal pour réduire l'éblouissement et la chaleur à la vitre. **Ombrage de la zone avant (terrasse)** : rester complètement déployé chaque fois que le soleil est devant la store banne, pour ombrager une terrasse ou un espace assis plutôt que la fenêtre."
         }
       },
       "duplicate_select": {
@@ -399,7 +401,8 @@
           "day_night_control_model": "Modèle de contrôle",
           "day_night_middle_rail_entity": "Entité du Rail Central (modèle double entité)",
           "dual_panel_front_entity": "Entité du panneau avant (voile)",
-          "dual_panel_blackout_triggers": "Déclencheurs du déploiement de l'occultant"
+          "dual_panel_blackout_triggers": "Déclencheurs du déploiement de l'occultant",
+          "awning_shade_mode": "Mode Store Banne"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -454,7 +457,8 @@
           "day_night_control_model": "Comment la paire abstraite couverture + tissu se mappe sur votre store physique. **Position + inclinaison** (par défaut) : la store commande set_position pour la couverture et set_tilt_position pour le mélange de tissu voile/occultant — pour le matériel exposant les deux axes. **Plage partagée** : une store monaxe dont la plage de position encode les deux — la moitié inférieure (0–50%) sélectionne le tissu occultant, la moitié supérieure (50–100%) le tissu voile — pour le matériel avec un seul moteur. **Deux entités de rail** : deux entités de store distinctes — un rail inférieur et un rail central — où le mélange de tissu se replie dans la position absolue du rail central.",
           "day_night_middle_rail_entity": "Pour le modèle **Deux entités de rail** uniquement : laquelle des stores configurées de cette instance est le rail central. L'autre store configurée est le rail inférieur. Le rail central est garanti de ne jamais descendre en dessous du rail inférieur.",
           "dual_panel_front_entity": "Quel store de cette instance est le panneau **avant / voile**. Il suit le soleil comme un store vertical simple. Tous les autres stores configurés sont le panneau **arrière / occultant**. Laissez non défini pour fonctionner comme un store vertical simple.",
-          "dual_panel_blackout_triggers": "Quand le panneau **occultant** arrière se déploie (se ferme). **Chaleur** : un été climatique / blocage total chaleur extrême. **Confidentialité** : la fenêtre du coucher du soleil. **Nuit** : le soleil est sous l'horizon. Sélectionnez n'importe quelle combinaison — l'arrière se rétracte (s'ouvre) chaque fois qu'aucun des déclencheurs sélectionnés n'est actif. Les deux panneaux sont indépendants (aucun couplage no-pass)."
+          "dual_panel_blackout_triggers": "Quand le panneau **occultant** arrière se déploie (se ferme). **Chaleur** : un été climatique / blocage total chaleur extrême. **Confidentialité** : la fenêtre du coucher du soleil. **Nuit** : le soleil est sous l'horizon. Sélectionnez n'importe quelle combinaison — l'arrière se rétracte (s'ouvre) chaque fois qu'aucun des déclencheurs sélectionnés n'est actif. Les deux panneaux sont indépendants (aucun couplage no-pass).",
+          "awning_shade_mode": "Détermine si la store banne protège la vitre de la fenêtre ou toute la zone devant elle. **Ombrager la vitre** (par défaut) : déployez juste assez pour garder le soleil direct loin de la fenêtre, se rétractant à mesure que le soleil se déplace vers le côté de la fenêtre — idéal pour réduire l'éblouissement et la chaleur à la vitre. **Ombrage de la zone avant (terrasse)** : rester complètement déployé chaque fois que le soleil est devant la store banne, pour ombrager une terrasse ou un espace assis plutôt que la fenêtre."
         }
       },
       "sun_tracking": {
@@ -1363,6 +1367,12 @@
         "heat": "Chaleur (été climatique / chaleur extrême)",
         "privacy": "Confidentialité (fenêtre du coucher du soleil)",
         "night": "Nuit (soleil sous l'horizon)"
+      }
+    },
+    "awning_shade_mode": {
+      "options": {
+        "window": "Ombrager la vitre",
+        "area": "Ombrage de la zone avant (terrasse)"
       }
     }
   },

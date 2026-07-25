@@ -18,7 +18,9 @@ from homeassistant.helpers.template import Template
 
 from .const import (
     BLIND_SPOT_SLOTS,
+    DEFAULT_AWNING_SHADE_MODE,
     GLARE_ZONE_SLOT_NUMBERS,
+    CONF_AWNING_SHADE_MODE,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
@@ -34,6 +36,7 @@ from .const import (
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
+    CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
     CONF_MOTION_TEMPLATE,
@@ -691,6 +694,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 new_options[CONF_VENETIAN_TILT_SAFETY_MARGIN],
             )
         new_minor = 10
+
+    # v3.10 → v3.11: added the awning shade-mode option (issue #1025). Seed the
+    # window-glass default ONLY for fixed-awning entries — detected by the
+    # awning-only geometry key CONF_LENGTH_AWNING, mirroring the key-presence gate
+    # of the v3.9→v3.10 block — so non-awning entries stay untouched. Additive +
+    # rollback-safe: an absent key already reads as "window" via the configuration
+    # service, and an older build simply ignores the key. setdefault-only.
+    if new_version == 3 and new_minor < 11:
+        if CONF_LENGTH_AWNING in new_options:
+            new_options.setdefault(CONF_AWNING_SHADE_MODE, DEFAULT_AWNING_SHADE_MODE)
+        new_minor = 11
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

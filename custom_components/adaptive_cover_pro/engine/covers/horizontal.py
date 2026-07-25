@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
-from numpy import sin
+from numpy import cos, sin, tan
 from numpy import radians as rad
 
 from ...config_types import HorizontalConfig
 from ...const import (
+    AWNING_SHADE_MODE_AREA,
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
@@ -18,9 +20,14 @@ from ...position_utils import PositionConverter
 from .vertical import AdaptiveVerticalCover
 
 # --- Numeric guards (file-local) ---
-# Threshold below which sin(c_angle) is treated as zero to avoid division
-# by near-zero. Hit when sun elevation + awning angle ≈ 90°.
-SIN_NEAR_ZERO_THRESHOLD = 1e-6
+# |cos(gamma)| at or below this treats the sun as being in / behind the window
+# plane (|gamma| ≥ 90°): no direct sun reaches the glass, so the overhang
+# retracts fully. cos(radians(90)) is +6e-17, comfortably below this bound.
+COS_GAMMA_RETRACT_THRESHOLD = 1e-9
+# Denominator floor for the overhang projection. In the fixed-awning domain
+# (awn_angle ∈ [0, 45°], sun above horizon and in front of the plane) the
+# denominator is strictly positive; this only guards a degenerate build.
+DENOM_NEAR_ZERO_THRESHOLD = 1e-9
 
 
 @dataclass
@@ -43,21 +50,18 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
         self,
         *,
         awn_angle: float,
-        a_angle: float,
-        c_angle: float,
-        vertical_position: float,
-        sin_c: float,
-        sin_c_near_zero: bool,
+        shade_mode: str,
+        cos_gamma: float,
+        profile_angle: float,
+        denom: float,
         length: float,
         result: float,
         clamped_to_awn_length: bool,
     ) -> dict:
-        """Assemble the raw horizontal solar-calculation trace (issue #682).
+        """Assemble the raw horizontal solar-calculation trace (issue #682, #1025).
 
-        Set AFTER the ``super().calculate_position()`` call so the awning trace
-        overwrites the vertical trace that the super sets on ``_last_calc_details``
-        (the latent overwrite bug noted in issue #682). Single source for both the
-        sin_c guard return and the normal/clip return. Raw native floats — rounding
+        Single source for the area-mode, retracted, and normal/clip returns so
+        the key set never drifts between them. Raw native floats — rounding
         happens at the ``DiagnosticsBuilder`` presentation boundary.
         """
         return {
@@ -67,81 +71,98 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
                 result, self.awn_length
             ),
             "awn_angle_deg": float(awn_angle),
-            "a_angle_deg": float(a_angle),
-            "c_angle_deg": float(c_angle),
-            "vertical_position_m": float(vertical_position),
-            "sin_c": float(sin_c),
-            "sin_c_near_zero": bool(sin_c_near_zero),
+            "shade_mode": str(shade_mode),
+            "cos_gamma": float(cos_gamma),
+            "profile_angle_deg": float(profile_angle),
+            "denom": float(denom),
             "length_m": float(length),
             "clamped_to_awn_length": bool(clamped_to_awn_length),
         }
 
     def calculate_position(self) -> float:
-        """Calculate awning extension length using trigonometric projection.
+        """Calculate awning extension length (metres) from the sun geometry.
 
-        Converts vertical blind height to horizontal awning length using the law
-        of sines based on sun elevation and awning mounting angle.
+        Two shade strategies (issue #1025):
 
-        Calculation:
-        1. Get vertical blind position that would block sun
-        2. Convert to gap above blind: h_win - vertical_position
-        3. Project to awning length using triangle geometry:
-           length = gap × sin(sun_angle) / sin(awning_closure_angle)
+        * **window** (default): project the horizontal overhang needed to shade
+          the window glass. With awning tilt ``β`` the extension is
+          ``L = h_win / (sin β + cos β · tan α / cos γ) − distance``; at ``β = 0``
+          this reduces to ``L = h_win · cos γ / tan α − distance``. The
+          projection decays smoothly to 0 as ``|γ| → 90°`` and stays 0 for
+          ``|γ| ≥ 90°`` (sun behind the window plane), so there is no
+          discontinuity — the issue #1025 defect. It intentionally ignores
+          ``sill_height`` / ``window_depth`` / the safety margin (they belonged
+          to the old, incorrect vertical-blind coupling) but keeps ``distance``.
+        * **area**: keep the awning fully extended across the whole field of
+          view (patio / area shading). ``calculate_position`` is only ever
+          invoked when the sun is in-FOV, so returning full extension means
+          "extended whenever the sun is in front, default otherwise" — and it
+          must stay extended past ``|γ| = 90°`` (a wide-FOV patio awning).
 
         Returns:
-            Awning extension length in meters, saturated at awn_length.
-            When the geometric solution exceeds full extension, the awning
-            is reported fully extended (100%) rather than overflowing.
+            Awning extension length in metres, clipped to ``[0, awn_length]``.
 
         """
-        awn_angle = 90 - self.awn_angle
-        a_angle = 90 - self.sol_elev
-        c_angle = 180 - awn_angle - a_angle
+        awn_length = self.awn_length
+        awn_angle = self.awn_angle
+        shade_mode = self.horiz_config.shade_mode
 
-        vertical_position = super().calculate_position()
-
-        # Guard: c_angle near zero → sin(c_angle) ≈ 0 → division by zero.
-        # Return full awning extension as a safe fallback.
-        sin_c = float(sin(rad(c_angle)))
-        if abs(sin_c) < SIN_NEAR_ZERO_THRESHOLD:
+        # --- Area mode: fully extended whenever the sun is in-FOV. -----------
+        if shade_mode == AWNING_SHADE_MODE_AREA:
             self.logger.debug(
-                "Horizontal calc: c_angle=%.2f° near zero — returning full extension",
-                c_angle,
+                "Horizontal calc (area): elev=%.1f°, gamma=%.1f° → full extension",
+                self.sol_elev,
+                self.gamma,
             )
             self._last_calc_details = self._build_horizontal_trace(
                 awn_angle=awn_angle,
-                a_angle=a_angle,
-                c_angle=c_angle,
-                vertical_position=vertical_position,
-                sin_c=sin_c,
-                sin_c_near_zero=True,
-                length=self.awn_length,
-                result=self.awn_length,
+                shade_mode=shade_mode,
+                cos_gamma=float(cos(rad(self.gamma))),
+                profile_angle=0.0,
+                denom=0.0,
+                length=awn_length,
+                result=awn_length,
                 clamped_to_awn_length=False,
             )
-            return self.awn_length
+            return awn_length
 
-        length = float(((self.h_win - vertical_position) * sin(rad(a_angle))) / sin_c)
+        # --- Window mode: correct overhang projection. ----------------------
+        cos_gamma = float(cos(rad(self.gamma)))
+        if self.sol_elev <= 0 or cos_gamma <= COS_GAMMA_RETRACT_THRESHOLD:
+            # Sun below the horizon OR behind the window plane (|gamma| ≥ 90°).
+            length = 0.0
+            profile_angle = 0.0
+            denom = 0.0
+            result = 0.0
+        else:
+            profile = float(tan(rad(self.sol_elev))) / cos_gamma
+            denom = float(sin(rad(awn_angle)) + cos(rad(awn_angle)) * profile)
+            if denom <= DENOM_NEAR_ZERO_THRESHOLD:
+                length = 0.0
+            else:
+                length = self.h_win / denom - self.distance
+            profile_angle = math.degrees(math.atan(profile))
+            result = float(np.clip(length, 0.0, awn_length))
+
         self.logger.debug(
-            "Horizontal calc: elev=%.1f°, gamma=%.1f°, awn_angle=%s°, "
-            "vertical_pos=%.3f, length=%.3f",
+            "Horizontal calc (window): elev=%.1f°, gamma=%.1f°, awn_angle=%s°, "
+            "cos_gamma=%.4f, length=%.3f, result=%.3f",
             self.sol_elev,
             self.gamma,
-            self.awn_angle,
-            vertical_position,
+            awn_angle,
+            cos_gamma,
             length,
+            result,
         )
-        result = float(np.clip(length, 0, self.awn_length))
         self._last_calc_details = self._build_horizontal_trace(
             awn_angle=awn_angle,
-            a_angle=a_angle,
-            c_angle=c_angle,
-            vertical_position=vertical_position,
-            sin_c=sin_c,
-            sin_c_near_zero=False,
+            shade_mode=shade_mode,
+            cos_gamma=cos_gamma,
+            profile_angle=profile_angle,
+            denom=denom,
             length=length,
             result=result,
-            clamped_to_awn_length=bool(length > self.awn_length),
+            clamped_to_awn_length=bool(length > awn_length),
         )
         return result
 

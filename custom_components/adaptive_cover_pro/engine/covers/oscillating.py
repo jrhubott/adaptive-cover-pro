@@ -206,3 +206,30 @@ class AdaptiveOscillatingCover(AdaptiveHorizontalCover):
         )
         pos = (theta - lo) / (hi - lo) * 100.0
         return float(np.clip(pos, 0, 100))
+
+    def calculate_raw_percentage(self) -> float:
+        """Route the pipeline's raw-percentage read to the arc solver (#1031).
+
+        The base :class:`AdaptiveHorizontalCover` implements
+        ``calculate_raw_percentage`` as ``calculate_position() / awn_length``,
+        i.e. the horizontal *overhang* projection — the wrong shade model for a
+        drop-arm awning, and (since #1025) it reads ``self.horiz_config`` which
+        an oscillating cover does not have (it carries ``osc_config`` instead),
+        raising ``AttributeError`` in the live solar pipeline. Returning the
+        arc-solved open percentage keeps the oscillating cover on its own
+        lip-drop geometry end-to-end. Already an unrounded float, so no separate
+        raw fraction is needed.
+        """
+        return self.calculate_percentage()
+
+    def calculate_position(self) -> float:
+        """Arm reach (metres) consistent with the arc-solved open percentage.
+
+        Overrides the inherited horizontal overhang projection so the
+        meters-based API stays coherent for an oscillating cover and never
+        touches ``horiz_config`` (which it does not have). Scales the open
+        percentage by the arm length; the live pipeline reads position via
+        :meth:`calculate_raw_percentage`, so this exists for API symmetry and
+        any direct meters caller (diagnostics, tests).
+        """
+        return self.calculate_percentage() / 100.0 * self.awn_length

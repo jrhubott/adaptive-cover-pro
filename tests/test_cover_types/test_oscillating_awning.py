@@ -493,3 +493,38 @@ def test_summary_includes_pivot_offset():
     joined = " ".join(lines)
     assert "0.7" in joined
     assert "pivot offset" in joined
+
+
+def test_live_pipeline_raw_percentage_without_horiz_config():
+    """Production builds the oscillating engine with NO horiz_config (only
+    vert_config + osc_config — see ``OscillatingAwningPolicy.build_calc_engine``).
+
+    The live solar pipeline reads position via ``calculate_raw_percentage``.
+    Before #1025 that inherited path reached ``calculate_position`` which only
+    touched the (overridden) awn_* properties + the vertical solve, so it worked
+    with a ``None`` horiz_config. #1025 made ``calculate_position`` read
+    ``self.horiz_config.shade_mode`` — an ``AttributeError`` for oscillating,
+    which carries ``osc_config`` and no ``horiz_config``. This pins the fix
+    (#1031): the arc solver drives the raw percentage and horiz_config is never
+    touched. The factory helper deliberately passes a horiz_config, so this test
+    constructs the engine the production-faithful way instead.
+    """
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    cover = AdaptiveOscillatingCover(
+        logger=MagicMock(),
+        sol_azi=_WIN_AZI - 20.0,
+        sol_elev=40.0,
+        sun_data=sun_data,
+        config=make_cover_config(win_azi=_WIN_AZI, fov_left=90, fov_right=103),
+        vert_config=make_vertical_config(distance=0.5, h_win=2.0),
+        osc_config=OscillatingConfig(arm_length=0.8, min_angle=0.0, max_angle=175.0),
+    )
+    assert cover.horiz_config is None  # production-faithful: no horiz_config
+
+    raw = cover.calculate_raw_percentage()  # must NOT raise AttributeError
+    assert raw == cover.calculate_percentage()  # routed to the arc solver
+    assert 0.0 <= raw <= 100.0
+
+    pos = cover.calculate_position()  # meters API also coherent, no crash
+    assert 0.0 <= pos <= cover.awn_length
