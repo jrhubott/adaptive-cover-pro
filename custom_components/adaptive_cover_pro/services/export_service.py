@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 from ..const import (
     CONF_AWNING_ANGLE,
     CONF_AWNING_SHADE_MODE,
+    DEFAULT_AWNING_SHADE_MODE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_ELEVATION_MODE,
@@ -128,7 +129,8 @@ async def async_handle_export(call: ServiceCall) -> dict:
         "horizontal": {
             CONF_LENGTH_AWNING: options.get(CONF_LENGTH_AWNING),
             CONF_AWNING_ANGLE: options.get(CONF_AWNING_ANGLE, 0),
-            CONF_AWNING_SHADE_MODE: options.get(CONF_AWNING_SHADE_MODE),
+            CONF_AWNING_SHADE_MODE: options.get(CONF_AWNING_SHADE_MODE)
+            or DEFAULT_AWNING_SHADE_MODE,
         },
         "tilt": {
             # Stored in cm as entered in UI — notebook divides by 100 to get meters
