@@ -20,6 +20,7 @@ from ..config_types import (
 )
 from ..const import (
     CONF_AWNING_ANGLE,
+    CONF_AWNING_SHADE_MODE,
     CONF_DISTANCE,
     CONF_ENABLE_GLARE_ZONES,
     CONF_HEIGHT_WIN,
@@ -39,6 +40,7 @@ from ..const import (
     CONF_VENETIAN_TILT_TRANSFORM,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    DEFAULT_AWNING_SHADE_MODE,
     DEFAULT_DISTANCE,
     DEFAULT_GLARE_ZONE_Z,
     GLARE_ZONE_SLOT_NUMBERS,
@@ -115,6 +117,7 @@ class ConfigurationService:
         return HorizontalConfig(
             awn_length=options.get(CONF_LENGTH_AWNING) or 2.0,
             awn_angle=options.get(CONF_AWNING_ANGLE) or 0,
+            shade_mode=options.get(CONF_AWNING_SHADE_MODE) or DEFAULT_AWNING_SHADE_MODE,
         )
 
     def get_tilt_data(self, options: dict) -> TiltConfig:

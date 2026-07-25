@@ -193,19 +193,17 @@ class TestHorizontalTrace:
         TRACE_KEY_GAMMA_DEG,
         TRACE_KEY_POSITION_PCT,
         "awn_angle_deg",
-        "a_angle_deg",
-        "c_angle_deg",
-        "vertical_position_m",
-        "sin_c",
-        "sin_c_near_zero",
+        "shade_mode",
+        "cos_gamma",
+        "profile_angle_deg",
+        "denom",
         "length_m",
         "clamped_to_awn_length",
     }
 
     def test_trace_is_horizontal_not_vertical(self, horizontal_cover_instance):
-        """Regression: the super().calculate_position() call sets the vertical
-        trace, but the horizontal trace must win — proving horizontal keys, NOT
-        vertical ones like effective_distance_m.
+        """The horizontal trace shape must win — horizontal keys, not vertical
+        ones like effective_distance_m (issue #682 / #1025 rewrite).
         """
         horizontal_cover_instance.calculate_position()
         details = horizontal_cover_instance._last_calc_details
@@ -215,26 +213,36 @@ class TestHorizontalTrace:
         assert "awn_angle_deg" in details
 
     def test_normal_branch_values(self, horizontal_cover_instance):
+        # gamma=0, elev=45, awn_angle=0, h_win=2, distance=0.5 → L = 2·1/1 − 0.5.
         horizontal_cover_instance.calculate_position()
         details = horizontal_cover_instance._last_calc_details
-        assert details["sin_c_near_zero"] is False
+        assert details["shade_mode"] == "window"
         assert details[TRACE_KEY_SOL_ELEV_DEG] == pytest.approx(45.0)
-        assert details["a_angle_deg"] == pytest.approx(45.0)  # 90 - sol_elev
+        assert details["cos_gamma"] == pytest.approx(1.0)
+        assert details["profile_angle_deg"] == pytest.approx(45.0)  # atan(tan45/1)
+        assert details["length_m"] == pytest.approx(1.5)
 
     def test_native_types(self, horizontal_cover_instance):
         horizontal_cover_instance.calculate_position()
         assert not _check_native_types(horizontal_cover_instance._last_calc_details)
 
-    def test_sin_c_near_zero_guard(self, horizontal_cover_instance):
-        """c_angle = awn_angle + sol_elev; both ≈ 0 → sin(c_angle) ≈ 0 → guard fires."""
-        # awn_angle_calc = 90 - awn_angle, a_angle = 90 - sol_elev,
-        # c_angle = 180 - awn_angle_calc - a_angle = awn_angle + sol_elev.
+    def test_retracts_below_horizon(self, horizontal_cover_instance):
+        """sol_elev ≤ 0 → no direct sun → overhang retracts (length 0)."""
         horizontal_cover_instance.sol_elev = 0.0
-        horizontal_cover_instance.horiz_config.awn_angle = 0.0
         result = horizontal_cover_instance.calculate_position()
         details = horizontal_cover_instance._last_calc_details
-        assert details["sin_c_near_zero"] is True
-        assert result == horizontal_cover_instance.awn_length
+        assert result == 0.0
+        assert details["length_m"] == pytest.approx(0.0)
+        assert details["denom"] == pytest.approx(0.0)
+        assert not _check_native_types(details)
+
+    def test_area_mode_trace(self, horizontal_cover_instance):
+        """Area mode reports full extension in the trace regardless of gamma."""
+        horizontal_cover_instance.horiz_config.shade_mode = "area"
+        result = horizontal_cover_instance.calculate_position()
+        details = horizontal_cover_instance._last_calc_details
+        assert details["shade_mode"] == "area"
+        assert result == pytest.approx(horizontal_cover_instance.awn_length)
         assert details["length_m"] == pytest.approx(
             horizontal_cover_instance.awn_length
         )

@@ -74,6 +74,8 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     # Awning.
     "geometry.awning.length": "{v}m awning",
     "geometry.awning.angle": "angled at {v}°",
+    "geometry.awning.shade_mode_window": "shade window glass",
+    "geometry.awning.shade_mode_area": "shade area in front (patio)",
     "geometry.awning.blocking_wall": "blocking sun {v}m from wall",
     # Slat block (tilt + venetian).
     "geometry.slat.depth": "slat depth {v}cm",

@@ -241,6 +241,8 @@
     "awning": {
       "length": "{v}m awning",
       "angle": "angled at {v}°",
+      "shade_mode_window": "shade window glass",
+      "shade_mode_area": "shade area in front (patio)",
       "blocking_wall": "blocking sun {v}m from wall"
     },
     "slat": {

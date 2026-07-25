@@ -237,7 +237,9 @@
     "awning": {
       "length": "{v}m Markise",
       "angle": "Winkel {v}°",
-      "blocking_wall": "Sonne {v}m vor der Wand blockiert"
+      "blocking_wall": "Sonne {v}m vor der Wand blockiert",
+      "shade_mode_window": "fenster beschatten",
+      "shade_mode_area": "bereich davor beschatten (terrasse)"
     },
     "slat": {
       "depth": "Lamellentiefe {v}cm",

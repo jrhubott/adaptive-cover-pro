@@ -36,6 +36,7 @@ from .const import (
     WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_AWNING_ANGLE,
+    CONF_AWNING_SHADE_MODE,
     CONF_AZIMUTH,
     CONF_BUILDING_PROFILE_ID,
     CONF_PROFILE_SENSOR_OVERRIDES,
@@ -3206,6 +3207,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WINDOW_WIDTH,
             CONF_LENGTH_AWNING,
             CONF_AWNING_ANGLE,
+            CONF_AWNING_SHADE_MODE,
             CONF_TILT_DEPTH,
             CONF_TILT_DISTANCE,
             CONF_TILT_MODE,
@@ -3907,8 +3909,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # CONF_TILT_SAFETY_MARGIN (shared by all tilt-axis covers). The v3.9→v3.10
     # block copies the legacy venetian_tilt_safety_margin value into the new key;
     # the legacy key is retained (read-only). (3.9 was a no-op bump for #943.)
+    # 3.11 (issue #1025): added the awning shade-mode option. The v3.10→v3.11
+    # block setdefault-seeds CONF_AWNING_SHADE_MODE to the window-glass default so
+    # pre-existing awnings keep the shipped overhang behaviour; an absent key
+    # already reads as "window" and an older build ignores it.
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 10
+    MINOR_VERSION = 11
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

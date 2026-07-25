@@ -114,7 +114,7 @@ _VERT_CONFIG_FIELDS = {
 }
 
 # HorizontalConfig field names
-_HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle"}
+_HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle", "shade_mode"}
 
 # TiltConfig field names
 _TILT_CONFIG_FIELDS = {

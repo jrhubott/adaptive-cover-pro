@@ -8,6 +8,7 @@ from typing import Any
 from .const import (
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
+    DEFAULT_AWNING_SHADE_MODE,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
@@ -298,6 +299,10 @@ class HorizontalConfig:
 
     awn_length: float = 2.0
     awn_angle: float = 0.0
+    # Shade strategy (issue #1025): "window" (default) projects the overhang to
+    # shade the window glass; "area" keeps the awning fully extended across the
+    # whole field of view (patio / area shading).
+    shade_mode: str = DEFAULT_AWNING_SHADE_MODE
 
 
 @dataclass
