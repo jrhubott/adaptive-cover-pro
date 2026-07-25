@@ -24,6 +24,7 @@ now True.
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -319,6 +320,176 @@ async def test_reload_then_contextless_remote_move_engages_override_assumed_stat
         )
 
     assert manager.is_cover_manual(eid) is True
+
+
+# ===========================================================================
+# Layer C — base RestoreEntity plumbing (async_added_to_hass seam)
+# ===========================================================================
+
+
+def _build_restorable_sensor(cls, coordinator, last_state):
+    """Build a bare restorable sensor around a mock coordinator.
+
+    Bypasses CoordinatorEntity / HA machinery via ``object.__new__`` and stubs
+    ``async_get_last_state`` (RestoreEntity) so the real
+    ``_ACPRestorableDiagnosticSensor.async_added_to_hass`` seam can be driven
+    end-to-end. Returns ``(sensor, write_spy)``.
+    """
+    sensor = object.__new__(cls)
+    sensor.coordinator = coordinator
+    sensor.async_get_last_state = AsyncMock(return_value=last_state)
+    write_spy = MagicMock()
+    sensor.async_write_ha_state = write_spy
+    return sensor, write_spy
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_restores_target_end_to_end():
+    """Real async_added_to_hass seam: last state → cmd store + one HA-state write.
+
+    Exercises the full RestoreEntity plumbing (async_added_to_hass →
+    async_get_last_state → extract per_entity → _restore_from_attributes →
+    conditional async_write_ha_state) rather than a direct
+    _restore_from_attributes call, so the seam that only production hits is
+    covered. Asserts BOTH the target landed in the real CoverCommandService and
+    that HA state was written.
+    """
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+    from custom_components.adaptive_cover_pro.sensor import _PositionVerificationSensor
+
+    eid = "cover.demo"
+    hass = _make_hass(_state("closed"))
+    svc = _make_svc(hass, cover_type="cover_awning")
+    coordinator = MagicMock()
+    coordinator.entities = [eid]
+    coordinator._cmd_svc = svc
+
+    last_state = MagicMock()
+    last_state.attributes = {"per_entity": {eid: {"target": 0}}}
+    sensor, write_spy = _build_restorable_sensor(
+        _PositionVerificationSensor, coordinator, last_state
+    )
+
+    with (
+        patch.object(CoordinatorEntity, "async_added_to_hass", AsyncMock()),
+        patch(_CC, return_value=_open_close_caps()),
+    ):
+        await sensor.async_added_to_hass()
+
+    # (a) target landed in the real command-target store
+    assert svc.get_target(eid) == 0
+    # (b) HA state was written exactly once (restore happened)
+    assert write_spy.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_tolerates_non_mapping_per_entity():
+    """A corrupted non-mapping ``per_entity`` restores nothing without raising.
+
+    A restore snapshot whose ``per_entity`` is a list/str (corruption) must be
+    treated as empty by the shared base seam — never crash the entity setup with
+    an AttributeError on ``.items()``. This guards BOTH restorable subclasses at
+    once (the guard lives in the base ``async_added_to_hass``).
+    """
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+    from custom_components.adaptive_cover_pro.sensor import _PositionVerificationSensor
+
+    eid = "cover.demo"
+    hass = _make_hass(_state("closed"))
+    svc = _make_svc(hass, cover_type="cover_awning")
+    coordinator = MagicMock()
+    coordinator.entities = [eid]
+    coordinator._cmd_svc = svc
+
+    last_state = MagicMock()
+    # per_entity is a non-mapping (list) — a corrupted restore snapshot.
+    last_state.attributes = {"per_entity": ["cover.demo", "junk"]}
+    sensor, write_spy = _build_restorable_sensor(
+        _PositionVerificationSensor, coordinator, last_state
+    )
+
+    with (
+        patch.object(CoordinatorEntity, "async_added_to_hass", AsyncMock()),
+        patch(_CC, return_value=_open_close_caps()),
+    ):
+        # Must not raise AttributeError on `.items()`.
+        await sensor.async_added_to_hass()
+
+    # Nothing restored, no HA-state write.
+    assert svc.get_target(eid) is None
+    assert write_spy.call_count == 0
+
+
+# ===========================================================================
+# Layer D — composition with #1019/#1021 active-override restore
+# ===========================================================================
+
+
+@pytest.mark.parametrize("override_first", [True, False])
+def test_target_restore_composes_with_active_override_restore(override_first):
+    """#1022 target restore and #1019 override restore never clobber each other.
+
+    They write to disjoint stores — the override restore populates
+    ``manager.manual_control`` / ``manual_control_time`` (#1019/#1021), the target
+    restore seeds ``CoverCommandService._state[eid].target`` (#1022). Running both
+    for the SAME entity in EITHER order must leave both intact: the active
+    manual-override (manual_control True + a future expiry) survives AND the
+    command target is set.
+    """
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
+    from custom_components.adaptive_cover_pro.sensor import (
+        _ManualOverrideEndSensor,
+        _PositionVerificationSensor,
+    )
+
+    eid = "cover.patio_awning"
+    # Cover rests "closed" — i.e. on its last commanded target 0 (#187 guard passes).
+    hass = _make_hass(_state("closed"))
+    svc = _make_svc(hass, cover_type="cover_awning")
+    manager = AdaptiveCoverManager(
+        hass=hass, reset_duration={"minutes": 60}, logger=MagicMock()
+    )
+    manager.add_covers([eid])
+
+    coordinator = MagicMock()
+    coordinator.manager = manager
+    coordinator._cmd_svc = svc
+    coordinator.entities = [eid]
+
+    override_sensor = object.__new__(_ManualOverrideEndSensor)
+    override_sensor.coordinator = coordinator
+    target_sensor = object.__new__(_PositionVerificationSensor)
+    target_sensor.coordinator = coordinator
+
+    # An active override with a future expiry (30 min out).
+    expiry = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=30)
+    override_payload = {eid: expiry.isoformat()}
+    target_payload = {eid: {"target": 0}}
+
+    def _restore_override():
+        assert override_sensor._restore_from_attributes(override_payload) is True
+
+    def _restore_target():
+        with patch(_CC, return_value=_open_close_caps()):
+            assert target_sensor._restore_from_attributes(target_payload) is True
+
+    if override_first:
+        _restore_override()
+        _restore_target()
+    else:
+        _restore_target()
+        _restore_override()
+
+    # Manual-override state survives intact.
+    assert manager.is_cover_manual(eid) is True
+    assert manager.manual_control.get(eid) is True
+    assert eid in manager.manual_control_time
+    # Command target is set on the disjoint store.
+    assert svc.get_target(eid) == 0
 
 
 @pytest.mark.asyncio

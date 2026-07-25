@@ -263,7 +263,13 @@ class _ACPRestorableDiagnosticSensor(_ACPDiagnosticSensor, RestoreEntity):
         last = await self.async_get_last_state()
         if last is None:
             return
-        per_entity = (last.attributes or {}).get("per_entity") or {}
+        # Any non-mapping ``per_entity`` (None, a list/str from a corrupted
+        # restore snapshot, …) is treated as empty here in the shared base seam,
+        # so neither restorable subclass ever iterates ``.items()`` on a value
+        # that lacks it. Guarding once here covers both subclasses.
+        per_entity = (last.attributes or {}).get("per_entity")
+        if not isinstance(per_entity, Mapping):
+            per_entity = {}
         if self._restore_from_attributes(per_entity):
             self.async_write_ha_state()
 
