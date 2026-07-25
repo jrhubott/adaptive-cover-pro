@@ -75,6 +75,7 @@
           "window_width": "Window Width",
           "length_awning": "Awning Span Length",
           "angle": "Awning Angle",
+          "awning_shade_mode": "Awning Shade Mode",
           "slat_depth": "Slat Depth",
           "slat_distance": "Slat Spacing",
           "tilt_mode": "Tilt Mode",
@@ -130,6 +131,7 @@
           "window_width": "Width of the window opening. Shown in the unit Home Assistant is configured for. Used by glare zones to determine which floor zones can receive direct sunlight based on the sun's horizontal angle. Measure the inside width of the glass area. Examples: Standard window = 0.9–1.2 m / 35–47 in, Double window = 1.5–1.8 m / 59–71 in, Patio door = 2.0–3.0 m / 79–118 in. Only relevant when glare zones are enabled.",
           "length_awning": "Maximum extension length of your awning when fully extended. Shown in the unit Home Assistant is configured for. Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0–3.0 m / 79–118 in, Small window awning = 1.0–1.5 m / 39–59 in, Large commercial = 4.0 m / 157 in or more. Used to calculate how far the awning needs to extend to block sun.",
           "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
+          "awning_shade_mode": "Whether the awning shades the window glass or the whole area in front of it. **Shade window glass** (default): extend just far enough to keep direct sun off the window, retracting as the sun moves toward the side of the window — best for cutting glare and heat at the glass. **Shade area in front (patio)**: stay fully extended whenever the sun is in front of the awning, to shade a patio or seating area rather than the window.",
           "slat_depth": "Width of each slat (measure one slat front to back). Shown in the unit Home Assistant is configured for. Common sizes: Mini blinds = 2.5 cm / 1 in, Standard blinds = 5 cm / 2 in, Wide slats = 6.5–7.5 cm / 2.5–3 in. Measure a single slat with a ruler for precise sun blocking calculation.",
           "slat_distance": "Vertical spacing between slat centres. Shown in the unit Home Assistant is configured for. Measure from the middle of one slat to the middle of the next slat (vertically). Usually slightly more than slat depth to allow overlap when closed. Common: 3–8 cm / 1.2–3 in depending on blind type. Used to calculate optimal tilt angle.",
           "tilt_mode": "How the tilt percentage maps to slat angle. **Single direction** (0% = closed / 100% = open): the slats rotate one way only. **Bi-directional** (0% = closed / 50% = open / 100% = closed): the slats open at 50% and close in either direction. **Specify angles**: set the exact raw slat angle at 0% and 100% tilt below, for hardware whose travel matches neither preset.",
@@ -376,6 +378,7 @@
           "window_width": "Window Width",
           "length_awning": "Awning Span Length",
           "angle": "Awning Angle",
+          "awning_shade_mode": "Awning Shade Mode",
           "slat_depth": "Slat Depth",
           "slat_distance": "Slat Spacing",
           "tilt_mode": "Tilt Mode",
@@ -431,6 +434,7 @@
           "window_width": "Width of the window opening. Shown in the unit Home Assistant is configured for. Used by glare zones to determine which floor zones can receive direct sunlight based on the sun's horizontal angle. Measure the inside width of the glass area. Examples: Standard window = 0.9–1.2 m / 35–47 in, Double window = 1.5–1.8 m / 59–71 in, Patio door = 2.0–3.0 m / 79–118 in. Only relevant when glare zones are enabled.",
           "length_awning": "Maximum extension length of your awning when fully extended. Shown in the unit Home Assistant is configured for. Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0–3.0 m / 79–118 in, Small window awning = 1.0–1.5 m / 39–59 in, Large commercial = 4.0 m / 157 in or more. Used to calculate how far the awning needs to extend to block sun.",
           "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
+          "awning_shade_mode": "Whether the awning shades the window glass or the whole area in front of it. **Shade window glass** (default): extend just far enough to keep direct sun off the window, retracting as the sun moves toward the side of the window — best for cutting glare and heat at the glass. **Shade area in front (patio)**: stay fully extended whenever the sun is in front of the awning, to shade a patio or seating area rather than the window.",
           "slat_depth": "Width of each slat (measure one slat front to back). Shown in the unit Home Assistant is configured for. Common sizes: Mini blinds = 2.5 cm / 1 in, Standard blinds = 5 cm / 2 in, Wide slats = 6.5–7.5 cm / 2.5–3 in. Measure a single slat with a ruler for precise sun blocking calculation.",
           "slat_distance": "Vertical spacing between slat centres. Shown in the unit Home Assistant is configured for. Measure from the middle of one slat to the middle of the next slat (vertically). Usually slightly more than slat depth to allow overlap when closed. Common: 3–8 cm / 1.2–3 in depending on blind type. Used to calculate optimal tilt angle.",
           "tilt_mode": "How the tilt percentage maps to slat angle. **Single direction** (0% = closed / 100% = open): the slats rotate one way only. **Bi-directional** (0% = closed / 50% = open / 100% = closed): the slats open at 50% and close in either direction. **Specify angles**: set the exact raw slat angle at 0% and 100% tilt below, for hardware whose travel matches neither preset.",
@@ -1242,6 +1246,12 @@
         "heat": "Heat (climate summer / extreme heat)",
         "privacy": "Privacy (sunset window)",
         "night": "Night (sun below the horizon)"
+      }
+    },
+    "awning_shade_mode": {
+      "options": {
+        "window": "Shade window glass",
+        "area": "Shade area in front (patio)"
       }
     },
     "tilt_mode": {

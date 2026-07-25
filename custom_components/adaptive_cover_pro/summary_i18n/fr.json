@@ -237,7 +237,9 @@
     "awning": {
       "length": "store banne de {v}m",
       "angle": "incliné à {v}°",
-      "blocking_wall": "bloque le soleil {v}m du mur"
+      "blocking_wall": "bloque le soleil {v}m du mur",
+      "shade_mode_window": "ombrager la vitre",
+      "shade_mode_area": "ombrage de la zone avant (terrasse)"
     },
     "slat": {
       "depth": "profondeur de lamelle {v}cm",

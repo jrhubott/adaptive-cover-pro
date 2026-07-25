@@ -120,7 +120,8 @@
           "day_night_control_model": "Kontrollmodell",
           "day_night_middle_rail_entity": "Mittlere Schiene-Entität (Doppelentitäts-Modell)",
           "dual_panel_front_entity": "Transparentes Frontpaneel",
-          "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser"
+          "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser",
+          "awning_shade_mode": "Markisen-Beschattungsmodus"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -175,7 +176,8 @@
           "day_night_control_model": "Wie das abstrakte Coverage + Stoff-Paar auf Ihre physische Beschattung abgebildet wird. **Position + Neigung** (Standard): Die Beschattung steuert set_position für die Abdeckung und set_tilt_position für die Sheer/Verdunkelung-Mischung — für Hardware, die beide Achsen freilegt. **Geteilter Bereich**: Eine einachsige Beschattung, deren Positionsbereich beide kodiert — die untere Hälfte (0–50%) wählt den Verdunkelungsstoff, die obere Hälfte (50–100%) den Sheer-Stoff — für Hardware mit nur einem Motor. **Zwei Schienen-Entitäten**: zwei separate Beschattungs-Entitäten — eine untere Schiene und eine mittlere Schiene — wobei die Stoff-Mischung in die absolute Position der mittleren Schiene eingefaltet wird.",
           "day_night_middle_rail_entity": "Nur für das **Zwei Schienen-Entitäten**-Modell: Welche Beschattung dieser Instanz ist die mittlere Schiene. Die andere konfigurierte Beschattung ist die untere Schiene. Die mittlere Schiene wird garantiert nicht unter die untere Schiene fallen.",
           "dual_panel_front_entity": "Welches der Covers dieser Instanz ist das **transparente Frontpaneel**. Es folgt der Sonne wie eine normale Jalousie. Alle anderen konfigurierten Covers sind das **Verdunkelungspaneel**. Lassen Sie diesen Wert leer, um als normale Jalousie zu funktionieren.",
-          "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig."
+          "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig.",
+          "awning_shade_mode": "Ob die Markise das Fenster-Glas oder den gesamten Bereich davor beschattet. **Fenster beschatten** (Standard): Gerade weit genug ausfahren, um die direkte Sonne vom Fenster fernzuhalten, und einfahren, wenn die Sonne zur Seite des Fensters wandert – am besten zur Verringerung von Blendung und Wärmeeintrag am Glas. **Bereich davor beschatten (Terrasse)**: Vollständig ausgefahren bleiben, wenn die Sonne vor der Markise steht, um eine Terrasse oder einen Sitzbereich statt des Fensters zu beschatten."
         }
       },
       "duplicate_select": {
@@ -399,7 +401,8 @@
           "day_night_control_model": "Kontrollmodell",
           "day_night_middle_rail_entity": "Mittlere Schiene-Entität (Doppelentitäts-Modell)",
           "dual_panel_front_entity": "Transparentes Frontpaneel",
-          "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser"
+          "dual_panel_blackout_triggers": "Verdunkelungs-Auslöser",
+          "awning_shade_mode": "Markisen-Beschattungsmodus"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -454,7 +457,8 @@
           "day_night_control_model": "Wie das abstrakte Coverage + Stoff-Paar auf Ihre physische Beschattung abgebildet wird. **Position + Neigung** (Standard): Die Beschattung steuert set_position für die Abdeckung und set_tilt_position für die Sheer/Verdunkelung-Mischung — für Hardware, die beide Achsen freilegt. **Geteilter Bereich**: Eine einachsige Beschattung, deren Positionsbereich beide kodiert — die untere Hälfte (0–50%) wählt den Verdunkelungsstoff, die obere Hälfte (50–100%) den Sheer-Stoff — für Hardware mit nur einem Motor. **Zwei Schienen-Entitäten**: zwei separate Beschattungs-Entitäten — eine untere Schiene und eine mittlere Schiene — wobei die Stoff-Mischung in die absolute Position der mittleren Schiene eingefaltet wird.",
           "day_night_middle_rail_entity": "Nur für das **Zwei Schienen-Entitäten**-Modell: Welche Beschattung dieser Instanz ist die mittlere Schiene. Die andere konfigurierte Beschattung ist die untere Schiene. Die mittlere Schiene wird garantiert nicht unter die untere Schiene fallen.",
           "dual_panel_front_entity": "Welches der Covers dieser Instanz ist das **transparente Frontpaneel**. Es folgt der Sonne wie eine normale Jalousie. Alle anderen konfigurierten Covers sind das **Verdunkelungspaneel**. Lassen Sie diesen Wert leer, um als normale Jalousie zu funktionieren.",
-          "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig."
+          "dual_panel_blackout_triggers": "Wenn das **Verdunkelungspaneel** schließt. **Wärme**: Klima-Sommer / extreme Hitze Block. **Datenschutz**: Sonnenuntergangsfenster. **Nacht**: Sonne unter dem Horizont. Wählen Sie eine beliebige Kombination – das Verdunkelungspaneel öffnet sich, wenn keiner der ausgewählten Auslöser aktiv ist. Die beiden Paneele sind unabhängig.",
+          "awning_shade_mode": "Ob die Markise das Fenster-Glas oder den gesamten Bereich davor beschattet. **Fenster beschatten** (Standard): Gerade weit genug ausfahren, um die direkte Sonne vom Fenster fernzuhalten, und einfahren, wenn die Sonne zur Seite des Fensters wandert – am besten zur Verringerung von Blendung und Wärmeeintrag am Glas. **Bereich davor beschatten (Terrasse)**: Vollständig ausgefahren bleiben, wenn die Sonne vor der Markise steht, um eine Terrasse oder einen Sitzbereich statt des Fensters zu beschatten."
         }
       },
       "sun_tracking": {
@@ -1363,6 +1367,12 @@
         "heat": "Wärme (Klima-Sommer / extreme Hitze)",
         "privacy": "Datenschutz (Sonnenuntergangsfenster)",
         "night": "Nacht (Sonne unter dem Horizont)"
+      }
+    },
+    "awning_shade_mode": {
+      "options": {
+        "window": "Fenster beschatten",
+        "area": "Bereich davor beschatten (Terrasse)"
       }
     }
   },

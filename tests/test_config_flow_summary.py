@@ -330,6 +330,26 @@ def test_geometry_awning_shows_awning_fields():
     assert "15°" in summary
 
 
+def test_geometry_awning_shows_shade_mode():
+    """Awning shade mode renders in the geometry summary (issue #1025)."""
+    from custom_components.adaptive_cover_pro.const import (
+        AWNING_SHADE_MODE_AREA,
+        AWNING_SHADE_MODE_WINDOW,
+        CONF_AWNING_SHADE_MODE,
+    )
+
+    window_cfg = {
+        CONF_LENGTH_AWNING: 3.0,
+        CONF_AWNING_SHADE_MODE: AWNING_SHADE_MODE_WINDOW,
+    }
+    assert "shade window glass" in _build_config_summary(window_cfg, CoverType.AWNING)
+
+    area_cfg = {CONF_LENGTH_AWNING: 3.0, CONF_AWNING_SHADE_MODE: AWNING_SHADE_MODE_AREA}
+    assert "shade area in front (patio)" in _build_config_summary(
+        area_cfg, CoverType.AWNING
+    )
+
+
 def test_geometry_tilt_shows_tilt_fields():
     """Tilt slat dimensions appear."""
     cfg = {CONF_TILT_DEPTH: 3.0, CONF_TILT_DISTANCE: 4.0, CONF_TILT_MODE: "mode1"}
