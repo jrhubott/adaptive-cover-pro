@@ -51,6 +51,7 @@ from .cover_types import CoverTypePolicy, get_policy
 from .cover_types.base import (
     AXIS_NAME_POSITION,
     AXIS_NAME_TILT,
+    STATE_ATTR_TILT_POSITION,
     CoverDescriptor,
     axis_inverted,
     caps_get,
@@ -2181,22 +2182,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._pipeline_result is not None and self._pipeline_result.skip_command:
             result = self._pipeline_result
             label = _HOLD_SKIP_LABEL.get(result.control_method, "hold")
-            # Motion holds carry the held position in ``position`` and leave
-            # held_position None; manual holds keep ``position`` as the would-be
-            # shadow and put the physical position in held_position.  Prefer
-            # held_position when present so the recorded value is the true
-            # physical position for a manual hold.
+            # Where the cover is actually sitting, in the COVER frame — one
+            # frame for every hold type, never "logical when motion won and
+            # cover-frame when manual won" (#1028). This extra ships beside
+            # ``would_be_position`` (the cover-frame ``state``) and the
+            # ``inverse_state_applied`` label, which is what fixes the frame:
+            # this whole surface speaks the cover's own numbers.
             #
-            # Frame note (#1028): a motion hold's ``position`` is the held read
-            # expressed in the LOGICAL frame, so on an inverse-state instance
-            # this extras value is logical while ``would_be_position`` (=
-            # ``state``) carries the cover-frame equivalent. Both describe the
-            # same physical place.
-            held = (
-                result.held_position
-                if result.held_position is not None
-                else result.position
-            )
+            # Manual and group-lock holds already carry the raw read in
+            # ``held_position``. A motion hold describes the same physical
+            # place in ``position``, converted to the logical frame so
+            # ``coordinator.state`` can invert it back out — so flip it here
+            # rather than pushing the raw value onto ``held_position``, which
+            # is also the value the registry clamps a floor against and must
+            # stay comparable to the user's logical floor (#534 / #809).
+            held = result.held_position
+            if held is None:
+                held = (
+                    inverse_state(result.position)
+                    if self.position_axis_inverted
+                    else result.position
+                )
             self._cmd_svc.record_skipped_action(
                 cover,
                 label,
@@ -2215,24 +2221,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
     def _entity_target(
-        self, cover: str, state: int, *, inverted: bool | None = None
+        self,
+        cover: str,
+        state: int,
+        *,
+        inverted: bool | None = None,
+        interpolated: bool = False,
     ) -> int:
         """Per-entity dispatch target for this cover (identity for most types).
 
         The pipeline resolves ONE position per cycle, which is then sent to
         every bound entity. A cover type that drives several physical entities
         to different positions from that one value — the Model C day/night
-        shade with a separate middle-rail entity — remaps here via its
-        polymorphic ``resolve_entity_target`` hook. Every other cover type's
-        hook is identity, so this seam never branches on the cover type.
+        shade with a separate middle-rail entity, the dual panel's blackout
+        panel — remaps here via its polymorphic ``resolve_entity_target`` hook.
+        Every other cover type's hook is identity, so this seam never branches
+        on the cover type.
 
-        ``inverted`` names the inversion space of ``state`` so a remapping
-        policy un-inverts it correctly. The main pipeline path leaves it
-        ``None`` (the policy reuses its cached per-cycle decision that mirrors
-        ``coordinator.state``); the broadcast seams that dispatch in a divergent
-        space pass their own explicit value (#993).
+        ``inverted`` and ``interpolated`` name the dispatch frame of ``state``
+        so a remapping policy reproduces or undoes it correctly. The main
+        pipeline path leaves ``inverted`` ``None`` (the policy reuses its cached
+        per-cycle decision that mirrors ``coordinator.state``); every seam that
+        dispatches off that cycle names its own frame explicitly (#993 /
+        #1027). ``interpolated`` is the half ``inverted`` alone could not
+        express — see ``CoverTypePolicy.resolve_entity_target``.
         """
-        return self._policy.resolve_entity_target(cover, state, inverted=inverted)
+        return self._policy.resolve_entity_target(
+            cover, state, inverted=inverted, interpolated=interpolated
+        )
 
     def set_group_intent(self, group_id: str, intent: GroupIntent | None) -> None:
         """Store or remove one cover-group's live intent for this member.
@@ -3234,14 +3250,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # that already lives in cover space — the same carve-out ``state``
         # applies to a floor-clamped pipeline winner (#469).
         skip_transforms = clamped != requested
-        inverted = not skip_transforms and self.position_axis_inverted
         target = self._entity_target(
             entity_id,
             self._to_cover_frame(clamped, skip_transforms=skip_transforms),
-            # A user command dispatches in a space that can diverge from the
-            # main pipeline's cached per-cycle decision, so name it explicitly
-            # rather than leaving the remap to guess (#993).
-            inverted=inverted,
+            # A user command runs the same transform as the main pipeline but
+            # off-cycle, so the policy's cached per-cycle decision may describe
+            # a different value's frame (#993). Name BOTH halves of the frame
+            # this dispatch actually used: ``inverted`` alone cannot say
+            # "interpolated, not inverted", and a remapping policy handed that
+            # ambiguity drops the calibration curve entirely (#1027).
+            inverted=not skip_transforms and self.position_axis_inverted,
+            interpolated=not skip_transforms and self._use_interpolation,
         )
         return await self._cmd_svc.apply_position(entity_id, target, trigger, ctx)
 
@@ -3591,6 +3610,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         the formula.
         """
         return axis_inverted(self._policy.axes[0], self.config_entry.options)
+
+    @property
+    def tilt_read_inverted(self) -> bool:
+        """Whether the source's TILT attribute holds a re-framed value.
+
+        True only for the cover types whose primary axis IS the tilt axis
+        (``cover_tilt``, ``cover_louvered_roof``). Their single axis writes the
+        tilt attribute, and their user commands fall through
+        ``async_apply_user_tilt`` onto ``async_apply_user_position``, so the
+        number that reaches the device went through :meth:`_to_cover_frame`
+        (#1027). A reader that mirrors the attribute verbatim would therefore
+        publish 70 for a slider the user dragged to 30.
+
+        A venetian / day-night shade's tilt is its SECOND axis: it is keyed on
+        ``inverse_tilt``, converted by the venetian sequencer's ``_to_wire``,
+        and untouched by the position dispatch path — so it is excluded here
+        rather than swept in. Derived from the axis descriptor, not from a
+        cover-type string, so a future tilt-primary type is covered for free.
+        """
+        primary = self._policy.axes[0]
+        if primary.state_attr != STATE_ATTR_TILT_POSITION:
+            return False
+        return self.position_axis_inverted
 
     def _to_cover_frame(self, value: float, *, skip_transforms: bool = False) -> int:
         """Map a logical (HA-convention) position into this cover's dispatch frame.

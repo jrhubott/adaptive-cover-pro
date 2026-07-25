@@ -441,3 +441,87 @@ async def test_proxy_slider_round_trip_inverse_state(hass) -> None:
     await hass.async_block_till_done()
 
     assert hass.states.get(proxy_eid).attributes.get("current_position") == 30
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: the tilt-PRIMARY cover types ride the position path, so their
+# tilt read has to be re-framed with it.
+# ---------------------------------------------------------------------------
+
+_TILT_ONLY_FEATURES = 128 | 15
+
+
+async def test_proxy_tilt_round_trip_inverse_state_on_tilt_only_cover(hass) -> None:
+    """Drag the proxy tilt to 30 on a ``cover_tilt`` instance and read 30 back.
+
+    ``cover_tilt`` / ``cover_louvered_roof`` carry tilt as their ONLY axis, so
+    ``async_apply_user_tilt`` falls back to ``async_apply_user_position`` and
+    the value is re-framed by ``_to_cover_frame`` before it is dispatched onto
+    ``set_cover_tilt_position``. The read side has to move with it, exactly as
+    the position axis did — otherwise the slider settles on 70 after the user
+    dragged it to 30.
+    """
+    options = dict(TILT_OPTIONS)
+    options[CONF_INVERSE_STATE] = True
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass,
+        cover_type=CoverType.TILT,
+        entry_id="proxy_cmd_tilt_round_trip",
+        options=options,
+        attrs={
+            "current_tilt_position": 50,
+            "supported_features": _TILT_ONLY_FEATURES,
+        },
+    )
+    calls = _capture_cover_calls(hass, "cover.living_room")
+
+    await hass.services.async_call(
+        "cover",
+        "set_cover_tilt_position",
+        {"entity_id": proxy_eid, "tilt_position": 30},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    sent = calls.get("set_cover_tilt_position", [])
+    assert sent, f"no tilt command reached the source: {calls}"
+    commanded = sent[0]["tilt_position"]
+    assert commanded == 70
+
+    # The source now reports what it was actually driven to.
+    hass.states.async_set(
+        "cover.living_room",
+        "open",
+        {
+            "current_tilt_position": commanded,
+            "supported_features": _TILT_ONLY_FEATURES,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(proxy_eid).attributes.get("current_tilt_position") == 30
+
+
+async def test_proxy_tilt_read_stays_verbatim_for_second_axis_tilt(hass) -> None:
+    """A venetian's SECOND tilt axis is deliberately left alone.
+
+    Its wire conversion lives in the venetian sequencer's ``_to_wire`` and is
+    keyed on ``inverse_tilt``, not ``inverse_state``; nothing on the #1027
+    dispatch path touches it. Pinning the boundary keeps a future "just invert
+    every tilt read" edit from silently double-flipping the venetian.
+    """
+    options = dict(TILT_OPTIONS)
+    options[CONF_INVERSE_STATE] = True
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass,
+        cover_type=CoverType.VENETIAN,
+        entry_id="proxy_cmd_venetian_tilt_read",
+        options=options,
+        attrs={
+            "current_position": 60,
+            "current_tilt_position": 30,
+            "supported_features": _TILT_ONLY_FEATURES,
+        },
+    )
+
+    assert hass.states.get(proxy_eid).attributes.get("current_tilt_position") == 30

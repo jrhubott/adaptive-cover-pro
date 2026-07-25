@@ -519,6 +519,7 @@ class CoverTypePolicy(ABC):
         position: int,
         *,
         inverted: bool | None = None,  # noqa: ARG002
+        interpolated: bool = False,  # noqa: ARG002
     ) -> int:
         """Adjust the dispatched position for one specific entity.
 
@@ -531,14 +532,30 @@ class CoverTypePolicy(ABC):
         polymorphic hook rather than branching on the cover type — every other
         cover type keeps sending the resolved position verbatim.
 
-        ``inverted`` names the inversion space of the supplied ``position`` so a
-        remapping policy can un-invert it correctly. ``None`` (the default and
-        the only value the identity implementation ever needs) means "use the
-        policy's own cached per-cycle decision" — the main pipeline dispatch
-        path. The broadcast dispatch seams (sunset-window transition,
-        end-time-default, auto-control-off return) dispatch in a space that may
-        diverge from that cached flag, so they pass an explicit ``True``/``False``
-        (#993). Backward-compatible: every non-remapping policy ignores it.
+        ``inverted`` and ``interpolated`` together name the DISPATCH FRAME of
+        the supplied ``position`` — which of the two mutually exclusive
+        logical→wire transforms the caller already applied — so a remapping
+        policy can reproduce or undo it.
+
+        * ``inverted=None`` (the default, and the only value the identity
+          implementation ever needs) means "use the policy's own cached
+          per-cycle decision": the main pipeline dispatch path, whose frame the
+          policy already recorded in ``post_pipeline_resolve``. ``interpolated``
+          is not consulted in this mode.
+        * An explicit ``inverted=True``/``False`` names the frame outright, and
+          ``interpolated`` completes it. The broadcast seams (sunset-window
+          transition, end-time-default, auto-control-off return) dispatch an
+          absolute default that is inverted-or-not but never interpolated, so
+          they leave ``interpolated`` at its default. A user command
+          (``async_apply_user_position``) rides the SAME transform as the main
+          pipeline but off-cycle, so it names both dimensions rather than
+          trusting a cache built for a different value (#993 / #1027).
+
+        ``interpolated`` exists because ``inverted`` alone cannot describe an
+        interpolating install: "interpolated, not inverted" and "neither" both
+        collapsed to ``inverted=False``, which silently dropped a calibrated
+        cover type's curve. Backward-compatible: every non-remapping policy
+        ignores both.
         """
         return position
 

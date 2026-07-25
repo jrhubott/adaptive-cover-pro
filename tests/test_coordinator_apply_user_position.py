@@ -811,20 +811,27 @@ async def test_user_position_untransformed_when_neither_configured() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("options", "requested", "dispatched", "expected_inverted"),
+    ("options", "requested", "dispatched", "expected_inverted", "expected_interp"),
     [
-        ({CONF_INVERSE_STATE: True}, 30, 70, True),
-        (dict(_INTERP_OPTIONS), 25, 45, False),
+        ({CONF_INVERSE_STATE: True}, 30, 70, True, False),
+        (dict(_INTERP_OPTIONS), 25, 45, False, True),
+        ({}, 30, 30, False, False),
     ],
 )
-async def test_user_position_routes_through_entity_target_with_explicit_inverted(
-    options: dict, requested: int, dispatched: int, expected_inverted: bool
+async def test_user_position_routes_through_entity_target_with_explicit_frame(
+    options: dict,
+    requested: int,
+    dispatched: int,
+    expected_inverted: bool,
+    expected_interp: bool,
 ) -> None:
-    """The per-entity remap runs, and is told which inversion space it is handed.
+    """The per-entity remap runs, and is told the full frame it is handed.
 
-    Issue #993: a seam that dispatches in a space diverging from the main
-    pipeline's cached decision must name that space explicitly. ``None`` would
-    make a dual-panel / day-night policy un-invert against the wrong flag.
+    Issue #993: a seam dispatching off the main pipeline's cycle must name its
+    space explicitly — ``None`` would make a dual-panel / day-night policy
+    resolve against a flag cached for a different value. Issue #1027: naming
+    only the *inversion* is not enough, because "interpolated, not inverted"
+    and "neither" are different frames that both read as ``inverted=False``.
     """
     coord, _ctx = _make_coord([], default_options=options)
     policy = MagicMock()
@@ -836,16 +843,21 @@ async def test_user_position_routes_through_entity_target_with_explicit_inverted
     )
 
     policy.resolve_entity_target.assert_called_once_with(
-        "cover.test", dispatched, inverted=expected_inverted
+        "cover.test",
+        dispatched,
+        inverted=expected_inverted,
+        interpolated=expected_interp,
     )
 
 
 @pytest.mark.asyncio
-async def test_user_position_entity_target_inverted_false_when_floor_skips() -> None:
-    """A floor-skipped dispatch names the un-inverted space, never ``None``."""
+async def test_user_position_entity_target_frame_is_untransformed_when_floor_skips() -> (
+    None
+):
+    """A floor-skipped dispatch names the untransformed frame, never ``None``."""
     coord, _ctx = _make_coord(
         [_slot(25, is_on=True, min_mode=True, priority=82)],
-        default_options={CONF_INVERSE_STATE: True},
+        default_options={CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
     )
     policy = MagicMock()
     policy.resolve_entity_target = MagicMock(return_value=25)
@@ -854,5 +866,5 @@ async def test_user_position_entity_target_inverted_false_when_floor_skips() -> 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 
     policy.resolve_entity_target.assert_called_once_with(
-        "cover.test", 25, inverted=False
+        "cover.test", 25, inverted=False, interpolated=False
     )

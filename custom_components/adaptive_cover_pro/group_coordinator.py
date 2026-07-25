@@ -65,7 +65,9 @@ from .const import (
     GroupState,
 )
 from .cover_types import get_policy
+from .cover_types.base import axis_inverted
 from .helpers import climate_mode_from_diagnostics
+from .managers import inverse_state
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
@@ -575,17 +577,34 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         await super().async_shutdown()
 
     async def _async_update_data(self) -> GroupAggregates:
-        """Recompute the group position/state aggregates from member covers."""
+        """Recompute the group position/state aggregates from member covers.
+
+        Every reading is normalised to the LOGICAL frame before it is averaged
+        or compared (#1027). A group cover is an ordinary HA cover: the number
+        it publishes and the number its slider accepts are logical, and
+        ``async_set_position`` hands that logical value to each ACP member,
+        which re-frames it for its own hardware. Members can be configured
+        differently — one on ``inverse_state``, one not — so the raw aggregate
+        genuinely mixes frames and cannot be un-inverted after the fact.
+        Normalising per member is the only thing that composes.
+        """
         member_positions: dict[str, int | None] = {}
         for entry_id in self.member_entry_ids():
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None:
                 continue
             policy = get_policy(entry.data[CONF_SENSOR_TYPE])
+            # Same predicate the member's own coordinator uses, read from the
+            # member's options rather than its runtime_data so a mid-reload
+            # member still contributes its reading in the right frame.
+            inverted = axis_inverted(policy.axes[0], entry.options)
             for entity_id in entry.options.get(CONF_ENTITIES, []):
-                member_positions[entity_id] = policy.read_axis_value(
-                    self.hass, entity_id, caps=None
+                raw = policy.read_axis_value(self.hass, entity_id, caps=None)
+                member_positions[entity_id] = (
+                    inverse_state(raw) if inverted and raw is not None else raw
                 )
+        # Generic (non-ACP) covers are adopted as-is — ACP holds no inversion
+        # config for them, so their reading is already the logical one.
         for entity_id in self.generic_cover_ids():
             member_positions[entity_id] = self._adopt_policy.read_axis_value(
                 self.hass, entity_id, caps=None

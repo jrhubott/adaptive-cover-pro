@@ -178,6 +178,26 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         state = self._source_state()
         return state is not None and state.state == CoverState.CLOSING
 
+    def _logical_axis_value(self, attr: str, *, inverted: bool) -> int | None:
+        """Read *attr* off the source and express it in the logical frame.
+
+        One read path for both axes so the un-inversion is written once and
+        only the *predicate* differs — each axis asks the coordinator whether
+        the value it is about to publish was re-framed on the way out.
+
+        Only inversion is undone. Interpolation is NOT unwound: mapping a motor
+        reading back onto the linear scale is #925's opt-in
+        ``CONF_PROXY_LINEAR_SCALE``, and the coordinator's inversion predicates
+        already report False whenever interpolation is active on that axis.
+        """
+        state = self._source_state()
+        if state is None:
+            return None
+        value = state.attributes.get(attr)
+        if value is None:
+            return None
+        return inverse_state(int(value)) if inverted else int(value)
+
     @property
     def current_cover_position(self) -> int | None:
         """Source ``current_position`` expressed in the logical frame.
@@ -189,31 +209,25 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         mapped back here — the read side of the same predicate
         ``_to_cover_frame`` uses, which is what keeps the round trip closed
         (#1027 / #1028).
-
-        Only inversion is undone. Interpolation is NOT unwound: mapping a motor
-        reading back onto the linear scale is #925's opt-in
-        ``CONF_PROXY_LINEAR_SCALE``, and ``position_axis_inverted`` is already
-        False whenever interpolation is active.
         """
-        state = self._source_state()
-        if state is None:
-            return None
-        value = state.attributes.get(STATE_ATTR_POSITION)
-        if value is None:
-            return None
-        value = int(value)
-        if self.coordinator.position_axis_inverted:
-            return inverse_state(value)
-        return value
+        return self._logical_axis_value(
+            STATE_ATTR_POSITION, inverted=self.coordinator.position_axis_inverted
+        )
 
     @property
     def current_cover_tilt_position(self) -> int | None:
-        """Mirror source current_tilt_position verbatim."""
-        state = self._source_state()
-        if state is None:
-            return None
-        value = state.attributes.get(STATE_ATTR_TILT_POSITION)
-        return int(value) if value is not None else None
+        """Source ``current_tilt_position``, re-framed only for a tilt-primary cover.
+
+        A tilt-PRIMARY cover (``cover_tilt``, ``cover_louvered_roof``) has no
+        separate position axis: ``async_apply_user_tilt`` falls back to
+        ``async_apply_user_position``, so the value on the wire went through
+        ``_to_cover_frame`` and the read owes the slider the inverse (#1027).
+        A venetian's second tilt axis is converted by its own sequencer and is
+        left verbatim — ``tilt_read_inverted`` draws that line.
+        """
+        return self._logical_axis_value(
+            STATE_ATTR_TILT_POSITION, inverted=self.coordinator.tilt_read_inverted
+        )
 
     @property
     def supported_features(self) -> CoverEntityFeature:

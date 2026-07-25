@@ -50,7 +50,7 @@ def _make_coord_with_stale_default():
     # The per-entity dispatch seam delegates to the policy; identity here so the
     # mock policy leaves the dispatched position unchanged (blind semantics).
     coord._policy.resolve_entity_target = (
-        lambda entity_id, position, *, inverted=None: position
+        lambda entity_id, position, *, inverted=None, interpolated=False: position
     )
     coord._inverse_state = False
     coord._use_interpolation = False  # ``coord.state`` post-processing

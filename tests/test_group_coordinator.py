@@ -44,12 +44,16 @@ GENERIC_ENTITY = "cover.generic1"
 
 
 def _member_entry(
-    hass, entry_id: str, cover_type: CoverType, entities: list[str]
+    hass,
+    entry_id: str,
+    cover_type: CoverType,
+    entities: list[str],
+    extra_options: dict | None = None,
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"name": entry_id, CONF_SENSOR_TYPE: cover_type},
-        options={CONF_ENTITIES: entities},
+        options={CONF_ENTITIES: entities, **(extra_options or {})},
         entry_id=entry_id,
         title=entry_id,
     )
@@ -841,7 +845,9 @@ def _group_with_dispatch_members(hass, member_options: dict[str, dict]):
     coords = {}
     for idx, (entity, options) in enumerate(member_options.items()):
         entry_id = f"frame_member_{idx}"
-        entry = _member_entry(hass, entry_id, CoverType.BLIND, [entity])
+        # A real member stores its frame config in its OWN entry options, which
+        # is where the group's aggregate has to read it from.
+        entry = _member_entry(hass, entry_id, CoverType.BLIND, [entity], options)
         coord = _dispatch_member_coordinator(options, entity)
         entry.runtime_data = coord
         entry_ids.append(entry_id)
@@ -908,3 +914,85 @@ async def test_group_member_dispatch_applies_member_interpolation(hass) -> None:
 
     assert _dispatched_position(coords["cover.calibrated_member"]) == 45
     assert _dispatched_position(coords["cover.plain_member"]) == 25
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: the group cover entity round-trips its own slider
+# ---------------------------------------------------------------------------
+
+
+def _report_positions(hass, positions: dict[str, int]) -> None:
+    """Publish what each member cover was actually driven to."""
+    for entity_id, pos in positions.items():
+        hass.states.async_set(
+            entity_id, "open", {"current_position": pos, "supported_features": 15}
+        )
+
+
+async def test_group_cover_round_trip_with_mixed_frame_members(hass) -> None:
+    """Drag the group slider to 30 and the group settles on 30, not 43.
+
+    The group entity is an ordinary HA cover: its slider value is logical, and
+    ``async_set_position`` now hands that logical number to each ACP member,
+    which re-frames it for its own hardware (#1027). The aggregate therefore
+    has to normalise every member's reading back to the logical frame BEFORE
+    averaging — a group can mix inverted and plain members, so un-inverting the
+    average is not a thing that can work.
+    """
+    coordinator, coords = _group_with_dispatch_members(
+        hass,
+        {
+            "cover.inverted_member": {CONF_INVERSE_STATE: True},
+            "cover.plain_member": {},
+        },
+    )
+
+    await coordinator.async_set_position(30)
+
+    # Each member is driven in its own frame …
+    assert _dispatched_position(coords["cover.inverted_member"]) == 70
+    assert _dispatched_position(coords["cover.plain_member"]) == 30
+    _report_positions(
+        hass,
+        {
+            "cover.inverted_member": 70,
+            "cover.plain_member": 30,
+            GENERIC_ENTITY: 30,
+        },
+    )
+
+    await coordinator.async_refresh()
+
+    # … and the group reads back the one logical number the user asked for.
+    assert coordinator.data.position == 30
+
+
+async def test_group_state_normalises_before_deciding_open(hass) -> None:
+    """Everything physically open reads as OPEN even with an inverted member.
+
+    ``GroupState`` is decided from the same member readings as the average, so
+    the raw-frame aggregate mislabelled a fully open group as MIXED whenever a
+    member ran ``inverse_state``. That drives ``is_closed`` on the group cover
+    entity, so it is user-visible, not just cosmetic.
+    """
+    coordinator, _coords = _group_with_dispatch_members(
+        hass,
+        {
+            "cover.inverted_member": {CONF_INVERSE_STATE: True},
+            "cover.plain_member": {},
+        },
+    )
+    _report_positions(
+        hass,
+        {
+            # Inverted hardware reports 0 when it is physically wide open.
+            "cover.inverted_member": POSITION_CLOSED,
+            "cover.plain_member": 100,
+            GENERIC_ENTITY: 100,
+        },
+    )
+
+    await coordinator.async_refresh()
+
+    assert coordinator.data.position == 100
+    assert coordinator.data.state is GroupState.OPEN

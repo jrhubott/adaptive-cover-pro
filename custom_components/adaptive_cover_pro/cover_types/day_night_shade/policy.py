@@ -612,7 +612,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 
     def resolve_entity_target(
-        self, entity_id: str, position: int, *, inverted: bool | None = None
+        self,
+        entity_id: str,
+        position: int,
+        *,
+        inverted: bool | None = None,
+        interpolated: bool = False,  # noqa: ARG002
     ) -> int:
         """Remap the middle-rail entity's absolute position (Model C only).
 
@@ -636,6 +641,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         never inverts — so each passes its own explicit ``True``/``False``.
         Reusing the cached flag there would un-invert with the wrong assumption
         and cross the bottom rail physically (#993).
+
+        ``interpolated`` is accepted for seam parity and deliberately NOT
+        consulted: the remap is arithmetic in open-percent space and never
+        unwinds the calibration curve. That is consistent in both modes —
+        interpolation forces ``axis_inverted`` False, so the cached flag is
+        False too and the interpolated wire value is treated as open-percent
+        either way. Mapping a motor reading back onto the linear scale is
+        #925's territory, not this hook's.
         """
         if (
             self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY
