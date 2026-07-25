@@ -402,6 +402,11 @@ async def _trigger_async_apply_user_position(coord):
     coord.config_entry.options = {}
     # After fix #643, async_apply_user_position falls back to _resolved_options.
     coord._resolved_options = {}
+    # Dispatch-frame inputs the user-command path reads (#1027). This is a real
+    # coordinator object, so ``position_axis_inverted`` and ``_entity_target``
+    # resolve for free from the (empty) options and the blind policy.
+    coord._inverse_state = False
+    coord._use_interpolation = False
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors = MagicMock(return_value=[])
     # Floor composition reads from a real PipelineSnapshot (#463).

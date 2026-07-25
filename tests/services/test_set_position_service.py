@@ -12,10 +12,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
+from tests.ha_helpers import wire_dispatch_frame
 
 
 def _slot(
@@ -35,7 +42,7 @@ def _slot(
     )
 
 
-def _make_coord(custom_states):
+def _make_coord(custom_states, *, options: dict | None = None):
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -43,7 +50,9 @@ def _make_coord(custom_states):
     coord = MagicMock()
     coord.entities = ["cover.living_room"]
     coord.config_entry = MagicMock()
-    coord.config_entry.options = {}
+    entry_opts = options or {}
+    coord.config_entry.options = entry_opts
+    wire_dispatch_frame(coord, entry_opts)
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = custom_states
     # Floor composition reads custom_position_sensors from a real PipelineSnapshot
@@ -129,4 +138,55 @@ async def test_set_position_clamps_requested_below_min_mode_floor() -> None:
         await async_handle_set_position(call)
     coord._cmd_svc.apply_position.assert_awaited_once_with(
         "cover.living_room", 10, "set_position", ctx
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: the service takes a logical position and must dispatch the
+# cover-frame equivalent, exactly like the automatic path.
+# ---------------------------------------------------------------------------
+
+
+async def _call_set_position(coord, position: int) -> None:
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        async_handle_set_position,
+    )
+
+    call = MagicMock()
+    call.data = {"position": position}
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_position_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_position(call)
+
+
+@pytest.mark.asyncio
+async def test_set_position_inverse_state_dispatches_inverted() -> None:
+    """``set_position: 30`` on an inverse-state instance drives the cover to 70."""
+    coord, ctx = _make_coord([], options={CONF_INVERSE_STATE: True})
+
+    await _call_set_position(coord, 30)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.living_room", 70, "set_position", ctx
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_position_interpolation_dispatches_motor_value() -> None:
+    """``set_position: 25`` on a calibrated instance drives the motor to 45."""
+    coord, ctx = _make_coord(
+        [],
+        options={
+            CONF_INTERP: True,
+            CONF_INTERP_LIST: [0, 25, 58, 100],
+            CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+        },
+    )
+
+    await _call_set_position(coord, 25)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.living_room", 45, "set_position", ctx
     )

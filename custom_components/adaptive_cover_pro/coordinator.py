@@ -3106,6 +3106,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         clamp, the pipeline preemption check, manual-override engagement, and
         dispatch to ``CoverCommandService.apply_position``.
 
+        ``requested`` is a LOGICAL position — HA's convention, 0 = closed /
+        100 = open — like every other user-facing number in this integration.
+        It is mapped into the cover's dispatch frame exactly once, here, by
+        :meth:`_to_cover_frame`, the same helper ``state`` uses for the
+        automatic path (#1027). ``CoverCommandService`` keeps its contract of
+        receiving a value that is already transformed.
+
         Because every caller is an explicit user action, the dispatch always
         bypasses the ``auto_control_off`` gate (``bypass_auto_control=True``):
         "automatic control off" suppresses the integration's own sun tracking,
@@ -3223,7 +3230,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # must stay deduped by the same-position gate (issue #290).
             user_command=True,
         )
-        return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
+        # The floor raised the request, so ``clamped`` is a user-typed value
+        # that already lives in cover space — the same carve-out ``state``
+        # applies to a floor-clamped pipeline winner (#469).
+        skip_transforms = clamped != requested
+        inverted = not skip_transforms and self.position_axis_inverted
+        target = self._entity_target(
+            entity_id,
+            self._to_cover_frame(clamped, skip_transforms=skip_transforms),
+            # A user command dispatches in a space that can diverge from the
+            # main pipeline's cached per-cycle decision, so name it explicitly
+            # rather than leaving the remap to guess (#993).
+            inverted=inverted,
+        )
+        return await self._cmd_svc.apply_position(entity_id, target, trigger, ctx)
 
     async def async_apply_user_tilt(
         self,
@@ -3572,6 +3592,50 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return axis_inverted(self._policy.axes[0], self.config_entry.options)
 
+    def _to_cover_frame(self, value: float, *, skip_transforms: bool = False) -> int:
+        """Map a logical (HA-convention) position into this cover's dispatch frame.
+
+        The one place the position axis crosses from the frame every user-facing
+        number is expressed in — 0 = closed, 100 = open — into whatever the
+        physical cover actually wants. Both producers delegate here: the
+        automatic pipeline via :attr:`state`, and every user-initiated command
+        via :meth:`async_apply_user_position`. Before #1027 only the first ran
+        the transforms, so the same logical value drove the cover to different
+        places depending on which path produced it.
+
+        Interpolation and inverse-state are mutually exclusive by design — the
+        combination is unsupported and logged — so a single ordered pass covers
+        both. ``skip_transforms`` reproduces the caller's own carve-out for a
+        value that is *already* in cover space (a safety-override or
+        floor-clamped pipeline winner, or a user request the floor raised);
+        see :attr:`state` and issue #469.
+
+        Deliberately NOT shared with the end-of-window sender: that seam inverts
+        unconditionally of bypass/floor-clamp/interpolation and never
+        interpolates, which is a genuinely different transform (#993).
+        """
+        if skip_transforms:
+            return int(round(value))
+
+        if self._use_interpolation:
+            value = interpolate_position(
+                value,
+                self.start_value,
+                self.end_value,
+                self.normal_list,
+                self.new_list,
+            )
+
+        if self._inverse_state and self._use_interpolation:
+            self.logger.info("Inverse state is not supported with interpolation")
+
+        if self.position_axis_inverted:
+            value = inverse_state(value)
+
+        # interpolate_position() returns numpy float64; inverse_state() returns int.
+        # Always coerce to plain Python int so sensors/diagnostics never see a float.
+        return int(round(value))
+
     @property
     def state(self) -> int:
         """Final cover position after pipeline, interpolation, and inverse_state transforms.
@@ -3597,27 +3661,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ):
             return self._pipeline_result.position
 
-        state = self._pipeline_result.position
-
-        # Post-processing: interpolation and inverse state
-        if self._use_interpolation:
-            state = interpolate_position(
-                state,
-                self.start_value,
-                self.end_value,
-                self.normal_list,
-                self.new_list,
-            )
-
-        if self._inverse_state and self._use_interpolation:
-            self.logger.info("Inverse state is not supported with interpolation")
-
-        if self.position_axis_inverted:
-            state = inverse_state(state)
-
-        # interpolate_position() returns numpy float64; inverse_state() returns int.
-        # Always coerce to plain Python int so sensors/diagnostics never see a float.
-        return int(round(state))
+        return self._to_cover_frame(self._pipeline_result.position)
 
     # --- Toggle property delegates (switch entities use setattr) ---
 
@@ -3838,6 +3882,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 return
             options = self.config_entry.options
             effective_pos, is_sunset = self._compute_current_effective_default(options)
+            # Deliberately NOT ``_to_cover_frame``: this seam inverts whenever
+            # inverse-state is configured — unconditional of bypass, floor
+            # clamp, and interpolation — and never interpolates. #993's
+            # middle-rail invariant depends on that divergence.
             pos_to_send = (
                 inverse_state(effective_pos) if self._inverse_state else effective_pos
             )

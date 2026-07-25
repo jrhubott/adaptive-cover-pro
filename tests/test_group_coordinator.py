@@ -16,6 +16,10 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_GROUP_MEMBER_OPT_OUT,
     CONF_GROUP_STAGGER_DELAY,
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
     CONF_MEMBER_COVERS,
     CONF_MEMBER_ENTRIES,
     CONF_SENSOR_TYPE,
@@ -773,3 +777,134 @@ async def test_entity_area_id_unregistered_entity(group_setup) -> None:
     """An entity absent from the registry has no area."""
     coordinator, _, _ = group_setup
     assert coordinator._entity_area_id("cover.not_registered") is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: one group slider value, each member's own dispatch frame
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_member_coordinator(options: dict, entity: str) -> MagicMock:
+    """Build a member coord whose real user-position path runs to the dispatch seam."""
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import (
+        DecisionStep,
+        PipelineResult,
+    )
+    from tests.ha_helpers import wire_dispatch_frame
+    from tests.test_pipeline.conftest import make_snapshot
+
+    coord = MagicMock()
+    coord.entities = [entity]
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = options
+    wire_dispatch_frame(coord, options)
+    coord._resolved_options = options
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.build = MagicMock(return_value=make_snapshot())
+    # Solar winner at priority 40 — below manual override, so a group drag is
+    # not preempted and reaches dispatch.
+    coord._pipeline = MagicMock()
+    coord._pipeline.evaluate.return_value = PipelineResult(
+        position=50,
+        control_method=ControlMethod.SOLAR,
+        reason="solar",
+        decision_trace=[
+            DecisionStep(handler="solar", matched=True, reason="solar", position=50)
+        ],
+    )
+    solar = MagicMock()
+    solar.priority = 40
+    coord._handler_by_name = {"solar": solar}
+    coord._cmd_svc = MagicMock()
+    coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    coord.async_apply_user_position = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    )
+    coord.async_reset_manual_overrides = AsyncMock(return_value=[])
+    coord.async_refresh = AsyncMock()
+    coord.async_request_refresh = AsyncMock()
+    return coord
+
+
+def _dispatched_position(coord: MagicMock) -> int:
+    coord._cmd_svc.apply_position.assert_awaited_once()
+    return coord._cmd_svc.apply_position.await_args.args[1]
+
+
+def _group_with_dispatch_members(hass, member_options: dict[str, dict]):
+    """Build a group whose ACP members each carry their own frame config."""
+    entry_ids = []
+    coords = {}
+    for idx, (entity, options) in enumerate(member_options.items()):
+        entry_id = f"frame_member_{idx}"
+        entry = _member_entry(hass, entry_id, CoverType.BLIND, [entity])
+        coord = _dispatch_member_coordinator(options, entity)
+        entry.runtime_data = coord
+        entry_ids.append(entry_id)
+        coords[entity] = coord
+
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Frame Group", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: entry_ids,
+            CONF_MEMBER_COVERS: [GENERIC_ENTITY],
+        },
+        entry_id="group_frame",
+        title="Frame Group",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+    coordinator._cmd_svc = MagicMock(
+        apply_position=AsyncMock(return_value=("sent", "")), stop=MagicMock()
+    )
+    return coordinator, coords
+
+
+async def test_group_member_dispatch_transforms_per_member_config(hass) -> None:
+    """One group drag, two members, two frames — each member's own config wins.
+
+    The group slider is a logical value like every other user surface, so an
+    ``inverse_state`` member owes its cover the inverted number while a plain
+    member sends it through unchanged (#1027). The non-ACP adopt path is
+    deliberately untouched and keeps dispatching raw.
+    """
+    coordinator, coords = _group_with_dispatch_members(
+        hass,
+        {
+            "cover.inverted_member": {CONF_INVERSE_STATE: True},
+            "cover.plain_member": {},
+        },
+    )
+
+    await coordinator.async_set_position(30)
+
+    assert _dispatched_position(coords["cover.inverted_member"]) == 70
+    assert _dispatched_position(coords["cover.plain_member"]) == 30
+    # Generic (non-ACP) members ride the adopt path and stay raw.
+    coordinator._cmd_svc.apply_position.assert_awaited_once()
+    assert coordinator._cmd_svc.apply_position.await_args.args[1] == 30
+
+
+async def test_group_member_dispatch_applies_member_interpolation(hass) -> None:
+    """A calibrated member maps the group's linear value onto its motor curve."""
+    coordinator, coords = _group_with_dispatch_members(
+        hass,
+        {
+            "cover.calibrated_member": {
+                CONF_INTERP: True,
+                CONF_INTERP_LIST: [0, 25, 58, 100],
+                CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+            },
+            "cover.plain_member": {},
+        },
+    )
+
+    await coordinator.async_set_position(25)
+
+    assert _dispatched_position(coords["cover.calibrated_member"]) == 45
+    assert _dispatched_position(coords["cover.plain_member"]) == 25

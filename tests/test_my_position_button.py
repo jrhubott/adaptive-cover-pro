@@ -10,7 +10,14 @@ from custom_components.adaptive_cover_pro.coordinator import (
 )
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
+    ControlMethod,
+)
+from tests.ha_helpers import wire_dispatch_frame
 
 # ---------------------------------------------------------------------------
 # Step 8 — My Position button created when entities configured
@@ -146,7 +153,7 @@ async def test_press_records_preempted_skip_when_force_override_active():
 # ---------------------------------------------------------------------------
 
 
-def _make_my_position_coord():
+def _make_my_position_coord(options: dict | None = None):
     """Return a coordinator-shaped object with a real _build_position_context.
 
     Uses the same _make_coord pattern as test_coordinator_apply_user_position.py
@@ -156,9 +163,11 @@ def _make_my_position_coord():
 
     coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
     coord.config_entry = MagicMock()
-    coord.config_entry.options = {}
+    entry_opts = options or {}
+    coord.config_entry.options = entry_opts
     # After fix #643, async_apply_user_position falls back to _resolved_options.
-    coord._resolved_options = {}
+    coord._resolved_options = entry_opts
+    wire_dispatch_frame(coord, entry_opts)
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = []
     # Floor composition reads from a real PipelineSnapshot (#463).
@@ -191,9 +200,11 @@ def _make_my_position_coord():
     # bypass_auto_control is True on the context.  We use a real PositionContext
     # to drive the gate, inspecting the context the coordinator passes.
     captured_contexts: list[PositionContext] = []
+    captured_positions: list[int] = []
 
     async def _fake_apply(entity_id, position, trigger, ctx):
         captured_contexts.append(ctx)
+        captured_positions.append(position)
         if not ctx.is_safety and not ctx.bypass_auto_control and not ctx.auto_control:
             return ("skipped", "auto_control_off")
         return ("sent", "set_cover_position")
@@ -203,6 +214,7 @@ def _make_my_position_coord():
     cmd_svc.record_preempted_skip = MagicMock()
     coord._cmd_svc = cmd_svc
     coord._captured_contexts = captured_contexts
+    coord._captured_positions = captured_positions
 
     # Real _build_position_context that passes bypass_auto_control into PositionContext.
     coord.automatic_control = False
@@ -210,11 +222,8 @@ def _make_my_position_coord():
     coord._pipeline_result = PipelineResult(
         position=50, control_method=ControlMethod.SOLAR, reason="solar"
     )
-    coord._inverse_state = False
     coord.min_change = 2
     coord.time_threshold = 0
-    coord._policy = MagicMock()
-    coord._policy.position_context_overrides.return_value = {}
 
     manager = MagicMock()
     manager.is_cover_manual.return_value = False
@@ -302,3 +311,66 @@ async def test_my_position_button_passes_bypass_kwargs():
     assert (
         "bypass_auto_control" not in kwargs
     ), "bypass is intrinsic now — button must not pass bypass_auto_control"
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027 (closes the #371 symptom): the My Position value is logical
+# ---------------------------------------------------------------------------
+
+
+async def _press_my_position(coord, my_value: int, options: dict) -> None:
+    """Drive the real button against a coordinator-shaped mock."""
+    from custom_components.adaptive_cover_pro.button import (
+        AdaptiveCoverMyPositionButton,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENTITIES,
+        CONF_MY_POSITION_VALUE,
+    )
+
+    config_entry = MagicMock()
+    config_entry.entry_id = "test_entry"
+    config_entry.options = {
+        **options,
+        CONF_MY_POSITION_VALUE: my_value,
+        CONF_ENTITIES: ["cover.test"],
+    }
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
+
+    button = AdaptiveCoverMyPositionButton.__new__(AdaptiveCoverMyPositionButton)
+    button.coordinator = coord
+    button.config_entry = config_entry
+    button._entities = ["cover.test"]
+    await button.async_press()
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_inverse_state_dispatches_inverted():
+    """A configured My Position of 40 drives an inverse-state cover to 60.
+
+    Issue #371's reported symptom — "the button moves the cover to 100 minus
+    the configured value" — became reachable inside ACP once the integration
+    shipped its own My Position button dispatching raw. The configured value is
+    logical, so the inversion belongs on the dispatch, not on the user.
+    """
+    options = {CONF_INVERSE_STATE: True}
+    coord = _make_my_position_coord(options)
+
+    await _press_my_position(coord, 40, options)
+
+    assert coord._captured_positions == [60]
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_interpolation_dispatches_motor_value():
+    """A configured My Position of linear 25 drives the motor to 45."""
+    options = {
+        CONF_INTERP: True,
+        CONF_INTERP_LIST: [0, 25, 58, 100],
+        CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+    }
+    coord = _make_my_position_coord(options)
+
+    await _press_my_position(coord, 25, options)
+
+    assert coord._captured_positions == [45]

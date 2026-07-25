@@ -23,6 +23,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 from tests.ha_helpers import (
     VERTICAL_OPTIONS,
     _patch_coordinator_refresh,
+    wire_dispatch_frame,
 )
 
 pytestmark = pytest.mark.integration
@@ -67,7 +68,9 @@ def _make_coord(
     coord = MagicMock()
     coord.entities = entities or ["cover.test_blind"]
     coord.config_entry = MagicMock()
-    coord.config_entry.options = options or {}
+    entry_opts = options or {}
+    coord.config_entry.options = entry_opts
+    wire_dispatch_frame(coord, entry_opts)
 
     # Snapshot builder — async_apply_user_position routes its custom-position
     # read through this collaborator after Phase D.  Floor composition now

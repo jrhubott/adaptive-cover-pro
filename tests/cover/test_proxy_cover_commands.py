@@ -6,9 +6,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from homeassistant.const import ATTR_ENTITY_ID
+
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
     CONF_SENSOR_TYPE,
     DOMAIN,
     CoverType,
@@ -284,3 +290,154 @@ async def test_commands_dropped_when_source_unavailable(hass) -> None:
         blocking=True,
     )
     coord.async_apply_user_position.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: the proxy speaks the logical frame; the source gets cover frame
+# ---------------------------------------------------------------------------
+
+
+def _capture_cover_calls(hass, source: str) -> dict[str, list[dict]]:
+    """Record every cover service call landing on *source*, keyed by service."""
+    from homeassistant.const import EVENT_CALL_SERVICE
+
+    captured: dict[str, list[dict]] = {}
+
+    def _on_event(event):
+        if event.data.get("domain") != "cover":
+            return
+        data = dict(event.data.get("service_data") or {})
+        if data.get(ATTR_ENTITY_ID) != source:
+            return
+        captured.setdefault(event.data.get("service"), []).append(data)
+
+    hass.bus.async_listen(EVENT_CALL_SERVICE, _on_event)
+    return captured
+
+
+async def test_proxy_slider_inverse_state_dispatches_inverted(hass) -> None:
+    """Dragging the proxy slider to 30 commands the source to 70.
+
+    The proxy publishes HA's standard frame, so its slider value is logical.
+    On an ``inverse_state`` instance the integration owes the source the
+    inverted number — the same one the automatic path sends (#1027).
+    """
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_INVERSE_STATE] = True
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass, entry_id="proxy_cmd_inv", options=options
+    )
+    calls = _capture_cover_calls(hass, "cover.living_room")
+
+    await hass.services.async_call(
+        "cover",
+        "set_cover_position",
+        {"entity_id": proxy_eid, "position": 30},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    sent = calls.get("set_cover_position", [])
+    assert sent, f"no position command reached the source: {calls}"
+    assert all(c["position"] == 70 for c in sent), sent
+
+
+async def test_proxy_slider_interpolation_dispatches_motor_value(hass) -> None:
+    """Dragging the proxy slider to linear 25 commands the source to motor 45."""
+    options = dict(VERTICAL_OPTIONS)
+    options.update(
+        {
+            CONF_INTERP: True,
+            CONF_INTERP_LIST: [0, 25, 58, 100],
+            CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+        }
+    )
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass, entry_id="proxy_cmd_interp", options=options
+    )
+    calls = _capture_cover_calls(hass, "cover.living_room")
+
+    await hass.services.async_call(
+        "cover",
+        "set_cover_position",
+        {"entity_id": proxy_eid, "position": 25},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    sent = calls.get("set_cover_position", [])
+    assert sent, f"no position command reached the source: {calls}"
+    assert all(c["position"] == 45 for c in sent), sent
+
+
+async def test_proxy_open_close_with_inverse_and_endpoint_open_close(hass) -> None:
+    """Proxy Open/Close route through the endpoint services in the cover frame.
+
+    With ``endpoint_use_open_close`` (default on) and ``has_open``/``has_close``
+    capabilities, a logical endpoint is inverted first and then routed: logical
+    Open (100) becomes cover-frame 0 and lands on ``close_cover``; logical Close
+    becomes 100 and lands on ``open_cover``. That is byte-identical to what the
+    automatic path already emits for the same logical values, which is the point
+    of #1027 — the two paths stop disagreeing.
+    """
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_INVERSE_STATE] = True
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass, entry_id="proxy_cmd_endpoint_inv", options=options
+    )
+    calls = _capture_cover_calls(hass, "cover.living_room")
+
+    await hass.services.async_call(
+        "cover", "open_cover", {"entity_id": proxy_eid}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert "close_cover" in calls, f"logical Open must route to close_cover: {calls}"
+    assert "open_cover" not in calls, calls
+
+    calls.clear()
+    await hass.services.async_call(
+        "cover", "close_cover", {"entity_id": proxy_eid}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert "open_cover" in calls, f"logical Close must route to open_cover: {calls}"
+    assert "close_cover" not in calls, calls
+
+
+async def test_proxy_slider_round_trip_inverse_state(hass) -> None:
+    """Command and read agree: set the proxy to 30, read 30 back.
+
+    The pair of #1027 (dispatch inverts) and #1028 (read un-inverts). Either
+    half alone leaves the proxy entity self-inconsistent — a slider that
+    settles on a different number than the one the user dragged it to.
+    """
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_INVERSE_STATE] = True
+    _entry, _coord, proxy_eid = await _setup_proxy(
+        hass, entry_id="proxy_cmd_round_trip", options=options
+    )
+    calls = _capture_cover_calls(hass, "cover.living_room")
+
+    await hass.services.async_call(
+        "cover",
+        "set_cover_position",
+        {"entity_id": proxy_eid, "position": 30},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    sent = calls.get("set_cover_position", [])
+    assert sent, f"no position command reached the source: {calls}"
+    commanded = sent[0]["position"]
+    assert commanded == 70
+
+    # The source now reports what it was actually driven to.
+    hass.states.async_set(
+        "cover.living_room",
+        "open",
+        {"current_position": commanded, "supported_features": 143},
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(proxy_eid).attributes.get("current_position") == 30

@@ -84,6 +84,12 @@ def _make_coordinator(
     coordinator.position_axis_inverted = (
         AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coordinator)
     )
+    # `state` delegates its post-processing to the shared logical → cover-frame
+    # helper the user-command path also uses (#1027); bind the real one so the
+    # spec'd mock does not intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
     return coordinator
 
 

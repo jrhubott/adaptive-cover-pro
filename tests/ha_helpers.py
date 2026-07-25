@@ -196,6 +196,53 @@ def _patch_coordinator_refresh():
 
 
 # ---------------------------------------------------------------------------
+# Coordinator-shaped mock wiring
+# ---------------------------------------------------------------------------
+
+
+def wire_dispatch_frame(
+    coord: Any, options: dict[str, Any], *, cover_type: str = CoverType.BLIND
+) -> Any:
+    """Give a coordinator-shaped mock the inputs the dispatch boundary reads.
+
+    ``async_apply_user_position`` maps its logical input into the cover's
+    dispatch frame before handing it to ``CoverCommandService`` (#1027), which
+    means every fixture that binds the real method also needs the frame inputs
+    the coordinator's own ``__init__`` / ``_update_options`` would have set.
+    Everything here is derived from *options* exactly the way the coordinator
+    derives it, and ``position_axis_inverted`` is evaluated through the real
+    property, so no fixture ever hand-rolls the inversion formula it is meant
+    to be exercising.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord._policy = get_policy(cover_type)
+    coord._inverse_state = bool(options.get(CONF_INVERSE_STATE, False))
+    coord._use_interpolation = bool(options.get(CONF_INTERP, False))
+    coord.start_value = options.get(CONF_INTERP_START)
+    coord.end_value = options.get(CONF_INTERP_END)
+    coord.normal_list = options.get(CONF_INTERP_LIST)
+    coord.new_list = options.get(CONF_INTERP_LIST_NEW)
+    coord.logger = MagicMock()
+    coord.position_axis_inverted = (
+        AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coord)
+    )
+    coord._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(coord)
+    coord._entity_target = AdaptiveDataUpdateCoordinator._entity_target.__get__(coord)
+    return coord
+
+
+# ---------------------------------------------------------------------------
 # Convenience assertions
 # ---------------------------------------------------------------------------
 

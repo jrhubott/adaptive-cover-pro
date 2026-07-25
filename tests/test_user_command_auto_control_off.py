@@ -31,6 +31,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
+from tests.ha_helpers import wire_dispatch_frame
 
 
 def _make_coord():
@@ -46,6 +47,7 @@ def _make_coord():
     coord.config_entry.options = {}
     # After fix #643, async_apply_user_position falls back to _resolved_options.
     coord._resolved_options = {}
+    wire_dispatch_frame(coord, coord.config_entry.options)
 
     from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
 
@@ -80,11 +82,8 @@ def _make_coord():
     coord._pipeline_result = PipelineResult(
         position=50, control_method=ControlMethod.SOLAR, reason="solar"
     )
-    coord._inverse_state = False
     coord.min_change = 2
     coord.time_threshold = 0
-    coord._policy = MagicMock()
-    coord._policy.position_context_overrides.return_value = {}
 
     coord.manager = MagicMock()
     coord.manager.is_cover_manual.return_value = False
