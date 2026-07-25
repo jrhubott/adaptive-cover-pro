@@ -200,14 +200,15 @@ class TestCoverReasonCode:
                 Reason(cover.control_state_reason_code)
             )
 
-    def test_fov_exit(self, mock_sun_data, mock_logger):
+    def test_sun_behind_plane(self, mock_sun_data, mock_logger):
+        """γ = −180 → the cover layer reports the unlit face, not an azimuth exit (#1030)."""
         cover = _make_cover(mock_sun_data, mock_logger, sol_azi=0.0, sol_elev=45.0)
         with patch.object(
             type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
         ):
             assert (
                 cover.control_state_reason_code
-                == ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT
+                == ReasonCode.ENGINE_DEFAULT_SUN_BEHIND_PLANE
             )
             assert cover.control_state_reason == render_en(
                 Reason(cover.control_state_reason_code)

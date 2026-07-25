@@ -90,6 +90,7 @@
     "default_sunset_offset": "Default: Sunset Offset",
     "default_elevation_limit": "Default: Elevation Limit",
     "default_acceptance_angle_exit": "Default: Acceptance Angle Exit",
+    "default_sun_behind_plane": "Default: Sun Behind Plane",
     "default_blind_spot": "Default: Blind Spot",
     "default": "Default"
   },

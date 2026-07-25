@@ -90,6 +90,7 @@
     "default_sunset_offset": "Défaut : Décalage Coucher du Soleil",
     "default_elevation_limit": "Défaut : Limite d'Élévation",
     "default_acceptance_angle_exit": "Défaut : Sortie Angle d'Acceptation",
+    "default_sun_behind_plane": "Défaut : Soleil Derrière le Plan",
     "default_blind_spot": "Défaut : Angle Mort",
     "default": "Défaut"
   },

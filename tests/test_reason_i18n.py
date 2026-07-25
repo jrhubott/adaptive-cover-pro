@@ -342,6 +342,7 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {},
         "Default: Acceptance Angle Exit",
     ),
+    (ReasonCode.ENGINE_DEFAULT_SUN_BEHIND_PLANE, {}, "Default: Sun Behind Plane"),
     (ReasonCode.ENGINE_DEFAULT_BLIND_SPOT, {}, "Default: Blind Spot"),
     (ReasonCode.ENGINE_DEFAULT, {}, "Default"),
     # --- skip / describe_skip ---

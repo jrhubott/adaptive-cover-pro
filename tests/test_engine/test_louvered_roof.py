@@ -227,12 +227,12 @@ class TestAoiGate:
         # Steep pitch facing south (win_azi=180); sun low in the north
         # (azimuth 0) → sun strikes the BACK of the plane → cos_aoi <= 0.
         cover = _louvered(sol_azi=0, sol_elev=10, roof_pitch=80, win_azi=180)
-        assert cover._cos_aoi() <= 0
+        assert cover.cos_aoi <= 0
         assert cover.valid_elevation is False
 
     def test_pitched_roof_true_when_sun_on_face(self) -> None:
         cover = _louvered(sol_azi=180, sol_elev=40, roof_pitch=40, win_azi=180)
-        assert cover._cos_aoi() > 0
+        assert cover.cos_aoi > 0
         assert cover.valid_elevation is True
 
 

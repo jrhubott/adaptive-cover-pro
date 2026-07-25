@@ -40,7 +40,8 @@ from math import atan, cos, degrees, radians, sin, tan
 import numpy as np
 
 from ...config_types import RoofWindowConfig
-from .vertical import MIN_COS_GAMMA_CLAMP, AdaptiveVerticalCover
+from ..sun_geometry import foreshortened_slope
+from .vertical import AdaptiveVerticalCover
 
 # --- Numeric guards (file-local) ---
 # Pitch (from horizontal) at which the glass is vertical and the geometry
@@ -98,32 +99,34 @@ def roof_slope_ratio(gamma: float, elev: float, pitch: float) -> float:
 
     Single source of truth for the slope-projection math shared by the
     roof-window drop projection (``_project_drop``) and the louvered-roof
-    profile angle (``beta = arctan|slope_ratio|``).
+    profile angle (``beta = arctan|slope_ratio|``). Evaluated straight from the
+    dot products::
 
-    Factoring the numerator and denominator by ``cos(elev)·cos Δazi`` expresses
-    the ratio through the vertical foreshortening ``f = tan(elev)/cos(gamma)``::
+        s·t = −cosβ·cos(elev)·cos γ + sinβ·sin(elev)
+        s·n =  sinβ·cos(elev)·cos γ + cosβ·sin(elev)
 
-        (s·t)/(s·n) = (−cosβ + sinβ·f) / (sinβ + cosβ·f)
+    with **no ``cos γ`` in either denominator**, so the ``γ → 90°`` singularity
+    simply does not exist here. The earlier form factored both sides by
+    ``cos(elev)·cos γ`` to reuse the vertical foreshortening ``f =
+    tan(elev)/cos γ``; that introduced an artificial divisor whose clamp froze
+    the ratio across ``|γ| ∈ (89.43°, 90.57°)`` and misreported it by up to
+    3.96 % at pitch 30 — unboundedly at pitch 0, where the true ratio crosses
+    zero and the clamped one jumped ±0.01732 (#1030).
 
-    which collapses to ``f`` at ``β = 90°`` (vertical plane — the roof-window
-    bit-for-bit regression anchor) and to ``−1/f = −cot(elev)`` at ``β = 0°``,
-    ``gamma = 0`` (flat plane, aligned sun). ``cos(gamma)`` is clamped exactly as
-    the vertical engine clamps it (``MIN_COS_GAMMA_CLAMP``) so the roof-window
-    projection stays byte-for-byte; the tiny ``β`` denominator is clamped by
-    ``MIN_SLOPE_DENOMINATOR`` at the grazing limit.
+    ``β = 90°`` (vertical glass) keeps the factored fast path: the ratio is then
+    exactly ``f``, and routing it through ``foreshortened_slope`` preserves the
+    bit-for-bit vertical-engine regression anchor. The surviving denominator is
+    ``cos(AOI)`` itself, which the illumination gate keeps positive; the residual
+    ``MIN_SLOPE_DENOMINATOR`` guard covers only the true grazing limit.
     """
-    cos_gamma = float(cos(radians(gamma)))
-    cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
-        1 if cos_gamma >= 0 else -1
-    )
-    f = float(tan(radians(elev))) / cos_gamma_clamped
     if pitch == VERTICAL_GLASS_PITCH_DEG:
-        return f
+        return foreshortened_slope(elev, gamma)
     beta = radians(pitch)
-    sin_b = sin(beta)
-    cos_b = cos(beta)
-    numerator = -cos_b + sin_b * f
-    denominator = sin_b + cos_b * f
+    sin_b, cos_b = sin(beta), cos(beta)
+    horizontal = cos(radians(elev)) * cos(radians(gamma))
+    vertical = sin(radians(elev))
+    numerator = -cos_b * horizontal + sin_b * vertical
+    denominator = sin_b * horizontal + cos_b * vertical
     if abs(denominator) < MIN_SLOPE_DENOMINATOR:
         denominator = (
             MIN_SLOPE_DENOMINATOR if denominator >= 0 else -MIN_SLOPE_DENOMINATOR
@@ -151,13 +154,20 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
     # Sun-on-glass geometry
     # ------------------------------------------------------------------
 
-    def _cos_aoi(self) -> float:
+    @property
+    def cos_aoi(self) -> float:
         """Cosine of the angle of incidence on the tilted glass plane (``s·n``).
 
         ``cos(AOI) = sinβ·cos(elev)·cos Δazi + cosβ·sin(elev)`` with
         ``cos Δazi = cos(gamma)``. Positive → the sun strikes the outer face.
-        At β=90° this is ``cos(elev)·cos(gamma)`` (the vertical case); at β=0°
-        it is ``sin(elev)`` (a flat skylight, azimuth-independent).
+        At β=90° this is ``cos(elev)·cos(gamma)`` — exactly the vertical-facade
+        default on :class:`AdaptiveGeneralCover`, of which this is the pitched
+        generalisation; at β=0° it is ``sin(elev)`` (a flat skylight,
+        azimuth-independent).
+
+        Overriding the base hook is all the illumination gate needs: the base
+        ``valid_elevation`` composes ``cos(AOI) > 0`` for every cover type
+        (#1030), so this class no longer carries its own copy of that gate.
         """
         return float(roof_cos_aoi(self.gamma, self.sol_elev, self.roof_pitch))
 
@@ -231,16 +241,6 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
     # ------------------------------------------------------------------
 
     @property
-    def valid_elevation(self) -> bool:
-        """Replace the bare above-horizon test with the tilted-plane AOI gate.
-
-        Keeps the inherited min/max-elevation bounds (``super().valid_elevation``)
-        and additionally requires the sun to strike the outer glass face
-        (``cos(AOI) > 0``). The azimuth FOV gate still applies in ``valid``.
-        """
-        return bool(super().valid_elevation and self._cos_aoi() > 0)
-
-    @property
     def direct_sun_valid(self) -> bool:
         """Direct sun also requires the roof above the window not to occlude it.
 
@@ -299,7 +299,7 @@ class AdaptiveRoofWindowCover(AdaptiveVerticalCover):
         self._last_calc_details = {
             **self._last_calc_details,
             TRACE_KEY_ROOF_PITCH_DEG: float(self.roof_pitch),
-            TRACE_KEY_COS_AOI: float(self._cos_aoi()),
+            TRACE_KEY_COS_AOI: float(self.cos_aoi),
             TRACE_KEY_SLOPE_RATIO: float(getattr(self, "_roof_slope_ratio", 0.0)),
             TRACE_KEY_RIDGE_GATE_ENABLED: bool(self.roof_height_above > 0),
             TRACE_KEY_RIDGE_GATE_OCCLUDED: bool(self._is_sun_behind_ridge()),

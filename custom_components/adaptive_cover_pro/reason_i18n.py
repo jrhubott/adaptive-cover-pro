@@ -184,6 +184,7 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET: "Default: Sunset Offset",
     ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT: "Default: Elevation Limit",
     ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT: "Default: Acceptance Angle Exit",
+    ReasonCode.ENGINE_DEFAULT_SUN_BEHIND_PLANE: "Default: Sun Behind Plane",
     ReasonCode.ENGINE_DEFAULT_BLIND_SPOT: "Default: Blind Spot",
     ReasonCode.ENGINE_DEFAULT: "Default",
     # -- describe_skip / inactive-reason prose

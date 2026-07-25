@@ -62,3 +62,21 @@ def test_matches_vertical_glare_zone_projection() -> None:
     nearest_x, nearest_y, gamma = 0.42, 3.6, 28.0
     expected = nearest_x + nearest_y * math.tan(math.radians(gamma))
     assert ray_x_at_window_plane(nearest_x, nearest_y, gamma) == expected
+
+
+# ---------------------------------------------------------------------------
+# The tan(gamma) pole. Raw ``tan`` reaches 3.27e16 at exactly 90° and flips sign
+# one step past it; routing through the shared ``clamped_cos_gamma`` guard keeps
+# the projection bounded (#1030). Both consumers already bail on
+# ``|x| > half_width``, so a bounded-but-large value produces the same decision
+# as an astronomically large one — the point is that no caller can inherit an
+# unguarded infinity.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("gamma", [89.9, 90.0, 90.1, -89.9, -90.0, -90.1])
+def test_pole_region_stays_finite_and_bounded(gamma):
+    x = ray_x_at_window_plane(0.0, 2.0, gamma)
+    assert math.isfinite(x)
+    # 2 m of depth over the 0.01 cosine floor caps the shift at 200 m.
+    assert abs(x) <= 2.0 / 0.01

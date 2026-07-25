@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy import cos, tan
-from numpy import radians as rad
+from numpy import tan
 
 from ...config_types import TiltConfig
 from ...const import (
@@ -18,6 +17,7 @@ from ...const import (
 )
 from ...geometry import SafetyMarginCalculator
 from ...position_utils import PositionConverter
+from ..sun_geometry import foreshortened_slope
 from .base import AdaptiveGeneralCover
 
 
@@ -85,12 +85,16 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         perspective, accounting for both sun elevation and horizontal angle (gamma).
         Used in slat tilt calculation to block direct sun while maximizing view/light.
 
+        The argument is the shared ``foreshortened_slope`` VSA tangent. This copy
+        had drifted — it divided by a raw ``cos(gamma)`` with no guard at all, so
+        past ``|gamma| = 90`` it returned ``≈ −π/2`` instead of ``+π/2`` and the
+        cut-off solve collapsed the slat angle 180° → 0° (#1030).
+
         Returns:
             Beta angle in radians.
 
         """
-        beta = np.arctan(tan(rad(self.sol_elev)) / cos(rad(self.gamma)))
-        return beta
+        return float(np.arctan(foreshortened_slope(self.sol_elev, self.gamma)))
 
     def _max_degrees(self) -> float:
         """Resolve max slat degrees for the configured mode (string or enum)."""
