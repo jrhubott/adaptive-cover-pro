@@ -218,13 +218,19 @@ def _read_sun_boundary_options(
 ) -> SunBoundaryOptions:
     """Read the four HA-side inputs that define sunset/sunrise for this instance.
 
-    The single source of truth for the *reads*, as
-    :func:`.helpers.resolve_sun_boundaries` is for the arithmetic they feed. Both
-    consumers — the day/night position boundary
+    The single source of truth for the *reads* on the coordinator's own two
+    boundary consumers, as :func:`.helpers.resolve_sun_boundaries` is for the
+    arithmetic they feed: the day/night position boundary
     (``_compute_current_effective_default``) and the manual-override sun deadline
-    (``_resolve_override_deadline``) — delegate here, so a later fifth input can
-    only be added in one place and "sunset" can never come to mean two different
-    instants inside one instance (CODING_GUIDELINES.md § no-duplication).
+    (``_resolve_override_deadline``) both delegate here, so a later fifth input
+    lands in one place and those two can never disagree about what "sunset" means
+    (CODING_GUIDELINES.md § no-duplication).
+
+    Not yet exhaustive across the integration: ``pipeline/snapshot_builder.py``
+    re-derives the offsets itself and calls ``compute_effective_default`` without
+    the sunset/sunrise *time entities*, so its fallback path drops the #411/#415
+    overrides; ``config_types.py`` and ``services/export_service.py`` carry their
+    own copies of the offset fallback. Fold them in here when you next touch them.
 
     ``sunrise_offset`` falls back to ``sunset_offset`` when unset, so an install
     that only ever set one offset gets a symmetric night window.
