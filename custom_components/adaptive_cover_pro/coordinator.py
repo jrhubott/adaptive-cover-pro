@@ -239,6 +239,13 @@ _HOLD_SKIP_LABEL: dict[ControlMethod, str] = {
     ControlMethod.MANUAL: "manual_override_hold",
 }
 
+# Skip-record label written when a cover is left alone because a manual
+# override is live.  Mirrors the reason code the manual-override gate inside
+# ``CoverCommandService.apply_position`` emits on the normal (non-forced) path,
+# so a cover pre-filtered out of a forced dispatch renders identically in
+# ``last_skipped_action``, diagnostics and the Lovelace card.
+_MANUAL_OVERRIDE_SKIP_LABEL = "manual_override"
+
 
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
@@ -2178,7 +2185,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         didn't move; the label reflects the winning control method (motion_hold
         vs manual_override_hold — issue #809). All other callers (forced
         transitions, override clears, window events) bypass this helper and call
-        apply_position directly so they are never blocked by hold mode.
+        apply_position directly so they are never blocked by hold mode — the
+        one exception being the Apply Calculated Position button (#1045), which
+        opts back in via ``_async_force_send_pipeline_position(honor_holds=True)``.
         """
         if self._pipeline_result is not None and self._pipeline_result.skip_command:
             result = self._pipeline_result
@@ -2370,7 +2379,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         cover-unavailable boundary (#342) or the same-position / relay-click
         short-circuit (#290/#507/#567/#779), and it leaves covers under a live
         manual override alone — the dedicated Reset Manual Override button is
-        the surface for those.
+        the surface for those.  A pre-filtered cover still gets a
+        ``manual_override`` skip record so diagnostics say why it stayed put.
+
+        **Pipeline holds are honoured.**  When the winning handler emits
+        ``skip_command`` — a live group lock (which outranks every handler,
+        weather included), a motion ``hold_position``, or a manual-override
+        hold — that cover is skipped and a hold-skip record is written instead
+        of a command.  A held result's position is
+        ``snapshot.current_cover_position``, the arithmetic mean of the
+        instance's covers, so dispatching it would break the hold *and* send a
+        number that is nobody's calculated position.
 
         The auto-control bypass rides ``bypass_auto_control``, never
         ``is_safety`` — an ``is_safety`` target would be resent by
@@ -2397,6 +2416,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             bypass_auto_control=True,
             respect_manual_override=True,
             ignore_clock_window=True,
+            honor_holds=True,
         )
 
     async def _async_force_send_pipeline_position(
@@ -2409,6 +2429,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         bypass_auto_control: bool = False,
         respect_manual_override: bool = False,
         ignore_clock_window: bool = False,
+        honor_holds: bool = False,
     ) -> set[str]:
         """Force-send this cycle's pipeline position, past the delta/time gates.
 
@@ -2447,13 +2468,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 ``apply_position`` (#1022/#654).
             ignore_clock_window: If True, skip the clock-window guard and
                 dispatch outside the active-hours window.
+            honor_holds: If True, route each dispatch through
+                ``_dispatch_to_cover`` so a pipeline hold (``skip_command`` —
+                group lock, motion hold_position, manual-override hold) is
+                honoured: no command is sent and a hold-skip record is written
+                instead.  Necessary because a held result's ``position`` is
+                ``snapshot.current_cover_position``, i.e. the arithmetic MEAN
+                of every cover's position on a multi-cover instance — sending
+                it would both break the hold and drive each cover to a number
+                that is not its calculated position.  The default ``False``
+                reproduces the documented forced-transition behaviour: forced
+                transitions, override clears and window events call
+                ``apply_position`` directly and are never blocked by hold mode.
 
-        Every one of the three flags above defaults to ``False``, which
+        Every one of the four flags above defaults to ``False``, which
         reproduces the pre-existing behaviour of the two override-clear callers
         (``async_reset_manual_overrides`` and the auto-expiry branch in
         ``_dispatch_for_cycle``, which passes ``entities=None``) bit-for-bit.
         Only ``async_force_apply_calculated_position`` — the Apply Calculated
-        Position button, issue #1045 — sets all three True.
+        Position button, issue #1045 — sets all four True.
 
         Returns:
             Set of entity_ids that were successfully sent to (``"sent"``
@@ -2474,6 +2507,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     self.logger.debug(
                         "Force-send: skipping position command for %s (manual override active/restored)",
                         cover,
+                    )
+                    # Leave the same diagnostic trace the manual-override gate
+                    # inside apply_position writes on the normal path, so
+                    # last_skipped_action / diagnostics / the Lovelace card
+                    # explain why this cover did not move.  A silent `continue`
+                    # makes the button look broken for that cover.
+                    self._cmd_svc.record_skipped_action(
+                        cover,
+                        _MANUAL_OVERRIDE_SKIP_LABEL,
+                        state,
+                        trigger=trigger,
+                        current_position=self._cmd_svc.get_current_position(cover),
+                        inverse_state=self._inverse_state,
                     )
                     continue
                 kept.append(cover)
@@ -2513,10 +2559,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 bypass_auto_control=bypass_auto_control,
                 sun_just_appeared=sun_just_appeared,
             )
-            outcome, _ = await self._cmd_svc.apply_position(
-                cover, self._entity_target(cover, state), trigger, context=ctx
-            )
-            if outcome == "sent":
+            if honor_holds:
+                # Returns None when the cover is held — no command, hold-skip
+                # record already written.  Unpack defensively so a held cover
+                # simply never joins ``sent``.
+                result = await self._dispatch_to_cover(cover, state, trigger, ctx)
+            else:
+                result = await self._cmd_svc.apply_position(
+                    cover, self._entity_target(cover, state), trigger, context=ctx
+                )
+            if result is not None and result[0] == "sent":
                 sent.add(cover)
         return sent
 

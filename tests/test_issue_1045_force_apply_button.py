@@ -36,6 +36,7 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
 # Harness — mirrors tests/test_reset_button_time_window.py::_make_coordinator
@@ -74,6 +75,13 @@ def _make_coordinator(
     )
     # The per-entity dispatch seam is identity for a blind (no rail remap).
     coordinator._entity_target = lambda cover, state: state
+    # No hold in play by default; bind the real hold-aware dispatch seam so
+    # honor_holds=True runs the production code rather than a bare MagicMock.
+    coordinator._pipeline_result = None
+    coordinator.position_axis_inverted = False
+    coordinator._dispatch_to_cover = (
+        AdaptiveDataUpdateCoordinator._dispatch_to_cover.__get__(coordinator)
+    )
     return coordinator
 
 
@@ -207,6 +215,29 @@ async def test_force_send_filters_override_before_building_context():
     await _force_send(coordinator, respect_manual_override=True)
 
     assert _context_entities(coordinator) == ["cover.b"]
+
+
+@pytest.mark.asyncio
+async def test_force_send_records_skip_for_manually_overridden_cover():
+    """A pre-filtered cover must leave the same diagnostic trace as the gate.
+
+    The non-forced path records ``manual_override`` from apply_position's gate,
+    so ``last_skipped_action`` / diagnostics / the Lovelace card explain why the
+    cover stayed put.  A silent ``continue`` here would make the button look
+    broken for that cover.
+    """
+    coordinator = _make_coordinator(
+        entities=["cover.a", "cover.b"], manual_covers=("cover.a",)
+    )
+    coordinator._inverse_state = False
+
+    await _force_send(coordinator, respect_manual_override=True, trigger="press")
+
+    recorded = coordinator._cmd_svc.record_skipped_action.call_args_list
+    assert [call.args[0] for call in recorded] == ["cover.a"]
+    # Same reason code the manual-override gate inside apply_position emits.
+    assert recorded[0].args[1] == "manual_override"
+    assert recorded[0].kwargs["trigger"] == "press"
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +524,145 @@ async def test_press_still_deduped_by_same_position_gate():
 
     assert outcomes == [("skipped", "same_position")]
     hass.services.async_call.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Step 7b — honor_holds: pipeline holds must survive the press
+#
+# GroupLockHandler and MotionTimeoutHandler's hold_position mode both emit
+# skip_command=True with position = snapshot.current_cover_position, which for
+# a multi-cover instance is the arithmetic MEAN of every cover's position.
+# Dispatching that value punches through the hold AND sends a number that is
+# not the calculated position for any single cover.
+# ---------------------------------------------------------------------------
+
+
+def _make_hold_coordinator(*, positions: dict[str, int], control_method, state: int):
+    """Real CoverCommandService + a hold-mode (skip_command) pipeline result."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    state_obj = MagicMock()
+    state_obj.state = "open"
+    hass.states.get = MagicMock(return_value=state_obj)
+
+    svc = CoverCommandService(
+        hass=hass,
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=MagicMock(),
+        open_close_threshold=50,
+        check_interval_minutes=1,
+        position_tolerance=3,
+        max_retries=3,
+    )
+    svc._get_current_position = MagicMock(side_effect=lambda entity: positions[entity])
+    svc.apply_position = AsyncMock(wraps=svc.apply_position)
+    svc.record_skipped_action = MagicMock(wraps=svc.record_skipped_action)
+
+    coordinator = _make_apply_coordinator(entities=list(positions))
+    coordinator.state = state
+    coordinator._cmd_svc = svc
+    coordinator.min_change = 2
+    coordinator.time_threshold = 2
+    coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
+    coordinator._pipeline_bypasses_auto_control = False
+    coordinator._pipeline_result = PipelineResult(
+        position=state,
+        control_method=control_method,
+        skip_command=True,
+    )
+    return coordinator, svc, hass
+
+
+async def _press_raw(coordinator):
+    """Press the button with the real service wired, no apply_position spy."""
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=dt.datetime(2020, 1, 1, tzinfo=dt.UTC),
+        ),
+    ):
+        await _apply(coordinator)
+
+
+@pytest.mark.asyncio
+async def test_press_honors_group_lock_hold():
+    """A live group lock outranks everything — the press must not break it.
+
+    GroupLockHandler sits at CUSTOM_POSITION_SAFETY_PRIORITY and is documented
+    as outranking every other handler, weather included.  Its position is the
+    mean of the members' positions, so punching through would drive a two-cover
+    instance at 20/80 to 50/50.
+    """
+    coordinator, svc, hass = _make_hold_coordinator(
+        positions={"cover.a": 20, "cover.b": 80},
+        control_method=const.ControlMethod.GROUP_LOCK,
+        state=50,
+    )
+
+    await _press_raw(coordinator)
+
+    svc.apply_position.assert_not_called()
+    hass.services.async_call.assert_not_awaited()
+    assert [call.args[0] for call in svc.record_skipped_action.call_args_list] == [
+        "cover.a",
+        "cover.b",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_press_honors_motion_hold():
+    """MotionTimeoutHandler hold_position mode is the same shape as group lock."""
+    coordinator, svc, hass = _make_hold_coordinator(
+        positions={"cover.a": 20, "cover.b": 80},
+        control_method=const.ControlMethod.MOTION,
+        state=50,
+    )
+
+    await _press_raw(coordinator)
+
+    svc.apply_position.assert_not_called()
+    hass.services.async_call.assert_not_awaited()
+    assert [call.args[1] for call in svc.record_skipped_action.call_args_list] == [
+        "motion_hold",
+        "motion_hold",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_force_send_bypasses_holds_by_default():
+    """Safe-default lock: forced transitions still ignore hold mode.
+
+    _dispatch_to_cover's docstring records that forced transitions, override
+    clears and window events deliberately bypass it.  Without ``honor_holds``
+    the two pre-existing callers must keep that behaviour exactly.
+    """
+    coordinator = _make_coordinator()
+    coordinator._pipeline_result = PipelineResult(
+        position=50,
+        control_method=const.ControlMethod.GROUP_LOCK,
+        skip_command=True,
+    )
+
+    result = await _force_send(coordinator)
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+    coordinator._cmd_svc.record_skipped_action.assert_not_called()
+    assert result == {"cover.test"}
+
+
+@pytest.mark.asyncio
+async def test_async_force_apply_delegates_with_honor_holds():
+    """The public entry point must ask the shared helper to honour holds."""
+    coordinator = _make_apply_coordinator()
+    coordinator._async_force_send_pipeline_position = AsyncMock(return_value=set())
+
+    await _apply(coordinator)
+
+    kwargs = coordinator._async_force_send_pipeline_position.call_args.kwargs
+    assert kwargs["honor_holds"] is True
 
 
 # ---------------------------------------------------------------------------

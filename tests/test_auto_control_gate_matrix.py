@@ -111,6 +111,9 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     coord.automatic_control = False
     coord.entities = [MagicMock()]
     coord._group_intents = {}
+    # object.__new__ skips __init__, which seeds this to None. The hold-aware
+    # dispatch seam reads it, so a bare mock coordinator must carry it too.
+    coord._pipeline_result = None
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
