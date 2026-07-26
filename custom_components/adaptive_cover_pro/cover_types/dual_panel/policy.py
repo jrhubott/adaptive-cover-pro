@@ -428,8 +428,8 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         entity_id: str,
         position: int,
         *,
-        inverted: bool | None = None,
-        interpolated: bool = False,
+        inverted: bool | None = None,  # noqa: ARG002
+        interpolated: bool = False,  # noqa: ARG002
     ) -> int:
         """Substitute the back panel's blackout target; the front passes through.
 
@@ -441,14 +441,20 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         (identity for all); a safety/bypass cycle also passes every entity
         through untouched so the safety winner is never overwritten.
 
-        ``inverted`` / ``interpolated`` name the dispatch frame. ``None``
-        (the main dispatch path) applies the cached per-cycle transform;
-        anything else names the caller's own frame outright. Both routes then
-        run the SAME application step, so the back can never be calibrated on
-        one path and left raw on the other — which is exactly what happened
-        while the seam could only say "inverted or not": a user command on an
-        interpolating install named ``inverted=False`` and drove the blackout
-        panel to raw 0, outside its calibrated band (#1027).
+        ``inverted`` / ``interpolated`` are accepted for seam parity and
+        DELIBERATELY NOT CONSULTED. They name the frame of the incoming
+        ``position``, and this policy substitutes an absolute target rather
+        than transforming that value — ``compute_layered`` never reads
+        ``front`` when computing ``back`` — so the only wire space that
+        applies is the device's own, cached by ``_cache_inverse_and_interp``
+        from ``options`` alone (#996 Finding 1, #1035).
+
+        History: the interpolation behaviour #1027 added is preserved, just
+        sourced from the cache instead of the kwarg. Before #1027 the seam
+        could only say "inverted or not", so an interpolating install's user
+        command named ``inverted=False`` and drove the blackout to raw 0,
+        outside its calibrated band. Reading the cache unconditionally is a
+        strictly stronger answer: no caller can produce that value at all.
         """
         if not self._front_entity or self._back_bypass:
             return position
@@ -461,10 +467,14 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
             closed_position=POSITION_CLOSED,
         )
         back = layered.back
-        # Interpolation XOR inverse — the same mutual exclusion
-        # ``coordinator._to_cover_frame`` applies to the front's value.
-        use_interp = self._back_interp if inverted is None else interpolated
-        use_inverse = self._back_inverse if inverted is None else inverted
-        if use_interp:
+        # The back's target is an ABSOLUTE SUBSTITUTION — ``compute_layered``
+        # discards ``front`` — so the caller's frame describes a value this
+        # panel never consumes. Its wire space is device semantics only
+        # (#996 Finding 1), which ``_cache_inverse_and_interp`` derives from
+        # ``options`` alone: interpolation XOR inverse, the same mutual
+        # exclusion ``coordinator._to_cover_frame`` applies to the front's
+        # value. A floor raise is a statement about the FRONT's target, not
+        # about how the back is wired (#1035).
+        if self._back_interp:
             return self._calibrated_back(back)
-        return inverse_state(back) if use_inverse else back
+        return inverse_state(back) if self._back_inverse else back
