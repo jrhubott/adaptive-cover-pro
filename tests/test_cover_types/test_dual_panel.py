@@ -378,7 +378,12 @@ class TestResolveIndependence:
 
 
 class TestResolveInverseState:
-    """Inverse-state swaps open/closed in wire space; kwarg overrides the cache."""
+    """Inverse-state swaps open/closed in the back's OWN device wire space.
+
+    The cache is the only source of that space; no caller can override it
+    (#1035). Contrast ``DayNightShadePolicy``, whose middle rail IS derived
+    from the front's dispatched value and therefore must consult the frame.
+    """
 
     def test_cached_inverse_swaps_open_closed(self) -> None:
         from custom_components.adaptive_cover_pro.managers.manual_override import (
@@ -408,23 +413,67 @@ class TestResolveInverseState:
             POSITION_OPEN
         )
 
-    def test_explicit_inverted_kwarg_overrides_cache(self) -> None:
+    def test_back_wire_space_ignores_caller_frame(self) -> None:
+        """No caller can push the back into a wire space its device is not in.
+
+        #1035: ``compute_layered`` discards ``front`` when computing ``back``,
+        so the frame naming the incoming ``position`` (#993/#1027) says nothing
+        about how this panel is wired. Its wire space is device semantics only
+        (#996 Finding 1) — the same invariant ``TestResolveInverseIndependent
+        OfClamp`` states for the clamp axis, now closed against the caller axis
+        too. This replaces ``test_explicit_inverted_kwarg_overrides_cache``,
+        whose ``inverted=False`` assertion was the #1035 defect written as an
+        expectation and contradicted that sibling class outright.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_INTERP,
+            CONF_INTERP_END,
+            CONF_INTERP_START,
+        )
         from custom_components.adaptive_cover_pro.managers.manual_override import (
             inverse_state,
         )
-
-        policy = DualPanelPolicy()
-        # Cache says non-inverse, but the broadcast seam passes inverted=True.
-        _resolve(policy, control_method=ControlMethod.SUMMER, triggers=["heat"])
-        assert policy.resolve_entity_target(_BACK, 40, inverted=True) == inverse_state(
-            POSITION_CLOSED
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
         )
-        # And inverted=False forces non-inverse even if the cache said invert.
+
+        # 1. Cache non-inverse — a caller asking for inversion cannot impose it.
+        plain = DualPanelPolicy()
+        _resolve(plain, control_method=ControlMethod.SUMMER, triggers=["heat"])
+        assert plain.resolve_entity_target(_BACK, 40, inverted=True) == POSITION_CLOSED
+
+        # 2. Cache inverse — the floor-raise seam's ``inverted=False`` cannot
+        #    un-invert it. THIS assertion is issue #1035.
         inv = DualPanelPolicy()
         _resolve(
             inv, control_method=ControlMethod.SUMMER, triggers=["heat"], inverse=True
         )
-        assert inv.resolve_entity_target(_BACK, 40, inverted=False) == POSITION_CLOSED
+        assert inv.resolve_entity_target(_BACK, 40, inverted=False) == inverse_state(
+            POSITION_CLOSED
+        )
+
+        # 3. Cache interpolating — a broadcast seam's implicit
+        #    ``interpolated=False`` cannot defeat the calibration curve
+        #    (#996 Finding 5; seams 4/5).
+        interp = DualPanelPolicy()
+        opts = _opts(triggers=["heat"], front=_FRONT)
+        opts[CONF_INTERP] = True
+        opts[CONF_INTERP_START] = 10
+        opts[CONF_INTERP_END] = 90
+        interp.post_pipeline_resolve(
+            PipelineResult(
+                position=40, control_method=ControlMethod.SUMMER, reason="t"
+            ),
+            cover=_sunset_cover(False),
+            **_resolve_kwargs(options=opts),
+        )
+        expected = int(round(interpolate_position(POSITION_CLOSED, 10, 90, None, None)))
+        assert interp.resolve_entity_target(_BACK, 40, inverted=False) == expected
+
+        # 4. Cache non-interpolating — a caller cannot impose a curve either.
+        assert (
+            plain.resolve_entity_target(_BACK, 40, interpolated=True) == POSITION_CLOSED
+        )
 
 
 class TestResolveInverseIndependentOfClamp:

@@ -34,6 +34,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
+    POSITION_CLOSED,
     ControlMethod,
     CoverType,
 )
@@ -44,6 +45,7 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
 )
 from custom_components.adaptive_cover_pro.cover_types.dual_panel import DualPanelPolicy
+from custom_components.adaptive_cover_pro.managers.manual_override import inverse_state
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
     DecisionStep,
@@ -72,39 +74,23 @@ _FRAMES: dict[str, dict] = {
     "inverse+interpolated": {CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
 }
 
-
-# A min-mode floor high enough to bind on part of the logical sweep and not on
-# the rest, so the parametrisation exercises both the clamped and the inert
-# branch. Priority 90 is load-bearing: ``async_apply_user_position`` only lets a
-# floor clamp a user move when it strictly outranks manual override (#472).
-_FLOOR = 60
-_FLOOR_PRIORITY = 90
+# A min-mode floor whose priority strictly exceeds ManualOverrideHandler's (80).
+# At or below 80, ``floor_applies`` is False at coordinator.py:3180 and the
+# floor never clamps a user move at all (#472) — the sweep would silently
+# degrade to the no-floor case.
+_FLOOR_POS = 40
 
 
-def _floor_slot() -> CustomPositionSensorState:
+def _floor_slot(pos: int, priority: int = 82) -> CustomPositionSensorState:
+    """Build an active min-mode floor slot that outranks manual override."""
     return CustomPositionSensorState(
-        entity_ids=("binary_sensor.floor",),
+        entity_ids=(f"binary_sensor.floor_{pos}",),
         is_on=True,
-        position=_FLOOR,
-        priority=_FLOOR_PRIORITY,
+        position=pos,
+        priority=priority,
         min_mode=True,
         use_my=False,
-        slot=1,
-        active_entity_ids=("binary_sensor.floor",),
     )
-
-
-def _composed(logical: int, floor_clamped: bool) -> tuple[int, bool]:
-    """Compose what the registry's axis-constraint pass puts on the winner.
-
-    Returns ``(position, floor_clamp_applied)``. The flag is DERIVED — it is
-    only True when the floor actually binds — because forcing it on for the
-    whole sweep would exercise a shape the registry never produces.
-    """
-    if not floor_clamped:
-        return logical, False
-    raised = max(logical, _FLOOR)
-    return raised, raised != logical
 
 
 def _sunset_cover(sunset_valid: bool) -> MagicMock:
@@ -137,22 +123,21 @@ def _prime(policy, result: PipelineResult, options: dict, cover) -> None:
     )
 
 
-def _dual_panel_case(frame_options: dict, logical: int, floor_clamped: bool):
+def _dual_panel_case(frame_options: dict, logical: int, *, floor: int | None = None):
     """Real dual-panel policy + options + the entities to compare."""
     options = {
         CONF_DUAL_PANEL_FRONT_ENTITY: _FRONT,
         CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["night"],
         **frame_options,
     }
-    position, clamped = _composed(logical, floor_clamped)
     policy = DualPanelPolicy()
     _prime(
         policy,
         PipelineResult(
-            position=position,
+            position=logical,
             control_method=ControlMethod.SOLAR,
             reason="solar",
-            floor_clamp_applied=clamped,
+            floor_clamp_applied=floor is not None,
         ),
         options,
         _sunset_cover(False),
@@ -160,23 +145,22 @@ def _dual_panel_case(frame_options: dict, logical: int, floor_clamped: bool):
     return policy, options, (_FRONT, _BACK), CoverType.DUAL_PANEL
 
 
-def _day_night_case(frame_options: dict, logical: int, floor_clamped: bool):
+def _day_night_case(frame_options: dict, logical: int, *, floor: int | None = None):
     """Real Model C day/night policy + options + the entities to compare."""
     options = {
         CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
         CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _MIDDLE,
         **frame_options,
     }
-    position, clamped = _composed(logical, floor_clamped)
     policy = DayNightShadePolicy()
     _prime(
         policy,
         PipelineResult(
-            position=position,
+            position=logical,
             control_method=ControlMethod.CUSTOM_POSITION,
             reason="custom",
             tilt=50,
-            floor_clamp_applied=clamped,
+            floor_clamp_applied=floor is not None,
         ),
         options,
         None,
@@ -191,7 +175,7 @@ _CASES = {
 
 
 def _make_coord(
-    policy, options: dict, cover_type: str, logical: int, floor_clamped: bool = False
+    policy, options: dict, cover_type: str, logical: int, *, floor: int | None = None
 ):
     """Coordinator-shaped mock carrying a real policy and real frame inputs."""
     from tests.test_pipeline.conftest import make_snapshot
@@ -211,7 +195,7 @@ def _make_coord(
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.build = MagicMock(
         return_value=make_snapshot(
-            custom_position_sensors=[_floor_slot()] if floor_clamped else []
+            custom_position_sensors=[_floor_slot(floor)] if floor is not None else []
         )
     )
     coord._cover_data = MagicMock(name="cover_data")
@@ -225,18 +209,15 @@ def _make_coord(
     coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
 
     # Solar winner at priority 40 — below manual override, so a user command
-    # reaches dispatch instead of being preempted. When the sweep asks for a
-    # floor-clamped axis the winner carries what the registry's constraint pass
-    # would have composed onto it (#1036).
-    position, clamped = _composed(logical, floor_clamped)
+    # reaches dispatch instead of being preempted.
     winner = PipelineResult(
-        position=position,
+        position=logical,
         control_method=ControlMethod.SOLAR,
         reason="solar",
-        floor_clamp_applied=clamped,
+        floor_clamp_applied=floor is not None,
         decision_trace=[
             DecisionStep(
-                handler="solar", matched=True, reason="solar", position=position
+                handler="solar", matched=True, reason="solar", position=logical
             )
         ],
     )
@@ -274,11 +255,11 @@ def _auto_target(coord, entity_id: str) -> int:
 @pytest.mark.parametrize("case_name", sorted(_CASES))
 @pytest.mark.parametrize("frame_name", sorted(_FRAMES))
 @pytest.mark.parametrize("logical", [0, 30, 50, 100])
-@pytest.mark.parametrize("floor_clamped", [False, True])
+@pytest.mark.parametrize("floor", [None, _FLOOR_POS])
 async def test_user_and_auto_paths_resolve_identical_entity_targets(
-    case_name: str, frame_name: str, logical: int, floor_clamped: bool
+    case_name: str, frame_name: str, logical: int, floor: int | None
 ) -> None:
-    """Same logical value, same wire target — on every entity, in every frame.
+    """Same logical value, same wire target — every entity, every frame, floor or not.
 
     The ``inverted: bool`` seam could name the inversion space but not the
     interpolation space, so an interpolating dual-panel user command routed
@@ -286,23 +267,34 @@ async def test_user_and_auto_paths_resolve_identical_entity_targets(
     entirely (auto 20, user 0 for a deployed blackout). Parity is the property
     that was actually broken; assert the property.
 
-    The ``floor_clamped`` axis (#1035's Scope note, #1036) widens the sweep onto
-    a winner an active min-mode floor raised. Both paths used to *skip* the
-    frame transform in that case, and skipped it differently — the automatic
-    seam reused a per-cycle cached flag that ignores the clamp, the user seam
-    hard-named ``inverted=False, interpolated=False``.
+    The floor axis closes #1035. When a min-mode floor above the request is
+    active the registry raises the winner to the floor and the user path's
+    #472 clamp raises the request to the same place, so the number they must
+    agree on is the floor itself. Both paths then run that one logical number
+    through the same transforms: #1036 removed the carve-out that used to let a
+    floor-clamped value skip them, so parity here holds because both sides
+    convert, not because both sides skip. A policy whose target is an absolute
+    substitution rather than a transform of that number must still land in its
+    own device wire space; the dual-panel back did not, and dispatched raw
+    canonical 0 while the automatic side sent wire 100 (inverse) or calibrated
+    20 (interpolated).
     """
+    # With the floor active the registry has ALREADY raised the pipeline winner
+    # to the floor, so the agreed number IS the floor; the user asks for
+    # something strictly below it and the #472 clamp raises it there.
+    agreed = logical if floor is None else floor
+    requested = logical if floor is None else min(logical, floor - 1)
+
     policy, options, entities, cover_type = _CASES[case_name](
-        _FRAMES[frame_name], logical, floor_clamped
+        _FRAMES[frame_name], agreed, floor=floor
     )
-    coord = _make_coord(policy, options, cover_type, logical, floor_clamped)
+    coord = _make_coord(policy, options, cover_type, agreed, floor=floor)
 
     for entity_id in entities:
         auto = _auto_target(coord, entity_id)
-        user = await _user_target(coord, entity_id, logical)
+        user = await _user_target(coord, entity_id, requested)
         assert user == auto, (
-            f"{case_name} / {frame_name} / logical {logical} / "
-            f"floor_clamped={floor_clamped}: "
+            f"{case_name} / {frame_name} / logical {logical} / floor {floor}: "
             f"{entity_id} auto target {auto} != user target {user}"
         )
 
@@ -318,9 +310,36 @@ async def test_interpolating_dual_panel_user_command_calibrates_the_back_panel()
     hardware, and driving the blackout panel to 0 puts it outside its
     calibrated band (#996 Finding 5).
     """
-    policy, options, _entities, cover_type = _dual_panel_case(
-        dict(_INTERP_OPTIONS), 30, False
-    )
+    policy, options, _entities, cover_type = _dual_panel_case(dict(_INTERP_OPTIONS), 30)
     coord = _make_coord(policy, options, cover_type, 30)
 
     assert await _user_target(coord, _BACK, 30) == 20
+
+
+@pytest.mark.asyncio
+async def test_floor_raised_user_command_keeps_the_back_panel_inverted() -> None:
+    """#1035: a floor clamp on the FRONT must not un-invert the back's blackout.
+
+    Pinned separately from the parity sweep so the failure names the physical
+    consequence. The back's target is an absolute substitution that never
+    consumed the front's value, so its wire space is device semantics only
+    (#996 Finding 1): a deployed blackout on an inverse install is wire 100 =
+    physically CLOSED. Raw 0 leaves the device physically OPEN and the blackout
+    silently never deploys on a night/privacy/heat trigger.
+
+    This held when the floor made the seam name ``(inverted=False,
+    interpolated=False)``, and it still holds now that #1036 has the seam name
+    the true frame on every path: the back never depended on what the front's
+    value claimed about itself, which is exactly #996 Finding 1's point.
+    """
+    policy, options, _entities, cover_type = _dual_panel_case(
+        {CONF_INVERSE_STATE: True}, _FLOOR_POS, floor=_FLOOR_POS
+    )
+    coord = _make_coord(policy, options, cover_type, _FLOOR_POS, floor=_FLOOR_POS)
+
+    target = await _user_target(coord, _BACK, 10)
+
+    assert target == inverse_state(POSITION_CLOSED)  # wire 100 = physically closed
+    # Legibility guard, mirroring the overdrive assertion at
+    # tests/test_dual_panel_dispatch.py:228 — name the physical failure.
+    assert target != POSITION_CLOSED

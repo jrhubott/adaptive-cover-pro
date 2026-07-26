@@ -9,7 +9,7 @@ import json
 import pathlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .forecast import Forecast
@@ -3612,28 +3612,55 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return axis_inverted(self._policy.axes[0], self.config_entry.options)
 
-    @property
-    def tilt_read_inverted(self) -> bool:
+    def tilt_read_inverted(self, caps: Any) -> bool:
         """Whether the source's TILT attribute holds a re-framed value.
 
-        True only for the cover types whose primary axis IS the tilt axis
-        (``cover_tilt``, ``cover_louvered_roof``). Their single axis writes the
-        tilt attribute, and their user commands fall through
-        ``async_apply_user_tilt`` onto ``async_apply_user_position``, so the
-        number that reaches the device went through :meth:`_to_cover_frame`
-        (#1027). A reader that mirrors the attribute verbatim would therefore
-        publish 70 for a slider the user dragged to 30.
+        Two different write-side transforms can land on
+        ``current_tilt_position``, and the proxy read owes the inverse of
+        whichever one actually produced the number (#1034). This reconciles
+        them:
 
-        A venetian / day-night shade's tilt is its SECOND axis: it is keyed on
-        ``inverse_tilt``, converted by the venetian sequencer's ``_to_wire``,
-        and untouched by the position dispatch path — so it is excluded here
-        rather than swept in. Derived from the axis descriptor, not from a
-        cover-type string, so a future tilt-primary type is covered for free.
+        * **The policy declares a tilt axis.** The axis descriptor already
+          knows which transform ran and on which option. A venetian /
+          day-night shade's SECOND axis is ``TILT_AXIS`` — keyed on
+          ``inverse_tilt``, converted by the dual-axis sequencer's ``_to_wire``
+          and never interpolation-gated. A tilt-PRIMARY type's only axis is
+          ``TILT_AXIS_PRIMARY`` — keyed on ``inverse_state``, converted by
+          :meth:`_to_cover_frame` because ``async_apply_user_tilt`` falls
+          through to ``async_apply_user_position`` (#1027). ``axis_inverted``
+          carries that whole asymmetry, so the descriptor answers for both and
+          no formula is rewritten here.
+        * **The policy declares no tilt axis, but the dispatch went there
+          anyway.** ``should_use_tilt`` routes ANY policy onto
+          ``set_cover_tilt_position`` when the bound entity advertises
+          ``set_tilt_position`` but not ``set_position``. The value such an
+          install writes was re-framed by :meth:`_to_cover_frame` on
+          ``inverse_state``, so the frame is the POSITION axis's and the answer
+          is :attr:`position_axis_inverted`. Deliberately not
+          ``axis_inverted(select_default_axis(caps), …)``: that call hands back
+          the shared ``TILT_AXIS``, which keys on ``inverse_tilt`` — an option
+          this install was never offered and never set.
+
+        A declared axis wins over the caps fallback. A venetian bound to
+        tilt-only hardware still has its slats written through the sequencer,
+        so the descriptor names the transform that really ran.
+
+        Derived from axis descriptors and ``caps``, never from a cover-type
+        string, so a future tilt-carrying type is covered for free. ``caps`` is
+        a required argument rather than a defaulted one so a later caller
+        cannot silently drop back to the axis-only answer; ``None`` is accepted
+        and normalised by ``select_default_axis``.
         """
-        primary = self._policy.axes[0]
-        if primary.state_attr != STATE_ATTR_TILT_POSITION:
-            return False
-        return self.position_axis_inverted
+        axis = next(
+            (a for a in self._policy.axes if a.state_attr == STATE_ATTR_TILT_POSITION),
+            None,
+        )
+        if axis is not None:
+            return axis_inverted(axis, self.config_entry.options)
+        dispatch_axis = self._policy.select_default_axis(caps)
+        if dispatch_axis.state_attr == STATE_ATTR_TILT_POSITION:
+            return self.position_axis_inverted
+        return False
 
     def _to_cover_frame(self, value: float) -> int:
         """Map a logical (HA-convention) position into this cover's dispatch frame.
