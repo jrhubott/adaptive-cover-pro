@@ -212,7 +212,7 @@ def test_cancel_grace_period_handles_missing_entity():
 async def test_reset_clears_manual_override_and_sends_post_refresh_position():
     """Reset must clear override, refresh, then delegate to the shared send path.
 
-    The shared path (_async_send_after_override_clear) owns force=True and the
+    The shared path (_async_force_send_pipeline_position) owns force=True and the
     time-window / auto-control gates.  async_reset_manual_overrides supplies the
     post-refresh state, the options dict, the target entities, and the
     "manual_reset" trigger.  (Sequence moved from the button in issue #790.)
@@ -231,7 +231,9 @@ async def test_reset_clears_manual_override_and_sends_post_refresh_position():
     coordinator.cover_state_change = False
     coordinator.state = POST_REFRESH_STATE
     coordinator.async_refresh = AsyncMock()
-    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
+    coordinator._async_force_send_pipeline_position = AsyncMock(
+        return_value={entity_id}
+    )
 
     await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
         coordinator, [entity_id]
@@ -242,8 +244,8 @@ async def test_reset_clears_manual_override_and_sends_post_refresh_position():
     coordinator.async_refresh.assert_called_once()
 
     # Must delegate to the shared send path with correct args
-    coordinator._async_send_after_override_clear.assert_called_once()
-    call = coordinator._async_send_after_override_clear.call_args
+    coordinator._async_force_send_pipeline_position.assert_called_once()
+    call = coordinator._async_force_send_pipeline_position.call_args
     assert call[0][0] == POST_REFRESH_STATE  # post-refresh state
     assert call[0][1] == options  # options dict
     assert call[1].get("entities") == [entity_id]
@@ -283,7 +285,9 @@ async def test_reset_suppresses_redetection_during_refresh():
     coordinator._cmd_svc.set_waiting = MagicMock(side_effect=_set_waiting)
     coordinator._cmd_svc.is_waiting_for_target = MagicMock(side_effect=_is_waiting)
     coordinator.cover_state_change = False
-    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
+    coordinator._async_force_send_pipeline_position = AsyncMock(
+        return_value={entity_id}
+    )
 
     await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
         coordinator, [entity_id]
@@ -297,7 +301,7 @@ async def test_reset_suppresses_redetection_during_refresh():
 async def test_reset_clears_wait_for_target_when_no_command_sent():
     """wait_for_target must be False after reset when the shared send path skips the entity.
 
-    The shared method (_async_send_after_override_clear) returns a set of sent
+    The shared method (_async_force_send_pipeline_position) returns a set of sent
     entity_ids.  If an entity is absent (gated by time window, auto-control off,
     or no positioning capability), the button must clear wait_for_target.
     """
@@ -312,7 +316,7 @@ async def test_reset_clears_wait_for_target_when_no_command_sent():
     coordinator.state = 50
     coordinator.config_entry.options = {}
     # Shared method returns empty set — entity was not sent to
-    coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
+    coordinator._async_force_send_pipeline_position = AsyncMock(return_value=set())
     coordinator.async_refresh = AsyncMock()
     coordinator.cover_state_change = False
 
@@ -405,14 +409,16 @@ async def test_reset_sends_correct_position_with_climate_mode():
     # Simulate: after refresh the pipeline now returns the climate position
     coordinator.state = CLIMATE_POSITION
     coordinator.async_refresh = AsyncMock()
-    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
+    coordinator._async_force_send_pipeline_position = AsyncMock(
+        return_value={entity_id}
+    )
 
     await AdaptiveDataUpdateCoordinator.async_reset_manual_overrides(
         coordinator, [entity_id]
     )
 
     # The state passed to the shared method must be the post-refresh climate position
-    call = coordinator._async_send_after_override_clear.call_args
+    call = coordinator._async_force_send_pipeline_position.call_args
     sent_position = call[0][0]
     assert sent_position == CLIMATE_POSITION
     assert sent_position != SOLAR_POSITION

@@ -315,6 +315,9 @@ TRIGGER_PROXY_TILT = "proxy_tilt"
 # Cover-group aggregate cover entity commands (issue #790, Phase 3).
 TRIGGER_GROUP_COVER = "group_cover"
 TRIGGER_GROUP_COVER_TILT = "group_cover_tilt"
+# Apply Calculated Position button (issue #1045): force-dispatch this cycle's
+# pipeline position past the delta_position / delta_time gates.
+TRIGGER_FORCE_APPLY_CALCULATED = "force_apply_calculated"
 
 
 # =============================================================================

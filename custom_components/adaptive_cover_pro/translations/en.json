@@ -1188,6 +1188,9 @@
       "my_position": {
         "name": "Managed My Position"
       },
+      "apply_calculated_position": {
+        "name": "Apply Calculated Position"
+      },
       "group_scene_all_open": {
         "name": "Scene: All Open"
       },

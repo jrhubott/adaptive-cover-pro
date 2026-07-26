@@ -110,6 +110,7 @@ from .const import (
     LOGGER,
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
+    TRIGGER_FORCE_APPLY_CALCULATED,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
 from .diagnostics.event_buffer import EventBuffer
@@ -2335,7 +2336,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Time-window and automatic-control gates live in the shared send
         # path, along with force=True so time_delta/position_delta are
         # bypassed for this intentional reset.
-        sent = await self._async_send_after_override_clear(
+        sent = await self._async_force_send_pipeline_position(
             self.state,
             self.config_entry.options,
             entities=reset_entities,
@@ -2354,21 +2355,69 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self._cmd_svc.set_waiting(entity, False)
         return reset_entities
 
-    async def _async_send_after_override_clear(
+    async def async_force_apply_calculated_position(
+        self,
+        entities: list[str] | None = None,
+        *,
+        trigger: str = TRIGGER_FORCE_APPLY_CALCULATED,
+    ) -> set[str]:
+        """Recompute and force-dispatch the calculated position (issue #1045).
+
+        Backs the Apply Calculated Position button.  An explicit user press is a
+        user command, so this bypasses the ``delta_position`` / ``delta_time``
+        gates, the Automatic Control gate (the #430 My Position precedent) and
+        the clock window.  It does NOT bypass the master kill switch, the
+        cover-unavailable boundary (#342) or the same-position / relay-click
+        short-circuit (#290/#507/#567/#779), and it leaves covers under a live
+        manual override alone — the dedicated Reset Manual Override button is
+        the surface for those.
+
+        The auto-control bypass rides ``bypass_auto_control``, never
+        ``is_safety`` — an ``is_safety`` target would be resent by
+        reconciliation outside the time window (#215/#216).
+
+        Args:
+            entities: Covers to target.  ``None`` (the button's value) resolves
+                ``self.entities`` live inside the shared helper.
+            trigger: Reason string recorded against the command.
+
+        Returns:
+            Set of entity_ids that were successfully sent to.
+
+        """
+        # Recompute first so the forced position reflects current conditions
+        # rather than a stale cached state (mirrors async_reset_manual_overrides).
+        await self.async_refresh()
+
+        return await self._async_force_send_pipeline_position(
+            self.state,
+            self.config_entry.options,
+            entities=entities,
+            trigger=trigger,
+            bypass_auto_control=True,
+            respect_manual_override=True,
+            ignore_clock_window=True,
+        )
+
+    async def _async_force_send_pipeline_position(
         self,
         state: int,
         options: dict,
         *,
         entities: list[str] | None = None,
         trigger: str = "manual_override_cleared",
+        bypass_auto_control: bool = False,
+        respect_manual_override: bool = False,
+        ignore_clock_window: bool = False,
     ) -> set[str]:
-        """Send the pipeline position after a manual override clears.
+        """Force-send this cycle's pipeline position, past the delta/time gates.
 
-        Single authoritative path for both the auto-expiry timer and the reset
-        button.  All gate checks live here so neither caller needs to duplicate
-        them.
+        Single authoritative force-dispatch path.  All gate checks live here so
+        no caller needs to duplicate them.  ``force=True`` bypasses the position
+        delta, time delta and manual-override gates; ``is_safety=False`` keeps
+        the target from persisting across window boundaries (#223).
 
-        **Time-window guard:** Outside the active-hours window the integration
+        **Clock-window guard:** Outside the active-hours window the integration
         has no business repositioning covers.  The normal update cycle sends the
         correct position when the window reopens.
 
@@ -2376,7 +2425,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         must stay wherever the user left it.
 
         Args:
-            state: Post-reset pipeline position (computed without the override).
+            state: Pipeline position to send.
             options: Config entry options dict.
             entities: Covers to target.  Defaults to ``self.entities`` (all
                 covers), but the reset button supplies only the covers it just
@@ -2385,6 +2434,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 in ``last_skipped_action``.  Defaults to
                 ``"manual_override_cleared"`` (auto-expiry); the reset button
                 passes ``"manual_reset"``.
+            bypass_auto_control: If True, skip the Automatic-Control guard AND
+                set ``bypass_auto_control`` on the built ``PositionContext``.
+                The two must move together — skipping only this guard would
+                leave ``apply_position`` refusing the command with
+                ``auto_control_off``.  Never reach the bypass via
+                ``is_safety=True``: that also tags the target so reconciliation
+                resends it outside the window (#215/#216).
+            respect_manual_override: If True, drop covers under a live manual
+                override from the target list *before* dispatch.  Necessary
+                because ``force=True`` disables the manual-override gate inside
+                ``apply_position`` (#1022/#654).
+            ignore_clock_window: If True, skip the clock-window guard and
+                dispatch outside the active-hours window.
+
+        Every one of the three flags above defaults to ``False``, which
+        reproduces the pre-existing behaviour of the two override-clear callers
+        (``async_reset_manual_overrides`` and the auto-expiry branch in
+        ``_dispatch_for_cycle``, which passes ``entities=None``) bit-for-bit.
+        Only ``async_force_apply_calculated_position`` — the Apply Calculated
+        Position button, issue #1045 — sets all three True.
 
         Returns:
             Set of entity_ids that were successfully sent to (``"sent"``
@@ -2394,9 +2463,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         target_covers = entities if entities is not None else list(self.entities)
 
-        if not self.clock_window_open:
+        if respect_manual_override:
+            # Pre-filter rather than lean on the manual-override gate inside
+            # apply_position — ``force=True`` disables that gate, so a cover
+            # under a live override would be commanded straight through
+            # (#1022/#654).
+            kept: list[str] = []
+            for cover in target_covers:
+                if self.manager.is_cover_manual(cover):
+                    self.logger.debug(
+                        "Force-send: skipping position command for %s (manual override active/restored)",
+                        cover,
+                    )
+                    continue
+                kept.append(cover)
+            target_covers = kept
+
+        if not ignore_clock_window and not self.clock_window_open:
             self.logger.debug(
-                "Manual override cleared for %s but outside the clock window — "
+                "Force-send requested for %s but outside the clock window — "
                 "skipping reposition (pipeline position was %s; will apply when "
                 "window opens)",
                 target_covers,
@@ -2404,9 +2489,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             return set()
 
-        if not self.automatic_control:
+        if not bypass_auto_control and not self.automatic_control:
             self.logger.debug(
-                "Manual override cleared for %s but automatic control is OFF — "
+                "Force-send requested for %s but automatic control is OFF — "
                 "skipping reposition (pipeline position was %s)",
                 target_covers,
                 state,
@@ -2414,7 +2499,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return set()
 
         self.logger.debug(
-            "Sending pipeline position %s after manual override cleared for %s",
+            "Force-sending pipeline position %s to %s",
             state,
             target_covers,
         )
@@ -2422,7 +2507,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sent: set[str] = set()
         for cover in target_covers:
             ctx = self._build_position_context(
-                cover, options, force=True, sun_just_appeared=sun_just_appeared
+                cover,
+                options,
+                force=True,
+                bypass_auto_control=bypass_auto_control,
+                sun_just_appeared=sun_just_appeared,
             )
             outcome, _ = await self._cmd_svc.apply_position(
                 cover, self._entity_target(cover, state), trigger, context=ctx
@@ -2498,7 +2587,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # One or more manual overrides just timed out.  Proactively send
             # the fresh pipeline position so covers don't linger at the
             # user-moved position until the next solar/entity-state event.
-            await self._async_send_after_override_clear(state, options)
+            await self._async_force_send_pipeline_position(state, options)
         elif target_changed:
             # No state_change edge this cycle, but the resolved target moved
             # since the last dispatch — send it through the same path.

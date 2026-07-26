@@ -814,7 +814,7 @@ async def test_force_without_is_safety_does_not_mark_safety_target(svc, mock_has
 
     force=True only bypasses gate checks (delta, time, manual override).
     Safety target classification is controlled exclusively by is_safety.
-    Callers like _async_send_after_override_clear use force=True to bypass
+    Callers like _async_force_send_pipeline_position use force=True to bypass
     gates but is_safety=False so the target does not persist across window
     boundaries (fix for issue #223).
     """
@@ -1558,7 +1558,7 @@ async def test_force_true_bypasses_time_delta_and_position_delta(svc, mock_hass)
 async def test_manual_override_expiry_force_true_bypasses_time_delta(svc, mock_hass):
     """Manual override expiry (force=True) also bypasses time delta.
 
-    Manual override expiry already uses force=True (_async_send_after_override_clear).
+    Manual override expiry already uses force=True (_async_force_send_pipeline_position).
     This test confirms the gate behavior is identical to force override release.
     """
     _patch_position(svc, 30)
