@@ -998,3 +998,76 @@ def test_effective_floor_returns_winning_floor_priority() -> None:
     assert pos == 65
     assert info is not None
     assert info.priority == 82
+
+
+# ---------------------------------------------------------------------------
+# The frame a floor is compared IN (issue #1036)
+# ---------------------------------------------------------------------------
+
+
+class TestFloorComparesInLogicalFrame:
+    """A logical floor must be compared against a logical held position.
+
+    ``held_position`` is a RAW cover-frame read (``snapshot.current_cover_position``
+    straight off the entity), while a configured floor is a logical
+    pre-inversion value (``CustomPositionSensorState.position``). Comparing them
+    directly means that on an ``inverse_state`` install the registry asks
+    "is 25%-open above 75%-open?" — and answers wrong in both directions.
+
+    Both assertions are on the registry's own composed LOGICAL ``position``, with
+    no transform written into the assertion, so they cannot be satisfied by
+    restating the conversion.
+    """
+
+    @staticmethod
+    def _registry() -> PipelineRegistry:
+        return PipelineRegistry(
+            [
+                ManualOverrideHandler(),
+                _cp_handler(1, 25),
+                ClimateHandler(),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
+
+    @staticmethod
+    def _snapshot(*, current_cover_position: int):
+        return make_snapshot(
+            manual_override_active=True,
+            current_cover_position=current_cover_position,
+            position_axis_inverted=True,
+            default_position=80,
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.floor",
+                    is_on=True,
+                    position=25,
+                    min_mode=True,
+                    slot=1,
+                )
+            ],
+        )
+
+    def test_compliant_hold_is_not_lowered_by_the_floor(self) -> None:
+        """Raw 20 on an inverse cover IS logical 80 — already above a logical-25 floor.
+
+        Nothing should bind. Before #1036 the registry compared the logical floor
+        (25) against the raw read (20), called it a raise, and drove an
+        already-compliant cover from logical 80 down to logical 25.
+        """
+        result = self._registry().evaluate(self._snapshot(current_cover_position=20))
+
+        assert result.position == 80
+        assert result.floor_clamp_applied is False
+
+    def test_non_compliant_hold_is_still_raised_by_the_floor(self) -> None:
+        """Mirror case, so the fix cannot be "never clamp a held cover".
+
+        Raw 90 on an inverse cover is logical 10 — genuinely below the logical-25
+        floor — so the floor must bind and lift it to 25.
+        """
+        result = self._registry().evaluate(self._snapshot(current_cover_position=90))
+
+        assert result.position == 25
+        assert result.floor_clamp_applied is True

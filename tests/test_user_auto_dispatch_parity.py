@@ -45,6 +45,7 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
 )
 from custom_components.adaptive_cover_pro.cover_types.dual_panel import DualPanelPolicy
 from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
     DecisionStep,
     PipelineResult,
 )
@@ -70,6 +71,40 @@ _FRAMES: dict[str, dict] = {
     "interpolated": dict(_INTERP_OPTIONS),
     "inverse+interpolated": {CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
 }
+
+
+# A min-mode floor high enough to bind on part of the logical sweep and not on
+# the rest, so the parametrisation exercises both the clamped and the inert
+# branch. Priority 90 is load-bearing: ``async_apply_user_position`` only lets a
+# floor clamp a user move when it strictly outranks manual override (#472).
+_FLOOR = 60
+_FLOOR_PRIORITY = 90
+
+
+def _floor_slot() -> CustomPositionSensorState:
+    return CustomPositionSensorState(
+        entity_ids=("binary_sensor.floor",),
+        is_on=True,
+        position=_FLOOR,
+        priority=_FLOOR_PRIORITY,
+        min_mode=True,
+        use_my=False,
+        slot=1,
+        active_entity_ids=("binary_sensor.floor",),
+    )
+
+
+def _composed(logical: int, floor_clamped: bool) -> tuple[int, bool]:
+    """Compose what the registry's axis-constraint pass puts on the winner.
+
+    Returns ``(position, floor_clamp_applied)``. The flag is DERIVED — it is
+    only True when the floor actually binds — because forcing it on for the
+    whole sweep would exercise a shape the registry never produces.
+    """
+    if not floor_clamped:
+        return logical, False
+    raised = max(logical, _FLOOR)
+    return raised, raised != logical
 
 
 def _sunset_cover(sunset_valid: bool) -> MagicMock:
@@ -102,18 +137,22 @@ def _prime(policy, result: PipelineResult, options: dict, cover) -> None:
     )
 
 
-def _dual_panel_case(frame_options: dict, logical: int):
+def _dual_panel_case(frame_options: dict, logical: int, floor_clamped: bool):
     """Real dual-panel policy + options + the entities to compare."""
     options = {
         CONF_DUAL_PANEL_FRONT_ENTITY: _FRONT,
         CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["night"],
         **frame_options,
     }
+    position, clamped = _composed(logical, floor_clamped)
     policy = DualPanelPolicy()
     _prime(
         policy,
         PipelineResult(
-            position=logical, control_method=ControlMethod.SOLAR, reason="solar"
+            position=position,
+            control_method=ControlMethod.SOLAR,
+            reason="solar",
+            floor_clamp_applied=clamped,
         ),
         options,
         _sunset_cover(False),
@@ -121,21 +160,23 @@ def _dual_panel_case(frame_options: dict, logical: int):
     return policy, options, (_FRONT, _BACK), CoverType.DUAL_PANEL
 
 
-def _day_night_case(frame_options: dict, logical: int):
+def _day_night_case(frame_options: dict, logical: int, floor_clamped: bool):
     """Real Model C day/night policy + options + the entities to compare."""
     options = {
         CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
         CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _MIDDLE,
         **frame_options,
     }
+    position, clamped = _composed(logical, floor_clamped)
     policy = DayNightShadePolicy()
     _prime(
         policy,
         PipelineResult(
-            position=logical,
+            position=position,
             control_method=ControlMethod.CUSTOM_POSITION,
             reason="custom",
             tilt=50,
+            floor_clamp_applied=clamped,
         ),
         options,
         None,
@@ -149,7 +190,9 @@ _CASES = {
 }
 
 
-def _make_coord(policy, options: dict, cover_type: str, logical: int):
+def _make_coord(
+    policy, options: dict, cover_type: str, logical: int, floor_clamped: bool = False
+):
     """Coordinator-shaped mock carrying a real policy and real frame inputs."""
     from tests.test_pipeline.conftest import make_snapshot
 
@@ -166,7 +209,11 @@ def _make_coord(policy, options: dict, cover_type: str, logical: int):
     coord._resolved_options = options
 
     coord._snapshot_builder = MagicMock()
-    coord._snapshot_builder.build = MagicMock(return_value=make_snapshot())
+    coord._snapshot_builder.build = MagicMock(
+        return_value=make_snapshot(
+            custom_position_sensors=[_floor_slot()] if floor_clamped else []
+        )
+    )
     coord._cover_data = MagicMock(name="cover_data")
     coord._cover_type = cover_type
     coord._weather_readings = None
@@ -178,14 +225,18 @@ def _make_coord(policy, options: dict, cover_type: str, logical: int):
     coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
 
     # Solar winner at priority 40 — below manual override, so a user command
-    # reaches dispatch instead of being preempted.
+    # reaches dispatch instead of being preempted. When the sweep asks for a
+    # floor-clamped axis the winner carries what the registry's constraint pass
+    # would have composed onto it (#1036).
+    position, clamped = _composed(logical, floor_clamped)
     winner = PipelineResult(
-        position=logical,
+        position=position,
         control_method=ControlMethod.SOLAR,
         reason="solar",
+        floor_clamp_applied=clamped,
         decision_trace=[
             DecisionStep(
-                handler="solar", matched=True, reason="solar", position=logical
+                handler="solar", matched=True, reason="solar", position=position
             )
         ],
     )
@@ -223,8 +274,9 @@ def _auto_target(coord, entity_id: str) -> int:
 @pytest.mark.parametrize("case_name", sorted(_CASES))
 @pytest.mark.parametrize("frame_name", sorted(_FRAMES))
 @pytest.mark.parametrize("logical", [0, 30, 50, 100])
+@pytest.mark.parametrize("floor_clamped", [False, True])
 async def test_user_and_auto_paths_resolve_identical_entity_targets(
-    case_name: str, frame_name: str, logical: int
+    case_name: str, frame_name: str, logical: int, floor_clamped: bool
 ) -> None:
     """Same logical value, same wire target — on every entity, in every frame.
 
@@ -233,17 +285,24 @@ async def test_user_and_auto_paths_resolve_identical_entity_targets(
     into the broadcast-seam branch and skipped the back panel's calibration
     entirely (auto 20, user 0 for a deployed blackout). Parity is the property
     that was actually broken; assert the property.
+
+    The ``floor_clamped`` axis (#1035's Scope note, #1036) widens the sweep onto
+    a winner an active min-mode floor raised. Both paths used to *skip* the
+    frame transform in that case, and skipped it differently — the automatic
+    seam reused a per-cycle cached flag that ignores the clamp, the user seam
+    hard-named ``inverted=False, interpolated=False``.
     """
     policy, options, entities, cover_type = _CASES[case_name](
-        _FRAMES[frame_name], logical
+        _FRAMES[frame_name], logical, floor_clamped
     )
-    coord = _make_coord(policy, options, cover_type, logical)
+    coord = _make_coord(policy, options, cover_type, logical, floor_clamped)
 
     for entity_id in entities:
         auto = _auto_target(coord, entity_id)
         user = await _user_target(coord, entity_id, logical)
         assert user == auto, (
-            f"{case_name} / {frame_name} / logical {logical}: "
+            f"{case_name} / {frame_name} / logical {logical} / "
+            f"floor_clamped={floor_clamped}: "
             f"{entity_id} auto target {auto} != user target {user}"
         )
 
@@ -259,7 +318,9 @@ async def test_interpolating_dual_panel_user_command_calibrates_the_back_panel()
     hardware, and driving the blackout panel to 0 puts it outside its
     calibrated band (#996 Finding 5).
     """
-    policy, options, _entities, cover_type = _dual_panel_case(dict(_INTERP_OPTIONS), 30)
+    policy, options, _entities, cover_type = _dual_panel_case(
+        dict(_INTERP_OPTIONS), 30, False
+    )
     coord = _make_coord(policy, options, cover_type, 30)
 
     assert await _user_target(coord, _BACK, 30) == 20
