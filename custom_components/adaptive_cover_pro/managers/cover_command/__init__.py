@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
@@ -725,10 +725,18 @@ class CoverCommandService:
     def discard_target(self, entity_id: str) -> None:
         """Remove all tracking state for an entity, including safety targets.
 
-        Called when a manual override starts for an entity so that any
-        pre-existing integration target (including safety-tagged end-time
-        defaults) cannot be resurrected by reconciliation while — or after
-        — the user is controlling the cover.
+        Called on both manual-override edges — start (``on_engaged``) and
+        clear (``on_cleared``, via :meth:`discard_targets`) — so that no
+        integration target (including safety-tagged end-time defaults) can be
+        resurrected by reconciliation while, or after, the user is controlling
+        the cover.
+
+        Clearing on the *cleared* edge matters because the override's own
+        command target outlives it otherwise (issue #1052): when the
+        post-cancel cycle recomputes a position the delta gates suppress —
+        the cover is already within ``min_change`` of it — nothing overwrites
+        ``target``, and the next reconcile tick drives the cover back to the
+        cancelled override's position.
 
         Args:
             entity_id: Cover entity ID to clear.
@@ -737,9 +745,23 @@ class CoverCommandService:
         existing = self._state.pop(entity_id, None)
         if existing is not None and existing.target is not None:
             self._logger.debug(
-                "Discarded stale target for %s on manual override start",
+                "Discarded stale target for %s on manual override edge",
                 entity_id,
             )
+
+    def discard_targets(self, entity_ids: Iterable[str]) -> None:
+        """Discard targets for several entities — the ``on_cleared`` edge shape.
+
+        ``ManualOverrideManager`` fires ``on_cleared`` with a list, so this is
+        the plural adapter over :meth:`discard_target` that the coordinator
+        subscribes to. Entities with no tracked state are a no-op.
+
+        Args:
+            entity_ids: Cover entity IDs whose override just cleared.
+
+        """
+        for entity_id in entity_ids:
+            self.discard_target(entity_id)
 
     # ------------------------------------------------------------------ #
     # Progress-aware transit tracking

@@ -632,9 +632,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # detection channel that flips a cover into manual override fires
         # on_engaged → discard the latched command target (issue #215/#216);
         # every current and future detector inherits this without coordinator
-        # changes. The ACP-origin predicate lets detectors distinguish
-        # ACP-issued context ids from genuine user actions.
-        self.manager.set_transition_callbacks(on_engaged=self._cmd_svc.discard_target)
+        # changes. Clearing an override discards it too (issue #1052) — the
+        # target the override itself latched must not survive the cancel, or
+        # reconciliation drives the cover back to it whenever the post-cancel
+        # cycle's corrective command is suppressed by the delta gates. The
+        # ACP-origin predicate lets detectors distinguish ACP-issued context
+        # ids from genuine user actions.
+        self.manager.set_transition_callbacks(
+            on_engaged=self._cmd_svc.discard_target,
+            on_cleared=self._cmd_svc.discard_targets,
+        )
         self.manager.set_acp_context_predicate(self._cmd_svc.was_acp_position_context)
         # Issue #888: drop the display-only assumed position when the override
         # resets or a real numeric position read arrives.
