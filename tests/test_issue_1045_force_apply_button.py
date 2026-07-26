@@ -537,8 +537,20 @@ async def test_press_still_deduped_by_same_position_gate():
 # ---------------------------------------------------------------------------
 
 
-def _make_hold_coordinator(*, positions: dict[str, int], control_method, state: int):
-    """Real CoverCommandService + a hold-mode (skip_command) pipeline result."""
+def _make_hold_coordinator(
+    *,
+    positions: dict[str, int],
+    control_method,
+    state: int,
+    manual_covers=(),
+):
+    """Real CoverCommandService + a hold-mode (skip_command) pipeline result.
+
+    ``manual_covers`` puts one or more of the instance's covers under a live
+    manual override so the per-cover ``respect_manual_override`` pre-filter and
+    the instance-wide hold can be exercised together — the intersection that
+    neither the pre-filter tests nor the hold tests reached on their own.
+    """
     hass = MagicMock()
     hass.services.async_call = AsyncMock()
     state_obj = MagicMock()
@@ -559,7 +571,9 @@ def _make_hold_coordinator(*, positions: dict[str, int], control_method, state: 
     svc.apply_position = AsyncMock(wraps=svc.apply_position)
     svc.record_skipped_action = MagicMock(wraps=svc.record_skipped_action)
 
-    coordinator = _make_apply_coordinator(entities=list(positions))
+    coordinator = _make_apply_coordinator(
+        entities=list(positions), manual_covers=manual_covers
+    )
     coordinator.state = state
     coordinator._cmd_svc = svc
     coordinator.min_change = 2
@@ -576,7 +590,10 @@ def _make_hold_coordinator(*, positions: dict[str, int], control_method, state: 
 
 
 async def _press_raw(coordinator):
-    """Press the button with the real service wired, no apply_position spy."""
+    """Press the button with the real service wired, no apply_position spy.
+
+    Returns the set of entity_ids the press actually sent to.
+    """
     with (
         _patch_caps(),
         patch(
@@ -584,7 +601,7 @@ async def _press_raw(coordinator):
             return_value=dt.datetime(2020, 1, 1, tzinfo=dt.UTC),
         ),
     ):
-        await _apply(coordinator)
+        return await _apply(coordinator)
 
 
 @pytest.mark.asyncio
@@ -629,6 +646,71 @@ async def test_press_honors_motion_hold():
         "motion_hold",
         "motion_hold",
     ]
+
+
+@pytest.mark.asyncio
+async def test_press_moves_unheld_covers_under_partial_manual_override():
+    """A manual hold on ONE cover must not neutralise the press for the others.
+
+    ``ManualOverrideHandler`` fires on ``snapshot.manual_override_active``,
+    which is ``any(cover is manual)`` — so its ``skip_command`` hold is
+    instance-wide while the ``respect_manual_override`` pre-filter is per-cover.
+    Honouring that hold would suppress every cover on the instance, including
+    the ones the pre-filter deliberately kept.
+
+    The mean hazard that justifies ``honor_holds`` does not exist here: a manual
+    hold's ``position`` is ``compute_solar_position`` / ``compute_default_position``
+    (the genuine calculated position), not ``snapshot.current_cover_position``.
+    """
+    coordinator, svc, hass = _make_hold_coordinator(
+        positions={"cover.a": 20, "cover.b": 80},
+        control_method=const.ControlMethod.MANUAL,
+        state=65,
+        manual_covers=("cover.a",),
+    )
+
+    sent = await _press_raw(coordinator)
+
+    assert sent == {"cover.b"}
+    svc.apply_position.assert_called_once()
+    assert svc.apply_position.call_args.args[0] == "cover.b"
+    # The calculated position — not the 50 that averaging 20 and 80 would give.
+    assert svc.apply_position.call_args.args[1] == 65
+    hass.services.async_call.assert_awaited_once()
+    service_data = hass.services.async_call.await_args.args[2]
+    assert service_data["entity_id"] == "cover.b"
+    assert service_data["position"] == 65
+    # cover.a stays put, and says why — the pre-filter's own record, not a hold.
+    assert [
+        (call.args[0], call.args[1])
+        for call in svc.record_skipped_action.call_args_list
+    ] == [("cover.a", "manual_override")]
+
+
+@pytest.mark.asyncio
+async def test_press_still_honors_group_lock_with_a_manual_cover_present():
+    """Narrowing the hold set must not re-open the mean bug when both apply.
+
+    A group lock outranks the manual-override handler, so GROUP_LOCK is still
+    the winner even with a cover under a live override. The press must send
+    nothing: cover.a is pre-filtered, cover.b is held.
+    """
+    coordinator, svc, hass = _make_hold_coordinator(
+        positions={"cover.a": 20, "cover.b": 80},
+        control_method=const.ControlMethod.GROUP_LOCK,
+        state=50,
+        manual_covers=("cover.a",),
+    )
+
+    sent = await _press_raw(coordinator)
+
+    assert sent == set()
+    svc.apply_position.assert_not_called()
+    hass.services.async_call.assert_not_awaited()
+    assert [
+        (call.args[0], call.args[1])
+        for call in svc.record_skipped_action.call_args_list
+    ] == [("cover.a", "manual_override"), ("cover.b", "hold")]
 
 
 @pytest.mark.asyncio

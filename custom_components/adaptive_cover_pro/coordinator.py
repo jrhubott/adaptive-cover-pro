@@ -246,6 +246,27 @@ _HOLD_SKIP_LABEL: dict[ControlMethod, str] = {
 # ``last_skipped_action``, diagnostics and the Lovelace card.
 _MANUAL_OVERRIDE_SKIP_LABEL = "manual_override"
 
+# Control methods whose held ``PipelineResult.position`` is the INSTANCE MEAN
+# rather than any cover's calculated target — that, and only that, is why
+# ``_async_force_send_pipeline_position(honor_holds=True)`` routes through
+# ``_dispatch_to_cover``.  Both derive their position from
+# ``snapshot.current_cover_position`` (``pipeline/handlers/group_lock.py:43``,
+# ``pipeline/handlers/motion_timeout.py:40``), which on a multi-cover instance
+# is the arithmetic mean of every bound cover.  Dispatching it would break the
+# hold AND drive each cover to a number that is nobody's position.
+#
+# ``ControlMethod.MANUAL`` is deliberately NOT a member and must not be added.
+# The manual-override handler's position is ``compute_solar_position`` /
+# ``compute_default_position`` (``pipeline/handlers/manual_override.py:39,:51``)
+# — the genuine calculated position — so the mean hazard does not exist for it.
+# Its hold is also instance-wide (it fires on ``snapshot.manual_override_active``,
+# i.e. *any* cover is manual) while the ``respect_manual_override`` pre-filter is
+# per-cover: honouring it would suppress every cover on the instance, including
+# the ones the pre-filter deliberately kept.  The pre-filter owns MANUAL.
+_INSTANCE_MEAN_POSITION_HOLDS: frozenset[ControlMethod] = frozenset(
+    {ControlMethod.GROUP_LOCK, ControlMethod.MOTION}
+)
+
 
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
@@ -2187,7 +2208,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         transitions, override clears, window events) bypass this helper and call
         apply_position directly so they are never blocked by hold mode — the
         one exception being the Apply Calculated Position button (#1045), which
-        opts back in via ``_async_force_send_pipeline_position(honor_holds=True)``.
+        opts back in via ``_async_force_send_pipeline_position(honor_holds=True)``
+        and is routed here only for the ``_INSTANCE_MEAN_POSITION_HOLDS``
+        winners, never for a manual-override hold.
         """
         if self._pipeline_result is not None and self._pipeline_result.skip_command:
             result = self._pipeline_result
@@ -2379,17 +2402,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         cover-unavailable boundary (#342) or the same-position / relay-click
         short-circuit (#290/#507/#567/#779), and it leaves covers under a live
         manual override alone — the dedicated Reset Manual Override button is
-        the surface for those.  A pre-filtered cover still gets a
-        ``manual_override`` skip record so diagnostics say why it stayed put.
+        the surface for those.  That exclusion is strictly **per cover**: on a
+        multi-cover instance one overridden cover does not stop the press from
+        moving the rest.  A pre-filtered cover still gets a ``manual_override``
+        skip record so diagnostics say why it stayed put.
 
-        **Pipeline holds are honoured.**  When the winning handler emits
-        ``skip_command`` — a live group lock (which outranks every handler,
-        weather included), a motion ``hold_position``, or a manual-override
-        hold — that cover is skipped and a hold-skip record is written instead
-        of a command.  A held result's position is
-        ``snapshot.current_cover_position``, the arithmetic mean of the
+        **The mean-position pipeline holds are honoured.**  When a live group
+        lock (which outranks every handler, weather included) or a motion
+        ``hold_position`` wins, every remaining cover is skipped and a hold-skip
+        record is written instead of a command: those two winners' ``position``
+        is ``snapshot.current_cover_position``, the arithmetic mean of the
         instance's covers, so dispatching it would break the hold *and* send a
         number that is nobody's calculated position.
+
+        A **manual-override hold** is deliberately NOT honoured here, and that
+        is not an oversight — see ``_INSTANCE_MEAN_POSITION_HOLDS``.  Its
+        ``position`` is the genuine calculated position, and its ``skip_command``
+        is instance-wide (it fires when *any* cover is manual), so honouring it
+        would cancel the press for the covers the per-cover pre-filter above
+        deliberately kept.
 
         The auto-control bypass rides ``bypass_auto_control``, never
         ``is_safety`` — an ``is_safety`` target would be resent by
@@ -2468,18 +2499,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 ``apply_position`` (#1022/#654).
             ignore_clock_window: If True, skip the clock-window guard and
                 dispatch outside the active-hours window.
-            honor_holds: If True, route each dispatch through
-                ``_dispatch_to_cover`` so a pipeline hold (``skip_command`` —
-                group lock, motion hold_position, manual-override hold) is
-                honoured: no command is sent and a hold-skip record is written
-                instead.  Necessary because a held result's ``position`` is
-                ``snapshot.current_cover_position``, i.e. the arithmetic MEAN
-                of every cover's position on a multi-cover instance — sending
-                it would both break the hold and drive each cover to a number
-                that is not its calculated position.  The default ``False``
-                reproduces the documented forced-transition behaviour: forced
-                transitions, override clears and window events call
-                ``apply_position`` directly and are never blocked by hold mode.
+            honor_holds: If True, route dispatch through ``_dispatch_to_cover``
+                — but ONLY when this cycle's winning control method is one of
+                ``_INSTANCE_MEAN_POSITION_HOLDS`` (group lock, motion
+                hold_position).  Those two are exactly the winners whose
+                ``position`` is ``snapshot.current_cover_position``, i.e. the
+                arithmetic MEAN of every cover's position on a multi-cover
+                instance; sending it would both break the hold and drive each
+                cover to a number that is not its calculated position, so the
+                cover is skipped and a hold-skip record written instead.
+                Any other winner — a MANUAL hold above all, whose position is
+                the genuine calculated one and whose hold is instance-wide
+                while ``respect_manual_override`` is per-cover — takes the
+                direct ``apply_position`` path even under this flag, so a
+                partial manual override cannot neutralise the whole instance.
+                No pipeline result yet (``None``) likewise means nothing to
+                honour.  The default ``False`` reproduces the documented
+                forced-transition behaviour: forced transitions, override
+                clears and window events call ``apply_position`` directly and
+                are never blocked by hold mode.
 
         Every one of the four flags above defaults to ``False``, which
         reproduces the pre-existing behaviour of the two override-clear callers
@@ -2549,6 +2587,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state,
             target_covers,
         )
+        # ``honor_holds`` applies only to the holds whose position is the
+        # instance mean — see ``_INSTANCE_MEAN_POSITION_HOLDS``.  Every other
+        # winner (notably a MANUAL hold, whose position IS the calculated one
+        # and whose hold is instance-wide while the pre-filter above is
+        # per-cover) takes the direct path, so the covers the pre-filter kept
+        # still move.  Decided once: the pipeline result is instance-wide, and
+        # ``None`` (no result computed yet) simply means no hold to honour.
+        pipeline_result = self._pipeline_result
+        route_via_hold_seam = (
+            honor_holds
+            and pipeline_result is not None
+            and pipeline_result.control_method in _INSTANCE_MEAN_POSITION_HOLDS
+        )
+
         sun_just_appeared = self._check_sun_validity_transition()
         sent: set[str] = set()
         for cover in target_covers:
@@ -2559,7 +2611,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 bypass_auto_control=bypass_auto_control,
                 sun_just_appeared=sun_just_appeared,
             )
-            if honor_holds:
+            if route_via_hold_seam:
                 # Returns None when the cover is held — no command, hold-skip
                 # record already written.  Unpack defensively so a held cover
                 # simply never joins ``sent``.
