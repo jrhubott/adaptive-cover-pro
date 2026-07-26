@@ -4,7 +4,7 @@ When the user presses Reset Manual Override outside the active-hours window,
 the override flag must still be cleared but the cover must NOT be repositioned.
 The next normal update cycle (when the window opens) sends the correct position.
 
-These tests also verify that _async_send_after_override_clear is the single
+These tests also verify that _async_force_send_pipeline_position is the single
 shared gate for both the auto-expiry path and the button path.
 """
 
@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 def _make_coordinator(
     *, check_adaptive_time=True, automatic_control=True, clock_window_open=None
 ):
-    """Minimal coordinator mock for testing _async_send_after_override_clear.
+    """Minimal coordinator mock for testing _async_force_send_pipeline_position.
 
     ``clock_window_open`` defaults to mirror ``check_adaptive_time`` (closed clock
     when outside the window). Pass ``clock_window_open=True`` to model the
@@ -67,7 +67,7 @@ def _make_button(coordinator, entities):
 
 
 # ---------------------------------------------------------------------------
-# _async_send_after_override_clear — direct method tests
+# _async_force_send_pipeline_position — direct method tests
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +85,7 @@ async def test_send_after_override_clear_skips_when_clock_window_closed():
 
     coordinator = _make_coordinator(check_adaptive_time=False, clock_window_open=False)
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 75, {}
     )
 
@@ -112,7 +112,7 @@ async def test_send_after_override_clear_sends_when_gate_dark_but_clock_open():
         automatic_control=True,
     )
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 0, {}
     )
 
@@ -131,7 +131,7 @@ async def test_send_after_override_clear_skips_when_auto_control_off():
 
     coordinator = _make_coordinator(automatic_control=False)
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 75, {}
     )
 
@@ -149,7 +149,7 @@ async def test_send_after_override_clear_sends_to_specified_entities_only():
     coordinator = _make_coordinator()
     coordinator.entities = ["cover.all_a", "cover.all_b"]
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 60, {}, entities=["cover.only_this"]
     )
 
@@ -169,7 +169,7 @@ async def test_send_after_override_clear_defaults_to_all_entities():
     coordinator = _make_coordinator()
     coordinator.entities = ["cover.a", "cover.b"]
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 50, {}
     )
 
@@ -187,7 +187,7 @@ async def test_send_after_override_clear_uses_custom_trigger():
     coordinator = _make_coordinator()
     coordinator.entities = ["cover.test"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 50, {}, trigger="manual_reset"
     )
 
@@ -205,7 +205,7 @@ async def test_send_after_override_clear_default_trigger_is_manual_override_clea
     coordinator = _make_coordinator()
     coordinator.entities = ["cover.test"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 50, {}
     )
 
@@ -230,7 +230,7 @@ async def test_send_after_override_clear_returns_only_sent_entities():
 
     coordinator._cmd_svc.apply_position = AsyncMock(side_effect=side_effect)
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, 50, {}
     )
 
@@ -243,7 +243,7 @@ async def test_send_after_override_clear_returns_only_sent_entities():
 # The sequence historically lived in the button's async_press; it moved to
 # AdaptiveDataUpdateCoordinator.async_reset_manual_overrides (issue #790) so
 # the cover-group bulk clear shares it. Tests exercise the method unbound,
-# same pattern as the _async_send_after_override_clear tests above.
+# same pattern as the _async_force_send_pipeline_position tests above.
 # ---------------------------------------------------------------------------
 
 
@@ -273,7 +273,7 @@ async def test_reset_skips_send_when_outside_time_window():
     coordinator.config_entry.options = {}
     coordinator.async_refresh = AsyncMock()
     # The shared send path handles the gate; the reset must delegate to it
-    coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
+    coordinator._async_force_send_pipeline_position = AsyncMock(return_value=set())
 
     await _reset_via_coordinator(coordinator, [entity_id])
 
@@ -296,7 +296,7 @@ async def test_reset_skips_send_when_auto_control_off():
     coordinator.state = 0
     coordinator.config_entry.options = {}
     coordinator.async_refresh = AsyncMock()
-    coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
+    coordinator._async_force_send_pipeline_position = AsyncMock(return_value=set())
 
     await _reset_via_coordinator(coordinator, [entity_id])
 
@@ -307,7 +307,7 @@ async def test_reset_skips_send_when_auto_control_off():
 
 @pytest.mark.asyncio
 async def test_reset_delegates_to_shared_method_with_correct_args():
-    """The reset must call _async_send_after_override_clear with entities and trigger kwargs."""
+    """The reset must call _async_force_send_pipeline_position with entities and trigger kwargs."""
     entity_id = "cover.kitchen"
     options = {"some_opt": True}
 
@@ -317,13 +317,15 @@ async def test_reset_delegates_to_shared_method_with_correct_args():
     coordinator.state = 55
     coordinator.config_entry.options = options
     coordinator.async_refresh = AsyncMock()
-    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
+    coordinator._async_force_send_pipeline_position = AsyncMock(
+        return_value={entity_id}
+    )
 
     reset = await _reset_via_coordinator(coordinator, [entity_id])
 
     assert reset == [entity_id]
-    coordinator._async_send_after_override_clear.assert_called_once()
-    call = coordinator._async_send_after_override_clear.call_args
+    coordinator._async_force_send_pipeline_position.assert_called_once()
+    call = coordinator._async_force_send_pipeline_position.call_args
     assert call[0][0] == 55  # state
     assert call[0][1] == options  # options
     assert call[1].get("entities") == [entity_id]
@@ -343,7 +345,7 @@ async def test_reset_clears_wait_for_target_for_unsent_entities():
     coordinator.config_entry.options = {}
     coordinator.async_refresh = AsyncMock()
     # Simulate: shared method sent to entity_a but not entity_b
-    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_a})
+    coordinator._async_force_send_pipeline_position = AsyncMock(return_value={entity_a})
 
     await _reset_via_coordinator(coordinator, [entity_a, entity_b])
 
@@ -366,14 +368,16 @@ async def test_reset_happy_path_inside_window():
     coordinator.state = 42
     coordinator.config_entry.options = {}
     coordinator.async_refresh = AsyncMock()
-    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
+    coordinator._async_force_send_pipeline_position = AsyncMock(
+        return_value={entity_id}
+    )
 
     reset = await _reset_via_coordinator(coordinator, [entity_id])
 
     assert reset == [entity_id]
     coordinator.manager.reset.assert_called_once_with(entity_id)
     coordinator.async_refresh.assert_called_once()
-    coordinator._async_send_after_override_clear.assert_called_once()
+    coordinator._async_force_send_pipeline_position.assert_called_once()
     # entity was sent — reset must NOT clear waiting (apply_position set it)
     set_waiting_calls = coordinator._cmd_svc.set_waiting.call_args_list
     cleared = [call for call in set_waiting_calls if call.args == (entity_id, False)]

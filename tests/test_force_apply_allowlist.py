@@ -34,7 +34,7 @@ or with auto_control=OFF".  Only genuine safety handlers (ForceOverride,
 WeatherOverride) should set this True.
 
 Transitional paths that need to bypass gates for a one-shot send (e.g.
-``_async_send_after_override_clear``) use ``force=True, is_safety=False`` (the
+``_async_force_send_pipeline_position``) use ``force=True, is_safety=False`` (the
 default) — they get through the gates but do not persist as safety targets.
 This decoupling was introduced in the fix for issue #223.
 
@@ -44,7 +44,7 @@ How to respond when this test fails
 2. Decide: does this path bypass ``automatic_control`` intentionally?
    - **Non-bypass (gated):** Add an ``automatic_control`` early-return guard
      *before* the ``_build_position_context`` call (see
-     ``_async_send_after_override_clear`` for the pattern).
+     ``_async_force_send_pipeline_position`` for the pattern).
    - **Intentional bypass:** Decide whether it is a safety target (ForceOverride,
      Weather) or a transitional one-shot (override clear, force_released).
      Transitional paths use the default ``is_safety=False``.
@@ -70,8 +70,8 @@ import pytest
 ALLOWED_LITERAL_FORCE_TRUE_SITES: frozenset[str] = frozenset(
     {
         # Manual-override expiry path. Gated by automatic_control before the call.
-        # See coordinator.py::_async_send_after_override_clear, line ~1140.
-        "_async_send_after_override_clear",
+        # See coordinator.py::_async_force_send_pipeline_position, line ~1140.
+        "_async_force_send_pipeline_position",
         # _on_window_closed removed: it now uses force=False so the end-time
         # target is not safety-tagged.  See issue #215/#216 fix.
         # User-initiated single entry point (set_position service + opt-in

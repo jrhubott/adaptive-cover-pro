@@ -1190,6 +1190,9 @@
       "my_position": {
         "name": "Verwaltete My-Position"
       },
+      "apply_calculated_position": {
+        "name": "Berechnete Position anwenden"
+      },
       "group_scene_all_open": {
         "name": "Szene: Alle offen"
       },

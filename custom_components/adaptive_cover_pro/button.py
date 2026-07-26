@@ -53,6 +53,11 @@ async def async_setup_entry(
                     config_entry.entry_id, hass, config_entry, coordinator
                 )
             )
+        buttons.append(
+            AdaptiveCoverApplyCalculatedPositionButton(
+                config_entry.entry_id, hass, config_entry, coordinator
+            )
+        )
 
     async_add_entities(buttons)
 
@@ -123,3 +128,34 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
                 force=False,
                 use_my_position=True,
             )
+
+
+class AdaptiveCoverApplyCalculatedPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
+    """Button that force-applies the calculated position (issue #1045).
+
+    Recomputes the pipeline position and dispatches it past the
+    ``delta_position`` / ``delta_time`` gates.  The full guard policy lives on
+    the coordinator (``async_force_apply_calculated_position``) so this stays a
+    one-liner and no cover-type knowledge leaks into the button platform.
+    """
+
+    _attr_translation_key = "apply_calculated_position"
+
+    def __init__(
+        self,
+        entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(entry_id, hass, config_entry, coordinator)
+        self._attr_unique_id = f"{entry_id}_apply_calculated_position"
+
+    async def async_press(self) -> None:
+        """Recompute and force-send the calculated position to every cover.
+
+        No entity list is passed: the coordinator resolves ``self.entities``
+        live, so covers added after this entity was constructed are included.
+        """
+        await self.coordinator.async_force_apply_calculated_position()

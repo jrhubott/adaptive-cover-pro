@@ -111,6 +111,9 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     coord.automatic_control = False
     coord.entities = [MagicMock()]
     coord._group_intents = {}
+    # object.__new__ skips __init__, which seeds this to None. The hold-aware
+    # dispatch seam reads it, so a bare mock coordinator must carry it too.
+    coord._pipeline_result = None
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
@@ -214,7 +217,26 @@ async def _trigger_manual_override_expiry(coord):
     coord._time_mgr = MagicMock()
     coord._time_mgr.is_active = True  # inside time window
     coord._check_sun_validity_transition = MagicMock(return_value=False)
-    await coord._async_send_after_override_clear(50, {})
+    await coord._async_force_send_pipeline_position(50, {})
+
+
+async def _trigger_force_apply_calculated_position(coord):
+    """Trigger: the Apply Calculated Position button is pressed (issue #1045).
+
+    An explicit press is a user command, so it bypasses the auto_control gate
+    via ``bypass_auto_control=True`` — never ``is_safety=True``, which would
+    tag the target and have reconciliation resend it outside the window
+    (#215/#216).
+    """
+    from unittest.mock import patch as _patch  # noqa: PLC0415
+
+    coord.async_refresh = AsyncMock()
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {}
+    coord._time_mgr = MagicMock()
+    coord._check_sun_validity_transition = MagicMock(return_value=False)
+    with _patch.object(AdaptiveDataUpdateCoordinator, "state", new_callable=lambda: 50):
+        await coord.async_force_apply_calculated_position()
 
 
 async def _trigger_state_change_safety_custom_position(coord):
@@ -538,6 +560,18 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         setup=lambda _: None,
         trigger=_trigger_async_apply_user_position,
     ),
+    MatrixCase(
+        # Issue #1045: the Apply Calculated Position button. An explicit press
+        # is a user command, so it rides bypass_auto_control=True through the
+        # auto_control gate with force=True for the delta gates — but the
+        # target is NOT safety-tagged, so reconciliation will not resend it
+        # outside the time window (#215/#216).
+        id="force_apply_calculated_position",
+        is_safety_bypass=True,
+        is_safety_target=False,
+        setup=lambda _: None,
+        trigger=_trigger_force_apply_calculated_position,
+    ),
 ]
 
 
@@ -589,7 +623,7 @@ async def test_auto_control_gate(case: MatrixCase):
         assert not forced, (
             f"[{case.id}] Non-bypass path called apply_position(context.force=True) "
             f"with automatic_control=False — add an automatic_control gate before the "
-            f"apply_position call (see _async_send_after_override_clear for the pattern). "
+            f"apply_position call (see _async_force_send_pipeline_position for the pattern). "
             f"Offending calls: {forced}"
         )
 

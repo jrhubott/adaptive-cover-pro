@@ -35,7 +35,7 @@ def _make_coordinator(
     automatic_control: bool = True,
     clock_window_open: bool | None = None,
 ):
-    """Build a minimal mock coordinator for testing _async_send_after_override_clear.
+    """Build a minimal mock coordinator for testing _async_force_send_pipeline_position.
 
     ``clock_window_open`` defaults to mirror ``check_adaptive_time`` because every
     scenario in this file models "outside the window" as a genuinely closed clock
@@ -63,7 +63,7 @@ def _make_coordinator(
 
 
 # ---------------------------------------------------------------------------
-# _async_send_after_override_clear — time-window guard
+# _async_force_send_pipeline_position — time-window guard
 # ---------------------------------------------------------------------------
 
 
@@ -82,7 +82,7 @@ async def test_override_clear_skips_send_outside_time_window():
 
     coordinator = _make_coordinator(check_adaptive_time=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -103,7 +103,7 @@ async def test_override_clear_sends_position_inside_time_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=50, options={}
     )
 
@@ -136,7 +136,7 @@ async def test_override_clear_sends_when_gate_dark_but_clock_open():
         automatic_control=True,
     )
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -158,7 +158,7 @@ async def test_override_clear_logs_debug_when_outside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -184,7 +184,7 @@ async def test_override_clear_uses_force_true_inside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=75, options={"test_option": True}
     )
 
@@ -194,11 +194,14 @@ async def test_override_clear_uses_force_true_inside_window():
         "cover.test_blind",
         {"test_option": True},
         force=True,
+        # Default for this caller — the auto-control bypass is opt-in and only
+        # the Apply Calculated Position button (#1045) requests it.
+        bypass_auto_control=False,
         sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
     )
     ctx = coordinator._build_position_context.call_args
     assert not ctx.kwargs.get("is_safety", False), (
-        "_async_send_after_override_clear must NOT pass is_safety=True — "
+        "_async_force_send_pipeline_position must NOT pass is_safety=True — "
         "override-clear targets are NOT safety targets and must not persist "
         "across window boundaries (fix for issue #223)"
     )
@@ -217,7 +220,7 @@ async def test_override_clear_outside_window_multiple_covers():
     coordinator = _make_coordinator(check_adaptive_time=False)
     coordinator.entities = ["cover.blind_1", "cover.blind_2", "cover.blind_3"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -239,7 +242,7 @@ async def test_override_clear_inside_window_multiple_covers():
     coordinator = _make_coordinator(check_adaptive_time=True)
     coordinator.entities = ["cover.blind_1", "cover.blind_2"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=50, options={}
     )
 
@@ -253,7 +256,7 @@ async def test_override_clear_inside_window_multiple_covers():
 
 
 # ---------------------------------------------------------------------------
-# _async_send_after_override_clear — automatic-control guard (issue #139)
+# _async_force_send_pipeline_position — automatic-control guard (issue #139)
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +275,7 @@ async def test_override_clear_skips_send_when_auto_control_off():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -289,7 +292,7 @@ async def test_override_clear_logs_debug_when_auto_control_off():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -311,7 +314,7 @@ async def test_override_clear_sends_when_auto_control_on_inside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=True)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=40, options={}
     )
 
@@ -333,7 +336,7 @@ async def test_override_clear_auto_control_off_multiple_covers():
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
     coordinator.entities = ["cover.blind_a", "cover.blind_b", "cover.blind_c"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -355,7 +358,7 @@ async def test_override_clear_outside_window_takes_precedence_over_auto_control(
 
     coordinator = _make_coordinator(check_adaptive_time=False, automatic_control=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -660,7 +663,7 @@ class TestIssue215EuropeParisSunsetConfig:
         coordinator = _make_coordinator(check_adaptive_time=False)
 
         # state=0 simulates the pipeline's correct answer (sunset_pos)
-        await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
             coordinator, state=0, options={}
         )
 
@@ -1003,7 +1006,7 @@ class TestIssue215StaleSafetyTarget:
 class TestIssue223OverrideClearSafetyTag:
     """Regression tests for issue #223.
 
-    Root cause: _async_send_after_override_clear called apply_position with
+    Root cause: _async_force_send_pipeline_position called apply_position with
     force=True (to bypass delta gates), but force=True was conflated with
     is_safety=True, adding the entity to _safety_targets.  When the window
     later closed, clear_non_safety_targets() preserved the entity and
@@ -1011,7 +1014,7 @@ class TestIssue223OverrideClearSafetyTag:
 
     Fix: decouple force (bypass gates) from is_safety (safety target
     classification) by adding an explicit is_safety field to PositionContext.
-    _async_send_after_override_clear still uses force=True but is_safety
+    _async_force_send_pipeline_position still uses force=True but is_safety
     defaults to False, so the target is cleaned up normally when the window
     closes.
     """
