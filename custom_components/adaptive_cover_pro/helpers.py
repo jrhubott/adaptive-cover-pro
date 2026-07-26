@@ -2,8 +2,10 @@
 
 import datetime as dt
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, timedelta
+from functools import partial
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -18,6 +20,10 @@ from .const import (
     CONF_MOTION_SENSORS,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
 )
 from .templates import is_template_string
 
@@ -409,6 +415,205 @@ def _local_naive_to_utc_naive(local_naive: dt.datetime) -> dt.datetime:
     return dt_util.as_utc(aware_local).replace(tzinfo=None)
 
 
+def _resolve_boundary(
+    local_naive: dt.datetime | None,
+    astral: Callable[[], dt.datetime],
+    offset_minutes: int,
+) -> dt.datetime:
+    """Resolve ONE sunset/sunrise occurrence to a naive-UTC instant.
+
+    The integration's boundary rule in one place: a configured override entity
+    (issues #411/#415) fully replaces astral, then the configured minute offset
+    applies on top either way.
+    """
+    base = (
+        _local_naive_to_utc_naive(local_naive)
+        if local_naive is not None
+        else astral().replace(tzinfo=None)
+    )
+    return base + timedelta(minutes=offset_minutes)
+
+
+@dataclass(frozen=True, slots=True)
+class SunBoundaries:
+    """The integration's resolved sunset/sunrise instants, in naive UTC.
+
+    ``sunset`` / ``sunrise`` are today's occurrences with their configured
+    minute offsets already applied, so callers compare against them directly.
+
+    ``next_sunset`` / ``next_sunrise`` are the following day's occurrences —
+    the roll-forward candidates a deadline anchored after today's event needs
+    (issue #1044). Their *astral* form resolves on first read: the day/night
+    position boundary (:func:`compute_effective_default`) never asks for
+    tomorrow, and it runs once per forecast sample, so eagerly paying two extra
+    astral walks per call would be pure waste in the hot path.
+    """
+
+    sunset: dt.datetime
+    sunrise: dt.datetime
+    _next_sunset: Callable[[], dt.datetime]
+    _next_sunrise: Callable[[], dt.datetime]
+
+    @property
+    def next_sunset(self) -> dt.datetime:
+        """Tomorrow's sunset boundary (naive UTC, offset applied)."""
+        return self._next_sunset()
+
+    @property
+    def next_sunrise(self) -> dt.datetime:
+        """Tomorrow's sunrise boundary (naive UTC, offset applied)."""
+        return self._next_sunrise()
+
+
+def _next_boundary_resolver(
+    local_naive: dt.datetime | None,
+    astral_next: Callable[[], dt.datetime],
+    offset_minutes: int,
+) -> Callable[[], dt.datetime]:
+    """Return a zero-arg resolver for tomorrow's occurrence of one boundary.
+
+    An entity-derived boundary is rolled and resolved immediately: rolling
+    happens in *local* wall-clock space (``+1 day``) with the UTC conversion
+    applied afterwards, so a DST transition between the two days shortens or
+    lengthens the real gap correctly instead of drifting an hour. Resolving it
+    up front is free — it is pure timezone arithmetic — and keeps every field
+    of a :class:`SunBoundaries` consistent with the moment it was built.
+
+    Only the astral branch is deferred; that walk is the expensive part.
+    """
+    if local_naive is not None:
+        resolved = _resolve_boundary(
+            local_naive + timedelta(days=1), astral_next, offset_minutes
+        )
+        return lambda: resolved
+    return partial(_resolve_boundary, None, astral_next, offset_minutes)
+
+
+def resolve_sun_boundaries(
+    sun_data: "SunData",
+    *,
+    sunset_time: dt.datetime | None = None,
+    sunrise_time: dt.datetime | None = None,
+    sunset_off: int = 0,
+    sunrise_off: int = 0,
+) -> SunBoundaries:
+    """Return the integration's definition of sunset/sunrise as naive-UTC instants.
+
+    Single source of truth for what "sunset" and "sunrise" *mean* here:
+    configured override entities win over astral, then the configured minute
+    offsets are added. ``compute_effective_default`` (the day/night position
+    boundary) and the manual-override sun deadline resolver both delegate here
+    so the two can never drift apart.
+
+    Args:
+        sun_data: ``SunData`` providing the astral fallbacks.
+        sunset_time: Optional naive-local sunset override (entity-derived).
+        sunrise_time: Optional naive-local sunrise override (entity-derived).
+        sunset_off: Minutes added to the sunset boundary.
+        sunrise_off: Minutes added to the sunrise boundary.
+
+    """
+    return SunBoundaries(
+        sunset=_resolve_boundary(sunset_time, sun_data.sunset, sunset_off),
+        sunrise=_resolve_boundary(sunrise_time, sun_data.sunrise, sunrise_off),
+        _next_sunset=_next_boundary_resolver(
+            sunset_time, sun_data.next_sunset, sunset_off
+        ),
+        _next_sunrise=_next_boundary_resolver(
+            sunrise_time, sun_data.next_sunrise, sunrise_off
+        ),
+    )
+
+
+def _sun_deadline_candidates(
+    mode: str, boundaries: SunBoundaries
+) -> tuple[dt.datetime, ...]:
+    """Return the boundary instants a sun-anchored mode may expire on.
+
+    An empty tuple means the mode is not sun-anchored (``fixed``,
+    ``until_window_end``, or an unrecognised value), so the caller resolves it
+    another way or falls back to the numeric duration.
+    """
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET:
+        return (boundaries.sunset, boundaries.next_sunset)
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE:
+        return (boundaries.sunrise, boundaries.next_sunrise)
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT:
+        return (
+            boundaries.sunset,
+            boundaries.next_sunset,
+            boundaries.sunrise,
+            boundaries.next_sunrise,
+        )
+    return ()
+
+
+# The operating window's end is a local wall-clock time normalized onto today
+# (or tomorrow, for a midnight end), so at most two rolls are ever needed to
+# clear an anchor. Three bounds the loop with room to spare and guarantees it
+# terminates whatever a caller passes in.
+_MAX_WINDOW_END_ROLL_DAYS = 3
+
+
+def _next_window_end_after(
+    anchor: dt.datetime, window_end_local_naive: dt.datetime | None
+) -> dt.datetime | None:
+    """Return the first occurrence of the window end strictly after *anchor*.
+
+    Rolls in *local* wall-clock space so a DST transition between the anchor
+    day and the deadline day changes the real elapsed hours correctly. Returns
+    ``None`` when no window end is configured at all.
+    """
+    if window_end_local_naive is None:
+        return None
+    local = window_end_local_naive
+    for _ in range(_MAX_WINDOW_END_ROLL_DAYS):
+        candidate = _local_naive_to_utc_naive(local)
+        if candidate > anchor:
+            return candidate
+        local += timedelta(days=1)
+    return None
+
+
+def resolve_override_deadline(
+    mode: str,
+    anchor: dt.datetime,
+    *,
+    boundaries: SunBoundaries | None = None,
+    window_end_local_naive: dt.datetime | None = None,
+) -> dt.datetime | None:
+    """Resolve a manual-override deadline for *mode*, anchored on the override start.
+
+    The deadline is the **first occurrence of the mode's event strictly after
+    the anchor**. Strictly, because an anchor landing exactly on the boundary
+    would otherwise produce a zero-length hold that expires on the very cycle
+    that engaged it.
+
+    The anchor is the moment the user touched the cover — never "now". This
+    runs on every coordinator cycle, so anchoring on now would make the
+    deadline recede forever and the override would never expire.
+
+    ``None`` means "this mode has no resolvable deadline here" — ``fixed``, an
+    unrecognised mode, a sun mode with no ``SunData`` yet (before the first
+    coordinator cycle), or ``until_window_end`` with no window configured. Every
+    such case falls back to the numeric ``manual_override_duration``.
+
+    Args:
+        mode: One of ``MANUAL_OVERRIDE_DURATION_MODES``.
+        anchor: The override start, as a naive-UTC datetime.
+        boundaries: Resolved sun boundaries, or ``None`` when unavailable.
+        window_end_local_naive: The operating window's resolved end as a
+            naive-local wall-clock datetime, or ``None`` when unconfigured.
+
+    """
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END:
+        return _next_window_end_after(anchor, window_end_local_naive)
+    if boundaries is None:
+        return None
+    upcoming = [c for c in _sun_deadline_candidates(mode, boundaries) if c > anchor]
+    return min(upcoming) if upcoming else None
+
+
 def compute_effective_default(
     h_def: int,
     sunset_pos: int | None,
@@ -512,15 +717,12 @@ def compute_effective_default(
         effective = int(sunset_pos) if is_sunset_active else int(h_def)
         return effective, is_sunset_active
 
-    sunset = (
-        _local_naive_to_utc_naive(sunset_time)
-        if sunset_time is not None
-        else sun_data.sunset().replace(tzinfo=None)
-    )
-    sunrise = (
-        _local_naive_to_utc_naive(sunrise_time)
-        if sunrise_time is not None
-        else sun_data.sunrise().replace(tzinfo=None)
+    boundaries = resolve_sun_boundaries(
+        sun_data,
+        sunset_time=sunset_time,
+        sunrise_time=sunrise_time,
+        sunset_off=sunset_off,
+        sunrise_off=sunrise_off,
     )
     now_naive = (
         _eval_time_to_utc_naive(eval_time)
@@ -528,8 +730,8 @@ def compute_effective_default(
         else dt.datetime.now(UTC).replace(tzinfo=None)
     )
 
-    after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))
-    before_sunrise = now_naive < (sunrise + timedelta(minutes=sunrise_off))
+    after_sunset = now_naive > boundaries.sunset
+    before_sunrise = now_naive < boundaries.sunrise
 
     # End-of-window phase 1 (issue #625): once the operating window is
     # clock-closed, the end-of-window position holds from window-end UNTIL astral

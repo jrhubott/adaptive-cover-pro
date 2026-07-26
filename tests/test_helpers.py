@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.helpers import (
     get_safe_state,
     get_timedelta_str,
     motion_entities,
+    resolve_sun_boundaries,
     should_use_tilt,
 )
 from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
@@ -821,3 +822,100 @@ def test_is_entity_active_unknown_domain(mock_hass):
 
     mock_hass.states.get.return_value = _make_state("some_state")
     assert is_entity_active(mock_hass, "light.living_room") is True
+
+
+# ---------------------------------------------------------------------------
+# resolve_sun_boundaries — the shared sunset/sunrise boundary rule (#1044)
+# ---------------------------------------------------------------------------
+
+
+def _boundary_sun_data() -> MagicMock:
+    """SunData double returning aware-UTC astral instants for all four events."""
+    sun_data = MagicMock()
+    sun_data.sunset.return_value = dt.datetime(2026, 7, 2, 19, 30, tzinfo=dt.UTC)
+    sun_data.sunrise.return_value = dt.datetime(2026, 7, 2, 4, 15, tzinfo=dt.UTC)
+    sun_data.next_sunset.return_value = dt.datetime(2026, 7, 3, 19, 29, tzinfo=dt.UTC)
+    sun_data.next_sunrise.return_value = dt.datetime(2026, 7, 3, 4, 16, tzinfo=dt.UTC)
+    return sun_data
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_uses_astral_when_no_entities():
+    """With no override entities the four boundaries come straight from astral."""
+    sun_data = _boundary_sun_data()
+
+    b = resolve_sun_boundaries(
+        sun_data, sunset_time=None, sunrise_time=None, sunset_off=0, sunrise_off=0
+    )
+
+    assert b.sunset == dt.datetime(2026, 7, 2, 19, 30)
+    assert b.sunrise == dt.datetime(2026, 7, 2, 4, 15)
+    assert b.next_sunset == dt.datetime(2026, 7, 3, 19, 29)
+    assert b.next_sunrise == dt.datetime(2026, 7, 3, 4, 16)
+    # Naive-UTC is the comparison space every caller uses.
+    assert all(
+        v.tzinfo is None for v in (b.sunset, b.sunrise, b.next_sunset, b.next_sunrise)
+    )
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_prefers_entity_times_over_astral():
+    """Configured sunset/sunrise entities (#411/#415) win over astral entirely."""
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    sun_data = _boundary_sun_data()
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
+        b = resolve_sun_boundaries(
+            sun_data,
+            sunset_time=dt.datetime(2026, 7, 2, 20, 0),
+            sunrise_time=dt.datetime(2026, 7, 2, 6, 0),
+            sunset_off=0,
+            sunrise_off=0,
+        )
+
+    # 20:00 EDT (UTC-4) → 00:00 UTC the next day; 06:00 EDT → 10:00 UTC.
+    assert b.sunset == dt.datetime(2026, 7, 3, 0, 0)
+    assert b.sunrise == dt.datetime(2026, 7, 2, 10, 0)
+    sun_data.sunset.assert_not_called()
+    sun_data.sunrise.assert_not_called()
+    sun_data.next_sunset.assert_not_called()
+    sun_data.next_sunrise.assert_not_called()
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_applies_offsets():
+    """The configured minute offsets are baked into every returned boundary."""
+    sun_data = _boundary_sun_data()
+
+    b = resolve_sun_boundaries(sun_data, sunset_off=-30, sunrise_off=45)
+
+    assert b.sunset == dt.datetime(2026, 7, 2, 19, 0)
+    assert b.next_sunset == dt.datetime(2026, 7, 3, 18, 59)
+    assert b.sunrise == dt.datetime(2026, 7, 2, 5, 0)
+    assert b.next_sunrise == dt.datetime(2026, 7, 3, 5, 1)
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_rolls_entity_times_forward_in_local_space_across_dst():
+    """Entity-derived "next" boundaries roll +1 local day, not +24 UTC hours.
+
+    US DST starts 2026-03-08 02:00 local, so 21:00 on 03-07 (EST, UTC-5) and
+    21:00 on 03-08 (EDT, UTC-4) are only 23 hours apart. A naive +24 h in UTC
+    would put the rolled boundary an hour late.
+    """
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    sun_data = _boundary_sun_data()
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
+        b = resolve_sun_boundaries(
+            sun_data,
+            sunset_time=dt.datetime(2026, 3, 7, 21, 0),
+            sunrise_time=dt.datetime(2026, 3, 7, 6, 0),
+        )
+
+    assert b.sunset == dt.datetime(2026, 3, 8, 2, 0)
+    assert b.next_sunset == dt.datetime(2026, 3, 9, 1, 0)
+    assert b.next_sunset - b.sunset == dt.timedelta(hours=23)
+    assert b.sunrise == dt.datetime(2026, 3, 7, 11, 0)
+    assert b.next_sunrise == dt.datetime(2026, 3, 8, 10, 0)
+    assert b.next_sunrise - b.sunrise == dt.timedelta(hours=23)

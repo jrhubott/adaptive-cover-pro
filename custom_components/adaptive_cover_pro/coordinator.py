@@ -44,6 +44,8 @@ from .helpers import (
     custom_position_slot_sensors,
     get_datetime_from_str,
     get_safe_state,
+    resolve_override_deadline,
+    resolve_sun_boundaries,
     state_attr,
 )
 from .config_context_adapter import ConfigContextAdapter
@@ -79,6 +81,7 @@ from .const import (
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_OVERRIDE_STRATEGY,
     CONF_MANUAL_THRESHOLD,
@@ -96,6 +99,7 @@ from .const import (
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MANUAL_OVERRIDE_STRATEGY,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     DIAG_CACHE_KEY,
@@ -108,6 +112,7 @@ from .const import (
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
     LOGGER,
+    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
 )
@@ -557,6 +562,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Issue #888: drop the display-only assumed position when the override
         # resets or a real numeric position read arrives.
         self.manager.set_assumed_invalidator(self._cmd_svc.clear_assumed_position)
+        # Issue #1044: supply the duration mode's deadline. Wired here rather
+        # than passed to the constructor because the resolver reads the time
+        # window, which is built further down.
+        self.manager.set_deadline_resolver(self._resolve_override_deadline)
 
         # Late-bind cover-type policy dependencies (e.g. VenetianPolicy
         # constructs its DualAxisSequencer here once cmd_svc + grace_mgr are
@@ -3450,28 +3459,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             for eid in cover_entities
         }
 
-        # Per-entity manual override live state
-        _now = dt.datetime.now(dt.UTC)
-        _reset_secs = self.manager.reset_duration.total_seconds()
-        _mo_entries = {}
-        for eid in self.manager.covers:
-            active = self.manager.manual_control.get(eid, False)
-            started_at = self.manager.manual_control_time.get(eid)
-            if started_at is not None:
-                if started_at.tzinfo is None:
-                    started_at = started_at.replace(tzinfo=dt.UTC)
-                elapsed = (_now - started_at).total_seconds()
-                remaining = max(0, _reset_secs - elapsed)
-                _mo_entries[eid] = {
-                    "active": active,
-                    "started_at": started_at.isoformat(),
-                    "remaining_seconds": int(remaining),
-                }
-        _manual_override_state = {
-            "reset_duration_seconds": int(_reset_secs),
-            "tracked_covers": sorted(self.manager.covers),
-            "entries": _mo_entries,
-        }
+        _manual_override_state = self._manual_override_diagnostics()
 
         # Coordinator update health
         _last_success_time = self._last_update_success_time
@@ -4006,6 +3994,105 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             on_window_open=_on_window_open,
         )
         await self._check_sunset_window_transition()
+
+    def _manual_override_diagnostics(self) -> dict:
+        """Build the ``manual_override_state`` diagnostics block.
+
+        The per-entity countdown reads the manager's ``expiry_for`` authority,
+        so it reflects a pinned service deadline and the configured duration
+        mode alike instead of assuming ``started_at + reset_duration``.
+        ``expires_at`` and ``duration_mode`` are additive: every pre-existing
+        key keeps its meaning.
+        """
+        now = dt.datetime.now(dt.UTC)
+        reset_secs = self.manager.reset_duration.total_seconds()
+        entries = {}
+        for eid in self.manager.covers:
+            started_at = self.manager.manual_control_time.get(eid)
+            expires_at = self.manager.expiry_for(eid)
+            if started_at is None or expires_at is None:
+                continue
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=dt.UTC)
+            entries[eid] = {
+                "active": self.manager.manual_control.get(eid, False),
+                "started_at": started_at.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "remaining_seconds": int(max(0, (expires_at - now).total_seconds())),
+            }
+        return {
+            "reset_duration_seconds": int(reset_secs),
+            "duration_mode": (
+                self.config_entry.options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+                or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+            ),
+            "tracked_covers": sorted(self.manager.covers),
+            "entries": entries,
+        }
+
+    def _resolve_override_deadline(self, anchor: dt.datetime) -> dt.datetime | None:
+        """Resolve a manual override's end time for the configured mode (issue #1044).
+
+        The HA-side half of the rule, injected into ``AdaptiveCoverManager`` via
+        ``set_deadline_resolver`` so the manager itself stays HA-free: it reads
+        the duration mode, the sunset/sunrise override entities and offsets, and
+        the operating window's resolved end, then hands the arithmetic to the
+        pure :func:`.helpers.resolve_override_deadline`.
+
+        ``fixed`` — the default, and what an install that never touched the
+        option gets — short-circuits before any state read, so the common case
+        pays nothing per cycle.
+
+        Args:
+            anchor: The override start (when the user touched the cover) as a
+                tz-aware UTC datetime. Never "now": this runs every cycle, so a
+                now-anchored deadline would recede forever.
+
+        Returns:
+            The resolved absolute end as a tz-aware UTC datetime, or ``None``
+            when the mode has no resolvable anchor — the caller then falls back
+            to the numeric ``manual_override_duration``.
+
+        """
+        options = self.config_entry.options
+        mode = (
+            options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+            or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+        )
+        if mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED:
+            return None
+
+        boundaries = None
+        cover_data = self._cover_data
+        if cover_data is not None:
+            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+            boundaries = resolve_sun_boundaries(
+                cover_data.sun_data,
+                sunset_time=_read_time_entity(
+                    self.hass, options.get(CONF_SUNSET_TIME_ENTITY)
+                ),
+                sunrise_time=_read_time_entity(
+                    self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
+                ),
+                sunset_off=sunset_off,
+                sunrise_off=int(options.get(CONF_SUNRISE_OFFSET, sunset_off)),
+            )
+
+        deadline = resolve_override_deadline(
+            mode,
+            dt_util.as_utc(anchor).replace(tzinfo=None),
+            boundaries=boundaries,
+            window_end_local_naive=self._time_mgr.end_time,
+        )
+        if deadline is None:
+            self.logger.debug(
+                "Manual override duration mode %s could not be resolved "
+                "(sun data available: %s) — falling back to the fixed duration",
+                mode,
+                boundaries is not None,
+            )
+            return None
+        return deadline.replace(tzinfo=dt.UTC)
 
     def _compute_current_effective_default(
         self, options: dict, cover_data=None

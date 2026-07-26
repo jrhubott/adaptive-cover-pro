@@ -197,10 +197,11 @@ engage_manual_override:
     Engages (or extends) manual override on the targeted covers WITHOUT moving
     them — no cover command is sent. Use it to pause automatic control and hold
     the cover where it is. With no end time and no duration, the override lasts
-    the configured manual-override duration starting now. Provide end_time for
-    an absolute end, or duration to extend an active override by that amount
+    the configured manual-override duration mode starting now. Provide end_time
+    for an absolute end, or duration to extend an active override by that amount
     (or engage fresh for that long if none is active). If both are given,
-    end_time wins.
+    end_time wins. Either one pins an absolute end that outranks the configured
+    manual_override_duration_mode.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -425,6 +426,22 @@ set_manual_override:
       description: "How long a manual override lasts before automatic control resumes."
       selector:
         duration:
+    manual_override_duration_mode:
+      name: Override duration mode
+      description: >-
+        What the hold is measured against. "fixed" uses the duration above.
+        The other modes hold until the next sunset, sunrise, sun event, or
+        operating-window end after the moment you moved the cover, and fall
+        back to the duration above when that boundary cannot be resolved.
+      selector:
+        select:
+          translation_key: manual_override_duration_mode
+          options:
+            - fixed
+            - until_sunset
+            - until_sunrise
+            - until_next_sun_event
+            - until_window_end
     manual_override_reset:
       name: Reset override on time window start
       description: "If true, clear any active manual override when the time window starts."

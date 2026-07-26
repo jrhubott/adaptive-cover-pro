@@ -55,6 +55,11 @@
   },
   "manual": {
     "pauses_for": "pausiert für {duration}",
+    "until_sunset": "hält bis zum nächsten Sonnenuntergang",
+    "until_sunrise": "hält bis zum nächsten Sonnenaufgang",
+    "until_next_sun_event": "hält bis zum nächsten Sonnenauf- oder -untergang",
+    "until_window_end": "hält bis zum Ende des Zeitfensters",
+    "until_window_end_no_window": "\u26a0\ufe0f Die manuelle Übersteuerung soll bis zum Ende des Zeitfensters halten, es ist aber keine Endzeit konfiguriert \u2014 stattdessen wird die eingestellte Dauer verwendet",
     "threshold": "Schwellwert {threshold}%",
     "resets_on_move": "setzt bei nächster Bewegung zurück",
     "ignore_intermediate": "ignoriert Zwischenpositionen",

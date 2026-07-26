@@ -52,6 +52,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_ELEVATION,
@@ -3902,3 +3903,94 @@ def test_min_mode_without_position_shows_no_as_minimum():
     assert "(as minimum)" not in line
     assert "at most 50%" in line
     assert "the calculated position" in line
+
+
+# ---------------------------------------------------------------------------
+# Manual-override duration mode (issue #1044)
+# ---------------------------------------------------------------------------
+
+
+def _manual_block(cfg):
+    """Return the manual-override line plus any of its continuation lines."""
+    lines = _build_config_summary(cfg, CoverType.BLIND).splitlines()
+    start = next(i for i, ln in enumerate(lines) if "Manual override" in ln)
+    block = [lines[start]]
+    for ln in lines[start + 1 :]:
+        # A new badged rule block, or the end of the rules section.
+        if ln.startswith("**") or not ln.strip():
+            break
+        block.append(ln)
+    return "\n".join(block)
+
+
+def test_manual_override_summary_renders_fixed_duration_when_mode_absent():
+    """No mode key → the numeric duration renders exactly as it always has."""
+    from custom_components.adaptive_cover_pro.const import (
+        MANUAL_OVERRIDE_DURATION_MODE_FIXED,
+    )
+
+    cfg = {CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3}}
+    absent = _manual_block(cfg)
+    explicit = _manual_block(
+        {**cfg, CONF_MANUAL_OVERRIDE_DURATION_MODE: MANUAL_OVERRIDE_DURATION_MODE_FIXED}
+    )
+
+    assert "pauses for 3 h" in absent
+    assert explicit == absent
+
+
+def test_manual_override_summary_renders_until_sunset_mode():
+    """A sun mode replaces the duration phrase — the duration is only the fallback."""
+    from custom_components.adaptive_cover_pro.const import (
+        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
+    )
+
+    block = _manual_block(
+        {
+            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET
+            ),
+        }
+    )
+
+    assert "sunset" in block
+    assert "pauses for 3 h" not in block
+
+
+def test_manual_override_summary_renders_until_window_end_mode():
+    """``until_window_end`` with a real end time renders the mode, no warning."""
+    from custom_components.adaptive_cover_pro.const import (
+        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    )
+
+    block = _manual_block(
+        {
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+            ),
+            CONF_END_TIME: "22:00:00",
+        }
+    )
+
+    assert "window" in block
+    assert "⚠️" not in block
+
+
+def test_manual_override_summary_warns_when_until_window_end_has_no_configured_end():
+    """A silent no-op config must be surfaced as a ⚠️ line."""
+    from custom_components.adaptive_cover_pro.const import (
+        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    )
+
+    block = _manual_block(
+        {
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+            ),
+            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
+        }
+    )
+
+    assert "⚠️" in block
+    assert "3 h" in block

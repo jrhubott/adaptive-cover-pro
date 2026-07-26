@@ -1252,6 +1252,26 @@ CONF_INTERP_LIST_NEW = "interp_list_new"  # new-format control points
 # How long a manual override stays active before automation resumes.
 CONF_MANUAL_OVERRIDE_DURATION = "manual_override_duration"
 DEFAULT_MANUAL_OVERRIDE_DURATION: dict = {"hours": 2}  # default hold duration
+# What the manual-override hold is measured against (issue #1044): a fixed
+# clock duration, or the next sun / schedule boundary after the moment the user
+# touched the cover. ``fixed`` is byte-for-byte the legacy behaviour, so an
+# absent key needs no config-entry migration. In every non-fixed mode the
+# numeric duration above becomes the FALLBACK used when the mode's anchor
+# cannot be resolved.
+CONF_MANUAL_OVERRIDE_DURATION_MODE = "manual_override_duration_mode"
+MANUAL_OVERRIDE_DURATION_MODE_FIXED = "fixed"
+MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET = "until_sunset"
+MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE = "until_sunrise"
+MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT = "until_next_sun_event"
+MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END = "until_window_end"
+MANUAL_OVERRIDE_DURATION_MODES: tuple[str, ...] = (
+    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+)
+DEFAULT_MANUAL_OVERRIDE_DURATION_MODE = MANUAL_OVERRIDE_DURATION_MODE_FIXED
 # If True, the manual override is reset when end_time is reached.
 CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"  # % delta = manual touch, 0-99

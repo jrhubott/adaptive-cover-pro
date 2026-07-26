@@ -656,3 +656,22 @@ def test_service_field_descriptions_icu_safe(lang_file: Path) -> None:
         f"an unescaped '{{'/'}}' — escape literal braces ICU-style as '{{{{' … '}}}}' "
         f"so the frontend does not raise MALFORMED_ARGUMENT. Offenders: {offending}"
     )
+
+
+@pytest.mark.unit
+def test_manual_override_duration_mode_options_translated_in_en():
+    """All five duration-mode values need a non-empty English selector label (#1044)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_DURATION_MODE,
+        MANUAL_OVERRIDE_DURATION_MODES,
+    )
+
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    options = en["selector"][CONF_MANUAL_OVERRIDE_DURATION_MODE]["options"]
+
+    assert set(options) == set(MANUAL_OVERRIDE_DURATION_MODES)
+    assert all(str(v).strip() for v in options.values())
+
+    step = en["options"]["step"]["manual_override"]
+    assert step["data"][CONF_MANUAL_OVERRIDE_DURATION_MODE].strip()
+    assert step["data_description"][CONF_MANUAL_OVERRIDE_DURATION_MODE].strip()

@@ -122,6 +122,7 @@ from .const import (
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
     CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
     CONF_MANUAL_OVERRIDE_RESET,
@@ -220,11 +221,15 @@ from .const import (
     DEFAULT_GROUP_ENABLE_SENSOR,
     DEFAULT_GROUP_STAGGER_DELAY,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TIMEOUT,
     GLARE_ZONE_FORM_KEYS,
     GLARE_ZONE_SLOT_NUMBERS,
     GLARE_ZONE_SLOTS,
     GROUP_SCENE_PRIORITY,
+    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    MANUAL_OVERRIDE_DURATION_MODES,
     OPT_OUT_ALL_SCENES,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
@@ -806,6 +811,16 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_MANUAL_OVERRIDE_DURATION, default={"hours": 2}
         ): selector.DurationSelector(),
+        vol.Optional(
+            CONF_MANUAL_OVERRIDE_DURATION_MODE,
+            default=DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=list(MANUAL_OVERRIDE_DURATION_MODES),
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key=CONF_MANUAL_OVERRIDE_DURATION_MODE,
+            )
+        ),
         vol.Optional(
             CONF_MANUAL_OVERRIDE_RESET, default=False
         ): selector.BooleanSelector(),
@@ -1493,6 +1508,14 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{detail}"
     ),
     "manual.pauses_for": "pauses for {duration}",
+    "manual.until_sunset": "holds until the next sunset",
+    "manual.until_sunrise": "holds until the next sunrise",
+    "manual.until_next_sun_event": "holds until the next sunrise or sunset",
+    "manual.until_window_end": "holds until the time window ends",
+    "manual.until_window_end_no_window": (
+        "⚠️ Manual override is set to hold until the time window ends, but no "
+        "end time is configured — the configured duration is used instead"
+    ),
     "manual.threshold": "threshold {threshold}%",
     "manual.resets_on_move": "resets on next move",
     "manual.ignore_intermediate": "ignores intermediate positions",
@@ -2254,12 +2277,27 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             ),
         )
 
-    # Manual override (80)
+    # Manual override (80). The duration mode (issue #1044) decides what the
+    # hold is measured against: ``fixed`` shows the numeric duration, every
+    # other mode shows the boundary it runs to — the numeric duration is then
+    # only the unresolvable-anchor fallback, so printing it would mislead.
     mo_parts = []
-    if manual_dur is not None:
-        mo_parts.append(
-            L["manual.pauses_for"].format(duration=_format_duration(manual_dur))
-        )
+    manual_mode = (
+        config.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+        or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+    )
+    manual_window_end_missing = (
+        manual_mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+        and not config.get(CONF_END_TIME)
+        and not config.get(CONF_END_ENTITY)
+    )
+    if manual_mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED or manual_window_end_missing:
+        if manual_dur is not None:
+            mo_parts.append(
+                L["manual.pauses_for"].format(duration=_format_duration(manual_dur))
+            )
+    else:
+        mo_parts.append(L[f"manual.{manual_mode}"])
     threshold = config.get(CONF_MANUAL_THRESHOLD)
     if threshold is not None:
         mo_parts.append(L["manual.threshold"].format(threshold=threshold))
@@ -2289,6 +2327,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         _HID_ORDER_INDEX["manual_override"],
         L["rules.manual"].format(detail=mo_str),
     )
+    if manual_window_end_missing:
+        _sub(L["manual.until_window_end_no_window"])
 
     # Custom positions — each slot at its own configured priority. Each slot is
     # its own sortable block; its warnings are folded in (issue #923) so they
@@ -3297,6 +3337,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "manual_override": frozenset(
         {
             CONF_MANUAL_OVERRIDE_DURATION,
+            CONF_MANUAL_OVERRIDE_DURATION_MODE,
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MANUAL_IGNORE_INTERMEDIATE,
