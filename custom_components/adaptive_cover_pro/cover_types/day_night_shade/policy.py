@@ -596,19 +596,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
         The cached ``_dual_entity_inverse`` flag records whether inversion was
         ACTUALLY applied to the dispatched value this cycle — mirroring
-        ``coordinator.state`` exactly — not merely whether inverse-state is
-        configured. ``state`` returns ``result.position`` RAW (no inverse) on
-        the safety/bypass path, for a floor-clamped winner, and under
-        interpolation; if the middle-rail remap un-inverted a value that was
-        never inverted, it would drive the rail to the wrong physical position
-        (bottom raw 30 → middle physical 0 instead of fully open). Keeping the
-        flag in the dispatched value's OWN space is what preserves the physical
-        no-pass invariant regardless of inverse / bypass / clamp (#993).
+        ``coordinator.state`` exactly. If the middle-rail remap un-inverted a
+        value that was never inverted, it would drive the rail to the wrong
+        physical position (bottom raw 30 → middle physical 0 instead of fully
+        open). Keeping the flag in the dispatched value's OWN space is what
+        preserves the physical no-pass invariant (#993).
+
+        ``state`` now maps EVERY winner through ``_to_cover_frame``, so mirroring
+        it is exactly ``axis_inverted`` — the same predicate the coordinator's
+        own ``position_axis_inverted`` reads, which already folds in
+        interpolation's suppression of inverse-state. The bypass / floor-clamp
+        exclusion this used to carry described a dispatch carve-out that no
+        longer exists (#1036); the broadcast seams still dispatch in a divergent
+        space and still say so explicitly — see ``resolve_entity_target``.
         """
         self._dual_entity_blend = resolved.tilt
-        self._dual_entity_inverse = axis_inverted(self.axes[0], options) and not (
-            resolved.bypass_auto_control or resolved.floor_clamp_applied
-        )
+        self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 
     def resolve_entity_target(
@@ -637,8 +640,8 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         ``_dual_entity_inverse`` (mirroring ``coordinator.state``) and passes
         ``None`` here to reuse it. The broadcast seams dispatch in a divergent
         space — the sunset/end-time loops invert iff inverse-state is CONFIGURED
-        (unconditional of bypass/floor-clamp/interp), the auto-off return loop
-        never inverts — so each passes its own explicit ``True``/``False``.
+        (unconditional of interpolation), the auto-off return loop never
+        inverts — so each passes its own explicit ``True``/``False``.
         Reusing the cached flag there would un-invert with the wrong assumption
         and cross the bottom rail physically (#993).
 

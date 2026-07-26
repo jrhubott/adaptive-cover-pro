@@ -21,7 +21,6 @@ from ..const import (
     ReasonCode,
     SunState,
 )
-from ..managers.manual_override import inverse_state
 from ..reason_i18n import Reason, render
 
 # Sensor state classifications (issue #693, Q3).
@@ -452,17 +451,20 @@ class DiagnosticsBuilder:
     def _logical_position(ctx: DiagnosticContext) -> int:
         """Return the winner's position in the logical frame (issue #1028).
 
-        Mirrors ``coordinator.state``'s short-circuit: a bypass or floor-clamped
-        winner is returned to the cover verbatim, so on an inverted install its
-        position is a cover-frame value and must be flipped to become logical.
-        Every other winner's position is already logical.
+        ``PipelineResult.position`` is contractually logical for every winner —
+        ``coordinator.state`` maps all of them through ``_to_cover_frame`` on
+        the way to the wire — so this is the identity.
+
+        Kept as a named method rather than inlined: it is the single place that
+        states which frame ``linear_position`` publishes, and the guarantee it
+        carries (#1028) is unchanged. Until #1036 the guarantee was delivered by
+        un-flipping bypass / floor-clamped winners, because ``state`` handed
+        those to the cover verbatim; that un-flip was compensating for the
+        carve-out, not for a real frame difference, and went away with it.
         """
         result = ctx.pipeline_result
         if result is None:
             return 0
-        cover_frame = result.bypass_auto_control or result.floor_clamp_applied
-        if cover_frame and ctx.position_axis_inverted:
-            return inverse_state(result.position)
         return result.position
 
     @classmethod
@@ -477,12 +479,9 @@ class DiagnosticsBuilder:
         # interpolation maps it onto the motor curve.
         #
         # It equals the motor value ``coordinator.state`` publishes only when
-        # neither interpolation nor inverse-state is in play. Bypass and
-        # floor-clamped winners short-circuit ``coordinator.state``, so their
-        # position is already in the cover's frame — flip those back so the
-        # field's frame does not depend on which handler won. Under
-        # interpolation such a value passes through in the motor frame; mapping
-        # a motor value back onto the linear scale is #925's scope.
+        # neither interpolation nor inverse-state is in play. Every winner's
+        # position is logical regardless of which handler won (#1036), so the
+        # field's frame never depends on provenance.
         diagnostics["linear_position"] = cls._logical_position(ctx)
 
         if result is not None and result.climate_state is not None:

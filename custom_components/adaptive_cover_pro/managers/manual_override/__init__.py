@@ -17,7 +17,7 @@ from .detector import (
     default_stop_to_my_decision,
     default_user_context_decision,
 )
-from .manager import AdaptiveCoverManager, inverse_state
+from .manager import AdaptiveCoverManager, inverse_state, to_logical
 from .position_delta import PositionDeltaDetector
 from .registry import DEFAULT_DETECTOR, DETECTOR_REGISTRY, get_detector
 from .secondary_axis import (
@@ -48,4 +48,5 @@ __all__ = [
     "get_detector",
     "inverse_state",
     "resolve_dispatched_secondary_expected",
+    "to_logical",
 ]

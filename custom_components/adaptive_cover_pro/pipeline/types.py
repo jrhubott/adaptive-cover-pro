@@ -388,8 +388,9 @@ class PipelineSnapshot:
     # (inverse-state configured and not suppressed by interpolation, per
     # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
     # such as ``current_cover_position`` into ``PipelineResult.position`` must
-    # convert it to the logical frame first, because ``coordinator.state``
-    # inverts every non-bypass winner on the way out (issue #1028).
+    # convert it to the logical frame first (``managers.manual_override
+    # .to_logical``), because ``coordinator.state`` maps every winner through
+    # ``_to_cover_frame`` on the way out — no flag exempts one (#1028 / #1036).
     position_axis_inverted: bool = False
 
     # The CoverTypePolicy chosen at coordinator startup. Handlers should consult
@@ -540,10 +541,16 @@ class PipelineResult:
 
     # When True, the registry's axis-constraint composition pass clamped this
     # winner's position to a user-configured bound — a floor raise (issue #463)
-    # or, since issue #943, a ceiling lower. The coordinator's `state` property
-    # treats the position as already in cover-position space and skips
-    # interpolation / inverse-state remapping (issue #469); that holds for
-    # either bound, since both are values the user typed in cover space.
+    # or, since issue #943, a ceiling lower. Drives the reason/trace labelling
+    # and clears `skip_command` so the clamp still reaches a cover the winner
+    # was merely holding (issues #534 / #809).
+    #
+    # It makes NO claim about the value's frame: `position` stays logical, and
+    # `coordinator.state` interpolates/inverts a clamped winner exactly like any
+    # other (issue #1036 removed the #469 carve-out that skipped both). The name
+    # predates that and is due a rename to `position_constraint_applied` in a
+    # follow-up — it is a rename only, deliberately kept out of a
+    # behaviour-changing PR.
     floor_clamp_applied: bool = False
 
     # Composed tilt bounds that could not be applied during evaluation because

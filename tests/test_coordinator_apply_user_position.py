@@ -777,13 +777,15 @@ async def test_user_position_inverse_with_interpolation_interpolates_only() -> N
 
 
 @pytest.mark.asyncio
-async def test_user_position_floor_clamped_dispatches_verbatim() -> None:
-    """A floor that actually raised the request dispatches verbatim (#469).
+async def test_user_position_floor_clamped_runs_the_frame_transform() -> None:
+    """A floor that raised the request still runs the frame transform (#1036).
 
-    ``coordinator.state`` short-circuits post-processing for a floor-clamped
-    winner because a user-typed floor is already a cover-frame number. The user
-    path must apply the identical carve-out, or the same configured floor would
-    dispatch differently on the two paths — #1027's own defect, in a corner.
+    The requirement is the one #469/#1027 actually needed: the same configured
+    floor must dispatch identically on the user and automatic paths. That now
+    holds because BOTH transform, not because both skip. A user-typed floor is a
+    logical value (0 = closed, 100 = open), so on an inverse install the raised
+    request of 25 reaches the cover as wire 75 — under the old carve-out it
+    dispatched 25, driving a "minimum 25% open" floor to 75% open.
     """
     coord, ctx = _make_coord(
         [_slot(25, is_on=True, min_mode=True, priority=82)],
@@ -793,7 +795,7 @@ async def test_user_position_floor_clamped_dispatches_verbatim() -> None:
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 
     coord._cmd_svc.apply_position.assert_awaited_once_with(
-        "cover.test", 25, "set_position", ctx
+        "cover.test", 75, "set_position", ctx
     )
 
 
@@ -851,20 +853,28 @@ async def test_user_position_routes_through_entity_target_with_explicit_frame(
 
 
 @pytest.mark.asyncio
-async def test_user_position_entity_target_frame_is_untransformed_when_floor_skips() -> (
+async def test_user_position_entity_target_frame_names_both_halves_after_a_floor_raise() -> (
     None
 ):
-    """A floor-skipped dispatch names the untransformed frame, never ``None``."""
+    """A floor-raised dispatch names both halves of its frame, never ``None``.
+
+    The requirement (#1027) is unchanged: the seam must state the frame the
+    value is actually in, and ``inverted`` alone cannot express "interpolated,
+    not inverted". What changed is the frame itself — a floor raise no longer
+    skips the transform (#1036), so with inverse + interpolation configured
+    (interpolation suppresses inversion) the raised 25 is calibrated to 45 and
+    the seam is told ``inverted=False, interpolated=True``.
+    """
     coord, _ctx = _make_coord(
         [_slot(25, is_on=True, min_mode=True, priority=82)],
         default_options={CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
     )
     policy = MagicMock()
-    policy.resolve_entity_target = MagicMock(return_value=25)
+    policy.resolve_entity_target = MagicMock(return_value=45)
     coord._policy = policy
 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 
     policy.resolve_entity_target.assert_called_once_with(
-        "cover.test", 25, inverted=False, interpolated=False
+        "cover.test", 45, inverted=False, interpolated=True
     )

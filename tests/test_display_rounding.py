@@ -105,8 +105,16 @@ class TestCoordinatorStateIntCoercion:
         )
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        pr = SimpleNamespace(position=0, bypass_auto_control=True)
+        pr = SimpleNamespace(
+            position=0, bypass_auto_control=True, floor_clamp_applied=False
+        )
         coord._pipeline_result = pr
+        # A safety winner runs the same frame transform as any other (#1036),
+        # so the fixture needs the same frame inputs as its sibling above.
+        coord._use_interpolation = False
+        coord._inverse_state = False
+        coord._policy = get_policy("cover_blind")
+        coord.config_entry = SimpleNamespace(options={})
 
         result = AdaptiveDataUpdateCoordinator.state.fget(coord)
         assert isinstance(result, int)

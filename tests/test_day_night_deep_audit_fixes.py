@@ -276,28 +276,40 @@ def _cache_dual(
 
 
 class TestDualEntityInverseConsistency:
-    """The middle-rail remap tracks the ACTUAL dispatched space, not config."""
+    """The middle-rail remap tracks the ACTUAL dispatched space (#993).
+
+    Still the requirement; the derivation moved. ``coordinator.state`` maps
+    every winner through ``_to_cover_frame``, so the dispatched space is
+    "inverse configured AND interpolation off" for all of them — a bypass or
+    floor-clamp flag riding the result no longer changes it (#1036).
+    """
 
     def test_floor_clamp_summer_blackout_middle_opens_not_closes(self) -> None:
         # The audit's exact failure: inverse_state=True + a min-position floor
-        # clamp + summer solar (blend 0). coordinator.state returns the raw
-        # floor-clamped 30 (NO inverse applied). The middle rail must open fully
+        # clamp + summer solar (blend 0). The middle rail must open fully
         # (physical 100), NOT be slammed to physical 0.
+        #
+        # Re-derived for #1036: a floor-clamped winner's position is LOGICAL
+        # like every other winner, so coordinator.state dispatches
+        # inverse_state(30) rather than a raw 30. Feed the remap what state
+        # actually sends and assert the invariant in physical terms.
         policy = DayNightShadePolicy()
         # Reproduce the summer-solar blend-0 outcome deterministically via a
         # handler blend of 0 with the floor-clamp flag set + inverse configured.
         _cache_dual(policy, position=30, blend=0, inverse=True, floor_clamp=True)
-        middle = policy.resolve_entity_target(_MIDDLE, 30)
-        assert middle == 100
-        assert middle != 0
+        middle_wire = policy.resolve_entity_target(_MIDDLE, inverse_state(30))
+        assert inverse_state(middle_wire) == 100
+        assert inverse_state(middle_wire) != 0
 
     def test_bypass_slot_carrying_blend_uses_dispatched_space(self) -> None:
-        # A safety/bypass slot returns result.position RAW (no inverse). With
-        # inverse configured but bypassed, the remap must treat 40 as open-space.
+        # A safety/bypass slot's position is logical too (#1036), so the value
+        # that reaches the wire is inverse_state(40) = 60. The remap must
+        # un-invert it, compose in open-space, and re-invert.
         policy = DayNightShadePolicy()
         _cache_dual(policy, position=40, blend=50, inverse=True, bypass=True)
         # open-space: M = 100 - 50*(100-40)/100 = 70.
-        assert policy.resolve_entity_target(_MIDDLE, 40) == 70
+        middle_wire = policy.resolve_entity_target(_MIDDLE, inverse_state(40))
+        assert inverse_state(middle_wire) == 70
 
     @pytest.mark.parametrize("floor_clamp", [False, True])
     @pytest.mark.parametrize("bypass", [False, True])
@@ -315,9 +327,10 @@ class TestDualEntityInverseConsistency:
         blend: int,
     ) -> None:
         # Whatever the dispatched space, the middle rail must never physically
-        # pass below the bottom rail. Inversion is ACTUALLY applied only when
-        # inverse is on AND interpolation is off AND neither bypass nor floor
-        # clamp short-circuited coordinator.state.
+        # pass below the bottom rail. Inversion is ACTUALLY applied when inverse
+        # is on AND interpolation is off — the flags ride the result but no
+        # longer buy an exemption from the frame transform (#1036), so they must
+        # not appear in the derivation of "what space is the wire value in".
         policy = DayNightShadePolicy()
         _cache_dual(
             policy,
@@ -328,7 +341,7 @@ class TestDualEntityInverseConsistency:
             floor_clamp=floor_clamp,
             bypass=bypass,
         )
-        actually_inverted = inverse and not interp and not (floor_clamp or bypass)
+        actually_inverted = inverse and not interp
 
         def phys(v: int) -> int:
             return inverse_state(v) if actually_inverted else v
@@ -348,13 +361,18 @@ class TestBroadcastSeamInverseSpace:
     """
 
     def test_explicit_inverted_overrides_diverging_cached_flag(self) -> None:
-        # Cache the main-pipeline flag as False (floor-clamped inverse cycle),
-        # then dispatch a value the sunset/end-time seam produced in INVERTED
-        # space (wire 100 for logical 0). The seam passes inverted=True; the
-        # middle rail must un-invert 100 → open 0 → wire 0 (physically OPEN),
-        # NOT reuse the cached False.
+        # Cache the main-pipeline flag as False (a non-inverse cycle), then
+        # dispatch a value the sunset/end-time seam produced in INVERTED space
+        # (wire 100 for logical 0). The seam passes inverted=True; the middle
+        # rail must un-invert 100 → open 0 → wire 0 (physically OPEN), NOT
+        # reuse the cached False.
+        #
+        # The divergence used to be produced with a floor-clamped inverse cycle;
+        # #1036 removed that lever (the clamp no longer un-sets the cached
+        # flag), so it is produced from the config instead. The requirement is
+        # unchanged: an explicit seam-supplied ``inverted`` beats the cache.
         policy = DayNightShadePolicy()
-        _cache_dual(policy, position=30, blend=0, inverse=True, floor_clamp=True)
+        _cache_dual(policy, position=30, blend=0, inverse=False)
         assert policy._dual_entity_inverse is False  # cached main-path space
         wire = policy.resolve_entity_target(_MIDDLE, 100, inverted=True)
         assert inverse_state(wire) == 100  # open-space fully open

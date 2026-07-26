@@ -645,6 +645,12 @@ def test_state_property_safety_custom_position_precedence():
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
     coordinator.position_axis_inverted = False
+    # A safety winner runs the same frame transform as any other (#1036), so
+    # bind the real logical → cover-frame helper instead of letting the bare
+    # MagicMock intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
 
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
 
