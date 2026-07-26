@@ -216,17 +216,20 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
 
     @property
     def current_cover_tilt_position(self) -> int | None:
-        """Source ``current_tilt_position``, re-framed only for a tilt-primary cover.
+        """Source ``current_tilt_position`` expressed in the logical frame.
 
-        A tilt-PRIMARY cover (``cover_tilt``, ``cover_louvered_roof``) has no
-        separate position axis: ``async_apply_user_tilt`` falls back to
-        ``async_apply_user_position``, so the value on the wire went through
-        ``_to_cover_frame`` and the read owes the slider the inverse (#1027).
-        A venetian's second tilt axis is converted by its own sequencer and is
-        left verbatim — ``tilt_read_inverted`` draws that line.
+        Every write that reaches the tilt attribute was re-framed by exactly
+        one transform, and this read owes that transform its inverse — a
+        venetian / day-night shade's slats via the dual-axis sequencer's
+        ``_to_wire`` on ``inverse_tilt``, a tilt-PRIMARY cover or a
+        position-only cover bound to tilt-only hardware via ``_to_cover_frame``
+        on ``inverse_state`` (#1027 / #1034). ``tilt_read_inverted`` resolves
+        which one ran; the source's capabilities are passed because the last
+        case is a routing decision, not a config one.
         """
         return self._logical_axis_value(
-            STATE_ATTR_TILT_POSITION, inverted=self.coordinator.tilt_read_inverted
+            STATE_ATTR_TILT_POSITION,
+            inverted=self.coordinator.tilt_read_inverted(self._source_caps()),
         )
 
     @property
