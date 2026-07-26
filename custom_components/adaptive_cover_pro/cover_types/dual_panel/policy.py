@@ -27,7 +27,6 @@ from homeassistant.helpers import selector
 from ...const import (
     CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
     CONF_DUAL_PANEL_FRONT_ENTITY,
-    CONF_INVERSE_STATE,
     DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS,
     DUAL_PANEL_BLACKOUT_TRIGGERS,
     DUAL_PANEL_TRIGGER_HEAT,
@@ -49,6 +48,7 @@ from ..base import (
     POSITION_AXIS,
     CoverAxis,
     CoverTypePolicy,
+    axis_inverted,
     caps_get,
 )
 from ..blind import VERTICAL_LENGTH_KEYS, geometry_vertical_schema
@@ -402,16 +402,34 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         )
 
         use_interp = bool(options.get(CONF_INTERP, False))
-        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
         self._back_interp = use_interp
-        self._back_inverse = inverse_cfg and not use_interp
+        self._back_inverse = axis_inverted(self.axes[0], options)
         self._interp_start = options.get(CONF_INTERP_START)
         self._interp_end = options.get(CONF_INTERP_END)
         self._interp_list = options.get(CONF_INTERP_LIST)
         self._interp_list_new = options.get(CONF_INTERP_LIST_NEW)
 
+    def _calibrated_back(self, back: int) -> int:
+        """Map the back's canonical open/closed target onto the motor curve."""
+        return int(
+            round(
+                interpolate_position(
+                    back,
+                    self._interp_start,
+                    self._interp_end,
+                    self._interp_list,
+                    self._interp_list_new,
+                )
+            )
+        )
+
     def resolve_entity_target(
-        self, entity_id: str, position: int, *, inverted: bool | None = None
+        self,
+        entity_id: str,
+        position: int,
+        *,
+        inverted: bool | None = None,
+        interpolated: bool = False,
     ) -> int:
         """Substitute the back panel's blackout target; the front passes through.
 
@@ -423,12 +441,14 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         (identity for all); a safety/bypass cycle also passes every entity
         through untouched so the safety winner is never overwritten.
 
-        ``inverted`` names the wire value's inversion space: ``None`` (the main
-        dispatch path) applies the cached per-cycle transform — interpolation
-        through the calibration curve when configured, else inverse-state per the
-        device semantics. A broadcast seam passes an explicit ``True``/``False``
-        for its own inversion space; those seams dispatch their absolute default
-        un-interpolated, so the back mirrors exactly the inversion they applied.
+        ``inverted`` / ``interpolated`` name the dispatch frame. ``None``
+        (the main dispatch path) applies the cached per-cycle transform;
+        anything else names the caller's own frame outright. Both routes then
+        run the SAME application step, so the back can never be calibrated on
+        one path and left raw on the other — which is exactly what happened
+        while the seam could only say "inverted or not": a user command on an
+        interpolating install named ``inverted=False`` and drove the blackout
+        panel to raw 0, outside its calibrated band (#1027).
         """
         if not self._front_entity or self._back_bypass:
             return position
@@ -441,21 +461,10 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
             closed_position=POSITION_CLOSED,
         )
         back = layered.back
-        if inverted is None:
-            # Main dispatch path — interpolation XOR inverse, matching how
-            # ``coordinator.state`` transforms the front's value this cycle.
-            if self._back_interp:
-                return int(
-                    round(
-                        interpolate_position(
-                            back,
-                            self._interp_start,
-                            self._interp_end,
-                            self._interp_list,
-                            self._interp_list_new,
-                        )
-                    )
-                )
-            return inverse_state(back) if self._back_inverse else back
-        # Broadcast seam — mirror the seam's own (un-interpolated) inversion.
-        return inverse_state(back) if inverted else back
+        # Interpolation XOR inverse — the same mutual exclusion
+        # ``coordinator._to_cover_frame`` applies to the front's value.
+        use_interp = self._back_interp if inverted is None else interpolated
+        use_inverse = self._back_inverse if inverted is None else inverted
+        if use_interp:
+            return self._calibrated_back(back)
+        return inverse_state(back) if use_inverse else back

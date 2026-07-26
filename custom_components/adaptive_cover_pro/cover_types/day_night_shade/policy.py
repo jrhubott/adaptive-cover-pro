@@ -35,8 +35,6 @@ from ...const import (
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
-    CONF_INTERP,
-    CONF_INVERSE_STATE,
     DAY_NIGHT_CONTROL_MODELS,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
@@ -72,6 +70,7 @@ from ..base import (
     TILT_AXIS,
     CoverAxis,
     CoverTypePolicy,
+    axis_inverted,
     caps_get,
 )
 from ..blind import VERTICAL_LENGTH_KEYS, geometry_vertical_schema
@@ -607,17 +606,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         no-pass invariant regardless of inverse / bypass / clamp (#993).
         """
         self._dual_entity_blend = resolved.tilt
-        inverse_cfg = bool(options.get(CONF_INVERSE_STATE, False))
-        use_interp = bool(options.get(CONF_INTERP, False))
-        self._dual_entity_inverse = (
-            inverse_cfg
-            and not use_interp
-            and not (resolved.bypass_auto_control or resolved.floor_clamp_applied)
+        self._dual_entity_inverse = axis_inverted(self.axes[0], options) and not (
+            resolved.bypass_auto_control or resolved.floor_clamp_applied
         )
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 
     def resolve_entity_target(
-        self, entity_id: str, position: int, *, inverted: bool | None = None
+        self,
+        entity_id: str,
+        position: int,
+        *,
+        inverted: bool | None = None,
+        interpolated: bool = False,  # noqa: ARG002
     ) -> int:
         """Remap the middle-rail entity's absolute position (Model C only).
 
@@ -641,6 +641,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         never inverts — so each passes its own explicit ``True``/``False``.
         Reusing the cached flag there would un-invert with the wrong assumption
         and cross the bottom rail physically (#993).
+
+        ``interpolated`` is accepted for seam parity and deliberately NOT
+        consulted: the remap is arithmetic in open-percent space and never
+        unwinds the calibration curve. That is consistent in both modes —
+        interpolation forces ``axis_inverted`` False, so the cached flag is
+        False too and the interpolated wire value is treated as open-percent
+        either way. Mapping a motor reading back onto the linear scale is
+        #925's territory, not this hook's.
         """
         if (
             self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY

@@ -18,6 +18,9 @@ from custom_components.adaptive_cover_pro.sensor import (
 EXPECTED: dict[str, set[str]] = {
     "Cover_Position": {
         "actual_positions",
+        # Same weight class as actual_positions — a per-entity dict with no
+        # recorder-history use case (issue #1028).
+        "linear_actual_positions",
         "actual_distances",
         "position_explanation",
     },

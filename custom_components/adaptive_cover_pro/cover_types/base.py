@@ -13,7 +13,9 @@ overrides everything.
 
 from __future__ import annotations
 
+import dataclasses
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -28,6 +30,9 @@ from homeassistant.helpers import selector
 from ..const import (
     ATTR_POSITION,
     ATTR_TILT_POSITION,
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    CONF_INVERSE_TILT,
     POSITION_CLOSED,
     POSITION_OPEN,
     GroupScene,
@@ -112,6 +117,12 @@ class CoverAxis:
     tilt axis has no fallback, so it stays drivable only with native tilt. This
     keeps the axis model — not a cover-type string check — the single source of
     truth for "can this axis be driven" (#886).
+
+    ``inversion_option_key`` and ``interpolatable`` encode which config option
+    reverses this axis and whether interpolation suppresses that reversal —
+    the two inputs ``axis_inverted`` needs (#1028). Both carry safe defaults so
+    existing construction sites and Liskov-conformant stub policies are
+    unaffected.
     """
 
     name: str
@@ -125,6 +136,8 @@ class CoverAxis:
     value_max: int = AXIS_VALUE_MAX
     unit: str = AXIS_VALUE_UNIT
     drive_fallbacks: tuple[tuple[str, ...], ...] = ()
+    inversion_option_key: str = CONF_INVERSE_STATE
+    interpolatable: bool = True
 
     def is_drivable(self, caps: Any) -> bool:
         """Whether the integration can drive this axis on an entity with *caps*.
@@ -179,7 +192,57 @@ TILT_AXIS = CoverAxis(
     capability_key=CAP_HAS_SET_TILT_POSITION,
     open_blocks_sun=False,
     label_key="axes.tilt",
+    inversion_option_key=CONF_INVERSE_TILT,
+    interpolatable=False,
 )
+
+# The tilt axis as a cover's PRIMARY (and only) axis — tilt-only types such as
+# ``cover_tilt`` and ``cover_louvered_roof``. Identical to ``TILT_AXIS`` in
+# every HA-facing respect (same service, same attributes, same capability), and
+# differs only in the two config-semantics fields:
+#
+#   * ``inversion_option_key`` — ``inverse_tilt`` is offered by the venetian
+#     geometry schema alone, so a tilt-only instance can never set it. What it
+#     IS configured with is ``inverse_state``, the shared position-schema option
+#     every cover type gets. ``TILT_AXIS``'s ``inverse_tilt`` is correct only
+#     for the SECOND axis of a venetian / day-night shade, where the option is
+#     real and separately configured.
+#   * ``interpolatable`` — a single-axis cover runs its one axis through the
+#     calibration curve like any other, and ``coordinator._to_cover_frame``
+#     treats interpolation and inverse-state as mutually exclusive there.
+#     Interpolation suppresses inversion on the second axis of a venetian only
+#     because the sequencer's ``_to_wire`` reads ``inverse_tilt`` raw.
+#
+# Derived with ``dataclasses.replace`` so the shared ``TILT_AXIS`` singleton
+# stays the single definition of the tilt axis's HA contract.
+TILT_AXIS_PRIMARY = dataclasses.replace(
+    TILT_AXIS,
+    inversion_option_key=CONF_INVERSE_STATE,
+    interpolatable=True,
+)
+
+
+def axis_inverted(axis: CoverAxis, options: Mapping[str, Any] | None) -> bool:
+    """Whether *axis* is effectively reversed for the install described by *options*.
+
+    Single source of truth for the "is this axis inverted right now" question
+    (#1028). Derived at read time from ``config_entry.options`` — never cached
+    on an instance — so it cannot drift from the config the way the three
+    hand-written copies of this formula did.
+
+    An axis is inverted when its ``inversion_option_key`` is set AND the
+    inversion is not suppressed by interpolation. Position inversion IS
+    suppressed (``coordinator.state`` logs the combination as unsupported and
+    skips it); tilt inversion is not, because the venetian sequencer's
+    ``_to_wire`` reads ``inverse_tilt`` directly and never consults the
+    calibration curve. ``interpolatable`` on the axis carries that asymmetry
+    so no caller has to know which axis it is holding.
+    """
+    if not options:
+        return False
+    if not options.get(axis.inversion_option_key):
+        return False
+    return not (axis.interpolatable and bool(options.get(CONF_INTERP)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +254,11 @@ class AxisDescriptor:
     service, the companion Lovelace card) needs to render and drive an axis
     without knowing the cover type — plus ``supported``, the per-install
     rollup of whether the bound cover(s) actually expose the axis.
+
+    ``inverted`` (#1028) states whether this install reverses the axis, so a
+    consumer reading a raw cover attribute knows which frame it is in without
+    guessing from the config. Defaults to ``False`` so a caller that describes
+    an axis without options is unaffected.
     """
 
     id: str
@@ -204,6 +272,7 @@ class AxisDescriptor:
     service_attr: str
     open_blocks_sun: bool
     supported: bool
+    inverted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,6 +519,7 @@ class CoverTypePolicy(ABC):
         position: int,
         *,
         inverted: bool | None = None,  # noqa: ARG002
+        interpolated: bool = False,  # noqa: ARG002
     ) -> int:
         """Adjust the dispatched position for one specific entity.
 
@@ -462,14 +532,30 @@ class CoverTypePolicy(ABC):
         polymorphic hook rather than branching on the cover type — every other
         cover type keeps sending the resolved position verbatim.
 
-        ``inverted`` names the inversion space of the supplied ``position`` so a
-        remapping policy can un-invert it correctly. ``None`` (the default and
-        the only value the identity implementation ever needs) means "use the
-        policy's own cached per-cycle decision" — the main pipeline dispatch
-        path. The broadcast dispatch seams (sunset-window transition,
-        end-time-default, auto-control-off return) dispatch in a space that may
-        diverge from that cached flag, so they pass an explicit ``True``/``False``
-        (#993). Backward-compatible: every non-remapping policy ignores it.
+        ``inverted`` and ``interpolated`` together name the DISPATCH FRAME of
+        the supplied ``position`` — which of the two mutually exclusive
+        logical→wire transforms the caller already applied — so a remapping
+        policy can reproduce or undo it.
+
+        * ``inverted=None`` (the default, and the only value the identity
+          implementation ever needs) means "use the policy's own cached
+          per-cycle decision": the main pipeline dispatch path, whose frame the
+          policy already recorded in ``post_pipeline_resolve``. ``interpolated``
+          is not consulted in this mode.
+        * An explicit ``inverted=True``/``False`` names the frame outright, and
+          ``interpolated`` completes it. The broadcast seams (sunset-window
+          transition, end-time-default, auto-control-off return) dispatch an
+          absolute default that is inverted-or-not but never interpolated, so
+          they leave ``interpolated`` at its default. A user command
+          (``async_apply_user_position``) rides the SAME transform as the main
+          pipeline but off-cycle, so it names both dimensions rather than
+          trusting a cache built for a different value (#993 / #1027).
+
+        ``interpolated`` exists because ``inverted`` alone cannot describe an
+        interpolating install: "interpolated, not inverted" and "neither" both
+        collapsed to ``inverted=False``, which silently dropped a calibrated
+        cover type's curve. Backward-compatible: every non-remapping policy
+        ignores both.
         """
         return position
 
@@ -653,7 +739,12 @@ class CoverTypePolicy(ABC):
         primary = self.axes[0]
         is_tilt_default = primary.name == AXIS_NAME_TILT
         if should_use_tilt(is_tilt_default, caps if caps is not None else {}):
-            return TILT_AXIS
+            # A tilt-primary policy returns its OWN axis object: it declares
+            # ``TILT_AXIS_PRIMARY``, which matches the shared singleton on every
+            # HA-facing field but carries primary-axis config semantics. Handing
+            # back ``TILT_AXIS`` would give callers an axis that disagrees with
+            # ``self.axes[0]`` about which option inverts it.
+            return primary if is_tilt_default else TILT_AXIS
         return primary
 
     def tilt_capability_contradiction(self, caps: Any) -> bool:
@@ -693,12 +784,16 @@ class CoverTypePolicy(ABC):
         axis: CoverAxis,
         caps: Any = None,
         labels: dict[str, str] | None = None,
+        *,
+        options: Mapping[str, Any] | None = None,
     ) -> AxisDescriptor:
         """Project one ``CoverAxis`` to a serialisable ``AxisDescriptor``.
 
         ``labels`` overlays translated ``axes.*`` strings on the English base;
         ``None`` keeps English (back-compat). ``supported`` reflects whether
-        *caps* expose the axis.
+        *caps* expose the axis. ``options`` are this entry's config options —
+        the only thing that can answer ``inverted`` — and default to ``None``
+        so the Liskov contract for a partial fifth-cover-type policy holds.
         """
         label = {**AXIS_LABELS_EN, **(labels or {})}.get(axis.label_key, axis.label_key)
         return AxisDescriptor(
@@ -713,12 +808,15 @@ class CoverTypePolicy(ABC):
             service_attr=axis.service_attr,
             open_blocks_sun=axis.open_blocks_sun,
             supported=axis.is_drivable(caps),
+            inverted=axis_inverted(axis, options),
         )
 
     def describe(
         self,
         caps: Any = None,
         labels: dict[str, str] | None = None,
+        *,
+        options: Mapping[str, Any] | None = None,
     ) -> CoverDescriptor:
         """Assemble the self-discovery descriptor for this cover type (#725).
 
@@ -731,7 +829,9 @@ class CoverTypePolicy(ABC):
         return CoverDescriptor(
             cover_type=self.cover_type,
             cover_label=self.display_label(labels),
-            axes=tuple(self.describe_axis(a, caps, labels) for a in self.axes),
+            axes=tuple(
+                self.describe_axis(a, caps, labels, options=options) for a in self.axes
+            ),
         )
 
     def position_axis_supported(self, caps: Any) -> bool:

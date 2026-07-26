@@ -17,6 +17,12 @@ import pytest
 import voluptuous as vol
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
+)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     AXIS_NAME_POSITION,
@@ -305,3 +311,90 @@ async def test_unsupported_axis_rejected_before_any_dispatch() -> None:
         await async_handle_set_axes(call)
 
     coord.async_apply_user_axis.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: set_axes speaks the logical frame on the position axis
+# ---------------------------------------------------------------------------
+
+
+def _make_dispatch_coord(options: dict) -> MagicMock:
+    """Build a coord whose position axis reaches the real dispatch boundary.
+
+    ``_make_coord`` above stops at ``async_apply_user_axis`` so the routing
+    tests stay unit-level. These frame tests need the value that actually
+    leaves the coordinator, so bind the real collapse point and the real
+    position setter and observe ``CoverCommandService.apply_position``.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from tests.ha_helpers import wire_dispatch_frame
+    from tests.test_pipeline.conftest import make_snapshot
+
+    coord = MagicMock()
+    coord.entities = ["cover.blind"]
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = options
+    wire_dispatch_frame(coord, options)
+    coord._resolved_options = options
+    coord._cover_provider = MagicMock()
+    coord._cover_provider.read_single_capabilities.return_value = _POSITION_ONLY_CAPS
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.build = MagicMock(return_value=make_snapshot())
+    ctx = MagicMock(name="position_context")
+    coord._build_position_context.return_value = ctx
+    coord._cmd_svc = MagicMock()
+    coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    coord.async_apply_user_position = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    )
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
+    )
+    coord._ctx = ctx
+    return coord
+
+
+async def _call_set_axes(coord: MagicMock, position: int) -> None:
+    from custom_components.adaptive_cover_pro.services.set_axes_service import (
+        async_handle_set_axes,
+    )
+
+    call = MagicMock()
+    call.data = {"axes": {AXIS_NAME_POSITION: position}, "force": True}
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_axes_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_axes(call)
+
+
+@pytest.mark.asyncio
+async def test_set_axes_position_inverse_state_dispatches_inverted() -> None:
+    """``set_axes: {position: 30}`` on an inverse-state instance dispatches 70."""
+    coord = _make_dispatch_coord({CONF_INVERSE_STATE: True})
+
+    await _call_set_axes(coord, 30)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.blind", 70, "set_axes", coord._ctx
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_axes_position_interpolation_dispatches_motor_value() -> None:
+    """``set_axes: {position: 25}`` on a calibrated instance dispatches motor 45."""
+    coord = _make_dispatch_coord(
+        {
+            CONF_INTERP: True,
+            CONF_INTERP_LIST: [0, 25, 58, 100],
+            CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+        }
+    )
+
+    await _call_set_axes(coord, 25)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.blind", 45, "set_axes", coord._ctx
+    )

@@ -12,13 +12,24 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
     inverse_state,
 )
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    ControlMethod,
+)
+from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY, get_policy
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
+    MotionTimeoutHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
@@ -49,6 +60,7 @@ def _make_coordinator(
     end_value=None,
     normal_list=None,
     new_list=None,
+    cover_type: str = "cover_blind",
 ) -> MagicMock:
     """Build a minimal mock coordinator with the attributes used by `state` property."""
     coordinator = MagicMock(spec=AdaptiveDataUpdateCoordinator)
@@ -61,6 +73,26 @@ def _make_coordinator(
     coordinator.normal_list = normal_list
     coordinator.new_list = new_list
     coordinator.logger = MagicMock()
+    # `state` asks the coordinator's own `position_axis_inverted` property, which
+    # derives the answer from the entry options (#1028). Give the mock real
+    # options + policy and evaluate the real property so the fixture never
+    # hand-rolls the formula it is meant to exercise.
+    coordinator.config_entry = SimpleNamespace(
+        options={
+            CONF_INVERSE_STATE: inverse_state_enabled,
+            CONF_INTERP: use_interpolation,
+        }
+    )
+    coordinator._policy = get_policy(cover_type)
+    coordinator.position_axis_inverted = (
+        AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coordinator)
+    )
+    # `state` delegates its post-processing to the shared logical → cover-frame
+    # helper the user-command path also uses (#1027); bind the real one so the
+    # spec'd mock does not intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
     return coordinator
 
 
@@ -316,3 +348,102 @@ class TestInterpolationAndInverseStateConflict:
             "inverse" in msg.lower() and "interpolation" in msg.lower()
             for msg in logged
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #1028: a motion hold must not be inverted into a contradictory target
+# ---------------------------------------------------------------------------
+
+
+class TestMotionHoldRoundTripsUnderInverse:
+    """The published target for a motion hold equals the cover's actual position."""
+
+    @staticmethod
+    def _hold_result(*, current: int, inverted: bool) -> PipelineResult:
+        from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+
+        snap = make_snapshot(
+            motion_control_enabled=True,
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=current,
+            position_axis_inverted=inverted,
+        )
+        result = MotionTimeoutHandler().evaluate(snap)
+        assert result is not None
+        return result
+
+    def test_hold_at_30_publishes_30_under_inverse(self):
+        """Cover physically at 30 → published state 30, not 100 - 30."""
+        result = self._hold_result(current=30, inverted=True)
+        coord = _make_coordinator(pipeline_result=result, inverse_state_enabled=True)
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30
+
+    def test_hold_at_30_publishes_30_without_inverse(self):
+        """Unchanged on a non-inverted install."""
+        result = self._hold_result(current=30, inverted=False)
+        coord = _make_coordinator(pipeline_result=result, inverse_state_enabled=False)
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30
+
+
+# ---------------------------------------------------------------------------
+# ``inverse_state`` applies to every cover type, not just the position-axis ones
+# ---------------------------------------------------------------------------
+
+# Derived from the registry so a new cover type is covered without an edit here.
+_COVER_TYPES_WITH_AXES = sorted(
+    cover_type for cover_type, cls in POLICY_REGISTRY.items() if cls.axes
+)
+
+
+class TestInverseStateAppliesToEveryCoverType:
+    """``coordinator.state`` honours ``inverse_state`` whatever the cover type.
+
+    ``inverse_state`` is a shared position-schema option every instance can set,
+    and ``coordinator.position_axis_inverted`` derives the answer from
+    ``policy.axes[0]``. A tilt-only cover (``cover_tilt``,
+    ``cover_louvered_roof``) whose only axis is the tilt axis must invert
+    exactly like a blind — it is configured with ``inverse_state`` and never
+    with ``inverse_tilt``.
+    """
+
+    @pytest.mark.parametrize("cover_type", _COVER_TYPES_WITH_AXES)
+    def test_solar_30_becomes_70(self, cover_type: str) -> None:
+        result = _make_pipeline_result(position=30, control_method=ControlMethod.SOLAR)
+        coord = _make_coordinator(
+            pipeline_result=result,
+            inverse_state_enabled=True,
+            cover_type=cover_type,
+        )
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 70
+
+    @pytest.mark.parametrize("cover_type", _COVER_TYPES_WITH_AXES)
+    def test_no_inversion_when_flag_off(self, cover_type: str) -> None:
+        result = _make_pipeline_result(position=30, control_method=ControlMethod.SOLAR)
+        coord = _make_coordinator(
+            pipeline_result=result,
+            inverse_state_enabled=False,
+            cover_type=cover_type,
+        )
+
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 30
+
+    @pytest.mark.parametrize("cover_type", _COVER_TYPES_WITH_AXES)
+    def test_interpolation_suppresses_inversion(self, cover_type: str) -> None:
+        result = _make_pipeline_result(position=0, control_method=ControlMethod.SOLAR)
+        coord = _make_coordinator(
+            pipeline_result=result,
+            inverse_state_enabled=True,
+            use_interpolation=True,
+            start_value=20,
+            end_value=80,
+            cover_type=cover_type,
+        )
+
+        # Interpolated to 20; inverse NOT applied (would have given 80).
+        assert AdaptiveDataUpdateCoordinator.state.fget(coord) == 20

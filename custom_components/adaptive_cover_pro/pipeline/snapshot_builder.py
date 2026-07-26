@@ -101,6 +101,7 @@ from ..const import (
     DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
+from ..cover_types.base import axis_inverted
 from ..helpers import (
     compute_effective_default,
     custom_position_slot_configured,
@@ -561,6 +562,7 @@ class PipelineSnapshotBuilder:
                 CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
             ),
             current_cover_position=current_cover_position,
+            position_axis_inverted=axis_inverted(self._policy.axes[0], options),
             policy=self._policy,
             group_intent=group_intent,
             minimize_movements=bool(

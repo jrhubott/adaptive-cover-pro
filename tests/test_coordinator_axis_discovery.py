@@ -8,10 +8,12 @@ HA features or branching on the cover-type string.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import CONF_INTERP, CONF_INVERSE_STATE
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
@@ -78,3 +80,17 @@ def test_venetian_discovery_tilt_unsupported_when_no_member_has_it() -> None:
     by_id = {a.id: a for a in desc.axes}
     assert by_id["position"].supported is True
     assert by_id["tilt"].supported is False
+
+
+def test_build_axis_discovery_passes_entry_options() -> None:
+    """The descriptor's per-axis ``inverted`` reflects this entry's options (#1028)."""
+    coord = _coord("cover_blind", {"cover.blind": _caps(position=True, tilt=False)})
+
+    coord.config_entry = SimpleNamespace(options={CONF_INVERSE_STATE: True})
+    assert coord.build_axis_discovery().axes[0].inverted is True
+
+    # Interpolation suppresses position inversion — same rule as coordinator.state.
+    coord.config_entry = SimpleNamespace(
+        options={CONF_INVERSE_STATE: True, CONF_INTERP: True}
+    )
+    assert coord.build_axis_discovery().axes[0].inverted is False

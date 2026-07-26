@@ -12,12 +12,18 @@ floor-clamped position, so the dispatched cover command diverged from the
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    ControlMethod,
+)
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
@@ -57,6 +63,25 @@ def _make_coordinator(
     coordinator.normal_list = normal_list
     coordinator.new_list = new_list
     coordinator.logger = MagicMock()
+    # `state` asks the coordinator's own `position_axis_inverted` property,
+    # which derives from the entry options (#1028). Give the mock real options
+    # + policy and evaluate the real property.
+    coordinator.config_entry = SimpleNamespace(
+        options={
+            CONF_INVERSE_STATE: inverse_state_enabled,
+            CONF_INTERP: use_interpolation,
+        }
+    )
+    coordinator._policy = get_policy("cover_blind")
+    coordinator.position_axis_inverted = (
+        AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coordinator)
+    )
+    # `state` delegates its post-processing to the shared logical → cover-frame
+    # helper the user-command path also uses (#1027); bind the real one so the
+    # spec'd mock does not intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
     return coordinator
 
 

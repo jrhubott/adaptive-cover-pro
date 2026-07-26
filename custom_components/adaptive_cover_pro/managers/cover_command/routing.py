@@ -92,7 +92,7 @@ def route_service_call(
     Routing precedence: position-capable axis → My-position stop → open/close
     threshold → no capable service.
 
-    Inverse-state ordering note (``CODING_GUIDELINES.md`` line 221):
+    Inverse-state ordering note (see ``CODING_GUIDELINES.md``):
     ``state`` here is the value the caller wants the cover to land at, after
     any inverse-state transformation upstream. This helper does NOT touch
     inverse state.
