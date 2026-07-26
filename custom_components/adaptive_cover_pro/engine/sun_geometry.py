@@ -86,9 +86,18 @@ def ray_x_at_window_plane(x_floor: float, y_floor: float, gamma_deg: float) -> f
     ``tan γ`` is expanded to ``sin γ / clamped_cos_gamma(γ)`` — the fifth copy of
     the ``cos γ`` divisor, folded into the one shared guard (#1030). Identical to
     ``tan γ`` for ``|γ| ≤ 89.43°``; past that it stays bounded instead of
-    reaching 3.27e16 at exactly 90. Both consumers run behind
-    ``direct_sun_valid``, which the illumination gate now keeps inside
-    ``|γ| < 90``, so the clamp band is unreachable in production either way.
+    reaching 3.27e16 at exactly 90.
+
+    Both consumers run behind ``direct_sun_valid`` — but that alone does not
+    bound ``γ``. The bound comes from the illumination gate collapsing to
+    ``|γ| < 90`` only on engines that keep the DEFAULT vertical-plane
+    ``cos_aoi = cos(elev)·cos γ``, and both consumers do: the sliding curtain
+    inherits it, and the glare-zone projection is reachable only via
+    ``supports_glare_zones``, True for the blind and dual-panel policies alone.
+    So the clamp band is unreachable in production today. Revisit if glare zones
+    ever extend to awnings — ``AdaptiveHorizontalCover`` overrides
+    ``sun_behind_plane`` to opt area mode out of the gate, which puts ``|γ| > 90``
+    back in reach here.
     """
     # Parenthesised so the ratio is formed BEFORE the multiply — that keeps the
     # result bit-identical to the previous ``y_floor * tan(gamma)``.

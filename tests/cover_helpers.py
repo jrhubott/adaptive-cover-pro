@@ -16,7 +16,7 @@ from custom_components.adaptive_cover_pro.config_types import (
 )
 
 
-def make_daytime_sun_data(**overrides) -> MagicMock:
+def make_daytime_sun_data() -> MagicMock:
     """Return a SunData mock whose sunrise/sunset bracket *now*.
 
     ``SunGeometry.sunset_valid`` compares wall-clock now against the sunrise /
@@ -30,8 +30,6 @@ def make_daytime_sun_data(**overrides) -> MagicMock:
     sun_data.timezone = "UTC"
     sun_data.sunrise.return_value = now - timedelta(hours=6)
     sun_data.sunset.return_value = now + timedelta(hours=6)
-    for key, value in overrides.items():
-        setattr(sun_data, key, value)
     return sun_data
 
 
