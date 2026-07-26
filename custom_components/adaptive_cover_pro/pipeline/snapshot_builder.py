@@ -475,11 +475,13 @@ class PipelineSnapshotBuilder:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
         ``effective_default`` / ``is_sunset_active`` are recomputed from
-        ``options`` and ``cover_data.sun_data`` when omitted — preserving the
-        fallback the original ``_build_pipeline_snapshot`` used so that
-        ``async_apply_user_position`` (which evaluates a preemption check
-        outside the update cycle) can still build a valid snapshot without
-        knowing those values.
+        ``options``, ``cover_data.sun_data``, and (via
+        ``_read_sun_boundary_options``) two ``hass.states.get()`` reads
+        resolving the configured sunrise/sunset time entities, when omitted —
+        preserving the fallback the original ``_build_pipeline_snapshot`` used
+        so that ``async_apply_user_position`` (which evaluates a preemption
+        check outside the update cycle) can still build a valid snapshot
+        without knowing those values.
 
         ``is_glare_zone_enabled(idx)`` returns the current state of the
         per-instance glare-zone master switch for zone ``idx``.  The coordinator

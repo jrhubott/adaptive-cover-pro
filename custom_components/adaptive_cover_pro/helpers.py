@@ -585,9 +585,12 @@ def _read_sun_boundary_options(
     input lands in one place and those callers can never disagree about what
     "sunset" means (CODING_GUIDELINES.md § no-duplication).
 
-    Not yet exhaustive across the integration: ``config_types.py`` and
-    ``services/export_service.py`` carry their own copies of the offset fallback.
-    Fold them in here when you next touch them (tracked in issue #1050).
+    Not yet exhaustive across the integration: ``config_types.py``,
+    ``services/export_service.py``, and ``config_flow.py`` each carry their own
+    copy of the offset fallback. ``config_flow.py``'s is semantically divergent —
+    it defaults ``sunrise_offset`` to ``0`` instead of falling back to
+    ``sunset_off``. Fold them in here when you next touch them (tracked in
+    issue #1050).
 
     ``sunrise_offset`` falls back to ``sunset_offset`` when unset, so an install
     that only ever set one offset gets a symmetric night window.

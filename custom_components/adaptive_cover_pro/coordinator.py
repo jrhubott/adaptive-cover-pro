@@ -39,7 +39,6 @@ from homeassistant.util import dt as dt_util
 from .config_types import CoverConfig, RuntimeConfig
 from .helpers import (
     _read_sun_boundary_options,
-    _read_time_entity,  # noqa: F401 - re-exported: tests patch/import it here
     check_cover_features,
     compute_effective_default,
     custom_position_slot_delivers_fixed_position,
