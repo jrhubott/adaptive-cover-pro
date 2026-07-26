@@ -17,7 +17,7 @@ from ...const import (
 )
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
-from ..sun_geometry import ray_x_at_window_plane
+from ..sun_geometry import clamped_cos_gamma, ray_x_at_window_plane
 from .base import AdaptiveGeneralCover
 
 # --- Numeric guards (file-local) ---
@@ -25,10 +25,6 @@ from .base import AdaptiveGeneralCover
 # elevation ≈ 2.9°, below which the projected shadow is geometrically
 # unbounded. Capping the divisor keeps sill_offset finite at low sun.
 MIN_TAN_ELEVATION_CLAMP = 0.05
-# Minimum |cos(gamma)| before path-length division — corresponds to gamma
-# ≈ 89.4°. Bridges the gap between the edge-case threshold (85°) and the
-# 90° singularity where cos(gamma) → 0.
-MIN_COS_GAMMA_CLAMP = 0.01
 
 
 def _elevation_offset(height_m: float, sol_elev: float) -> float:
@@ -214,11 +210,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         onto a tilted plane without duplicating the surrounding edge-case /
         window-depth / sill / safety-margin pipeline (CODING_GUIDELINES.md
         "Code duplication is not okay").
+
+        The divisor comes from the shared one-sided ``clamped_cos_gamma`` guard
+        (#1030); the raw ``cos_gamma`` is still returned for the #682 trace.
         """
         cos_gamma = float(cos(rad(self.gamma)))
-        cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
-            1 if cos_gamma >= 0 else -1
-        )
+        cos_gamma_clamped = clamped_cos_gamma(self.gamma)
         path_length = effective_distance / cos_gamma_clamped
         base_height = path_length * float(tan(rad(self.sol_elev)))
         return base_height, cos_gamma, cos_gamma_clamped, path_length

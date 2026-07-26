@@ -5,7 +5,7 @@ Extracted from AdaptiveGeneralCover to enable standalone testing and reuse.
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from math import atan, ceil, degrees, radians, tan
+from math import atan, ceil, cos, degrees, radians, sin, tan
 
 import pandas as pd
 
@@ -15,6 +15,7 @@ from ..const import (
     CONF_FOV_LEFT,
     DEFAULT_FOV_LEFT,
     DEGREES_IN_CIRCLE,
+    MIN_COS_GAMMA_CLAMP,
     OPTION_RANGES,
     BlindSpot,
     ReasonCode,
@@ -40,6 +41,35 @@ def azimuth_within_fov(angle: float, fov_left: float, fov_right: float) -> bool:
     return bool(_in_fov_cone(angle, fov_left, fov_right))
 
 
+def clamped_cos_gamma(gamma_deg: float) -> float:
+    """``cos γ`` with a one-sided magnitude floor of ``MIN_COS_GAMMA_CLAMP``.
+
+    The ONE guard for every ``… / cos γ`` division on a lit face (#1030). It is
+    one-sided — ``max(cos γ, ε)``, not ``sign(cos γ)·max(|cos γ|, ε)`` — because
+    the illumination gate on :class:`~engine.covers.base.AdaptiveGeneralCover`
+    (``cos(AOI) > 0``) makes ``|γ| > 90`` unreachable, so a negative cosine
+    never arrives. The two-sided form each caller used to carry faithfully
+    reproduced "sun behind the wall" as a NEGATIVE projected drop, which the
+    surrounding clamps then read as an endpoint command.
+    """
+    return max(cos(radians(gamma_deg)), MIN_COS_GAMMA_CLAMP)
+
+
+def foreshortened_slope(sol_elev: float, gamma_deg: float) -> float:
+    """Vertical Shadow Angle tangent ``f = tan(elev) / cos γ`` on a lit facade.
+
+    The vertical drop a sun ray covers per metre of in-room depth, foreshortened
+    by the surface-solar azimuth (NRC CBD-59; reviewed in #206). The formula is
+    defined only for ``|γ| < 90`` — the domain restriction #1030 supplies via the
+    illumination gate — so ``clamped_cos_gamma`` needs no sign branch.
+
+    Shared by the vertical blind's drop projection, the drop-arm awning's
+    lip-shadow slope, the tilt/venetian profile angle, and the roof window's
+    vertical-glass reduction.
+    """
+    return tan(radians(sol_elev)) / clamped_cos_gamma(gamma_deg)
+
+
 def ray_x_at_window_plane(x_floor: float, y_floor: float, gamma_deg: float) -> float:
     """Along-wall coordinate where a sun ray crossed the window plane.
 
@@ -52,8 +82,26 @@ def ray_x_at_window_plane(x_floor: float, y_floor: float, gamma_deg: float) -> f
     glare-zone projection and the sliding-curtain shade-area projection share one
     formula (#829). Positive ``gamma`` shifts the entry point toward +x; ``gamma =
     0`` (perpendicular sun) crosses at the floor point's own ``x``.
+
+    ``tan γ`` is expanded to ``sin γ / clamped_cos_gamma(γ)`` — the fifth copy of
+    the ``cos γ`` divisor, folded into the one shared guard (#1030). Identical to
+    ``tan γ`` for ``|γ| ≤ 89.43°``; past that it stays bounded instead of
+    reaching 3.27e16 at exactly 90.
+
+    Both consumers run behind ``direct_sun_valid`` — but that alone does not
+    bound ``γ``. The bound comes from the illumination gate collapsing to
+    ``|γ| < 90`` only on engines that keep the DEFAULT vertical-plane
+    ``cos_aoi = cos(elev)·cos γ``, and both consumers do: the sliding curtain
+    inherits it, and the glare-zone projection is reachable only via
+    ``supports_glare_zones``, True for the blind and dual-panel policies alone.
+    So the clamp band is unreachable in production today. Revisit if glare zones
+    ever extend to awnings — ``AdaptiveHorizontalCover`` overrides
+    ``sun_behind_plane`` to opt area mode out of the gate, which puts ``|γ| > 90``
+    back in reach here.
     """
-    return x_floor + y_floor * tan(radians(gamma_deg))
+    # Parenthesised so the ratio is formed BEFORE the multiply — that keeps the
+    # result bit-identical to the previous ``y_floor * tan(gamma)``.
+    return x_floor + y_floor * (sin(radians(gamma_deg)) / clamped_cos_gamma(gamma_deg))
 
 
 def fov_from_reveal(width_m: float, depth_m: float) -> int:
@@ -216,6 +264,12 @@ class SunGeometry:
     @property
     def valid_elevation(self) -> bool:
         """Check if sun elevation is within configured limits.
+
+        This is the elevation bound ONLY. Whether the sun actually strikes the
+        cover's plane is per-geometry, so the illumination clause lives one layer
+        up on :class:`~engine.covers.base.AdaptiveGeneralCover`, which composes
+        ``cos(AOI) > 0`` on top of this (#1030). ``SunGeometry`` stays
+        cover-type agnostic.
 
         Returns:
             True if sun elevation within configured min/max range (or no limits set).
@@ -381,6 +435,11 @@ class SunGeometry:
         The pure engine emits a frozen code (no HA, no translation); the prose
         is resolved at the diagnostics/sensor boundary. Branches mirror
         :attr:`control_state_reason` exactly.
+
+        Cover-agnostic by design: there is deliberately no
+        ``DEFAULT_SUN_BEHIND_PLANE`` branch here, because this class does not
+        know the cover's plane. ``AdaptiveGeneralCover`` adds that branch on top
+        (#1030), so this keeps its original two-way azimuth/elevation split.
 
         Returns:
             One of ``ReasonCode.ENGINE_*``: DIRECT_SUN, DEFAULT_SUNSET_OFFSET,

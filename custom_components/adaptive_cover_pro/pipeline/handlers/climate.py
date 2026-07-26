@@ -244,8 +244,11 @@ class ClimateCoverState:
 
         ``gamma_deg``/``beta_deg`` are computed once here for tilt covers — the
         same ``float(tilt_cover.gamma)`` / ``np.rad2deg(tilt_cover.beta)`` the
-        original routers used, evaluated regardless of validity to match the
-        prior behavior.
+        original routers used, still evaluated unconditionally. Past the #1030
+        illumination gate ``beta_deg`` is no longer meaningful (the clamped
+        cosine changes it, e.g. −49° → +89° at ``γ = 120``), but its only
+        consumer — ``_tilt_winter_mode2`` — sits behind ``cover_valid``, so the
+        value is discarded there rather than acted on.
         """
         gamma_deg = 0.0
         beta_deg = 0.0

@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.cover_helpers import build_horizontal_cover
+from tests.cover_helpers import build_horizontal_cover, make_daytime_sun_data
 
 # ---------------------------------------------------------------------------
 # Issue #1025 — corrected overhang projection + area/window shade modes.
@@ -144,6 +144,41 @@ class TestAreaShadeMode1025:
         # And a window-mode awning does NOT sit at full extension at moderate sun.
         cover = _awning_1025(sol_elev=25.0, gamma=45.0)
         assert cover.calculate_position() < _AWN_LENGTH_1025
+
+
+class TestAreaShadeModeGate:
+    """#1025 area mode at the GATE, not just at ``calculate_position`` (#1030).
+
+    ``TestAreaShadeMode1025`` calls ``calculate_position()`` directly, so it
+    never touches ``direct_sun_valid`` — the illumination gate #1030 adds could
+    silently retract an area-mode patio awning past ``|gamma| = 90`` while that
+    class stayed green. These assert the routing decision itself.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("gamma", [95.0, 130.0])
+    def test_area_mode_direct_sun_valid_past_90(self, gamma):
+        """A patio awning shades the PATIO, not the glass — it opts out of the gate."""
+        cover = _awning_1025(
+            sol_elev=30.0,
+            gamma=gamma,
+            shade_mode="area",
+            fov_left=137,
+            sun_data=make_daytime_sun_data(),
+        )
+        assert cover.direct_sun_valid is True
+        assert cover.calculate_position() == pytest.approx(_AWN_LENGTH_1025)
+
+    @pytest.mark.unit
+    def test_window_mode_direct_sun_valid_gated_past_90(self):
+        """Window mode shades the glass, so past 90 it falls through to default."""
+        cover = _awning_1025(
+            sol_elev=30.0,
+            gamma=91.0,
+            fov_left=137,
+            sun_data=make_daytime_sun_data(),
+        )
+        assert cover.direct_sun_valid is False
 
 
 class TestAdaptiveHorizontalCover:

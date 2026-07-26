@@ -1769,6 +1769,7 @@ class ReasonCode(StrEnum):
     ENGINE_DEFAULT_SUNSET_OFFSET = "engine.default_sunset_offset"
     ENGINE_DEFAULT_ELEVATION_LIMIT = "engine.default_elevation_limit"
     ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT = "engine.default_acceptance_angle_exit"
+    ENGINE_DEFAULT_SUN_BEHIND_PLANE = "engine.default_sun_behind_plane"
     ENGINE_DEFAULT_BLIND_SPOT = "engine.default_blind_spot"
     ENGINE_DEFAULT = "engine.default"
 
@@ -1924,6 +1925,15 @@ DEFAULT_WINDOW_AZIMUTH = 180  # degrees — config-flow default (south-facing)
 MAX_WINDOW_DEPTH = 5.0  # metres — UI cap for window depth
 MAX_AWNING_ANGLE = 45  # degrees — UI cap for awning tilt
 DEGREES_IN_CIRCLE = 360  # used for azimuth/wind-direction wrap-around math
+
+# Minimum cos(gamma) before the foreshortening division ``tan(elev)/cos γ``
+# (gamma ≈ 89.43°). ``d/cos γ → ∞`` as ``γ → 90⁻`` is real geometry — a ray
+# parallel to the wall never reaches depth ``d`` — so the magnitude gets a floor
+# rather than a reformulation. The floor is ONE-SIDED: the illumination gate on
+# ``AdaptiveGeneralCover`` (``cos(AOI) > 0``) makes ``|γ| > 90`` unreachable, so
+# a negative cosine never arrives here (#1030). Cross-file: consumed by the
+# shared helpers in ``engine/sun_geometry.py``.
+MIN_COS_GAMMA_CLAMP = 0.01
 
 
 # =============================================================================

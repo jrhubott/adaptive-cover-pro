@@ -74,12 +74,17 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
         """Roof-plane pitch from horizontal in degrees (0=flat, 90=vertical)."""
         return self.roof_config.roof_pitch
 
-    def _cos_aoi(self) -> float:
+    @property
+    def cos_aoi(self) -> float:
         """Cosine of the angle of incidence on the roof plane (``s·n``).
 
         Positive → the sun strikes the working (outer) face of the slats. At
         ``roof_pitch = 0`` this is ``sin(elev)`` (azimuth-independent); at
         ``roof_pitch = 90`` it is ``cos(elev)·cos(gamma)`` (the vertical case).
+
+        Overriding the :class:`AdaptiveGeneralCover` hook is the whole gate: the
+        base ``valid_elevation`` composes ``cos(AOI) > 0`` for every cover type
+        (#1030), so this class no longer carries its own copy.
         """
         return float(roof_cos_aoi(self.gamma, self.sol_elev, self.roof_pitch))
 
@@ -167,16 +172,6 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
         return int(m) if m else self._max_degrees()
 
     @property
-    def valid_elevation(self) -> bool:
-        """Keep the elevation bounds and additionally require sun on the face.
-
-        Composes the inherited min/max-elevation gate with the tilted-plane AOI
-        illumination test (``cos(AOI) > 0``), mirroring
-        :class:`AdaptiveRoofWindowCover`.
-        """
-        return bool(super().valid_elevation and self._cos_aoi() > 0)
-
-    @property
     def fov_angle(self) -> float:
         """FOV azimuth measured in the tilted roof plane (#830, mirrors #212).
 
@@ -195,7 +190,7 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
         self._last_calc_details = {
             **self._last_calc_details,
             TRACE_KEY_ROOF_PITCH_DEG: float(self.roof_pitch),
-            TRACE_KEY_COS_AOI: self._cos_aoi(),
+            TRACE_KEY_COS_AOI: self.cos_aoi,
             TRACE_KEY_SLOPE_RATIO: float(
                 roof_slope_ratio(self.gamma, self.sol_elev, self.roof_pitch)
             ),

@@ -5,12 +5,32 @@ which accept flat kwargs (old-style API) and route them to the correct typed
 config dataclasses (CoverConfig, VerticalConfig, etc.).
 """
 
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
+
 from custom_components.adaptive_cover_pro.config_types import (
     CoverConfig,
     HorizontalConfig,
     TiltConfig,
     VerticalConfig,
 )
+
+
+def make_daytime_sun_data() -> MagicMock:
+    """Return a SunData mock whose sunrise/sunset bracket *now*.
+
+    ``SunGeometry.sunset_valid`` compares wall-clock now against the sunrise /
+    sunset offsets, so a bare ``MagicMock`` makes it unevaluatable. Bracketing
+    now with real datetimes makes ``sunset_valid`` cleanly ``False``, which is
+    what a test asserting on ``direct_sun_valid`` needs without patching the
+    property away.
+    """
+    now = datetime.now(UTC)
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    sun_data.sunrise.return_value = now - timedelta(hours=6)
+    sun_data.sunset.return_value = now + timedelta(hours=6)
+    return sun_data
 
 
 def make_cover_config(**overrides) -> CoverConfig:

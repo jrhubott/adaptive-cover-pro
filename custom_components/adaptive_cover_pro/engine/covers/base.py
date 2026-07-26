@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from math import cos, radians
 
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
@@ -148,9 +149,39 @@ class AdaptiveGeneralCover(ABC):
         return self.solar.gamma
 
     @property
+    def cos_aoi(self) -> float:
+        """Cosine of the angle of incidence on this cover's own plane (``s·n``).
+
+        Polymorphic hook, same shape as :attr:`fov_angle`. The default is the
+        vertical facade, ``cos(elev)·cos(gamma)``; cover types whose working
+        plane is not vertical (roof window, louvered roof) override it with the
+        pitched-plane form. Positive means the sun strikes the outer face.
+        """
+        return cos(radians(self.sol_elev)) * cos(radians(self.gamma))
+
+    @property
+    def sun_behind_plane(self) -> bool:
+        """Whether the sun is on the far side of this cover's plane (#1030).
+
+        The single predicate both the illumination gate and the reason branch
+        read. ``cos(AOI) <= 0`` means the face receives no direct sun at all, so
+        the shading projection has no answer — asking it anyway is what made
+        ``tan(elev)/cos(gamma)`` flip sign past ``|gamma| = 90`` and slam
+        vertical / tilt / venetian covers to an endpoint (and drive a drop-arm
+        awning to full extension). Cover types whose shade target is not the
+        glass — an area-mode patio awning — override this.
+        """
+        return self.cos_aoi <= 0.0
+
+    @property
     def valid_elevation(self) -> bool:
-        """Delegate to SunGeometry.valid_elevation."""
-        return self.solar.valid_elevation
+        """Configured elevation bounds AND the sun striking the outer face.
+
+        The bounds come from ``SunGeometry``; the illumination clause is added
+        here because "is this plane lit?" is a per-geometry question that
+        ``SunGeometry`` (cover-type agnostic) deliberately does not answer.
+        """
+        return bool(self.solar.valid_elevation and not self.sun_behind_plane)
 
     @property
     def sunset_valid(self) -> bool:
@@ -252,6 +283,12 @@ class AdaptiveGeneralCover(ABC):
         if self.sunset_valid:
             return ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET
         if not self.valid:
+            # An unlit face outranks the elevation clause: reporting "Elevation
+            # Limit" for a sun behind the plane sends the user to a bound that
+            # is satisfied (#1030 — also the roof window's pre-existing
+            # mis-attribution).
+            if self.sun_behind_plane:
+                return ReasonCode.ENGINE_DEFAULT_SUN_BEHIND_PLANE
             if not self.valid_elevation:
                 return ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT
             return ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT

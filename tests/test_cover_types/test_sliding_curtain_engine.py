@@ -23,19 +23,9 @@ from custom_components.adaptive_cover_pro.const import POSITION_CLOSED, POSITION
 from custom_components.adaptive_cover_pro.engine.covers import (
     AdaptiveSlidingCurtainCover,
 )
-from tests.cover_helpers import make_cover_config
+from tests.cover_helpers import make_cover_config, make_daytime_sun_data
 
 _WIN_AZI = 180.0
-
-
-def _safe_sun_data() -> MagicMock:
-    """Sun data with far-off sunset/sunrise → ``sunset_valid`` is False."""
-    sun_data = MagicMock()
-    sun_data.timezone = "UTC"
-    now = datetime.now(UTC)
-    sun_data.sunset.return_value = now + timedelta(hours=6)
-    sun_data.sunrise.return_value = now - timedelta(hours=6)
-    return sun_data
 
 
 def _past_sunset_sun_data() -> MagicMock:
@@ -60,7 +50,7 @@ def _curtain(
         logger=MagicMock(),
         sol_azi=_WIN_AZI - gamma,
         sol_elev=sol_elev,
-        sun_data=sun_data if sun_data is not None else _safe_sun_data(),
+        sun_data=sun_data if sun_data is not None else make_daytime_sun_data(),
         config=make_cover_config(
             win_azi=_WIN_AZI, fov_left=fov_left, fov_right=fov_right
         ),

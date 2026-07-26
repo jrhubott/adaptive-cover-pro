@@ -46,6 +46,28 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
         """Get awning angle from horiz_config."""
         return self.horiz_config.awn_angle
 
+    @property
+    def sun_behind_plane(self) -> bool:
+        """Area mode opts out of the illumination gate (#1025 / #1030).
+
+        A patio awning in **area** mode shades the patio, not the glass, so the
+        window plane's ``cos(AOI)`` says nothing about whether it should be
+        extended — it must stay out across the whole (possibly >90°) field of
+        view. **Window** mode projects an overhang onto the glass, so it keeps
+        the gate and falls through to the default position past ``|gamma| = 90``.
+
+        ``horiz_config`` is ``None`` for :class:`AdaptiveOscillatingCover`
+        (production builds a drop-arm awning with ``vert_config`` + ``osc_config``
+        only), which must land on the gated default — that awning's fail-open
+        branch is the worst outcome of the #1030 sign flip.
+        """
+        if (
+            self.horiz_config is not None
+            and self.horiz_config.shade_mode == AWNING_SHADE_MODE_AREA
+        ):
+            return False
+        return super().sun_behind_plane
+
     def _build_horizontal_trace(
         self,
         *,

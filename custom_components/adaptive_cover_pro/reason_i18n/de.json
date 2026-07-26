@@ -90,6 +90,7 @@
     "default_sunset_offset": "Standard: Sonnenuntergang-Versatz",
     "default_elevation_limit": "Standard: Höhenlimit",
     "default_acceptance_angle_exit": "Standard: Akzeptanzwinkel-Ausgang",
+    "default_sun_behind_plane": "Standard: Sonne hinter der Ebene",
     "default_blind_spot": "Standard: Blinder Fleck",
     "default": "Standard"
   },
