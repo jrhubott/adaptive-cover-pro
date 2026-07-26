@@ -2193,9 +2193,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # ``held_position``. A motion hold describes the same physical
             # place in ``position``, converted to the logical frame so
             # ``coordinator.state`` can invert it back out — so flip it here
-            # rather than pushing the raw value onto ``held_position``, which
-            # is also the value the registry clamps a floor against and must
-            # stay comparable to the user's logical floor (#534 / #809).
+            # rather than pushing the raw value onto ``held_position``. That
+            # keeps every hold type's ``held_position`` in one frame, the
+            # cover's own (#534 / #809). The registry converts it to logical
+            # itself, at the one site that compares it against a floor (#1036).
             held = result.held_position
             if held is None:
                 held = (
