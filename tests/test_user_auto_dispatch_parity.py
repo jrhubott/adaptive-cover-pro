@@ -268,13 +268,16 @@ async def test_user_and_auto_paths_resolve_identical_entity_targets(
     that was actually broken; assert the property.
 
     The floor axis closes #1035. When a min-mode floor above the request is
-    active, BOTH paths carve out the transforms — the registry already raised
-    the winner into cover space (#469) and the user path's ``skip_transforms``
-    mirrors it (#472/#469) — so the number they must agree on is the floor
-    itself. A policy whose target is an absolute substitution rather than a
-    transform of that number must still land in its own device wire space; the
-    dual-panel back did not, and dispatched raw canonical 0 while the automatic
-    side sent wire 100 (inverse) or calibrated 20 (interpolated).
+    active the registry raises the winner to the floor and the user path's
+    #472 clamp raises the request to the same place, so the number they must
+    agree on is the floor itself. Both paths then run that one logical number
+    through the same transforms: #1036 removed the carve-out that used to let a
+    floor-clamped value skip them, so parity here holds because both sides
+    convert, not because both sides skip. A policy whose target is an absolute
+    substitution rather than a transform of that number must still land in its
+    own device wire space; the dual-panel back did not, and dispatched raw
+    canonical 0 while the automatic side sent wire 100 (inverse) or calibrated
+    20 (interpolated).
     """
     # With the floor active the registry has ALREADY raised the pipeline winner
     # to the floor, so the agreed number IS the floor; the user asks for
@@ -318,13 +321,16 @@ async def test_floor_raised_user_command_keeps_the_back_panel_inverted() -> None
     """#1035: a floor clamp on the FRONT must not un-invert the back's blackout.
 
     Pinned separately from the parity sweep so the failure names the physical
-    consequence. The floor raises a user request into cover space, so the seam
-    correctly names ``(inverted=False, interpolated=False)`` — a true statement
-    about the FRONT's value (#993/#1027). The back's target is an absolute
-    substitution that never consumed that value, so its wire space is device
-    semantics only (#996 Finding 1): a deployed blackout on an inverse install
-    is wire 100 = physically CLOSED. Raw 0 leaves the device physically OPEN
-    and the blackout silently never deploys on a night/privacy/heat trigger.
+    consequence. The back's target is an absolute substitution that never
+    consumed the front's value, so its wire space is device semantics only
+    (#996 Finding 1): a deployed blackout on an inverse install is wire 100 =
+    physically CLOSED. Raw 0 leaves the device physically OPEN and the blackout
+    silently never deploys on a night/privacy/heat trigger.
+
+    This held when the floor made the seam name ``(inverted=False,
+    interpolated=False)``, and it still holds now that #1036 has the seam name
+    the true frame on every path: the back never depended on what the front's
+    value claimed about itself, which is exactly #996 Finding 1's point.
     """
     policy, options, _entities, cover_type = _dual_panel_case(
         {CONF_INVERSE_STATE: True}, _FLOOR_POS, floor=_FLOOR_POS

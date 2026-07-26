@@ -8,6 +8,7 @@ import datetime as dt
 from ..const import AxisConstraintMode, ReasonCode
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
 from ..diagnostics.event_buffer import EventBuffer
+from ..managers.manual_override import to_logical
 from ..reason_i18n import Reason, render_en
 from .axis_constraints import (
     bound_label,
@@ -336,8 +337,18 @@ class PipelineRegistry:
         # so a bound must clamp against held_position when present (#534).
         # Every other handler leaves held_position=None, so this preserves the
         # existing behaviour exactly.
+        #
+        # ``held_position`` is a RAW cover-frame read, deliberately so — the
+        # coordinator publishes it as a cover-frame diagnostic extra, "one
+        # frame for every hold type" (#1028). The bounds it is compared against
+        # are logical (pre-inversion canonical) user values, so convert HERE,
+        # at the one site that does the comparing, rather than re-framing the
+        # field itself. Without this the registry asks "is 25%-open above
+        # 75%-open?" on an inverse install and answers wrong in both
+        # directions: a compliant cover held at logical 80 gets *lowered* to a
+        # logical-25 floor (#1036). A no-op on non-inverse installs.
         effective_winner_pos = (
-            winner.held_position
+            to_logical(winner.held_position, inverted=snapshot.position_axis_inverted)
             if winner.held_position is not None
             else winner.position
         )
@@ -386,6 +397,9 @@ class PipelineRegistry:
                 if position_binding is not None
                 else constraint_label(constraints, AXIS_NAME_POSITION)
             )
+            # Both endpoints are logical now that ``effective_winner_pos`` is
+            # converted above, so "floor raised from X% to Y%" no longer mixes a
+            # motor reading with a user-typed bound (#1036).
             params = {
                 "from_pos": effective_winner_pos,
                 "to_pos": final_pos,
@@ -586,9 +600,11 @@ class PipelineRegistry:
             # A position clamp must reach the cover even when the winner is a
             # hold (manual-override / motion): clear skip_command so the composed
             # result is dispatched, not suppressed (issue #809 / #534).
-            # floor_clamp_applied marks the position as already in cover space
-            # so the coordinator skips interpolation (#469) — true of a ceiling
-            # lower for the same reason it is true of a floor raise.
+            # floor_clamp_applied records only that a user-configured bound
+            # clamped this winner — a floor raise (#463) or a ceiling lower
+            # (#943) — which is what drives that forced dispatch and the reason
+            # labelling. It makes NO claim about the value's frame: the composed
+            # position is logical, exactly like the winner's own was (#1036).
             winner = dataclasses.replace(
                 winner,
                 position=clamped_position,

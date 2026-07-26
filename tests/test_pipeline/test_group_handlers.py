@@ -165,6 +165,38 @@ def test_lock_handler_freezes_in_place() -> None:
     assert GROUP_ID in result.reason
 
 
+def test_lock_handler_publishes_a_logical_position_on_an_inverse_install() -> None:
+    """The raw hold read is converted before it lands in ``position`` (#1036).
+
+    ``current_cover_position`` is a RAW cover-frame read but
+    ``PipelineResult.position`` is a logical-frame field — ``coordinator.state``
+    maps every winner through ``_to_cover_frame`` on the way out, so handing the
+    raw value over would invert it a second time and publish a target that
+    contradicts where the cover actually is (``pipeline/types.py``, and the
+    ``motion_timeout`` handler's identical conversion).
+
+    Setting ``bypass_auto_control=True`` used to dodge that inversion by
+    accident; that flag means "apply even when automatic control is OFF", not
+    "this number is already in the cover's frame". The raw read stays available
+    in ``held_position`` and in the reason payload.
+    """
+    handler = GroupLockHandler()
+    snapshot = make_snapshot(
+        group_intent=_lock_intent(),
+        current_cover_position=20,
+        position_axis_inverted=True,
+    )
+
+    result = handler.evaluate(snapshot)
+
+    assert result is not None
+    assert result.position == 80
+    # The cover-frame read is preserved where a cover-frame read belongs.
+    assert result.held_position == 20
+    assert result.reason_payload is not None
+    assert result.reason_payload.params["position"] == 20
+
+
 def test_lock_handler_without_readable_position_uses_default() -> None:
     handler = GroupLockHandler()
     snapshot = make_snapshot(

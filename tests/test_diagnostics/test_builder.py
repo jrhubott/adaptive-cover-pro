@@ -1863,12 +1863,15 @@ class TestLinearPosition:
     def test_bypass_winner_normalized_to_logical_under_inverse(
         self, builder: DiagnosticsBuilder
     ):
-        """A bypass winner carries a cover-frame value — publish it as logical.
+        """A bypass winner's position is already logical — publish it unchanged.
 
-        ``coordinator.state`` returns a bypass winner's position verbatim, so
-        on an inverted install that number is already in the cover's frame.
-        ``linear_position`` claims the logical frame, so it must be flipped
-        back (issue #1028).
+        The requirement is unchanged (#1028): ``linear_position`` publishes the
+        LOGICAL frame regardless of which handler won. What changed is what
+        delivers it. ``coordinator.state`` used to return a bypass winner's
+        position verbatim, so the builder had to flip it back; now ``state``
+        maps every winner through ``_to_cover_frame``, which means the winner's
+        position was logical all along and the un-flip was compensating for the
+        carve-out rather than for a real frame difference (#1036).
         """
         diag, _ = builder.build(
             _base_ctx(
@@ -1876,19 +1879,25 @@ class TestLinearPosition:
                 position_axis_inverted=True,
             )
         )
-        assert diag["linear_position"] == 90
+        assert diag["linear_position"] == 10
 
     def test_floor_clamp_winner_normalized_to_logical_under_inverse(
         self, builder: DiagnosticsBuilder
     ):
-        """Floor-clamped winners take the same short-circuit as bypass (#469)."""
+        """A floor-clamped winner is logical too — same guarantee, same identity.
+
+        A configured floor is a pre-inversion canonical value (0 = closed,
+        100 = open), so composing it onto ``PipelineResult.position`` keeps the
+        field logical. ``linear_position`` must publish the number the user
+        typed, not its cover-frame mirror (#1028 / #1036).
+        """
         diag, _ = builder.build(
             _base_ctx(
                 pipeline_result=_make_pr(position=25, floor_clamp_applied=True),
                 position_axis_inverted=True,
             )
         )
-        assert diag["linear_position"] == 75
+        assert diag["linear_position"] == 25
 
     def test_solar_winner_unchanged_under_inverse(self, builder: DiagnosticsBuilder):
         """An ordinary winner's position is already logical — never touch it."""

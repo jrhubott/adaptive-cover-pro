@@ -922,3 +922,21 @@ class AdaptiveCoverManager:
 def inverse_state(state: int) -> int:
     """Inverse state."""
     return 100 - state
+
+
+def to_logical(value: int, *, inverted: bool) -> int:
+    """Map a RAW cover-frame reading into the logical (pre-inversion) frame.
+
+    Single source of truth for the ``inverse_state(v) if inverted else v``
+    conditional (issue #1036). Every producer that reads a physical position off
+    an entity and then hands it to a logical-frame field needs exactly this:
+    ``PipelineResult.position`` is logical for every winner, so a handler
+    holding a raw read (``MotionTimeoutHandler``'s hold, ``GroupLockHandler``'s
+    freeze) must convert first, and the registry must convert before comparing a
+    held position against a user-configured bound.
+
+    Lives beside :func:`inverse_state` so the involution is written once — the
+    caller supplies the "is this axis inverted right now?" answer, which is
+    itself sourced from ``cover_types.base.axis_inverted``.
+    """
+    return inverse_state(value) if inverted else value

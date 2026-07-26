@@ -2193,9 +2193,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # ``held_position``. A motion hold describes the same physical
             # place in ``position``, converted to the logical frame so
             # ``coordinator.state`` can invert it back out — so flip it here
-            # rather than pushing the raw value onto ``held_position``, which
-            # is also the value the registry clamps a floor against and must
-            # stay comparable to the user's logical floor (#534 / #809).
+            # rather than pushing the raw value onto ``held_position``. That
+            # keeps every hold type's ``held_position`` in one frame, the
+            # cover's own (#534 / #809). The registry converts it to logical
+            # itself, at the one site that compares it against a floor (#1036).
             held = result.held_position
             if held is None:
                 held = (
@@ -3246,21 +3247,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # must stay deduped by the same-position gate (issue #290).
             user_command=True,
         )
-        # The floor raised the request, so ``clamped`` is a user-typed value
-        # that already lives in cover space — the same carve-out ``state``
-        # applies to a floor-clamped pipeline winner (#469).
-        skip_transforms = clamped != requested
+        # ``clamped`` is logical whether or not the floor raised it: the request
+        # is a logical user value and so is the configured floor, so the max()
+        # above never leaves that frame (#1036 — this used to skip the mapping
+        # on a raise, which dispatched the floor's raw number).
         target = self._entity_target(
             entity_id,
-            self._to_cover_frame(clamped, skip_transforms=skip_transforms),
+            self._to_cover_frame(clamped),
             # A user command runs the same transform as the main pipeline but
             # off-cycle, so the policy's cached per-cycle decision may describe
             # a different value's frame (#993). Name BOTH halves of the frame
             # this dispatch actually used: ``inverted`` alone cannot say
             # "interpolated, not inverted", and a remapping policy handed that
             # ambiguity drops the calibration curve entirely (#1027).
-            inverted=not skip_transforms and self.position_axis_inverted,
-            interpolated=not skip_transforms and self._use_interpolation,
+            inverted=self.position_axis_inverted,
+            interpolated=self._use_interpolation,
         )
         return await self._cmd_svc.apply_position(entity_id, target, trigger, ctx)
 
@@ -3661,7 +3662,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return self.position_axis_inverted
         return False
 
-    def _to_cover_frame(self, value: float, *, skip_transforms: bool = False) -> int:
+    def _to_cover_frame(self, value: float) -> int:
         """Map a logical (HA-convention) position into this cover's dispatch frame.
 
         The one place the position axis crosses from the frame every user-facing
@@ -3674,18 +3675,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Interpolation and inverse-state are mutually exclusive by design — the
         combination is unsupported and logged — so a single ordered pass covers
-        both. ``skip_transforms`` reproduces the caller's own carve-out for a
-        value that is *already* in cover space (a safety-override or
-        floor-clamped pipeline winner, or a user request the floor raised);
-        see :attr:`state` and issue #469.
+        both. There is no escape hatch: every value that reaches here is
+        logical, so a caller cannot opt out of the mapping on the grounds that
+        some flag rode along with it (issue #1036 removed the ``skip_transforms``
+        carve-out both callers used to pass).
 
         Deliberately NOT shared with the end-of-window sender: that seam inverts
-        unconditionally of bypass/floor-clamp/interpolation and never
-        interpolates, which is a genuinely different transform (#993).
+        unconditionally of interpolation and never interpolates, which is a
+        genuinely different transform (#993).
         """
-        if skip_transforms:
-            return int(round(value))
-
         if self._use_interpolation:
             value = interpolate_position(
                 value,
@@ -3709,27 +3707,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def state(self) -> int:
         """Final cover position after pipeline, interpolation, and inverse_state transforms.
 
-        The pipeline always runs so _pipeline_result is always set.  Safety
-        override handlers (ForceOverride, WeatherOverride) set
-        bypass_auto_control=True on their result, which causes their position
-        to be returned directly — bypassing interpolation and inverse_state —
-        even when automatic_control is OFF or outside the time window.
+        The pipeline always runs, so ``_pipeline_result`` is always set, and
+        :attr:`PipelineResult.position` is contractually a LOGICAL
+        (pre-inversion canonical) value for every winner — a handler holding a
+        raw cover read converts it before assigning the field
+        (``pipeline/types.py``; ``motion_timeout`` and ``group_lock`` both do).
+        So this boundary answers "what frame is this in?" from the type
+        contract, never from provenance, and maps every winner unconditionally.
 
-        Floor-clamped winners (issue #469): when the registry raises a
-        non-bypass winner's position to a user-configured floor, the
-        resulting value is already in cover-position space.  Interpolation
-        and inverse_state would re-map a user-typed floor through the
-        calibration curve and silently dispatch a different position, so
-        the same short-circuit applies.
+        Neither flag on the result says anything about the frame (issue #1036):
+
+        - ``bypass_auto_control`` governs GATE PRECEDENCE — the position is
+          applied even when Automatic Control is OFF and outside the start/end
+          window (issue #767). A safety close of logical 0 must still reach an
+          inverse cover as wire 100, or the safety override opens the cover.
+        - ``floor_clamp_applied`` records that a user-configured bound clamped
+          this winner, which drives reason labelling and forces the dispatch
+          through a hold (issues #534 / #809). A configured floor is a logical
+          value like any other, so it is calibrated and inverted like any other
+          — issue #469 skipped both transforms for it, which made a "minimum
+          25% open" floor drive an inverse cover to 75% open and made dispatch
+          non-monotonic in the logical request.
         """
-        # Safety overrides and floor-clamped winners both produce positions
-        # already in cover-position space — skip post-processing transforms.
-        if (
-            self._pipeline_bypasses_auto_control
-            or self._pipeline_result.floor_clamp_applied
-        ):
-            return self._pipeline_result.position
-
         return self._to_cover_frame(self._pipeline_result.position)
 
     # --- Toggle property delegates (switch entities use setattr) ---

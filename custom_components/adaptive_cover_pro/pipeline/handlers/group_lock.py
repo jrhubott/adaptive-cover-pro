@@ -16,6 +16,7 @@ from ...const import (
     GroupIntentKind,
     ReasonCode,
 )
+from ...managers.manual_override import to_logical
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
@@ -41,13 +42,32 @@ class GroupLockHandler(OverrideHandler):
         if intent is None or intent.kind is not GroupIntentKind.LOCK:
             return None
         held = snapshot.current_cover_position
-        position = held if held is not None else snapshot.default_position
+        # ``held`` is a RAW cover-frame read, but ``PipelineResult.position`` is
+        # a logical-frame field: ``coordinator.state`` maps every winner through
+        # ``_to_cover_frame`` on the way out, so handing the raw value over
+        # would invert it a second time and publish a target that contradicts
+        # where the cover actually is (issue #1028 / #1036).
+        #
+        # ``bypass_auto_control=True`` below used to dodge that conversion by
+        # accident. That flag means "apply even when automatic control is OFF"
+        # — a statement about gate precedence, not about the number's frame —
+        # and it is set here because a group lock outranks the switch, exactly
+        # as ``motion_timeout`` explains for its own hold. Convert the frame
+        # instead and leave the flag alone. ``default_position`` is already
+        # logical, so only the entity read needs it.
+        if held is not None:
+            position = to_logical(held, inverted=snapshot.position_axis_inverted)
+            # The raw read stays in the reason payload / diagnostics, beside
+            # ``held_position`` — both describe where the cover physically is.
+            reported = held
+        else:
+            position = reported = snapshot.default_position
         return PipelineResult(
             position=position,
             control_method=ControlMethod.GROUP_LOCK,
             reason_payload=Reason(
                 ReasonCode.GROUP_LOCK,
-                {"group_id": intent.group_id, "position": position},
+                {"group_id": intent.group_id, "position": reported},
             ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
             held_position=held,

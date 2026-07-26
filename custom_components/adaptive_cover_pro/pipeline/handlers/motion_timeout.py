@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...const import ControlMethod, ReasonCode
-from ...managers.manual_override import inverse_state
+from ...managers.manual_override import to_logical
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_default_position, compute_raw_calculated_position
@@ -40,9 +40,9 @@ class MotionTimeoutHandler(OverrideHandler):
         ):
             held = snapshot.current_cover_position
             # ``held`` is a RAW cover-frame read, but ``PipelineResult.position``
-            # is a logical-frame field: ``coordinator.state`` inverts every
-            # non-bypass winner on the way out, so handing the raw value over
-            # would invert it a second time and publish a target that
+            # is a logical-frame field: ``coordinator.state`` maps every winner
+            # through ``_to_cover_frame`` on the way out, so handing the raw
+            # value over would invert it a second time and publish a target that
             # contradicts where the cover actually is (issue #1028).
             #
             # Setting ``bypass_auto_control=True`` would also dodge that
@@ -54,9 +54,7 @@ class MotionTimeoutHandler(OverrideHandler):
             # interpolation ``coordinator.state`` re-interpolates the held motor
             # read, so the published target still drifts. Pre-existing.
             return PipelineResult(
-                position=(
-                    inverse_state(held) if snapshot.position_axis_inverted else held
-                ),
+                position=to_logical(held, inverted=snapshot.position_axis_inverted),
                 control_method=ControlMethod.MOTION,
                 # The raw read stays in the reason payload / diagnostics.
                 reason_payload=Reason(ReasonCode.OCCUPANCY_HOLDING, {"held": held}),

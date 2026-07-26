@@ -2,7 +2,7 @@
 
 from .cover_command import CoverCommandService, PositionContext
 from .grace_period import GracePeriodManager
-from .manual_override import AdaptiveCoverManager, inverse_state
+from .manual_override import AdaptiveCoverManager, inverse_state, to_logical
 from .motion import MotionManager
 from .time_window import TimeWindowManager
 from .toggles import ToggleManager
@@ -16,4 +16,5 @@ __all__ = [
     "TimeWindowManager",
     "ToggleManager",
     "inverse_state",
+    "to_logical",
 ]

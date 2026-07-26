@@ -5,7 +5,8 @@ Tests the full chain: pipeline position → coordinator.state property
 
 Covers:
 - Step 15: Solar position inverted (30% → 70%) when inverse_state=True
-- Step 16: Force override bypasses inverse state (safety handlers are exempt)
+- Step 16: Safety/bypass positions are logical too, so they invert like the rest
+  (``bypass_auto_control`` is a gate-precedence flag, not a frame claim — #1036)
 - Step 17: Open/close-only cover: threshold checked after inversion
 - Step 18: Interpolation + inverse_state → inverse NOT applied (conflict guard)
 """
@@ -158,18 +159,27 @@ class TestSolarPositionInverted:
 
 
 # ---------------------------------------------------------------------------
-# Step 16: Force override bypasses inverse state
+# Step 16: Safety/bypass positions are logical too (issue #1036)
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverrideBypassesInverseState:
-    """Safety handlers (force/weather) bypass inverse state via bypass_auto_control."""
+class TestSafetyOverridePositionsAreLogical:
+    """``bypass_auto_control`` governs gate precedence, never the value's frame.
 
-    def test_force_override_position_not_inverted(self):
-        """ForceOverrideHandler result is returned as-is even with inverse_state=True.
+    Safety handlers (force/weather/priority-100 custom slots) set
+    ``bypass_auto_control=True`` so their position reaches the cover even when
+    Automatic Control is OFF and outside the time window (#767). That is the
+    requirement these tests still enforce. What they no longer claim — and what
+    issue #1036 removed — is that the flag also means "this number is already in
+    the cover's frame": ``PipelineResult.position`` is a logical, pre-inversion
+    value for every handler, so ``coordinator.state`` inverts it like any other.
+    """
 
-        Safety handlers set bypass_auto_control=True, causing coordinator.state
-        to return the pipeline position directly without post-processing transforms.
+    def test_force_override_position_is_inverted(self):
+        """A safety slot's logical 75 reaches an inverse cover as wire 25.
+
+        Before #1036 this dispatched 75, driving the cover to 25% open — the
+        opposite of what the user configured.
         """
         result = _make_pipeline_result(
             position=75,
@@ -180,11 +190,16 @@ class TestForceOverrideBypassesInverseState:
 
         state = AdaptiveDataUpdateCoordinator.state.fget(coord)
 
-        # 75% NOT inverted to 25% — safety bypasses all transforms
-        assert state == 75
+        assert state == 25
 
-    def test_weather_override_position_not_inverted(self):
-        """WeatherOverrideHandler result is also returned as-is."""
+    def test_weather_override_position_is_inverted(self):
+        """The headline case: a weather safety CLOSE must physically close the cover.
+
+        ``weather_override_position`` is a logical value (0 = closed). On an
+        inverse-state install the wire number for "closed" is 100. Before #1036
+        the bypass carve-out dispatched 0 — fully OPEN — during exactly the
+        conditions the safety override exists to protect against.
+        """
         result = _make_pipeline_result(
             position=0,
             control_method=ControlMethod.WEATHER,
@@ -194,11 +209,10 @@ class TestForceOverrideBypassesInverseState:
 
         state = AdaptiveDataUpdateCoordinator.state.fget(coord)
 
-        # 0% NOT inverted to 100% — safety bypasses transforms
-        assert state == 0
+        assert state == 100
 
-    def test_force_zero_percent_stays_zero(self):
-        """Force override to 0% stays 0% (not inverted to 100%)."""
+    def test_force_zero_percent_is_inverted_to_one_hundred(self):
+        """Force override to logical 0% dispatches wire 100% on an inverse cover."""
         result = _make_pipeline_result(
             position=0,
             control_method=ControlMethod.FORCE,
@@ -208,7 +222,7 @@ class TestForceOverrideBypassesInverseState:
 
         state = AdaptiveDataUpdateCoordinator.state.fget(coord)
 
-        assert state == 0
+        assert state == 100
 
     def test_non_safety_manual_position_IS_inverted(self):
         """ManualOverrideHandler does NOT set bypass_auto_control, so it IS inverted."""
