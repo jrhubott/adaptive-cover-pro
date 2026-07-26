@@ -15,6 +15,9 @@ from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BLANK_TIME,
+    CONF_END_ENTITY,
+    CONF_END_TIME,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
@@ -62,6 +65,31 @@ def manual_override_input_entities(options: Mapping) -> list[str]:
     "configured?" checks stay consistent.
     """
     return list(options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []))
+
+
+def has_configured_window_end(options: Mapping) -> bool:
+    """Return True when a *real* operating-window end is configured.
+
+    Single source of truth for "does this instance have a window end at all?",
+    shared by the ``until_window_end`` manual-override deadline resolver and the
+    configuration summary's ⚠️ warning so the two can never disagree about which
+    configs have no anchor (issue #1044).
+
+    ``BLANK_TIME`` (``"00:00:00"``) is the project's UNSET / all-day sentinel —
+    a cleared TimeSelector writes it, ``adaptive_cover_pro.set_options``
+    tolerates it, and legacy pre-#492 entries carry it. It is *truthy*, so a
+    bare falsiness test reads it as a configured 22:00-style end; it also cannot
+    be told apart from a deliberate midnight end once
+    ``TimeWindowManager.end_time`` has normalised it (that property maps a
+    static midnight onto **tomorrow's** midnight, a value that advances a day at
+    every local midnight). So the sentinel must be recognised here, on the raw
+    option values, exactly as ``config_flow`` and ``diagnostics.triage`` already
+    do.
+    """
+    return any(
+        options.get(key) not in (None, "", BLANK_TIME)
+        for key in (CONF_END_TIME, CONF_END_ENTITY)
+    )
 
 
 def custom_position_slot_sensors(

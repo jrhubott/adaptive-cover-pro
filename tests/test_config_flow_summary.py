@@ -3994,3 +3994,45 @@ def test_manual_override_summary_warns_when_until_window_end_has_no_configured_e
 
     assert "⚠️" in block
     assert "3 h" in block
+
+
+def test_manual_override_summary_warns_when_end_time_is_the_blank_sentinel():
+    """``"00:00:00"`` is the UNSET sentinel — truthy, but not a configured end.
+
+    This is precisely the config whose ``until_window_end`` hold falls back to
+    the numeric duration at runtime, so the ⚠️ has to fire for it too.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        BLANK_TIME,
+        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    )
+
+    block = _manual_block(
+        {
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+            ),
+            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
+            CONF_END_TIME: BLANK_TIME,
+        }
+    )
+
+    assert "⚠️" in block
+    assert "3 h" in block
+
+
+def test_manual_override_summary_tolerates_an_unknown_duration_mode():
+    """An out-of-schema stored mode must degrade, not break the whole form.
+
+    The runtime half already degrades (unrecognised mode → no candidates →
+    the fixed fallback); the summary's one computed label lookup must too.
+    """
+    cfg = {
+        CONF_MANUAL_OVERRIDE_DURATION_MODE: "not_a_real_mode",
+        CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
+    }
+
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+
+    assert isinstance(summary, str)
+    assert "pauses for 3 h" in _manual_block(cfg)

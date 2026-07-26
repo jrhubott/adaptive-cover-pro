@@ -17,6 +17,7 @@ from .detector import (
     default_stop_to_my_decision,
     default_user_context_decision,
 )
+from .expiry import STARTED_AT_SOURCE_DERIVED, STARTED_AT_SOURCE_ENGAGED
 from .manager import AdaptiveCoverManager, inverse_state, to_logical
 from .position_delta import PositionDeltaDetector
 from .registry import DEFAULT_DETECTOR, DETECTOR_REGISTRY, get_detector
@@ -36,6 +37,8 @@ __all__ = [
     "DetectorConfig",
     "OverrideDecision",
     "OverrideDetector",
+    "STARTED_AT_SOURCE_DERIVED",
+    "STARTED_AT_SOURCE_ENGAGED",
     "PositionDeltaDetector",
     "SecondaryAxisCheck",
     "SecondaryAxisResult",

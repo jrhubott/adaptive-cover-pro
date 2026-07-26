@@ -34,7 +34,12 @@ from .detector import (
     StopToMy,
     UserContextChange,
 )
-from .expiry import expiry_for_started_at, started_at_for_expiry
+from .expiry import (
+    STARTED_AT_SOURCE_DERIVED,
+    STARTED_AT_SOURCE_ENGAGED,
+    expiry_for_started_at,
+    started_at_for_expiry,
+)
 from .position_delta import PositionDeltaDetector
 from .secondary_axis import SecondaryAxisCheck
 
@@ -105,6 +110,13 @@ class AdaptiveCoverManager:
         # after a reboot. A pin outranks the configured duration mode; an entity
         # absent here has its end derived by :meth:`expiry_for`.
         self.manual_control_expiry: dict[str, dt.datetime] = {}
+        # How each entity's ``manual_control_time`` was obtained — see
+        # ``expiry.STARTED_AT_SOURCE_*``. Display/diagnostics only: nothing
+        # branches on it. It exists because the engage paths record the honest
+        # engage moment while the restore path can only reconstruct one, so the
+        # same override reports a different ``started_at`` across a restart and
+        # a consumer needs to be told which it is looking at.
+        self.manual_control_start_source: dict[str, str] = {}
         self.reset_duration = dt.timedelta(**reset_duration)
         self.logger = logger
         self._event_buffer: EventBuffer = (
@@ -701,12 +713,14 @@ class AdaptiveCoverManager:
         timestamp: dt.datetime,
         expiry: dt.datetime | None = None,
         overwrite: bool = True,
+        start_source: str = STARTED_AT_SOURCE_ENGAGED,
     ) -> None:
         """Write one cover's override start (and optional pinned end).
 
-        The single seam every arming path goes through, so ``manual_control_time``
-        and ``manual_control_expiry`` can never disagree about which cover is
-        armed (CODING_GUIDELINES.md § no-duplication).
+        The single seam every arming path goes through, so ``manual_control_time``,
+        ``manual_control_expiry`` and ``manual_control_start_source`` can never
+        disagree about which cover is armed (CODING_GUIDELINES.md §
+        no-duplication).
 
         Args:
             entity_id: Cover entity ID.
@@ -715,16 +729,22 @@ class AdaptiveCoverManager:
                 mode. ``None`` with ``overwrite=True`` **clears** any stale pin,
                 so a re-arm resolves fresh from the mode.
             overwrite: ``True`` re-arms (extend semantics). ``False`` is
-                ``setdefault`` on both stores — the "do not extend the window"
-                behaviour ``allow_reset=False`` and ``mark_user_command`` rely on.
+                ``setdefault`` on all three stores — the "do not extend the
+                window" behaviour ``allow_reset=False`` and ``mark_user_command``
+                rely on.
+            start_source: Provenance of ``timestamp`` (``expiry.STARTED_AT_SOURCE_*``).
+                Defaults to ``engaged`` — every path except the reboot restore
+                knows the real moment. Display-only.
 
         """
         if not overwrite:
             self.manual_control_time.setdefault(entity_id, timestamp)
+            self.manual_control_start_source.setdefault(entity_id, start_source)
             if expiry is not None:
                 self.manual_control_expiry.setdefault(entity_id, expiry)
             return
         self.manual_control_time[entity_id] = timestamp
+        self.manual_control_start_source[entity_id] = start_source
         if expiry is None:
             self.manual_control_expiry.pop(entity_id, None)
         else:
@@ -771,12 +791,22 @@ class AdaptiveCoverManager:
         rather than pushed through an inverse that no longer round-trips in the
         sun modes. The derived start is still written so the diagnostics
         ``started_at`` field and the restore round-trip keep their shape.
+
+        That derived start is a RECONSTRUCTION, not the moment the user touched
+        the cover: only the expiry was ever persisted (a per-entity ISO string —
+        the payload shape a rolled-back build still parses), so the true start
+        is unrecoverable here. Under a pinned service deadline or a non-``fixed``
+        duration mode it will differ from what the engage path reported for the
+        very same override before the restart. It is therefore tagged
+        ``derived_from_expiry`` so diagnostics can say so rather than silently
+        change meaning; the exact end remains available as ``expires_at``.
         """
         self.manual_control[entity_id] = True
         self._arm(
             entity_id,
             timestamp=started_at_for_expiry(expiry, self.reset_duration),
             expiry=expiry,
+            start_source=STARTED_AT_SOURCE_DERIVED,
         )
 
     def mark_manual_control(self, cover: str) -> None:
@@ -998,6 +1028,7 @@ class AdaptiveCoverManager:
         self.manual_control[entity_id] = False
         self.manual_control_time.pop(entity_id, None)
         self.manual_control_expiry.pop(entity_id, None)
+        self.manual_control_start_source.pop(entity_id, None)
         # Issue #888: the assumed My/display position was a stand-in while the
         # override held the cover; clearing the override retires it too.
         self._invalidate_assumed(entity_id)

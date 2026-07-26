@@ -255,6 +255,7 @@ from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
+    has_configured_window_end,
     mirror_legacy_slot_sensor_keys,
 )
 
@@ -2286,18 +2287,30 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         config.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
         or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
     )
+    # Same predicate the runtime resolver uses, so the ⚠️ fires for exactly the
+    # configs whose hold falls back to the numeric duration — including the
+    # truthy-but-unset ``BLANK_TIME`` sentinel (issue #1044).
     manual_window_end_missing = (
         manual_mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-        and not config.get(CONF_END_TIME)
-        and not config.get(CONF_END_ENTITY)
+        and not has_configured_window_end(config)
     )
-    if manual_mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED or manual_window_end_missing:
+    # The summary's only computed-key label lookup. An out-of-schema stored mode
+    # (hand-edited .storage, a value from a build that knew a mode this one
+    # doesn't) must degrade to the fixed rendering the way the runtime half
+    # does, not raise and take the whole Configuration Summary form down.
+    manual_mode_label = (
+        None
+        if manual_mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED
+        or manual_window_end_missing
+        else L.get(f"manual.{manual_mode}")
+    )
+    if manual_mode_label is None:
         if manual_dur is not None:
             mo_parts.append(
                 L["manual.pauses_for"].format(duration=_format_duration(manual_dur))
             )
     else:
-        mo_parts.append(L[f"manual.{manual_mode}"])
+        mo_parts.append(manual_mode_label)
     threshold = config.get(CONF_MANUAL_THRESHOLD)
     if threshold is not None:
         mo_parts.append(L["manual.threshold"].format(threshold=threshold))

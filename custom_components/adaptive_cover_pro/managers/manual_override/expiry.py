@@ -16,6 +16,26 @@ from __future__ import annotations
 
 import datetime as dt
 
+# How a cover's recorded ``started_at`` was obtained. The two arming paths
+# cannot mean the same thing by it, and a diagnostics consumer must be able to
+# tell which it is holding — the value visibly changes for one and the same
+# override across an HA restart (issue #1044).
+#
+#   engaged            — the honest moment ACP engaged the override: the user
+#                        touched the cover, a wall switch fired, or the
+#                        ``engage_manual_override`` service was called.
+#   derived_from_expiry — RECONSTRUCTED via :func:`started_at_for_expiry`. The
+#                        restore path (issue #1019) is handed an absolute expiry
+#                        and nothing else — the true start was never persisted —
+#                        so it back-dates one. Under a non-``fixed`` duration
+#                        mode, or against a pinned service deadline, that
+#                        back-date is not when the user actually touched the
+#                        cover and must not be read as such.
+#
+# The override's true end is ``expires_at``, which is exact in both cases.
+STARTED_AT_SOURCE_ENGAGED = "engaged"
+STARTED_AT_SOURCE_DERIVED = "derived_from_expiry"
+
 
 def expiry_for_started_at(
     started_at: dt.datetime, duration: dt.timedelta

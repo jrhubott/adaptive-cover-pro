@@ -7,9 +7,9 @@ import datetime as dt
 import dataclasses
 import json
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
     from .forecast import Forecast
@@ -44,6 +44,7 @@ from .helpers import (
     custom_position_slot_sensors,
     get_datetime_from_str,
     get_safe_state,
+    has_configured_window_end,
     resolve_override_deadline,
     resolve_sun_boundaries,
     state_attr,
@@ -125,6 +126,7 @@ from .managers.cover_command import (
 )
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import (
+    STARTED_AT_SOURCE_ENGAGED,
     AdaptiveCoverManager,
     DetectorConfig,
     get_detector,
@@ -158,6 +160,21 @@ from .state.window_transition_tracker import WindowTransitionTracker
 _MANIFEST_VERSION: str = json.loads(
     (pathlib.Path(__file__).parent / "manifest.json").read_text()
 )["version"]
+
+
+class SunBoundaryOptions(NamedTuple):
+    """The four HA-side inputs that define what "sunset"/"sunrise" mean here.
+
+    Produced by :func:`_read_sun_boundary_options`
+    and consumed by both the day/night position boundary and the manual-override
+    sun deadline. Field names match :func:`.helpers.resolve_sun_boundaries`'
+    keyword arguments.
+    """
+
+    sunset_time: dt.datetime | None
+    sunrise_time: dt.datetime | None
+    sunset_off: int
+    sunrise_off: int
 
 
 def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime | None:
@@ -194,6 +211,31 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
             raw,
         )
         return None
+
+
+def _read_sun_boundary_options(
+    hass: HomeAssistant, options: Mapping
+) -> SunBoundaryOptions:
+    """Read the four HA-side inputs that define sunset/sunrise for this instance.
+
+    The single source of truth for the *reads*, as
+    :func:`.helpers.resolve_sun_boundaries` is for the arithmetic they feed. Both
+    consumers — the day/night position boundary
+    (``_compute_current_effective_default``) and the manual-override sun deadline
+    (``_resolve_override_deadline``) — delegate here, so a later fifth input can
+    only be added in one place and "sunset" can never come to mean two different
+    instants inside one instance (CODING_GUIDELINES.md § no-duplication).
+
+    ``sunrise_offset`` falls back to ``sunset_offset`` when unset, so an install
+    that only ever set one offset gets a symmetric night window.
+    """
+    sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+    return SunBoundaryOptions(
+        sunset_time=_read_time_entity(hass, options.get(CONF_SUNSET_TIME_ENTITY)),
+        sunrise_time=_read_time_entity(hass, options.get(CONF_SUNRISE_TIME_ENTITY)),
+        sunset_off=sunset_off,
+        sunrise_off=int(options.get(CONF_SUNRISE_OFFSET, sunset_off)),
+    )
 
 
 # Cover states that carry no usable position. A transition whose *old* state is
@@ -4001,8 +4043,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         The per-entity countdown reads the manager's ``expiry_for`` authority,
         so it reflects a pinned service deadline and the configured duration
         mode alike instead of assuming ``started_at + reset_duration``.
-        ``expires_at`` and ``duration_mode`` are additive: every pre-existing
-        key keeps its meaning.
+        ``expires_at``, ``started_at_source`` and ``duration_mode`` are additive:
+        every pre-existing key keeps its meaning.
+
+        ``expires_at`` is the override's true end and the only field to derive
+        it from — ``started_at + reset_duration_seconds`` has not been the end
+        since the duration modes landed. ``started_at_source`` says how
+        ``started_at`` was obtained: ``engaged`` is the real moment ACP engaged
+        the override, ``derived_from_expiry`` is the value the reboot-restore
+        path back-derives because only the expiry was ever persisted. The same
+        override reports different ``started_at`` values on either side of a
+        restart; this field is what makes that legible instead of silent.
         """
         now = dt.datetime.now(dt.UTC)
         reset_secs = self.manager.reset_duration.total_seconds()
@@ -4017,6 +4068,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entries[eid] = {
                 "active": self.manager.manual_control.get(eid, False),
                 "started_at": started_at.isoformat(),
+                "started_at_source": self.manager.manual_control_start_source.get(
+                    eid, STARTED_AT_SOURCE_ENGAGED
+                ),
                 "expires_at": expires_at.isoformat(),
                 "remaining_seconds": int(max(0, (expires_at - now).total_seconds())),
             }
@@ -4065,24 +4119,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         boundaries = None
         cover_data = self._cover_data
         if cover_data is not None:
-            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+            bounds = _read_sun_boundary_options(self.hass, options)
             boundaries = resolve_sun_boundaries(
                 cover_data.sun_data,
-                sunset_time=_read_time_entity(
-                    self.hass, options.get(CONF_SUNSET_TIME_ENTITY)
-                ),
-                sunrise_time=_read_time_entity(
-                    self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
-                ),
-                sunset_off=sunset_off,
-                sunrise_off=int(options.get(CONF_SUNRISE_OFFSET, sunset_off)),
+                sunset_time=bounds.sunset_time,
+                sunrise_time=bounds.sunrise_time,
+                sunset_off=bounds.sunset_off,
+                sunrise_off=bounds.sunrise_off,
             )
 
+        # An unset window end is NO anchor. ``TimeWindowManager.end_time``
+        # normalises the ``BLANK_TIME`` sentinel onto tomorrow's midnight by
+        # design, so consulting it for an unconfigured window would produce a
+        # deadline that recedes a day at every local midnight and the hold would
+        # never expire. Decide off the raw options, where the sentinel is still
+        # distinguishable (issue #1044).
         deadline = resolve_override_deadline(
             mode,
             dt_util.as_utc(anchor).replace(tzinfo=None),
             boundaries=boundaries,
-            window_end_local_naive=self._time_mgr.end_time,
+            window_end_local_naive=(
+                self._time_mgr.end_time if has_configured_window_end(options) else None
+            ),
         )
         if deadline is None:
             self.logger.debug(
@@ -4099,11 +4157,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> tuple[int, bool]:
         """Return (effective_pos, is_sunset_active) for the current moment.
 
-        Single source of truth for reading the sunset/sunrise options and
-        calling ``compute_effective_default``. Shared by the main update cycle
-        (``_calculate_cover_state``), ``_on_window_closed`` and
-        ``_check_sunset_window_transition`` so the options-reading and the
-        ``window_explicitly_started`` signal are not duplicated.
+        Single source of truth for calling ``compute_effective_default``. Shared
+        by the main update cycle (``_calculate_cover_state``),
+        ``_on_window_closed`` and ``_check_sunset_window_transition`` so the
+        ``window_explicitly_started`` signal is not duplicated. The sunset /
+        sunrise inputs themselves come from
+        :func:`_read_sun_boundary_options`, which the manual-override deadline
+        resolver reads through too.
 
         Args:
             options: The config-entry options dict.
@@ -4115,14 +4175,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-        sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-        sunrise_off = int(
-            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
-        )
-        sunset_time = _read_time_entity(self.hass, options.get(CONF_SUNSET_TIME_ENTITY))
-        sunrise_time = _read_time_entity(
-            self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
-        )
+        bounds = _read_sun_boundary_options(self.hass, options)
         if cover_data is None:
             cover_data = self.get_blind_data(options=options)
         # A configured daytime gate (issue #632) OWNS the day/night boundary:
@@ -4143,10 +4196,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
             sun_data=cover_data.sun_data,
-            sunset_off=sunset_off,
-            sunrise_off=sunrise_off,
-            sunset_time=sunset_time,
-            sunrise_time=sunrise_time,
+            sunset_off=bounds.sunset_off,
+            sunrise_off=bounds.sunrise_off,
+            sunset_time=bounds.sunset_time,
+            sunrise_time=bounds.sunrise_time,
             window_explicitly_started=self.window_explicitly_started,
             daytime_gate=daytime_gate,
             end_of_window_pos=eow_pos,

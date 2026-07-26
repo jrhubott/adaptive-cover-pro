@@ -544,8 +544,15 @@ class TestCoordinatorResolver:
         assert deadline == dt.datetime(2026, 7, 2, 20, 15, tzinfo=dt.UTC)
 
     def test_resolver_uses_window_end_from_time_window_manager(self):
-        """``until_window_end`` reads the resolved end, not the raw option string."""
+        """``until_window_end`` reads the resolved end, not the raw option string.
+
+        The raw option is still what says a window end *exists* — a non-``None``
+        ``TimeWindowManager.end_time`` is only reachable when one of the two end
+        keys is set — but the instant itself comes from the manager, entity
+        resolution and all.
+        """
         from custom_components.adaptive_cover_pro.const import (
+            CONF_END_TIME,
             CONF_MANUAL_OVERRIDE_DURATION_MODE,
         )
 
@@ -554,6 +561,7 @@ class TestCoordinatorResolver:
                 CONF_MANUAL_OVERRIDE_DURATION_MODE: (
                     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
                 ),
+                CONF_END_TIME: "17:00:00",
             },
             sun_data=_astral_sun_data(),
             window_end=dt.datetime(2026, 7, 2, 17, 0),
@@ -622,6 +630,237 @@ class TestCoordinatorResolver:
             is None
         )
         coord.hass.states.get.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# One reader owns the sunset/sunrise HA reads
+# ---------------------------------------------------------------------------
+
+_CED = "custom_components.adaptive_cover_pro.coordinator.compute_effective_default"
+_READ_BOUNDS = (
+    "custom_components.adaptive_cover_pro.coordinator._read_sun_boundary_options"
+)
+
+
+class TestSunBoundarySource:
+    """Sunset must mean one instant per instance, not one per call site.
+
+    The night-position boundary and the manual-override sun deadline both need
+    the same four inputs (the two override entities and the two offsets). Two
+    hand-rolled copies of that read block would let a later third input land on
+    one site only.
+    """
+
+    def _bind(self, coord):
+        """Bind the real ``_compute_current_effective_default`` onto a stub."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord._compute_current_effective_default = (
+            AdaptiveDataUpdateCoordinator._compute_current_effective_default.__get__(
+                coord
+            )
+        )
+        return coord
+
+    def test_patching_the_single_reader_moves_both_consumers(self):
+        """Both paths must observe a patched reader — proof of one shared source."""
+        from types import SimpleNamespace
+
+        coord = self._bind(
+            _coordinator(
+                {
+                    CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+                    )
+                },
+                sun_data=_astral_sun_data(),
+            )
+        )
+        patched = SimpleNamespace(
+            sunset_time=None,
+            sunrise_time=dt.datetime(2026, 7, 2, 6, 30),
+            sunset_off=0,
+            sunrise_off=15,
+        )
+
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+            patch(_READ_BOUNDS, return_value=patched),
+            patch(_CED, return_value=(0, False)) as ced,
+        ):
+            coord._compute_current_effective_default(
+                {}, cover_data=MagicMock(sun_data=_astral_sun_data())
+            )
+            deadline = coord._resolve_override_deadline(
+                dt.datetime(2026, 7, 2, 3, 0, tzinfo=dt.UTC)
+            )
+
+        kwargs = ced.call_args.kwargs
+        assert kwargs["sunrise_time"] == patched.sunrise_time
+        assert kwargs["sunrise_off"] == patched.sunrise_off
+        assert kwargs["sunset_time"] == patched.sunset_time
+        assert kwargs["sunset_off"] == patched.sunset_off
+        # 06:30 local (UTC in this test) + the 15-minute offset.
+        assert deadline == dt.datetime(2026, 7, 2, 6, 45, tzinfo=dt.UTC)
+
+    def test_both_paths_agree_on_the_resolved_sunrise_instant(self):
+        """A sunrise entity plus a non-default offset lands identically on both."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_SUNRISE_OFFSET,
+            CONF_SUNRISE_TIME_ENTITY,
+        )
+
+        options = {
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+            ),
+            CONF_SUNRISE_TIME_ENTITY: "sensor.my_sunrise",
+            CONF_SUNRISE_OFFSET: 20,
+        }
+        coord = self._bind(
+            _coordinator(
+                options, sun_data=_astral_sun_data(), time_entity_state="05:00:00"
+            )
+        )
+
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+            patch(
+                "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+                return_value=dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC),
+            ),
+            patch(_CED, return_value=(0, False)) as ced,
+        ):
+            coord._compute_current_effective_default(
+                options, cover_data=MagicMock(sun_data=_astral_sun_data())
+            )
+            deadline = coord._resolve_override_deadline(
+                dt.datetime(2026, 7, 2, 3, 0, tzinfo=dt.UTC)
+            )
+
+        kwargs = ced.call_args.kwargs
+        assert kwargs["sunrise_time"] == dt.datetime(2026, 7, 2, 5, 0)
+        assert kwargs["sunrise_off"] == 20
+        # The entity's 05:00, not astral's 04:00, plus the same 20-minute offset.
+        assert deadline == dt.datetime(2026, 7, 2, 5, 20, tzinfo=dt.UTC)
+
+
+# ---------------------------------------------------------------------------
+# BLANK_TIME window end — the sentinel must read as "no window"
+# ---------------------------------------------------------------------------
+
+
+def _blank_end_coordinator(**overrides):
+    """Coordinator whose window end is the unset sentinel ``"00:00:00"``.
+
+    ``TimeWindowManager.end_time`` maps a static midnight end onto *tomorrow's*
+    midnight, so the resolved value the resolver would otherwise consult
+    advances a whole day at every local midnight.
+    """
+    from custom_components.adaptive_cover_pro.const import BLANK_TIME, CONF_END_TIME
+
+    options = {
+        CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+            MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+        ),
+        CONF_END_TIME: BLANK_TIME,
+    }
+    options.update(overrides)
+    return _coordinator(
+        options,
+        sun_data=_astral_sun_data(),
+        # What TimeWindowManager hands back for a "00:00:00" static end.
+        window_end=dt.datetime(2026, 7, 3, 0, 0),
+    )
+
+
+class TestBlankWindowEnd:
+    """``BLANK_TIME`` is the project's UNSET sentinel — never a real deadline."""
+
+    def test_resolver_returns_none_for_the_blank_time_sentinel(self):
+        """No anchor at all → ``None`` → the numeric duration takes over."""
+        coord = _blank_end_coordinator()
+
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC):
+            deadline = coord._resolve_override_deadline(
+                dt.datetime(2026, 7, 2, 10, 0, tzinfo=dt.UTC)
+            )
+
+        assert deadline is None
+
+    def test_resolver_still_uses_a_genuinely_configured_end(self):
+        """A real ``end_time`` is untouched by the sentinel guard."""
+        from custom_components.adaptive_cover_pro.const import CONF_END_TIME
+
+        coord = _coordinator(
+            {
+                CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+                ),
+                CONF_END_TIME: "18:00:00",
+            },
+            sun_data=_astral_sun_data(),
+            window_end=dt.datetime(2026, 7, 2, 18, 0),
+        )
+
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC):
+            deadline = coord._resolve_override_deadline(
+                dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
+            )
+
+        assert deadline == dt.datetime(2026, 7, 2, 18, 0, tzinfo=dt.UTC)
+
+    def test_resolver_still_uses_a_configured_end_entity(self):
+        """An end *entity* is a real window end even with a blank static value."""
+        from custom_components.adaptive_cover_pro.const import CONF_END_ENTITY
+
+        coord = _blank_end_coordinator(**{CONF_END_ENTITY: "input_datetime.window_end"})
+        coord._time_mgr.end_time = dt.datetime(2026, 7, 2, 19, 0)
+
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC):
+            deadline = coord._resolve_override_deadline(
+                dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
+            )
+
+        assert deadline == dt.datetime(2026, 7, 2, 19, 0, tzinfo=dt.UTC)
+
+    async def test_blank_end_override_expires_after_the_numeric_duration(self):
+        """The ship-blocker: the hold must not suspend auto-control forever."""
+        coord = _blank_end_coordinator()
+        mgr = _manager(["cover.x"], reset_duration={"hours": 2})
+        mgr.set_deadline_resolver(coord._resolve_override_deadline)
+        mgr.set_last_updated(
+            "cover.x", _state(dt.datetime(2026, 7, 2, 10, 0, tzinfo=dt.UTC)), True
+        )
+        mgr.mark_manual_control("cover.x")
+
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+            freeze_time("2026-07-02 12:00:01"),
+        ):
+            assert await mgr.reset_if_needed() == {"cover.x"}
+
+        assert mgr.is_cover_manual("cover.x") is False
+
+    async def test_blank_end_override_holds_until_the_numeric_duration(self):
+        """Falling back to ``fixed`` must not shorten the hold either."""
+        coord = _blank_end_coordinator()
+        mgr = _manager(["cover.x"], reset_duration={"hours": 2})
+        mgr.set_deadline_resolver(coord._resolve_override_deadline)
+        mgr.set_last_updated(
+            "cover.x", _state(dt.datetime(2026, 7, 2, 10, 0, tzinfo=dt.UTC)), True
+        )
+        mgr.mark_manual_control("cover.x")
+
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+            freeze_time("2026-07-02 11:59:59"),
+        ):
+            assert await mgr.reset_if_needed() == set()
+
+        assert mgr.is_cover_manual("cover.x") is True
 
 
 # ---------------------------------------------------------------------------
@@ -812,6 +1051,92 @@ class TestSurfaces:
             dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC).isoformat()
         )
         assert state["entries"]["cover.a"]["active"] is True
+
+
+class TestStartedAtProvenance:
+    """``started_at`` means two different things — the payload must say which.
+
+    ``engage_override`` records the honest moment the override was engaged.
+    ``restore_override`` can't: the persisted payload is an absolute expiry and
+    nothing else, so the start is *reconstructed* through the
+    ``expiry - reset_duration`` inverse. Both are legitimate; a consumer just
+    has to be able to tell them apart, because the same override reports a
+    different ``started_at`` before and after a restart.
+    """
+
+    def test_engaged_override_reports_an_honest_start(self):
+        """The service path knows exactly when it engaged — and says so."""
+        mgr = _manager(["cover.a"], reset_duration={"hours": 2})
+        end = dt.datetime(2026, 7, 2, 12, 30, tzinfo=dt.UTC)
+
+        with freeze_time("2026-07-02 12:00:00"):
+            mgr.engage_override("cover.a", end_time=end, reason="service")
+            state = _build_manual_override_diagnostics(mgr, {})
+
+        entry = state["entries"]["cover.a"]
+        assert entry["started_at_source"] == "engaged"
+        assert entry["started_at"] == (
+            dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC).isoformat()
+        )
+        # The true end is unambiguous regardless of how started_at was obtained.
+        assert entry["expires_at"] == end.isoformat()
+
+    def test_restored_override_reports_a_derived_start(self):
+        """After a restart the same override's start is a reconstruction."""
+        mgr = _manager(["cover.a"], reset_duration={"hours": 2})
+        end = dt.datetime(2026, 7, 2, 12, 30, tzinfo=dt.UTC)
+
+        with freeze_time("2026-07-02 12:00:00"):
+            mgr.restore_override("cover.a", end)
+            state = _build_manual_override_diagnostics(mgr, {})
+
+        entry = state["entries"]["cover.a"]
+        assert entry["started_at_source"] == "derived_from_expiry"
+        # Back-dated through the inverse — NOT the 12:00 the engage path reported.
+        assert entry["started_at"] == (
+            dt.datetime(2026, 7, 2, 10, 30, tzinfo=dt.UTC).isoformat()
+        )
+        assert entry["expires_at"] == end.isoformat()
+
+    def test_detected_override_reports_an_honest_start(self):
+        """The ordinary "user moved the cover" path is an honest start too."""
+        mgr = _manager(["cover.a"], reset_duration={"hours": 2})
+        mgr.set_last_updated(
+            "cover.a", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
+        )
+        mgr.mark_manual_control("cover.a")
+
+        with freeze_time("2026-07-02 12:30:00"):
+            state = _build_manual_override_diagnostics(mgr, {})
+
+        assert state["entries"]["cover.a"]["started_at_source"] == "engaged"
+
+    def test_re_engaging_a_restored_override_returns_to_an_honest_start(self):
+        """A fresh touch re-arms provenance along with the start and the pin."""
+        mgr = _manager(["cover.a"], reset_duration={"hours": 2})
+
+        with freeze_time("2026-07-02 12:00:00"):
+            mgr.restore_override(
+                "cover.a", dt.datetime(2026, 7, 2, 12, 30, tzinfo=dt.UTC)
+            )
+        with freeze_time("2026-07-02 12:10:00"):
+            mgr.engage_override("cover.a", reason="input_sensor")
+            state = _build_manual_override_diagnostics(mgr, {})
+
+        entry = state["entries"]["cover.a"]
+        assert entry["started_at_source"] == "engaged"
+        assert entry["started_at"] == (
+            dt.datetime(2026, 7, 2, 12, 10, tzinfo=dt.UTC).isoformat()
+        )
+
+    def test_reset_clears_the_provenance_with_the_rest_of_the_state(self):
+        """No stale provenance may outlive the override it described."""
+        mgr = _manager(["cover.a"], reset_duration={"hours": 2})
+        mgr.restore_override("cover.a", dt.datetime.now(dt.UTC) + dt.timedelta(hours=1))
+
+        mgr.reset("cover.a")
+
+        assert mgr.manual_control_start_source == {}
 
 
 def _build_manual_override_diagnostics(manager, options: dict) -> dict:
