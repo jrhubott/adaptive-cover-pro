@@ -16,18 +16,21 @@ bound onto it, so the seam is exercised end-to-end against a real policy.
 
 from __future__ import annotations
 
+import datetime as dt
 import types
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DEFAULT_HEIGHT,
     CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
     CONF_DUAL_PANEL_FRONT_ENTITY,
     CONF_INTERP,
     CONF_INTERP_END,
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
+    CONF_SUNSET_POS,
     POSITION_CLOSED,
     POSITION_OPEN,
     ControlMethod,
@@ -250,3 +253,169 @@ async def test_night_blackout_deploys_outside_operating_window() -> None:
     )
 
     assert coordinator._cmd_svc.get_target(_BACK) == POSITION_CLOSED
+
+
+# ---------------------------------------------------------------------------
+# Broadcast seams (#1035). Each of these dispatches OFF the main pipeline cycle
+# and names a frame that is a true statement about the FRONT's value — and a
+# false one about the back's absolute substitution. Direct counterparts of the
+# day/night seam trio at tests/test_day_night_dual_entity.py:361/423/474, which
+# pins the OPPOSITE contract for a policy that genuinely derives from the front.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_auto_control_off_seam_keeps_the_back_inverted() -> None:
+    """#1035 seam 6: the return-to-default broadcast must not un-invert the back.
+
+    ``switch.py:388`` names ``inverted=False`` because THAT loop never inverts
+    the raw default — a true statement about the FRONT's value (#993). The
+    back's absolute substitution never consumed it, so on an inverse install
+    the blackout's wire target is still ``inverse_state(CLOSED)`` = 100. Raw 0
+    leaves an inverted device physically OPEN. Previously unreported; cured by
+    the same policy change.
+    """
+    from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
+
+    policy = _primed_policy(triggers=["night"], sol_elev=-3.0, inverse=True)
+
+    coord = MagicMock()
+    coord.logger = MagicMock()
+    coord.entities = [_FRONT, _BACK]
+    coord._policy = policy
+    coord.return_to_default_toggle = True
+    coord.automatic_control = False
+    coord.manager.manual_controlled = []
+    coord.config_entry.options = {CONF_DEFAULT_HEIGHT: 60}
+    coord.async_refresh = AsyncMock()
+    coord._cmd_svc = _FakeCmdSvc()
+    coord._build_position_context = MagicMock(return_value=MagicMock())
+    coord._entity_target = types.MethodType(
+        AdaptiveDataUpdateCoordinator._entity_target, coord
+    )
+
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = coord
+    switch._key = "automatic_control"
+    switch._name = "test_switch"
+    switch._attr_is_on = True
+    switch.schedule_update_ha_state = MagicMock()
+
+    await switch.async_turn_off()
+
+    assert coord._cmd_svc.get_target(_FRONT) == 60  # front: the raw default
+    assert coord._cmd_svc.get_target(_BACK) == inverse_state(POSITION_CLOSED)
+    assert coord._cmd_svc.get_target(_BACK) != POSITION_CLOSED
+
+
+@pytest.mark.asyncio
+async def test_end_time_default_seam_calibrates_the_back_under_interpolation() -> None:
+    """#1035 seam 4: the end-of-window broadcast must not skip the back's curve.
+
+    The seam names ``inverted=self._inverse_state`` and never interpolates —
+    deliberate and #993-mandated for the FRONT's value. The back's absolute
+    substitution is not that value, so it still belongs on the motor curve
+    (#996 Finding 5): canonical CLOSED (0) on a 10..90 device is wire 10, not
+    raw 0, which is outside the calibrated band.
+    """
+    policy = _primed_policy(triggers=["night"], sol_elev=-3.0, interp=True)
+
+    coord = MagicMock()
+    coord._policy = policy
+    coord._inverse_state = False
+    coord.entities = [_FRONT, _BACK]
+    coord._track_end_time = True
+    coord.automatic_control = True
+    coord._pipeline_has_active_override = MagicMock(return_value=False)
+    coord.async_refresh = AsyncMock()
+    coord.config_entry.options = {}
+    coord._compute_current_effective_default = MagicMock(return_value=(60, False))
+    coord._check_sunset_window_transition = AsyncMock()
+
+    targets: dict[str, int] = {}
+
+    async def _apply(entity, position, reason, context=None):
+        targets[entity] = position
+
+    coord._cmd_svc.apply_position = _apply
+    coord._cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._build_position_context = MagicMock(return_value=MagicMock())
+    coord._entity_target = types.MethodType(
+        AdaptiveDataUpdateCoordinator._entity_target, coord
+    )
+
+    async def _fire_closed(*, track_end_time, refresh_callback, on_window_open):
+        await refresh_callback()
+
+    coord._time_mgr = MagicMock()
+    coord._time_mgr.check_transition = _fire_closed
+
+    await AdaptiveDataUpdateCoordinator._check_time_window_transition(
+        coord, dt.datetime.now(dt.UTC)
+    )
+
+    expected_back = int(
+        round(interpolate_position(POSITION_CLOSED, 10, 90, None, None))
+    )
+    # Assert ONLY the back. This seam deliberately does not interpolate the
+    # FRONT (#993, coordinator.py:3927-3930) — that divergence is out of scope
+    # and must not be "helpfully" fixed.
+    assert targets[_BACK] == expected_back
+    assert targets[_BACK] != POSITION_CLOSED
+
+
+@pytest.mark.asyncio
+async def test_sunset_seam_calibrates_the_back_under_interpolation() -> None:
+    """#1035 seam 5: the sunset broadcast must not skip the back's curve.
+
+    Same shape as seam 4 — ``coordinator.py:4117`` binds
+    ``inverted=self._inverse_state`` and leaves ``interpolated`` at its
+    default, which is right for the sunset position it sends and wrong for the
+    back's substitution.
+    """
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    policy = _primed_policy(triggers=["night"], sol_elev=-3.0, interp=True)
+
+    coord = MagicMock()
+    coord._policy = policy
+    coord._inverse_state = False
+    coord.entities = [_FRONT, _BACK]
+    coord._track_end_time = True
+    coord.automatic_control = True
+    coord.manager.is_cover_manual = lambda _e: False
+    coord._pipeline_has_active_override = MagicMock(return_value=False)
+    coord.async_refresh = AsyncMock()
+    coord.config_entry.options = {CONF_SUNSET_POS: 0}
+
+    is_sunset = {"v": False}
+    coord._window_tracker = WindowTransitionTracker(
+        MagicMock(),
+        MagicMock(),
+        event_buffer=MagicMock(),
+        effective_default_fn=lambda _o: (0, is_sunset["v"]),
+    )
+
+    targets: dict[str, int] = {}
+
+    async def _apply(entity, position, reason, context=None):
+        targets[entity] = position
+
+    coord._cmd_svc.apply_position = _apply
+    coord._build_position_context = MagicMock(return_value=MagicMock())
+    coord._entity_target = types.MethodType(
+        AdaptiveDataUpdateCoordinator._entity_target, coord
+    )
+
+    # Seed prior state (no dispatch), then open the sunset window.
+    await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
+    is_sunset["v"] = True
+    await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
+
+    expected_back = int(
+        round(interpolate_position(POSITION_CLOSED, 10, 90, None, None))
+    )
+    assert targets[_BACK] == expected_back
+    assert targets[_BACK] != POSITION_CLOSED

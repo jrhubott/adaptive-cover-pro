@@ -537,6 +537,20 @@ class CoverTypePolicy(ABC):
         logical→wire transforms the caller already applied — so a remapping
         policy can reproduce or undo it.
 
+        **Transform vs. substitute — the rule that decides whether to consult
+        them at all.** A policy that *transforms* the supplied ``position``
+        into its entity's target (the Model C day/night middle rail, derived
+        from the bottom rail's dispatched value) MUST consult the frame, or it
+        will undo a transform that was never applied. A policy that *replaces*
+        it with an absolute target (the dual panel's blackout, a pure
+        open/closed decision independent of the front) MUST ignore the frame
+        and derive its own wire space from ``options`` — the caller's frame
+        describes a value that policy never consumes, and honouring it
+        dispatches into the wrong space whenever the two diverge (#1035).
+        ``options`` does not reach this hook: a substituting policy caches its
+        wire space in ``post_pipeline_resolve``, which is where ``options``
+        arrives, and reads that cache here (see ``DualPanelPolicy``).
+
         * ``inverted=None`` (the default, and the only value the identity
           implementation ever needs) means "use the policy's own cached
           per-cycle decision": the main pipeline dispatch path, whose frame the
@@ -549,7 +563,9 @@ class CoverTypePolicy(ABC):
           they leave ``interpolated`` at its default. A user command
           (``async_apply_user_position``) rides the SAME transform as the main
           pipeline but off-cycle, so it names both dimensions rather than
-          trusting a cache built for a different value (#993 / #1027).
+          trusting a cache built for a different value (#993 / #1027). What a
+          *substituting* policy does with that frame is governed by the rule
+          above: nothing.
 
         ``interpolated`` exists because ``inverted`` alone cannot describe an
         interpolating install: "interpolated, not inverted" and "neither" both

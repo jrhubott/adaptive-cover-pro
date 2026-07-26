@@ -34,6 +34,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
+    POSITION_CLOSED,
     ControlMethod,
     CoverType,
 )
@@ -44,7 +45,9 @@ from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
 )
 from custom_components.adaptive_cover_pro.cover_types.dual_panel import DualPanelPolicy
+from custom_components.adaptive_cover_pro.managers.manual_override import inverse_state
 from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
     DecisionStep,
     PipelineResult,
 )
@@ -70,6 +73,24 @@ _FRAMES: dict[str, dict] = {
     "interpolated": dict(_INTERP_OPTIONS),
     "inverse+interpolated": {CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
 }
+
+# A min-mode floor whose priority strictly exceeds ManualOverrideHandler's (80).
+# At or below 80, ``floor_applies`` is False at coordinator.py:3180 and the
+# floor never clamps a user move at all (#472) — the sweep would silently
+# degrade to the no-floor case.
+_FLOOR_POS = 40
+
+
+def _floor_slot(pos: int, priority: int = 82) -> CustomPositionSensorState:
+    """Build an active min-mode floor slot that outranks manual override."""
+    return CustomPositionSensorState(
+        entity_ids=(f"binary_sensor.floor_{pos}",),
+        is_on=True,
+        position=pos,
+        priority=priority,
+        min_mode=True,
+        use_my=False,
+    )
 
 
 def _sunset_cover(sunset_valid: bool) -> MagicMock:
@@ -102,7 +123,7 @@ def _prime(policy, result: PipelineResult, options: dict, cover) -> None:
     )
 
 
-def _dual_panel_case(frame_options: dict, logical: int):
+def _dual_panel_case(frame_options: dict, logical: int, *, floor: int | None = None):
     """Real dual-panel policy + options + the entities to compare."""
     options = {
         CONF_DUAL_PANEL_FRONT_ENTITY: _FRONT,
@@ -113,7 +134,10 @@ def _dual_panel_case(frame_options: dict, logical: int):
     _prime(
         policy,
         PipelineResult(
-            position=logical, control_method=ControlMethod.SOLAR, reason="solar"
+            position=logical,
+            control_method=ControlMethod.SOLAR,
+            reason="solar",
+            floor_clamp_applied=floor is not None,
         ),
         options,
         _sunset_cover(False),
@@ -121,7 +145,7 @@ def _dual_panel_case(frame_options: dict, logical: int):
     return policy, options, (_FRONT, _BACK), CoverType.DUAL_PANEL
 
 
-def _day_night_case(frame_options: dict, logical: int):
+def _day_night_case(frame_options: dict, logical: int, *, floor: int | None = None):
     """Real Model C day/night policy + options + the entities to compare."""
     options = {
         CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
@@ -136,6 +160,7 @@ def _day_night_case(frame_options: dict, logical: int):
             control_method=ControlMethod.CUSTOM_POSITION,
             reason="custom",
             tilt=50,
+            floor_clamp_applied=floor is not None,
         ),
         options,
         None,
@@ -149,7 +174,9 @@ _CASES = {
 }
 
 
-def _make_coord(policy, options: dict, cover_type: str, logical: int):
+def _make_coord(
+    policy, options: dict, cover_type: str, logical: int, *, floor: int | None = None
+):
     """Coordinator-shaped mock carrying a real policy and real frame inputs."""
     from tests.test_pipeline.conftest import make_snapshot
 
@@ -166,7 +193,11 @@ def _make_coord(policy, options: dict, cover_type: str, logical: int):
     coord._resolved_options = options
 
     coord._snapshot_builder = MagicMock()
-    coord._snapshot_builder.build = MagicMock(return_value=make_snapshot())
+    coord._snapshot_builder.build = MagicMock(
+        return_value=make_snapshot(
+            custom_position_sensors=[_floor_slot(floor)] if floor is not None else []
+        )
+    )
     coord._cover_data = MagicMock(name="cover_data")
     coord._cover_type = cover_type
     coord._weather_readings = None
@@ -183,6 +214,7 @@ def _make_coord(policy, options: dict, cover_type: str, logical: int):
         position=logical,
         control_method=ControlMethod.SOLAR,
         reason="solar",
+        floor_clamp_applied=floor is not None,
         decision_trace=[
             DecisionStep(
                 handler="solar", matched=True, reason="solar", position=logical
@@ -223,27 +255,43 @@ def _auto_target(coord, entity_id: str) -> int:
 @pytest.mark.parametrize("case_name", sorted(_CASES))
 @pytest.mark.parametrize("frame_name", sorted(_FRAMES))
 @pytest.mark.parametrize("logical", [0, 30, 50, 100])
+@pytest.mark.parametrize("floor", [None, _FLOOR_POS])
 async def test_user_and_auto_paths_resolve_identical_entity_targets(
-    case_name: str, frame_name: str, logical: int
+    case_name: str, frame_name: str, logical: int, floor: int | None
 ) -> None:
-    """Same logical value, same wire target — on every entity, in every frame.
+    """Same logical value, same wire target — every entity, every frame, floor or not.
 
     The ``inverted: bool`` seam could name the inversion space but not the
     interpolation space, so an interpolating dual-panel user command routed
     into the broadcast-seam branch and skipped the back panel's calibration
     entirely (auto 20, user 0 for a deployed blackout). Parity is the property
     that was actually broken; assert the property.
+
+    The floor axis closes #1035. When a min-mode floor above the request is
+    active, BOTH paths carve out the transforms — the registry already raised
+    the winner into cover space (#469) and the user path's ``skip_transforms``
+    mirrors it (#472/#469) — so the number they must agree on is the floor
+    itself. A policy whose target is an absolute substitution rather than a
+    transform of that number must still land in its own device wire space; the
+    dual-panel back did not, and dispatched raw canonical 0 while the automatic
+    side sent wire 100 (inverse) or calibrated 20 (interpolated).
     """
+    # With the floor active the registry has ALREADY raised the pipeline winner
+    # to the floor, so the agreed number IS the floor; the user asks for
+    # something strictly below it and the #472 clamp raises it there.
+    agreed = logical if floor is None else floor
+    requested = logical if floor is None else min(logical, floor - 1)
+
     policy, options, entities, cover_type = _CASES[case_name](
-        _FRAMES[frame_name], logical
+        _FRAMES[frame_name], agreed, floor=floor
     )
-    coord = _make_coord(policy, options, cover_type, logical)
+    coord = _make_coord(policy, options, cover_type, agreed, floor=floor)
 
     for entity_id in entities:
         auto = _auto_target(coord, entity_id)
-        user = await _user_target(coord, entity_id, logical)
+        user = await _user_target(coord, entity_id, requested)
         assert user == auto, (
-            f"{case_name} / {frame_name} / logical {logical}: "
+            f"{case_name} / {frame_name} / logical {logical} / floor {floor}: "
             f"{entity_id} auto target {auto} != user target {user}"
         )
 
@@ -263,3 +311,29 @@ async def test_interpolating_dual_panel_user_command_calibrates_the_back_panel()
     coord = _make_coord(policy, options, cover_type, 30)
 
     assert await _user_target(coord, _BACK, 30) == 20
+
+
+@pytest.mark.asyncio
+async def test_floor_raised_user_command_keeps_the_back_panel_inverted() -> None:
+    """#1035: a floor clamp on the FRONT must not un-invert the back's blackout.
+
+    Pinned separately from the parity sweep so the failure names the physical
+    consequence. The floor raises a user request into cover space, so the seam
+    correctly names ``(inverted=False, interpolated=False)`` — a true statement
+    about the FRONT's value (#993/#1027). The back's target is an absolute
+    substitution that never consumed that value, so its wire space is device
+    semantics only (#996 Finding 1): a deployed blackout on an inverse install
+    is wire 100 = physically CLOSED. Raw 0 leaves the device physically OPEN
+    and the blackout silently never deploys on a night/privacy/heat trigger.
+    """
+    policy, options, _entities, cover_type = _dual_panel_case(
+        {CONF_INVERSE_STATE: True}, _FLOOR_POS, floor=_FLOOR_POS
+    )
+    coord = _make_coord(policy, options, cover_type, _FLOOR_POS, floor=_FLOOR_POS)
+
+    target = await _user_target(coord, _BACK, 10)
+
+    assert target == inverse_state(POSITION_CLOSED)  # wire 100 = physically closed
+    # Legibility guard, mirroring the overdrive assertion at
+    # tests/test_dual_panel_dispatch.py:228 — name the physical failure.
+    assert target != POSITION_CLOSED
