@@ -7,9 +7,9 @@ import datetime as dt
 import dataclasses
 import json
 import pathlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .forecast import Forecast
@@ -38,12 +38,12 @@ from homeassistant.util import dt as dt_util
 
 from .config_types import CoverConfig, RuntimeConfig
 from .helpers import (
+    _read_sun_boundary_options,
+    _read_time_entity,  # noqa: F401 - re-exported: tests patch/import it here
     check_cover_features,
     compute_effective_default,
     custom_position_slot_delivers_fixed_position,
     custom_position_slot_sensors,
-    get_datetime_from_str,
-    get_safe_state,
     has_configured_window_end,
     resolve_override_deadline,
     resolve_sun_boundaries,
@@ -89,11 +89,8 @@ from .const import (
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_RETURN_SUNSET,
-    CONF_SUNRISE_OFFSET,
-    CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
-    CONF_SUNSET_TIME_ENTITY,
     CONF_TRANSIT_TIMEOUT,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
@@ -161,88 +158,6 @@ from .state.window_transition_tracker import WindowTransitionTracker
 _MANIFEST_VERSION: str = json.loads(
     (pathlib.Path(__file__).parent / "manifest.json").read_text()
 )["version"]
-
-
-class SunBoundaryOptions(NamedTuple):
-    """The four HA-side inputs that define what "sunset"/"sunrise" mean here.
-
-    Produced by :func:`_read_sun_boundary_options`
-    and consumed by both the day/night position boundary and the manual-override
-    sun deadline. Field names match :func:`.helpers.resolve_sun_boundaries`'
-    keyword arguments.
-    """
-
-    sunset_time: dt.datetime | None
-    sunrise_time: dt.datetime | None
-    sunset_off: int
-    sunrise_off: int
-
-
-def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime | None:
-    """Read an entity whose state is an ISO-8601 datetime.
-
-    Returns naive-local datetime on success; None if entity_id is None,
-    the entity is unavailable, or the state cannot be parsed.
-
-    The entity's *time-of-day* is re-anchored onto today's local date and the
-    original date component is discarded. This makes a "next-event" sensor
-    (e.g. ``sensor.sun_next_setting``, which rolls over to *tomorrow's*
-    setting the instant today's sun sets) behave like a fixed daily wall-clock
-    time. ``compute_effective_default`` already compares the boundary against
-    *today's* clock, so a future-dated boundary would otherwise make the
-    ``after_sunset`` comparison structurally unreachable (issue #531 follow-up).
-    """
-    if entity_id is None:
-        return None
-    raw = get_safe_state(hass, entity_id)
-    if raw is None:
-        return None
-    try:
-        parsed = get_datetime_from_str(raw)
-        today_local = dt_util.now().date()
-        return parsed.replace(
-            year=today_local.year,
-            month=today_local.month,
-            day=today_local.day,
-        )
-    except Exception:  # noqa: BLE001
-        _LOGGER.debug(
-            "Could not parse time entity %s state %r as datetime",
-            entity_id,
-            raw,
-        )
-        return None
-
-
-def _read_sun_boundary_options(
-    hass: HomeAssistant, options: Mapping
-) -> SunBoundaryOptions:
-    """Read the four HA-side inputs that define sunset/sunrise for this instance.
-
-    The single source of truth for the *reads* on the coordinator's own two
-    boundary consumers, as :func:`.helpers.resolve_sun_boundaries` is for the
-    arithmetic they feed: the day/night position boundary
-    (``_compute_current_effective_default``) and the manual-override sun deadline
-    (``_resolve_override_deadline``) both delegate here, so a later fifth input
-    lands in one place and those two can never disagree about what "sunset" means
-    (CODING_GUIDELINES.md § no-duplication).
-
-    Not yet exhaustive across the integration: ``pipeline/snapshot_builder.py``
-    re-derives the offsets itself and calls ``compute_effective_default`` without
-    the sunset/sunrise *time entities*, so its fallback path drops the #411/#415
-    overrides; ``config_types.py`` and ``services/export_service.py`` carry their
-    own copies of the offset fallback. Fold them in here when you next touch them.
-
-    ``sunrise_offset`` falls back to ``sunset_offset`` when unset, so an install
-    that only ever set one offset gets a symmetric night window.
-    """
-    sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-    return SunBoundaryOptions(
-        sunset_time=_read_time_entity(hass, options.get(CONF_SUNSET_TIME_ENTITY)),
-        sunrise_time=_read_time_entity(hass, options.get(CONF_SUNRISE_TIME_ENTITY)),
-        sunset_off=sunset_off,
-        sunrise_off=int(options.get(CONF_SUNRISE_OFFSET, sunset_off)),
-    )
 
 
 # Cover states that carry no usable position. A transition whose *old* state is

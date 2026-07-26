@@ -1068,7 +1068,7 @@ def test_compute_current_effective_default_passes_sunset_entity_time():
 
     with (
         patch(
-            "custom_components.adaptive_cover_pro.coordinator._read_time_entity",
+            "custom_components.adaptive_cover_pro.helpers._read_time_entity",
             return_value=fake_sunset_dt,
         ) as mock_read,
         patch(
@@ -1117,7 +1117,7 @@ def test_compute_current_effective_default_passes_sunrise_entity_time():
 
     with (
         patch(
-            "custom_components.adaptive_cover_pro.coordinator._read_time_entity",
+            "custom_components.adaptive_cover_pro.helpers._read_time_entity",
             return_value=fake_sunrise_dt,
         ) as mock_read,
         patch(

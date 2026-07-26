@@ -8,9 +8,11 @@ involve a coordinator at all.
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
@@ -22,6 +24,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MAX_TILT_SUN_ONLY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_SUNRISE_TIME_ENTITY,
+    CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRACKING_SEASONS,
@@ -520,6 +525,106 @@ def test_build_recomputes_effective_default_when_omitted():
     )
     assert snapshot.default_position == 55
     assert snapshot.is_sunset_active is False
+
+
+@pytest.mark.unit
+def test_build_fallback_uses_configured_sunset_time_entity():
+    """The fallback branch must honor CONF_SUNSET_TIME_ENTITY, not astral (#1048).
+
+    Astral sunset (22:00) hasn't happened yet at 20:00, so a fallback that
+    drops the configured entity would report the daytime default. The
+    entity says sunset was at 18:00 — already past — so the fix must report
+    the sunset position instead.
+    """
+    sunset_state = MagicMock()
+    sunset_state.state = "2026-07-02T18:00:00+00:00"
+    builder, _, _ = _make_builder(states={"sensor.sun2_dusk": sunset_state})
+
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    cover_data.sun_data.sunset.return_value = dt.datetime(
+        2026, 7, 2, 22, 0, tzinfo=dt.UTC
+    )
+    cover_data.sun_data.sunrise.return_value = dt.datetime(
+        2026, 7, 2, 6, 0, tzinfo=dt.UTC
+    )
+
+    opts = {
+        CONF_DEFAULT_HEIGHT: 10,
+        CONF_SUNSET_POS: 80,
+        CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk",
+    }
+
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+        freeze_time("2026-07-02 20:00:00"),
+    ):
+        snapshot = builder.build(
+            opts,
+            cover_data=cover_data,
+            cover_type="cover_blind",
+            climate_readings=None,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            in_time_window=True,
+            current_cover_position=None,
+            is_glare_zone_enabled=lambda idx: True,
+        )
+
+    assert snapshot.is_sunset_active is True
+    assert snapshot.default_position == 80
+
+
+@pytest.mark.unit
+def test_build_fallback_uses_configured_sunrise_time_entity():
+    """The fallback branch must honor CONF_SUNRISE_TIME_ENTITY, not astral (#1048).
+
+    Astral sunrise (04:00) hasn't happened yet at 03:00, so a fallback that
+    drops the configured entity would report the sunset/night position. The
+    entity says sunrise was at 02:00 — already past — so the fix must report
+    the daytime default instead.
+    """
+    sunrise_state = MagicMock()
+    sunrise_state.state = "2026-07-02T02:00:00+00:00"
+    builder, _, _ = _make_builder(states={"sensor.sun2_dawn": sunrise_state})
+
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    cover_data.sun_data.sunset.return_value = dt.datetime(
+        2026, 7, 2, 20, 0, tzinfo=dt.UTC
+    )
+    cover_data.sun_data.sunrise.return_value = dt.datetime(
+        2026, 7, 2, 4, 0, tzinfo=dt.UTC
+    )
+
+    opts = {
+        CONF_DEFAULT_HEIGHT: 10,
+        CONF_SUNSET_POS: 80,
+        CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn",
+    }
+
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+        freeze_time("2026-07-02 03:00:00"),
+    ):
+        snapshot = builder.build(
+            opts,
+            cover_data=cover_data,
+            cover_type="cover_blind",
+            climate_readings=None,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            in_time_window=True,
+            current_cover_position=None,
+            is_glare_zone_enabled=lambda idx: True,
+        )
+
+    assert snapshot.is_sunset_active is False
+    assert snapshot.default_position == 10
 
 
 @pytest.mark.unit
