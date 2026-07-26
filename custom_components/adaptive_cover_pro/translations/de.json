@@ -522,6 +522,7 @@
         "description": "Steuern Sie, was geschieht, nachdem jemand ein Beschattungselement manuell bewegt. Die automatische Steuerung wird für die konfigurierte Dauer unterbrochen und setzt sich dann fort.\n\n**Übersteuerungsdauer** gibt an, wie lange (in Minuten) ACP wartet, bevor es die Kontrolle zurücknimmt. **Bei jeder Anpassung zurücksetzen** setzt den Timer jedes Mal neu auf, wenn das Beschattungselement berührt wird — nützlich, wenn jemand ein Beschattungselement mehrfach nacheinander anpasst. **Schwellenwert** ist die minimale Positionsänderung, die als manuelle Bewegung zählt; erhöhen Sie ihn leicht, wenn Motor-Positionsdrift falsche Übersteuerungen verursacht. **Transitzeitüberschreitung** teilt ACP mit, wie lange es auf ein bewegendes Beschattungselement warten soll, bevor es die Endposition als beabsichtigt behandelt.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
+          "manual_override_duration_mode": "Woran die Übersteuerungsdauer gemessen wird",
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
           "manual_threshold": "Schwellwert der manuellen Übersteuerung",
           "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)",
@@ -532,6 +533,7 @@
         },
         "data_description": {
           "manual_override_duration": "Wie lange (in Minuten) die automatische Steuerung nach manueller Anpassung pausiert werden soll. Wenn Sie die Beschattung manuell verschieben, wird die automatische Steuerung unterbrochen. Typische Werte: 10-15 min (kurze Pause, bald zur Verfolgung zurückkehren), 30 min (mittlere Pause, ausgewogen), 60-120 min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort zur automatischen Steuerung zurückkehren - nicht empfohlen). Ermöglicht Ihnen die Kontrolle, wenn Sie sie wünschen, und setzt die Automatisierung später fort.",
+          "manual_override_duration_mode": "Legen Sie fest, ob die oben eingestellte Haltezeit eine feste Zeitspanne ist oder bis zu einer Sonnen- bzw. Zeitplangrenze läuft. \u201eFeste Dauer\u201c verwendet unverändert die Dauer von oben \u2014 das ist die Standardeinstellung und entspricht dem bisherigen Verhalten der manuellen Übersteuerung. Die übrigen Optionen halten bis zum ersten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben. Genau das braucht man für den Fall \u201eabends die Beschattung schließen\u201c: Sie bleibt die ganze Nacht geschlossen, statt um 2 Uhr wieder zu öffnen. Sonnenuntergang und Sonnenaufgang bezeichnen dieselben Zeitpunkte wie im übrigen Adaptive Cover Pro, einschließlich eigener Sonnenuntergangs-/Sonnenaufgangs-Entitäten und Versätze, die Sie konfiguriert haben. Lässt sich diese Grenze nicht ermitteln \u2014 zum Beispiel \u201eBis das Zeitfenster endet\u201c ohne gesetzte Endzeit \u2014, wird die Dauer von oben als Rückfallwert verwendet, sodass die Übersteuerung niemals unbegrenzt hält.",
           "manual_override_reset": "Setzen Sie den Timer für die manuelle Übersteuerung nach jeder manuellen Anpassung zurück. Wenn aktiviert, wird die Übersteuerungsdauer bei jeder manuellen Änderung neu gestartet. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie diese Option, wenn Sie möchten, dass der Übersteuerungszeitraum sich mit jedem manuellen Eingriff 'erneuert'.",
           "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' zählt (Standard: 1 %). Wenn Sie die Beschattung um diesen Betrag manuell verschieben, wird die Übersteuerungserkennung ausgelöst. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
           "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um die Übersteuerungserkennung von Übergangspositionen zu verhindern, während die Beschattung zu Ihrer Zielposition wechselt. Nützlich, wenn Ihre Beschattung während der Bewegung viele Zwischenwerte meldet.",
@@ -1286,6 +1288,15 @@
         "weather_override": "Wetter-Übersteuerung"
       }
     },
+    "manual_override_duration_mode": {
+      "options": {
+        "fixed": "Feste Dauer",
+        "until_sunset": "Bis zum nächsten Sonnenuntergang",
+        "until_sunrise": "Bis zum nächsten Sonnenaufgang",
+        "until_next_sun_event": "Bis zum nächsten Sonnenauf- oder -untergang",
+        "until_window_end": "Bis das Zeitfenster endet"
+      }
+    },
     "motion_timeout_mode": {
       "options": {
         "return_to_default": "Standardposition zurückkehren",
@@ -1709,6 +1720,10 @@
         "manual_override_duration": {
           "description": "Wie lange eine manuelle Übersteuerung andauert vor Wiederaufnahme der automatischen Kontrolle.",
           "name": "Übersteuerungs-Dauer"
+        },
+        "manual_override_duration_mode": {
+          "description": "Woran die Haltezeit gemessen wird. \u201eFeste Dauer\u201c verwendet die Dauer von oben. Die übrigen Modi halten bis zum nächsten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben, und greifen auf die Dauer von oben zurück, wenn diese Grenze nicht ermittelt werden kann.",
+          "name": "Modus der Übersteuerungs-Dauer"
         },
         "manual_override_reset": {
           "description": "Wenn wahr, wird jede aktive manuelle Übersteuerung beim Fenster-Start gelöscht.",

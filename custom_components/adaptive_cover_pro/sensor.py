@@ -49,10 +49,6 @@ from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod
 from .managers.manual_override import inverse_state
-from .managers.manual_override.expiry import (
-    expiry_for_started_at,
-    started_at_for_expiry,
-)
 from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
@@ -299,9 +295,7 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
             expiry = dt.datetime.fromisoformat(expiry_iso)
             if expiry <= now:
                 continue
-            started_at = started_at_for_expiry(expiry, manager.reset_duration)
-            manager.manual_control[eid] = True
-            manager.manual_control_time[eid] = started_at
+            manager.restore_override(eid, expiry)
             manager._record_event(  # noqa: SLF001
                 eid,
                 "restored",
@@ -719,25 +713,30 @@ def _last_action_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     return attrs
 
 
+def _manual_override_expiries(s: _ManualOverrideEndSensor) -> dict[str, dt.datetime]:
+    """Per-entity resolved override end times, via the manager's single authority."""
+    manager = s.coordinator.manager
+    return {
+        entity_id: expiry
+        for entity_id in manager.manual_control_time
+        if (expiry := manager.expiry_for(entity_id)) is not None
+    }
+
+
 def _manual_override_end_value(s: _ManualOverrideEndSensor) -> dt.datetime | None:
-    times = s.coordinator.manager.manual_control_time
-    if not times:
-        return None
-    duration = s.coordinator.manager.reset_duration
-    return max(expiry_for_started_at(t, duration) for t in times.values())
+    expiries = _manual_override_expiries(s)
+    return max(expiries.values()) if expiries else None
 
 
 def _manual_override_end_attrs(
     s: _ManualOverrideEndSensor,
 ) -> Mapping[str, Any] | None:
-    times = s.coordinator.manager.manual_control_time
-    if not times:
+    expiries = _manual_override_expiries(s)
+    if not expiries:
         return None
-    duration = s.coordinator.manager.reset_duration
     return {
         "per_entity": {
-            entity_id: expiry_for_started_at(t, duration).isoformat()
-            for entity_id, t in times.items()
+            entity_id: expiry.isoformat() for entity_id, expiry in expiries.items()
         }
     }
 

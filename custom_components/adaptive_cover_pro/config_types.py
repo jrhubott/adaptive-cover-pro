@@ -10,6 +10,7 @@ from .const import (
     BLIND_SPOT_SLOTS,
     DEFAULT_AWNING_SHADE_MODE,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_ENABLED,
@@ -751,6 +752,10 @@ class ManualOverrideSlice:
     # Optional Jinja template whose truthy render engages manual override on
     # every cover (issue #974). Edge-triggered, no combine mode. None = off.
     input_template: str | None = None
+    # What the hold is measured against (issue #1044). ``fixed`` uses the
+    # numeric ``duration`` above; every other mode runs until the next sun or
+    # schedule boundary and falls back to ``duration`` when unresolvable.
+    duration_mode: str = DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -808,6 +813,7 @@ class RuntimeConfig:
             CONF_INTERP_START,
             CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MANUAL_OVERRIDE_DURATION,
+            CONF_MANUAL_OVERRIDE_DURATION_MODE,
             CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
             CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
             CONF_MANUAL_OVERRIDE_RESET,
@@ -920,6 +926,10 @@ class RuntimeConfig:
                 ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
                 input_entities=options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []),
                 input_template=options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
+                duration_mode=(
+                    options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+                    or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+                ),
             ),
             time_window=TimeWindowSlice(
                 start_time=options.get(CONF_START_TIME),

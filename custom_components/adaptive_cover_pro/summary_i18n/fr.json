@@ -55,6 +55,11 @@
   },
   "manual": {
     "pauses_for": "pause pendant {duration}",
+    "until_sunset": "maintient jusqu'au prochain coucher de soleil",
+    "until_sunrise": "maintient jusqu'au prochain lever de soleil",
+    "until_next_sun_event": "maintient jusqu'au prochain lever ou coucher de soleil",
+    "until_window_end": "maintient jusqu'à la fin de la fenêtre de temps",
+    "until_window_end_no_window": "\u26a0\ufe0f La dérogation manuelle doit maintenir jusqu'à la fin de la fenêtre de temps, mais aucune heure de fin n'est configurée \u2014 la durée configurée est utilisée à la place",
     "threshold": "seuil {threshold}%",
     "resets_on_move": "réinitialise au prochain mouvement",
     "ignore_intermediate": "ignore les positions intermédiaires",

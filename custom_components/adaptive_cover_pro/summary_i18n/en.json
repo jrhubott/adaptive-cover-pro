@@ -55,6 +55,11 @@
   },
   "manual": {
     "pauses_for": "pauses for {duration}",
+    "until_sunset": "holds until the next sunset",
+    "until_sunrise": "holds until the next sunrise",
+    "until_next_sun_event": "holds until the next sunrise or sunset",
+    "until_window_end": "holds until the time window ends",
+    "until_window_end_no_window": "⚠️ Manual override is set to hold until the time window ends, but no end time is configured — the configured duration is used instead",
     "threshold": "threshold {threshold}%",
     "resets_on_move": "resets on next move",
     "ignore_intermediate": "ignores intermediate positions",

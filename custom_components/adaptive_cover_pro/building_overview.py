@@ -51,6 +51,7 @@ from .const import (
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
@@ -83,12 +84,14 @@ from .const import (
     DEFAULT_DELTA_POSITION,
     DEFAULT_DELTA_TIME,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_WEATHER_ENABLED,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
 )
 from .cover_types import get_policy
 from .helpers import (
@@ -385,6 +388,25 @@ def _fmt_duration(value: Any) -> str:
     return " ".join(parts) if parts else _NONE
 
 
+def _manual_override_hold(options: Mapping) -> str:
+    """Render what the manual-override hold is measured against (issue #1044).
+
+    ``fixed`` — the default — prints the numeric duration exactly as it always
+    has. Any other mode prints the mode instead: the duration is then only the
+    fallback for an unresolvable boundary, so showing it would misrepresent the
+    configured behaviour in a side-by-side comparison.
+    """
+    mode = (
+        _eff(options, CONF_MANUAL_OVERRIDE_DURATION_MODE, None)
+        or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+    )
+    if mode != MANUAL_OVERRIDE_DURATION_MODE_FIXED:
+        return mode
+    return _fmt_duration(
+        _eff(options, CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION)
+    )
+
+
 def _count_custom_slots(options: Mapping) -> int:
     return sum(
         custom_position_slot_configured(options, slot_keys)
@@ -446,7 +468,7 @@ _COMPARISON_SPECS: tuple[_DiffSpec, ...] = (
     ),
     _DiffSpec(
         "Manual override",
-        lambda r: f"{_fmt_duration(_eff(r.options, CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION))}"
+        lambda r: f"{_manual_override_hold(r.options)}"
         f" / {_fmt(_eff(r.options, CONF_MANUAL_THRESHOLD, None))}%",
     ),
     _DiffSpec(

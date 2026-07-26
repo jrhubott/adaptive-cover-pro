@@ -574,6 +574,7 @@
         "description": "Control what happens after someone manually moves a cover. Automatic control pauses for the configured duration then resumes.\n\n**Override duration** is how long (in minutes) ACP waits before retaking control. **Reset on each adjustment** restarts the timer every time the cover is touched — useful if someone adjusts a cover several times in a row. **Threshold** is the minimum position change that counts as a manual move; raise it slightly if motor position drift causes false overrides. **Transit timeout** tells ACP how long to wait for a moving cover to stop before treating its final position as intentional.\n\n[Learn more]({learn_more})",
         "data": {
           "manual_override_duration": "Duration of manual override",
+          "manual_override_duration_mode": "What the override duration is measured against",
           "manual_override_reset": "Reset Manual override duration",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
@@ -584,6 +585,7 @@
         },
         "data_description": {
           "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
+          "manual_override_duration_mode": "Choose whether the hold above is a fixed stretch of time or runs until a sun or schedule boundary. 'Fixed duration' uses the duration above unchanged \u2014 this is the default and matches how manual override has always worked. The other options hold until the first sunset, sunrise, sun event, or end of the operating window that falls after the moment you moved the cover, which is what you want for the close-the-blind-at-dusk case: it stays closed all night instead of reopening at 2 a.m. Sunset and sunrise mean the same instants the rest of Adaptive Cover Pro uses, including any custom sunset/sunrise entities and offsets you have configured. If that boundary cannot be worked out \u2014 for example 'Until the time window ends' with no end time set \u2014 the duration above is used as the fallback, so the override never holds forever.",
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
@@ -1325,6 +1327,15 @@
         "weather_override": "Weather Override"
       }
     },
+    "manual_override_duration_mode": {
+      "options": {
+        "fixed": "Fixed duration",
+        "until_sunset": "Until the next sunset",
+        "until_sunrise": "Until the next sunrise",
+        "until_next_sun_event": "Until the next sunrise or sunset",
+        "until_window_end": "Until the time window ends"
+      }
+    },
     "motion_timeout_mode": {
       "options": {
         "return_to_default": "Return to default position",
@@ -1532,6 +1543,10 @@
         "manual_override_duration": {
           "name": "Override duration",
           "description": "How long a manual override lasts before automatic control resumes."
+        },
+        "manual_override_duration_mode": {
+          "name": "Override duration mode",
+          "description": "What the hold is measured against. 'Fixed duration' uses the duration above. The other modes hold until the next sunset, sunrise, sun event, or operating-window end after the moment you moved the cover, and fall back to the duration above when that boundary cannot be resolved."
         },
         "manual_override_reset": {
           "name": "Reset on window start",
