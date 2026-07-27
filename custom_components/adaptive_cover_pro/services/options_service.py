@@ -8,7 +8,6 @@ a full reload so all state-change listeners and pipeline handlers pick up new va
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
@@ -216,6 +215,7 @@ from ..const import (
     CUSTOM_POSITION_SLOTS,
     DOMAIN,
     OPTION_RANGES,
+    TIME_STRING_RE,
 )
 from ..helpers import CUSTOM_POSITION_CLAIM_KEYS, custom_position_slot_sensors
 from ..templates import is_template_string as _is_template_str
@@ -229,8 +229,6 @@ IDENTITY_KEYS: frozenset[str] = frozenset(
 
 # HA service call plumbing keys to strip when building a patch
 _PLUMBING_KEYS: frozenset[str] = frozenset({"entity_id", "device_id", "area_id"})
-
-_TIME_RE = re.compile(r"^\d{2}:\d{2}:\d{2}$")
 
 # ---------------------------------------------------------------------------
 # Per-field validators
@@ -341,7 +339,7 @@ def _duration_v():
 
 def _time_v():
     def _check(v):
-        if v is not None and not _TIME_RE.match(str(v)):
+        if v is not None and not TIME_STRING_RE.match(str(v)):
             raise vol.Invalid(f"Time must be HH:MM:SS, got: {v!r}")
         return v
 

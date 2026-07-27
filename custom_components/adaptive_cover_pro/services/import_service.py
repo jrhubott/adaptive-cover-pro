@@ -14,7 +14,8 @@ from homeassistant.exceptions import ServiceValidationError
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN, OPTION_RANGES
+from ..config_fields import TIME_OPTION_KEYS
+from ..const import DOMAIN, OPTION_RANGES, TIME_STRING_RE
 from .export_service import DEFAULT_EXPORT_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,10 +38,14 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     never overwritten by an older export.
 
     Numeric keys present in ``OPTION_RANGES`` are validated against their
-    declared bounds before the entry is updated; a failed check records
-    ``"error: ..."`` for that entry in the result dict without aborting the
-    rest of the import. Keys absent from ``OPTION_RANGES`` (booleans, strings,
-    enums, and unknown future keys) are accepted as-is.
+    declared bounds, and time keys (``TIME_OPTION_KEYS``) against the
+    ``HH:MM:SS`` wire format the config flow and ``set_options`` both enforce,
+    before the entry is updated; a failed check records ``"error: ..."`` for
+    that entry in the result dict without aborting the rest of the import. A
+    malformed time otherwise reaches the entry verbatim and defeats the literal
+    ``BLANK_TIME`` comparisons across the integration (issue #1049). Remaining
+    keys (booleans, strings, enums, and unknown future keys) are accepted
+    as-is.
 
     Returns a per-entry result dict:
         ``{entry_id: "updated" | "skipped" | "error: <msg>"}``
@@ -119,20 +124,28 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                 k: v for k, v in file_opts.items() if not k.startswith("_")
             }
 
-            # Validate numeric keys against their declared OPTION_RANGES bounds.
+            # Validate numeric keys against their declared OPTION_RANGES bounds
+            # and time keys against the one accepted HH:MM:SS wire format.
             validation_errors: list[str] = []
             for key, value in imported_public.items():
-                if key not in OPTION_RANGES or value is None:
+                if value is None:
                     continue
-                lo, hi = OPTION_RANGES[key]
-                try:
-                    num = float(value)
-                    if not (lo <= num <= hi):
+                if key in OPTION_RANGES:
+                    lo, hi = OPTION_RANGES[key]
+                    try:
+                        num = float(value)
+                        if not (lo <= num <= hi):
+                            validation_errors.append(
+                                f"{key}={value} out of range [{lo}, {hi}]"
+                            )
+                    except (TypeError, ValueError):
                         validation_errors.append(
-                            f"{key}={value} out of range [{lo}, {hi}]"
+                            f"{key}={value!r} is not a valid number"
                         )
-                except (TypeError, ValueError):
-                    validation_errors.append(f"{key}={value!r} is not a valid number")
+                elif key in TIME_OPTION_KEYS and not TIME_STRING_RE.match(str(value)):
+                    validation_errors.append(
+                        f"{key}={value!r} is not a valid time (expected HH:MM:SS)"
+                    )
             if validation_errors:
                 raise ServiceValidationError(
                     f"import_config: invalid values for entry '{entry_id}': "

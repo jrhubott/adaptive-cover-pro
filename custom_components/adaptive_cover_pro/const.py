@@ -51,6 +51,7 @@ Section index
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from typing import Any
@@ -1230,6 +1231,12 @@ CONF_END_ENTITY = "end_entity"  # input_datetime overriding end_time
 # true None, so a cleared field coerces to midnight. Treated as "no time set"
 # everywhere (see issue #492).
 BLANK_TIME = "00:00:00"
+# The one accepted wire format for a time-typed option. Every write path must
+# enforce it: the config flow does so via TimeSelector, and both service paths
+# (``set_options`` and ``import_config``) match against this pattern. A value in
+# any other shape — ``"00:00"``, ``"0:00:00"`` — compares unequal to BLANK_TIME
+# and silently flips the sentinel checks that key off it (issue #1049).
+TIME_STRING_RE = re.compile(r"^\d{2}:\d{2}:\d{2}$")
 
 
 # =============================================================================
