@@ -416,13 +416,7 @@ class TestBroadcastSeamInverseSpace:
         if cached_true:
             _cache_dual(policy, position=logical_pos, blend=blend, inverse=True)
         else:
-            _cache_dual(
-                policy,
-                position=logical_pos,
-                blend=blend,
-                inverse=True,
-                floor_clamp=True,
-            )
+            _cache_dual(policy, position=logical_pos, blend=blend, inverse=False)
 
         bottom_wire = inverse_state(logical_pos) if seam_inverted else logical_pos
         middle_wire = policy.resolve_entity_target(
@@ -439,7 +433,7 @@ class TestBroadcastSeamInverseSpace:
         # inverse_state(100)=0; the middle must stay physically >= the bottom
         # rail (open-space 100), never drop to open-space 50 (the buggy cross).
         policy = DayNightShadePolicy()
-        _cache_dual(policy, position=100, blend=50, inverse=True, floor_clamp=True)
+        _cache_dual(policy, position=100, blend=50, inverse=True)
         middle_wire = policy.resolve_entity_target(_MIDDLE, 0, inverted=True)
         assert inverse_state(middle_wire) >= 100
 
