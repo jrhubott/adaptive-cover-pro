@@ -15,11 +15,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.const import (
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.helpers.restore_state import RestoreEntity
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_SUN_TRACKING,
     CONF_ENTITIES,
@@ -398,6 +404,76 @@ async def test_group_bulk_switch_restores_its_last_command(
     await switch.async_added_to_hass()
 
     assert switch.is_on is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cls", "default"),
+    [(GroupAutomationSwitch, True), (GroupClimateSwitch, False)],
+)
+@pytest.mark.parametrize("restored", [STATE_UNAVAILABLE, STATE_UNKNOWN, "garbage"])
+async def test_group_bulk_switch_ignores_an_unusable_restored_state(
+    cls, default, restored
+):
+    """Only ``on``/``off`` are real history — anything else keeps the default.
+
+    Group entities go ``unavailable`` whenever the group coordinator's update
+    throws (``AdaptiveCoverBaseEntity.available`` keys off ``coordinator.data``),
+    and the restore store snapshots on a timer, so an unclean shutdown while
+    unavailable persists that. Treating every non-``on`` state as ``off`` would
+    turn a crash into a silent, and sticky, "somebody switched this off".
+    """
+    coord = _FakeCoordinator()
+    switch = cls("group_01", coord.hass, _make_group_config_entry(), coord)
+    switch.async_write_ha_state = MagicMock()
+    switch.async_get_last_state = AsyncMock(return_value=MagicMock(state=restored))
+
+    await switch.async_added_to_hass()
+
+    assert switch.is_on is default
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_group_climate_bulk_skips_members_that_cannot_hold_it():
+    """Climate mode is only bulk-set on members configured for it.
+
+    The pipeline gates on the ``switch_mode`` toggle, not on
+    ``CONF_CLIMATE_MODE``, so setting it on an unconfigured member really does
+    switch climate on — but that member exposes no Climate Mode switch to
+    persist it, and its coordinator re-seeds ``switch_mode`` from the option at
+    every startup. The bulk command would evaporate at the next restart while
+    the group switch, which now restores, kept claiming it.
+    """
+    configured = _FakeCoordinator(switch_mode=False)
+    unconfigured = _FakeCoordinator(switch_mode=False)
+
+    configured_entry = MagicMock(options={CONF_CLIMATE_MODE: True})
+    unconfigured_entry = MagicMock(options={})
+
+    group = object.__new__(GroupCoordinator)
+    group.resolved_members = MagicMock(
+        return_value=[
+            (configured_entry, configured),
+            (unconfigured_entry, unconfigured),
+        ]
+    )
+
+    await GroupCoordinator.async_set_climate_mode(group, True)
+
+    assert configured.switch_mode is True
+    assert unconfigured.switch_mode is False
+    unconfigured.async_refresh.assert_not_called()
+
+
+@pytest.mark.unit
+def test_group_bulk_switch_subclass_must_declare_its_locked_suffix():
+    """A missing suffix fails at class creation, not deep inside platform setup."""
+    with pytest.raises(TypeError, match="_unique_id_suffix"):
+
+        class Broken(GroupAutomationSwitch):
+            _unique_id_suffix = ""
 
 
 @pytest.mark.asyncio

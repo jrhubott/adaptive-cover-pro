@@ -10,12 +10,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pandas as pd
 from dateutil import parser
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
 from .const import (
     BLANK_TIME,
+    CONF_CLIMATE_MODE,
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_MANUAL_OVERRIDE_DURATION_MODE,
@@ -68,11 +70,24 @@ def usable_coordinator(entry: "ConfigEntry") -> Any | None:
     whether the running HA leaves ``runtime_data`` unset or defaults it to
     ``None``.
     """
-    from homeassistant.config_entries import ConfigEntryState  # noqa: PLC0415
-
     if entry.state is not ConfigEntryState.LOADED:
         return None
     return getattr(entry, "runtime_data", None)
+
+
+def climate_mode_configured(options: Mapping) -> bool:
+    """Whether this entry is set up for climate mode at all.
+
+    Single source of truth for "may climate mode be switched on here?". The
+    pipeline gates on the runtime ``switch_mode`` toggle rather than on this
+    option, so an unconfigured entry really would start acting on climate if
+    something set the toggle — but it exposes no Climate Mode switch to persist
+    that, and its coordinator re-seeds ``switch_mode`` from this option at every
+    startup. Both the switch platform (which decides whether to create the
+    entity) and the group's bulk control (which decides whom to command) read
+    this so the two agree on who can hold the state.
+    """
+    return bool(options.get(CONF_CLIMATE_MODE))
 
 
 def motion_entities(options: Mapping) -> list[str]:

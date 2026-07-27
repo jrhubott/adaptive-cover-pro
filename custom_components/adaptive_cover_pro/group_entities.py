@@ -16,7 +16,7 @@ from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import STATE_ON
+from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -114,6 +114,19 @@ class _GroupBulkSwitch(_GroupEntityBase, SwitchEntity):
     _unique_id_suffix: str
     _default_state: bool = False
 
+    def __init_subclass__(cls, **kwargs) -> None:
+        """Fail at import time if a concrete subclass forgets its locked suffix.
+
+        The suffix is half of the ``f"{entry_id}_{suffix}"`` registry key, so a
+        missing one has to be loud here rather than a bare ``AttributeError``
+        surfacing as an opaque platform-setup failure.
+        """
+        super().__init_subclass__(**kwargs)
+        if not cls.__name__.startswith("_") and not getattr(
+            cls, "_unique_id_suffix", None
+        ):
+            raise TypeError(f"{cls.__name__} must set _unique_id_suffix")
+
     def __init__(self, *args) -> None:
         """Initialize at the no-history default."""
         super().__init__(*args, self._unique_id_suffix)
@@ -147,10 +160,19 @@ class _GroupRestoringBulkSwitch(_GroupBulkSwitch, RestoreEntity):
     """
 
     async def async_added_to_hass(self) -> None:
-        """Restore the last command; keep the default when there is no history."""
+        """Restore the last command; keep the default when there is no history.
+
+        Only ``on``/``off`` count as history. Group entities go ``unavailable``
+        whenever the group coordinator's update throws (see
+        ``AdaptiveCoverBaseEntity.available``), and the restore store snapshots
+        on a timer — so an unclean shutdown during that window persists
+        ``unavailable``. Folding every non-``on`` state into ``off`` would turn
+        a crash into a silent "somebody switched this off", and a sticky one:
+        the restored ``off`` is what the next shutdown would record.
+        """
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
-        if last_state is not None:
+        if last_state is not None and last_state.state in (STATE_ON, STATE_OFF):
             self._attr_is_on = last_state.state == STATE_ON
 
 

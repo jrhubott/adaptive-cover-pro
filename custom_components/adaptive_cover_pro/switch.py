@@ -14,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
-    CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
@@ -29,7 +28,7 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
-from .helpers import motion_entities
+from .helpers import climate_mode_configured, motion_entities
 from .services.options_service import apply_options_patch, validate_options_patch
 
 
@@ -60,7 +59,7 @@ class _SwitchSpec:
 
 
 def _has_climate_mode(entry: ConfigEntry) -> bool:
-    return bool(entry.options.get(CONF_CLIMATE_MODE))
+    return climate_mode_configured(entry.options)
 
 
 def _has_climate_temp_source(entry: ConfigEntry) -> bool:

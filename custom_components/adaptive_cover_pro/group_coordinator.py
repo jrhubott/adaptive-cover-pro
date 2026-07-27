@@ -66,7 +66,11 @@ from .const import (
 )
 from .cover_types import get_policy
 from .cover_types.base import axis_inverted
-from .helpers import climate_mode_from_diagnostics, usable_coordinator
+from .helpers import (
+    climate_mode_configured,
+    climate_mode_from_diagnostics,
+    usable_coordinator,
+)
 from .managers import inverse_state
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
@@ -475,8 +479,18 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             await coordinator.async_refresh()
 
     async def async_set_climate_mode(self, enabled: bool) -> None:
-        """Bulk-enable/disable climate mode on every ACP member."""
-        for _entry, coordinator in self.resolved_members():
+        """Bulk-enable/disable climate mode on every member configured for it.
+
+        Members without climate mode in their config are skipped: they expose
+        no Climate Mode switch, so nothing would persist the change, and their
+        coordinator re-seeds ``switch_mode`` from the option at every startup.
+        Commanding them would take real effect until the next restart and then
+        silently evaporate — while this group's own switch, which restores,
+        went on claiming it (issue #1063).
+        """
+        for entry, coordinator in self.resolved_members():
+            if not climate_mode_configured(entry.options):
+                continue
             coordinator.switch_mode = enabled
             await coordinator.async_refresh()
 
