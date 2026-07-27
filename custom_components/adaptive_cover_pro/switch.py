@@ -269,7 +269,6 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
     ) -> None:
         """Initialize the switch."""
         super().__init__(entry_id, hass, config_entry, coordinator)
-        self._state: bool | None = None
         self._key = key
         self._attr_translation_key = key
         self._switch_name = display_name or switch_name
@@ -292,6 +291,21 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
 
         Option-backed switches read config_entry.options so service/options-flow
         changes are reflected without RestoreEntity state drift.
+
+        Every other switch reads the coordinator attribute named by ``_key``
+        (issue #1063). A local ``_attr_is_on`` was only ever written by this
+        entity's own turn_on/turn_off, so a caller that set the coordinator
+        directly — the group's bulk controls, the integration_enable /
+        integration_disable / emergency_stop services — changed behavior while
+        the entity kept reporting its old value. Since the rendered state is
+        what RestoreEntity hands back, that stale value then won at the next
+        restart and silently undid the change.
+
+        The ``getattr`` default covers two unset cases: ``ToggleManager`` seeds
+        most toggles to ``None`` until a switch restores, and the dynamic
+        ``glare_zone_N`` attributes do not exist at all until first written
+        (``coordinator._is_glare_zone_enabled`` reads them defensively for the
+        same reason). Both fall back to the spec's declared initial state.
         """
         if self._option_key is not None:
             return bool(
@@ -300,7 +314,10 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     self._initial_state,
                 )
             )
-        return self._attr_is_on
+        value = getattr(self.coordinator, self._key, None)
+        if value is None:
+            return self._initial_state
+        return bool(value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -308,7 +325,6 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         if self._option_key is not None:
             await self._async_set_option(True)
             return
-        self._attr_is_on = True
         setattr(self.coordinator, self._key, True)
         if self._key == "automatic_control" and kwargs.get("added") is not True:
             # Issue #33 defense-in-depth: invalidate the venetian sequencer's
@@ -338,7 +354,6 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         if self._option_key is not None:
             await self._async_set_option(False)
             return
-        self._attr_is_on = False
         setattr(self.coordinator, self._key, False)
         if self._key == "enabled_toggle" and kwargs.get("added") is not True:
             # Stop any ACP-in-flight cover moves FIRST (before the gate closes),
@@ -395,7 +410,19 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self.schedule_update_ha_state()
 
     async def async_added_to_hass(self) -> None:
-        """Call when entity about to be added to hass."""
+        """Call when entity about to be added to hass.
+
+        Restored state seeds the coordinator, not the other way round — and
+        that direction is deliberate even though ``is_on`` now derives from the
+        coordinator (issue #1063). Several toggles carry a static non-``None``
+        default (``switch_mode`` from ``CONF_CLIMATE_MODE``, ``motion_control``
+        from ``ToggleManager``), so a "coordinator wins at add time" rule would
+        make those ignore the user's last runtime toggle after every restart.
+        The defect was never the direction: it was that the value being
+        restored came from a local field no caller updated. With ``is_on``
+        reading the coordinator, what gets recorded — and therefore what gets
+        restored here — is the value the coordinator last actually held.
+        """
         await super().async_added_to_hass()
 
         if self._option_key is not None:

@@ -177,6 +177,23 @@ def _resolve_targets(
     return result
 
 
+def _set_enabled(coord, value: bool, service: str, outcome: str) -> None:
+    """Flip a coordinator's kill switch and push the change to its switch entity.
+
+    ``switch.<entry>_integration_enabled`` reads ``coordinator.enabled_toggle``
+    (issue #1063), so the coordinator is the single source of truth — but the
+    entity still needs a listener notification to re-render. These three
+    services deliberately never refresh, and the coordinator sets no
+    ``update_interval`` (refreshes are state-change driven), so without the
+    notification the switch would keep rendering its old value until some
+    unrelated cycle happened to run. That stale render is what ``RestoreEntity``
+    would hand back at the next restart, silently re-enabling the integration.
+    """
+    coord.enabled_toggle = value
+    coord.async_update_listeners()
+    coord.logger.debug("%s service: %s", service, outcome)
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register integration services (idempotent — safe to call per config entry)."""
     if hass.services.has_service(DOMAIN, "export_config"):
@@ -216,8 +233,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_integration_enable(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
         for coord in targets:
-            coord.enabled_toggle = True
-            coord.logger.debug("integration_enable service: enabled")
+            _set_enabled(coord, True, "integration_enable", "enabled")
 
     async def handle_integration_disable(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
@@ -228,8 +244,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             coord._cancel_weather_timeout()  # noqa: SLF001
             coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
             coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
-            coord.enabled_toggle = False
-            coord.logger.debug("integration_disable service: disabled")
+            _set_enabled(coord, False, "integration_disable", "disabled")
 
     async def handle_emergency_stop(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
@@ -244,8 +259,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             coord._cancel_weather_timeout()  # noqa: SLF001
             coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
             coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
-            coord.enabled_toggle = False
-            coord.logger.debug("emergency_stop service: stopped and disabled")
+            _set_enabled(coord, False, "emergency_stop", "stopped and disabled")
 
     hass.services.async_register(
         DOMAIN, "integration_enable", handle_integration_enable
