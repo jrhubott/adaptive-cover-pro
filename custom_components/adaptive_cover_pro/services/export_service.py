@@ -52,6 +52,7 @@ from ..const import (
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DOMAIN,
 )
+from ..helpers import resolve_sunrise_offset, resolve_sunset_offset
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,10 +102,8 @@ async def async_handle_export(call: ServiceCall) -> dict:
             CONF_FOV_RIGHT: options.get(CONF_FOV_RIGHT),
             CONF_DEFAULT_HEIGHT: options.get(CONF_DEFAULT_HEIGHT),
             CONF_SUNSET_POS: options.get(CONF_SUNSET_POS),
-            CONF_SUNSET_OFFSET: options.get(CONF_SUNSET_OFFSET, 0),
-            CONF_SUNRISE_OFFSET: options.get(
-                CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET, 0)
-            ),
+            CONF_SUNSET_OFFSET: resolve_sunset_offset(options),
+            CONF_SUNRISE_OFFSET: resolve_sunrise_offset(options),
             CONF_MAX_POSITION: options.get(CONF_MAX_POSITION, 100),
             CONF_MIN_POSITION: options.get(CONF_MIN_POSITION, 0),
             CONF_MIN_POSITION_SUN_TRACKING: options.get(CONF_MIN_POSITION_SUN_TRACKING),

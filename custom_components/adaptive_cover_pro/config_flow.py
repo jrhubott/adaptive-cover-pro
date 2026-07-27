@@ -258,6 +258,8 @@ from .helpers import (
     has_configured_window_end,
     mirror_legacy_slot_sensor_keys,
     normalize_time_string,
+    resolve_sunrise_offset,
+    resolve_sunset_offset,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -2825,8 +2827,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
     eow_pos = config.get(CONF_END_OF_WINDOW_POS)
-    sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
-    sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
+    sunset_off = resolve_sunset_offset(config)
+    sunrise_off = resolve_sunrise_offset(config)
     sunset_time_entity = config.get(CONF_SUNSET_TIME_ENTITY)
     sunrise_time_entity = config.get(CONF_SUNRISE_TIME_ENTITY)
     timing_parts = []

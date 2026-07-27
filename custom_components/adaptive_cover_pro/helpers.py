@@ -605,6 +605,32 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
         return None
 
 
+def resolve_sunset_offset(options: Mapping) -> int:
+    """Return the configured sunset offset in minutes, 0 when unset.
+
+    A stored ``None`` counts as unset — the key can exist with no value on an
+    entry whose form field was never filled in.
+    """
+    return int(options.get(CONF_SUNSET_OFFSET) or 0)
+
+
+def resolve_sunrise_offset(options: Mapping) -> int:
+    """Return the configured sunrise offset in minutes.
+
+    Falls back to :func:`resolve_sunset_offset` when unset, so an install that
+    only ever set one offset gets a symmetric night window. An explicit ``0`` is
+    a real choice and does *not* fall back; a stored ``None`` does, matching
+    :func:`resolve_sunset_offset`.
+
+    The single source of truth for this rule, which used to be spelled out
+    independently in five places — one of them defaulting to ``0`` instead of to
+    the sunset offset, so the Configuration Summary described a night window the
+    runtime never used (issue #1050, CODING_GUIDELINES.md § no-duplication).
+    """
+    raw = options.get(CONF_SUNRISE_OFFSET)
+    return resolve_sunset_offset(options) if raw is None else int(raw)
+
+
 def _read_sun_boundary_options(
     hass: HomeAssistant, options: Mapping
 ) -> SunBoundaryOptions:
@@ -618,22 +644,16 @@ def _read_sun_boundary_options(
     input lands in one place and those callers can never disagree about what
     "sunset" means (CODING_GUIDELINES.md § no-duplication).
 
-    Not yet exhaustive across the integration: ``config_types.py``,
-    ``services/export_service.py``, and ``config_flow.py`` each carry their own
-    copy of the offset fallback. ``config_flow.py``'s is semantically divergent —
-    it defaults ``sunrise_offset`` to ``0`` instead of falling back to
-    ``sunset_off``. Fold them in here when you next touch them (tracked in
-    issue #1050).
-
-    ``sunrise_offset`` falls back to ``sunset_offset`` when unset, so an install
-    that only ever set one offset gets a symmetric night window.
+    The offset arithmetic itself lives in :func:`resolve_sunset_offset` /
+    :func:`resolve_sunrise_offset`, which the hass-less consumers
+    (``CoverConfig.from_options``, the export service, the config-flow summary)
+    share — see issue #1050.
     """
-    sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
     return SunBoundaryOptions(
         sunset_time=_read_time_entity(hass, options.get(CONF_SUNSET_TIME_ENTITY)),
         sunrise_time=_read_time_entity(hass, options.get(CONF_SUNRISE_TIME_ENTITY)),
-        sunset_off=sunset_off,
-        sunrise_off=int(options.get(CONF_SUNRISE_OFFSET, sunset_off)),
+        sunset_off=resolve_sunset_offset(options),
+        sunrise_off=resolve_sunrise_offset(options),
     )
 
 
