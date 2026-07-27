@@ -30,8 +30,10 @@ from .const import (
     CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_TIME,
     CONF_ENTITIES,
     CONF_START_ENTITY,
+    CONF_START_TIME,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
@@ -76,6 +78,7 @@ from .helpers import (
     custom_position_slot_sensors,
     manual_override_input_entities,
     motion_entities,
+    normalize_time_string,
 )
 from .profile_link import _copy_profile_to_cover, _covers_linked_to
 from .templates import is_template_string
@@ -567,6 +570,25 @@ def _seed_signed_gamma_blind_spots(options: dict) -> bool:
     return seeded
 
 
+def _repair_malformed_times(options: dict) -> list[str]:
+    """Rewrite non-canonical start/end times to ``HH:MM:SS`` (issue #1049).
+
+    Returns the keys actually changed. A value already canonical, absent, or
+    unparsable is left alone — see the v3.11 → v3.12 block in
+    ``async_migrate_entry`` for why this one migration rewrites in place and why
+    that stays rollback-safe.
+    """
+    repaired: list[str] = []
+    for key in (CONF_START_TIME, CONF_END_TIME):
+        if key not in options:
+            continue
+        canonical = normalize_time_string(options[key])
+        if canonical != options[key]:
+            options[key] = canonical
+            repaired.append(key)
+    return repaired
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
@@ -705,6 +727,30 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if CONF_LENGTH_AWNING in new_options:
             new_options.setdefault(CONF_AWNING_SHADE_MODE, DEFAULT_AWNING_SHADE_MODE)
         new_minor = 11
+
+    # v3.11 → v3.12: repair start_time/end_time already stored in a non-canonical
+    # shape (issue #1049). Validating the write paths stops new bad values but
+    # leaves an already-bitten entry with e.g. "00:00", which fails every literal
+    # BLANK_TIME comparison while TimeWindowManager resolves it to tomorrow's
+    # midnight — the until_window_end deadline recedes a day at every local
+    # midnight and the override never expires.
+    #
+    # This is the rare migration that rewrites an existing key rather than only
+    # seeding one, so the rollback contract (CLAUDE.md § "Rollback-Safe Config
+    # Migrations") deserves an explicit answer: the rewrite is a repair *into*
+    # the format every release — old and new — already expects. An older build
+    # reading the canonical "00:00:00" applies the unset semantics it always
+    # intended; before the repair it read a phantom configured window end. So a
+    # rollback is strictly better off, never worse, and nothing is renamed or
+    # dropped. Values no parser can rescue are left untouched.
+    if new_version == 3 and new_minor < 12:
+        if repaired := _repair_malformed_times(new_options):
+            _LOGGER.info(
+                "Repaired malformed time options of %s (%s)",
+                entry.data.get("name", entry.entry_id),
+                ", ".join(repaired),
+            )
+        new_minor = 12
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

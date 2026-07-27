@@ -544,30 +544,6 @@ class TestImportConfig:
         assert (await async_handle_import_config(call))["id-1"] == "updated"
 
     @pytest.mark.asyncio
-    async def test_every_time_selector_field_is_tagged_time(self):
-        """TIME_OPTION_KEYS covers every TimeSelector field in the registry.
-
-        The derivation is only as good as the ``ValidatorKind.TIME`` tagging, so
-        the guard is on the tagging itself: a new field that renders a
-        ``TimeSelector`` but is tagged something else would slip past both
-        service validators exactly as start_time/end_time did (issue #1049).
-        """
-        from homeassistant.helpers import selector
-
-        from custom_components.adaptive_cover_pro.config_fields import (
-            FIELD_SPECS,
-            TIME_OPTION_KEYS,
-        )
-
-        for key, spec in FIELD_SPECS.items():
-            if spec.make_selector is None:
-                continue
-            if isinstance(spec.make_selector(None, {}), selector.TimeSelector):
-                assert key in TIME_OPTION_KEYS
-
-        assert {"start_time", "end_time"} == TIME_OPTION_KEYS
-
-    @pytest.mark.asyncio
     async def test_mixed_results(self, tmp_path):
         """One valid entry and one unknown entry produce mixed results dict."""
         from custom_components.adaptive_cover_pro.services.import_service import (

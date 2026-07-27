@@ -14,8 +14,7 @@ from homeassistant.exceptions import ServiceValidationError
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..config_fields import TIME_OPTION_KEYS
-from ..const import DOMAIN, OPTION_RANGES, TIME_STRING_RE
+from ..const import DOMAIN, OPTION_RANGES, TIME_OPTION_KEYS, TIME_STRING_RE
 from .export_service import DEFAULT_EXPORT_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,13 +38,13 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
 
     Numeric keys present in ``OPTION_RANGES`` are validated against their
     declared bounds, and time keys (``TIME_OPTION_KEYS``) against the
-    ``HH:MM:SS`` wire format the config flow and ``set_options`` both enforce,
-    before the entry is updated; a failed check records ``"error: ..."`` for
-    that entry in the result dict without aborting the rest of the import. A
-    malformed time otherwise reaches the entry verbatim and defeats the literal
-    ``BLANK_TIME`` comparisons across the integration (issue #1049). Remaining
-    keys (booleans, strings, enums, and unknown future keys) are accepted
-    as-is.
+    ``HH:MM:SS`` wire format in ``const.TIME_STRING_RE`` — the same pattern
+    ``set_options`` enforces — before the entry is updated; a failed check
+    records ``"error: ..."`` for that entry in the result dict without aborting
+    the rest of the import. A malformed time otherwise reaches the entry
+    verbatim and defeats the literal ``BLANK_TIME`` comparisons across the
+    integration (issue #1049). Remaining keys (booleans, strings, enums, and
+    unknown future keys) are accepted as-is.
 
     Returns a per-entry result dict:
         ``{entry_id: "updated" | "skipped" | "error: <msg>"}``

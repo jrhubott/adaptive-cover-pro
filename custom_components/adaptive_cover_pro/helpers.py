@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, timedelta
 from functools import partial
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pandas as pd
 from dateutil import parser
@@ -31,6 +31,7 @@ from .const import (
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    TIME_STRING_RE,
 )
 from .templates import is_template_string
 
@@ -94,6 +95,32 @@ def has_configured_window_end(options: Mapping) -> bool:
         options.get(key) not in (None, "", BLANK_TIME)
         for key in (CONF_END_TIME, CONF_END_ENTITY)
     )
+
+
+def normalize_time_string(value: Any) -> Any:
+    """Return *value* as a canonical ``HH:MM:SS`` string when it parses as a time.
+
+    HA's ``TimeSelector`` validates a submission via ``dt_util.parse_time`` but
+    stores it **unnormalized**, so a non-frontend flow client (websocket/REST
+    flow API, a custom card) can persist ``"00:00"``, ``"7:30"`` or
+    ``"٠٧:٣٠:٠٠"`` verbatim. None of those equal ``BLANK_TIME``, so every
+    literal sentinel comparison downstream reads them as a configured window
+    end while ``TimeWindowManager`` resolves them to tomorrow's midnight —
+    issue #1049.
+
+    The flow normalizes rather than rejects, unlike the service write paths
+    (``set_options`` / ``import_config``, which raise): the user picked a real
+    time, only in a shape the picker itself would never emit, so canonicalising
+    it honours the intent. Values already in canonical form, and values no
+    parser can rescue, are returned unchanged — the latter have already been
+    refused by the selector, and inventing a time here would mask that.
+    """
+    if not isinstance(value, str) or TIME_STRING_RE.match(value):
+        return value
+    parsed = dt_util.parse_time(value)
+    if parsed is None:
+        return value
+    return parsed.strftime("%H:%M:%S")
 
 
 def custom_position_slot_sensors(
