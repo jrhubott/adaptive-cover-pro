@@ -317,9 +317,15 @@ def _dual_policy_primed(
 ) -> DayNightShadePolicy:
     """Prime a Model C policy's dispatch cache (blend + role map + inverse flag).
 
-    ``floor_clamp``/``bypass``/``interp`` drive the cached ``_dual_entity_inverse``
-    to False even with inverse configured — reproducing the main-pipeline space
-    that DIVERGES from the unconditional broadcast seams.
+    Only ``interp`` drives the cached ``_dual_entity_inverse`` to False even
+    with inverse configured — reproducing the main-pipeline space that
+    DIVERGES from the unconditional broadcast seams. ``floor_clamp`` and
+    ``bypass`` no longer have that effect: #1036/#1043 made
+    ``_cache_dual_entity`` derive the flag from ``axis_inverted(...)`` alone,
+    dropping the ``floor_clamp_applied``/``bypass_auto_control`` exclusion it
+    used to carry. Both kwargs stay on this helper so callers can still set
+    those ``PipelineResult`` fields for other assertions, but they no longer
+    diverge the cache.
     """
     policy = DayNightShadePolicy()
     from tests.cover_helpers import make_cover_config, make_vertical_config
@@ -363,19 +369,19 @@ async def test_sunset_seam_inverse_uses_seam_space_not_cached_flag() -> None:
     """Sunset-window broadcast under inverse_state → middle rail physically OPEN.
 
     Audit repro: sunset_pos=0, blend 0 (all blackout), inverse_state ON, and a
-    prior main cycle that was floor-clamped (cached inverse flag → False). The
-    sunset seam inverts unconditionally (sends wire 100), so the middle-rail
-    remap must un-invert 100 → open 0, yielding wire 0 (physically OPEN). Using
-    the stale cached flag (False) would leave the middle at wire 100 →
-    physically CLOSED, crossing the bottom rail.
+    prior main cycle that had interpolation enabled (cached inverse flag →
+    False — post-#1036/#1043, ``interp`` is the only lever left that forces
+    ``axis_inverted`` False while inverse is configured; floor-clamp/bypass no
+    longer do). The sunset seam inverts unconditionally (sends wire 100), so
+    the middle-rail remap must un-invert 100 → open 0, yielding wire 0
+    (physically OPEN). Using the stale cached flag (False) would leave the
+    middle at wire 100 → physically CLOSED, crossing the bottom rail.
     """
     from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
         WindowTransitionTracker,
     )
 
-    policy = _dual_policy_primed(
-        position=0, blend=0, inverse_cfg=True, floor_clamp=True
-    )
+    policy = _dual_policy_primed(position=0, blend=0, inverse_cfg=True, interp=True)
 
     coord = MagicMock()
     coord._policy = policy
@@ -425,11 +431,12 @@ async def test_end_time_default_seam_inverse_uses_seam_space() -> None:
 
     Same divergence as the sunset seam: the end-time loop inverts the effective
     default unconditionally when inverse_state is configured, while the cached
-    flag reflects a floor-clamped main cycle (False). effective_pos=0, blend 0.
+    flag reflects a main cycle with interpolation enabled (False —
+    post-#1036/#1043, ``interp`` is the only lever left that forces
+    ``axis_inverted`` False while inverse is configured; floor-clamp/bypass no
+    longer do). effective_pos=0, blend 0.
     """
-    policy = _dual_policy_primed(
-        position=0, blend=0, inverse_cfg=True, floor_clamp=True
-    )
+    policy = _dual_policy_primed(position=0, blend=0, inverse_cfg=True, interp=True)
 
     coord = MagicMock()
     coord._policy = policy

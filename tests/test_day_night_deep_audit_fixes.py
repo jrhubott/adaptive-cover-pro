@@ -413,10 +413,8 @@ class TestBroadcastSeamInverseSpace:
         # physically pass below the bottom rail. The seam's wire value is the
         # logical position mapped into its OWN inversion space.
         policy = DayNightShadePolicy()
-        if cached_true:
-            _cache_dual(policy, position=logical_pos, blend=blend, inverse=True)
-        else:
-            _cache_dual(policy, position=logical_pos, blend=blend, inverse=False)
+        _cache_dual(policy, position=logical_pos, blend=blend, inverse=cached_true)
+        assert policy._dual_entity_inverse is cached_true
 
         bottom_wire = inverse_state(logical_pos) if seam_inverted else logical_pos
         middle_wire = policy.resolve_entity_target(
