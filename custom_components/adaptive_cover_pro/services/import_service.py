@@ -38,12 +38,17 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     never overwritten by an older export.
 
     Numeric keys present in ``OPTION_RANGES`` are validated against their
-    declared bounds, and time keys (``TIME_OPTION_KEYS``) against the
-    ``HH:MM:SS`` wire format in ``const.TIME_STRING_RE`` — the same pattern
-    ``set_options`` enforces — before the entry is updated; a failed check
-    records ``"error: ..."`` for that entry in the result dict without aborting
-    the rest of the import. A malformed time otherwise reaches the entry
-    verbatim and defeats the literal ``BLANK_TIME`` comparisons across the
+    declared bounds before the entry is updated; a failed check records
+    ``"error: ..."`` for that entry in the result dict without aborting the
+    rest of the import.
+
+    Time keys (``TIME_OPTION_KEYS``) are **canonicalised, not rejected**, and
+    this deliberately differs from ``set_options``: a value that parses is
+    rewritten to the ``const.TIME_STRING_RE`` wire format (``"00:00"`` is
+    stored as ``"00:00:00"``) and only a value no parser can rescue records an
+    error. An export file predates this validation, so failing the entry would
+    drop every *other* option a user is restoring — while a malformed time left
+    verbatim defeats the literal ``BLANK_TIME`` comparisons across the
     integration (issue #1049). Remaining keys (booleans, strings, enums, and
     unknown future keys) are accepted as-is.
 
@@ -152,6 +157,14 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                     # no one to ask.
                     canonical = normalize_time_string(value)
                     if TIME_STRING_RE.match(str(canonical)):
+                        if canonical != value:
+                            _LOGGER.debug(
+                                "import_config: entry '%s' %s=%r stored as %r",
+                                entry_id,
+                                key,
+                                value,
+                                canonical,
+                            )
                         imported_public[key] = canonical
                     else:
                         validation_errors.append(

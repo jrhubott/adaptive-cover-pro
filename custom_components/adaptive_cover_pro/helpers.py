@@ -108,12 +108,18 @@ def normalize_time_string(value: Any) -> Any:
     end while ``TimeWindowManager`` resolves them to tomorrow's midnight —
     issue #1049.
 
-    The flow normalizes rather than rejects, unlike the service write paths
-    (``set_options`` / ``import_config``, which raise): the user picked a real
-    time, only in a shape the picker itself would never emit, so canonicalising
-    it honours the intent. Values already in canonical form, and values no
-    parser can rescue, are returned unchanged — the latter have already been
-    refused by the selector, and inventing a time here would mask that.
+    Callers that have no one to send a bad value back to normalize with this
+    and keep going — the options flow (the user picked a real time, just in a
+    shape the picker never emits) and ``import_config`` (an export file predates
+    the validation). ``set_options`` is the exception: it rejects outright,
+    because its caller wrote the patch by hand and can fix it. The full
+    per-path table lives at ``const.TIME_STRING_RE``.
+
+    Values already canonical, and values no parser can rescue, are returned
+    unchanged — inventing a time for the latter would mask the problem. Callers
+    must therefore re-check the result against ``TIME_STRING_RE`` to tell
+    "canonicalised" from "could not be rescued"; what they do with the latter
+    differs (import errors, the migration drops the key).
     """
     if not isinstance(value, str) or TIME_STRING_RE.match(value):
         return value

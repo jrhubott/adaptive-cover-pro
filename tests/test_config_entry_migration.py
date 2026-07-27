@@ -1089,14 +1089,43 @@ async def test_migrate_v3_11_to_v3_12_drops_unrescuable_times(
 async def test_migrate_v3_11_to_v3_12_dropped_time_leaves_window_usable(
     hass: HomeAssistant,
 ) -> None:
-    """After the drop, the manager resolves the window instead of raising."""
-    from custom_components.adaptive_cover_pro.helpers import (
-        has_configured_window_end,
+    """After the drop, TimeWindowManager resolves the window instead of raising.
+
+    This is the delete branch's whole justification, so assert it against the
+    real manager rather than inferring it from the key's absence:
+    ``get_datetime_from_str`` calls ``dateutil.parser.parse`` unguarded, so the
+    stored ``"25:00:00"`` raises ``ParserError`` on every coordinator cycle
+    until the migration removes it.
+    """
+    import logging
+    from unittest.mock import MagicMock
+
+    from dateutil.parser import ParserError
+
+    from custom_components.adaptive_cover_pro.managers.time_window import (
+        TimeWindowManager,
     )
 
+    def _manager(options: dict) -> TimeWindowManager:
+        manager = TimeWindowManager(hass, logging.getLogger(__name__))
+        manager.logger = MagicMock()
+        manager.update_config(
+            start_time=options.get("start_time"),
+            start_time_entity=None,
+            end_time=options.get("end_time"),
+            end_time_entity=None,
+        )
+        return manager
+
     entry = _make_entry(hass, {"end_time": "25:00:00"}, version=3, minor_version=11)
+
+    # Pre-migration state is genuinely fatal, not merely untidy.
+    with pytest.raises(ParserError):
+        _ = _manager(dict(entry.options)).end_time
+
     assert await async_migrate_entry(hass, entry) is True
-    assert has_configured_window_end(entry.options) is False
+    assert _manager(dict(entry.options)).end_time is None
+    assert _manager(dict(entry.options)).before_end_time is True
 
 
 async def test_migrate_v3_12_is_idempotent(hass: HomeAssistant) -> None:
