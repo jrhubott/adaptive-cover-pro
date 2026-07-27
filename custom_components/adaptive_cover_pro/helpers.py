@@ -1175,9 +1175,13 @@ def _read_current_effective_default(
             in hand, which is coordinator business and stays there.
         time_mgr: The live ``TimeWindowManager``, or ``None``. ``None`` is the
             contract for a builder constructed without one (tests, legacy call
-            sites): each read degrades to exactly the default
-            :func:`compute_effective_default` would have applied anyway.
-            Production always injects the live manager.
+            sites): the three manager-derived kwargs degrade to exactly the
+            defaults :func:`compute_effective_default` would have applied
+            anyway. ``end_of_window_pos`` is options-derived, so it is still
+            read — but every end-of-window branch in that function also
+            requires ``end_of_window_active``, which is ``False`` here, so the
+            value is inert rather than defaulted. Production always injects
+            the live manager.
 
     """
     h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))

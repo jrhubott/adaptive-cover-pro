@@ -863,7 +863,8 @@ class TestEffectiveDefaultSingleSource:
         """No ``time_mgr`` (test/legacy construction) degrades to the pure defaults.
 
         Production always injects one; this pins the optional-collaborator
-        contract so the seven builders constructed without it stay valid.
+        contract so the test modules that construct a builder without it stay
+        valid.
         """
         builder, _, _ = _make_builder()
         snapshot = _build_at(
