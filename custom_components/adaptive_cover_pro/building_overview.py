@@ -92,10 +92,12 @@ from .const import (
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     MANUAL_OVERRIDE_DURATION_MODE_FIXED,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
 )
 from .cover_types import get_policy
 from .helpers import (
     custom_position_slot_configured,
+    has_configured_window_end,
     is_template_string,
     motion_entities,
 )
@@ -405,18 +407,27 @@ def _manual_override_hold(options: Mapping) -> str:
     fallback for an unresolvable boundary, so showing it would misrepresent the
     configured behaviour in a side-by-side comparison.
 
-    A mode with no label is one this build does not know — a hand-edited
-    ``.storage``, or a value written by a newer build. It degrades to the
-    numeric duration rather than leaking the raw identifier into the table
-    (issue #1051), which is also what actually happens at runtime:
-    ``resolve_override_deadline`` returns ``None`` for an unrecognised mode, so
-    the hold really is the numeric duration.
+    Two cases degrade back to the numeric duration rather than printing a
+    boundary the hold will never reach (issue #1051). Both mirror what the
+    runtime actually does — ``resolve_override_deadline`` returns ``None``, and
+    the caller falls back to the duration:
+
+    * A mode with no label: one this build does not know — a hand-edited
+      ``.storage``, or a value written by a newer build.
+    * ``until_window_end`` with no window end configured. Decided by the same
+      ``has_configured_window_end`` predicate the resolver and the config
+      summary's ⚠️ use, so all three agree on which configs have no anchor —
+      including the truthy-but-unset ``BLANK_TIME`` sentinel.
     """
     mode = (
         _eff(options, CONF_MANUAL_OVERRIDE_DURATION_MODE, None)
         or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
     )
-    if mode != MANUAL_OVERRIDE_DURATION_MODE_FIXED:
+    unanchored_window_end = (
+        mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
+        and not has_configured_window_end(options)
+    )
+    if mode != MANUAL_OVERRIDE_DURATION_MODE_FIXED and not unanchored_window_end:
         label = _LABELS.get(f"manual_hold.{mode}")
         if label is not None:
             return label

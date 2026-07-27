@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_DELTA_POSITION,
+    CONF_END_TIME,
     CONF_ENTITIES,
     CONF_LUX_ENTITY,
     CONF_MANUAL_OVERRIDE_DURATION,
@@ -311,18 +312,91 @@ def test_manual_override_mode_renders_a_label_not_the_wire_value():
     assert "until_next_sun_event" not in row
 
 
-def test_every_sun_mode_has_a_label():
-    """No mode may fall through to the raw identifier."""
+def test_every_sun_mode_renders_its_label():
+    """Every mode reaches its label — none falls through to the identifier.
+
+    Asserting the label is *present* is the load-bearing half: the degrade path
+    means a missing label silently prints the numeric duration instead, so
+    ``mode not in row`` alone would pass for a mode with no label at all.
+    """
+    from custom_components.adaptive_cover_pro.building_overview import _LABELS
+
     for mode in MANUAL_OVERRIDE_DURATION_MODES:
         if mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED:
             continue
         row = _manual_row(
             [
-                _cover("Sun", options={CONF_MANUAL_OVERRIDE_DURATION_MODE: mode}),
+                _cover(
+                    "Sun",
+                    options={
+                        CONF_MANUAL_OVERRIDE_DURATION_MODE: mode,
+                        # ``until_window_end`` only has an anchor when a window
+                        # end exists; the other modes ignore this.
+                        CONF_END_TIME: "20:00:00",
+                    },
+                ),
                 _cover("Other", options={CONF_MANUAL_THRESHOLD: 20}),
             ]
         )
+        assert _LABELS[f"manual_hold.{mode}"] in row
         assert mode not in row
+
+
+def test_window_end_mode_without_a_window_end_shows_the_duration():
+    """No window end → no anchor → the hold really is the numeric duration.
+
+    ``config_flow``'s summary already degrades this case; the overview must
+    agree, or the two surfaces describe the same config differently.
+    """
+    unanchored = _cover(
+        "Unanchored",
+        options={
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_window_end",
+            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 4},
+        },
+    )
+    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
+
+    row = _manual_row([unanchored, other])
+
+    assert "4h" in row
+    assert "Until the time window ends" not in row
+
+
+def test_window_end_mode_treats_the_blank_sentinel_as_unset():
+    """``BLANK_TIME`` is the project's UNSET sentinel, and it is truthy."""
+    from custom_components.adaptive_cover_pro.const import BLANK_TIME
+
+    unanchored = _cover(
+        "Unanchored",
+        options={
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_window_end",
+            CONF_END_TIME: BLANK_TIME,
+            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 4},
+        },
+    )
+    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
+
+    row = _manual_row([unanchored, other])
+
+    assert "4h" in row
+    assert "Until the time window ends" not in row
+
+
+def test_window_end_mode_with_a_configured_end_shows_the_label():
+    """A genuinely configured end resolves, so the label is the honest render."""
+    anchored = _cover(
+        "Anchored",
+        options={
+            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_window_end",
+            CONF_END_TIME: "20:00:00",
+        },
+    )
+    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
+
+    row = _manual_row([anchored, other])
+
+    assert "Until the time window ends" in row
 
 
 def test_unknown_mode_degrades_to_the_numeric_duration():

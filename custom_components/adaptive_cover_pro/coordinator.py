@@ -516,8 +516,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Seeded so the end-time sensor and the reboot-restore path — both of
         # which can reach expiry_for() before the first _update_options cycle —
         # read a real mode rather than raising AttributeError; refreshed each
-        # cycle (issue #1051). ManualOverrideSlice is the single source: no
-        # consumer re-reads CONF_MANUAL_OVERRIDE_DURATION_MODE from options.
+        # cycle (issue #1051). ManualOverrideSlice is the single source for the
+        # coordinator: no *runtime* consumer re-reads
+        # CONF_MANUAL_OVERRIDE_DURATION_MODE from options. The config/options
+        # flow, the field schema and the service validator still read the raw
+        # key — correctly, since none of them has a coordinator to read from.
         self.manual_override_duration_mode = _rc_attach.manual_override.duration_mode
 
         # Cover command service — self-contained: owns positioning, target tracking,
