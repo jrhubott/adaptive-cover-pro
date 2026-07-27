@@ -310,9 +310,11 @@ def clear_slot(
     ``keep`` names SUB-KEYS (this mapping's own keys, e.g. ``"sensors"``) to
     spare. It exists for the "➕ Add…" reuse path, which lands on a slot that
     is merely *unconfigured* — possibly holding half-entered data the user
-    still wants. Sparing the sub-keys the page renders means that data comes
-    back as a pre-filled form the user can finish or clear; everything else has
-    no UI at all and goes. Delete passes nothing and wipes the lot.
+    still wants. That caller passes the sub-keys its page renders for this
+    instance, so the data comes back as a pre-filled form the user can finish
+    or clear, while everything the page has no field for goes — an unrenderable
+    key would otherwise be stranded, invisible and unresettable. Delete passes
+    nothing and wipes the lot.
 
     Keys are POPPED, not set to ``None``: ``enabled`` is opt-out, read as
     ``options.get(key, DEFAULT_CUSTOM_POSITION_ENABLED)``, so a stored ``None``

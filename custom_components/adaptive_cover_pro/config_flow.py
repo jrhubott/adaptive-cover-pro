@@ -3850,18 +3850,16 @@ _SLOT_AREA_META: dict[str, tuple[tuple[int, ...], dict[int, dict[str, str]]]] = 
     "glare_zone": (GLARE_ZONE_SLOT_NUMBERS, GLARE_ZONE_SLOTS),
 }
 
-# The sub-keys each area's single-slot page actually renders — i.e. the ones a
-# user can see and change. Resolved from the ``*_FORM_KEYS`` maps so there is
-# one definition of "on the form" (issue #1071). Used by the "➕ Add…" reuse
-# path, which lands on a slot that is unconfigured but not necessarily empty:
-# it spares these so half-entered data comes back as a pre-filled form, and
-# drops the rest (custom position's card-controlled ``enabled`` and legacy
-# ``sensor`` mirror, blind spot's legacy FOV-relative edges), which have no UI
-# and would otherwise be inherited invisibly. Delete spares nothing.
-_SLOT_AREA_FORM_SUBKEYS: dict[str, frozenset[str]] = {
-    "custom_position": frozenset(CUSTOM_POSITION_FORM_KEYS),
-    "blind_spot": frozenset(BLIND_SPOT_FORM_KEYS),
-    "glare_zone": frozenset(GLARE_ZONE_FORM_KEYS),
+# Each area's sub-key → generic form-key map, so one lookup answers "what does
+# this sub-key render as". ``_clear_slot_keys`` inverts it through the markers
+# the page actually builds to get the sub-keys "➕ Add…" must spare (#1071) —
+# membership in the map alone is not enough, because parts of a page are gated
+# per instance (custom position's tilt block renders only for tilt-capable
+# cover types).
+_SLOT_AREA_FORM_KEYS: dict[str, dict[str, str]] = {
+    "custom_position": CUSTOM_POSITION_FORM_KEYS,
+    "blind_spot": BLIND_SPOT_FORM_KEYS,
+    "glare_zone": GLARE_ZONE_FORM_KEYS,
 }
 
 # The metres-stored generic length keys for a single glare-zone page — the
@@ -4420,10 +4418,10 @@ class OptionsFlowHandler(OptionsFlow):
                     return await getattr(self, f"async_step_{_area_menu(_area)}")()
                 # A slot can be un-configured yet still hold keys left by an
                 # older blank-out (issue #1071) — and such a slot never appears
-                # on the menu, so Delete cannot reach it. Drop the ones with no
-                # UI; the form keys stay and are seeded back so a half-finished
-                # slot's entered data survives the reuse.
-                self._clear_slot_keys(_area, free, keep_form_keys=True)
+                # on the menu, so Delete cannot reach it. Drop the ones this
+                # page has no field for; the rendered keys stay and are seeded
+                # back so a half-finished slot's entered data survives the reuse.
+                self._clear_slot_keys(_area, free, keep_rendered=True)
                 self._active_slot[_area] = free
                 return await getattr(self, f"_render_{_area}_slot")(user_input)
 
@@ -4790,16 +4788,43 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_init()
         return self._slot_menu(self._delete_area, delete=True)
 
+    def _slot_schema(self, area: str, n: int) -> vol.Schema:
+        """Build the single-slot page schema for slot *n* of *area*.
+
+        The one place that knows how each area's page is assembled, so the
+        renderers and the "➕ Add…" reuse path agree on what the page shows
+        without either re-deriving it (issue #1071).
+        """
+        if area == "custom_position":
+            return config_fields.custom_position_slot_schema(
+                include_tilt=self._custom_position_include_tilt()
+            )
+        if area == "blind_spot":
+            return blind_spot_slot_schema(n, self.options)
+        return glare_zone_slot_schema(n, self.options, self.hass)
+
     def _clear_slot_keys(
-        self, area: str, n: int, *, keep_form_keys: bool = False
+        self, area: str, n: int, *, keep_rendered: bool = False
     ) -> None:
         """Drop the stored option keys owned by slot *n* of *area* (#1071).
 
-        ``keep_form_keys`` spares the sub-keys the area's single-slot page
-        renders — the "➕ Add…" reuse policy. Delete takes the default and wipes
-        the whole key map.
+        ``keep_rendered`` spares the sub-keys this page actually renders for
+        this instance — the "➕ Add…" reuse policy, so half-entered data comes
+        back as a pre-filled form instead of being thrown away. It is resolved
+        from the schema's own markers rather than from ``*_FORM_KEYS``
+        membership: a field the page gates off (custom position's tilt block on
+        a cover type without tilt) is in the map but has no UI, so sparing it
+        would strand a value the user can neither see nor reset. Delete takes
+        the default and wipes the whole key map.
         """
-        keep = _SLOT_AREA_FORM_SUBKEYS[area] if keep_form_keys else frozenset()
+        keep: set[str] = set()
+        if keep_rendered:
+            rendered = {str(marker) for marker in self._slot_schema(area, n).schema}
+            keep = {
+                sub
+                for sub, form_key in _SLOT_AREA_FORM_KEYS[area].items()
+                if form_key in rendered
+            }
         if area == "custom_position":
             clear_custom_position_slot(self.options, n, keep=keep)
             return
@@ -4839,7 +4864,6 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         n = self._active_slot["custom_position"]
         slot_keys = CUSTOM_POSITION_SLOTS[n]
-        include_tilt = self._custom_position_include_tilt()
         if user_input is not None:
             # Fill cleared optional (no-default) fields so a clear round-trips.
             form_optional = [
@@ -4872,7 +4896,7 @@ class OptionsFlowHandler(OptionsFlow):
             form_key: self.options.get(slot_keys[sub])
             for sub, form_key in CUSTOM_POSITION_FORM_KEYS.items()
         }
-        schema = config_fields.custom_position_slot_schema(include_tilt=include_tilt)
+        schema = self._slot_schema("custom_position", n)
         return self.async_show_form(
             step_id="custom_position_slot",
             data_schema=self.add_suggested_values_to_schema(schema, seeded),
@@ -4919,7 +4943,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def _render_blind_spot_slot(self, user_input: dict[str, Any] | None = None):
         n = self._active_slot["blind_spot"]
         slot_keys = BLIND_SPOT_SLOTS[n]
-        schema = blind_spot_slot_schema(n, self.options)
+        schema = self._slot_schema("blind_spot", n)
         if user_input is not None:
             left = user_input.get(BLIND_SPOT_FORM_KEYS["left_gamma"])
             right = user_input.get(BLIND_SPOT_FORM_KEYS["right_gamma"])
@@ -4993,7 +5017,7 @@ class OptionsFlowHandler(OptionsFlow):
         suggested = options_to_display(
             self.hass, metres, length_keys=_GLARE_ZONE_FORM_LENGTH_KEYS
         )
-        schema = glare_zone_slot_schema(n, self.options, self.hass)
+        schema = self._slot_schema("glare_zone", n)
         return self.async_show_form(
             step_id="glare_zone_slot",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),

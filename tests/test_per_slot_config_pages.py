@@ -485,9 +485,12 @@ async def test_add_slot_preserves_partial_form_data_but_drops_inert_keys():
     assert flow.options[slot1["template"]] == "{{ true }}"
     assert flow.options[slot1["min_mode"]] is True
     assert flow.options[slot1["use_my"]] is True
-    assert flow.options[slot1["tilt_only"]] is True
-    # Never on the form, so nothing could show or reset it — it must go.
+    # Never on the form, so nothing could show or reset it — it must go. The
+    # card-controlled `enabled` flag has no UI on any cover type; `tilt_only`
+    # has none on THIS one, because a blind's page hides the tilt block (see
+    # the include_tilt pair below).
     assert slot1["enabled"] not in flow.options
+    assert slot1["tilt_only"] not in flow.options
     # The legacy mirror is re-derived from the surviving list, not left stale.
     assert flow.options[slot1["sensor"]] == "binary_sensor.trigger"
     assert result["type"] == "form"
@@ -544,6 +547,71 @@ async def test_add_slot_preserves_partial_form_data_but_drops_inert_keys():
     suggested = _suggested(result)
     assert suggested[GLARE_ZONE_FORM_KEYS["x"]] == 0.5
     assert suggested[GLARE_ZONE_FORM_KEYS["radius"]] == 0.3
+
+
+# The tilt block a custom-position slot page renders only when the policy says
+# this cover type has tilt. Seeded under slot 1 with no trigger, so the slot
+# stays *unconfigured* — invisible on the menu, reachable only via "➕ Add…".
+_TILT_SEED: dict[str, object] = {
+    "tilt": 30,
+    "tilt_only": True,
+    "tilt_min": 10,
+    "tilt_max": 90,
+}
+
+
+@pytest.mark.asyncio
+async def test_add_slot_drops_tilt_keys_when_the_page_hides_them():
+    """Add's keep-set means rendered *here*, not merely in the key map (#1071).
+
+    ``custom_position_slot_schema(include_tilt=False)`` emits no tilt markers, so
+    on the ten cover types without tilt the four tilt sub-keys have no UI at all
+    — the user cannot see or reset them and HA cannot put them in ``user_input``.
+    A ``set_option`` call can still store them (they are neither a trigger nor a
+    claim key, so the slot stays unconfigured and Delete cannot reach it), and a
+    spared ``tilt_only`` makes the freshly configured slot claim nothing on
+    either axis with nothing in the form to explain why. Add must drop them.
+    """
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    flow = _options_flow(
+        {slot1[sub]: value for sub, value in _TILT_SEED.items()}, CoverType.BLIND
+    )
+    assert flow._custom_position_include_tilt() is False
+    assert flow._lowest_free_slot("custom_position") == 1
+
+    result = await flow.async_step_add_custom_position()
+
+    for sub in _TILT_SEED:
+        assert (
+            slot1[sub] not in flow.options
+        ), f"{slot1[sub]} survived Add with no field on the page to reset it"
+    assert result["type"] == "form"
+    assert result["step_id"] == "custom_position_slot"
+    assert result["description_placeholders"]["slot"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_add_slot_keeps_tilt_keys_when_the_page_renders_them():
+    """The mirror case: on a venetian the tilt block IS the user's own data.
+
+    Dropping it there would be the over-correction — the page renders every one
+    of these fields, so Add must seed them straight back like any other form key.
+    """
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    flow = _options_flow(
+        {slot1[sub]: value for sub, value in _TILT_SEED.items()}, CoverType.VENETIAN
+    )
+    assert flow._custom_position_include_tilt() is True
+    assert flow._lowest_free_slot("custom_position") == 1
+
+    result = await flow.async_step_add_custom_position()
+
+    for sub, value in _TILT_SEED.items():
+        assert flow.options[slot1[sub]] == value, f"{slot1[sub]} was wiped by Add"
+    assert result["type"] == "form"
+    suggested = _suggested(result)
+    for sub, value in _TILT_SEED.items():
+        assert suggested[CUSTOM_POSITION_FORM_KEYS[sub]] == value
 
 
 @pytest.mark.asyncio
