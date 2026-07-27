@@ -132,6 +132,41 @@ async def test_unknown_explicit_entry_raises():
 
 
 @pytest.mark.asyncio
+async def test_group_config_entry_id_raises_service_validation_error():
+    """Explicitly targeting a cover group's config_entry_id raises a clear
+    ServiceValidationError instead of an AttributeError from ``coord.data.diagnostics``
+    (issue #1059, finding #1). ``_resolve_by_config_entry`` must resolve through
+    ``cover_coordinators`` (which filters out groups/building profiles) rather
+    than ``loaded_coordinators`` (which does not) — a ``GroupCoordinator``'s
+    ``.data`` is ``GroupAggregates``, which has no ``diagnostics`` attribute.
+    """
+    from homeassistant.exceptions import ServiceValidationError
+
+    from custom_components.adaptive_cover_pro.group_coordinator import (
+        GroupCoordinator,
+    )
+
+    group_coord = MagicMock()
+    group_coord.__class__ = GroupCoordinator  # isinstance(..., GroupCoordinator) → True
+    group_coord.config_entry.entry_id = "group-1"
+
+    entry = MagicMock()
+    entry.entry_id = "group-1"
+    entry.runtime_data = group_coord
+    entry.state = ConfigEntryState.LOADED
+
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    hass.config_entries.async_get_entry.return_value = MagicMock(
+        domain=DOMAIN, entry_id="group-1"
+    )
+    call = make_call(hass, data={"config_entry_id": ["group-1"]})
+
+    with pytest.raises(ServiceValidationError):
+        await async_handle_get_diagnostics(call)
+
+
+@pytest.mark.asyncio
 async def test_sanitizer_handles_numpy_datetime_enum_dataclass():
     """Diagnostics containing numpy scalars, datetimes, enums, and dataclasses are JSON-serializable."""
     try:

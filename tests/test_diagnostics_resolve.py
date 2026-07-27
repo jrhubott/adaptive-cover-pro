@@ -221,3 +221,44 @@ def test_build_troubleshoot_result_renders_findings_via_labels():
     assert len(result.findings) == 1
     assert result.findings[0].reason.code == "triage.dry_run_left_on"
     assert "Dry-run mode is on" in result.report
+
+
+def test_build_troubleshoot_result_unavailable_gates_out_mixed_config_runtime_rule():
+    """The ``only=RuleInput.CONFIG if unavailable else None`` gate (resolve.py)
+    actually suppresses a mixed ``CONFIG | RUNTIME`` rule when the source is
+    unavailable — the exact extraction risk the evidence packet's
+    REGRESSION_CHECK names, previously unexercised by any test (issue #1059,
+    finding #2). CLOUD_OR_SEMANTICS (rule 7) is tagged ``CONFIG | RUNTIME`` and
+    fires off options alone (more than one cloud/low-light input configured),
+    so it is a rule that COULD run with only options data but must not when
+    ``only=RuleInput.CONFIG`` drops any rule that also reads RUNTIME.
+    """
+    options = {
+        "entities": [],
+        "lux_entity": "sensor.lux",
+        "irradiance_entity": "sensor.irr",
+    }
+
+    # Gated: source is unavailable → only=RuleInput.CONFIG drops this mixed rule.
+    unavailable_result = build_troubleshoot_result(
+        MagicMock(),
+        DiagnosticsRead(payload=None, source="unavailable"),
+        options=options,
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    unavailable_codes = [f.reason.code for f in unavailable_result.findings]
+    assert "triage.cloud_or_semantics" not in unavailable_codes
+
+    # Sibling assertion: the SAME options fire the same rule when the source is
+    # NOT unavailable (only=None, every rule runs) — proves the gate itself is
+    # what suppressed the finding above, not merely an absence of data.
+    available_result = build_troubleshoot_result(
+        MagicMock(),
+        DiagnosticsRead(payload={}, source="coordinator"),
+        options=options,
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    available_codes = [f.reason.code for f in available_result.findings]
+    assert "triage.cloud_or_semantics" in available_codes

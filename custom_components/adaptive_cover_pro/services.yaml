@@ -1396,10 +1396,7 @@ get_troubleshooting:
   name: Get troubleshooting
   description: >-
     Returns the Troubleshoot step's triage findings for the targeted Adaptive
-    Cover Pro instances — the same checks the options-flow Troubleshoot menu
-    runs, as structured data (code, severity, fix step, wiki link, rendered
-    message) plus the rendered report text. Designed to be called from the ACP
-    Lovelace card via hass.callService(..., { return_response: true }).
+    Cover Pro instances as structured data, plus the rendered report text.
   target:
     entity:
       integration: adaptive_cover_pro

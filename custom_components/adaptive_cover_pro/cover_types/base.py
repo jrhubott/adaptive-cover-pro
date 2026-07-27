@@ -1087,7 +1087,7 @@ class CoverTypePolicy(ABC):
         """Return user-facing warnings about the bound covers' capabilities.
 
         Default: no warnings — vertical / awning / tilt logic still lives in
-        ``config_flow._check_cover_capabilities``. ``VenetianPolicy``
+        ``helpers.check_cover_capabilities``. ``VenetianPolicy``
         overrides to express its dual-axis capability requirement.
         """
         return []
@@ -1102,7 +1102,7 @@ class CoverTypePolicy(ABC):
         day/night shade's control model relaxes the tilt requirement in its
         single-axis split-range mode). The Liskov-safe default delegates to
         :meth:`cover_capability_warnings`, so every other policy is unchanged —
-        the single ``config_flow._check_cover_capabilities`` call site can move
+        the single ``helpers.check_cover_capabilities`` call site can move
         to this hook without touching any existing behaviour.
         """
         return self.cover_capability_warnings(known)

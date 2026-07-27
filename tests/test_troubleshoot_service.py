@@ -154,6 +154,41 @@ async def test_unknown_explicit_entry_raises():
 
 
 @pytest.mark.asyncio
+async def test_group_config_entry_id_raises_service_validation_error():
+    """Explicitly targeting a cover group's config_entry_id raises a clear
+    ServiceValidationError instead of an AttributeError from ``coord.data.diagnostics``
+    (issue #1059, finding #1). ``_resolve_by_config_entry`` must resolve through
+    ``cover_coordinators`` (which filters out groups/building profiles) rather
+    than ``loaded_coordinators`` (which does not) — a ``GroupCoordinator``'s
+    ``.data`` is ``GroupAggregates``, which has no ``diagnostics`` attribute.
+    """
+    from homeassistant.exceptions import ServiceValidationError
+
+    from custom_components.adaptive_cover_pro.group_coordinator import (
+        GroupCoordinator,
+    )
+
+    group_coord = MagicMock()
+    group_coord.__class__ = GroupCoordinator  # isinstance(..., GroupCoordinator) → True
+    group_coord.config_entry.entry_id = "group-1"
+
+    entry = MagicMock()
+    entry.entry_id = "group-1"
+    entry.runtime_data = group_coord
+    entry.state = ConfigEntryState.LOADED
+
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    hass.config_entries.async_get_entry.return_value = MagicMock(
+        domain=DOMAIN, entry_id="group-1"
+    )
+    call = make_call(hass, data={"config_entry_id": ["group-1"]})
+
+    with pytest.raises(ServiceValidationError):
+        await async_handle_get_troubleshooting(call)
+
+
+@pytest.mark.asyncio
 async def test_explicit_config_entry_id_targets_single_coordinator():
     """config_entry_id field bypasses entity/device target resolution."""
     coord1 = make_coordinator(entry_id="e1", name="North")
@@ -169,6 +204,75 @@ async def test_explicit_config_entry_id_targets_single_coordinator():
     assert result["count"] == 1
     assert "e1" in result["entries"]
     assert "e2" not in result["entries"]
+
+
+@pytest.mark.asyncio
+async def test_one_bad_entry_does_not_blank_the_others():
+    """One coordinator has a corrupt ``sensor_type`` that ``get_policy`` can't
+    resolve (raises ``ValueError`` inside ``build_troubleshoot_result``) — the
+    other targeted coordinator still comes back, and the failing one degrades
+    to an error entry rather than losing the whole response (issue #1059,
+    finding #3).
+    """
+    good = make_coordinator(entry_id="good-1", name="Good Cover")
+    bad = make_coordinator(
+        entry_id="bad-1", name="Bad Cover", cover_type="not_a_real_cover_type"
+    )
+    hass = make_hass(good, bad)
+    call = make_call(hass)
+
+    result = await async_handle_get_troubleshooting(call)
+
+    assert result["count"] == 2
+    good_entry = result["entries"]["good-1"]
+    assert "findings" in good_entry
+    assert "error" not in good_entry
+    bad_entry = result["entries"]["bad-1"]
+    assert bad_entry["config_entry_id"] == "bad-1"
+    assert bad_entry["name"] == "Bad Cover"
+    assert "error" in bad_entry
+    assert "findings" not in bad_entry
+
+
+@pytest.mark.asyncio
+async def test_missing_sensor_type_falls_back_to_blind_without_raising():
+    """A falsy ``sensor_type`` (group/orchestrator or not-yet-configured cover)
+    falls back to ``CoverType.BLIND`` — the same default the options flow uses
+    — instead of raising when ``get_policy(None)`` is called (issue #1059,
+    finding #3).
+    """
+    coord = make_coordinator(entry_id="e1", cover_type=None)
+    hass = make_hass(coord)
+    call = make_call(hass)
+
+    result = await async_handle_get_troubleshooting(call)
+
+    entry = result["entries"]["e1"]
+    assert "error" not in entry
+    assert entry["findings"] == []
+
+
+@pytest.mark.asyncio
+async def test_read_error_is_surfaced_not_discarded():
+    """When ``read_from_coordinator`` reports an error (``coord.data`` is None
+    and a rebuild raises), the entry still gets a normal troubleshoot result
+    (CONFIG rules can still run against the empty payload) AND carries the raw
+    error string — mirroring ``get_diagnostics``'s existing ``read.error``
+    surfacing rather than silently discarding it (issue #1059, finding #3).
+    """
+    coord = make_coordinator(entry_id="e1")
+    coord.data = None
+    coord.build_diagnostic_data.side_effect = RuntimeError("update in progress")
+    hass = make_hass(coord)
+    call = make_call(hass)
+
+    result = await async_handle_get_troubleshooting(call)
+
+    entry = result["entries"]["e1"]
+    assert entry["source"] == "unavailable"
+    assert "error" in entry
+    assert "diagnostics_unavailable" in entry["error"]
+    assert "Diagnostics aren't available" in entry["report"]
 
 
 def test_translations_contain_get_troubleshooting_key():

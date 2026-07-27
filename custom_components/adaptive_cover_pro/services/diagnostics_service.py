@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
 from typing import TYPE_CHECKING
-
-import voluptuous as vol
-from homeassistant.helpers import config_validation as cv
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -17,32 +13,14 @@ from ..diagnostics.resolve import read_from_coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-GET_DIAGNOSTICS_SCHEMA = vol.Schema(
-    {
-        vol.Optional("entity_id"): vol.All(cv.ensure_list, [cv.entity_id]),
-        vol.Optional("device_id"): vol.All(cv.ensure_list, [str]),
-        vol.Optional("area_id"): vol.All(cv.ensure_list, [str]),
-        vol.Optional("config_entry_id"): vol.All(cv.ensure_list, [str]),
-    }
-)
-
 
 async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
     """Handle the get_diagnostics service call and return live diagnostics."""
     hass: HomeAssistant = call.hass
 
-    explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
+    from . import _resolve_service_targets  # noqa: PLC0415
 
-    if explicit_entry_ids:
-        from . import _resolve_by_config_entry  # noqa: PLC0415
-
-        coords_by_entry = _resolve_by_config_entry(hass, explicit_entry_ids)
-    else:
-        # Standard target resolution (entity_id / device_id / area_id / no target)
-        from . import _resolve_targets  # noqa: PLC0415
-
-        target_map = _resolve_targets(hass, call)
-        coords_by_entry = {coord.config_entry.entry_id: coord for coord in target_map}
+    coords_by_entry = _resolve_service_targets(hass, call)
 
     entries: dict[str, dict] = {}
     for entry_id, coord in coords_by_entry.items():
@@ -71,9 +49,6 @@ async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
             "diagnostics": _sanitize(diag) if diag is not None else None,
         }
 
-    return {
-        "version": 1,
-        "generated_at": dt.datetime.now(dt.UTC).isoformat(),
-        "count": len(entries),
-        "entries": entries,
-    }
+    from . import _build_response_envelope  # noqa: PLC0415
+
+    return _build_response_envelope(entries)

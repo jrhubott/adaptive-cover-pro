@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from typing import TYPE_CHECKING
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -18,7 +20,7 @@ if TYPE_CHECKING:
     from ..coordinator import AdaptiveDataUpdateCoordinator
 
 from ..const import DOMAIN
-from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
+from .diagnostics_service import async_handle_get_diagnostics
 from .group_service import GROUP_SERVICE_NAMES, register_group_services
 from .engage_manual_override_service import (
     ENGAGE_MANUAL_OVERRIDE_SCHEMA,
@@ -36,10 +38,7 @@ from .set_axes_service import SET_AXES_SCHEMA, async_handle_set_axes
 from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
 from .set_tilt_service import SET_TILT_SCHEMA, async_handle_set_tilt
 from .stop_service import async_handle_stop
-from .troubleshoot_service import (
-    GET_TROUBLESHOOTING_SCHEMA,
-    async_handle_get_troubleshooting,
-)
+from .troubleshoot_service import async_handle_get_troubleshooting
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,10 +93,19 @@ def _resolve_by_config_entry(
 
     Shared by ``get_diagnostics`` and ``get_troubleshooting`` — both accept an
     explicit ``config_entry_id`` escape hatch that bypasses the standard
-    entity/device/area target block. Raises ``ServiceValidationError`` for any
-    ID that doesn't exist or isn't owned by this domain.
+    entity/device/area target block. Resolves through :func:`cover_coordinators`
+    (not :func:`loaded_coordinators`) so a cover group or building profile is
+    never handed to a reader that expects a real cover coordinator's
+    ``.data.diagnostics`` shape — a ``GroupCoordinator``'s ``.data`` is
+    ``GroupAggregates``, which has no ``diagnostics`` attribute (issue #1059).
+
+    Raises ``ServiceValidationError`` for any ID that doesn't exist, isn't
+    owned by this domain, or names a cover group/building profile — the same
+    "explain the specific mistake" shape this function already uses for an
+    unknown ID, rather than silently dropping the entry from the response.
     """
-    all_coordinators = loaded_coordinators(hass)
+    cover_coords = cover_coordinators(hass)
+    all_coords = loaded_coordinators(hass)
     result = {}
     for entry_id in entry_ids:
         entry = hass.config_entries.async_get_entry(entry_id)
@@ -105,9 +113,17 @@ def _resolve_by_config_entry(
             raise ServiceValidationError(
                 f"Config entry '{entry_id}' not found or does not belong to {DOMAIN}"
             )
-        coord = all_coordinators.get(entry_id)
+        coord = cover_coords.get(entry_id)
         if coord is not None:
             result[entry_id] = coord
+        elif entry_id in all_coords:
+            # Loaded, but filtered out of cover_coordinators — a cover group or
+            # building profile, which has no diagnostics/troubleshoot findings
+            # of its own.
+            raise ServiceValidationError(
+                f"Config entry '{entry_id}' is a cover group or building "
+                "profile, which has no diagnostics"
+            )
     return result
 
 
@@ -206,6 +222,54 @@ def _resolve_targets(
     return result
 
 
+# Shared schema for the response-services that each return a per-instance
+# payload on demand (``get_diagnostics``, ``get_troubleshooting`` — issue
+# #1059): the standard entity/device/area target block plus an explicit
+# ``config_entry_id`` escape hatch. Defined once here so neither service
+# module hand-duplicates it (CODING_GUIDELINES "No Code Duplication").
+TARGET_WITH_CONFIG_ENTRY_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entity_id"): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional("device_id"): vol.All(cv.ensure_list, [str]),
+        vol.Optional("area_id"): vol.All(cv.ensure_list, [str]),
+        vol.Optional("config_entry_id"): vol.All(cv.ensure_list, [str]),
+    }
+)
+
+
+def _resolve_service_targets(
+    hass: HomeAssistant, call: ServiceCall
+) -> dict[str, AdaptiveDataUpdateCoordinator]:
+    """Resolve a response-service call to {entry_id: coordinator}.
+
+    Shared targeting preamble for ``get_diagnostics`` and
+    ``get_troubleshooting`` (issue #1059): an explicit ``config_entry_id``
+    list bypasses the standard entity/device/area target block via
+    :func:`_resolve_by_config_entry`; otherwise falls back to the standard
+    target block via :func:`_resolve_targets`.
+    """
+    explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
+    if explicit_entry_ids:
+        return _resolve_by_config_entry(hass, explicit_entry_ids)
+    target_map = _resolve_targets(hass, call)
+    return {coord.config_entry.entry_id: coord for coord in target_map}
+
+
+def _build_response_envelope(entries: dict) -> dict:
+    """Build the standard ``{version, generated_at, count, entries}`` envelope.
+
+    Shared response shape for every response-service that returns a
+    per-instance payload (``get_diagnostics``, ``get_troubleshooting`` — issue
+    #1059), so the envelope is never hand-duplicated a second time.
+    """
+    return {
+        "version": 1,
+        "generated_at": dt.datetime.now(dt.UTC).isoformat(),
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register integration services (idempotent — safe to call per config entry)."""
     if hass.services.has_service(DOMAIN, "export_config"):
@@ -222,7 +286,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             DOMAIN,
             "get_diagnostics",
             async_handle_get_diagnostics,
-            schema=GET_DIAGNOSTICS_SCHEMA,
+            schema=TARGET_WITH_CONFIG_ENTRY_SCHEMA,
             supports_response=SupportsResponse.ONLY,
         )
     if not hass.services.has_service(DOMAIN, "get_troubleshooting"):
@@ -230,7 +294,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             DOMAIN,
             "get_troubleshooting",
             async_handle_get_troubleshooting,
-            schema=GET_TROUBLESHOOTING_SCHEMA,
+            schema=TARGET_WITH_CONFIG_ENTRY_SCHEMA,
             supports_response=SupportsResponse.ONLY,
         )
     if not hass.services.has_service(DOMAIN, "export_all_config"):

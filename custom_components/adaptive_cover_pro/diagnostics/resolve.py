@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..const import DIAG_CACHE_KEY
+from ..helpers import check_cover_capabilities
+from . import triage
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -134,11 +136,9 @@ def build_troubleshoot_result(
     any CONFIG findings that could still be evaluated. Otherwise every rule
     runs and the report is either the rendered findings or the "all good" text.
     """
-    from ..config_flow import _check_cover_capabilities  # noqa: PLC0415
     from ..cover_types import get_policy  # noqa: PLC0415
-    from .triage import RuleInput, render_report, run_triage  # noqa: PLC0415
 
-    cap_map, _ = _check_cover_capabilities(options, sensor_type, hass)
+    cap_map, _ = check_cover_capabilities(options, sensor_type, hass)
     view: dict = {
         "options": dict(options),
         "capabilities": cap_map,
@@ -150,16 +150,18 @@ def build_troubleshoot_result(
         **(read.payload or {}),
     }
     unavailable = read.source == "unavailable"
-    findings = run_triage(view, only=RuleInput.CONFIG if unavailable else None)
+    findings = triage.run_triage(
+        view, only=triage.RuleInput.CONFIG if unavailable else None
+    )
 
     if unavailable:
         # Lead with the note that runtime checks need diagnostics, then list
         # any config findings that could still be evaluated.
         report = TROUBLESHOOT_UNAVAILABLE
         if findings:
-            report = f"{report}\n\n{render_report(findings, labels)}"
+            report = f"{report}\n\n{triage.render_report(findings, labels)}"
     elif findings:
-        report = render_report(findings, labels)
+        report = triage.render_report(findings, labels)
     else:
         report = TROUBLESHOOT_NO_ISSUES
 

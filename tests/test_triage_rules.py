@@ -1434,12 +1434,15 @@ def test_rule_wiki_points_at_canonical_findings_page(rule) -> None:
     assert rule.wiki == f"Troubleshooting-Findings#{_canonical_anchor(rule.code)}"
 
 
-@pytest.mark.parametrize("rule", TRIAGE_RULES, ids=lambda r: r.code)
-def test_wiki_anchor_for_returns_rule_wiki(rule) -> None:
+def test_wiki_anchor_for_agrees_with_every_rule_wiki() -> None:
     # The single-source-of-truth accessor (issue #1059) must agree with the
     # rule table itself for every code — the same map ``scripts/triage_json.py``
-    # and the ``get_troubleshooting`` service both point at.
-    assert wiki_anchor_for(rule.code) == rule.wiki
+    # and the ``get_troubleshooting`` service both point at. A single loop
+    # (rather than 27 parametrized cases against a `dict.get` built from this
+    # very table) is enough signal — a mismatch names the offending code in
+    # the assertion message.
+    for rule in TRIAGE_RULES:
+        assert wiki_anchor_for(rule.code) == rule.wiki, rule.code
 
 
 def test_wiki_anchor_for_unknown_code_returns_none() -> None:
