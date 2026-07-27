@@ -157,7 +157,7 @@ def test_extreme_heat_result_is_ordinary_not_a_bypass_path():
     """The extreme-heat PipelineResult rides the standard interpolation/inverse path.
 
     It carries none of the short-circuit flags the coordinator's ``state``
-    property honors (``is_safety`` / ``floor_clamp_applied`` /
+    property honors (``is_safety`` / ``position_constraint_applied`` /
     ``bypass_auto_control``), so its position is post-processed like every other
     climate position — no parallel path.
     """
@@ -188,7 +188,7 @@ def test_extreme_heat_result_is_ordinary_not_a_bypass_path():
     # None of the short-circuit flags are set → coordinator.state will
     # interpolate + inverse this position exactly like summer/winter/glare.
     assert result.is_safety is False
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
     assert result.bypass_auto_control is False
 
 

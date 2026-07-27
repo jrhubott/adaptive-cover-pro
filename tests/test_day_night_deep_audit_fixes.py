@@ -269,7 +269,7 @@ def _cache_dual(
         control_method=ControlMethod.CUSTOM_POSITION,
         reason="custom",
         tilt=blend,
-        floor_clamp_applied=floor_clamp,
+        position_constraint_applied=floor_clamp,
         bypass_auto_control=bypass,
     )
     policy.post_pipeline_resolve(result, cover=None, **kw)

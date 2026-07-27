@@ -218,7 +218,7 @@ def test_resolved_target_signature_tuple_content():
         is_safety=False,
         bypass_auto_control=True,
         skip_command=False,
-        floor_clamp_applied=False,
+        position_constraint_applied=False,
     )
 
     sig = AdaptiveDataUpdateCoordinator._resolved_target_signature(coordinator)
@@ -230,7 +230,7 @@ def test_resolved_target_signature_tuple_content():
         False,  # is_safety
         True,  # bypass_auto_control
         False,  # skip_command
-        False,  # floor_clamp_applied
+        False,  # position_constraint_applied
     )
 
 

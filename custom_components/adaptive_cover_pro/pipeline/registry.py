@@ -600,15 +600,16 @@ class PipelineRegistry:
             # A position clamp must reach the cover even when the winner is a
             # hold (manual-override / motion): clear skip_command so the composed
             # result is dispatched, not suppressed (issue #809 / #534).
-            # floor_clamp_applied records only that a user-configured bound
-            # clamped this winner — a floor raise (#463) or a ceiling lower
-            # (#943) — which is what drives that forced dispatch and the reason
-            # labelling. It makes NO claim about the value's frame: the composed
-            # position is logical, exactly like the winner's own was (#1036).
+            # position_constraint_applied records only that a user-configured
+            # bound clamped this winner — a floor raise (#463) or a ceiling
+            # lower (#943) — which is what drives that forced dispatch and the
+            # reason labelling. It makes NO claim about the value's frame: the
+            # composed position is logical, exactly like the winner's own was
+            # (#1036).
             winner = dataclasses.replace(
                 winner,
                 position=clamped_position,
-                floor_clamp_applied=True,
+                position_constraint_applied=True,
                 skip_command=False,
             )
         if tilt_clamped:
@@ -647,7 +648,7 @@ class PipelineRegistry:
                     "position": result.position,
                     "reason": result.reason,
                     "bypass_auto_control": result.bypass_auto_control,
-                    "floor_clamp_applied": result.floor_clamp_applied,
+                    "position_constraint_applied": result.position_constraint_applied,
                     "is_sunset_active": result.is_sunset_active,
                 }
             )

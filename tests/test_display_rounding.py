@@ -41,7 +41,7 @@ class TestCoordinatorStateIntCoercion:
         pr = SimpleNamespace(
             position=pipeline_position,
             bypass_auto_control=False,
-            floor_clamp_applied=False,
+            position_constraint_applied=False,
         )
         coord._pipeline_result = pr
         coord._use_interpolation = True
@@ -86,7 +86,7 @@ class TestCoordinatorStateIntCoercion:
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
         pr = SimpleNamespace(
-            position=55, bypass_auto_control=False, floor_clamp_applied=False
+            position=55, bypass_auto_control=False, position_constraint_applied=False
         )
         coord._pipeline_result = pr
         coord._use_interpolation = False
@@ -106,7 +106,7 @@ class TestCoordinatorStateIntCoercion:
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
         pr = SimpleNamespace(
-            position=0, bypass_auto_control=True, floor_clamp_applied=False
+            position=0, bypass_auto_control=True, position_constraint_applied=False
         )
         coord._pipeline_result = pr
         # A safety winner runs the same frame transform as any other (#1036),

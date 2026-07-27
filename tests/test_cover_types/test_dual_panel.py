@@ -255,7 +255,7 @@ def _resolve(
         control_method=control_method,
         reason="test",
         bypass_auto_control=bypass,
-        floor_clamp_applied=floor_clamp,
+        position_constraint_applied=floor_clamp,
     )
     return policy.post_pipeline_resolve(result, cover=_sunset_cover(sunset_valid), **kw)
 

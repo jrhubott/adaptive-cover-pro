@@ -106,7 +106,7 @@ def _primed_policy(
         position=40,
         control_method=control_method,
         reason="test",
-        floor_clamp_applied=floor_clamp,
+        position_constraint_applied=floor_clamp,
     )
     policy.post_pipeline_resolve(
         result,

@@ -137,7 +137,7 @@ def _dual_panel_case(frame_options: dict, logical: int, *, floor: int | None = N
             position=logical,
             control_method=ControlMethod.SOLAR,
             reason="solar",
-            floor_clamp_applied=floor is not None,
+            position_constraint_applied=floor is not None,
         ),
         options,
         _sunset_cover(False),
@@ -160,7 +160,7 @@ def _day_night_case(frame_options: dict, logical: int, *, floor: int | None = No
             control_method=ControlMethod.CUSTOM_POSITION,
             reason="custom",
             tilt=50,
-            floor_clamp_applied=floor is not None,
+            position_constraint_applied=floor is not None,
         ),
         options,
         None,
@@ -214,7 +214,7 @@ def _make_coord(
         position=logical,
         control_method=ControlMethod.SOLAR,
         reason="solar",
-        floor_clamp_applied=floor is not None,
+        position_constraint_applied=floor is not None,
         decision_trace=[
             DecisionStep(
                 handler="solar", matched=True, reason="solar", position=logical

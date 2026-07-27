@@ -76,7 +76,7 @@ def _make_pr(
     configured_sunset_pos: int | None = None,
     configured_cloudy_pos: int | None = None,
     bypass_auto_control: bool = False,
-    floor_clamp_applied: bool = False,
+    position_constraint_applied: bool = False,
     is_safety: bool = False,
     tilt: int | None = None,
     tilt_only_slot: int | None = None,
@@ -96,7 +96,7 @@ def _make_pr(
         configured_sunset_pos=configured_sunset_pos,
         configured_cloudy_pos=configured_cloudy_pos,
         bypass_auto_control=bypass_auto_control,
-        floor_clamp_applied=floor_clamp_applied,
+        position_constraint_applied=position_constraint_applied,
         is_safety=is_safety,
         tilt=tilt,
         tilt_only_slot=tilt_only_slot,
@@ -1893,7 +1893,7 @@ class TestLinearPosition:
         """
         diag, _ = builder.build(
             _base_ctx(
-                pipeline_result=_make_pr(position=25, floor_clamp_applied=True),
+                pipeline_result=_make_pr(position=25, position_constraint_applied=True),
                 position_axis_inverted=True,
             )
         )

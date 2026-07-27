@@ -5,7 +5,7 @@ contractually a LOGICAL (pre-inversion canonical) value for *every* winner —
 ``pipeline/types.py`` says so at the field's definition site and requires any
 handler holding a raw cover read to convert it first. So
 ``coordinator.state`` must never decide "which frame is this number in?" from
-provenance flags (``bypass_auto_control`` / ``floor_clamp_applied``): it maps
+provenance flags (``bypass_auto_control`` / ``position_constraint_applied``): it maps
 every winner through :meth:`_to_cover_frame`, unconditionally.
 
 #469's genuine requirement survives, asserted harder than before: **the
@@ -53,7 +53,7 @@ def _make_pipeline_result(
     position: int,
     control_method: ControlMethod = ControlMethod.DEFAULT,
     bypass_auto_control: bool = False,
-    floor_clamp_applied: bool = False,
+    position_constraint_applied: bool = False,
     is_safety: bool = False,
 ) -> PipelineResult:
     return PipelineResult(
@@ -61,7 +61,7 @@ def _make_pipeline_result(
         control_method=control_method,
         reason="test",
         bypass_auto_control=bypass_auto_control,
-        floor_clamp_applied=floor_clamp_applied,
+        position_constraint_applied=position_constraint_applied,
         is_safety=is_safety,
     )
 
@@ -128,12 +128,12 @@ _CURVE = {
 # the auto-control gate) — none of them says anything about the value's frame.
 _WINNER_SHAPES: dict[str, dict] = {
     "plain": {},
-    "floor_clamped": {"floor_clamp_applied": True},
+    "floor_clamped": {"position_constraint_applied": True},
     "bypass": {"bypass_auto_control": True},
     "bypass+safety": {"bypass_auto_control": True, "is_safety": True},
     "bypass+floor_clamped": {
         "bypass_auto_control": True,
-        "floor_clamp_applied": True,
+        "position_constraint_applied": True,
     },
 }
 
@@ -179,7 +179,7 @@ def test_floor_clamped_winner_is_inverted_like_any_other() -> None:
         position=25,
         control_method=ControlMethod.DEFAULT,
         bypass_auto_control=False,
-        floor_clamp_applied=True,
+        position_constraint_applied=True,
     )
     coord = _make_coordinator(
         pipeline_result=result,
@@ -204,7 +204,7 @@ def test_floor_clamped_winner_is_interpolated_like_any_other() -> None:
         position=25,
         control_method=ControlMethod.DEFAULT,
         bypass_auto_control=False,
-        floor_clamp_applied=True,
+        position_constraint_applied=True,
     )
     coord = _make_coordinator(pipeline_result=result, **_CURVE)
 
@@ -224,7 +224,7 @@ def test_bypass_winner_is_transformed_like_any_other() -> None:
         position=42,
         control_method=ControlMethod.FORCE,
         bypass_auto_control=True,
-        floor_clamp_applied=False,
+        position_constraint_applied=False,
     )
     coord = _make_coordinator(
         pipeline_result=result,
@@ -243,7 +243,7 @@ def test_non_floor_winner_still_runs_interpolation():
         position=25,
         control_method=ControlMethod.DEFAULT,
         bypass_auto_control=False,
-        floor_clamp_applied=False,
+        position_constraint_applied=False,
     )
     coord = _make_coordinator(
         pipeline_result=result,
@@ -265,7 +265,7 @@ def test_non_floor_winner_still_runs_inverse_state():
         position=25,
         control_method=ControlMethod.DEFAULT,
         bypass_auto_control=False,
-        floor_clamp_applied=False,
+        position_constraint_applied=False,
     )
     coord = _make_coordinator(
         pipeline_result=result,
@@ -303,7 +303,7 @@ def test_dispatch_is_monotone_in_the_logical_request(frame_name: str) -> None:
     """Sweeping the logical request with an active floor yields a monotone curve.
 
     Built through the REAL ``PipelineRegistry`` so composition and dispatch are
-    both exercised — a hand-set ``floor_clamp_applied`` would only test half of
+    both exercised — a hand-set ``position_constraint_applied`` would only test half of
     it. Under #469 the inverse-state curve was
     ``[25, 25, 25, 75, 74, 70, ..., 0]``: asking for logical 10 opened the cover
     further than asking for logical 30. No restatement of any transform can
