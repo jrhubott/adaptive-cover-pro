@@ -10,9 +10,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_CLIMATE_MODE,
     CONF_ENTITIES,
     CONF_GROUP_MEMBER_OPT_OUT,
     CONF_GROUP_STAGGER_DELAY,
@@ -49,13 +51,23 @@ def _member_entry(
     cover_type: CoverType,
     entities: list[str],
     extra_options: dict | None = None,
+    state: ConfigEntryState = ConfigEntryState.LOADED,
 ) -> MockConfigEntry:
+    """Build a member entry.
+
+    Defaults to ``LOADED`` because that is what a member the group can act on
+    actually looks like: ``resolved_members`` skips anything that has not
+    finished setup, since HA assigns ``runtime_data`` before platform setup and
+    a toggle written to a half-built coordinator is undone when its entities
+    restore (issue #1063).
+    """
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"name": entry_id, CONF_SENSOR_TYPE: cover_type},
         options={CONF_ENTITIES: entities, **(extra_options or {})},
         entry_id=entry_id,
         title=entry_id,
+        state=state,
     )
     entry.add_to_hass(hass)
     return entry
@@ -72,10 +84,25 @@ def _mock_member_coordinator() -> MagicMock:
 
 @pytest.fixture
 def group_setup(hass):
-    """Build a group with a blind member, an awning member, and one generic cover."""
-    blind_entry = _member_entry(hass, "member_blind", CoverType.BLIND, [BLIND_ENTITY])
+    """Build a group with a blind member, an awning member, and one generic cover.
+
+    Both members carry ``CONF_CLIMATE_MODE`` so they can hold a bulk climate
+    command — ``async_set_climate_mode`` skips members that expose no Climate
+    Mode switch to persist it (issue #1063).
+    """
+    blind_entry = _member_entry(
+        hass,
+        "member_blind",
+        CoverType.BLIND,
+        [BLIND_ENTITY],
+        extra_options={CONF_CLIMATE_MODE: True},
+    )
     awning_entry = _member_entry(
-        hass, "member_awning", CoverType.AWNING, [AWNING_ENTITY]
+        hass,
+        "member_awning",
+        CoverType.AWNING,
+        [AWNING_ENTITY],
+        extra_options={CONF_CLIMATE_MODE: True},
     )
     blind_coord = _mock_member_coordinator()
     awning_coord = _mock_member_coordinator()

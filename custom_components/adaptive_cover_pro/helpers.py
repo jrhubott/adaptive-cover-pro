@@ -10,17 +10,25 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pandas as pd
 from dateutil import parser
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import (
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
 from .const import (
     BLANK_TIME,
+    CONF_CLIMATE_MODE,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
     CONF_MAX_POSITION,
     CONF_MIN_POSITION,
@@ -32,6 +40,7 @@ from .const import (
     CONF_SUNSET_TIME_ENTITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
@@ -51,6 +60,65 @@ _LOGGER = logging.getLogger(__name__)
 # Entity states that mean "no usable value" — used by the safe-read helpers
 # below so the same set is checked everywhere instead of inline literals.
 _INVALID_STATES: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE})
+
+
+def usable_coordinator(entry: ConfigEntry) -> Any:
+    """Return an entry's coordinator, or ``None`` when it is not usable yet.
+
+    Single source of truth for "may I write to this entry's coordinator?", used
+    by both ``services.loaded_coordinators`` (walks every ACP entry) and
+    ``GroupCoordinator.resolved_members`` (walks one group's roster).
+
+    Two things have to hold. The entry must have reached ``LOADED``: HA assigns
+    ``runtime_data`` *before* forwarding platform setup, so between those points
+    a reloading entry already exposes a freshly-built coordinator whose switch
+    entities have not been added yet — a toggle written onto it is silently
+    undone moments later when those switches restore their previous state
+    (issue #1063). And ``runtime_data`` must actually hold something: virtual
+    entries (e.g. the Building Profile, ``controls_cover == False``) reach
+    ``LOADED`` without building a coordinator at all. ``getattr`` is robust
+    whether the running HA leaves ``runtime_data`` unset or defaults it to
+    ``None``.
+    """
+    if entry.state is not ConfigEntryState.LOADED:
+        return None
+    return getattr(entry, "runtime_data", None)
+
+
+def restored_bool(last_state: "State | None", default: bool) -> bool:
+    """Read a restored switch state, ignoring anything that is not on/off.
+
+    An entity that was ``unavailable`` or ``unknown`` when HA last snapshotted
+    state carries no information about what the user wanted, so it must not be
+    read as ``off``. Any raise inside a coordinator update flips
+    ``last_update_success``, which renders every ACP entity ``unavailable``
+    (``AdaptiveCoverBaseEntity.available``), and the restore store snapshots on
+    a timer — so an unclean shutdown during that window persists it. Folding
+    that into ``off`` turns a transient error into a silent, sticky "somebody
+    switched this off": the restored ``off`` is what the next shutdown records.
+
+    Shared by the per-cover switches (where the restored value is written
+    straight onto the coordinator, so a wrong read disables the thing) and the
+    group's bulk switches (issue #1063).
+    """
+    if last_state is None or last_state.state not in (STATE_ON, STATE_OFF):
+        return default
+    return last_state.state == STATE_ON
+
+
+def climate_mode_configured(options: Mapping) -> bool:
+    """Whether this entry is set up for climate mode at all.
+
+    Single source of truth for "may climate mode be switched on here?". The
+    pipeline gates on the runtime ``switch_mode`` toggle rather than on this
+    option, so an unconfigured entry really would start acting on climate if
+    something set the toggle — but it exposes no Climate Mode switch to persist
+    that, and its coordinator re-seeds ``switch_mode`` from this option at every
+    startup. Both the switch platform (which decides whether to create the
+    entity) and the group's bulk control (which decides whom to command) read
+    this so the two agree on who can hold the state.
+    """
+    return bool(options.get(CONF_CLIMATE_MODE))
 
 
 def motion_entities(options: Mapping) -> list[str]:
@@ -100,6 +168,29 @@ def has_configured_window_end(options: Mapping) -> bool:
     return any(
         options.get(key) not in (None, "", BLANK_TIME)
         for key in (CONF_END_TIME, CONF_END_ENTITY)
+    )
+
+
+def manual_hold_is_unanchored(options: Mapping) -> bool:
+    """Return True when the configured manual-override hold has no boundary.
+
+    Single source of truth for "does this config's hold fall back to the numeric
+    ``manual_override_duration``?", shared by the configuration summary's ⚠️ and
+    the Building Profile overview's comparison table so the two surfaces can
+    never describe the same config differently (issue #1051).
+
+    Today that is exactly ``until_window_end`` with no operating-window end:
+    :func:`resolve_override_deadline` finds no anchor and the caller falls back
+    to the duration. A future mode that also needs an anchor belongs **here**,
+    not in either surface's own render — two hand-rolled copies are how the
+    overview came to print a boundary the hold never reaches.
+    """
+    mode = (
+        options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+        or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+    )
+    return mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END and (
+        not has_configured_window_end(options)
     )
 
 

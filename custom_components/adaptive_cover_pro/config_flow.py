@@ -228,7 +228,6 @@ from .const import (
     GLARE_ZONE_SLOTS,
     GROUP_SCENE_PRIORITY,
     MANUAL_OVERRIDE_DURATION_MODE_FIXED,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
     MANUAL_OVERRIDE_DURATION_MODES,
     OPT_OUT_ALL_SCENES,
     CONF_DEBUG_CATEGORIES,
@@ -244,6 +243,8 @@ from .const import (
     MIN_TRANSIT_TIMEOUT,
     MODE2_OPEN_HORIZONTAL_PERCENT,
     DOMAIN,
+    TIME_OPTION_KEYS,
+    TIME_STRING_RE,
     CoverType,
     GroupScene,
     TemplateCombineMode,
@@ -256,7 +257,7 @@ from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
-    has_configured_window_end,
+    manual_hold_is_unanchored,
     mirror_legacy_slot_sensor_keys,
     normalize_time_string,
     resolve_sunrise_offset,
@@ -2187,10 +2188,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Same predicate the runtime resolver uses, so the ⚠️ fires for exactly the
     # configs whose hold falls back to the numeric duration — including the
     # truthy-but-unset ``BLANK_TIME`` sentinel (issue #1044).
-    manual_window_end_missing = (
-        manual_mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-        and not has_configured_window_end(config)
-    )
+    manual_window_end_missing = manual_hold_is_unanchored(config)
     # The summary's only computed-key label lookup. An out-of-schema stored mode
     # (hand-edited .storage, a value from a build that knew a mode this one
     # doesn't) must degrade to the fixed rendering the way the runtime half
@@ -3557,15 +3555,54 @@ def _extract_shared_options(
     Excludes per-window fields: CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID.
     When categories is None, returns all shared options (used by duplicate flow).
     When categories is a list, returns only options belonging to those categories.
+
+    Also canonicalizes any time-typed option (``TIME_OPTION_KEYS``) that isn't
+    already in the one accepted wire format: a source entry predating the
+    v3.11 -> v3.12 repair, or one that was ``disabled_by``-set before that
+    migration shipped (so it never ran), can still carry a raw value like
+    ``"7:30"``. Values ``normalize_time_string`` can't rescue are dropped
+    rather than copied — on Duplicate that means the key is simply absent
+    from the new entry; on Sync, where the result is merged as
+    ``{**target.options, **shared_options}``, a dropped key leaves the
+    target's own existing value in place rather than clearing it (issue
+    #1057).
     """
     if categories is None:
-        return {
+        result = {
             k: v for k, v in entry.options.items() if k not in _SHARED_OPTIONS_EXCLUDED
         }
-    allowed_keys = frozenset().union(
-        *(SYNC_CATEGORIES[c] for c in categories if c in SYNC_CATEGORIES)
-    )
-    return {k: v for k, v in entry.options.items() if k in allowed_keys}
+    else:
+        allowed_keys = frozenset().union(
+            *(SYNC_CATEGORIES[c] for c in categories if c in SYNC_CATEGORIES)
+        )
+        result = {k: v for k, v in entry.options.items() if k in allowed_keys}
+
+    for key in TIME_OPTION_KEYS:
+        if key not in result:
+            continue
+        value = result[key]
+        if value is None or TIME_STRING_RE.match(str(value)):
+            continue  # absent-equivalent or already canonical
+        canonical = normalize_time_string(value)
+        if TIME_STRING_RE.match(str(canonical)):
+            _LOGGER.debug(
+                "_extract_shared_options: entry '%s' %s=%r stored as %r",
+                entry.entry_id,
+                key,
+                value,
+                canonical,
+            )
+            result[key] = canonical
+        else:
+            _LOGGER.warning(
+                "_extract_shared_options: entry '%s' %s=%r is not a valid time "
+                "(expected HH:MM:SS) and was dropped rather than copied",
+                entry.entry_id,
+                key,
+                value,
+            )
+            del result[key]  # unrescuable — drop rather than copy garbage
+    return result
 
 
 def _build_cover_entity_schema(

@@ -20,6 +20,7 @@ import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
 
 UTC = dt.UTC
 
@@ -1202,3 +1203,152 @@ class TestIssue223OverrideClearSafetyTag:
                 "when the window closed (fix for issue #223)."
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Sun-mode expiry driven through the real coordinator guards (issue #1051)
+# ---------------------------------------------------------------------------
+
+
+def _sun_data(
+    *,
+    sunrise=dt.datetime(2026, 7, 2, 4, 0),
+    sunset=dt.datetime(2026, 7, 2, 21, 0),
+    next_sunrise=dt.datetime(2026, 7, 3, 4, 1),
+    next_sunset=dt.datetime(2026, 7, 3, 20, 59),
+):
+    """Return a mid-latitude summer day: sunrise 04:00, sunset 21:00 UTC."""
+    sun_data = MagicMock()
+    sun_data.sunrise.return_value = sunrise.replace(tzinfo=UTC)
+    sun_data.sunset.return_value = sunset.replace(tzinfo=UTC)
+    sun_data.next_sunrise.return_value = next_sunrise.replace(tzinfo=UTC)
+    sun_data.next_sunset.return_value = next_sunset.replace(tzinfo=UTC)
+    return sun_data
+
+
+def _sunrise_mode_coordinator(**kwargs):
+    """Coordinator with the REAL resolver, manager, and force-send path wired.
+
+    Everything between "the resolver picks a sunrise deadline" and "the guard
+    decides whether to reposition" is production code here: only the HA reads
+    (sun data, cover command service, position context) are stubbed.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_DURATION_MODE,
+        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
+
+    coord = _make_coordinator(**kwargs)
+    coord.config_entry.options = {
+        CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+            MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+        )
+    }
+    coord.manual_override_duration_mode = MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+    # No sunrise-time entity configured — the resolver falls through to astral.
+    coord.hass.states.get.return_value = None
+    coord._cover_data = MagicMock(sun_data=_sun_data())
+    coord._time_mgr.end_time = None
+    coord._resolve_override_deadline = (
+        AdaptiveDataUpdateCoordinator._resolve_override_deadline.__get__(coord)
+    )
+    coord._async_force_send_pipeline_position = (
+        AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position.__get__(coord)
+    )
+
+    manager = AdaptiveCoverManager(
+        hass=MagicMock(), reset_duration={"hours": 2}, logger=MagicMock()
+    )
+    manager.add_covers(["cover.test_blind"])
+    manager.set_deadline_resolver(coord._resolve_override_deadline)
+    coord.manager = manager
+    return coord
+
+
+def _engage_override_at_dusk(coord):
+    """Engage a manual override at 22:00 — the close-the-blind-at-dusk case."""
+    coord.manager.set_last_updated(
+        "cover.test_blind",
+        MagicMock(last_updated=dt.datetime(2026, 7, 2, 22, 0, tzinfo=UTC)),
+        allow_reset=True,
+    )
+    coord.manager.mark_manual_control("cover.test_blind")
+
+
+class TestSunModeExpiryThroughCoordinatorGuards:
+    """A sun-anchored expiry lands on the guards #215/#223 were written for.
+
+    Issue #1051 item 3. Everything else in this file drives
+    ``_async_force_send_pipeline_position`` directly; nothing walked the whole
+    path — resolver resolves a sunrise deadline, ``reset_if_needed`` returns the
+    entity, the guards suppress the reposition. The sun modes relocate expiry
+    onto exactly the dawn/dusk moments those issues were about, so a
+    ``until_sunrise`` deadline fires inside #215's literal timeline.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sunrise_expiry_outside_window_does_not_reposition(self):
+        """Expiry at sunrise, hours before the window opens → stay put."""
+        coord = _sunrise_mode_coordinator(check_adaptive_time=False)
+        _engage_override_at_dusk(coord)
+
+        # 02:00 — the fixed 2 h duration would have expired at midnight, and
+        # #215's "reopening at 2 a.m." is exactly this moment. The sun deadline
+        # holds, which is what proves the resolver set it and not the duration.
+        with freeze_time("2026-07-03 02:00:00"):
+            assert await coord.manager.reset_if_needed() == set()
+        assert coord.manager.is_cover_manual("cover.test_blind") is True
+
+        # Just past the resolved sunrise (04:01) the override clears.
+        with freeze_time("2026-07-03 04:01:01"):
+            expired = await coord.manager.reset_if_needed()
+        assert expired == {"cover.test_blind"}
+
+        sent = await coord._async_force_send_pipeline_position(60, {})
+
+        assert sent == set()
+        coord._cmd_svc.apply_position.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sunrise_expiry_with_auto_control_off_does_not_reposition(self):
+        """Same expiry inside the window, automatic control OFF → stay put."""
+        coord = _sunrise_mode_coordinator(
+            check_adaptive_time=True,
+            clock_window_open=True,
+            automatic_control=False,
+        )
+        _engage_override_at_dusk(coord)
+
+        with freeze_time("2026-07-03 04:01:01"):
+            expired = await coord.manager.reset_if_needed()
+        assert expired == {"cover.test_blind"}
+
+        sent = await coord._async_force_send_pipeline_position(60, {})
+
+        assert sent == set()
+        coord._cmd_svc.apply_position.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sunrise_expiry_inside_window_does_reposition(self):
+        """Positive control: with both guards open the same expiry DOES send.
+
+        Without this the two guard tests above would pass against an inert
+        harness that never dispatches for any reason.
+        """
+        coord = _sunrise_mode_coordinator(check_adaptive_time=True)
+        _engage_override_at_dusk(coord)
+
+        with freeze_time("2026-07-03 04:01:01"):
+            expired = await coord.manager.reset_if_needed()
+        assert expired == {"cover.test_blind"}
+
+        sent = await coord._async_force_send_pipeline_position(60, {})
+
+        assert sent == {"cover.test_blind"}
+        coord._cmd_svc.apply_position.assert_awaited_once()

@@ -16,6 +16,7 @@ from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     CONF_GROUP_ENABLE_CLIMATE_SENSOR,
@@ -28,6 +29,7 @@ from .const import (
     GroupState,
 )
 from .entity_base import AdaptiveCoverBaseEntity
+from .helpers import restored_bool
 from .pipeline.handlers import GroupLockHandler, GroupSceneHandler
 
 if TYPE_CHECKING:
@@ -100,86 +102,125 @@ class GroupActiveSceneSensor(_GroupEntityBase, SensorEntity):
         return str(scene) if scene is not None else None
 
 
-class GroupAutomationSwitch(_GroupEntityBase, SwitchEntity):
-    """Bulk-enable/disable sun-tracking automation across all ACP members.
+class _GroupBulkSwitch(_GroupEntityBase, SwitchEntity):
+    """Shared shape for the group's bulk switches.
 
-    Reflects the last bulk command sent through this group (defaults to on),
-    not a consensus of member states — members remain individually togglable.
+    Each holds the last command pushed through this group rather than a
+    consensus of live member states — members remain individually togglable.
+    Subclasses supply the locked unique_id suffix, the no-history default, and
+    the coordinator call that fans the command out.
     """
+
+    _unique_id_suffix: str
+    _default_state: bool = False
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        """Fail at import time if a concrete subclass forgets its locked suffix.
+
+        The suffix is half of the ``f"{entry_id}_{suffix}"`` registry key, so a
+        missing one has to be loud here rather than a bare ``AttributeError``
+        surfacing as an opaque platform-setup failure.
+        """
+        super().__init_subclass__(**kwargs)
+        if not cls.__name__.startswith("_") and not getattr(
+            cls, "_unique_id_suffix", None
+        ):
+            raise TypeError(f"{cls.__name__} must set _unique_id_suffix")
+
+    def __init__(self, *args) -> None:
+        """Initialize at the no-history default."""
+        super().__init__(*args, self._unique_id_suffix)
+        self._attr_is_on = self._default_state
+
+    async def _async_push(self, enabled: bool) -> None:
+        """Fan the command out to the members."""
+        raise NotImplementedError  # pragma: no cover - abstract
+
+    async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
+        """Push the enabled command to all members."""
+        await self._async_push(True)
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
+        """Push the disabled command to all members."""
+        await self._async_push(False)
+        self._attr_is_on = False
+        self.async_write_ha_state()
+
+
+class _GroupRestoringBulkSwitch(_GroupBulkSwitch, RestoreEntity):
+    """A bulk switch whose command outlives a restart, because its effect does.
+
+    The member toggles these drive are themselves restored at startup (issue
+    #1063), so a group switch that reinitialized to its default would sit
+    permanently at odds with its members: turn group automation off, restart,
+    and the group reads ``on`` while every member reads ``off`` and nothing
+    automates. Restoring keeps the two sides telling the same story.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last command; keep the default when there is no history.
+
+        Only ``on``/``off`` count as history. Group entities go ``unavailable``
+        whenever the group coordinator's update throws (see
+        ``AdaptiveCoverBaseEntity.available``), and the restore store snapshots
+        on a timer — so an unclean shutdown during that window persists
+        ``unavailable``. Folding every non-``on`` state into ``off`` would turn
+        a crash into a silent "somebody switched this off", and a sticky one:
+        the restored ``off`` is what the next shutdown would record.
+        """
+        await super().async_added_to_hass()
+        self._attr_is_on = restored_bool(
+            await self.async_get_last_state(), self._default_state
+        )
+
+
+class GroupAutomationSwitch(_GroupRestoringBulkSwitch):
+    """Bulk-enable/disable sun-tracking automation across all ACP members."""
 
     _attr_translation_key = "group_automation"
     _attr_icon = "mdi:cog-clockwise"
+    _unique_id_suffix = "group_automation"
+    _default_state = True
 
-    def __init__(self, *args) -> None:
-        """Initialize with automation considered on."""
-        super().__init__(*args, "group_automation")
-        self._attr_is_on = True
-
-    async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
-        """Bulk-enable automation on all members."""
-        await self.coordinator.async_set_automation(True)
-        self._attr_is_on = True
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
-        """Bulk-disable automation on all members."""
-        await self.coordinator.async_set_automation(False)
-        self._attr_is_on = False
-        self.async_write_ha_state()
+    async def _async_push(self, enabled: bool) -> None:
+        """Set automation on every member."""
+        await self.coordinator.async_set_automation(enabled)
 
 
-class GroupLockSwitch(_GroupEntityBase, SwitchEntity):
-    """Freeze every member in place via the LOCK intent at safety priority."""
+class GroupLockSwitch(_GroupBulkSwitch):
+    """Freeze every member in place via the LOCK intent at safety priority.
+
+    Deliberately the one bulk switch that does NOT restore: ``async_set_lock``
+    writes ``group_locked`` and a per-member ``GroupIntent``, both runtime-only.
+    Restoring to ``on`` would claim a lock no member is actually holding — the
+    inverse of the divergence #1063 fixed.
+    """
 
     _attr_translation_key = "group_lock"
     _attr_icon = "mdi:lock-outline"
+    _unique_id_suffix = "group_lock"
 
-    def __init__(self, *args) -> None:
-        """Initialize unlocked."""
-        super().__init__(*args, "group_lock")
-        self._attr_is_on = False
-
-    async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
-        """Push the lock intent to every member."""
-        await self.coordinator.async_set_lock(True)
-        self._attr_is_on = True
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
-        """Release the lock (re-pushing an active scene, if any)."""
-        await self.coordinator.async_set_lock(False)
-        self._attr_is_on = False
-        self.async_write_ha_state()
+    async def _async_push(self, enabled: bool) -> None:
+        """Push or release the lock (release re-pushes an active scene)."""
+        await self.coordinator.async_set_lock(enabled)
 
 
-class GroupClimateSwitch(_GroupEntityBase, SwitchEntity):
+class GroupClimateSwitch(_GroupRestoringBulkSwitch):
     """Bulk-enable/disable climate mode across all ACP members.
 
-    Reflects the last bulk command sent through this group (defaults to off),
-    not a consensus of live member states — members remain individually
-    togglable. For the "what's actually acting" view, the read-only
+    For the "what's actually acting" view, the read-only
     ``sensor.<group>_climate_mode`` rolls up live member climate modes.
     """
 
     _attr_translation_key = "group_climate_mode"
     _attr_icon = "mdi:sun-thermometer-outline"
+    _unique_id_suffix = "group_climate_mode"
 
-    def __init__(self, *args) -> None:
-        """Initialize with climate mode considered off."""
-        super().__init__(*args, "group_climate_mode")
-        self._attr_is_on = False
-
-    async def async_turn_on(self, **kwargs) -> None:  # noqa: ARG002
-        """Bulk-enable climate mode on all members."""
-        await self.coordinator.async_set_climate_mode(True)
-        self._attr_is_on = True
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs) -> None:  # noqa: ARG002
-        """Bulk-disable climate mode on all members."""
-        await self.coordinator.async_set_climate_mode(False)
-        self._attr_is_on = False
-        self.async_write_ha_state()
+    async def _async_push(self, enabled: bool) -> None:
+        """Set climate mode on every member."""
+        await self.coordinator.async_set_climate_mode(enabled)
 
 
 class GroupWhoWonSensor(_GroupEntityBase, SensorEntity):

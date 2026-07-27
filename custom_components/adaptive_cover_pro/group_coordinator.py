@@ -66,7 +66,11 @@ from .const import (
 )
 from .cover_types import get_policy
 from .cover_types.base import axis_inverted
-from .helpers import climate_mode_from_diagnostics
+from .helpers import (
+    climate_mode_configured,
+    climate_mode_from_diagnostics,
+    usable_coordinator,
+)
 from .managers import inverse_state
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
@@ -201,22 +205,24 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         return ids
 
     def resolved_members(self) -> list[tuple[ConfigEntry, object]]:
-        """ACP members whose entry exists and whose coordinator is loaded.
+        """ACP members whose entry exists and whose coordinator is usable.
 
-        Every ``runtime_data`` access is null-guarded: during a member reload
-        the attribute is briefly unset, and a removed member's id may linger
-        in the roster until the next options edit. Both are silently skipped —
-        absence is non-membership for this cycle.
+        A removed member's id may linger in the roster until the next options
+        edit, and a member mid-reload exposes a coordinator whose entities are
+        not up yet. Both are silently skipped — absence is non-membership for
+        this cycle. ``helpers.usable_coordinator`` owns the predicate (and the
+        reason a half-set-up entry must not be written to); the services path
+        resolves through the same helper.
         """
         members: list[tuple[ConfigEntry, object]] = []
         for entry_id in self.member_entry_ids():
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None:
                 continue
-            coordinator = getattr(entry, "runtime_data", None)
+            coordinator = usable_coordinator(entry)
             if coordinator is None:
                 _LOGGER.debug(
-                    "Group %s: member %s has no loaded coordinator; skipping",
+                    "Group %s: member %s has no usable coordinator; skipping",
                     self.entry.entry_id,
                     entry_id,
                 )
@@ -473,8 +479,29 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             await coordinator.async_refresh()
 
     async def async_set_climate_mode(self, enabled: bool) -> None:
-        """Bulk-enable/disable climate mode on every ACP member."""
-        for _entry, coordinator in self.resolved_members():
+        """Bulk-enable/disable climate mode on every member configured for it.
+
+        Members without climate mode in their config are skipped: they expose
+        no Climate Mode switch, so nothing would persist the change, and their
+        coordinator re-seeds ``switch_mode`` from the option at every startup.
+        Commanding them would take real effect until the next restart and then
+        silently evaporate — while this group's own switch, which restores,
+        went on claiming it (issue #1063).
+
+        The predicate is "configured for climate mode", not "has a live Climate
+        Mode entity": a member whose switch the user disabled in the entity
+        registry is still commanded here and still loses the value at the next
+        restart, because a disabled entity never restores. That is an explicit
+        user opt-out rather than a case worth more machinery.
+        """
+        for entry, coordinator in self.resolved_members():
+            if not climate_mode_configured(entry.options):
+                _LOGGER.debug(
+                    "Group %s: member %s is not configured for climate mode; skipping",
+                    self.entry.entry_id,
+                    entry.entry_id,
+                )
+                continue
             coordinator.switch_mode = enabled
             await coordinator.async_refresh()
 

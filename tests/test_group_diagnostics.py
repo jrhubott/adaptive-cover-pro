@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
@@ -40,6 +41,9 @@ async def test_group_entry_diagnostics_rollup(hass) -> None:
         options={CONF_ENTITIES: ["cover.blind1"]},
         entry_id="member_blind",
         title="Living Blind",
+        # A member the group can roll up is one that finished setup —
+        # ``resolved_members`` skips anything short of LOADED (issue #1063).
+        state=ConfigEntryState.LOADED,
     )
     member.add_to_hass(hass)
     member_coord = MagicMock()
