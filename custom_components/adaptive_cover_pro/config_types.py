@@ -220,12 +220,11 @@ class CoverConfig:
             CONF_MIN_ELEVATION,
             CONF_MIN_POSITION,
             CONF_MIN_POSITION_SUN_TRACKING,
-            CONF_SUNRISE_OFFSET,
-            CONF_SUNSET_OFFSET,
             CONF_SUNSET_POS,
             DEFAULT_FOV_LEFT,
             DEFAULT_FOV_RIGHT,
         )
+        from .helpers import resolve_sunrise_offset, resolve_sunset_offset
 
         fov_left = (
             options[CONF_FOV_LEFT]
@@ -248,11 +247,8 @@ class CoverConfig:
             ),
             h_def=options.get(CONF_DEFAULT_HEIGHT) or 0,
             sunset_pos=options.get(CONF_SUNSET_POS),
-            sunset_off=options.get(CONF_SUNSET_OFFSET) or 0,
-            sunrise_off=options.get(
-                CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)
-            )
-            or 0,
+            sunset_off=resolve_sunset_offset(options),
+            sunrise_off=resolve_sunrise_offset(options),
             max_pos=(  # no `or` — 0 ("always closed", #806) must survive, not fall back to 100
                 options[CONF_MAX_POSITION]
                 if options.get(CONF_MAX_POSITION) is not None
