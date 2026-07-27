@@ -9,11 +9,12 @@ initialisation.  Most values that change per cycle (manual-override flag,
 motion-timeout flag, weather flag, time-window flag, current cover position,
 the cover engine, etc.) flow in as a method argument rather than being held
 on the builder.  The one exception is the custom-position "last valid" hold
-state: the builder carries per-slot (issue #1005) and per-input (issue
-#1012) last-valid caches across cycles — see ``_last_valid_custom_position``,
-``_last_valid_sensor_fold``, and ``_last_valid_template_active`` in
-``__init__`` — so a transient sensor/template blip does not fire a false
-release edge.  The coordinator remains the single owner of
+state: the builder carries a per-slot whole-slot cache (issue #1005,
+``_last_valid_custom_position``) and per-slot, per-input
+:class:`~managers.common.graceful_source.GracefulSource` instances (issue
+#1012, ``_sensor_fold_sources`` and ``_template_active_sources``) across
+cycles — see ``__init__`` — so a transient sensor/template blip does not fire
+a false release edge.  The coordinator remains the single owner of
 ``_weather_readings`` — the builder returns ``ClimateReadings`` from
 :meth:`read_climate` and the coordinator stores it.
 
@@ -117,6 +118,7 @@ from ..helpers import (
     custom_position_slot_sensors,
     get_safe_state,
 )
+from ..managers.common.graceful_source import GracefulSource, SourceResolution
 from ..templates import combine_with_mode, is_template_string, render_condition_or_none
 from .types import (
     ClimateOptions,
@@ -215,23 +217,24 @@ class PipelineSnapshotBuilder:
         # whole-slot hold has NO time bound — it is the outer safety net for
         # the fully-invalid case, unchanged by the per-input hold below.
         self._last_valid_custom_position: dict[int, CustomPositionSensorState] = {}
-        # Last VALID per-input fold state, keyed by slot number, each paired
-        # with the clock reading at the time it was recorded (issue #1012).
-        # #1005's cache above only holds the *combined* slot state when every
-        # input is invalid at once. When a slot has a sensor AND a template, one
-        # input can go transiently invalid while the other still opines — the
-        # combined is_valid stays True, so the #1005 hold never engages, and the
-        # dropped input's fresh False silently wins the fold. These two caches
-        # hold each input's own last-valid contribution, substituted only when
+        # Per-slot, per-input grace-window state machines (issue #1012),
+        # lazily created on first use (see _hold_or_fresh). #1005's cache
+        # above only holds the *combined* slot state when every input is
+        # invalid at once. When a slot has a sensor AND a template, one input
+        # can go transiently invalid while the other still opines — the
+        # combined is_valid stays True, so the #1005 hold never engages, and
+        # the dropped input's fresh False silently wins the fold. Each of
+        # these two dicts holds one GracefulSource per slot, tracking that
+        # input's own last-valid contribution and substituting it only while
         # that specific input's own validity flag is False this cycle AND the
-        # hold hasn't exceeded CUSTOM_POSITION_INPUT_HOLD_SECONDS — past that, a
-        # permanently-dead input falls through to its fresh value instead of
-        # masking a healthy peer forever. Written via the shared
-        # _hold_or_fresh helper.
-        self._last_valid_sensor_fold: dict[
-            int, tuple[tuple[bool, tuple[str, ...]], float]
+        # hold hasn't exceeded CUSTOM_POSITION_INPUT_HOLD_SECONDS (anchored at
+        # the input's own last-valid reading — anchor_at_last_known=True) —
+        # past that, a permanently-dead input falls through to its fresh
+        # value instead of masking a healthy peer forever.
+        self._sensor_fold_sources: dict[
+            int, GracefulSource[tuple[bool, tuple[str, ...]]]
         ] = {}
-        self._last_valid_template_active: dict[int, tuple[bool, float]] = {}
+        self._template_active_sources: dict[int, GracefulSource[bool]] = {}
 
     # ---- HA reads ---------------------------------------------------------
 
@@ -319,42 +322,73 @@ class PipelineSnapshotBuilder:
             ),
         )
 
-    @staticmethod
     def _hold_or_fresh(
-        cache: dict[int, tuple[_T, float]],
+        self,
+        sources: dict[int, GracefulSource[_T]],
         slot: int,
         *,
         valid: bool,
         fresh: _T,
         now: float,
-        window: float,
-    ) -> _T:
-        """Return ``fresh`` when ``valid``; else the held value for ``slot``.
+    ) -> tuple[_T, bool]:
+        """Return ``(value, held)`` for one per-input fold through its slot's source.
 
-        Writes ``(fresh, now)`` into ``cache`` whenever ``valid`` is True, so
-        the cache always reflects this input's last genuinely valid reading
-        and when it was observed. Falls back to ``fresh`` itself when
-        ``slot`` was never cached (a first-ever invalid read has no prior
-        state to hold — same "no hold on cold start" contract as #1005's
-        whole-slot cache).
+        Lazily creates the slot's :class:`GracefulSource` (window
+        ``CUSTOM_POSITION_INPUT_HOLD_SECONDS``, ``anchor_at_last_known=True``
+        — issue #1012 needs the window measured from this input's own last
+        genuine reading, not from when it went indeterminate; see the
+        "Anchor point" note in ``graceful_source``'s module docstring) on
+        first use, then feeds it this cycle's verdict: ``fresh`` when
+        ``valid``, ``None`` (indeterminate) otherwise.
 
-        On an invalid read, the held value is returned only while ``now -
-        cached_at`` stays within ``window`` seconds (issue #1012): past that,
-        a permanently-dead input can no longer mask a healthy peer, and the
-        expired entry is dropped so a later blip starts its own fresh hold
-        window rather than reusing the stale timestamp.
+        DETERMINATE and FELL_BACK both resolve to ``fresh`` — FELL_BACK's own
+        ``Resolution.value`` is ``None`` (the kernel's generic "no caller
+        context" answer), but this caller always has this cycle's live
+        reading in hand, so that is its own, more useful fallback than the
+        kernel's ``None``. A first-ever invalid read has no prior state to
+        hold either (FELL_BACK, same "no hold on cold start" contract as
+        #1005's whole-slot cache). Only HOLDING substitutes the genuinely
+        held last-known value.
+
+        The second element of the return tuple is ``True`` only for HOLDING —
+        callers use this to decide whether the whole-slot #1005 cache may
+        treat this cycle's fold as genuinely-read (issue #1012 finding 2).
         """
-        if valid:
-            cache[slot] = (fresh, now)
-            return fresh
-        cached = cache.get(slot)
-        if cached is None:
-            return fresh
-        held_value, cached_at = cached
-        if now - cached_at <= window:
-            return held_value
-        del cache[slot]
-        return fresh
+        source = sources.setdefault(
+            slot,
+            GracefulSource(
+                CUSTOM_POSITION_INPUT_HOLD_SECONDS,
+                clock=self._clock,
+                anchor_at_last_known=True,
+            ),
+        )
+        resolution = source.observe(fresh if valid else None, now=now)
+        if resolution.state is SourceResolution.HOLDING:
+            return resolution.value, True
+        return fresh, False
+
+    def seconds_until_custom_position_hold_fallback(self) -> float | None:
+        """Seconds until the soonest active per-input hold falls back to fresh.
+
+        ``None`` when no configured slot currently has a HOLDING per-input
+        source — every input is either determinate, has never spoken, or has
+        already fallen back. Mirrors ``TimeWindowManager.
+        seconds_until_gate_fallback`` (issue #742) for the custom-position
+        per-input hold (issue #1012): while a source is HOLDING, nothing else
+        would prompt a refresh at the exact moment it falls back to its own
+        (possibly different) fresh reading, until the next state-change or
+        periodic cycle — the coordinator uses this to arm a single prompt
+        wake instead.
+        """
+        remainings = [
+            r
+            for source in (
+                *self._sensor_fold_sources.values(),
+                *self._template_active_sources.values(),
+            )
+            if (r := source.remaining()) is not None
+        ]
+        return min(remainings) if remainings else None
 
     def read_custom_position_sensors(
         self, options: dict
@@ -416,17 +450,19 @@ class PipelineSnapshotBuilder:
             # OR/AND fold below, so a template opining alongside a dropped
             # sensor can't let the sensor's fresh False silently win. Only
             # meaningful when at least one sensor is actually bound —
-            # symmetric with the template guard below, and it means a slot
-            # whose sensors were cleared entirely never reads back a stale
-            # hold from before the config change.
+            # symmetric with the template guard below; behaviour-neutral in
+            # practice, since a reconfiguration that clears a slot's sensors
+            # always reaches this via a fresh builder (async_reload — none of
+            # the custom_position_* keys are in _RUNTIME_APPLICABLE_OPTIONS),
+            # which starts with empty caches anyway.
+            sensor_held = False
             if sensors:
-                sensors_on, active = self._hold_or_fresh(
-                    self._last_valid_sensor_fold,
+                (sensors_on, active), sensor_held = self._hold_or_fresh(
+                    self._sensor_fold_sources,
                     slot,
                     valid=sensors_valid,
                     fresh=(sensors_on, active),
                     now=now,
-                    window=CUSTOM_POSITION_INPUT_HOLD_SECONDS,
                 )
 
             template = options.get(slot_keys["template"])
@@ -441,14 +477,14 @@ class PipelineSnapshotBuilder:
             template_valid = template_opinion is not None
             # Symmetric hold for the template side (issue #1012): only
             # meaningful when a template is actually configured.
+            template_held = False
             if has_template:
-                template_active = self._hold_or_fresh(
-                    self._last_valid_template_active,
+                template_active, template_held = self._hold_or_fresh(
+                    self._template_active_sources,
                     slot,
                     valid=template_valid,
                     fresh=bool(template_active),
                     now=now,
-                    window=CUSTOM_POSITION_INPUT_HOLD_SECONDS,
                 )
             mode = (
                 options.get(slot_keys["template_mode"]) or DEFAULT_TEMPLATE_COMBINE_MODE
@@ -545,10 +581,15 @@ class PipelineSnapshotBuilder:
                 tilt_max=tilt_max,
                 is_valid=is_valid,
             )
-            # Remember the last valid read so the next invalid read can hold it.
-            # Written only on a valid read → idempotent across the two same-cycle
-            # callers (same value both times).
-            if is_valid:
+            # Remember the last valid read so a later fully-invalid read can
+            # hold it. Written only when BOTH is_valid AND neither per-input
+            # hold substituted a held value this cycle (issue #1012 finding
+            # 2) — otherwise a per-input HOLDING value (itself not a fresh
+            # read) would get promoted into this unbounded cache and pinned
+            # forever once the other input also goes invalid. Idempotent
+            # across the two same-cycle callers (same value, same flags,
+            # both times).
+            if is_valid and not (sensor_held or template_held):
                 self._last_valid_custom_position[slot] = state
             result.append(state)
         return result

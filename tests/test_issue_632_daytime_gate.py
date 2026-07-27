@@ -379,6 +379,7 @@ async def test_async_shutdown_cancels_gate_fallback_handle():
     coord._forecast_unsub = None
     coord._forecast_max_unsub = None
     coord._refresh_after_unsub = None
+    coord._custom_position_hold_unsub = None
     cancel = MagicMock()
     coord._gate_fallback_unsub = cancel
     await coord.async_shutdown()

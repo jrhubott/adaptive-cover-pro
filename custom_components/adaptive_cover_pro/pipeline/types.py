@@ -140,10 +140,14 @@ class CustomPositionSensorState:
     # Two independent holds can substitute a held value here instead of this
     # cycle's fresh fold result: the whole-slot hold (issue #1005), engaged
     # only when EVERY input is invalid this cycle (``is_valid`` False); and
-    # the time-bounded per-input hold (issue #1012), which can substitute one
-    # input's (sensor or template) own last-valid contribution into the fold
-    # even while ``is_valid`` stays True, for up to
-    # CUSTOM_POSITION_INPUT_HOLD_SECONDS after that input alone went invalid.
+    # the time-bounded per-input hold (issue #1012), which runs on EITHER
+    # input regardless of ``is_valid`` — most visibly while ``is_valid``
+    # stays True (the other input is still speaking), but it also runs when
+    # both inputs are invalid, in which case the whole-slot hold then
+    # overwrites whatever it produced. The per-input window is measured from
+    # that input's own last VALID reading (not from when it went invalid —
+    # one cycle earlier), for up to CUSTOM_POSITION_INPUT_HOLD_SECONDS past
+    # that reading.
     is_on: bool
     # The slot's position claim, in pre-inversion canonical space. ``None`` =
     # the slot makes no position claim — a constraint-only slot (e.g. trigger →

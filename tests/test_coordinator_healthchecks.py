@@ -516,6 +516,7 @@ async def test_shutdown_cancels_both_managers():
     coord._forecast_max_unsub = None
     coord._gate_fallback_unsub = None
     coord._refresh_after_unsub = None
+    coord._custom_position_hold_unsub = None
     with (
         patch(f"{_BASE}.ir.async_create_issue") as create,
         patch(f"{_BASE}.ir.async_delete_issue"),
