@@ -487,9 +487,20 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         Commanding them would take real effect until the next restart and then
         silently evaporate — while this group's own switch, which restores,
         went on claiming it (issue #1063).
+
+        The predicate is "configured for climate mode", not "has a live Climate
+        Mode entity": a member whose switch the user disabled in the entity
+        registry is still commanded here and still loses the value at the next
+        restart, because a disabled entity never restores. That is an explicit
+        user opt-out rather than a case worth more machinery.
         """
         for entry, coordinator in self.resolved_members():
             if not climate_mode_configured(entry.options):
+                _LOGGER.debug(
+                    "Group %s: member %s is not configured for climate mode; skipping",
+                    self.entry.entry_id,
+                    entry.entry_id,
+                )
                 continue
             coordinator.switch_mode = enabled
             await coordinator.async_refresh()

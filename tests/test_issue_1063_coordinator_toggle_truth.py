@@ -212,6 +212,35 @@ async def test_restart_restores_the_coordinator_set_value_not_the_stale_one():
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+@pytest.mark.parametrize("spec", NON_OPTION_SPECS, ids=lambda s: s.key)
+@pytest.mark.parametrize("restored", [STATE_UNAVAILABLE, STATE_UNKNOWN, "garbage"])
+async def test_an_unusable_restored_state_does_not_write_the_coordinator(
+    spec, restored
+):
+    """Only ``on``/``off`` are history — anything else keeps the initial state.
+
+    This is the same defect as #1063 and it lands on the worst surface: the
+    restore path *writes* the coordinator, so a bogus restored state does not
+    merely display wrong, it disables the thing. Any raise inside
+    ``_async_update_data`` flips ``last_update_success``, which makes every ACP
+    switch render ``unavailable`` (``AdaptiveCoverBaseEntity.available``); HA's
+    restore store snapshots on a 15-minute timer, so an unclean shutdown in
+    that window persists ``unavailable``. Folding it into ``off`` would force
+    Integration Enabled, Automatic Control, Climate Mode and the rest to False
+    on the next start, with no user action and no self-recovery.
+    """
+    coord = _FakeCoordinator(**{spec.key: None})
+    switch = _make_switch(coord, spec.key, initial_state=spec.initial_state)
+    switch.async_get_last_state = AsyncMock(return_value=MagicMock(state=restored))
+
+    await switch.async_added_to_hass()
+
+    assert getattr(coord, spec.key) is spec.initial_state
+    assert switch.is_on is spec.initial_state
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("restored", "expected"), [(STATE_ON, True), (STATE_OFF, False)]
 )
@@ -453,6 +482,7 @@ async def test_group_climate_bulk_skips_members_that_cannot_hold_it():
     unconfigured_entry = MagicMock(options={})
 
     group = object.__new__(GroupCoordinator)
+    group.entry = MagicMock(entry_id="group_01")  # the skip logs at debug
     group.resolved_members = MagicMock(
         return_value=[
             (configured_entry, configured),

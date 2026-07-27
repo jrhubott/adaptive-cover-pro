@@ -10,8 +10,13 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pandas as pd
 from dateutil import parser
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import (
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
@@ -40,7 +45,6 @@ from .const import (
 from .templates import is_template_string
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import State
 
     from .sun import SunData
@@ -52,7 +56,7 @@ _LOGGER = logging.getLogger(__name__)
 _INVALID_STATES: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE})
 
 
-def usable_coordinator(entry: "ConfigEntry") -> Any | None:
+def usable_coordinator(entry: ConfigEntry) -> Any:
     """Return an entry's coordinator, or ``None`` when it is not usable yet.
 
     Single source of truth for "may I write to this entry's coordinator?", used
@@ -73,6 +77,27 @@ def usable_coordinator(entry: "ConfigEntry") -> Any | None:
     if entry.state is not ConfigEntryState.LOADED:
         return None
     return getattr(entry, "runtime_data", None)
+
+
+def restored_bool(last_state: "State | None", default: bool) -> bool:
+    """Read a restored switch state, ignoring anything that is not on/off.
+
+    An entity that was ``unavailable`` or ``unknown`` when HA last snapshotted
+    state carries no information about what the user wanted, so it must not be
+    read as ``off``. Any raise inside a coordinator update flips
+    ``last_update_success``, which renders every ACP entity ``unavailable``
+    (``AdaptiveCoverBaseEntity.available``), and the restore store snapshots on
+    a timer — so an unclean shutdown during that window persists it. Folding
+    that into ``off`` turns a transient error into a silent, sticky "somebody
+    switched this off": the restored ``off`` is what the next shutdown records.
+
+    Shared by the per-cover switches (where the restored value is written
+    straight onto the coordinator, so a wrong read disables the thing) and the
+    group's bulk switches (issue #1063).
+    """
+    if last_state is None or last_state.state not in (STATE_ON, STATE_OFF):
+        return default
+    return last_state.state == STATE_ON
 
 
 def climate_mode_configured(options: Mapping) -> bool:

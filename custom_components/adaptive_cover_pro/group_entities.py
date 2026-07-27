@@ -16,7 +16,6 @@ from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -30,6 +29,7 @@ from .const import (
     GroupState,
 )
 from .entity_base import AdaptiveCoverBaseEntity
+from .helpers import restored_bool
 from .pipeline.handlers import GroupLockHandler, GroupSceneHandler
 
 if TYPE_CHECKING:
@@ -171,9 +171,9 @@ class _GroupRestoringBulkSwitch(_GroupBulkSwitch, RestoreEntity):
         the restored ``off`` is what the next shutdown would record.
         """
         await super().async_added_to_hass()
-        last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state in (STATE_ON, STATE_OFF):
-            self._attr_is_on = last_state.state == STATE_ON
+        self._attr_is_on = restored_bool(
+            await self.async_get_last_state(), self._default_state
+        )
 
 
 class GroupAutomationSwitch(_GroupRestoringBulkSwitch):

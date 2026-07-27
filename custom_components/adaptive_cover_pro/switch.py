@@ -8,7 +8,6 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -28,7 +27,7 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
-from .helpers import climate_mode_configured, motion_entities
+from .helpers import climate_mode_configured, motion_entities, restored_bool
 from .services.options_service import apply_options_patch, validate_options_patch
 
 
@@ -432,6 +431,11 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         restored came from a local field no caller updated. With ``is_on``
         reading the coordinator, what gets recorded — and therefore what gets
         restored here — is the value the coordinator last actually held.
+
+        ``restored_bool`` guards the other half: this path *writes* the
+        coordinator, so an ``unavailable``/``unknown`` snapshot read as ``off``
+        would not merely display wrong, it would disable the toggle. Only real
+        on/off history counts; anything else keeps the spec's initial state.
         """
         await super().async_added_to_hass()
 
@@ -444,9 +448,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
 
         last_state = await self.async_get_last_state()
         self.coordinator.logger.debug("%s: last state is %s", self._name, last_state)
-        if (last_state is None and self._initial_state) or (
-            last_state is not None and last_state.state == STATE_ON
-        ):
+        if restored_bool(last_state, self._initial_state):
             await self.async_turn_on(added=True)
         else:
             await self.async_turn_off(added=True)
