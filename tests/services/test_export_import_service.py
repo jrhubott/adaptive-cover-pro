@@ -12,6 +12,25 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Time values the config flow's TimeSelector can never emit. Each one compares
+# unequal to BLANK_TIME ("00:00:00") while still parsing to — or crashing on —
+# something the runtime treats as a configured window end, which is the whole
+# of issue #1049. Shared by the import tests and the set_options parity tests
+# so neither write path can quietly grow a looser format than the other.
+_BAD_TIMES = [
+    "00:00",  # HH:MM — the reported case
+    "0:00:00",  # unpadded hour
+    "8:30:00",  # unpadded hour, non-midnight
+    "not a time",
+    "",  # empty string is not the unset sentinel
+    "00:00:00\n",  # trailing newline: `$` would let this through
+    "25:00:00",  # shape-valid, impossible clock time
+    "24:99:99",  # shape-valid, impossible clock time
+    "٠٠:٠٠:٠٠",  # Arabic-Indic digits: `\d` matches
+]
+
+_GOOD_TIMES = ["00:00:00", "07:00:00", "22:30:00", "23:59:59"]
+
 
 def _make_entry(
     entry_id: str, title: str, options: dict, domain: str = "adaptive_cover_pro"
@@ -363,10 +382,11 @@ class TestImportConfig:
         # entry options must not have been modified
         assert entry.options["set_azimuth"] == 90
 
-    @pytest.mark.parametrize("bad_time", ["00:00", "0:00:00", "8:30:00", "not a time"])
+    @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
+    @pytest.mark.parametrize("bad_time", _BAD_TIMES)
     @pytest.mark.asyncio
-    async def test_malformed_time_recorded_as_error(self, tmp_path, bad_time):
-        """A time key not in HH:MM:SS form records an error and leaves the entry alone.
+    async def test_malformed_time_recorded_as_error(self, tmp_path, time_key, bad_time):
+        """A time value outside the wire format errors and leaves the entry alone.
 
         Import used to skip every key absent from OPTION_RANGES, so a stray
         ``"00:00"`` reached the config entry and defeated the literal
@@ -377,13 +397,13 @@ class TestImportConfig:
             async_handle_import_config,
         )
 
-        entry = _make_entry("id-1", "Blind A", {"end_time": "22:00:00"})
+        entry = _make_entry("id-1", "Blind A", {time_key: "22:00:00"})
         hass = _make_hass([entry], config_dir=str(tmp_path))
 
         export_path = tmp_path / "import.json"
         self._write_export(
             export_path,
-            [{"entry_id": "id-1", "options": {"end_time": bad_time}}],
+            [{"entry_id": "id-1", "options": {time_key: bad_time}}],
         )
 
         call = MagicMock()
@@ -393,24 +413,25 @@ class TestImportConfig:
         result = await async_handle_import_config(call)
 
         assert result["id-1"].startswith("error:")
-        assert "end_time" in result["id-1"]
-        assert entry.options["end_time"] == "22:00:00"
+        assert time_key in result["id-1"]
+        assert entry.options[time_key] == "22:00:00"
 
-    @pytest.mark.parametrize("good_time", ["00:00:00", "22:30:00", None])
+    @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
+    @pytest.mark.parametrize("good_time", [*_GOOD_TIMES, None])
     @pytest.mark.asyncio
-    async def test_well_formed_time_imports(self, tmp_path, good_time):
+    async def test_well_formed_time_imports(self, tmp_path, time_key, good_time):
         """HH:MM:SS values — including the BLANK_TIME sentinel — and None import cleanly."""
         from custom_components.adaptive_cover_pro.services.import_service import (
             async_handle_import_config,
         )
 
-        entry = _make_entry("id-1", "Blind A", {"start_time": "07:00:00"})
+        entry = _make_entry("id-1", "Blind A", {time_key: "07:00:00"})
         hass = _make_hass([entry], config_dir=str(tmp_path))
 
         export_path = tmp_path / "import.json"
         self._write_export(
             export_path,
-            [{"entry_id": "id-1", "options": {"start_time": good_time}}],
+            [{"entry_id": "id-1", "options": {time_key: good_time}}],
         )
 
         call = MagicMock()
@@ -420,16 +441,47 @@ class TestImportConfig:
         result = await async_handle_import_config(call)
 
         assert result["id-1"] == "updated"
-        assert entry.options["start_time"] == good_time
+        assert entry.options[time_key] == good_time
 
-    @pytest.mark.parametrize("bad_time", ["00:00", "0:00:00", "8:30:00", "not a time"])
     @pytest.mark.asyncio
-    async def test_time_rejection_matches_set_options(self, tmp_path, bad_time):
+    async def test_numeric_and_time_errors_reported_together(self, tmp_path):
+        """One entry carrying both a bad number and a bad time reports both keys."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {"set_azimuth": 90})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [
+                {
+                    "entry_id": "id-1",
+                    "options": {"set_azimuth": 999, "end_time": "00:00"},
+                }
+            ],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert "set_azimuth" in result["id-1"]
+        assert "end_time" in result["id-1"]
+        assert entry.options["set_azimuth"] == 90
+
+    @pytest.mark.parametrize("bad_time", _BAD_TIMES)
+    @pytest.mark.asyncio
+    async def test_time_format_rejection_matches_set_options(self, tmp_path, bad_time):
         """import_config and set_options reject the same malformed times (issue #1049).
 
-        Both paths read ``const.TIME_STRING_RE``; this pins them together so a
-        future change to one format cannot leave the other accepting values the
-        rest of the integration never produces.
+        Both read ``const.TIME_STRING_RE``, so this pins the two service write
+        paths to one format. Scope is the *format* only — cross-field rules such
+        as the start_time/start_entity mutual exclusion stay ``set_options``-only.
         """
         from homeassistant.exceptions import ServiceValidationError
 
@@ -458,22 +510,62 @@ class TestImportConfig:
 
         assert (await async_handle_import_config(call))["id-1"].startswith("error:")
 
+    @pytest.mark.parametrize("good_time", _GOOD_TIMES)
     @pytest.mark.asyncio
-    async def test_time_option_keys_covers_every_time_field(self):
-        """TIME_OPTION_KEYS is derived from the field registry, not hand-listed."""
+    async def test_time_acceptance_matches_set_options(self, tmp_path, good_time):
+        """The accept side of the same parity — neither path is stricter (issue #1049).
+
+        Rejection parity alone would stay green if both paths went on accepting
+        a value the config flow can never emit; this is the half that catches
+        that.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            validate_options_patch,
+        )
+
+        validate_options_patch({"end_time": good_time}, {})
+
+        entry = _make_entry("id-1", "Blind A", {})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"end_time": good_time}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        assert (await async_handle_import_config(call))["id-1"] == "updated"
+
+    @pytest.mark.asyncio
+    async def test_every_time_selector_field_is_tagged_time(self):
+        """TIME_OPTION_KEYS covers every TimeSelector field in the registry.
+
+        The derivation is only as good as the ``ValidatorKind.TIME`` tagging, so
+        the guard is on the tagging itself: a new field that renders a
+        ``TimeSelector`` but is tagged something else would slip past both
+        service validators exactly as start_time/end_time did (issue #1049).
+        """
+        from homeassistant.helpers import selector
+
         from custom_components.adaptive_cover_pro.config_fields import (
             FIELD_SPECS,
             TIME_OPTION_KEYS,
-            ValidatorKind,
         )
 
-        declared = {
-            key
-            for key, spec in FIELD_SPECS.items()
-            if spec.validator is ValidatorKind.TIME
-        }
-        assert declared == TIME_OPTION_KEYS
-        assert {"start_time", "end_time"} <= TIME_OPTION_KEYS
+        for key, spec in FIELD_SPECS.items():
+            if spec.make_selector is None:
+                continue
+            if isinstance(spec.make_selector(None, {}), selector.TimeSelector):
+                assert key in TIME_OPTION_KEYS
+
+        assert {"start_time", "end_time"} == TIME_OPTION_KEYS
 
     @pytest.mark.asyncio
     async def test_mixed_results(self, tmp_path):

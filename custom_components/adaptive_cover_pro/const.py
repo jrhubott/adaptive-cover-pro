@@ -1231,12 +1231,21 @@ CONF_END_ENTITY = "end_entity"  # input_datetime overriding end_time
 # true None, so a cleared field coerces to midnight. Treated as "no time set"
 # everywhere (see issue #492).
 BLANK_TIME = "00:00:00"
-# The one accepted wire format for a time-typed option. Every write path must
-# enforce it: the config flow does so via TimeSelector, and both service paths
-# (``set_options`` and ``import_config``) match against this pattern. A value in
-# any other shape — ``"00:00"``, ``"0:00:00"`` — compares unequal to BLANK_TIME
-# and silently flips the sentinel checks that key off it (issue #1049).
-TIME_STRING_RE = re.compile(r"^\d{2}:\d{2}:\d{2}$")
+# The one accepted wire format for a time-typed option. Every service write
+# path matches against this pattern (``set_options`` and ``import_config``); the
+# config flow gets there via TimeSelector instead. A value in any other shape —
+# ``"00:00"``, ``"0:00:00"`` — compares unequal to BLANK_TIME and silently flips
+# every sentinel check that keys off it (issue #1049).
+#
+# Three deliberate choices, each closing a way a near-miss value slips through:
+#   * ``\Z``, not ``$`` — ``$`` also matches before a trailing newline, so
+#     ``"00:00:00\n"`` would pass while comparing unequal to BLANK_TIME.
+#   * ``[0-9]``, not ``\d`` — ``\d`` matches any Unicode decimal digit, so
+#     ``"٠٠:٠٠:٠٠"`` would pass and then parse to midnight.
+#   * real clock bounds, not ``{2}`` — the hour/minute/second alternations
+#     reject ``"25:00:00"``, which is shape-valid but raises in
+#     ``get_datetime_from_str`` on every coordinator cycle once stored.
+TIME_STRING_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\Z")
 
 
 # =============================================================================

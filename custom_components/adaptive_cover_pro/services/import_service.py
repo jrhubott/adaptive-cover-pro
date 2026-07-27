@@ -142,7 +142,7 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                         validation_errors.append(
                             f"{key}={value!r} is not a valid number"
                         )
-                elif key in TIME_OPTION_KEYS and not TIME_STRING_RE.match(str(value)):
+                if key in TIME_OPTION_KEYS and not TIME_STRING_RE.match(str(value)):
                     validation_errors.append(
                         f"{key}={value!r} is not a valid time (expected HH:MM:SS)"
                     )
