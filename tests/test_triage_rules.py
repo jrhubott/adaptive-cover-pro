@@ -1595,19 +1595,35 @@ def test_wiki_anchor_for_unknown_code_returns_none() -> None:
     assert wiki_anchor_for("triage.not_a_real_code") is None
 
 
-def _find_wiki_checkout() -> Path | None:
-    """Locate a sibling ``adaptive-cover-pro.wiki`` checkout, if one is present.
+_FINDINGS_PAGE = "Troubleshooting-Findings.md"
 
-    Walks the ancestors of this test file (which sit inside the integration
-    repo — possibly a worktree) looking for a sibling wiki clone. Returns None
-    when none is found so the anchor-resolves test skips instead of failing on a
-    machine without the wiki checked out.
+
+def _find_wiki_checkout(start: Path | None = None) -> Path | None:
+    """Locate a sibling ``adaptive-cover-pro.wiki`` checkout carrying the findings page.
+
+    Walks the ancestors of ``start`` (defaulting to this test file, which sits
+    inside the integration repo — possibly a worktree) looking for a sibling
+    wiki clone that actually contains ``_FINDINGS_PAGE``. Returns None when none
+    is found so the anchor-resolves test skips instead of failing on a machine
+    without the wiki checked out.
+
+    The page requirement is load-bearing, not belt-and-braces. Matching on the
+    directory name alone means the *nearest* clone wins, and a stale or partial
+    one sitting in an intermediate directory shadows the canonical checkout
+    further up — which is exactly what a 2026-07 clone left in
+    ``.claude/worktrees/`` did, silently pointing the anchor test at a tree with
+    no findings page. Skipping page-less candidates lets the walk climb past
+    them to the real wiki.
+
+    ``start`` is injectable so the resolution rules can be tested against a
+    synthetic directory tree rather than whatever happens to be on disk.
     """
     return next(
         (
-            p / "adaptive-cover-pro.wiki"
-            for p in Path(__file__).resolve().parents
-            if (p / "adaptive-cover-pro.wiki").is_dir()
+            candidate
+            for p in (start or Path(__file__)).resolve().parents
+            if (candidate := p / "adaptive-cover-pro.wiki").is_dir()
+            and (candidate / _FINDINGS_PAGE).is_file()
         ),
         None,
     )
@@ -1632,7 +1648,7 @@ def test_rule_wiki_anchor_resolves_on_findings_page(rule) -> None:
     # page's ### headings, GitHub-slugify them, and assert every rule's wiki
     # anchor actually points at a real section. A rule added without its section
     # (or a typo'd anchor) fails here rather than shipping a dead deep-link.
-    page = _WIKI_CHECKOUT / "Troubleshooting-Findings.md"
+    page = _WIKI_CHECKOUT / _FINDINGS_PAGE
     assert page.is_file(), page
     slugs = {
         _github_slugify(line[4:])
@@ -1641,6 +1657,47 @@ def test_rule_wiki_anchor_resolves_on_findings_page(rule) -> None:
     }
     _, _, anchor = rule.wiki.partition("#")
     assert anchor in slugs, f"{rule.code} → #{anchor} not a heading on {page.name}"
+
+
+def _synthetic_wiki_tree(root: Path, *, with_page: Path | None) -> Path:
+    """Build a worktree-shaped tree under ``root`` and return a start file path.
+
+    Plants a page-less ``adaptive-cover-pro.wiki`` in the intermediate
+    ``.claude/worktrees/`` directory — the real-world shape that shadowed the
+    canonical clone — and optionally a page-carrying one at ``with_page``.
+    """
+    decoy = root / "repo" / ".claude" / "worktrees" / "adaptive-cover-pro.wiki"
+    decoy.mkdir(parents=True)
+    (decoy / "Troubleshooting.md").write_text("an older page\n", encoding="utf-8")
+    if with_page is not None:
+        with_page.mkdir(parents=True, exist_ok=True)
+        (with_page / _FINDINGS_PAGE).write_text("### Stub\n", encoding="utf-8")
+    start = root / "repo" / ".claude" / "worktrees" / "wt" / "tests" / "test_x.py"
+    start.parent.mkdir(parents=True)
+    return start
+
+
+def test_find_wiki_checkout_skips_a_clone_without_the_findings_page(tmp_path) -> None:
+    # A stale or partial clone parked in an intermediate directory must not win
+    # the ancestor walk. It did once: a 2026-07 clone left in .claude/worktrees/
+    # predated Troubleshooting-Findings.md, so from every worktree the resolver
+    # returned a checkout with no findings page and the anchor test asserted
+    # against the wrong tree. Requiring the page is what makes the walk skip it
+    # and keep climbing to the real wiki.
+    real = tmp_path / "adaptive-cover-pro.wiki"
+    start = _synthetic_wiki_tree(tmp_path, with_page=real)
+    assert _find_wiki_checkout(start) == real.resolve()
+
+
+def test_find_wiki_checkout_returns_none_when_no_clone_carries_the_page(
+    tmp_path,
+) -> None:
+    # With only the page-less clone present the resolver must report "nothing
+    # usable" so the anchor test skips, rather than returning a directory whose
+    # findings page is missing and turning every rule into a bare is_file()
+    # failure.
+    start = _synthetic_wiki_tree(tmp_path, with_page=None)
+    assert _find_wiki_checkout(start) is None
 
 
 @pytest.mark.parametrize("rule", TRIAGE_RULES, ids=lambda r: r.code)
