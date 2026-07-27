@@ -12,6 +12,38 @@ from .const import (
 )
 
 
+def inverse_state(state: int) -> int:
+    """Inverse state."""
+    return 100 - state
+
+
+def flip_if(value: int, *, inverted: bool) -> int:
+    """Map a position between the cover frame and the logical frame.
+
+    Single source of truth for the ``inverse_state(v) if inverted else v``
+    conditional (issues #1036 / #1042). The involution ``100 - x`` is its own
+    inverse, so ONE primitive serves both directions:
+
+    * **cover → logical** — a producer that reads a physical position off an
+      entity and hands it to a logical-frame field.
+      ``PipelineResult.position`` is logical for every winner, so a handler
+      holding a raw read (``MotionTimeoutHandler``'s hold,
+      ``GroupLockHandler``'s freeze) must convert first, and the registry must
+      convert before comparing a held position against a user-configured bound.
+    * **logical → cover** — a consumer turning a pipeline value into the number
+      actually dispatched to, or recorded as held on, the entity.
+
+    The name is deliberately direction-free: while this helper carried a
+    directional name, every caller converting the other way hand-rolled the
+    same ternary instead of delegating. Lives beside :func:`inverse_state` in this
+    pure module so the arithmetic is written once and the pipeline layer can
+    reach it without importing a manager. The caller supplies the "is this axis
+    inverted right now?" answer, which is itself sourced from
+    ``cover_types.base.axis_inverted``.
+    """
+    return inverse_state(value) if inverted else value
+
+
 def _proportional_remap(value: int, lo: int, hi: int) -> int:
     """Linearly remap the full 0–100% demand onto the ``[lo, hi]`` band (#957).
 

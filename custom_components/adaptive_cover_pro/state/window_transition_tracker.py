@@ -35,7 +35,7 @@ import datetime as dt
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from ..managers.manual_override import inverse_state
+from ..position_utils import flip_if
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -181,11 +181,7 @@ class WindowTransitionTracker:
         if not just_opened:
             return
 
-        pos_to_send = (
-            inverse_state(int(sunset_pos_cfg))
-            if inverse_state_enabled
-            else int(sunset_pos_cfg)
-        )
+        pos_to_send = flip_if(int(sunset_pos_cfg), inverted=inverse_state_enabled)
         self._logger.info(
             "Sunset window opened after end_time — dispatching sunset position %s%% "
             "to %s cover(s) (issue #266)",

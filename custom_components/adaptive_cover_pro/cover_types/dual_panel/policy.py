@@ -38,9 +38,8 @@ from ...const import (
 )
 from ...engine.covers import AdaptiveVerticalCover
 from ...engine.covers.layered import blackout_should_deploy, compute_layered
-from ...managers.manual_override import inverse_state
 from ...pipeline.types import DecisionStep
-from ...position_utils import interpolate_position
+from ...position_utils import flip_if, interpolate_position
 from .._helpers import window_dimensions_lines
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
@@ -477,4 +476,4 @@ class DualPanelPolicy(CoverTypePolicy, register=True):
         # about how the back is wired (#1035).
         if self._back_interp:
             return self._calibrated_back(back)
-        return inverse_state(back) if self._back_inverse else back
+        return flip_if(back, inverted=self._back_inverse)

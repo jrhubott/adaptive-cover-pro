@@ -8,7 +8,7 @@ import datetime as dt
 from ..const import AxisConstraintMode, ReasonCode
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
 from ..diagnostics.event_buffer import EventBuffer
-from ..managers.manual_override import to_logical
+from ..position_utils import flip_if
 from ..reason_i18n import Reason, render_en
 from .axis_constraints import (
     bound_label,
@@ -348,7 +348,7 @@ class PipelineRegistry:
         # directions: a compliant cover held at logical 80 gets *lowered* to a
         # logical-25 floor (#1036). A no-op on non-inverse installs.
         effective_winner_pos = (
-            to_logical(winner.held_position, inverted=snapshot.position_axis_inverted)
+            flip_if(winner.held_position, inverted=snapshot.position_axis_inverted)
             if winner.held_position is not None
             else winner.position
         )

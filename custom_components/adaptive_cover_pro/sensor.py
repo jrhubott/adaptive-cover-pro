@@ -48,7 +48,7 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod
-from .managers.manual_override import inverse_state
+from .position_utils import flip_if
 from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
@@ -386,7 +386,7 @@ def _compute_distance_attrs(
 
     def _display_distance(pct: float) -> float:
         """Physical travel for *pct*, rebased onto the logical frame if needed."""
-        logical = inverse_state(pct) if inverted else pct
+        logical = flip_if(pct, inverted=inverted)
         return round(to_display_length(dim_m * logical / 100.0, hass), 2)
 
     attrs: dict[str, Any] = {
@@ -450,7 +450,7 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         # on one scale. Identity when the axis is not effectively inverted.
         inverted = s.coordinator.position_axis_inverted
         attrs["linear_actual_positions"] = {
-            eid: (inverse_state(pos) if inverted and pos is not None else pos)
+            eid: (flip_if(pos, inverted=inverted) if pos is not None else pos)
             for eid, pos in actual_positions.items()
         }
 

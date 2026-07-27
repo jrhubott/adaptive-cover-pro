@@ -56,11 +56,11 @@ from ...engine.covers.day_night_shade import (
 )
 from ...managers.manual_override import (
     SecondaryAxisCheck,
-    inverse_state,
     resolve_dispatched_secondary_expected,
 )
 from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
+from ...position_utils import flip_if
 from .._helpers import window_dimensions_lines
 from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
@@ -661,13 +661,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             return position
         blend = self._dual_entity_blend
         inverse = self._dual_entity_inverse if inverted is None else inverted
-        p_open = inverse_state(position) if inverse else position
+        p_open = flip_if(position, inverted=inverse)
         m_open = round(
             POSITION_OPEN - blend * (POSITION_OPEN - p_open) / DAY_NIGHT_SHEER
         )
         # Belt-and-braces no-pass clamp (the arithmetic already guarantees it).
         m_open = max(m_open, p_open)
-        return inverse_state(m_open) if inverse else m_open
+        return flip_if(m_open, inverted=inverse)
 
     def _apply_split_range(self, resolved: PipelineResult) -> PipelineResult:
         """Fold the abstract ``(position, blend)`` pair into the split-range wire.

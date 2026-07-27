@@ -125,7 +125,6 @@ from .managers.manual_override import (
     AdaptiveCoverManager,
     DetectorConfig,
     get_detector,
-    inverse_state,
 )
 from .managers.climate_smoothing import ClimateSmoothingManager
 from .managers.cloud_suppression import CloudSuppressionManager
@@ -135,7 +134,7 @@ from .managers.sensor_health import SensorHealthManager
 from .managers.weather import WeatherManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
-from .position_utils import interpolate_position
+from .position_utils import flip_if, interpolate_position, inverse_state
 from .pipeline.handlers import (
     ManualOverrideHandler,
     build_handlers,
@@ -2217,11 +2216,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # itself, at the one site that compares it against a floor (#1036).
             held = result.held_position
             if held is None:
-                held = (
-                    inverse_state(result.position)
-                    if self.position_axis_inverted
-                    else result.position
-                )
+                held = flip_if(result.position, inverted=self.position_axis_inverted)
             self._cmd_svc.record_skipped_action(
                 cover,
                 label,
@@ -4117,9 +4112,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # inverse-state is configured — unconditional of bypass, floor
             # clamp, and interpolation — and never interpolates. #993's
             # middle-rail invariant depends on that divergence.
-            pos_to_send = (
-                inverse_state(effective_pos) if self._inverse_state else effective_pos
-            )
+            pos_to_send = flip_if(effective_pos, inverted=self._inverse_state)
             self.logger.info(
                 "End time reached — sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",
@@ -4464,5 +4457,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("Coordinator shutdown complete")
 
 
-# AdaptiveCoverManager and inverse_state live in the managers/manual_override
-# package. They are re-imported above to maintain backward compatibility.
+# AdaptiveCoverManager lives in the managers/manual_override package and the
+# frame converters (``inverse_state`` / ``flip_if``) in ``position_utils``
+# (#1042). Both are re-imported above to maintain backward compatibility.

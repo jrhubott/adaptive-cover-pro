@@ -49,7 +49,7 @@ from .cover_types.base import (
     caps_get,
 )
 from .entity_base import _SENTINEL, AdaptiveCoverBaseEntity
-from .managers import inverse_state
+from .position_utils import flip_if
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -196,7 +196,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         value = state.attributes.get(attr)
         if value is None:
             return None
-        return inverse_state(int(value)) if inverted else int(value)
+        return flip_if(int(value), inverted=inverted)
 
     @property
     def current_cover_position(self) -> int | None:

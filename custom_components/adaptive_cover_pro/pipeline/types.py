@@ -388,8 +388,8 @@ class PipelineSnapshot:
     # (inverse-state configured and not suppressed by interpolation, per
     # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
     # such as ``current_cover_position`` into ``PipelineResult.position`` must
-    # convert it to the logical frame first (``managers.manual_override
-    # .to_logical``), because ``coordinator.state`` maps every winner through
+    # convert it to the logical frame first (``position_utils.flip_if``),
+    # because ``coordinator.state`` maps every winner through
     # ``_to_cover_frame`` on the way out — no flag exempts one (#1028 / #1036).
     position_axis_inverted: bool = False
 
