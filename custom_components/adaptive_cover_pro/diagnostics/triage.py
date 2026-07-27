@@ -1183,3 +1183,18 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         check=_check_stale_version,
     ),
 )
+
+
+# ---------------------------------------------------------------------------
+# Wiki-anchor lookup (issue #1059) — the single ``code -> wiki`` accessor for
+# every caller that wants a finding's deep link (``scripts/triage_json.py`` and
+# the ``get_troubleshooting`` service), so the map is never hand-duplicated a
+# second or third time (CODING_GUIDELINES § "Single-Source-of-Truth Helpers").
+# ---------------------------------------------------------------------------
+
+_RULE_WIKI_BY_CODE: dict[str, str] = {rule.code: rule.wiki for rule in TRIAGE_RULES}
+
+
+def wiki_anchor_for(code: str) -> str | None:
+    """Return the wiki anchor for a rule code, or None."""
+    return _RULE_WIKI_BY_CODE.get(code)

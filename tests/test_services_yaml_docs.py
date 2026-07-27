@@ -162,6 +162,7 @@ def test_set_position_has_position_field_with_correct_range():
 REGISTERED_SERVICES = {
     "export_config",
     "get_diagnostics",
+    "get_troubleshooting",
     "integration_enable",
     "integration_disable",
     "emergency_stop",

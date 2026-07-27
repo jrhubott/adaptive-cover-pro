@@ -1945,6 +1945,16 @@
         }
       }
     },
+    "get_troubleshooting": {
+      "name": "Fehlerbehebung abrufen",
+      "description": "Gibt die Ergebnisse des Fehlerbehebungsschritts für die gezielten Adaptive Cover Pro Instanzen als strukturierte Daten zurück, zusätzlich zum gerenderten Berichtstext.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konfigurationseintrag",
+          "description": "Explizite Konfigurations-Eintrags-IDs zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl. Kein Ziel gibt alle ACP-Instanzen zurück."
+        }
+      }
+    },
     "set_venetian": {
       "name": "Jalousie-Optionen setzen",
       "description": "Jalousie-spezifische Optionen aktualisieren: Betriebsmodus, Neigungsschwellenwert und Wartezeit nach Fahrt.",

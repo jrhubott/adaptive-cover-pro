@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -35,6 +36,10 @@ from .set_axes_service import SET_AXES_SCHEMA, async_handle_set_axes
 from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
 from .set_tilt_service import SET_TILT_SCHEMA, async_handle_set_tilt
 from .stop_service import async_handle_stop
+from .troubleshoot_service import (
+    GET_TROUBLESHOOTING_SCHEMA,
+    async_handle_get_troubleshooting,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,6 +85,30 @@ def cover_coordinators(
         for entry_id, coordinator in loaded_coordinators(hass).items()
         if not isinstance(coordinator, GroupCoordinator)
     }
+
+
+def _resolve_by_config_entry(
+    hass: HomeAssistant, entry_ids: list[str]
+) -> dict[str, AdaptiveDataUpdateCoordinator]:
+    """Resolve explicit config entry IDs to {entry_id: coordinator}.
+
+    Shared by ``get_diagnostics`` and ``get_troubleshooting`` — both accept an
+    explicit ``config_entry_id`` escape hatch that bypasses the standard
+    entity/device/area target block. Raises ``ServiceValidationError`` for any
+    ID that doesn't exist or isn't owned by this domain.
+    """
+    all_coordinators = loaded_coordinators(hass)
+    result = {}
+    for entry_id in entry_ids:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError(
+                f"Config entry '{entry_id}' not found or does not belong to {DOMAIN}"
+            )
+        coord = all_coordinators.get(entry_id)
+        if coord is not None:
+            result[entry_id] = coord
+    return result
 
 
 def _resolve_targets(
@@ -196,6 +225,14 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=GET_DIAGNOSTICS_SCHEMA,
             supports_response=SupportsResponse.ONLY,
         )
+    if not hass.services.has_service(DOMAIN, "get_troubleshooting"):
+        hass.services.async_register(
+            DOMAIN,
+            "get_troubleshooting",
+            async_handle_get_troubleshooting,
+            schema=GET_TROUBLESHOOTING_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
     if not hass.services.has_service(DOMAIN, "export_all_config"):
         hass.services.async_register(
             DOMAIN,
@@ -287,6 +324,7 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, "export_all_config")
     hass.services.async_remove(DOMAIN, "import_config")
     hass.services.async_remove(DOMAIN, "get_diagnostics")
+    hass.services.async_remove(DOMAIN, "get_troubleshooting")
     hass.services.async_remove(DOMAIN, "integration_enable")
     hass.services.async_remove(DOMAIN, "integration_disable")
     hass.services.async_remove(DOMAIN, "emergency_stop")

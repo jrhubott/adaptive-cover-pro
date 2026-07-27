@@ -17,6 +17,7 @@ Home Assistant collaborators.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,23 @@ from ..const import DIAG_CACHE_KEY
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+
+    from .triage import Finding
+
+# Server-rendered wrapper lines for the read-only Troubleshoot step (issue
+# #970, moved here for issue #1059 so the options-flow menu and the
+# get_troubleshooting service share exactly one copy). The per-finding
+# bullets are translated via the troubleshoot_i18n bundle; these two
+# "envelope" states are not finding codes, so they are not in that bundle
+# (its parity lock is strictly TriageCode-keyed) and live here instead.
+TROUBLESHOOT_NO_ISSUES = (
+    "✅ No configuration or runtime issues detected — everything looks correctly "
+    "set up."
+)
+TROUBLESHOOT_UNAVAILABLE = (
+    "ℹ️ Diagnostics aren't available yet for this cover — it may not have "
+    "completed a first update cycle. Re-check once it has run at least once."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,3 +93,74 @@ def read_diagnostics(hass: HomeAssistant, entry_id: str) -> DiagnosticsRead:
     if cached is not None:
         return DiagnosticsRead(cached, "cache")
     return DiagnosticsRead(None, "unavailable")
+
+
+@dataclass(frozen=True, slots=True)
+class TroubleshootResult:
+    """The outcome of a troubleshoot triage run.
+
+    ``findings`` are the raw :class:`~.triage.Finding` objects (code + params +
+    severity + fix_step), ``report`` is the rendered bullet report (or one of
+    the envelope strings when there is nothing to show), and ``source`` mirrors
+    the :class:`DiagnosticsRead` that fed it.
+    """
+
+    findings: list[Finding]
+    report: str
+    source: str
+
+
+def build_troubleshoot_result(
+    hass: HomeAssistant,
+    read: DiagnosticsRead,
+    *,
+    options: Mapping,
+    sensor_type: str | None,
+    labels: Mapping[str, str] | None,
+) -> TroubleshootResult:
+    """Run the triage engine against ``read`` and render the report.
+
+    The single seam shared by ``OptionsFlowHandler.async_step_troubleshoot``
+    and the ``get_troubleshooting`` service, so view-building/gating/rendering
+    never diverge (issue #1059). ``read`` is resolved by the caller (via
+    :func:`read_diagnostics` or :func:`read_from_coordinator`) — this function
+    never triggers an update cycle itself. ``labels`` is the already-loaded
+    translated ``troubleshoot_i18n`` bundle (or ``None`` for English); language
+    resolution is the caller's concern.
+
+    When ``read.source == "unavailable"`` there is no runtime payload, so only
+    the CONFIG rules run (they read options + capabilities alone) and the
+    report leads with the "diagnostics aren't available" preamble, followed by
+    any CONFIG findings that could still be evaluated. Otherwise every rule
+    runs and the report is either the rendered findings or the "all good" text.
+    """
+    from ..config_flow import _check_cover_capabilities  # noqa: PLC0415
+    from ..cover_types import get_policy  # noqa: PLC0415
+    from .triage import RuleInput, render_report, run_triage  # noqa: PLC0415
+
+    cap_map, _ = _check_cover_capabilities(options, sensor_type, hass)
+    view: dict = {
+        "options": dict(options),
+        "capabilities": cap_map,
+        # Policy-derived capability requirements for rule 13
+        # (COVER_FEATURE_MISMATCH): folded in here at the HA boundary where
+        # get_policy lives, so the pure triage engine never branches on the
+        # cover-type string (CODING_GUIDELINES § cover-type boundary).
+        "axis_requirements": get_policy(sensor_type).axis_requirements(),
+        **(read.payload or {}),
+    }
+    unavailable = read.source == "unavailable"
+    findings = run_triage(view, only=RuleInput.CONFIG if unavailable else None)
+
+    if unavailable:
+        # Lead with the note that runtime checks need diagnostics, then list
+        # any config findings that could still be evaluated.
+        report = TROUBLESHOOT_UNAVAILABLE
+        if findings:
+            report = f"{report}\n\n{render_report(findings, labels)}"
+    elif findings:
+        report = render_report(findings, labels)
+    else:
+        report = TROUBLESHOOT_NO_ISSUES
+
+    return TroubleshootResult(findings=findings, report=report, source=read.source)

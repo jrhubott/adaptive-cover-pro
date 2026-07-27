@@ -4411,20 +4411,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return f"{name} ({suffix} {counter})"
 
 
-# Server-rendered wrapper lines for the read-only Troubleshoot step (issue
-# #970). The per-finding bullets are translated via the troubleshoot_i18n
-# bundle; these two "envelope" states are not finding codes, so they are not in
-# that bundle (its parity lock is strictly TriageCode-keyed) and stay here.
-_TROUBLESHOOT_NO_ISSUES = (
-    "✅ No configuration or runtime issues detected — everything looks correctly "
-    "set up."
-)
-_TROUBLESHOOT_UNAVAILABLE = (
-    "ℹ️ Diagnostics aren't available yet for this cover — it may not have "
-    "completed a first update cycle. Re-check once it has run at least once."
-)
-
-
 class OptionsFlowHandler(OptionsFlow):
     """Options to adjust parameters."""
 
@@ -4613,66 +4599,40 @@ class OptionsFlowHandler(OptionsFlow):
 
         Resolves diagnostics WITHOUT running an update cycle — it never calls
         ``async_refresh`` (which runs the full pipeline and can move a cover).
-        Options, per-entity capabilities, and the resolved payload are folded
-        into one view, the triage engine runs, and the findings render as a
-        bullet report into ``description_placeholders``. The menu routes each
-        finding's ``fix_step`` to the options step that fixes it (deduped,
-        first-seen order), then a re-check (``troubleshoot``) and a back
-        (``init``) entry — a list so HA translates labels client-side (#227).
+        The view-build → triage → render sequence lives in
+        :func:`~.diagnostics.resolve.build_troubleshoot_result` (issue #1059) —
+        the single seam this step shares with the ``get_troubleshooting``
+        service, so they can never diverge. This step only adds its own
+        menu-building on top: each finding's ``fix_step`` routes to the options
+        step that fixes it (deduped, first-seen order), then a re-check
+        (``troubleshoot``) and a back (``init``) entry — a list so HA
+        translates labels client-side (#227).
         """
         from .diagnostics import resolve
-        from .diagnostics.triage import RuleInput, render_report, run_triage
         from .troubleshoot_i18n import load_troubleshoot_labels
 
-        from .cover_types import get_policy
-
         read = resolve.read_diagnostics(self.hass, self._config_entry.entry_id)
-        cap_map, _ = _check_cover_capabilities(
-            self.options, self.sensor_type, self.hass
-        )
-        view: dict[str, Any] = {
-            "options": dict(self.options),
-            "capabilities": cap_map,
-            # Policy-derived capability requirements for rule 13
-            # (COVER_FEATURE_MISMATCH): the triage engine reads these as plain
-            # data so it never branches on the cover-type string (§ cover-type
-            # boundary). Folded in here at the HA boundary where get_policy lives.
-            "axis_requirements": get_policy(self.sensor_type).axis_requirements(),
-            **(read.payload or {}),
-        }
-        # When diagnostics are unavailable there is no runtime payload, so only
-        # the CONFIG rules can run (they read options + capabilities alone). Run
-        # just those so every fix route in the menu corresponds to a finding the
-        # user actually sees in the report — never a route for an unshown,
-        # never-evaluated runtime finding (issue #970, MINOR 3).
-        unavailable = read.source == "unavailable"
-        findings = run_triage(view, only=RuleInput.CONFIG if unavailable else None)
-
         labels = await self.hass.async_add_executor_job(
             load_troubleshoot_labels,
             _resolve_summary_language(self.hass, self.context),
         )
-
-        if unavailable:
-            # Lead with the note that runtime checks need diagnostics, then list
-            # any config findings that could still be evaluated.
-            report = _TROUBLESHOOT_UNAVAILABLE
-            if findings:
-                report = f"{report}\n\n{render_report(findings, labels)}"
-        elif findings:
-            report = render_report(findings, labels)
-        else:
-            report = _TROUBLESHOOT_NO_ISSUES
+        result = resolve.build_troubleshoot_result(
+            self.hass,
+            read,
+            options=self.options,
+            sensor_type=self.sensor_type,
+            labels=labels,
+        )
 
         menu_options = [
-            *dict.fromkeys(f.fix_step for f in findings if f.fix_step),
+            *dict.fromkeys(f.fix_step for f in result.findings if f.fix_step),
             "troubleshoot",
             "init",
         ]
         return self.async_show_menu(  # type: ignore[return-value]
             step_id="troubleshoot",
             menu_options=menu_options,
-            description_placeholders={"report": report},
+            description_placeholders={"report": result.report},
         )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):

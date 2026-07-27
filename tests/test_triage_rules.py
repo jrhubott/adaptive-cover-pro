@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.diagnostics.triage import (
     RuleInput,
     Severity,
     run_triage,
+    wiki_anchor_for,
 )
 from custom_components.adaptive_cover_pro.reason_i18n import Reason, render
 from custom_components.adaptive_cover_pro.troubleshoot_i18n import (
@@ -1431,6 +1432,18 @@ def test_rule_wiki_points_at_canonical_findings_page(rule) -> None:
     # per-code anchor (the deliverable-D contract), not a scattering of config
     # pages with dangling anchors.
     assert rule.wiki == f"Troubleshooting-Findings#{_canonical_anchor(rule.code)}"
+
+
+@pytest.mark.parametrize("rule", TRIAGE_RULES, ids=lambda r: r.code)
+def test_wiki_anchor_for_returns_rule_wiki(rule) -> None:
+    # The single-source-of-truth accessor (issue #1059) must agree with the
+    # rule table itself for every code — the same map ``scripts/triage_json.py``
+    # and the ``get_troubleshooting`` service both point at.
+    assert wiki_anchor_for(rule.code) == rule.wiki
+
+
+def test_wiki_anchor_for_unknown_code_returns_none() -> None:
+    assert wiki_anchor_for("triage.not_a_real_code") is None
 
 
 def _find_wiki_checkout() -> Path | None:

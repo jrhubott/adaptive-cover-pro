@@ -7,13 +7,11 @@ import logging
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
-from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN
 from ..diagnostics import _sanitize
 from ..diagnostics.resolve import read_from_coordinator
 
@@ -29,29 +27,6 @@ GET_DIAGNOSTICS_SCHEMA = vol.Schema(
 )
 
 
-def _resolve_by_config_entry(
-    hass: HomeAssistant, entry_ids: list[str]
-) -> dict[str, object]:
-    """Resolve explicit config entry IDs to {entry_id: coordinator}.
-
-    Raises ServiceValidationError for any ID that doesn't exist or isn't ACP.
-    """
-    from . import loaded_coordinators  # noqa: PLC0415
-
-    all_coordinators = loaded_coordinators(hass)
-    result = {}
-    for entry_id in entry_ids:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is None or entry.domain != DOMAIN:
-            raise ServiceValidationError(
-                f"Config entry '{entry_id}' not found or does not belong to {DOMAIN}"
-            )
-        coord = all_coordinators.get(entry_id)
-        if coord is not None:
-            result[entry_id] = coord
-    return result
-
-
 async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
     """Handle the get_diagnostics service call and return live diagnostics."""
     hass: HomeAssistant = call.hass
@@ -59,6 +34,8 @@ async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
     explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
 
     if explicit_entry_ids:
+        from . import _resolve_by_config_entry  # noqa: PLC0415
+
         coords_by_entry = _resolve_by_config_entry(hass, explicit_entry_ids)
     else:
         # Standard target resolution (entity_id / device_id / area_id / no target)
