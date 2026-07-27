@@ -383,6 +383,48 @@ def test_window_end_mode_treats_the_blank_sentinel_as_unset():
     assert "Until the time window ends" not in row
 
 
+def test_unanchored_hold_agrees_with_the_config_flow_summary():
+    """Both surfaces decide "this hold has no anchor" from one predicate.
+
+    A mode that needs an anchor and has none falls back to the numeric duration
+    at runtime, so both surfaces must print the duration. Two hand-rolled copies
+    of that rule would let a future anchored mode land on one surface only —
+    which is exactly how the overview came to print a boundary the hold never
+    reaches. This walks every mode against every end-time shape and asserts the
+    two agree, whatever rule either one implements.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import _build_config_summary
+    from custom_components.adaptive_cover_pro.const import BLANK_TIME, CONF_END_ENTITY
+
+    end_shapes = (
+        {},
+        {CONF_END_TIME: None},
+        {CONF_END_TIME: ""},
+        {CONF_END_TIME: BLANK_TIME},
+        {CONF_END_TIME: "20:00:00"},
+        {CONF_END_ENTITY: "input_datetime.end"},
+        {CONF_END_TIME: BLANK_TIME, CONF_END_ENTITY: "input_datetime.end"},
+    )
+    for mode in MANUAL_OVERRIDE_DURATION_MODES:
+        for shape in end_shapes:
+            cfg = {
+                CONF_MANUAL_OVERRIDE_DURATION_MODE: mode,
+                CONF_MANUAL_OVERRIDE_DURATION: {"hours": 7},
+                **shape,
+            }
+            overview_shows_duration = "7h" in _manual_row(
+                [
+                    _cover("A", options=cfg),
+                    _cover("B", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}}),
+                ]
+            )
+            summary_shows_duration = "pauses for 7 h" in _build_config_summary(
+                cfg, CoverType.BLIND
+            )
+
+            assert overview_shows_duration == summary_shows_duration, (mode, shape)
+
+
 def test_window_end_mode_with_a_configured_end_shows_the_label():
     """A genuinely configured end resolves, so the label is the honest render."""
     anchored = _cover(

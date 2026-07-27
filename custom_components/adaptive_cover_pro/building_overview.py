@@ -92,13 +92,12 @@ from .const import (
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     MANUAL_OVERRIDE_DURATION_MODE_FIXED,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
 )
 from .cover_types import get_policy
 from .helpers import (
     custom_position_slot_configured,
-    has_configured_window_end,
     is_template_string,
+    manual_hold_is_unanchored,
     motion_entities,
 )
 from .profile_link import classify_profile_sensor_source
@@ -414,20 +413,18 @@ def _manual_override_hold(options: Mapping) -> str:
 
     * A mode with no label: one this build does not know — a hand-edited
       ``.storage``, or a value written by a newer build.
-    * ``until_window_end`` with no window end configured. Decided by the same
-      ``has_configured_window_end`` predicate the resolver and the config
-      summary's ⚠️ use, so all three agree on which configs have no anchor —
-      including the truthy-but-unset ``BLANK_TIME`` sentinel.
+    * A mode whose boundary this config cannot resolve. Decided by
+      ``manual_hold_is_unanchored``, the one predicate the config summary's ⚠️
+      reads too, so the two surfaces cannot describe the same config
+      differently — the truthy-but-unset ``BLANK_TIME`` sentinel included.
     """
     mode = (
         _eff(options, CONF_MANUAL_OVERRIDE_DURATION_MODE, None)
         or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
     )
-    unanchored_window_end = (
-        mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-        and not has_configured_window_end(options)
-    )
-    if mode != MANUAL_OVERRIDE_DURATION_MODE_FIXED and not unanchored_window_end:
+    if mode != MANUAL_OVERRIDE_DURATION_MODE_FIXED and not manual_hold_is_unanchored(
+        options
+    ):
         label = _LABELS.get(f"manual_hold.{mode}")
         if label is not None:
             return label

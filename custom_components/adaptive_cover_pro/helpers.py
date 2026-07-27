@@ -18,6 +18,7 @@ from .const import (
     BLANK_TIME,
     CONF_END_ENTITY,
     CONF_END_TIME,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
@@ -27,6 +28,7 @@ from .const import (
     CONF_SUNSET_TIME_ENTITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
@@ -94,6 +96,29 @@ def has_configured_window_end(options: Mapping) -> bool:
     return any(
         options.get(key) not in (None, "", BLANK_TIME)
         for key in (CONF_END_TIME, CONF_END_ENTITY)
+    )
+
+
+def manual_hold_is_unanchored(options: Mapping) -> bool:
+    """Return True when the configured manual-override hold has no boundary.
+
+    Single source of truth for "does this config's hold fall back to the numeric
+    ``manual_override_duration``?", shared by the configuration summary's ⚠️ and
+    the Building Profile overview's comparison table so the two surfaces can
+    never describe the same config differently (issue #1051).
+
+    Today that is exactly ``until_window_end`` with no operating-window end:
+    :func:`resolve_override_deadline` finds no anchor and the caller falls back
+    to the duration. A future mode that also needs an anchor belongs **here**,
+    not in either surface's own render — two hand-rolled copies are how the
+    overview came to print a boundary the hold never reaches.
+    """
+    mode = (
+        options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+        or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+    )
+    return mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END and (
+        not has_configured_window_end(options)
     )
 
 
