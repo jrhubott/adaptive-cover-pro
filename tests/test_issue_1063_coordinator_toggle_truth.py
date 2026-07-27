@@ -14,15 +14,27 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.helpers.restore_state import RestoreEntity
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_SUN_TRACKING,
+    CONF_ENTITIES,
+    CONF_MEMBER_COVERS,
+    CONF_MEMBER_ENTRIES,
     CONF_SENSOR_TYPE,
+    DOMAIN,
     CoverType,
 )
 from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
+from custom_components.adaptive_cover_pro.group_entities import (
+    GroupAutomationSwitch,
+    GroupClimateSwitch,
+    GroupLockSwitch,
+)
 from custom_components.adaptive_cover_pro.services import async_setup_services
 from custom_components.adaptive_cover_pro.switch import (
     _SWITCH_SPECS,
@@ -128,7 +140,15 @@ def test_glare_zone_switch_falls_back_when_attribute_absent():
 @pytest.mark.unit
 @pytest.mark.parametrize("initial_state", [True, False])
 def test_unset_toggle_falls_back_to_initial_state(initial_state):
-    """``ToggleManager`` seeds most toggles to ``None`` until a switch restores."""
+    """``ToggleManager`` seeds most toggles to ``None`` until a switch restores.
+
+    This pins the fallback, not a claim about runtime semantics: for
+    ``automatic_control`` the coordinator reads ``None`` as falsy while the
+    spec declares ``initial_state=True``, so during the sliver before
+    ``async_added_to_hass`` the switch renders ``on`` over a closed gate. See
+    the ``is_on`` docstring for why one shared default is preferred over a
+    per-toggle ``None``-semantics map.
+    """
     coord = _FakeCoordinator(automatic_control=None)
     switch = _make_switch(coord, "automatic_control", initial_state=initial_state)
 
@@ -302,3 +322,151 @@ async def test_kill_switch_services_push_the_new_state_to_the_entity(service, ex
 
     assert coord.enabled_toggle is expected
     coord.async_update_listeners.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# The render gate — the link that carries a coordinator flip to the state machine
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_coordinator_flip_reaches_the_state_machine():
+    """``is_on`` only helps if the render-signature gate lets the write through.
+
+    ``entity_base._handle_coordinator_update`` suppresses a write whenever
+    ``_acp_render_signature()`` is unchanged, and that signature is built from
+    ``self.state`` — which resolves through the new ``is_on``. Without this the
+    entity would hold its old state despite reading the right value, and that
+    old state is what ``RestoreEntity`` hands back.
+    """
+    coord = _FakeCoordinator(automatic_control=True)
+    coord.data = MagicMock()
+    coord.last_update_success = True
+    switch = _make_switch(coord, "automatic_control")
+    switch.async_write_ha_state = MagicMock()
+
+    switch._handle_coordinator_update()
+    assert switch.async_write_ha_state.call_count == 1
+
+    # An unchanged cycle is still gated — the fix must not defeat the dedup.
+    switch._handle_coordinator_update()
+    assert switch.async_write_ha_state.call_count == 1
+
+    coord.automatic_control = False
+    switch._handle_coordinator_update()
+    assert switch.async_write_ha_state.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# The group side: members now persist, so the group's own switches must too
+# ---------------------------------------------------------------------------
+
+
+def _make_group_config_entry():
+    entry = MagicMock()
+    entry.entry_id = "group_01"
+    entry.data = {"name": "Living Room", CONF_SENSOR_TYPE: CoverType.GROUP}
+    entry.options = {}
+    return entry
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cls", "default"),
+    [(GroupAutomationSwitch, True), (GroupClimateSwitch, False)],
+)
+@pytest.mark.parametrize(
+    ("restored", "expected"), [(STATE_ON, True), (STATE_OFF, False)]
+)
+async def test_group_bulk_switch_restores_its_last_command(
+    cls, default, restored, expected
+):
+    """A group bulk switch must not snap back to its default after a restart.
+
+    Its members now persist what the bulk command did to them (that is the
+    #1063 fix), so a group switch that reinitializes to its default would
+    permanently contradict them: the user turns group automation off, restarts,
+    and sees the group reading ``on`` while every member reads ``off``.
+    """
+    coord = _FakeCoordinator()
+    switch = cls("group_01", coord.hass, _make_group_config_entry(), coord)
+    switch.async_write_ha_state = MagicMock()
+    assert switch.is_on is default
+
+    switch.async_get_last_state = AsyncMock(return_value=MagicMock(state=restored))
+    await switch.async_added_to_hass()
+
+    assert switch.is_on is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_group_lock_switch_does_not_restore():
+    """The lock is deliberately the exception — its effect does not survive.
+
+    ``async_set_lock`` writes ``group_locked`` and a per-member ``GroupIntent``,
+    both of which are runtime-only. Restoring the switch to ``on`` would claim
+    a lock that no member is actually holding.
+    """
+    coord = _FakeCoordinator()
+    switch = GroupLockSwitch("group_01", coord.hass, _make_group_config_entry(), coord)
+    switch.async_write_ha_state = MagicMock()
+
+    assert not isinstance(switch, RestoreEntity)
+    assert switch.is_on is False
+
+
+# ---------------------------------------------------------------------------
+# The group's member resolution must not hand back a half-built coordinator
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolved_members_skips_an_entry_that_has_not_finished_setup(hass):
+    """``runtime_data`` is assigned before platform setup, so LOADED is the gate.
+
+    A member mid-reload already exposes its new coordinator while its switch
+    entities are still being added. Writing a toggle onto it is undone moments
+    later when those switches restore their previous state — the #1063 failure
+    mode all over again, on the one direct writer that does not filter on
+    ``ConfigEntryState``.
+    """
+    ready = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "ready", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={CONF_ENTITIES: ["cover.ready"]},
+        entry_id="member_ready",
+        state=ConfigEntryState.LOADED,
+    )
+    ready.add_to_hass(hass)
+    ready.runtime_data = _FakeCoordinator(automatic_control=True)
+
+    setting_up = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "setting_up", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={CONF_ENTITIES: ["cover.setting_up"]},
+        entry_id="member_setting_up",
+        state=ConfigEntryState.SETUP_IN_PROGRESS,
+    )
+    setting_up.add_to_hass(hass)
+    setting_up.runtime_data = _FakeCoordinator(automatic_control=True)
+
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: ["member_ready", "member_setting_up"],
+            CONF_MEMBER_COVERS: [],
+        },
+        entry_id="group_01",
+    )
+    group_entry.add_to_hass(hass)
+
+    group = GroupCoordinator(hass, group_entry)
+
+    assert [entry.entry_id for entry, _ in group.resolved_members()] == ["member_ready"]
+
+    await group.async_set_automation(False)
+    assert ready.runtime_data.automatic_control is False
+    assert setting_up.runtime_data.automatic_control is True

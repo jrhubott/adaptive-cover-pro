@@ -38,6 +38,7 @@ from .const import (
 from .templates import is_template_string
 
 if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import State
 
     from .sun import SunData
@@ -47,6 +48,31 @@ _LOGGER = logging.getLogger(__name__)
 # Entity states that mean "no usable value" — used by the safe-read helpers
 # below so the same set is checked everywhere instead of inline literals.
 _INVALID_STATES: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE})
+
+
+def usable_coordinator(entry: "ConfigEntry") -> Any | None:
+    """Return an entry's coordinator, or ``None`` when it is not usable yet.
+
+    Single source of truth for "may I write to this entry's coordinator?", used
+    by both ``services.loaded_coordinators`` (walks every ACP entry) and
+    ``GroupCoordinator.resolved_members`` (walks one group's roster).
+
+    Two things have to hold. The entry must have reached ``LOADED``: HA assigns
+    ``runtime_data`` *before* forwarding platform setup, so between those points
+    a reloading entry already exposes a freshly-built coordinator whose switch
+    entities have not been added yet — a toggle written onto it is silently
+    undone moments later when those switches restore their previous state
+    (issue #1063). And ``runtime_data`` must actually hold something: virtual
+    entries (e.g. the Building Profile, ``controls_cover == False``) reach
+    ``LOADED`` without building a coordinator at all. ``getattr`` is robust
+    whether the running HA leaves ``runtime_data`` unset or defaults it to
+    ``None``.
+    """
+    from homeassistant.config_entries import ConfigEntryState  # noqa: PLC0415
+
+    if entry.state is not ConfigEntryState.LOADED:
+        return None
+    return getattr(entry, "runtime_data", None)
 
 
 def motion_entities(options: Mapping) -> list[str]:

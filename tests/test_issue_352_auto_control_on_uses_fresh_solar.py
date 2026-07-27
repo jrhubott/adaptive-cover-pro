@@ -148,7 +148,6 @@ def _make_switch(coord):
     switch._key = "automatic_control"
     switch._switch_name = "Automatic Control"
     switch._initial_state = True
-    switch._attr_is_on = False
     switch.schedule_update_ha_state = MagicMock()
     return switch
 

@@ -66,7 +66,7 @@ from .const import (
 )
 from .cover_types import get_policy
 from .cover_types.base import axis_inverted
-from .helpers import climate_mode_from_diagnostics
+from .helpers import climate_mode_from_diagnostics, usable_coordinator
 from .managers import inverse_state
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
@@ -201,22 +201,24 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         return ids
 
     def resolved_members(self) -> list[tuple[ConfigEntry, object]]:
-        """ACP members whose entry exists and whose coordinator is loaded.
+        """ACP members whose entry exists and whose coordinator is usable.
 
-        Every ``runtime_data`` access is null-guarded: during a member reload
-        the attribute is briefly unset, and a removed member's id may linger
-        in the roster until the next options edit. Both are silently skipped —
-        absence is non-membership for this cycle.
+        A removed member's id may linger in the roster until the next options
+        edit, and a member mid-reload exposes a coordinator whose entities are
+        not up yet. Both are silently skipped — absence is non-membership for
+        this cycle. ``helpers.usable_coordinator`` owns the predicate (and the
+        reason a half-set-up entry must not be written to); the services path
+        resolves through the same helper.
         """
         members: list[tuple[ConfigEntry, object]] = []
         for entry_id in self.member_entry_ids():
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None:
                 continue
-            coordinator = getattr(entry, "runtime_data", None)
+            coordinator = usable_coordinator(entry)
             if coordinator is None:
                 _LOGGER.debug(
-                    "Group %s: member %s has no loaded coordinator; skipping",
+                    "Group %s: member %s has no usable coordinator; skipping",
                     self.entry.entry_id,
                     entry_id,
                 )

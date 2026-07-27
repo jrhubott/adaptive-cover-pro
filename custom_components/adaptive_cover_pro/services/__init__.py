@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -17,6 +16,7 @@ if TYPE_CHECKING:
     from ..coordinator import AdaptiveDataUpdateCoordinator
 
 from ..const import DOMAIN
+from ..helpers import usable_coordinator
 from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
 from .group_service import GROUP_SERVICE_NAMES, register_group_services
 from .engage_manual_override_service import (
@@ -47,17 +47,14 @@ def loaded_coordinators(
     Replaces the legacy ``hass.data[DOMAIN]`` registry: each loaded entry now
     stores its coordinator on ``entry.runtime_data``.
 
-    Virtual entries (e.g. the Building Profile, ``controls_cover == False``) reach
-    ``LOADED`` without setting ``runtime_data`` — they build no coordinator. Skip
-    them so callers never dereference a missing coordinator. ``getattr`` is robust
-    whether the running HA leaves ``runtime_data`` unset (raising ``AttributeError``)
-    or defaults it to ``None``.
+    The LOADED-and-has-a-coordinator predicate lives in
+    ``helpers.usable_coordinator`` so this walk and ``GroupCoordinator``'s
+    roster walk cannot drift apart.
     """
     return {
         entry.entry_id: coordinator
         for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.state is ConfigEntryState.LOADED
-        and (coordinator := getattr(entry, "runtime_data", None)) is not None
+        if (coordinator := usable_coordinator(entry)) is not None
     }
 
 
@@ -177,7 +174,12 @@ def _resolve_targets(
     return result
 
 
-def _set_enabled(coord, value: bool, service: str, outcome: str) -> None:
+def _set_enabled(
+    coord: AdaptiveDataUpdateCoordinator,
+    value: bool,
+    service: str,
+    outcome: str,
+) -> None:
     """Flip a coordinator's kill switch and push the change to its switch entity.
 
     ``switch.<entry>_integration_enabled`` reads ``coordinator.enabled_toggle``
@@ -192,6 +194,25 @@ def _set_enabled(coord, value: bool, service: str, outcome: str) -> None:
     coord.enabled_toggle = value
     coord.async_update_listeners()
     coord.logger.debug("%s service: %s", service, outcome)
+
+
+def _disable(
+    coord: AdaptiveDataUpdateCoordinator,
+    service: str,
+    outcome: str,
+) -> None:
+    """Cancel deferred work, drop reconciliation state, and close the gate.
+
+    Shared by ``integration_disable`` and ``emergency_stop`` — the two differ
+    only in how they stop in-flight moves (scoped ``stop_in_flight`` versus a
+    blanket ``stop_all``), which the caller does first; everything after that
+    is identical policy and lives here so the two cannot drift.
+    """
+    coord._cancel_motion_timeout()  # noqa: SLF001
+    coord._cancel_weather_timeout()  # noqa: SLF001
+    coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
+    coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
+    _set_enabled(coord, False, service, outcome)
 
 
 async def async_setup_services(hass: HomeAssistant) -> None:
@@ -240,11 +261,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         for coord, entity_filter in targets.items():
             # Stop in-flight moves first (before gate closes)
             await coord._cmd_svc.stop_in_flight(entities=entity_filter)  # noqa: SLF001
-            coord._cancel_motion_timeout()  # noqa: SLF001
-            coord._cancel_weather_timeout()  # noqa: SLF001
-            coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-            coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
-            _set_enabled(coord, False, "integration_disable", "disabled")
+            _disable(coord, "integration_disable", "disabled")
 
     async def handle_emergency_stop(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
@@ -255,11 +272,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             )
             await coord._cmd_svc.stop_all(entity_ids)  # noqa: SLF001
             # Then run full integration_disable cleanup
-            coord._cancel_motion_timeout()  # noqa: SLF001
-            coord._cancel_weather_timeout()  # noqa: SLF001
-            coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-            coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
-            _set_enabled(coord, False, "emergency_stop", "stopped and disabled")
+            _disable(coord, "emergency_stop", "stopped and disabled")
 
     hass.services.async_register(
         DOMAIN, "integration_enable", handle_integration_enable

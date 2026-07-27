@@ -306,6 +306,17 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         ``glare_zone_N`` attributes do not exist at all until first written
         (``coordinator._is_glare_zone_enabled`` reads them defensively for the
         same reason). Both fall back to the spec's declared initial state.
+
+        That fallback deliberately does NOT model each toggle's runtime
+        ``None``-semantics, which are not uniform: ``enabled_toggle`` maps
+        ``None`` to True (``coordinator.py``, ``_cmd_svc.enabled``) and so
+        agrees with its initial state, but ``automatic_control``,
+        ``manual_toggle``, ``lux_toggle`` and ``irradiance_toggle`` are read as
+        plain falsy while declaring ``initial_state=True`` — so for those four
+        an unset coordinator renders ``on`` while the gate they feed is closed.
+        The window is the sliver before ``async_added_to_hass`` restores, which
+        is why one shared default beats a per-toggle map here; if that window
+        ever widens, the map is the fix, not a wider default.
         """
         if self._option_key is not None:
             return bool(
