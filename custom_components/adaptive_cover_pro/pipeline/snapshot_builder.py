@@ -12,6 +12,11 @@ as a method argument.  The coordinator remains the single owner of
 ``_weather_readings`` — the builder returns ``ClimateReadings`` from
 :meth:`read_climate` and the coordinator stores it.
 
+The one manager it holds a reference to is ``TimeWindowManager``: the
+effective-default fallback needs live window state (grace windows, latched
+gate holds) that cannot be recomputed from ``hass`` + ``options``, so the
+manager itself is injected and read through pure properties (issue #1055).
+
 Background: this code lived inline on the coordinator as five private
 methods (``_read_climate_state``, ``_build_climate_options``,
 ``_read_force_sensor_states``, ``_read_custom_position_sensor_states``,
@@ -34,7 +39,6 @@ from ..const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
-    CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_TIME,
     CONF_DEVICE_ID,
@@ -65,7 +69,6 @@ from ..const import (
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_EXTREME_HEAT_POSITION,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
-    CONF_SUNSET_POS,
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
@@ -101,8 +104,7 @@ from ..const import (
 )
 from ..cover_types.base import axis_inverted
 from ..helpers import (
-    _read_sun_boundary_options,
-    compute_effective_default,
+    _read_current_effective_default,
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
@@ -123,6 +125,7 @@ if TYPE_CHECKING:
     from ..config_types import ConfigContextAdapter
     from ..cover_types.base import CoverTypePolicy
     from ..engine.covers.base import AdaptiveGeneralCover
+    from ..managers.time_window import TimeWindowManager
     from ..managers.toggles import ToggleManager
     from ..services.configuration_service import ConfigurationService
     from ..state.climate_provider import ClimateProvider, ClimateReadings
@@ -156,7 +159,14 @@ def _opt_int(options: dict, key: str) -> int | None:
 
 
 class PipelineSnapshotBuilder:
-    """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`."""
+    """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`.
+
+    ``time_mgr`` is the one manager the builder holds a reference to, for
+    :meth:`build`'s effective-default fallback (issue #1055). It is read
+    through pure properties only — never advanced — which is the same contract
+    ``async_apply_user_position`` already relies on for every other manager
+    flag it threads in: an ad-hoc build must not re-evaluate the managers.
+    """
 
     def __init__(
         self,
@@ -167,6 +177,7 @@ class PipelineSnapshotBuilder:
         toggles: ToggleManager,
         policy: CoverTypePolicy,
         config_service: ConfigurationService,
+        time_mgr: TimeWindowManager | None = None,
     ) -> None:
         """Bind the builder to its long-lived collaborators."""
         self._hass = hass
@@ -175,6 +186,7 @@ class PipelineSnapshotBuilder:
         self._toggles = toggles
         self._policy = policy
         self._config_service = config_service
+        self._time_mgr = time_mgr
         # Last VALID per-slot read, keyed by slot number (issue #1005). Written
         # only on a valid read; on an invalid read (transient unavailable /
         # unknown / missing sensor) the slot's activation is held to this so a
@@ -474,17 +486,23 @@ class PipelineSnapshotBuilder:
     ) -> PipelineSnapshot:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
-        ``effective_default`` / ``is_sunset_active`` are recomputed from
-        ``options``, ``cover_data.sun_data``, and — via
-        ``_read_sun_boundary_options`` — up to two ``hass.states.get()`` reads
-        resolving the configured sunrise/sunset time entities, when omitted.
-        An instance with neither entity configured reads no state at all.
-        This fallback exists so that ``async_apply_user_position`` (which
+        ``effective_default`` / ``is_sunset_active``, when omitted, come from
+        :func:`helpers._read_current_effective_default` — the single source of
+        truth the coordinator's own ``_compute_current_effective_default``
+        delegates to as well. That covers the configured sunrise/sunset time
+        entities (issue #1048, up to two ``hass.states.get()`` reads; an
+        instance with neither configured reads no state at all) *and* the four
+        live window-state inputs this branch used to drop: the daytime gate
+        (#632), the explicit window-start signal (#438/#492), and the
+        end-of-window position with its active flag (#625). Until issue #1055
+        the branch hand-rolled a narrower call, so it could report a different
+        position than the update cycle for the very same instant.
+
+        The fallback exists so that ``async_apply_user_position`` (which
         evaluates a preemption check outside the update cycle) can still build
-        a valid snapshot without knowing those values. Its inputs are
-        deliberately *wider* than the original ``_build_pipeline_snapshot``'s,
-        which read only ``options`` and ``sun_data`` and so silently dropped
-        the time entities (issue #1048).
+        a valid snapshot without knowing those values. A ``None`` ``time_mgr``
+        (test / legacy construction) degrades each window-state input to the
+        pure formula's own default.
 
         ``is_glare_zone_enabled(idx)`` returns the current state of the
         per-instance glare-zone master switch for zone ``idx``.  The coordinator
@@ -500,17 +518,8 @@ class PipelineSnapshotBuilder:
         / empty leaves the floor active.
         """
         if effective_default is None or is_sunset_active is None:
-            h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
-            sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-            bounds = _read_sun_boundary_options(self._hass, options)
-            effective_default, is_sunset_active = compute_effective_default(
-                h_def=h_def,
-                sunset_pos=sunset_pos_cfg,
-                sun_data=cover_data.sun_data,
-                sunset_off=bounds.sunset_off,
-                sunrise_off=bounds.sunrise_off,
-                sunset_time=bounds.sunset_time,
-                sunrise_time=bounds.sunrise_time,
+            effective_default, is_sunset_active = _read_current_effective_default(
+                self._hass, options, cover_data.sun_data, self._time_mgr
             )
 
         glare_zones_cfg = self._policy.glare_zones_config(self._config_service, options)

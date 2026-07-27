@@ -298,7 +298,7 @@ def test_coordinator_forwards_effective_daytime_gate_when_fell_back():
     coord._time_mgr.effective_daytime_gate = None
     options = {CONF_SUNSET_POS: 20, "default_percentage": 80}
     with patch(
-        "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
         return_value=(80, False),
     ) as m:
         coord._compute_current_effective_default(options)

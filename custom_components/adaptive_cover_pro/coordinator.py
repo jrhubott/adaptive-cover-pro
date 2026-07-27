@@ -38,9 +38,9 @@ from homeassistant.util import dt as dt_util
 
 from .config_types import CoverConfig, RuntimeConfig
 from .helpers import (
+    _read_current_effective_default,
     _read_sun_boundary_options,
     check_cover_features,
-    compute_effective_default,
     custom_position_slot_delivers_fixed_position,
     custom_position_slot_sensors,
     has_configured_window_end,
@@ -452,6 +452,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cover entity state provider
         self._cover_provider = CoverProvider(hass=self.hass, logger=self.logger)
 
+        # Time window manager (start/end time checks). Built here, ahead of the
+        # snapshot builder, because the builder's effective-default fallback
+        # reads the live window state off it (issue #1055).
+        self._time_mgr = TimeWindowManager(
+            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+        )
+
         # Pipeline snapshot builder — owns the HA reads + assembly for each
         # PipelineSnapshot.  Coordinator drives it once per cycle in
         # _calculate_cover_state and again from async_apply_user_position for
@@ -463,6 +470,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             toggles=self._toggles,
             policy=self._policy,
             config_service=self._config_service,
+            time_mgr=self._time_mgr,
         )
 
         # Current state snapshot (built at start of each update cycle)
@@ -568,8 +576,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # resets or a real numeric position read arrives.
         self.manager.set_assumed_invalidator(self._cmd_svc.clear_assumed_position)
         # Issue #1044: supply the duration mode's deadline. Wired here rather
-        # than passed to the constructor because the resolver reads the time
-        # window, which is built further down.
+        # than passed to the constructor because the resolver is a coordinator
+        # bound method — it resolves lazily at call time, so the wiring stays
+        # post-construction regardless of where its collaborators are built.
         self.manager.set_deadline_resolver(self._resolve_override_deadline)
 
         # Late-bind cover-type policy dependencies (e.g. VenetianPolicy
@@ -606,11 +615,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # tilt-only update fires promptly (issue #756). No-op for
             # single-axis policies (base attach ignores it).
             schedule_refresh_after=self._schedule_refresh_after,
-        )
-
-        # Time window manager (start/end time checks)
-        self._time_mgr = TimeWindowManager(
-            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
         )
 
         # Window-transition tracker — owns sun-visibility and astronomical
@@ -4285,53 +4289,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> tuple[int, bool]:
         """Return (effective_pos, is_sunset_active) for the current moment.
 
-        Single source of truth for calling ``compute_effective_default``. Shared
-        by the main update cycle (``_calculate_cover_state``),
-        ``_on_window_closed`` and ``_check_sunset_window_transition`` so the
-        ``window_explicitly_started`` signal is not duplicated. The sunset /
-        sunrise inputs themselves come from
-        :func:`_read_sun_boundary_options`, which the manual-override deadline
-        resolver reads through too.
+        A thin wrapper over :func:`helpers._read_current_effective_default`, the
+        single source of truth for that computation — shared with
+        ``PipelineSnapshotBuilder.build``'s fallback so the update cycle and the
+        ad-hoc ``async_apply_user_position`` path can never disagree about the
+        same instant (issue #1055).
+
+        All this adds is the cover-data resolution: the transition call sites
+        (``_on_window_closed``, ``_check_sunset_window_transition``) have none in
+        hand, and ``get_blind_data`` is coordinator business the helper must not
+        reach into.
 
         Args:
             options: The config-entry options dict.
             cover_data: An already-computed cover-data object whose ``sun_data``
                 is reused. When ``None`` the cover data is computed fresh via
-                ``get_blind_data`` (the transition call sites have no cover_data
-                in hand).
+                ``get_blind_data``.
 
         """
-        h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
-        sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-        bounds = _read_sun_boundary_options(self.hass, options)
         if cover_data is None:
             cover_data = self.get_blind_data(options=options)
-        # A configured daytime gate (issue #632) OWNS the day/night boundary:
-        # ``effective_daytime_gate`` is the single tri-state verdict to forward —
-        # True=daytime→no sunset, False=dark→apply sunset position, None=defer to
-        # the astronomical decision. None covers both an unconfigured gate and the
-        # graceful fallback after every gate source has been indeterminate past the
-        # grace window (issue #742).
-        daytime_gate = self._time_mgr.effective_daytime_gate
-        # End-of-window position (issue #625): an optional, clearable position
-        # applied once the operating window is clock-closed. ``before_end_time``
-        # is True all morning (end is later today), so the override only fires in
-        # the evening — never before the start time. compute_effective_default
-        # owns the two-phase astral handoff; here we only read the inputs.
-        eow_pos = options.get(CONF_END_OF_WINDOW_POS)
-        window_is_closed = not self._time_mgr.before_end_time
-        return compute_effective_default(
-            h_def=h_def,
-            sunset_pos=sunset_pos_cfg,
-            sun_data=cover_data.sun_data,
-            sunset_off=bounds.sunset_off,
-            sunrise_off=bounds.sunrise_off,
-            sunset_time=bounds.sunset_time,
-            sunrise_time=bounds.sunrise_time,
-            window_explicitly_started=self.window_explicitly_started,
-            daytime_gate=daytime_gate,
-            end_of_window_pos=eow_pos,
-            end_of_window_active=window_is_closed,
+        return _read_current_effective_default(
+            self.hass, options, cover_data.sun_data, self._time_mgr
         )
 
     @callback

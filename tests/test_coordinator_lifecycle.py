@@ -366,6 +366,38 @@ async def test_manager_covers_populated_at_init_for_restore(
     assert "cover.test_blind" in coordinator.manager.covers
 
 
+async def test_coordinator_injects_time_mgr_into_snapshot_builder(
+    hass: HomeAssistant,
+) -> None:
+    """The builder gets the live TimeWindowManager at construction (#1055).
+
+    The builder's effective-default fallback reads the gate, the start-time
+    signal and the window-end flag off this collaborator. Its ``None`` default
+    exists only for tests, so production must never be left on it — a refactor
+    that drops the injection, or reorders ``__init__`` back so ``_time_mgr`` is
+    built after the builder, silently reverts the ad-hoc path to the pure
+    defaults.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "TW Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="tw_inject_01",
+        title="TW Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    assert coordinator._snapshot_builder._time_mgr is coordinator._time_mgr
+
+
 # ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------
