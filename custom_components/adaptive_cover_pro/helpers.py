@@ -23,9 +23,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     BLANK_TIME,
     CONF_CLIMATE_MODE,
+    CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_MANUAL_OVERRIDE_DURATION_MODE,
@@ -37,6 +39,7 @@ from .const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
+    CONF_SUNSET_POS,
     CONF_SUNSET_TIME_ENTITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
@@ -53,6 +56,9 @@ from .templates import is_template_string
 if TYPE_CHECKING:
     from homeassistant.core import State
 
+    # TYPE_CHECKING only: managers.time_window imports from this module at
+    # runtime, so a real import here is a hard circular import.
+    from .managers.time_window import TimeWindowManager
     from .sun import SunData
 
 _LOGGER = logging.getLogger(__name__)
@@ -847,12 +853,14 @@ def _read_sun_boundary_options(
     """Read the four HA-side inputs that define sunset/sunrise for this instance.
 
     The single source of truth for the *reads* feeding :func:`resolve_sun_boundaries`'
-    arithmetic: the day/night position boundary
-    (``_compute_current_effective_default``), the manual-override sun deadline
-    (``_resolve_override_deadline``), and the pipeline snapshot builder's fallback
-    branch (``PipelineSnapshotBuilder.build``) all delegate here, so a later fifth
-    input lands in one place and those callers can never disagree about what
-    "sunset" means (CODING_GUIDELINES.md § no-duplication).
+    arithmetic. Two direct callers: the day/night position boundary
+    (:func:`_read_current_effective_default`) and the manual-override sun deadline
+    (``_resolve_override_deadline``). Both consumers of the day/night boundary —
+    the coordinator's ``_compute_current_effective_default`` and
+    ``PipelineSnapshotBuilder.build``'s fallback branch — reach here indirectly
+    through that first caller (issue #1055). So a later fifth input lands in one
+    place and no call site can disagree about what "sunset" means
+    (CODING_GUIDELINES.md § no-duplication).
 
     The offset arithmetic itself lives in :func:`resolve_sunset_offset` /
     :func:`resolve_sunrise_offset`, which the hass-less consumers
@@ -1130,6 +1138,81 @@ def compute_effective_default(
 
     effective = int(sunset_pos) if is_sunset_active else int(h_def)
     return effective, is_sunset_active
+
+
+def _read_current_effective_default(
+    hass: HomeAssistant,
+    options: Mapping,
+    sun_data: "SunData",
+    time_mgr: "TimeWindowManager | None" = None,
+) -> tuple[int, bool]:
+    """Return ``(effective_pos, is_sunset_active)`` for the current moment.
+
+    The single source of truth for *calling* :func:`compute_effective_default`
+    with live state. Both consumers delegate here: the coordinator's
+    ``_compute_current_effective_default`` (the update cycle and the window
+    transitions) and ``PipelineSnapshotBuilder.build``'s fallback, which
+    ``async_apply_user_position`` reaches when it assembles an ad-hoc snapshot
+    outside the cycle.
+
+    The builder used to re-derive the answer from a narrower input set, so four
+    live window-state inputs — ``window_explicitly_started`` (#438/#492),
+    ``daytime_gate`` (#632), and ``end_of_window_pos`` /
+    ``end_of_window_active`` (#625) — silently took the formula's own defaults
+    there and the two paths could disagree about the very same instant
+    (issue #1055, CODING_GUIDELINES.md § no-duplication).
+
+    Every ``time_mgr`` read below is a pure property read — nothing advances
+    manager state, so the ad-hoc path calls this without perturbing the cycle.
+
+    Args:
+        hass: Used only for the boundary-entity reads in
+            :func:`_read_sun_boundary_options`. An instance with neither time
+            entity configured reads no state at all.
+        options: The config-entry options mapping.
+        sun_data: Already-resolved ``SunData``. Callers own how they get it —
+            the coordinator falls back to ``get_blind_data`` when it has none
+            in hand, which is coordinator business and stays there.
+        time_mgr: The live ``TimeWindowManager``, or ``None``. ``None`` is the
+            contract for a builder constructed without one (tests, legacy call
+            sites): each read degrades to exactly the default
+            :func:`compute_effective_default` would have applied anyway.
+            Production always injects the live manager.
+
+    """
+    h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+    sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+    bounds = _read_sun_boundary_options(hass, options)
+    # A configured daytime gate (issue #632) OWNS the day/night boundary:
+    # ``effective_daytime_gate`` is the single tri-state verdict to forward —
+    # True=daytime→no sunset, False=dark→apply sunset position, None=defer to
+    # the astronomical decision. None covers both an unconfigured gate and the
+    # graceful fallback after every gate source has been indeterminate past the
+    # grace window (issue #742).
+    daytime_gate = time_mgr.effective_daytime_gate if time_mgr is not None else None
+    window_started = (
+        time_mgr.window_explicitly_started if time_mgr is not None else False
+    )
+    # End-of-window position (issue #625): an optional, clearable position
+    # applied once the operating window is clock-closed. ``before_end_time``
+    # is True all morning (end is later today), so the override only fires in
+    # the evening — never before the start time. compute_effective_default
+    # owns the two-phase astral handoff; here we only read the inputs.
+    eow_pos = options.get(CONF_END_OF_WINDOW_POS)
+    window_is_closed = (not time_mgr.before_end_time) if time_mgr is not None else False
+    return compute_effective_default(
+        h_def=h_def,
+        sunset_pos=sunset_pos_cfg,
+        sun_data=sun_data,
+        sunset_off=bounds.sunset_off,
+        sunrise_off=bounds.sunrise_off,
+        sunset_time=bounds.sunset_time,
+        sunrise_time=bounds.sunrise_time,
+        window_explicitly_started=window_started,
+        daytime_gate=daytime_gate,
+        end_of_window_pos=eow_pos,
+        end_of_window_active=window_is_closed,
+    )
 
 
 def should_use_tilt(is_tilt_cover: bool, caps) -> bool:

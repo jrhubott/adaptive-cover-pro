@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
+    CONF_END_OF_WINDOW_POS,
     CONF_LUX_ENTITY,
     CONF_MAX_TILT,
     CONF_MAX_TILT_SUN_ONLY,
@@ -74,6 +75,7 @@ def _make_builder(
     switch_mode: bool = False,
     motion_control: bool = False,
     states: dict | None = None,
+    time_mgr=None,
 ):
     hass = MagicMock()
     states_map = states or {}
@@ -103,6 +105,7 @@ def _make_builder(
         toggles=toggles,
         policy=policy,
         config_service=MagicMock(),
+        time_mgr=time_mgr,
     )
     return builder, climate_provider, hass
 
@@ -625,6 +628,253 @@ def test_build_fallback_uses_configured_sunrise_time_entity():
 
     assert snapshot.is_sunset_active is False
     assert snapshot.default_position == 10
+
+
+# ---------------------------------------------------------------------------
+# Fallback branch reads the live window state too (issue #1055)
+#
+# #1048 widened this branch to the two boundary time entities but left the four
+# window-state inputs on their pure-function defaults, so the ad-hoc
+# ``async_apply_user_position`` path could disagree with the update cycle about
+# the very same moment.  These drive the branch with a live ``TimeWindowManager``
+# stub and assert it lands where the coordinator would.
+# ---------------------------------------------------------------------------
+
+
+def _fallback_cover_data(*, sunset_hour: int, sunrise_hour: int = 6):
+    """Cover data whose astral sunset/sunrise sit at fixed hours on 2026-07-02."""
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    cover_data.sun_data.sunset.return_value = dt.datetime(
+        2026, 7, 2, sunset_hour, 0, tzinfo=dt.UTC
+    )
+    cover_data.sun_data.sunrise.return_value = dt.datetime(
+        2026, 7, 2, sunrise_hour, 0, tzinfo=dt.UTC
+    )
+    return cover_data
+
+
+def _fallback_time_mgr(
+    *,
+    effective_daytime_gate=None,
+    before_end_time=True,
+    window_explicitly_started=False,
+):
+    """Stub exposing only the three ``TimeWindowManager`` properties read here."""
+    time_mgr = MagicMock()
+    time_mgr.effective_daytime_gate = effective_daytime_gate
+    time_mgr.before_end_time = before_end_time
+    time_mgr.window_explicitly_started = window_explicitly_started
+    return time_mgr
+
+
+def _build_at(builder, opts, cover_data, *, frozen: str):
+    """Drive ``build()`` down the fallback branch at a frozen UTC instant.
+
+    ``effective_default`` / ``is_sunset_active`` are deliberately omitted — that
+    is what makes the fallback the code under test.
+    """
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+        freeze_time(frozen),
+    ):
+        return builder.build(
+            opts,
+            cover_data=cover_data,
+            cover_type="cover_blind",
+            climate_readings=None,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            in_time_window=True,
+            current_cover_position=None,
+            is_glare_zone_enabled=lambda idx: True,
+        )
+
+
+@pytest.mark.unit
+def test_build_fallback_honors_dark_daytime_gate():
+    """A gate reading dark forces the sunset position mid-afternoon (#632).
+
+    Astral says 12:00 is broad daylight, so a fallback that drops the gate
+    reports the daytime default. The gate says dark and OWNS the boundary.
+    """
+    builder, _, _ = _make_builder(
+        time_mgr=_fallback_time_mgr(effective_daytime_gate=False)
+    )
+    snapshot = _build_at(
+        builder,
+        {CONF_DEFAULT_HEIGHT: 10, CONF_SUNSET_POS: 80},
+        _fallback_cover_data(sunset_hour=20),
+        frozen="2026-07-02 12:00:00",
+    )
+
+    assert snapshot.is_sunset_active is True
+    assert snapshot.default_position == 80
+
+
+@pytest.mark.unit
+def test_build_fallback_honors_daytime_gate_suppressing_sunset():
+    """A gate reading daytime suppresses the sunset position past astral dusk (#632).
+
+    The mirror case: 21:00 is after astral sunset, so a fallback that drops the
+    gate reports the night position on a still-bright evening.
+    """
+    builder, _, _ = _make_builder(
+        time_mgr=_fallback_time_mgr(effective_daytime_gate=True)
+    )
+    snapshot = _build_at(
+        builder,
+        {CONF_DEFAULT_HEIGHT: 10, CONF_SUNSET_POS: 80},
+        _fallback_cover_data(sunset_hour=20),
+        frozen="2026-07-02 21:00:00",
+    )
+
+    assert snapshot.is_sunset_active is False
+    assert snapshot.default_position == 10
+
+
+@pytest.mark.unit
+def test_build_fallback_applies_end_of_window_position():
+    """A clock-closed window applies the end-of-window position (#625).
+
+    21:00 is past the window end but before astral sunset (22:00), so this is
+    end-of-window phase 1 — the position must hold until the astral handoff.
+    """
+    builder, _, _ = _make_builder(time_mgr=_fallback_time_mgr(before_end_time=False))
+    snapshot = _build_at(
+        builder,
+        {CONF_DEFAULT_HEIGHT: 10, CONF_SUNSET_POS: 80, CONF_END_OF_WINDOW_POS: 40},
+        _fallback_cover_data(sunset_hour=22),
+        frozen="2026-07-02 21:00:00",
+    )
+
+    assert snapshot.default_position == 40
+    assert snapshot.is_sunset_active is True
+
+
+@pytest.mark.unit
+def test_build_fallback_honors_window_explicitly_started():
+    """An explicitly-started window ends nighttime rules before sunrise (#438/#492).
+
+    05:00 is before astral sunrise (06:00), so a fallback that drops the signal
+    reports the night position even though the user's window is already open.
+    """
+    builder, _, _ = _make_builder(
+        time_mgr=_fallback_time_mgr(window_explicitly_started=True)
+    )
+    snapshot = _build_at(
+        builder,
+        {CONF_DEFAULT_HEIGHT: 10, CONF_SUNSET_POS: 80},
+        _fallback_cover_data(sunset_hour=20),
+        frozen="2026-07-02 05:00:00",
+    )
+
+    assert snapshot.is_sunset_active is False
+    assert snapshot.default_position == 10
+
+
+class TestEffectiveDefaultSingleSource:
+    """One reader owns the effective default — the builder holds no second copy.
+
+    The update cycle precomputes ``effective_default``/``is_sunset_active`` and
+    passes them in; ``async_apply_user_position`` does not and lands on the
+    fallback. Two hand-rolled copies of that computation let the two paths
+    disagree about the same moment (issue #1055).
+    """
+
+    def _coord_and_builder(self, *, time_mgr, cover_data):
+        """Both consumers over one shared ``hass`` / ``time_mgr`` / cover data."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        builder, _, hass = _make_builder(time_mgr=time_mgr)
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord.logger = MagicMock()
+        coord.hass = hass
+        coord._time_mgr = time_mgr
+        coord.get_blind_data = MagicMock(return_value=cover_data)
+        return coord, builder
+
+    # The end-of-window config: the widest gap between the two paths today,
+    # since it moves both the position and the sunset flag at once.
+    _OPTS = {
+        CONF_DEFAULT_HEIGHT: 10,
+        CONF_SUNSET_POS: 80,
+        CONF_END_OF_WINDOW_POS: 40,
+    }
+
+    def test_both_paths_agree_on_the_effective_default(self):
+        """The fallback must land exactly where the coordinator's read lands."""
+        time_mgr = _fallback_time_mgr(before_end_time=False)
+        cover_data = _fallback_cover_data(sunset_hour=22)
+        coord, builder = self._coord_and_builder(
+            time_mgr=time_mgr, cover_data=cover_data
+        )
+
+        snapshot = _build_at(
+            builder, self._OPTS, cover_data, frozen="2026-07-02 21:00:00"
+        )
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
+            freeze_time("2026-07-02 21:00:00"),
+        ):
+            coord_result = coord._compute_current_effective_default(
+                self._OPTS, cover_data=cover_data
+            )
+
+        assert (snapshot.default_position, snapshot.is_sunset_active) == coord_result
+
+    def test_patching_the_single_reader_moves_both_effective_default_consumers(self):
+        """Patching one definition must move both — proof of one shared source."""
+        time_mgr = _fallback_time_mgr(before_end_time=False)
+        cover_data = _fallback_cover_data(sunset_hour=22)
+        coord, builder = self._coord_and_builder(
+            time_mgr=time_mgr, cover_data=cover_data
+        )
+
+        with patch(
+            "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
+            return_value=(55, True),
+        ) as ced:
+            coord_result = coord._compute_current_effective_default(
+                self._OPTS, cover_data=cover_data
+            )
+            snapshot = _build_at(
+                builder, self._OPTS, cover_data, frozen="2026-07-02 21:00:00"
+            )
+
+        assert ced.call_count == 2
+        # Same inputs in, same call out — a second reader would drift here first.
+        assert ced.call_args_list[0].kwargs == ced.call_args_list[1].kwargs
+        assert coord_result == (55, True)
+        assert (snapshot.default_position, snapshot.is_sunset_active) == (55, True)
+
+    def test_snapshot_builder_holds_no_second_effective_default_reader(self):
+        """The builder must not import the formula or the boundary reader itself."""
+        import custom_components.adaptive_cover_pro.pipeline.snapshot_builder as mod
+
+        assert not hasattr(mod, "compute_effective_default")
+        assert not hasattr(mod, "_read_sun_boundary_options")
+
+    def test_build_fallback_without_time_mgr_uses_astral_defaults(self):
+        """No ``time_mgr`` (test/legacy construction) degrades to the pure defaults.
+
+        Production always injects one; this pins the optional-collaborator
+        contract so the seven builders constructed without it stay valid.
+        """
+        builder, _, _ = _make_builder()
+        snapshot = _build_at(
+            builder,
+            {CONF_DEFAULT_HEIGHT: 10, CONF_SUNSET_POS: 80},
+            _fallback_cover_data(sunset_hour=20),
+            frozen="2026-07-02 21:00:00",
+        )
+
+        assert snapshot.is_sunset_active is True
+        assert snapshot.default_position == 80
 
 
 @pytest.mark.unit

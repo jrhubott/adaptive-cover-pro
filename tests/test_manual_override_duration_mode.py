@@ -644,9 +644,18 @@ class TestCoordinatorResolver:
 # One reader owns the sunset/sunrise HA reads
 # ---------------------------------------------------------------------------
 
-_CED = "custom_components.adaptive_cover_pro.coordinator.compute_effective_default"
+_CED = "custom_components.adaptive_cover_pro.helpers.compute_effective_default"
+# One function object, two live bindings. The deadline path calls it through
+# ``coordinator``'s from-import; the effective-default path reaches it as a
+# module global inside ``helpers._read_current_effective_default`` (issue
+# #1055). Still one source of truth — ``helpers._read_sun_boundary_options`` —
+# but no single patch target intercepts both namespaces, so a test proving both
+# consumers move together has to enter both.
 _READ_BOUNDS = (
     "custom_components.adaptive_cover_pro.coordinator._read_sun_boundary_options"
+)
+_READ_BOUNDS_HELPERS = (
+    "custom_components.adaptive_cover_pro.helpers._read_sun_boundary_options"
 )
 
 
@@ -696,6 +705,7 @@ class TestSunBoundarySource:
         with (
             patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", dt.UTC),
             patch(_READ_BOUNDS, return_value=patched),
+            patch(_READ_BOUNDS_HELPERS, return_value=patched),
             patch(_CED, return_value=(0, False)) as ced,
         ):
             coord._compute_current_effective_default(
