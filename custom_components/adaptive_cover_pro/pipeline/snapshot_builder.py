@@ -65,8 +65,6 @@ from ..const import (
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_EXTREME_HEAT_POSITION,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
-    CONF_SUNRISE_OFFSET,
-    CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
@@ -103,6 +101,7 @@ from ..const import (
 )
 from ..cover_types.base import axis_inverted
 from ..helpers import (
+    _read_sun_boundary_options,
     compute_effective_default,
     custom_position_slot_configured,
     custom_position_slot_name,
@@ -476,11 +475,16 @@ class PipelineSnapshotBuilder:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
         ``effective_default`` / ``is_sunset_active`` are recomputed from
-        ``options`` and ``cover_data.sun_data`` when omitted — preserving the
-        fallback the original ``_build_pipeline_snapshot`` used so that
-        ``async_apply_user_position`` (which evaluates a preemption check
-        outside the update cycle) can still build a valid snapshot without
-        knowing those values.
+        ``options``, ``cover_data.sun_data``, and — via
+        ``_read_sun_boundary_options`` — up to two ``hass.states.get()`` reads
+        resolving the configured sunrise/sunset time entities, when omitted.
+        An instance with neither entity configured reads no state at all.
+        This fallback exists so that ``async_apply_user_position`` (which
+        evaluates a preemption check outside the update cycle) can still build
+        a valid snapshot without knowing those values. Its inputs are
+        deliberately *wider* than the original ``_build_pipeline_snapshot``'s,
+        which read only ``options`` and ``sun_data`` and so silently dropped
+        the time entities (issue #1048).
 
         ``is_glare_zone_enabled(idx)`` returns the current state of the
         per-instance glare-zone master switch for zone ``idx``.  The coordinator
@@ -498,16 +502,15 @@ class PipelineSnapshotBuilder:
         if effective_default is None or is_sunset_active is None:
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
             sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-            sunrise_off = int(
-                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
-            )
+            bounds = _read_sun_boundary_options(self._hass, options)
             effective_default, is_sunset_active = compute_effective_default(
                 h_def=h_def,
                 sunset_pos=sunset_pos_cfg,
                 sun_data=cover_data.sun_data,
-                sunset_off=sunset_off,
-                sunrise_off=sunrise_off,
+                sunset_off=bounds.sunset_off,
+                sunrise_off=bounds.sunrise_off,
+                sunset_time=bounds.sunset_time,
+                sunrise_time=bounds.sunrise_time,
             )
 
         glare_zones_cfg = self._policy.glare_zones_config(self._config_service, options)
