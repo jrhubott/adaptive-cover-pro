@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -17,7 +22,7 @@ if TYPE_CHECKING:
 
 from ..const import DOMAIN
 from ..helpers import usable_coordinator
-from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
+from .diagnostics_service import async_handle_get_diagnostics
 from .group_service import GROUP_SERVICE_NAMES, register_group_services
 from .engage_manual_override_service import (
     ENGAGE_MANUAL_OVERRIDE_SCHEMA,
@@ -35,6 +40,7 @@ from .set_axes_service import SET_AXES_SCHEMA, async_handle_set_axes
 from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
 from .set_tilt_service import SET_TILT_SCHEMA, async_handle_set_tilt
 from .stop_service import async_handle_stop
+from .troubleshoot_service import async_handle_get_troubleshooting
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +83,98 @@ def cover_coordinators(
         for entry_id, coordinator in loaded_coordinators(hass).items()
         if not isinstance(coordinator, GroupCoordinator)
     }
+
+
+@dataclass(frozen=True, slots=True)
+class UnresolvedConfigEntry:
+    """An explicitly-targeted ACP config entry with no cover coordinator.
+
+    ``name`` is ``entry.data["name"]`` — the same bare name every healthy
+    branch reads (``config_entry.data.get("name")`` in both
+    ``diagnostics_service.py`` and ``troubleshoot_service.py``), falling back
+    to ``entry.title`` only for an entry type that doesn't carry a
+    ``data["name"]`` at all. ``entry.title`` is a *different* string by
+    construction — ``config_flow.py`` builds every entry with
+    ``title=f"{cover_type_label} {name}"`` alongside ``data["name"]=name`` — so
+    using ``title`` here would give a degraded entry a different naming scheme
+    than a healthy one (issue #1059 audit round 4, N2). ``reason`` is a
+    per-case, human-readable explanation of why this id produced no
+    coordinator (a cover group, a Building Profile, or an entry that isn't
+    currently loaded — issue #1059 audit round 3, defect #1).
+    """
+
+    name: str
+    reason: str
+
+
+def _resolve_by_config_entry(
+    hass: HomeAssistant, entry_ids: list[str]
+) -> tuple[dict[str, AdaptiveDataUpdateCoordinator], dict[str, UnresolvedConfigEntry]]:
+    """Resolve explicit config entry IDs to (resolved, unresolved).
+
+    Shared by ``get_diagnostics`` and ``get_troubleshooting`` — both accept an
+    explicit ``config_entry_id`` escape hatch that bypasses the standard
+    entity/device/area target block. ``resolved`` maps entry_id → coordinator
+    for every id that is a real, loaded cover coordinator (resolved through
+    :func:`cover_coordinators`, never :func:`loaded_coordinators`, so a cover
+    group is never handed to a reader that expects a real cover coordinator's
+    ``.data.diagnostics`` shape — a ``GroupCoordinator``'s ``.data`` is
+    ``GroupAggregates``, which has no ``diagnostics`` attribute, issue #1059).
+
+    ``unresolved`` maps entry_id → :class:`UnresolvedConfigEntry` for every id
+    that IS an ACP config entry but has no cover coordinator to read from — a
+    cover group, a Building Profile (a virtual entry that reaches ``LOADED``
+    without ever setting ``runtime_data``, so it is absent from
+    :func:`loaded_coordinators` too), or an entry that isn't currently
+    ``LOADED`` at all (mid-reload, ``SETUP_RETRY``, disabled). Callers degrade
+    these to a per-entry error rather than losing the whole response — a
+    single targeted instance being unresolvable must not sink an explicit
+    multi-entry call (issue #1059 audit round 3, defect #1: an ``else: raise``
+    here previously made the whole batch all-or-nothing).
+
+    An id that is not an ACP config entry at all (typo, wrong integration,
+    nonexistent) is a different class of mistake with no instance to attach a
+    degraded entry to — that still raises ``ServiceValidationError``
+    immediately, unchanged from before.
+    """
+    cover_coords = cover_coordinators(hass)
+    all_loaded = loaded_coordinators(hass)
+    resolved: dict[str, AdaptiveDataUpdateCoordinator] = {}
+    unresolved: dict[str, UnresolvedConfigEntry] = {}
+    for entry_id in entry_ids:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError(
+                f"Config entry '{entry_id}' not found or does not belong to {DOMAIN}"
+            )
+        coord = cover_coords.get(entry_id)
+        if coord is not None:
+            resolved[entry_id] = coord
+            continue
+        if entry_id in all_loaded:
+            # Loaded, but excluded from cover_coordinators() → a cover group.
+            reason = (
+                "This config entry is a cover group, not a single cover "
+                "instance — it has no per-instance diagnostics or "
+                "troubleshooting data."
+            )
+        elif entry.state is ConfigEntryState.LOADED:
+            # LOADED but never set runtime_data → a virtual Building Profile.
+            reason = (
+                "This config entry has no cover coordinator — it is likely "
+                "a Building Profile (a virtual entry with no cover to "
+                "control)."
+            )
+        else:
+            reason = (
+                f"This config entry is not currently loaded (state: "
+                f"{entry.state.value}) — it may be mid-reload, in a setup "
+                "retry, or disabled."
+            )
+        unresolved[entry_id] = UnresolvedConfigEntry(
+            name=entry.data.get("name") or entry.title, reason=reason
+        )
+    return resolved, unresolved
 
 
 def _resolve_targets(
@@ -174,6 +272,56 @@ def _resolve_targets(
     return result
 
 
+# Shared schema for the response-services that each return a per-instance
+# payload on demand (``get_diagnostics``, ``get_troubleshooting`` — issue
+# #1059): the standard entity/device/area target block plus an explicit
+# ``config_entry_id`` escape hatch. Defined once here so neither service
+# module hand-duplicates it (CODING_GUIDELINES "No Code Duplication").
+TARGET_WITH_CONFIG_ENTRY_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entity_id"): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional("device_id"): vol.All(cv.ensure_list, [str]),
+        vol.Optional("area_id"): vol.All(cv.ensure_list, [str]),
+        vol.Optional("config_entry_id"): vol.All(cv.ensure_list, [str]),
+    }
+)
+
+
+def _resolve_service_targets(
+    hass: HomeAssistant, call: ServiceCall
+) -> tuple[dict[str, AdaptiveDataUpdateCoordinator], dict[str, UnresolvedConfigEntry]]:
+    """Resolve a response-service call to (resolved, unresolved).
+
+    Shared targeting preamble for ``get_diagnostics`` and
+    ``get_troubleshooting`` (issue #1059): an explicit ``config_entry_id``
+    list bypasses the standard entity/device/area target block via
+    :func:`_resolve_by_config_entry` — the only path that can produce
+    ``unresolved`` entries. The standard entity/device/area target block
+    (:func:`_resolve_targets`) only ever discovers real, loaded cover
+    coordinators, so it always pairs with an empty unresolved map.
+    """
+    explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
+    if explicit_entry_ids:
+        return _resolve_by_config_entry(hass, explicit_entry_ids)
+    target_map = _resolve_targets(hass, call)
+    return {coord.config_entry.entry_id: coord for coord in target_map}, {}
+
+
+def _build_response_envelope(entries: dict) -> dict:
+    """Build the standard ``{version, generated_at, count, entries}`` envelope.
+
+    Shared response shape for every response-service that returns a
+    per-instance payload (``get_diagnostics``, ``get_troubleshooting`` — issue
+    #1059), so the envelope is never hand-duplicated a second time.
+    """
+    return {
+        "version": 1,
+        "generated_at": dt.datetime.now(dt.UTC).isoformat(),
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
 def _set_enabled(
     coord: AdaptiveDataUpdateCoordinator,
     value: bool,
@@ -231,7 +379,15 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             DOMAIN,
             "get_diagnostics",
             async_handle_get_diagnostics,
-            schema=GET_DIAGNOSTICS_SCHEMA,
+            schema=TARGET_WITH_CONFIG_ENTRY_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
+    if not hass.services.has_service(DOMAIN, "get_troubleshooting"):
+        hass.services.async_register(
+            DOMAIN,
+            "get_troubleshooting",
+            async_handle_get_troubleshooting,
+            schema=TARGET_WITH_CONFIG_ENTRY_SCHEMA,
             supports_response=SupportsResponse.ONLY,
         )
     if not hass.services.has_service(DOMAIN, "export_all_config"):
@@ -314,6 +470,7 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, "export_all_config")
     hass.services.async_remove(DOMAIN, "import_config")
     hass.services.async_remove(DOMAIN, "get_diagnostics")
+    hass.services.async_remove(DOMAIN, "get_troubleshooting")
     hass.services.async_remove(DOMAIN, "integration_enable")
     hass.services.async_remove(DOMAIN, "integration_disable")
     hass.services.async_remove(DOMAIN, "emergency_stop")

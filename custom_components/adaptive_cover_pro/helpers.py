@@ -23,10 +23,15 @@ from homeassistant.util import dt as dt_util
 from .const import (
     BLANK_TIME,
     CONF_CLIMATE_MODE,
+    CONF_ENABLE_MAX_POSITION,
+    CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
     CONF_END_TIME,
+    CONF_ENTITIES,
     CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    CONF_MAX_POSITION,
+    CONF_MIN_POSITION,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_SUNRISE_OFFSET,
@@ -41,6 +46,7 @@ from .const import (
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
     TIME_STRING_RE,
+    TriageCode,
 )
 from .templates import is_template_string
 
@@ -540,6 +546,119 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
         "has_close": bool(supported_features & CoverEntityFeature.CLOSE),
         "has_stop": bool(supported_features & CoverEntityFeature.STOP),
     }
+
+
+def check_cover_capabilities(
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None,
+) -> tuple[dict[str, dict[str, bool] | None], list[str]]:
+    """Inspect bound cover entities and return capabilities + warning lines.
+
+    Returns:
+        cap_map:  entity_id → feature dict (None if entity unavailable)
+        warnings: list of ⚠️ strings — per-entity and cross-entity issues
+
+    Moved here from ``config_flow.py`` (issue #1059) so ``diagnostics/resolve.py``
+    can import it at module level instead of reaching into ``config_flow`` —
+    ``config_flow`` already imports ``diagnostics.triage``, so the old
+    ``diagnostics -> config_flow`` edge made the two modules mutually dependent
+    (working only because both directions deferred the import). The
+    ``cover_types`` import below stays function-local: ``cover_types.base``
+    imports THIS module at module level, so importing ``cover_types`` back from
+    here at module scope would be circular.
+
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return {}, []
+
+    warnings: list[str] = []
+
+    from .cover_types import get_policy
+    from .cover_types.base import CAP_HAS_SET_POSITION, caps_get
+    from .diagnostics.triage import RuleInput, run_triage
+    from .reason_i18n import render
+    from .troubleshoot_i18n import load_troubleshoot_labels
+
+    # The "not ready (unavailable)" line (rule 8a) is rendered from the shared
+    # triage engine so the summary and troubleshoot surfaces share one rule and
+    # one string (issue #970). Build the capability map up front, then index the
+    # COVER_NOT_READY findings by entity so the per-entity warning loop below
+    # keeps its exact ordering (and its interleaving with the open/close-only and
+    # assumed_state lines). Rendered in English to match the legacy raw f-string,
+    # which was hardcoded English regardless of the summary language.
+    cap_map: dict[str, dict[str, bool] | None] = {
+        eid: check_cover_features(hass, eid) for eid in entities
+    }
+    _not_ready = {
+        f.reason.params["eid"]: f
+        for f in run_triage({"capabilities": cap_map}, only=RuleInput.CONFIG)
+        if f.reason.code == TriageCode.COVER_NOT_READY
+    }
+    _triage_labels = load_troubleshoot_labels("en")
+
+    for eid in entities:
+        caps = cap_map[eid]
+        if caps is None:
+            warnings.append(render(_not_ready[eid].reason, _triage_labels))
+        else:
+            if not caps_get(caps, CAP_HAS_SET_POSITION):
+                warnings.append(
+                    f"⚠️ {eid} is open/close-only — will be driven via "
+                    "threshold compare, not set_position."
+                )
+            state = hass.states.get(eid)
+            if state and state.attributes.get("assumed_state"):
+                warnings.append(
+                    f"⚠️ {eid} has assumed_state — real position cannot be "
+                    "read back, which may affect position verification and delta-bypass."
+                )
+
+    known: dict[str, dict[str, bool]] = {
+        eid: caps for eid, caps in cap_map.items() if caps is not None
+    }
+
+    if known:
+        has_pos = {
+            eid for eid, caps in known.items() if caps_get(caps, CAP_HAS_SET_POSITION)
+        }
+        no_pos = {
+            eid
+            for eid, caps in known.items()
+            if not caps_get(caps, CAP_HAS_SET_POSITION)
+        }
+
+        if has_pos and no_pos:
+            warnings.append(
+                "⚠️ Mixed capabilities: some covers support set_position, "
+                "others are open/close-only — they will be driven differently."
+            )
+
+        if sensor_type is not None:
+            warnings.extend(
+                get_policy(sensor_type).capability_warnings_for_options(known, config)
+            )
+
+        min_pos_val = config.get(CONF_MIN_POSITION)
+        max_pos_val = config.get(CONF_MAX_POSITION)
+        enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
+        enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
+        limits_in_use = (
+            (min_pos_val is not None and min_pos_val != 0)
+            or (max_pos_val is not None and max_pos_val != 100)
+            or enable_min_val
+            or enable_max_val
+        )
+        oc_only = [eid for eid in no_pos if eid in known]
+        if limits_in_use and oc_only:
+            oc_str = ", ".join(oc_only)
+            warnings.append(
+                f"⚠️ Position limits are configured but {oc_str} "
+                "is open/close-only — limits will be ignored on that cover."
+            )
+
+    return cap_map, warnings
 
 
 def _eval_time_to_utc_naive(eval_time: dt.datetime) -> dt.datetime:

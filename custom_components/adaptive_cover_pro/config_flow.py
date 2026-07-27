@@ -253,6 +253,7 @@ from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
 from .troubleshoot_i18n import load_troubleshoot_labels
 from .helpers import (
+    check_cover_capabilities,
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
@@ -1208,113 +1209,6 @@ def _format_duration(dur: dict | int | float | None) -> str:
     return " ".join(parts) if parts else "0 min"
 
 
-def _check_cover_capabilities(
-    config: dict,
-    sensor_type: str | None,
-    hass: HomeAssistant | None,
-) -> tuple[dict[str, dict[str, bool] | None], list[str]]:
-    """Inspect bound cover entities and return capabilities + warning lines.
-
-    Returns:
-        cap_map:  entity_id → feature dict (None if entity unavailable)
-        warnings: list of ⚠️ strings — per-entity and cross-entity issues
-
-    """
-    entities: list[str] = config.get(CONF_ENTITIES) or []
-    if hass is None or not entities:
-        return {}, []
-
-    from .helpers import check_cover_features
-
-    warnings: list[str] = []
-
-    from .cover_types.base import CAP_HAS_SET_POSITION, caps_get
-
-    # The "not ready (unavailable)" line (rule 8a) is rendered from the shared
-    # triage engine so the summary and troubleshoot surfaces share one rule and
-    # one string (issue #970). Build the capability map up front, then index the
-    # COVER_NOT_READY findings by entity so the per-entity warning loop below
-    # keeps its exact ordering (and its interleaving with the open/close-only and
-    # assumed_state lines). Rendered in English to match the legacy raw f-string,
-    # which was hardcoded English regardless of the summary language.
-    from .const import TriageCode
-    from .diagnostics.triage import RuleInput, run_triage
-    from .reason_i18n import render
-    from .troubleshoot_i18n import load_troubleshoot_labels
-
-    cap_map: dict[str, dict[str, bool] | None] = {
-        eid: check_cover_features(hass, eid) for eid in entities
-    }
-    _not_ready = {
-        f.reason.params["eid"]: f
-        for f in run_triage({"capabilities": cap_map}, only=RuleInput.CONFIG)
-        if f.reason.code == TriageCode.COVER_NOT_READY
-    }
-    _triage_labels = load_troubleshoot_labels("en")
-
-    for eid in entities:
-        caps = cap_map[eid]
-        if caps is None:
-            warnings.append(render(_not_ready[eid].reason, _triage_labels))
-        else:
-            if not caps_get(caps, CAP_HAS_SET_POSITION):
-                warnings.append(
-                    f"⚠️ {eid} is open/close-only — will be driven via "
-                    "threshold compare, not set_position."
-                )
-            state = hass.states.get(eid)
-            if state and state.attributes.get("assumed_state"):
-                warnings.append(
-                    f"⚠️ {eid} has assumed_state — real position cannot be "
-                    "read back, which may affect position verification and delta-bypass."
-                )
-
-    known: dict[str, dict[str, bool]] = {
-        eid: caps for eid, caps in cap_map.items() if caps is not None
-    }
-
-    if known:
-        has_pos = {
-            eid for eid, caps in known.items() if caps_get(caps, CAP_HAS_SET_POSITION)
-        }
-        no_pos = {
-            eid
-            for eid, caps in known.items()
-            if not caps_get(caps, CAP_HAS_SET_POSITION)
-        }
-
-        if has_pos and no_pos:
-            warnings.append(
-                "⚠️ Mixed capabilities: some covers support set_position, "
-                "others are open/close-only — they will be driven differently."
-            )
-
-        if sensor_type is not None:
-            warnings.extend(
-                get_policy(sensor_type).capability_warnings_for_options(known, config)
-            )
-
-        min_pos_val = config.get(CONF_MIN_POSITION)
-        max_pos_val = config.get(CONF_MAX_POSITION)
-        enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
-        enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
-        limits_in_use = (
-            (min_pos_val is not None and min_pos_val != 0)
-            or (max_pos_val is not None and max_pos_val != 100)
-            or enable_min_val
-            or enable_max_val
-        )
-        oc_only = [eid for eid in no_pos if eid in known]
-        if limits_in_use and oc_only:
-            oc_str = ", ".join(oc_only)
-            warnings.append(
-                f"⚠️ Position limits are configured but {oc_str} "
-                "is open/close-only — limits will be ignored on that cover."
-            )
-
-    return cap_map, warnings
-
-
 def _build_cover_capabilities_text(
     config: dict,
     sensor_type: str | None,
@@ -1329,7 +1223,7 @@ def _build_cover_capabilities_text(
     if hass is None or not entities:
         return ""
 
-    cap_map, warnings = _check_cover_capabilities(config, sensor_type, hass)
+    cap_map, warnings = check_cover_capabilities(config, sensor_type, hass)
 
     from .cover_types.base import (
         CAP_HAS_CLOSE,
@@ -1466,7 +1360,7 @@ def _cover_type_label(
 #   * cover-type label (``policy.display_label()``)
 #   * physical-dimension block (``policy.summary_geometry_lines()``)
 #   * decision-priority short labels (Force/Weather/...) and the ✅/❌/→ marks
-#   * cover-capability warning lines built in ``_check_cover_capabilities``
+#   * cover-capability warning lines built in ``helpers.check_cover_capabilities``
 _SUMMARY_LABELS_EN: dict[str, str] = {
     # --- banners / section headers ---
     "banner.dry_run": (
@@ -2168,7 +2062,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # =========================================================================
     # Section 1c: Cover Capability Warnings
     # =========================================================================
-    _, cap_warnings = _check_cover_capabilities(config, sensor_type, hass)
+    _, cap_warnings = check_cover_capabilities(config, sensor_type, hass)
     if cap_warnings:
         lines.append("")
         lines.append(L["headers.cover_warnings"])
@@ -4448,20 +4342,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return f"{name} ({suffix} {counter})"
 
 
-# Server-rendered wrapper lines for the read-only Troubleshoot step (issue
-# #970). The per-finding bullets are translated via the troubleshoot_i18n
-# bundle; these two "envelope" states are not finding codes, so they are not in
-# that bundle (its parity lock is strictly TriageCode-keyed) and stay here.
-_TROUBLESHOOT_NO_ISSUES = (
-    "✅ No configuration or runtime issues detected — everything looks correctly "
-    "set up."
-)
-_TROUBLESHOOT_UNAVAILABLE = (
-    "ℹ️ Diagnostics aren't available yet for this cover — it may not have "
-    "completed a first update cycle. Re-check once it has run at least once."
-)
-
-
 class OptionsFlowHandler(OptionsFlow):
     """Options to adjust parameters."""
 
@@ -4650,66 +4530,40 @@ class OptionsFlowHandler(OptionsFlow):
 
         Resolves diagnostics WITHOUT running an update cycle — it never calls
         ``async_refresh`` (which runs the full pipeline and can move a cover).
-        Options, per-entity capabilities, and the resolved payload are folded
-        into one view, the triage engine runs, and the findings render as a
-        bullet report into ``description_placeholders``. The menu routes each
-        finding's ``fix_step`` to the options step that fixes it (deduped,
-        first-seen order), then a re-check (``troubleshoot``) and a back
-        (``init``) entry — a list so HA translates labels client-side (#227).
+        The view-build → triage → render sequence lives in
+        :func:`~.diagnostics.resolve.build_troubleshoot_result` (issue #1059) —
+        the single seam this step shares with the ``get_troubleshooting``
+        service, so they can never diverge. This step only adds its own
+        menu-building on top: each finding's ``fix_step`` routes to the options
+        step that fixes it (deduped, first-seen order), then a re-check
+        (``troubleshoot``) and a back (``init``) entry — a list so HA
+        translates labels client-side (#227).
         """
         from .diagnostics import resolve
-        from .diagnostics.triage import RuleInput, render_report, run_triage
         from .troubleshoot_i18n import load_troubleshoot_labels
 
-        from .cover_types import get_policy
-
         read = resolve.read_diagnostics(self.hass, self._config_entry.entry_id)
-        cap_map, _ = _check_cover_capabilities(
-            self.options, self.sensor_type, self.hass
-        )
-        view: dict[str, Any] = {
-            "options": dict(self.options),
-            "capabilities": cap_map,
-            # Policy-derived capability requirements for rule 13
-            # (COVER_FEATURE_MISMATCH): the triage engine reads these as plain
-            # data so it never branches on the cover-type string (§ cover-type
-            # boundary). Folded in here at the HA boundary where get_policy lives.
-            "axis_requirements": get_policy(self.sensor_type).axis_requirements(),
-            **(read.payload or {}),
-        }
-        # When diagnostics are unavailable there is no runtime payload, so only
-        # the CONFIG rules can run (they read options + capabilities alone). Run
-        # just those so every fix route in the menu corresponds to a finding the
-        # user actually sees in the report — never a route for an unshown,
-        # never-evaluated runtime finding (issue #970, MINOR 3).
-        unavailable = read.source == "unavailable"
-        findings = run_triage(view, only=RuleInput.CONFIG if unavailable else None)
-
         labels = await self.hass.async_add_executor_job(
             load_troubleshoot_labels,
             _resolve_summary_language(self.hass, self.context),
         )
-
-        if unavailable:
-            # Lead with the note that runtime checks need diagnostics, then list
-            # any config findings that could still be evaluated.
-            report = _TROUBLESHOOT_UNAVAILABLE
-            if findings:
-                report = f"{report}\n\n{render_report(findings, labels)}"
-        elif findings:
-            report = render_report(findings, labels)
-        else:
-            report = _TROUBLESHOOT_NO_ISSUES
+        result = resolve.build_troubleshoot_result(
+            self.hass,
+            read,
+            options=self.options,
+            sensor_type=self.sensor_type,
+            labels=labels,
+        )
 
         menu_options = [
-            *dict.fromkeys(f.fix_step for f in findings if f.fix_step),
+            *dict.fromkeys(f.fix_step for f in result.findings if f.fix_step),
             "troubleshoot",
             "init",
         ]
         return self.async_show_menu(  # type: ignore[return-value]
             step_id="troubleshoot",
             menu_options=menu_options,
-            description_placeholders={"report": report},
+            description_placeholders={"report": result.report},
         )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):

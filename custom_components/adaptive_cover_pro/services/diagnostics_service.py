@@ -2,72 +2,46 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
 from typing import TYPE_CHECKING
-
-import voluptuous as vol
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import config_validation as cv
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN
 from ..diagnostics import _sanitize
 from ..diagnostics.resolve import read_from_coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-GET_DIAGNOSTICS_SCHEMA = vol.Schema(
-    {
-        vol.Optional("entity_id"): vol.All(cv.ensure_list, [cv.entity_id]),
-        vol.Optional("device_id"): vol.All(cv.ensure_list, [str]),
-        vol.Optional("area_id"): vol.All(cv.ensure_list, [str]),
-        vol.Optional("config_entry_id"): vol.All(cv.ensure_list, [str]),
-    }
-)
-
-
-def _resolve_by_config_entry(
-    hass: HomeAssistant, entry_ids: list[str]
-) -> dict[str, object]:
-    """Resolve explicit config entry IDs to {entry_id: coordinator}.
-
-    Raises ServiceValidationError for any ID that doesn't exist or isn't ACP.
-    """
-    from . import loaded_coordinators  # noqa: PLC0415
-
-    all_coordinators = loaded_coordinators(hass)
-    result = {}
-    for entry_id in entry_ids:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is None or entry.domain != DOMAIN:
-            raise ServiceValidationError(
-                f"Config entry '{entry_id}' not found or does not belong to {DOMAIN}"
-            )
-        coord = all_coordinators.get(entry_id)
-        if coord is not None:
-            result[entry_id] = coord
-    return result
-
 
 async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
-    """Handle the get_diagnostics service call and return live diagnostics."""
+    """Handle the get_diagnostics service call and return live diagnostics.
+
+    An explicitly-named ``config_entry_id`` that resolves to no cover
+    coordinator (a cover group, a Building Profile, or an entry that isn't
+    currently loaded) degrades to a per-entry ``diagnostics: {"error": ...}``
+    entry rather than raising — a single unresolvable instance must not blank
+    an explicit multi-entry call (issue #1059 audit round 3, defect #1). An id
+    that isn't an ACP config entry at all still raises ``ServiceValidationError``
+    (see :func:`~..services._resolve_by_config_entry`).
+    """
     hass: HomeAssistant = call.hass
 
-    explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
+    from . import _resolve_service_targets  # noqa: PLC0415
 
-    if explicit_entry_ids:
-        coords_by_entry = _resolve_by_config_entry(hass, explicit_entry_ids)
-    else:
-        # Standard target resolution (entity_id / device_id / area_id / no target)
-        from . import _resolve_targets  # noqa: PLC0415
-
-        target_map = _resolve_targets(hass, call)
-        coords_by_entry = {coord.config_entry.entry_id: coord for coord in target_map}
+    coords_by_entry, unresolved = _resolve_service_targets(hass, call)
 
     entries: dict[str, dict] = {}
+    for entry_id, unresolved_entry in unresolved.items():
+        entries[entry_id] = {
+            "config_entry_id": entry_id,
+            "name": unresolved_entry.name,
+            "cover_type": None,
+            "last_update_success": False,
+            "last_update_success_time": None,
+            "diagnostics": {"error": unresolved_entry.reason},
+        }
+
     for entry_id, coord in coords_by_entry.items():
         # Read-only resolution (prefers coord.data, else a live build) — never an
         # update cycle. Unified with the download path via diagnostics.resolve.
@@ -94,9 +68,6 @@ async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
             "diagnostics": _sanitize(diag) if diag is not None else None,
         }
 
-    return {
-        "version": 1,
-        "generated_at": dt.datetime.now(dt.UTC).isoformat(),
-        "count": len(entries),
-        "entries": entries,
-    }
+    from . import _build_response_envelope  # noqa: PLC0415
+
+    return _build_response_envelope(entries)

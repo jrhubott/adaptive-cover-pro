@@ -14,9 +14,11 @@ from unittest.mock import MagicMock
 import pytest
 
 import custom_components.adaptive_cover_pro.services as services
-from custom_components.adaptive_cover_pro.const import DIAG_CACHE_KEY
+from custom_components.adaptive_cover_pro.const import DIAG_CACHE_KEY, CoverType
 from custom_components.adaptive_cover_pro.diagnostics.resolve import (
+    RESOLVE_READ_SOURCES,
     DiagnosticsRead,
+    build_troubleshoot_result,
     read_diagnostics,
     read_from_coordinator,
 )
@@ -43,6 +45,15 @@ def test_diagnostics_read_error_defaults_none():
     """Error defaults to None when omitted."""
     read = DiagnosticsRead(payload={"a": 1}, source="coordinator")
     assert read.error is None
+
+
+def test_resolve_read_sources_enumerates_the_vocabulary():
+    """RESOLVE_READ_SOURCES is the one authoritative list of every value
+    DiagnosticsRead/TroubleshootResult ``source`` can carry (issue #1059
+    audit round 3, nit #4) — locked against a literal so a new source value
+    added to one docstring but not the other can't slip through silently.
+    """
+    assert RESOLVE_READ_SOURCES == ("coordinator", "built", "cache", "unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -168,3 +179,96 @@ def test_async_refresh_never_called_on_any_path(monkeypatch):
     monkeypatch.setattr(services, "cover_coordinators", lambda hass: {"e1": spy})
     read_diagnostics(MagicMock(), "e1")
     spy.async_refresh.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# build_troubleshoot_result — the shared troubleshoot seam (issue #1059)
+# ---------------------------------------------------------------------------
+
+
+def test_build_troubleshoot_result_no_findings_uses_no_issues_text():
+    """No findings and a live source renders the "all good" envelope text."""
+    read = DiagnosticsRead(payload={}, source="coordinator")
+    result = build_troubleshoot_result(
+        MagicMock(),
+        read,
+        options={},
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    assert result.findings == []
+    assert result.source == "coordinator"
+    assert "No configuration or runtime issues detected" in result.report
+
+
+def test_build_troubleshoot_result_unavailable_source_uses_unavailable_text():
+    """An unavailable read with no CONFIG findings renders only the preamble."""
+    read = DiagnosticsRead(payload=None, source="unavailable")
+    result = build_troubleshoot_result(
+        MagicMock(),
+        read,
+        options={},
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    assert result.findings == []
+    assert result.source == "unavailable"
+    assert "Diagnostics aren't available" in result.report
+
+
+def test_build_troubleshoot_result_renders_findings_via_labels():
+    """A firing rule (dry-run left on) produces a Finding and shows in the report."""
+    read = DiagnosticsRead(
+        payload={"debug_config": {"dry_run": True}}, source="coordinator"
+    )
+    result = build_troubleshoot_result(
+        MagicMock(),
+        read,
+        options={},
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    assert len(result.findings) == 1
+    assert result.findings[0].reason.code == "triage.dry_run_left_on"
+    assert "Dry-run mode is on" in result.report
+
+
+def test_build_troubleshoot_result_unavailable_gates_out_mixed_config_runtime_rule():
+    """The ``only=RuleInput.CONFIG if unavailable else None`` gate (resolve.py)
+    actually suppresses a mixed ``CONFIG | RUNTIME`` rule when the source is
+    unavailable — the exact extraction risk the evidence packet's
+    REGRESSION_CHECK names, previously unexercised by any test (issue #1059,
+    finding #2). CLOUD_OR_SEMANTICS (rule 7) is tagged ``CONFIG | RUNTIME`` and
+    fires off options alone (more than one cloud/low-light input configured),
+    so it is a rule that COULD run with only options data but must not when
+    ``only=RuleInput.CONFIG`` drops any rule that also reads RUNTIME.
+    """
+    options = {
+        "entities": [],
+        "lux_entity": "sensor.lux",
+        "irradiance_entity": "sensor.irr",
+    }
+
+    # Gated: source is unavailable → only=RuleInput.CONFIG drops this mixed rule.
+    unavailable_result = build_troubleshoot_result(
+        MagicMock(),
+        DiagnosticsRead(payload=None, source="unavailable"),
+        options=options,
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    unavailable_codes = [f.reason.code for f in unavailable_result.findings]
+    assert "triage.cloud_or_semantics" not in unavailable_codes
+
+    # Sibling assertion: the SAME options fire the same rule when the source is
+    # NOT unavailable (only=None, every rule runs) — proves the gate itself is
+    # what suppressed the finding above, not merely an absence of data.
+    available_result = build_troubleshoot_result(
+        MagicMock(),
+        DiagnosticsRead(payload={}, source="coordinator"),
+        options=options,
+        sensor_type=CoverType.BLIND,
+        labels=None,
+    )
+    available_codes = [f.reason.code for f in available_result.findings]
+    assert "triage.cloud_or_semantics" in available_codes

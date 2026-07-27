@@ -35,17 +35,16 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
 from custom_components.adaptive_cover_pro.diagnostics.triage import (  # noqa: E402
-    TRIAGE_RULES,
     build_offline_view,
     render_report,
     run_triage,
+    wiki_anchor_for,
 )
 from custom_components.adaptive_cover_pro.troubleshoot_i18n import (  # noqa: E402
     load_troubleshoot_labels,
 )
 
 _WIKI_BASE = "https://github.com/jrhubott/adaptive-cover-pro/wiki/"
-_RULE_WIKI_BY_CODE = {rule.code: rule.wiki for rule in TRIAGE_RULES}
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -88,7 +87,7 @@ def main(argv: list[str]) -> int:
     print(render_report(findings, labels))
     print("\nWiki:")
     for finding in findings:
-        wiki = _RULE_WIKI_BY_CODE.get(finding.reason.code)
+        wiki = wiki_anchor_for(finding.reason.code)
         if wiki:
             print(f"  - {finding.reason.code}: {_WIKI_BASE}{wiki}")
     return 0

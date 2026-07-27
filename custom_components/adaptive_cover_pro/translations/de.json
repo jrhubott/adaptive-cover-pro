@@ -1941,7 +1941,17 @@
       "fields": {
         "config_entry_id": {
           "name": "Konfigurationseintrag",
-          "description": "Explizite Konfigurations-Eintrags-IDs zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl. Kein Ziel gibt alle ACP-Instanzen zurück."
+          "description": "Explizite Konfigurations-Eintrags-ID(s) zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl (Entität/Gerät/Bereich). Ganz ohne Ziel werden alle ACP-Instanzen zurückgegeben."
+        }
+      }
+    },
+    "get_troubleshooting": {
+      "name": "Fehlerbehebung abrufen",
+      "description": "Gibt die Ergebnisse des Fehlerbehebungsschritts für die gezielten Adaptive Cover Pro Instanzen als strukturierte Daten zurück, zusätzlich zum gerenderten Berichtstext.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konfigurationseintrag",
+          "description": "Explizite Konfigurations-Eintrags-ID(s) zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl (Entität/Gerät/Bereich). Ganz ohne Ziel werden alle ACP-Instanzen zurückgegeben."
         }
       }
     },

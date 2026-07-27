@@ -1437,7 +1437,17 @@
       "fields": {
         "config_entry_id": {
           "name": "Config entry",
-          "description": "Explicit config entry id(s) to query. When omitted, standard target selection applies. No target returns all ACP instances."
+          "description": "Explicit config entry id(s) to query. When omitted, standard target (entity / device / area) selection applies. No target at all returns all ACP instances."
+        }
+      }
+    },
+    "get_troubleshooting": {
+      "name": "Get troubleshooting",
+      "description": "Returns the Troubleshoot step's triage findings for the targeted Adaptive Cover Pro instances as structured data, plus the rendered report text.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Explicit config entry id(s) to query. When omitted, standard target (entity / device / area) selection applies. No target at all returns all ACP instances."
         }
       }
     },

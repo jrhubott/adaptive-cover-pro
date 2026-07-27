@@ -3610,7 +3610,7 @@ def test_summary_building_profile_line_when_linked() -> None:
             self.title = title
 
     class _FakeStates:
-        """Minimal hass.states stub so _check_cover_capabilities doesn't crash."""
+        """Minimal hass.states stub so check_cover_capabilities doesn't crash."""
 
         def get(self, entity_id: str):  # noqa: D102
             return None
