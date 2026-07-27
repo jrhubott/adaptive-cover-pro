@@ -1789,6 +1789,117 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
 
 
 @pytest.mark.integration
+async def test_options_flow_delete_custom_position_slot_frees_it_for_clean_reuse(
+    hass: HomeAssistant,
+) -> None:
+    """🗑️ Delete must erase every key a slot owns, form-key or not (issue #1071).
+
+    Blanking a slot's form fields leaves the card/service-controlled leftovers
+    (``enabled``, ``min_mode``, ``use_my``, ``position_max``) in storage, so the
+    slot number the next "Add" hands out arrives pre-poisoned — most sharply,
+    ``enabled=False`` silently disables the brand-new slot. Delete pops the full
+    stored key map, so a re-added slot starts genuinely clean.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    slot2 = CUSTOM_POSITION_SLOTS[2]
+    slot3 = CUSTOM_POSITION_SLOTS[3]
+    # Slots 1 and 2 exist independently — they must survive untouched, and they
+    # keep slot 3 the lowest free number once it is deleted.
+    pre_options[slot1["sensors"]] = ["binary_sensor.slot_1"]
+    pre_options[slot1["position"]] = 15
+    pre_options[slot1["priority"]] = 30
+    pre_options[slot2["sensors"]] = ["binary_sensor.slot_2"]
+    pre_options[slot2["position"]] = 20
+    # Slot 3 as the card + service leave it: form fields plus the inert keys the
+    # per-slot page can never clear.
+    pre_options[slot3["sensors"]] = ["binary_sensor.slot_3"]
+    pre_options[slot3["sensor"]] = "binary_sensor.slot_3"
+    pre_options[slot3["position"]] = 25
+    pre_options[slot3["priority"]] = 60
+    pre_options[slot3["position_max"]] = 80
+    pre_options[slot3["enabled"]] = False
+    pre_options[slot3["min_mode"]] = True
+    pre_options[slot3["use_my"]] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Delete Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=pre_options,
+        entry_id="custom_pos_delete_01",
+        title="Delete Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position"}
+    )
+    assert "custom_position_slot_3" in result.get("menu_options", {})
+    assert "delete_custom_position" in result.get("menu_options", {})
+
+    # The chooser IS the confirm step.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "delete_custom_position"}
+    )
+    assert result["step_id"] == "delete_slot"
+    assert "delete_custom_position_slot_3" in result.get("menu_options", {})
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "delete_custom_position_slot_3"}
+    )
+    assert result["type"] == "menu"  # back on the sub-menu
+    assert "custom_position_slot_3" not in result.get("menu_options", {})
+    assert "custom_position_slot_1" in result.get("menu_options", {})
+
+    # Add lands on the freed number and opens a genuinely blank page.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_custom_position"}
+    )
+    assert result["step_id"] == "custom_position_slot"
+    assert result["description_placeholders"]["slot"] == "3"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "custom_position_sensors": ["binary_sensor.fresh"],
+            "custom_position": 70,
+            "custom_position_priority": 55,
+        },
+    )
+    assert result["type"] == "menu"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    saved = result["data"]
+    # `enabled` is opt-out and never on the form — only a pop clears it, and a
+    # stored None would still read as "disabled".
+    assert slot3["enabled"] not in saved, "the reused slot must start enabled"
+    # BooleanSelectors, so the fresh submit writes False back: assert falsy.
+    assert not saved.get(slot3["min_mode"])
+    assert not saved.get(slot3["use_my"])
+    assert saved.get(slot3["position_max"]) is None
+    # The fresh config's own values are in place, mirror included.
+    assert saved[slot3["position"]] == 70
+    assert saved[slot3["priority"]] == 55
+    assert saved[slot3["sensors"]] == ["binary_sensor.fresh"]
+    assert saved.get(slot3["sensor"]) == "binary_sensor.fresh"
+    # Neighbouring slots untouched.
+    assert saved[slot1["position"]] == 15
+    assert saved[slot1["priority"]] == 30
+
+
+@pytest.mark.integration
 async def test_cleared_start_time_persists_blank(hass: HomeAssistant) -> None:
     """Clearing the start time in the automation step must not persist '00:00:00'.
 

@@ -2,7 +2,7 @@
 
 import datetime as dt
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, timedelta
 from functools import partial
@@ -290,6 +290,56 @@ def mirror_legacy_slot_sensor_keys(options: dict) -> None:
             # Slot cleared: null the stale mirror so neither old nor new code
             # resurrects it. Never-configured slots get no key at all.
             options[slot_keys["sensor"]] = None
+
+
+def clear_slot(
+    options: dict[str, Any],
+    slot_keys: Mapping[str, str],
+    *,
+    keep: Collection[str] = (),
+) -> None:
+    """Remove the stored option keys owned by one slot (issue #1071).
+
+    Single source of truth for "this slot no longer exists". Drives off the
+    FULL stored key map (``CUSTOM_POSITION_SLOTS[n]`` / ``BLIND_SPOT_SLOTS[n]``
+    / ``GLARE_ZONE_SLOTS[n]``), never the narrower ``*_FORM_KEYS`` subset the
+    save path merges, so non-form keys — custom position's card-controlled
+    ``enabled``, blind spot's legacy FOV-relative ``left``/``right`` — cannot
+    survive into the slot number the next "Add" hands out.
+
+    ``keep`` names SUB-KEYS (this mapping's own keys, e.g. ``"sensors"``) to
+    spare. It exists for the "➕ Add…" reuse path, which lands on a slot that
+    is merely *unconfigured* — possibly holding half-entered data the user
+    still wants. That caller passes the sub-keys its page renders for this
+    instance, so the data comes back as a pre-filled form the user can finish
+    or clear, while everything the page has no field for goes — an unrenderable
+    key would otherwise be stranded, invisible and unresettable. Delete passes
+    nothing and wipes the lot.
+
+    Keys are POPPED, not set to ``None``: ``enabled`` is opt-out, read as
+    ``options.get(key, DEFAULT_CUSTOM_POSITION_ENABLED)``, so a stored ``None``
+    is a present-but-falsy key that would leave the reused slot disabled.
+    """
+    for sub, key in slot_keys.items():
+        if sub in keep:
+            continue
+        options.pop(key, None)
+
+
+def clear_custom_position_slot(
+    options: dict[str, Any], slot: int, *, keep: Collection[str] = ()
+) -> None:
+    """Clear custom-position slot *slot*, legacy sensor mirror included.
+
+    The one entry point for "erase this custom-position slot" — the config
+    flow's delete/reuse paths call it, and a future ``clear_custom_position``
+    service should call exactly this rather than re-deriving the key list.
+    ``keep`` threads straight through to :func:`clear_slot`; the mirror pass
+    then re-derives the legacy single-sensor key from whatever ``sensors``
+    survived, so a spared list never leaves a stale or missing mirror behind.
+    """
+    clear_slot(options, CUSTOM_POSITION_SLOTS[slot], keep=keep)
+    mirror_legacy_slot_sensor_keys(options)
 
 
 # Sub-keys whose presence gives a slot something to contribute on its own,
