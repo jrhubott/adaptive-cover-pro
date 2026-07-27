@@ -27,7 +27,7 @@ the same composed-class pattern that Phase B established with
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 from collections.abc import Callable
 
 from homeassistant.const import ATTR_FRIENDLY_NAME, STATE_ON
@@ -158,6 +158,9 @@ def _opt_int(options: dict, key: str) -> int | None:
     return int(raw) if raw is not None else None
 
 
+_T = TypeVar("_T")
+
+
 class PipelineSnapshotBuilder:
     """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`.
 
@@ -195,6 +198,17 @@ class PipelineSnapshotBuilder:
         # (build() and the coordinator release-edge stamp) share it and agree.
         # A config-entry reload constructs a fresh builder, clearing it.
         self._last_valid_custom_position: dict[int, CustomPositionSensorState] = {}
+        # Last VALID per-input fold state, keyed by slot number (issue #1012).
+        # #1005's cache above only holds the *combined* slot state when every
+        # input is invalid at once. When a slot has a sensor AND a template, one
+        # input can go transiently invalid while the other still opines — the
+        # combined is_valid stays True, so the #1005 hold never engages, and the
+        # dropped input's fresh False silently wins the fold. These two caches
+        # hold each input's own last-valid contribution, substituted only when
+        # that specific input's own validity flag is False this cycle, before
+        # the OR/AND fold runs. Written via the shared _hold_or_fresh helper.
+        self._last_valid_sensor_fold: dict[int, tuple[bool, tuple[str, ...]]] = {}
+        self._last_valid_template_active: dict[int, bool] = {}
 
     # ---- HA reads ---------------------------------------------------------
 
@@ -282,6 +296,23 @@ class PipelineSnapshotBuilder:
             ),
         )
 
+    @staticmethod
+    def _hold_or_fresh(
+        cache: dict[int, _T], slot: int, *, valid: bool, fresh: _T
+    ) -> _T:
+        """Return ``fresh`` when ``valid``; else the cached value for ``slot``.
+
+        Writes ``fresh`` into ``cache`` whenever ``valid`` is True, so the
+        cache always reflects this input's last genuinely valid reading.
+        Falls back to ``fresh`` itself when ``slot`` was never cached (a
+        first-ever invalid read has no prior state to hold — same "no hold on
+        cold start" contract as #1005's whole-slot cache).
+        """
+        if valid:
+            cache[slot] = fresh
+            return fresh
+        return cache.get(slot, fresh)
+
     def read_custom_position_sensors(
         self, options: dict
     ) -> list[CustomPositionSensorState]:
@@ -297,6 +328,18 @@ class PipelineSnapshotBuilder:
         ``use_my`` defaults to False (when True the slot triggers the cover's
         hardware "My" preset via ``stop_cover`` instead of the slot's numeric
         position).
+
+        Two layers of "hold last-valid" protect against transient invalid
+        reads. Per-input (issue #1012): the sensor-OR and the template
+        opinion are each held to their own last-valid contribution — via
+        :meth:`_hold_or_fresh` — whenever that specific input alone is
+        invalid this cycle, *before* the OR/AND fold runs. This prevents one
+        dropped input (e.g. a sensor going transiently unavailable) from
+        silently outvoting a template (or vice versa) that is still opining
+        normally. Whole-slot (issue #1005): the combined ``is_on`` is held to
+        ``_last_valid_custom_position`` only when *every* input is invalid at
+        once — the outer safety net for the fully-invalid case, unchanged by
+        the per-input hold above.
         """
         result: list[CustomPositionSensorState] = []
         for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
@@ -319,6 +362,16 @@ class PipelineSnapshotBuilder:
             # The slot has a usable sensor input this cycle when at least one
             # bound sensor reported a non-invalid value.
             sensors_valid = any(v is not None for v in safe_states.values())
+            # Hold the sensor side's own last-valid fold input when every
+            # bound sensor is invalid this cycle (issue #1012) — before the
+            # OR/AND fold below, so a template opining alongside a dropped
+            # sensor can't let the sensor's fresh False silently win.
+            sensors_on, active = self._hold_or_fresh(
+                self._last_valid_sensor_fold,
+                slot,
+                valid=sensors_valid,
+                fresh=(sensors_on, active),
+            )
 
             template = options.get(slot_keys["template"])
             has_template = is_template_string(template)
@@ -330,6 +383,15 @@ class PipelineSnapshotBuilder:
             )
             template_active = bool(template_opinion) if has_template else None
             template_valid = template_opinion is not None
+            # Symmetric hold for the template side (issue #1012): only
+            # meaningful when a template is actually configured.
+            if has_template:
+                template_active = self._hold_or_fresh(
+                    self._last_valid_template_active,
+                    slot,
+                    valid=template_valid,
+                    fresh=bool(template_active),
+                )
             mode = (
                 options.get(slot_keys["template_mode"]) or DEFAULT_TEMPLATE_COMBINE_MODE
             )
