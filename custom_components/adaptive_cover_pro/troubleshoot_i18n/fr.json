@@ -27,6 +27,7 @@
     "skip_cover_unavailable": "⚠️ La dernière commande vers {entity} a été ignorée{when} car le store était indisponible. Vérifiez l'appareil — il était hors ligne quand l'intégration a essayé de le déplacer.",
     "skip_age": " il y a {age_minutes} minutes",
     "stale_version": "⚠️ Une version plus récente est disponible : vous êtes sur {current} mais {latest} est sortie. Mettez à jour l'intégration via HACS pour bénéficier des derniers correctifs.",
-    "mixed_temp_units": "🛑 Le capteur de température intérieure indique {inside_unit} mais le capteur de température extérieure indique {outside_unit}. Adaptive Cover Pro ne convertit pas entre les unités, les comparaisons climatiques seront donc erronées. Réglez les deux capteurs de température sur la même unité."
+    "mixed_temp_units": "🛑 Le capteur de température intérieure indique {inside_unit} mais le capteur de température extérieure indique {outside_unit}. Adaptive Cover Pro ne convertit pas entre les unités, les comparaisons climatiques seront donc erronées. Réglez les deux capteurs de température sur la même unité.",
+    "endpoint_position_not_tracking": "⚠️ La commande {service} a été envoyée à {entity} pour la fin de course {target}% et il se signale {state}, mais son attribut de position reste à {current}%. Ce store ne met pas à jour sa position signalée lors des commandes d'ouverture/fermeture. Désactivez « Utiliser les commandes d'ouverture/fermeture aux fins de course » pour que l'intégration envoie plutôt set_cover_position."
   }
 }

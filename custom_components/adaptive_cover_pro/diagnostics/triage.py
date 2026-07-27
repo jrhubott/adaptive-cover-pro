@@ -38,6 +38,7 @@ from ..const import (
     CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_TIME,
+    CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_IRRADIANCE_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
@@ -46,6 +47,7 @@ from ..const import (
     CONF_MAX_ELEVATION,
     CONF_MIN_POSITION,
     CONF_OUTSIDETEMP_ENTITY,
+    CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_START_ENTITY,
@@ -59,6 +61,7 @@ from ..const import (
     GLARE_ZONE_SLOTS,
     POSITION_CLOSED,
     POSITION_OPEN,
+    POSITION_TOLERANCE_PERCENT,
     ControlStatus,
     TriageCode,
 )
@@ -104,6 +107,14 @@ _NEAR_BINARY_DISTANCE_M = 0.75
 # A movement-hysteresis delta wider than this (%) is "wide" for rule 19 — a
 # special 0/100 default paired with it means fine intermediate moves are gated.
 _WIDE_DELTA_PCT = 5
+
+# Mirrors cover_types.base.CAP_HAS_SET_POSITION — duplicated because that
+# module imports Home Assistant and this one may not; see module docstring.
+_CAP_HAS_SET_POSITION = "has_set_position"
+# HA state strings for the mechanical stops this rule discriminates on. Named
+# here (not imported from homeassistant.const) for the same reason.
+_HA_STATE_OPEN = "open"
+_HA_STATE_CLOSED = "closed"
 
 
 # ---------------------------------------------------------------------------
@@ -925,6 +936,63 @@ def _check_stale_version(data: Mapping) -> Iterable[Mapping]:
         yield {"latest": latest_raw, "current": current_raw}
 
 
+def _check_endpoint_position_not_tracking(data: Mapping) -> Iterable[Mapping]:
+    """Rule 25 — an endpoint open/close command never moved current_position.
+
+    Fires when endpoint_use_open_close routed a 0/100 target to open_cover/
+    close_cover, the reconciliation loop is still waiting (not given up), the
+    reported current_position never converged within tolerance, AND the
+    entity's own HA state already claims the matching mechanical stop — the
+    "claims open but position stuck at 0" discriminator #1026 identifies.
+    Distinct from rule 18 (ENDPOINT_CHASE), which requires gave_up is True;
+    this rule requires gave_up is NOT True, so the two are mutually exclusive.
+    """
+    options = _get(data, "options")
+    if not isinstance(options, Mapping) or not options.get(
+        CONF_ENDPOINT_USE_OPEN_CLOSE
+    ):
+        return
+    commands = _get(data, "cover_commands")
+    covers = _get(data, "covers")
+    if not isinstance(commands, Mapping) or not isinstance(covers, Mapping):
+        return
+    tolerance = options.get(CONF_POSITION_TOLERANCE)
+    tolerance = (
+        int(tolerance)
+        if isinstance(tolerance, int | float) and not isinstance(tolerance, bool)
+        else POSITION_TOLERANCE_PERCENT
+    )
+    for eid, state in commands.items():
+        if not isinstance(state, Mapping):
+            continue
+        target = state.get("target_call")
+        if target not in (POSITION_CLOSED, POSITION_OPEN):
+            continue
+        if state.get("wait_for_target") is not True or state.get("gave_up") is True:
+            continue
+        cover = covers.get(eid)
+        if not isinstance(cover, Mapping):
+            continue
+        current = cover.get("current_position")
+        if not isinstance(current, int | float) or isinstance(current, bool):
+            continue
+        if abs(current - target) <= tolerance:
+            continue
+        expected = _HA_STATE_OPEN if target == POSITION_OPEN else _HA_STATE_CLOSED
+        if cover.get("ha_state") != expected:
+            continue
+        caps = cover.get("capabilities")
+        if not isinstance(caps, Mapping) or not caps.get(_CAP_HAS_SET_POSITION):
+            continue
+        yield {
+            "entity": eid,
+            "service": "open_cover" if target == POSITION_OPEN else "close_cover",
+            "target": target,
+            "state": expected,
+            "current": current,
+        }
+
+
 # ---------------------------------------------------------------------------
 # The rule table
 # ---------------------------------------------------------------------------
@@ -1181,6 +1249,15 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         wiki="Troubleshooting-Findings#stale-version",
         issues=(972,),
         check=_check_stale_version,
+    ),
+    TriageRule(
+        code=TriageCode.ENDPOINT_POSITION_NOT_TRACKING,
+        severity=Severity.WARNING,
+        inputs=RuleInput.CONFIG | RuleInput.RUNTIME,
+        fix_step="position",
+        wiki="Troubleshooting-Findings#endpoint-position-not-tracking",
+        issues=(1026,),
+        check=_check_endpoint_position_not_tracking,
     ),
 )
 

@@ -27,6 +27,7 @@
     "skip_cover_unavailable": "⚠️ Der letzte Befehl an {entity} wurde übersprungen{when}, weil die Beschattung nicht verfügbar war. Überprüfen Sie das Gerät – es war offline, als die Integration versuchte, es zu bewegen.",
     "skip_age": " vor {age_minutes} Minuten",
     "stale_version": "⚠️ Eine neuere Version ist verfügbar: Sie nutzen {current}, aber {latest} ist erschienen. Aktualisieren Sie die Integration über HACS, um die neuesten Fehlerbehebungen zu erhalten.",
-    "mixed_temp_units": "🛑 Der Innentemperatursensor meldet {inside_unit}, aber der Außentemperatursensor meldet {outside_unit}. Adaptive Cover Pro rechnet nicht zwischen Einheiten um, daher werden Klimavergleiche falsch. Stellen Sie beide Temperatursensoren auf dieselbe Einheit ein."
+    "mixed_temp_units": "🛑 Der Innentemperatursensor meldet {inside_unit}, aber der Außentemperatursensor meldet {outside_unit}. Adaptive Cover Pro rechnet nicht zwischen Einheiten um, daher werden Klimavergleiche falsch. Stellen Sie beide Temperatursensoren auf dieselbe Einheit ein.",
+    "endpoint_position_not_tracking": "⚠️ {entity} wurde der Befehl {service} für den {target}%-Endpunkt gesendet und meldet sich selbst als {state}, aber sein Positionsattribut steht weiterhin auf {current}%. Diese Beschattung aktualisiert ihre gemeldete Position nicht durch Öffnen/Schließen-Befehle. Schalten Sie \"Öffnen/Schließen-Befehle an den Endlagen verwenden\" aus, damit die Integration stattdessen set_cover_position sendet."
   }
 }
