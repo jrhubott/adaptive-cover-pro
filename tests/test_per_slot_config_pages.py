@@ -421,12 +421,12 @@ def test_getattr_rejects_non_slot_delete_names():
 async def test_add_slot_wipes_inert_keys_before_reuse():
     # A slot holding only inert leftovers is NOT configured, so it never shows
     # on the menu and Delete cannot reach it — but Add hands it straight back.
+    # "Inert" means the single-slot page cannot render it: the card-controlled
+    # `enabled` flag and the legacy single-sensor mirror.
     slot1 = CUSTOM_POSITION_SLOTS[1]
     inert = {
         slot1["enabled"]: False,
-        slot1["min_mode"]: True,
-        slot1["use_my"]: True,
-        slot1["tilt_only"]: True,
+        slot1["sensor"]: "binary_sensor.stale",
     }
     flow = _options_flow(dict(inert))
     assert flow._lowest_free_slot("custom_position") == 1
@@ -438,3 +438,164 @@ async def test_add_slot_wipes_inert_keys_before_reuse():
     assert result["type"] == "form"
     assert result["step_id"] == "custom_position_slot"
     assert result["description_placeholders"]["slot"] == "1"
+
+
+def _suggested(result) -> dict[str, object]:
+    """Map schema key → the value seeded back onto the rendered form."""
+    return {
+        str(marker): marker.description["suggested_value"]
+        for marker in result["data_schema"].schema
+        if getattr(marker, "description", None)
+        and "suggested_value" in marker.description
+    }
+
+
+@pytest.mark.asyncio
+async def test_add_slot_preserves_partial_form_data_but_drops_inert_keys():
+    """Add must not throw away a half-finished slot's entered data (#1071).
+
+    ``_lowest_free_slot`` returns the lowest slot failing its *configured*
+    gate, and "not configured" is not "empty": a custom position with a
+    trigger but no axis claim, a blind spot with an elevation but no gammas, a
+    glare zone with geometry but no name are all real states a user can leave
+    behind — and none of them shows on the sub-menu, so Add is the only route
+    back in. Add therefore clears only the sub-keys the page cannot render;
+    every form key is seeded straight back so the user can finish or clear it.
+    """
+    # ── custom positions: trigger + name + template, no axis claim ──────
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    flow = _options_flow(
+        {
+            slot1["sensors"]: ["binary_sensor.trigger"],
+            slot1["name"]: "Movie night",
+            slot1["template"]: "{{ true }}",
+            # BooleanSelectors on the page — pre-filled, so not silent.
+            slot1["min_mode"]: True,
+            slot1["use_my"]: True,
+            slot1["tilt_only"]: True,
+            slot1["enabled"]: False,
+        }
+    )
+    assert flow._lowest_free_slot("custom_position") == 1
+
+    result = await flow.async_step_add_custom_position()
+
+    assert flow.options[slot1["sensors"]] == ["binary_sensor.trigger"]
+    assert flow.options[slot1["name"]] == "Movie night"
+    assert flow.options[slot1["template"]] == "{{ true }}"
+    assert flow.options[slot1["min_mode"]] is True
+    assert flow.options[slot1["use_my"]] is True
+    assert flow.options[slot1["tilt_only"]] is True
+    # Never on the form, so nothing could show or reset it — it must go.
+    assert slot1["enabled"] not in flow.options
+    # The legacy mirror is re-derived from the surviving list, not left stale.
+    assert flow.options[slot1["sensor"]] == "binary_sensor.trigger"
+    assert result["type"] == "form"
+    assert result["description_placeholders"]["slot"] == "1"
+    # The user-visible half: the rendered form carries the values back.
+    suggested = _suggested(result)
+    assert suggested[CUSTOM_POSITION_FORM_KEYS["name"]] == "Movie night"
+    assert suggested[CUSTOM_POSITION_FORM_KEYS["sensors"]] == ["binary_sensor.trigger"]
+    assert suggested[CUSTOM_POSITION_FORM_KEYS["template"]] == "{{ true }}"
+    assert suggested[CUSTOM_POSITION_FORM_KEYS["min_mode"]] is True
+    assert suggested[CUSTOM_POSITION_FORM_KEYS["use_my"]] is True
+
+    # ── blind spots: elevation set, gammas unset → not configured ───────
+    bs1 = BLIND_SPOT_SLOTS[1]
+    flow = _options_flow(
+        {
+            "fov_left": 45,
+            "fov_right": 45,
+            bs1["elevation"]: 20,
+            bs1["elevation_mode"]: "below",
+            # Legacy FOV-relative edges — migration-read-only, never rendered.
+            bs1["left"]: 10,
+            bs1["right"]: 12,
+        }
+    )
+    assert flow._lowest_free_slot("blind_spot") == 1
+
+    result = await flow.async_step_add_blind_spot()
+
+    assert flow.options[bs1["elevation"]] == 20
+    assert flow.options[bs1["elevation_mode"]] == "below"
+    assert bs1["left"] not in flow.options
+    assert bs1["right"] not in flow.options
+    assert result["type"] == "form"
+    assert result["description_placeholders"]["slot"] == "1"
+    suggested = _suggested(result)
+    assert suggested[BLIND_SPOT_FORM_KEYS["elevation"]] == 20
+    assert suggested[BLIND_SPOT_FORM_KEYS["elevation_mode"]] == "below"
+
+    # ── glare zones: geometry set, name blank → not configured ──────────
+    # Form keys and slot keys are set-identical here, so Add pops nothing.
+    gz1 = GLARE_ZONE_SLOTS[1]
+    assert set(GLARE_ZONE_FORM_KEYS) == set(gz1)
+    flow = _options_flow({gz1["x"]: 0.5, gz1["y"]: 1.0, gz1["radius"]: 0.3})
+    assert flow._lowest_free_slot("glare_zone") == 1
+
+    result = await flow.async_step_add_glare_zone()
+
+    assert flow.options[gz1["x"]] == 0.5
+    assert flow.options[gz1["y"]] == 1.0
+    assert flow.options[gz1["radius"]] == 0.3
+    assert result["type"] == "form"
+    assert result["description_placeholders"]["slot"] == "1"
+    suggested = _suggested(result)
+    assert suggested[GLARE_ZONE_FORM_KEYS["x"]] == 0.5
+    assert suggested[GLARE_ZONE_FORM_KEYS["radius"]] == 0.3
+
+
+@pytest.mark.asyncio
+async def test_delete_slot_still_pops_form_keys():
+    """Delete is the other half of the split: it erases the FULL key map.
+
+    Add spares form keys so half-finished work survives a reuse; Delete means
+    "this slot is gone", so every key it owns goes — form keys included.
+    """
+    slot3 = CUSTOM_POSITION_SLOTS[3]
+    options: dict = {}
+    _seed_custom_position(options, 3)
+    flow = _options_flow(options)
+    flow.async_step_custom_position = AsyncMock(return_value={"type": "menu"})
+
+    await flow.async_step_delete_custom_position_slot_3()
+
+    for sub in CUSTOM_POSITION_FORM_KEYS:
+        assert slot3[sub] not in flow.options, f"{slot3[sub]} survived the delete"
+
+    bs2 = BLIND_SPOT_SLOTS[2]
+    flow = _options_flow({bs2[sub]: 5 for sub in bs2})
+    flow.async_step_blind_spot = AsyncMock(return_value={"type": "menu"})
+
+    await flow.async_step_delete_blind_spot_slot_2()
+
+    for sub in BLIND_SPOT_FORM_KEYS:
+        assert bs2[sub] not in flow.options, f"{bs2[sub]} survived the delete"
+
+    gz2 = GLARE_ZONE_SLOTS[2]
+    flow = _options_flow({gz2[sub]: "x" for sub in gz2})
+    flow.async_step_glare_zones = AsyncMock(return_value={"type": "menu"})
+
+    await flow.async_step_delete_glare_zone_slot_2()
+
+    for sub in GLARE_ZONE_FORM_KEYS:
+        assert gz2[sub] not in flow.options, f"{gz2[sub]} survived the delete"
+
+
+@pytest.mark.asyncio
+async def test_delete_slot_step_without_an_area_falls_back_to_the_root_menu():
+    """A bare ``delete_slot`` re-render has no area yet — show init, not blow up.
+
+    ``_delete_area`` is only set by the chooser, so an early or replayed
+    ``delete_slot`` step would index ``_SLOT_AREA_META[""]`` and raise.
+    """
+    flow = _options_flow({})
+    # async_step_init reads the live entry through HA's flow plumbing.
+    flow.handler = "delete_slot_fallback"
+    flow.hass.config_entries.async_entries.return_value = []
+
+    result = await flow.async_step_delete_slot()
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"

@@ -3850,6 +3850,20 @@ _SLOT_AREA_META: dict[str, tuple[tuple[int, ...], dict[int, dict[str, str]]]] = 
     "glare_zone": (GLARE_ZONE_SLOT_NUMBERS, GLARE_ZONE_SLOTS),
 }
 
+# The sub-keys each area's single-slot page actually renders — i.e. the ones a
+# user can see and change. Resolved from the ``*_FORM_KEYS`` maps so there is
+# one definition of "on the form" (issue #1071). Used by the "➕ Add…" reuse
+# path, which lands on a slot that is unconfigured but not necessarily empty:
+# it spares these so half-entered data comes back as a pre-filled form, and
+# drops the rest (custom position's card-controlled ``enabled`` and legacy
+# ``sensor`` mirror, blind spot's legacy FOV-relative edges), which have no UI
+# and would otherwise be inherited invisibly. Delete spares nothing.
+_SLOT_AREA_FORM_SUBKEYS: dict[str, frozenset[str]] = {
+    "custom_position": frozenset(CUSTOM_POSITION_FORM_KEYS),
+    "blind_spot": frozenset(BLIND_SPOT_FORM_KEYS),
+    "glare_zone": frozenset(GLARE_ZONE_FORM_KEYS),
+}
+
 # The metres-stored generic length keys for a single glare-zone page — the
 # per-slot analogue of ``_glare_zone_length_keys`` used for locale conversion.
 _GLARE_ZONE_FORM_LENGTH_KEYS: tuple[str, ...] = tuple(
@@ -4404,10 +4418,12 @@ class OptionsFlowHandler(OptionsFlow):
                 free = self._lowest_free_slot(_area)
                 if free is None:  # every slot full — fall back to the sub-menu
                     return await getattr(self, f"async_step_{_area_menu(_area)}")()
-                # A slot can be un-configured yet still hold inert keys left by
-                # an older blank-out (issue #1071) — and such a slot never
-                # appears on the menu, so Delete cannot reach it. Wipe on reuse.
-                self._clear_slot_keys(_area, free)
+                # A slot can be un-configured yet still hold keys left by an
+                # older blank-out (issue #1071) — and such a slot never appears
+                # on the menu, so Delete cannot reach it. Drop the ones with no
+                # UI; the form keys stay and are seeded back so a half-finished
+                # slot's entered data survives the reuse.
+                self._clear_slot_keys(_area, free, keep_form_keys=True)
                 self._active_slot[_area] = free
                 return await getattr(self, f"_render_{_area}_slot")(user_input)
 
@@ -4767,15 +4783,28 @@ class OptionsFlowHandler(OptionsFlow):
         every returned ``step_id`` to resolve to a handler method, so this must
         exist even though a menu selection routes straight to its target step.
         """
+        if not self._delete_area:
+            # Reached without the chooser having set an area (a replayed or
+            # out-of-order step). There is nothing to list, so fall back to the
+            # options root rather than indexing _SLOT_AREA_META[""].
+            return await self.async_step_init()
         return self._slot_menu(self._delete_area, delete=True)
 
-    def _clear_slot_keys(self, area: str, n: int) -> None:
-        """Drop every stored option key owned by slot *n* of *area* (#1071)."""
-        _, slots = _SLOT_AREA_META[area]
+    def _clear_slot_keys(
+        self, area: str, n: int, *, keep_form_keys: bool = False
+    ) -> None:
+        """Drop the stored option keys owned by slot *n* of *area* (#1071).
+
+        ``keep_form_keys`` spares the sub-keys the area's single-slot page
+        renders — the "➕ Add…" reuse policy. Delete takes the default and wipes
+        the whole key map.
+        """
+        keep = _SLOT_AREA_FORM_SUBKEYS[area] if keep_form_keys else frozenset()
         if area == "custom_position":
-            clear_custom_position_slot(self.options, n)
-        else:
-            clear_slot(self.options, slots[n])
+            clear_custom_position_slot(self.options, n, keep=keep)
+            return
+        _, slots = _SLOT_AREA_META[area]
+        clear_slot(self.options, slots[n], keep=keep)
 
     async def _delete_slot(self, area: str, n: int) -> FlowResult:
         """Erase slot *n* and return to the area sub-menu (issue #1071)."""
