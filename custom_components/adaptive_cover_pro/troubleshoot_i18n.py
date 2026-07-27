@@ -196,6 +196,14 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         "convert between units, so climate comparisons will be wrong. Set both "
         "temperature sensors to the same unit."
     ),
+    # Rule 25
+    TriageCode.ENDPOINT_POSITION_NOT_TRACKING: (
+        "⚠️ {entity} was sent {service} for the {target}% endpoint and reports "
+        "itself {state}, but its position attribute is still {current}%. This "
+        "cover doesn't update its reported position from open/close commands. "
+        "Turn off 'Use open/close at endpoints' so the integration sends "
+        "set_cover_position instead."
+    ),
 }
 
 

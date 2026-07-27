@@ -13,7 +13,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_OUTSIDETEMP_ENTITY,
+    POSITION_OPEN,
     ControlMethod,
     TriageCode,
 )
@@ -327,3 +329,69 @@ def test_mixed_temp_units_does_not_fire_when_units_match():
     )
     findings = run_triage({"options": {}, **diag})
     assert TriageCode.MIXED_TEMP_UNITS not in _codes(findings)
+
+
+# ---------------------------------------------------------------------------
+# (ix) rule 25 ENDPOINT_POSITION_NOT_TRACKING fires on real covers/cover_commands
+# ---------------------------------------------------------------------------
+
+
+def _endpoint_covers(current_position: int) -> dict:
+    return {
+        "cover.a": {
+            "current_position": current_position,
+            "available": True,
+            "transit_state": None,
+            "ha_state": "open",
+            "capabilities": {
+                "has_set_position": True,
+                "has_set_tilt_position": False,
+                "has_open": True,
+                "has_close": True,
+            },
+        }
+    }
+
+
+def _endpoint_command_state() -> dict:
+    return {
+        "cover.a": {
+            "target_call": POSITION_OPEN,
+            "wait_for_target": True,
+            "retry_count": 0,
+            "gave_up": False,
+        }
+    }
+
+
+def test_endpoint_position_not_tracking_fires_on_real_builder_output():
+    """A stuck-at-0 cover claiming "open" under endpoint routing → the new rule.
+
+    Proves rule 25's RUNTIME key path — ``covers[eid]["ha_state"]`` (the field
+    added to ``coordinator.build_diagnostic_data()`` for issue #1026) — survives
+    the real ``DiagnosticsBuilder`` passthrough, not just a hand-built dict.
+    """
+    diag, _ = DiagnosticsBuilder().build(
+        _base_ctx(
+            covers=_endpoint_covers(current_position=0),
+            cover_command_state=_endpoint_command_state(),
+        )
+    )
+
+    # Sanity: the builder really did emit the keys the rule reads.
+    assert diag["covers"]["cover.a"]["ha_state"] == "open"
+    assert diag["cover_commands"]["cover.a"]["target_call"] == POSITION_OPEN
+
+    findings = run_triage({"options": {CONF_ENDPOINT_USE_OPEN_CLOSE: True}, **diag})
+    assert TriageCode.ENDPOINT_POSITION_NOT_TRACKING in _codes(findings)
+
+
+def test_endpoint_position_not_tracking_does_not_fire_when_position_tracks():
+    diag, _ = DiagnosticsBuilder().build(
+        _base_ctx(
+            covers=_endpoint_covers(current_position=100),
+            cover_command_state=_endpoint_command_state(),
+        )
+    )
+    findings = run_triage({"options": {CONF_ENDPOINT_USE_OPEN_CLOSE: True}, **diag})
+    assert TriageCode.ENDPOINT_POSITION_NOT_TRACKING not in _codes(findings)

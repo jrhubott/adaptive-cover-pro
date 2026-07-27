@@ -3628,6 +3628,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "current_position": _positions.get(eid),
                 "transit_state": self._cmd_svc.get_transit_direction(eid),
                 "available": _positions.get(eid) is not None,
+                "ha_state": getattr(self.hass.states.get(eid), "state", None),
                 "capabilities": (
                     dataclasses.asdict(_caps[eid]) if eid in _caps else None
                 ),

@@ -13,7 +13,10 @@ from pathlib import Path
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ENDPOINT_USE_OPEN_CLOSE,
     CUSTOM_POSITION_SAFETY_PRIORITY,
+    POSITION_CLOSED,
+    POSITION_OPEN,
     TriageCode,
 )
 from custom_components.adaptive_cover_pro.diagnostics.triage import (
@@ -987,6 +990,149 @@ def test_rule18_near_miss_not_gave_up() -> None:
 
 def test_rule18_near_miss_empty() -> None:
     assert _fire(TriageCode.ENDPOINT_CHASE, {"cover_commands": {}}) == []
+
+
+# ---------------------------------------------------------------------------
+# Rule 25 — ENDPOINT_POSITION_NOT_TRACKING (RUNTIME, per-entity, issue #1026)
+# ---------------------------------------------------------------------------
+
+
+def _endpoint_view(
+    *,
+    target: int = POSITION_OPEN,
+    ha_state: str = "open",
+    current: int = 0,
+    wait_for_target: bool = True,
+    gave_up: bool = False,
+    has_set_position: bool = True,
+    endpoint_use_open_close: bool = True,
+) -> dict:
+    return {
+        "options": {CONF_ENDPOINT_USE_OPEN_CLOSE: endpoint_use_open_close},
+        "cover_commands": {
+            "cover.a": {
+                "target_call": target,
+                "wait_for_target": wait_for_target,
+                "gave_up": gave_up,
+            }
+        },
+        "covers": {
+            "cover.a": {
+                "current_position": current,
+                "ha_state": ha_state,
+                "capabilities": {"has_set_position": has_set_position},
+            }
+        },
+    }
+
+
+def test_rule25_fires_when_endpoint_open_reports_stuck_position() -> None:
+    findings = _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, _endpoint_view())
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.WARNING
+    assert findings[0].fix_step == "position"
+    assert dict(findings[0].reason.params) == {
+        "entity": "cover.a",
+        "service": "open_cover",
+        "target": POSITION_OPEN,
+        "state": "open",
+        "current": 0,
+    }
+
+
+def test_rule25_fires_when_endpoint_close_reports_stuck_position() -> None:
+    view = _endpoint_view(target=POSITION_CLOSED, ha_state="closed", current=100)
+    findings = _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view)
+    assert len(findings) == 1
+    assert dict(findings[0].reason.params) == {
+        "entity": "cover.a",
+        "service": "close_cover",
+        "target": POSITION_CLOSED,
+        "state": "closed",
+        "current": 100,
+    }
+
+
+def test_rule25_fires_per_entity_n_covers() -> None:
+    view = {
+        "options": {CONF_ENDPOINT_USE_OPEN_CLOSE: True},
+        "cover_commands": {
+            "cover.a": {
+                "target_call": POSITION_OPEN,
+                "wait_for_target": True,
+                "gave_up": False,
+            },
+            "cover.b": {
+                "target_call": POSITION_OPEN,
+                "wait_for_target": True,
+                "gave_up": False,
+            },
+            "cover.c": {
+                "target_call": POSITION_OPEN,
+                "wait_for_target": True,
+                "gave_up": False,
+            },
+        },
+        "covers": {
+            "cover.a": {  # genuinely stuck — claims open, position never moved
+                "current_position": 0,
+                "ha_state": "open",
+                "capabilities": {"has_set_position": True},
+            },
+            "cover.b": {  # tracked correctly
+                "current_position": 100,
+                "ha_state": "open",
+                "capabilities": {"has_set_position": True},
+            },
+            "cover.c": {  # still catching up — transient, not yet "open"
+                "current_position": 40,
+                "ha_state": "opening",
+                "capabilities": {"has_set_position": True},
+            },
+        },
+    }
+    findings = _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view)
+    assert _params(findings) == [
+        {
+            "entity": "cover.a",
+            "service": "open_cover",
+            "target": POSITION_OPEN,
+            "state": "open",
+            "current": 0,
+        }
+    ]
+
+
+def test_rule25_near_miss_endpoint_use_open_close_off() -> None:
+    view = _endpoint_view(endpoint_use_open_close=False)
+    assert _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view) == []
+
+
+def test_rule25_near_miss_mid_range_target() -> None:
+    view = _endpoint_view(target=50)
+    assert _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view) == []
+
+
+def test_rule25_near_miss_gave_up_true() -> None:
+    # Mutually exclusive with rule 18 (ENDPOINT_CHASE), which requires gave_up
+    # is True — this rule requires gave_up is NOT True.
+    view = _endpoint_view(gave_up=True)
+    assert _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view) == []
+
+
+def test_rule25_near_miss_still_in_transit() -> None:
+    view = _endpoint_view(ha_state="opening")
+    assert _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view) == []
+
+
+def test_rule25_near_miss_no_set_position_fallback() -> None:
+    view = _endpoint_view(has_set_position=False)
+    assert _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view) == []
+
+
+def test_rule25_near_miss_within_tolerance() -> None:
+    view = _endpoint_view(current=98)
+    assert _fire(TriageCode.ENDPOINT_POSITION_NOT_TRACKING, view) == []
 
 
 # ---------------------------------------------------------------------------

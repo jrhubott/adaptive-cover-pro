@@ -27,6 +27,7 @@
     "skip_cover_unavailable": "⚠️ The last command to {entity} was skipped{when} because the cover was unavailable. Check the device — it was offline when the integration tried to move it.",
     "skip_age": " {age_minutes} minutes ago",
     "stale_version": "⚠️ A newer release is available: you are on {current} but {latest} has shipped. Update the integration through HACS to pick up the latest fixes.",
-    "mixed_temp_units": "🛑 The inside temperature sensor reports {inside_unit} but the outside temperature sensor reports {outside_unit}. Adaptive Cover Pro does not convert between units, so climate comparisons will be wrong. Set both temperature sensors to the same unit."
+    "mixed_temp_units": "🛑 The inside temperature sensor reports {inside_unit} but the outside temperature sensor reports {outside_unit}. Adaptive Cover Pro does not convert between units, so climate comparisons will be wrong. Set both temperature sensors to the same unit.",
+    "endpoint_position_not_tracking": "⚠️ {entity} was sent {service} for the {target}% endpoint and reports itself {state}, but its position attribute is still {current}%. This cover doesn't update its reported position from open/close commands. Turn off 'Use open/close at endpoints' so the integration sends set_cover_position instead."
   }
 }

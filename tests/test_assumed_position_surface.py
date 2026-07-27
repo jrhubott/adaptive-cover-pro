@@ -339,3 +339,31 @@ async def test_assumed_cleared_on_native_position_command(
     await coordinator._cmd_svc.apply_position("cover.test_blind", 30, "solar", ctx)
 
     assert coordinator._cmd_svc.get_assumed_position("cover.test_blind") is None
+
+
+# ---------------------------------------------------------------------------
+# Coordinator wiring — covers[eid]["ha_state"] (issue #1026)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_diagnostic_data_covers_includes_ha_state(
+    hass: HomeAssistant,
+) -> None:
+    """Diagnostics ``covers[eid]`` carries the entity's raw HA state (#1026).
+
+    Distinct from ``transit_state`` (an ACP-synthetic "opening"/"closing"
+    belief) — this is the entity's own reported state string, the
+    discriminator the ENDPOINT_POSITION_NOT_TRACKING triage rule needs to
+    tell "claims open but position stuck" apart from "still catching up".
+    """
+    coordinator = await _setup_open_close_cover(hass, my_position=50)
+
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": _OPEN_CLOSE_STOP},
+    )
+
+    diag = coordinator.build_diagnostic_data()
+    assert diag["covers"]["cover.test_blind"]["ha_state"] == "open"
