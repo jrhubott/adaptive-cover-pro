@@ -153,14 +153,21 @@ async def test_unknown_explicit_entry_raises():
         await async_handle_get_troubleshooting(call)
 
 
-def _make_unresolvable_entry(entry_id, title, state, runtime_data=None):
+def _make_unresolvable_entry(entry_id, name, state, runtime_data=None):
     """Build a MagicMock ``ConfigEntry`` for an id that must NOT resolve to a
     cover coordinator — used by the three degrade-not-raise cases below.
+
+    ``title`` is deliberately type-prefixed and different from ``data["name"]``
+    — mirroring how ``config_flow.py`` builds every real entry
+    (``title=f"{cover_type_label} {name}"``, ``data["name"]=name``) — so a
+    degraded entry's reported ``"name"`` can only match ``name`` if it is read
+    from ``data["name"]``, not ``title`` (issue #1059 audit round 4, N2).
     """
     entry = MagicMock()
     entry.entry_id = entry_id
     entry.domain = DOMAIN
-    entry.title = title
+    entry.data = {"name": name}
+    entry.title = f"Some Cover Type {name}"
     entry.state = state
     entry.runtime_data = runtime_data
     return entry

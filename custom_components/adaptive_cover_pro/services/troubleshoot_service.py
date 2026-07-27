@@ -145,7 +145,7 @@ async def async_handle_get_troubleshooting(call: ServiceCall) -> dict:
                 labels=labels,
             )
         except Exception as exc:  # noqa: BLE001 - one bad entry must not sink the batch
-            reason = str(exc)
+            reason = f"{type(exc).__name__}: {exc}"
             _LOGGER.warning(
                 "get_troubleshooting: could not build results for %s: %s",
                 entry_id,

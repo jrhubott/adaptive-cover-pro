@@ -91,12 +91,18 @@ def cover_coordinators(
 class UnresolvedConfigEntry:
     """An explicitly-targeted ACP config entry with no cover coordinator.
 
-    ``name`` is the entry's title — the same human-readable label
-    ``export_config``/``diagnostics/__init__.py`` already show for a raw
-    config entry with no coordinator to read a ``data["name"]`` off of.
-    ``reason`` is a per-case, human-readable explanation of why this id
-    produced no coordinator (a cover group, a Building Profile, or an entry
-    that isn't currently loaded — issue #1059 audit round 3, defect #1).
+    ``name`` is ``entry.data["name"]`` — the same bare name every healthy
+    branch reads (``config_entry.data.get("name")`` in both
+    ``diagnostics_service.py`` and ``troubleshoot_service.py``), falling back
+    to ``entry.title`` only for an entry type that doesn't carry a
+    ``data["name"]`` at all. ``entry.title`` is a *different* string by
+    construction — ``config_flow.py`` builds every entry with
+    ``title=f"{cover_type_label} {name}"`` alongside ``data["name"]=name`` — so
+    using ``title`` here would give a degraded entry a different naming scheme
+    than a healthy one (issue #1059 audit round 4, N2). ``reason`` is a
+    per-case, human-readable explanation of why this id produced no
+    coordinator (a cover group, a Building Profile, or an entry that isn't
+    currently loaded — issue #1059 audit round 3, defect #1).
     """
 
     name: str
@@ -167,7 +173,9 @@ def _resolve_by_config_entry(
                 f"{entry.state.value}) — it may be mid-reload, in a setup "
                 "retry, or disabled."
             )
-        unresolved[entry_id] = UnresolvedConfigEntry(name=entry.title, reason=reason)
+        unresolved[entry_id] = UnresolvedConfigEntry(
+            name=entry.data.get("name") or entry.title, reason=reason
+        )
     return resolved, unresolved
 
 

@@ -134,10 +134,17 @@ async def test_unknown_explicit_entry_raises():
 def _make_unresolvable_entry(entry_id, state, runtime_data=None):
     """Build a MagicMock ``ConfigEntry`` for an id that must NOT resolve to a
     cover coordinator — used by the three degrade-not-raise cases below.
+
+    ``data`` is set to a real (empty) dict, not left as an auto-``MagicMock``
+    attribute — ``_resolve_by_config_entry`` now reads ``entry.data.get("name")``
+    before falling back to ``entry.title`` (issue #1059 audit round 4, N2), and
+    an unset ``MagicMock`` attribute's ``.get(...)`` returns a truthy child
+    mock rather than ``None``, which would silently defeat that fallback here.
     """
     entry = MagicMock()
     entry.entry_id = entry_id
     entry.domain = DOMAIN
+    entry.data = {}
     entry.title = entry_id
     entry.state = state
     entry.runtime_data = runtime_data
@@ -369,6 +376,39 @@ async def test_explicit_config_entry_id_targets_single_coordinator():
     assert result["count"] == 1
     assert "e1" in result["entries"]
     assert "e2" not in result["entries"]
+
+
+@pytest.mark.asyncio
+async def test_entry_key_contract_locked_for_healthy_and_degraded():
+    """Every entry — healthy or degraded — has exactly the same six keys:
+    ``config_entry_id``, ``name``, ``cover_type``, ``last_update_success``,
+    ``last_update_success_time``, ``diagnostics``. Locked against a literal set
+    rather than comparing the two branches' key sets against each other (which
+    would only prove they agree, not that the contract itself holds) — a
+    seventh key added to the healthy entry with the degraded block forgotten
+    would otherwise go unnoticed with the suite green (issue #1059 audit round
+    4, N4 — mirrors the six-key lock in
+    ``tests/test_troubleshoot_service.py::test_one_bad_entry_does_not_blank_the_others``).
+    """
+    good = make_coordinator(entry_id="good-1", name="Good Cover")
+    profile_entry = _make_unresolvable_entry(
+        "profile-1", ConfigEntryState.LOADED, runtime_data=None
+    )
+    hass = _make_multi_entry_hass(good, profile_entry)
+    call = make_call(hass, data={"config_entry_id": ["good-1", "profile-1"]})
+
+    result = await async_handle_get_diagnostics(call)
+
+    six_key_contract = {
+        "config_entry_id",
+        "name",
+        "cover_type",
+        "last_update_success",
+        "last_update_success_time",
+        "diagnostics",
+    }
+    assert set(result["entries"]["good-1"].keys()) == six_key_contract
+    assert set(result["entries"]["profile-1"].keys()) == six_key_contract
 
 
 def test_translations_contain_get_diagnostics_key():
