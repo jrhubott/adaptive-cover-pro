@@ -1068,13 +1068,35 @@ async def test_migrate_v3_11_to_v3_12_leaves_canonical_times_alone(
     assert dict(entry.options) == options
 
 
-async def test_migrate_v3_11_to_v3_12_leaves_unparsable_times_alone(
+@pytest.mark.parametrize("stored", ["garbage", "25:00:00", "24:99:99", ""])
+async def test_migrate_v3_11_to_v3_12_drops_unrescuable_times(
+    hass: HomeAssistant, stored
+) -> None:
+    """A value no parser can rescue is dropped to the unset sentinel semantics.
+
+    Leaving it is not neutral: ``get_datetime_from_str`` calls
+    ``dateutil.parser.parse`` without a guard, so ``"25:00:00"`` raises on every
+    coordinator cycle. Both are reachable in stored options — the pre-#1049
+    ``set_options`` regex accepted "25:00:00", and import validated no time at
+    all. Dropping the key is the #492 "no time set" state, which is what an
+    unusable window bound already means in practice.
+    """
+    entry = _make_entry(hass, {"end_time": stored}, version=3, minor_version=11)
+    assert await async_migrate_entry(hass, entry) is True
+    assert "end_time" not in entry.options
+
+
+async def test_migrate_v3_11_to_v3_12_dropped_time_leaves_window_usable(
     hass: HomeAssistant,
 ) -> None:
-    """A value no parser can rescue is left as-is rather than guessed at."""
-    entry = _make_entry(hass, {"end_time": "garbage"}, version=3, minor_version=11)
+    """After the drop, the manager resolves the window instead of raising."""
+    from custom_components.adaptive_cover_pro.helpers import (
+        has_configured_window_end,
+    )
+
+    entry = _make_entry(hass, {"end_time": "25:00:00"}, version=3, minor_version=11)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.options["end_time"] == "garbage"
+    assert has_configured_window_end(entry.options) is False
 
 
 async def test_migrate_v3_12_is_idempotent(hass: HomeAssistant) -> None:

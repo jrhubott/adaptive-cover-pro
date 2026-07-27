@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
 from ..const import DOMAIN, OPTION_RANGES, TIME_OPTION_KEYS, TIME_STRING_RE
+from ..helpers import normalize_time_string
 from .export_service import DEFAULT_EXPORT_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
             # Validate numeric keys against their declared OPTION_RANGES bounds
             # and time keys against the one accepted HH:MM:SS wire format.
             validation_errors: list[str] = []
-            for key, value in imported_public.items():
+            for key, value in list(imported_public.items()):
                 if value is None:
                     continue
                 if key in OPTION_RANGES:
@@ -141,10 +142,21 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                         validation_errors.append(
                             f"{key}={value!r} is not a valid number"
                         )
-                if key in TIME_OPTION_KEYS and not TIME_STRING_RE.match(str(value)):
-                    validation_errors.append(
-                        f"{key}={value!r} is not a valid time (expected HH:MM:SS)"
-                    )
+                if key in TIME_OPTION_KEYS:
+                    # Canonicalise what parses rather than failing the entry.
+                    # An export predates this validation, so the users most
+                    # likely to hold a "00:00" are exactly the ones #1049 bit —
+                    # rejecting would drop every *other* option they are trying
+                    # to restore. ``set_options`` still refuses the same value:
+                    # it has a caller who can fix the patch, an import file has
+                    # no one to ask.
+                    canonical = normalize_time_string(value)
+                    if TIME_STRING_RE.match(str(canonical)):
+                        imported_public[key] = canonical
+                    else:
+                        validation_errors.append(
+                            f"{key}={value!r} is not a valid time (expected HH:MM:SS)"
+                        )
             if validation_errors:
                 raise ServiceValidationError(
                     f"import_config: invalid values for entry '{entry_id}': "

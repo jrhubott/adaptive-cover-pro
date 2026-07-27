@@ -2125,10 +2125,12 @@ def _build_time_option_keys() -> frozenset[str]:
 
 
 #: Keys whose stored value is an ``HH:MM:SS`` string (``const.TIME_STRING_RE``).
-#: Derived from the registry so a new time field is validated by every consumer
-#: the moment its ``FieldSpec`` is declared — consumed by the service write
-#: paths in ``services.options_service`` and ``services.import_service``
-#: (issue #1049).
+#: Derived from the registry, so declaring a ``ValidatorKind.TIME`` field is
+#: enough for ``services.import_service`` to validate it (issue #1049).
+#: ``services.options_service`` does NOT read this — its ``FIELD_VALIDATORS``
+#: map is hand-written, so a new time field must be added there by hand or
+#: ``set_options`` will reject it as an unknown option. The two are kept in step
+#: by ``test_every_time_field_has_a_set_options_validator``, not by derivation.
 TIME_OPTION_KEYS: frozenset[str] = _build_time_option_keys()
 
 

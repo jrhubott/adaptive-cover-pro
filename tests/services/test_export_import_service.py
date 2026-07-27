@@ -12,21 +12,29 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Time values the config flow's TimeSelector can never emit. Each one compares
-# unequal to BLANK_TIME ("00:00:00") while still parsing to — or crashing on —
-# something the runtime treats as a configured window end, which is the whole
-# of issue #1049. Shared by the import tests and the set_options parity tests
-# so neither write path can quietly grow a looser format than the other.
-_BAD_TIMES = [
-    "00:00",  # HH:MM — the reported case
-    "0:00:00",  # unpadded hour
-    "8:30:00",  # unpadded hour, non-midnight
+# Time values the config flow's TimeSelector can never emit. Each compares
+# unequal to BLANK_TIME ("00:00:00") while the runtime still treats it as a
+# configured window end — the whole of issue #1049.
+#
+# They split by whether a parser can rescue them, and import treats the halves
+# differently on purpose. An export file predates this validation, so rejecting
+# a rescuable value would drop every *other* option for that entry on a restore
+# — punishing precisely the users #1049 already bit. So import canonicalises
+# what it can and errors only on the rest.
+_RESCUABLE_TIMES = [
+    ("00:00", "00:00:00"),  # HH:MM — the reported case
+    ("0:00:00", "00:00:00"),  # unpadded hour
+    ("00:00:00\n", "00:00:00"),  # trailing newline: `$` would let this through
+    ("٠٠:٠٠:٠٠", "00:00:00"),  # Arabic-Indic digits: `\d` matches
+    ("8:30:00", "08:30:00"),  # unpadded hour, non-midnight
+    ("7:30", "07:30:00"),
+]
+
+_UNRESCUABLE_TIMES = [
     "not a time",
     "",  # empty string is not the unset sentinel
-    "00:00:00\n",  # trailing newline: `$` would let this through
     "25:00:00",  # shape-valid, impossible clock time
     "24:99:99",  # shape-valid, impossible clock time
-    "٠٠:٠٠:٠٠",  # Arabic-Indic digits: `\d` matches
 ]
 
 _GOOD_TIMES = ["00:00:00", "07:00:00", "22:30:00", "23:59:59"]
@@ -383,15 +391,83 @@ class TestImportConfig:
         assert entry.options["set_azimuth"] == 90
 
     @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
-    @pytest.mark.parametrize("bad_time", _BAD_TIMES)
+    @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)
     @pytest.mark.asyncio
-    async def test_malformed_time_recorded_as_error(self, tmp_path, time_key, bad_time):
-        """A time value outside the wire format errors and leaves the entry alone.
+    async def test_rescuable_time_is_canonicalized(
+        self, tmp_path, time_key, raw, expected
+    ):
+        """A parsable non-canonical time is stored canonically, not rejected.
 
         Import used to skip every key absent from OPTION_RANGES, so a stray
         ``"00:00"`` reached the config entry and defeated the literal
         ``BLANK_TIME`` comparisons the rest of the integration relies on
-        (issue #1049).
+        (issue #1049). Erroring instead would fail the whole entry, which is
+        worse for the one population guaranteed to have such a file: users
+        restoring a backup taken before the validation existed.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {time_key: "22:00:00"})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {time_key: raw}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options[time_key] == expected
+
+    @pytest.mark.asyncio
+    async def test_rescuable_time_does_not_block_the_rest_of_the_entry(self, tmp_path):
+        """The whole point of canonicalising: every other option still restores."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {"azimuth": 90})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [
+                {
+                    "entry_id": "id-1",
+                    "options": {"end_time": "00:00", "azimuth": 270, "fov_left": 45},
+                }
+            ],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        assert (await async_handle_import_config(call))["id-1"] == "updated"
+        assert entry.options["azimuth"] == 270
+        assert entry.options["fov_left"] == 45
+        assert entry.options["end_time"] == "00:00:00"
+
+    @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
+    @pytest.mark.parametrize("bad_time", _UNRESCUABLE_TIMES)
+    @pytest.mark.asyncio
+    async def test_unrescuable_time_recorded_as_error(
+        self, tmp_path, time_key, bad_time
+    ):
+        """A value no parser can rescue errors and leaves the entry alone.
+
+        Nothing can be inferred from ``"25:00:00"``, and guessing would store a
+        time the user never chose — so the import reports it and the caller
+        fixes the file.
         """
         from custom_components.adaptive_cover_pro.services.import_service import (
             async_handle_import_config,
@@ -459,7 +535,7 @@ class TestImportConfig:
             [
                 {
                     "entry_id": "id-1",
-                    "options": {"set_azimuth": 999, "end_time": "00:00"},
+                    "options": {"set_azimuth": 999, "end_time": "25:00:00"},
                 }
             ],
         )
@@ -474,14 +550,35 @@ class TestImportConfig:
         assert "end_time" in result["id-1"]
         assert entry.options["set_azimuth"] == 90
 
-    @pytest.mark.parametrize("bad_time", _BAD_TIMES)
-    @pytest.mark.asyncio
-    async def test_time_format_rejection_matches_set_options(self, tmp_path, bad_time):
-        """import_config and set_options reject the same malformed times (issue #1049).
+    @pytest.mark.parametrize(
+        "bad_time", [raw for raw, _ in _RESCUABLE_TIMES] + _UNRESCUABLE_TIMES
+    )
+    def test_set_options_rejects_every_non_canonical_time(self, bad_time):
+        """``set_options`` is the strict path: no value outside the format gets in.
 
-        Both read ``const.TIME_STRING_RE``, so this pins the two service write
-        paths to one format. Scope is the *format* only — cross-field rules such
-        as the start_time/start_entity mutual exclusion stay ``set_options``-only.
+        Unlike import it has no file to salvage — the caller wrote this patch by
+        hand and can fix it, so a hard error is the useful answer (issue #1049).
+        """
+        from homeassistant.exceptions import ServiceValidationError
+
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            validate_options_patch,
+        )
+
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch({"end_time": bad_time}, {})
+
+    @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)
+    @pytest.mark.asyncio
+    async def test_import_canonicalizes_what_set_options_rejects(
+        self, tmp_path, raw, expected
+    ):
+        """The two service paths diverge on rescuable values, by design.
+
+        Both end at the same stored format — ``const.TIME_STRING_RE`` — but
+        import gets there by canonicalising a file it cannot ask the user to
+        edit, while ``set_options`` refuses. Pinning the divergence here keeps
+        it a decision rather than a drift.
         """
         from homeassistant.exceptions import ServiceValidationError
 
@@ -493,7 +590,7 @@ class TestImportConfig:
         )
 
         with pytest.raises(ServiceValidationError):
-            validate_options_patch({"end_time": bad_time}, {})
+            validate_options_patch({"end_time": raw}, {})
 
         entry = _make_entry("id-1", "Blind A", {})
         hass = _make_hass([entry], config_dir=str(tmp_path))
@@ -501,14 +598,15 @@ class TestImportConfig:
         export_path = tmp_path / "import.json"
         self._write_export(
             export_path,
-            [{"entry_id": "id-1", "options": {"end_time": bad_time}}],
+            [{"entry_id": "id-1", "options": {"end_time": raw}}],
         )
 
         call = MagicMock()
         call.hass = hass
         call.data = {"filename": str(export_path)}
 
-        assert (await async_handle_import_config(call))["id-1"].startswith("error:")
+        assert (await async_handle_import_config(call))["id-1"] == "updated"
+        assert entry.options["end_time"] == expected
 
     @pytest.mark.parametrize("good_time", _GOOD_TIMES)
     @pytest.mark.asyncio

@@ -7,15 +7,19 @@ different shape reads as a *configured* window end while
 ``until_window_end`` override deadline that recedes a day at every local
 midnight and never expires.
 
-Three write paths reach ``config_entry.options``, and each closes the hole its
-own way: the service paths (``import_config``, ``set_options``) reject a
-malformed value outright, while the config/options flow **normalizes** it —
-HA's ``TimeSelector`` validates via ``dt_util.parse_time`` but stores the raw
-submission, so a non-frontend flow client can hand it ``"00:00"`` or
-``"٠٧:٣٠:٠٠"`` and it persists verbatim. Rejection would be wrong there: the
-user picked a real time, only in a shape the picker itself would never emit.
+Each write path handles it differently — see ``const.TIME_STRING_RE`` for the
+full enumeration. This module covers the options flow's automation step, which
+**normalizes** rather than rejects: HA's ``TimeSelector`` validates via
+``dt_util.parse_time`` but stores the raw submission, so a non-frontend flow
+client can hand it ``"00:00"`` or ``"٠٧:٣٠:٠٠"`` and it persists verbatim.
+Rejection would be wrong there — the user picked a real time, only in a shape
+the picker itself would never emit.
 
-Service-path rejection lives in ``tests/services/test_export_import_service.py``.
+It also holds the registry guards that keep the derived ``TIME_OPTION_KEYS`` and
+the hand-written ``FIELD_VALIDATORS`` from drifting apart.
+
+The service paths live in ``tests/services/test_export_import_service.py``; the
+stored-entry repair in ``tests/test_config_entry_migration.py``.
 """
 
 from __future__ import annotations

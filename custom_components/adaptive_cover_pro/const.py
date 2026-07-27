@@ -1235,17 +1235,24 @@ BLANK_TIME = "00:00:00"
 # shape — ``"00:00"``, ``"0:00:00"`` — compares unequal to BLANK_TIME and
 # silently flips every sentinel check that keys off it (issue #1049).
 #
-# The three write paths into ``config_entry.options`` reach it differently, and
-# HA's TimeSelector is NOT one of the enforcers — it validates via
-# ``dt_util.parse_time`` and then stores the submission **unnormalized**, so it
-# happily persists ``"00:00"`` or ``"7:30"`` from any non-frontend flow client:
-#   * ``set_options`` / ``import_config`` — match against this pattern and
-#     reject, since a service caller gets a hard error it can act on.
-#   * the config/options flow — canonicalises instead, via
-#     ``helpers.normalize_time_string``; the user picked a real time, just in a
-#     shape the picker itself never emits.
-#   * entries stored before either guard existed — repaired by the v3.11 → v3.12
-#     migration in ``__init__.py``.
+# HA's TimeSelector is NOT an enforcer — it validates via ``dt_util.parse_time``
+# and then stores the submission **unnormalized**, so it happily persists
+# ``"00:00"`` or ``"7:30"`` from any non-frontend flow client. Each write path
+# into ``config_entry.options`` that can carry a time key therefore handles it
+# itself:
+#   * ``set_options`` (``services.options_service``) — matches this pattern and
+#     rejects; the caller wrote the patch by hand and can fix it.
+#   * ``import_config`` (``services.import_service``) — canonicalises what
+#     ``helpers.normalize_time_string`` can parse and errors on the rest; an
+#     export file has no caller to send back to.
+#   * the options flow's automation step (``config_flow``) — canonicalises; the
+#     user picked a real time, just in a shape the picker never emits. It is
+#     the only flow step rendering a TimeSelector.
+#   * the flow's Sync and Duplicate steps (``config_flow``) — copy a time key
+#     verbatim between entries. Safe only because the source is already
+#     canonical; they add no guard of their own.
+# Entries written before any of this existed are repaired by the v3.11 → v3.12
+# migration in ``__init__.py``.
 #
 # Three deliberate choices, each closing a way a near-miss value slips through:
 #   * ``\Z``, not ``$`` — ``$`` also matches before a trailing newline, so

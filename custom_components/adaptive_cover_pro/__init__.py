@@ -64,6 +64,7 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DIAG_CACHE_KEY,
     DOMAIN,
+    TIME_STRING_RE,
     _LOGGER,
     blind_spot_legacy_to_gamma,
     clamp_gamma_pair,
@@ -573,20 +574,33 @@ def _seed_signed_gamma_blind_spots(options: dict) -> bool:
 def _repair_malformed_times(options: dict) -> list[str]:
     """Rewrite non-canonical start/end times to ``HH:MM:SS`` (issue #1049).
 
-    Returns the keys actually changed. A value already canonical, absent, or
-    unparsable is left alone — see the v3.11 → v3.12 block in
-    ``async_migrate_entry`` for why this one migration rewrites in place and why
-    that stays rollback-safe.
+    A value that parses is canonicalised. A value that does **not** parse —
+    ``"25:00:00"``, ``"garbage"`` — is dropped rather than left alone: the old
+    ``set_options`` regex accepted shape-valid impossible clock times and import
+    validated no time at all, so both are reachable in stored options, and
+    ``get_datetime_from_str`` runs ``dateutil.parser.parse`` on them with no
+    guard — raising on every coordinator cycle. Dropping the key is the #492
+    "no time set" state, which is what an unusable window bound already means.
+
+    Returns a description of each change, for the migration log. See the
+    v3.11 → v3.12 block in ``async_migrate_entry`` for why this one migration
+    rewrites in place and why that stays rollback-safe.
     """
-    repaired: list[str] = []
+    changes: list[str] = []
     for key in (CONF_START_TIME, CONF_END_TIME):
         if key not in options:
             continue
-        canonical = normalize_time_string(options[key])
-        if canonical != options[key]:
+        original = options[key]
+        if original is None or TIME_STRING_RE.match(str(original)):
+            continue  # absent-equivalent or already canonical
+        canonical = normalize_time_string(original)
+        if TIME_STRING_RE.match(str(canonical)):
             options[key] = canonical
-            repaired.append(key)
-    return repaired
+            changes.append(f"{key}: {original!r} → {canonical!r}")
+        else:
+            del options[key]
+            changes.append(f"{key}: {original!r} → unset (unparsable)")
+    return changes
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -741,8 +755,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # the format every release — old and new — already expects. An older build
     # reading the canonical "00:00:00" applies the unset semantics it always
     # intended; before the repair it read a phantom configured window end. So a
-    # rollback is strictly better off, never worse, and nothing is renamed or
-    # dropped. Values no parser can rescue are left untouched.
+    # rollback is strictly better off, never worse, and no key is renamed.
+    # A value no parser can rescue is dropped instead — see
+    # ``_repair_malformed_times`` for why leaving it is not the safe option.
     if new_version == 3 and new_minor < 12:
         if repaired := _repair_malformed_times(new_options):
             _LOGGER.info(
