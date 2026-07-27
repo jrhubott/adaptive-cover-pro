@@ -30,8 +30,10 @@ from .const import (
     CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_TIME,
     CONF_ENTITIES,
     CONF_START_ENTITY,
+    CONF_START_TIME,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
@@ -62,6 +64,7 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DIAG_CACHE_KEY,
     DOMAIN,
+    TIME_STRING_RE,
     _LOGGER,
     blind_spot_legacy_to_gamma,
     clamp_gamma_pair,
@@ -76,6 +79,7 @@ from .helpers import (
     custom_position_slot_sensors,
     manual_override_input_entities,
     motion_entities,
+    normalize_time_string,
 )
 from .profile_link import _copy_profile_to_cover, _covers_linked_to
 from .templates import is_template_string
@@ -567,6 +571,38 @@ def _seed_signed_gamma_blind_spots(options: dict) -> bool:
     return seeded
 
 
+def _repair_malformed_times(options: dict) -> list[str]:
+    """Rewrite non-canonical start/end times to ``HH:MM:SS`` (issue #1049).
+
+    A value that parses is canonicalised. A value that does **not** parse —
+    ``"25:00:00"``, ``"garbage"`` — is dropped rather than left alone: the old
+    ``set_options`` regex accepted shape-valid impossible clock times and import
+    validated no time at all, so both are reachable in stored options, and
+    ``get_datetime_from_str`` runs ``dateutil.parser.parse`` on them with no
+    guard — raising on every coordinator cycle. Dropping the key is the #492
+    "no time set" state, which is what an unusable window bound already means.
+
+    Returns a description of each change, for the migration log. See the
+    v3.11 → v3.12 block in ``async_migrate_entry`` for why this one migration
+    rewrites in place and why that stays rollback-safe.
+    """
+    changes: list[str] = []
+    for key in (CONF_START_TIME, CONF_END_TIME):
+        if key not in options:
+            continue
+        original = options[key]
+        if original is None or TIME_STRING_RE.match(str(original)):
+            continue  # absent-equivalent or already canonical
+        canonical = normalize_time_string(original)
+        if TIME_STRING_RE.match(str(canonical)):
+            options[key] = canonical
+            changes.append(f"{key}: {original!r} → {canonical!r}")
+        else:
+            del options[key]
+            changes.append(f"{key}: {original!r} → unset (unparsable)")
+    return changes
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
@@ -705,6 +741,31 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if CONF_LENGTH_AWNING in new_options:
             new_options.setdefault(CONF_AWNING_SHADE_MODE, DEFAULT_AWNING_SHADE_MODE)
         new_minor = 11
+
+    # v3.11 → v3.12: repair start_time/end_time already stored in a non-canonical
+    # shape (issue #1049). Validating the write paths stops new bad values but
+    # leaves an already-bitten entry with e.g. "00:00", which fails every literal
+    # BLANK_TIME comparison while TimeWindowManager resolves it to tomorrow's
+    # midnight — the until_window_end deadline recedes a day at every local
+    # midnight and the override never expires.
+    #
+    # This is the rare migration that rewrites an existing key rather than only
+    # seeding one, so the rollback contract (CLAUDE.md § "Rollback-Safe Config
+    # Migrations") deserves an explicit answer: the rewrite is a repair *into*
+    # the format every release — old and new — already expects. An older build
+    # reading the canonical "00:00:00" applies the unset semantics it always
+    # intended; before the repair it read a phantom configured window end. So a
+    # rollback is strictly better off, never worse, and no key is renamed.
+    # A value no parser can rescue is dropped instead — see
+    # ``_repair_malformed_times`` for why leaving it is not the safe option.
+    if new_version == 3 and new_minor < 12:
+        if repaired := _repair_malformed_times(new_options):
+            _LOGGER.info(
+                "Repaired malformed time options of %s (%s)",
+                entry.data.get("name", entry.entry_id),
+                ", ".join(repaired),
+            )
+        new_minor = 12
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

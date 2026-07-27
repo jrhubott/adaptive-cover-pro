@@ -2118,6 +2118,22 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
 OPTION_RANGES: dict[str, tuple[float, float]] = _build_option_ranges()
 
 
+def _build_time_option_keys() -> frozenset[str]:
+    return frozenset(
+        s.key for s in FIELD_SPECS.values() if s.validator is ValidatorKind.TIME
+    )
+
+
+#: Keys whose stored value is an ``HH:MM:SS`` string (``const.TIME_STRING_RE``).
+#: Derived from the registry, so declaring a ``ValidatorKind.TIME`` field is
+#: enough for ``services.import_service`` to validate it (issue #1049).
+#: ``services.options_service`` does NOT read this — its ``FIELD_VALIDATORS``
+#: map is hand-written, so a new time field must be added there by hand or
+#: ``set_options`` will reject it as an unknown option. The two are kept in step
+#: by ``test_every_time_field_has_a_set_options_validator``, not by derivation.
+TIME_OPTION_KEYS: frozenset[str] = _build_time_option_keys()
+
+
 # Template-support audit (issue #974). The condition-template surface was
 # extended to the severe-weather override and the manual-override input trigger.
 # Deliberately EXCLUDED from template support, and why:

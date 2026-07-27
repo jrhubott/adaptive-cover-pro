@@ -51,6 +51,7 @@ Section index
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from typing import Any
@@ -1230,6 +1231,38 @@ CONF_END_ENTITY = "end_entity"  # input_datetime overriding end_time
 # true None, so a cleared field coerces to midnight. Treated as "no time set"
 # everywhere (see issue #492).
 BLANK_TIME = "00:00:00"
+# The one accepted wire format for a time-typed option. A value in any other
+# shape — ``"00:00"``, ``"0:00:00"`` — compares unequal to BLANK_TIME and
+# silently flips every sentinel check that keys off it (issue #1049).
+#
+# HA's TimeSelector is NOT an enforcer — it validates via ``dt_util.parse_time``
+# and then stores the submission **unnormalized**, so it happily persists
+# ``"00:00"`` or ``"7:30"`` from any non-frontend flow client. Each write path
+# into ``config_entry.options`` that can carry a time key therefore handles it
+# itself:
+#   * ``set_options`` (``services.options_service``) — matches this pattern and
+#     rejects; the caller wrote the patch by hand and can fix it.
+#   * ``import_config`` (``services.import_service``) — canonicalises what
+#     ``helpers.normalize_time_string`` can parse and errors on the rest; an
+#     export file has no caller to send back to.
+#   * the options flow's automation step (``config_flow``) — canonicalises; the
+#     user picked a real time, just in a shape the picker never emits. It is
+#     the only flow step rendering a TimeSelector.
+#   * the flow's Sync and Duplicate steps (``config_flow``) — copy a time key
+#     verbatim between entries. Safe only because the source is already
+#     canonical; they add no guard of their own.
+# Entries written before any of this existed are repaired by the v3.11 → v3.12
+# migration in ``__init__.py``.
+#
+# Three deliberate choices, each closing a way a near-miss value slips through:
+#   * ``\Z``, not ``$`` — ``$`` also matches before a trailing newline, so
+#     ``"00:00:00\n"`` would pass while comparing unequal to BLANK_TIME.
+#   * ``[0-9]``, not ``\d`` — ``\d`` matches any Unicode decimal digit, so
+#     ``"٠٠:٠٠:٠٠"`` would pass and then parse to midnight.
+#   * real clock bounds, not ``{2}`` — the hour/minute/second alternations
+#     reject ``"25:00:00"``, which is shape-valid but raises in
+#     ``get_datetime_from_str`` on every coordinator cycle once stored.
+TIME_STRING_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\Z")
 
 
 # =============================================================================
@@ -2191,7 +2224,7 @@ SLIDING_SLIDE_DIRECTIONS = tuple(d.value for d in SlideDirection)
 # name ``config_fields`` needs is already defined above. ``config_fields`` does
 # ``from . import const`` (the partially-initialised module is fine — it only
 # reads names defined before this line).
-from .config_fields import OPTION_RANGES  # noqa: E402, F401
+from .config_fields import OPTION_RANGES, TIME_OPTION_KEYS  # noqa: E402, F401
 
 # =============================================================================
 # 27. Enumerations (semantic identifiers)

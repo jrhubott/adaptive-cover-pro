@@ -257,6 +257,7 @@ from .helpers import (
     custom_position_slot_sensors,
     has_configured_window_end,
     mirror_legacy_slot_sensor_keys,
+    normalize_time_string,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -3967,8 +3968,15 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # block setdefault-seeds CONF_AWNING_SHADE_MODE to the window-glass default so
     # pre-existing awnings keep the shipped overhang behaviour; an absent key
     # already reads as "window" and an older build ignores it.
-    # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 11
+    # 3.12 (issue #1049): repair start_time/end_time already stored in a
+    # non-canonical shape ("00:00", "7:30", non-ASCII digits) to the HH:MM:SS
+    # wire format every literal BLANK_TIME comparison expects. The one block
+    # that rewrites an existing key rather than only seeding one — see the
+    # rollback reasoning at the block itself in __init__.py.
+    # Rollback-safe: every other migration block is additive (existing keys
+    # retained), and the v3.12 rewrite only ever moves a value into the format
+    # older builds already expect.
+    MINOR_VERSION = 12
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -5084,7 +5092,14 @@ class OptionsFlowHandler(OptionsFlow):
             # sentinel "00:00:00". Treat both as "unset": drop the key from the
             # submission and from any previously-stored option so it never
             # persists as a literal midnight window (issue #492).
+            #
+            # Canonicalise first: TimeSelector validates via parse_time but
+            # stores the raw submission, so a non-frontend flow client can hand
+            # us "00:00" — which is midnight, yet fails the BLANK_TIME test
+            # below and every other literal sentinel check (issue #1049).
             for time_key in (CONF_START_TIME, CONF_END_TIME):
+                if time_key in user_input:
+                    user_input[time_key] = normalize_time_string(user_input[time_key])
                 if user_input.get(time_key) in (None, BLANK_TIME):
                     user_input.pop(time_key, None)
                     self.options.pop(time_key, None)

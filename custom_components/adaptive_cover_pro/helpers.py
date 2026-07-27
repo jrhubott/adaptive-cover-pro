@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, timedelta
 from functools import partial
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pandas as pd
 from dateutil import parser
@@ -31,6 +31,7 @@ from .const import (
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    TIME_STRING_RE,
 )
 from .templates import is_template_string
 
@@ -94,6 +95,38 @@ def has_configured_window_end(options: Mapping) -> bool:
         options.get(key) not in (None, "", BLANK_TIME)
         for key in (CONF_END_TIME, CONF_END_ENTITY)
     )
+
+
+def normalize_time_string(value: Any) -> Any:
+    """Return *value* as a canonical ``HH:MM:SS`` string when it parses as a time.
+
+    HA's ``TimeSelector`` validates a submission via ``dt_util.parse_time`` but
+    stores it **unnormalized**, so a non-frontend flow client (websocket/REST
+    flow API, a custom card) can persist ``"00:00"``, ``"7:30"`` or
+    ``"٠٧:٣٠:٠٠"`` verbatim. None of those equal ``BLANK_TIME``, so every
+    literal sentinel comparison downstream reads them as a configured window
+    end while ``TimeWindowManager`` resolves them to tomorrow's midnight —
+    issue #1049.
+
+    Callers that have no one to send a bad value back to normalize with this
+    and keep going — the options flow (the user picked a real time, just in a
+    shape the picker never emits) and ``import_config`` (an export file predates
+    the validation). ``set_options`` is the exception: it rejects outright,
+    because its caller wrote the patch by hand and can fix it. The full
+    per-path table lives at ``const.TIME_STRING_RE``.
+
+    Values already canonical, and values no parser can rescue, are returned
+    unchanged — inventing a time for the latter would mask the problem. Callers
+    must therefore re-check the result against ``TIME_STRING_RE`` to tell
+    "canonicalised" from "could not be rescued"; what they do with the latter
+    differs (import errors, the migration drops the key).
+    """
+    if not isinstance(value, str) or TIME_STRING_RE.match(value):
+        return value
+    parsed = dt_util.parse_time(value)
+    if parsed is None:
+        return value
+    return parsed.strftime("%H:%M:%S")
 
 
 def custom_position_slot_sensors(
