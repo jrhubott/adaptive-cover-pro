@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...const import ControlMethod, ReasonCode
-from ...managers.manual_override import to_logical
+from ...position_utils import flip_if
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_default_position, compute_raw_calculated_position
@@ -54,7 +54,7 @@ class MotionTimeoutHandler(OverrideHandler):
             # interpolation ``coordinator.state`` re-interpolates the held motor
             # read, so the published target still drifts. Pre-existing.
             return PipelineResult(
-                position=to_logical(held, inverted=snapshot.position_axis_inverted),
+                position=flip_if(held, inverted=snapshot.position_axis_inverted),
                 control_method=ControlMethod.MOTION,
                 # The raw read stays in the reason payload / diagnostics.
                 reason_payload=Reason(ReasonCode.OCCUPANCY_HOLDING, {"held": held}),

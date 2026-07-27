@@ -71,11 +71,11 @@ from .helpers import (
     climate_mode_from_diagnostics,
     usable_coordinator,
 )
-from .managers import inverse_state
 from .managers.cover_command import CoverCommandService
 from .managers.cover_command.state_store import PositionContext
 from .managers.grace_period import GracePeriodManager
 from .pipeline.types import GroupIntent
+from .position_utils import flip_if
 from .state.area_resolver import device_area_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -628,7 +628,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             for entity_id in entry.options.get(CONF_ENTITIES, []):
                 raw = policy.read_axis_value(self.hass, entity_id, caps=None)
                 member_positions[entity_id] = (
-                    inverse_state(raw) if inverted and raw is not None else raw
+                    flip_if(raw, inverted=inverted) if raw is not None else raw
                 )
         # Generic (non-ACP) covers are adopted as-is — ACP holds no inversion
         # config for them, so their reading is already the logical one.

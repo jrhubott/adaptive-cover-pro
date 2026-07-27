@@ -341,7 +341,7 @@ def _dual_policy_primed(
         control_method=ControlMethod.CUSTOM_POSITION,
         reason="custom",
         tilt=blend,
-        floor_clamp_applied=floor_clamp,
+        position_constraint_applied=floor_clamp,
         bypass_auto_control=bypass,
     )
     policy.post_pipeline_resolve(

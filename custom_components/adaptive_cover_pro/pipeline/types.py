@@ -388,8 +388,8 @@ class PipelineSnapshot:
     # (inverse-state configured and not suppressed by interpolation, per
     # ``cover_types.base.axis_inverted``). A handler that puts a raw cover read
     # such as ``current_cover_position`` into ``PipelineResult.position`` must
-    # convert it to the logical frame first (``managers.manual_override
-    # .to_logical``), because ``coordinator.state`` maps every winner through
+    # convert it to the logical frame first (``position_utils.flip_if``),
+    # because ``coordinator.state`` maps every winner through
     # ``_to_cover_frame`` on the way out — no flag exempts one (#1028 / #1036).
     position_axis_inverted: bool = False
 
@@ -541,17 +541,17 @@ class PipelineResult:
 
     # When True, the registry's axis-constraint composition pass clamped this
     # winner's position to a user-configured bound — a floor raise (issue #463)
-    # or, since issue #943, a ceiling lower. Drives the reason/trace labelling
-    # and clears `skip_command` so the clamp still reaches a cover the winner
-    # was merely holding (issues #534 / #809).
+    # or, since issue #943, a ceiling lower. The flag has exactly three jobs:
+    #
+    #   1. reason/trace labelling (the `floor_clamp` / `ceiling_clamp` steps),
+    #   2. clearing `skip_command` so the clamp still reaches a cover the winner
+    #      was merely holding (issues #534 / #809),
+    #   3. riding the diagnostics and event-timeline payloads.
     #
     # It makes NO claim about the value's frame: `position` stays logical, and
     # `coordinator.state` interpolates/inverts a clamped winner exactly like any
-    # other (issue #1036 removed the #469 carve-out that skipped both). The name
-    # predates that and is due a rename to `position_constraint_applied` in a
-    # follow-up — it is a rename only, deliberately kept out of a
-    # behaviour-changing PR.
-    floor_clamp_applied: bool = False
+    # other (issue #1036 removed the #469 carve-out that skipped both).
+    position_constraint_applied: bool = False
 
     # Composed tilt bounds that could not be applied during evaluation because
     # the winner had no tilt to clamp yet (issue #943). Tilt can resolve *after*

@@ -173,10 +173,10 @@ class TestPositionCeiling:
         res = _evaluate([_slot(1, position_max=60)], winner=_StubWinner(80))
         assert res.position == 60
 
-    def test_ceiling_sets_floor_clamp_applied(self) -> None:
+    def test_ceiling_sets_position_constraint_applied(self) -> None:
         """A ceiling clamp is a user-configured cover-space value (#469)."""
         res = _evaluate([_slot(1, position_max=60)], winner=_StubWinner(80))
-        assert res.floor_clamp_applied is True
+        assert res.position_constraint_applied is True
 
     def test_ceiling_clears_skip_command(self) -> None:
         """A clamp must reach the cover even when the winner was a hold."""
@@ -206,7 +206,7 @@ class TestPositionCeiling:
         """An inert ceiling leaves the winner's own position exactly as-is."""
         res = _evaluate([_slot(1, position_max=60)], winner=_StubWinner(40))
         assert res.position == 40
-        assert res.floor_clamp_applied is False
+        assert res.position_constraint_applied is False
 
     def test_inert_ceiling_emits_inactive_step(self) -> None:
         """An inert ceiling still explains itself rather than a stale skip."""
@@ -252,7 +252,7 @@ class TestCeilingVersusHeldPosition:
             [_slot(1, position_max=60)],
             winner=_StubWinner(50, held_position=50, skip_command=True),
         )
-        assert res.floor_clamp_applied is False
+        assert res.position_constraint_applied is False
         assert ReasonCode.REGISTRY_CEILING_INACTIVE in _codes(res)
 
 

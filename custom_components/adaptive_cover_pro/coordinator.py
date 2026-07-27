@@ -125,7 +125,6 @@ from .managers.manual_override import (
     AdaptiveCoverManager,
     DetectorConfig,
     get_detector,
-    inverse_state,
 )
 from .managers.climate_smoothing import ClimateSmoothingManager
 from .managers.cloud_suppression import CloudSuppressionManager
@@ -135,7 +134,7 @@ from .managers.sensor_health import SensorHealthManager
 from .managers.weather import WeatherManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
-from .position_utils import interpolate_position
+from .position_utils import flip_if, interpolate_position, inverse_state
 from .pipeline.handlers import (
     ManualOverrideHandler,
     build_handlers,
@@ -2221,11 +2220,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # itself, at the one site that compares it against a floor (#1036).
             held = result.held_position
             if held is None:
-                held = (
-                    inverse_state(result.position)
-                    if self.position_axis_inverted
-                    else result.position
-                )
+                held = flip_if(result.position, inverted=self.position_axis_inverted)
             self._cmd_svc.record_skipped_action(
                 cover,
                 label,
@@ -2633,7 +2628,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             result.is_safety,
             result.bypass_auto_control,
             result.skip_command,
-            result.floor_clamp_applied,
+            result.position_constraint_applied,
         )
 
     async def _dispatch_for_cycle(
@@ -2771,13 +2766,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Outside the clock window — skipping position update")
             return
 
-        # A floor-clamp raised the winner this cycle (#534).  When manual
-        # override holds the cover below an active floor, the clamped value is
-        # already in cover-position space and must bypass the time/position
-        # delta gates so the raise reaches the cover.
+        # A user-configured bound clamped the winner this cycle (#534).  When
+        # manual override holds the cover below an active floor, the clamp must
+        # bypass the time/position delta gates so the raise still reaches the
+        # cover.  The clamped value is not special in any other way — it is a
+        # logical position that `state` interpolates and inverts exactly like
+        # any other winner's (#1036).
         floor_clamp = bool(
             self._pipeline_result is not None
-            and self._pipeline_result.floor_clamp_applied
+            and self._pipeline_result.position_constraint_applied
         )
         # target_changed alone must not defeat the user's delta_position/
         # delta_time throttle for routine solar/climate tracking (issue #853)
@@ -3888,13 +3885,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
           applied even when Automatic Control is OFF and outside the start/end
           window (issue #767). A safety close of logical 0 must still reach an
           inverse cover as wire 100, or the safety override opens the cover.
-        - ``floor_clamp_applied`` records that a user-configured bound clamped
-          this winner, which drives reason labelling and forces the dispatch
-          through a hold (issues #534 / #809). A configured floor is a logical
-          value like any other, so it is calibrated and inverted like any other
-          — issue #469 skipped both transforms for it, which made a "minimum
-          25% open" floor drive an inverse cover to 75% open and made dispatch
-          non-monotonic in the logical request.
+        - ``position_constraint_applied`` records that a user-configured bound
+          clamped this winner, which drives reason labelling and forces the
+          dispatch through a hold (issues #534 / #809). A configured floor is a
+          logical value like any other, so it is calibrated and inverted like
+          any other — issue #469 skipped both transforms for it, which made a
+          "minimum 25% open" floor drive an inverse cover to 75% open and made
+          dispatch non-monotonic in the logical request.
         """
         return self._to_cover_frame(self._pipeline_result.position)
 
@@ -4121,9 +4118,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # inverse-state is configured — unconditional of bypass, floor
             # clamp, and interpolation — and never interpolates. #993's
             # middle-rail invariant depends on that divergence.
-            pos_to_send = (
-                inverse_state(effective_pos) if self._inverse_state else effective_pos
-            )
+            pos_to_send = flip_if(effective_pos, inverted=self._inverse_state)
             self.logger.info(
                 "End time reached — sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",
@@ -4443,5 +4438,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("Coordinator shutdown complete")
 
 
-# AdaptiveCoverManager and inverse_state live in the managers/manual_override
-# package. They are re-imported above to maintain backward compatibility.
+# AdaptiveCoverManager lives in the managers/manual_override package and the
+# frame converters (``inverse_state`` / ``flip_if``) in ``position_utils``
+# (#1042). Both are re-imported above to maintain backward compatibility.

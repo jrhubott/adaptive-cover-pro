@@ -16,7 +16,7 @@ from ...const import (
     GroupIntentKind,
     ReasonCode,
 )
-from ...managers.manual_override import to_logical
+from ...position_utils import flip_if
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
@@ -56,7 +56,7 @@ class GroupLockHandler(OverrideHandler):
         # instead and leave the flag alone. ``default_position`` is already
         # logical, so only the entity read needs it.
         if held is not None:
-            position = to_logical(held, inverted=snapshot.position_axis_inverted)
+            position = flip_if(held, inverted=snapshot.position_axis_inverted)
             # The raw read stays in the reason payload / diagnostics, beside
             # ``held_position`` — both describe where the cover physically is.
             reported = held

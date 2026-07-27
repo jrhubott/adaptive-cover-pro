@@ -612,8 +612,8 @@ def test_floor_inactive_when_sensor_off() -> None:
     assert not any(s.handler == "floor_clamp" for s in result.decision_trace)
 
 
-def test_floor_clamp_sets_floor_clamp_applied_flag() -> None:
-    """Active floor that raises the winner sets ``floor_clamp_applied=True`` (issue #469)."""
+def test_floor_clamp_sets_position_constraint_applied_flag() -> None:
+    """Active floor raising the winner sets ``position_constraint_applied`` (#469)."""
     cover = _climate_cover(direct_sun_valid=False)
     snap = make_snapshot(
         cover=cover,
@@ -634,11 +634,11 @@ def test_floor_clamp_sets_floor_clamp_applied_flag() -> None:
     handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
-    assert result.floor_clamp_applied is True
+    assert result.position_constraint_applied is True
 
 
-def test_no_clamp_keeps_floor_clamp_applied_false() -> None:
-    """With no active floors, ``floor_clamp_applied`` stays False (issue #469)."""
+def test_no_clamp_keeps_position_constraint_applied_false() -> None:
+    """With no active floors, ``position_constraint_applied`` stays False (issue #469)."""
     cover = _climate_cover(direct_sun_valid=False)
     snap = make_snapshot(
         cover=cover,
@@ -649,7 +649,7 @@ def test_no_clamp_keeps_floor_clamp_applied_false() -> None:
     )
     registry = _registry_with_custom([])
     result = registry.evaluate(snap)
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
 
 
 def test_inactive_floor_below_winner_keeps_flag_false() -> None:
@@ -684,7 +684,7 @@ def test_inactive_floor_below_winner_keeps_flag_false() -> None:
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     assert result.position == 80
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
 
 
 def test_floor_raises_manual_override_held_below_floor() -> None:
@@ -723,7 +723,7 @@ def test_floor_raises_manual_override_held_below_floor() -> None:
     )
     assert winner_step.handler == "manual_override"
     assert result.position == 80
-    assert result.floor_clamp_applied is True
+    assert result.position_constraint_applied is True
     # The floor raise must reach the cover: a manual-override hold sets
     # skip_command=True, but the composed floor result clears it (#809/#534).
     assert result.skip_command is False
@@ -767,7 +767,7 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
     )
     assert winner_step.handler == "manual_override"
     # No clamp: the held physical position (85) is already above the floor (80).
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
     # The manual-override hold is inert-floor: it genuinely holds the cover, so
     # skip_command stays set (no floor raise to clear it)  (#809).
     assert result.skip_command is True
@@ -812,7 +812,7 @@ def test_floor_equal_to_would_be_but_above_held_still_raises() -> None:
     )
     assert winner_step.handler == "manual_override"
     assert result.position == 100
-    assert result.floor_clamp_applied is True
+    assert result.position_constraint_applied is True
     assert result.skip_command is False
 
 
@@ -1059,7 +1059,7 @@ class TestFloorComparesInLogicalFrame:
         result = self._registry().evaluate(self._snapshot(current_cover_position=20))
 
         assert result.position == 80
-        assert result.floor_clamp_applied is False
+        assert result.position_constraint_applied is False
 
     def test_non_compliant_hold_is_still_raised_by_the_floor(self) -> None:
         """Mirror case, so the fix cannot be "never clamp a held cover".
@@ -1070,4 +1070,4 @@ class TestFloorComparesInLogicalFrame:
         result = self._registry().evaluate(self._snapshot(current_cover_position=90))
 
         assert result.position == 25
-        assert result.floor_clamp_applied is True
+        assert result.position_constraint_applied is True
