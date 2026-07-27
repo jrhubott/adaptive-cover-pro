@@ -1256,7 +1256,8 @@ BLANK_TIME = "00:00:00"
 # Entries written before any of this existed are repaired by the v3.11 → v3.12
 # migration in ``__init__.py`` — but only once HA sets the entry up; one
 # ``disabled_by``-set before v3.12 shipped never reaches that setup call, so
-# the migration never runs for it. That is exactly why the copy site above
+# the migration does not run while it stays disabled (re-enabling it reloads
+# the entry and does run the repair). That is exactly why the copy site above
 # carries its own guard instead of trusting the migration to have run first.
 #
 # Three deliberate choices, each closing a way a near-miss value slips through:
