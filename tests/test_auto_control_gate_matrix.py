@@ -405,7 +405,6 @@ async def _trigger_switch_auto_control_off_return(coord):
     switch._key = "automatic_control"
     switch._name = "automatic_control"
     switch._initial_state = True
-    switch._attr_is_on = True
     switch.schedule_update_ha_state = MagicMock()
 
     await switch.async_turn_off()

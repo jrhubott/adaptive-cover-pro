@@ -539,7 +539,6 @@ async def test_auto_control_off_seam_never_inverts_middle_rail() -> None:
     switch._key = "automatic_control"
     switch._name = "test_switch"
     switch._initial_state = True
-    switch._attr_is_on = True
     switch._option_key = None
     switch.schedule_update_ha_state = MagicMock()
 

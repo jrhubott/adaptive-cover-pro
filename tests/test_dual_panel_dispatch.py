@@ -298,7 +298,6 @@ async def test_auto_control_off_seam_keeps_the_back_inverted() -> None:
     switch.coordinator = coord
     switch._key = "automatic_control"
     switch._name = "test_switch"
-    switch._attr_is_on = True
     switch.schedule_update_ha_state = MagicMock()
 
     await switch.async_turn_off()
