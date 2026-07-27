@@ -167,6 +167,38 @@ async def test_group_config_entry_id_raises_service_validation_error():
 
 
 @pytest.mark.asyncio
+async def test_building_profile_config_entry_id_raises_service_validation_error():
+    """Explicitly targeting a Building Profile's config_entry_id raises
+    ``ServiceValidationError`` instead of silently resolving to no entries
+    (issue #1059 audit, finding #3).
+
+    A Building Profile is a virtual config entry: ``async_setup_entry``
+    returns early for it (``not policy.controls_cover``) without ever setting
+    ``entry.runtime_data``, so it is absent from BOTH ``cover_coordinators``
+    AND ``loaded_coordinators`` — unlike a cover group, which sets
+    ``runtime_data`` to a ``GroupCoordinator`` and is only filtered out of the
+    former. Before this fix, ``_resolve_by_config_entry`` had no branch
+    covering this case and silently dropped the entry from the response.
+    """
+    from homeassistant.exceptions import ServiceValidationError
+
+    entry = MagicMock()
+    entry.entry_id = "profile-1"
+    entry.runtime_data = None  # never set, per async_setup_entry for a profile
+    entry.state = ConfigEntryState.LOADED
+
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    hass.config_entries.async_get_entry.return_value = MagicMock(
+        domain=DOMAIN, entry_id="profile-1"
+    )
+    call = make_call(hass, data={"config_entry_id": ["profile-1"]})
+
+    with pytest.raises(ServiceValidationError):
+        await async_handle_get_diagnostics(call)
+
+
+@pytest.mark.asyncio
 async def test_sanitizer_handles_numpy_datetime_enum_dataclass():
     """Diagnostics containing numpy scalars, datetimes, enums, and dataclasses are JSON-serializable."""
     try:

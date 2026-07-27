@@ -37,6 +37,7 @@ from .const import (
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
     MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
     TIME_STRING_RE,
+    TriageCode,
 )
 from .templates import is_template_string
 
@@ -483,7 +484,6 @@ def check_cover_capabilities(
 
     warnings: list[str] = []
 
-    from .const import TriageCode
     from .cover_types import get_policy
     from .cover_types.base import CAP_HAS_SET_POSITION, caps_get
     from .diagnostics.triage import RuleInput, run_triage

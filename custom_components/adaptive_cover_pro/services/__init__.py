@@ -100,12 +100,15 @@ def _resolve_by_config_entry(
     ``GroupAggregates``, which has no ``diagnostics`` attribute (issue #1059).
 
     Raises ``ServiceValidationError`` for any ID that doesn't exist, isn't
-    owned by this domain, or names a cover group/building profile — the same
-    "explain the specific mistake" shape this function already uses for an
-    unknown ID, rather than silently dropping the entry from the response.
+    owned by this domain, or resolves to no cover coordinator at all — a cover
+    group, a Building Profile (a virtual entry that reaches ``LOADED`` without
+    ever setting ``runtime_data``, so it is absent from
+    :func:`loaded_coordinators` too), or any other ACP entry that isn't
+    currently usable — the same "explain the specific mistake" shape this
+    function already uses for an unknown ID, rather than silently dropping the
+    entry from the response (issue #1059 audit, finding #3).
     """
     cover_coords = cover_coordinators(hass)
-    all_coords = loaded_coordinators(hass)
     result = {}
     for entry_id in entry_ids:
         entry = hass.config_entries.async_get_entry(entry_id)
@@ -116,13 +119,11 @@ def _resolve_by_config_entry(
         coord = cover_coords.get(entry_id)
         if coord is not None:
             result[entry_id] = coord
-        elif entry_id in all_coords:
-            # Loaded, but filtered out of cover_coordinators — a cover group or
-            # building profile, which has no diagnostics/troubleshoot findings
-            # of its own.
+        else:
             raise ServiceValidationError(
-                f"Config entry '{entry_id}' is a cover group or building "
-                "profile, which has no diagnostics"
+                f"Config entry '{entry_id}' has no diagnostics or "
+                "troubleshooting data — it may be a cover group, a Building "
+                "Profile, or not currently loaded"
             )
     return result
 

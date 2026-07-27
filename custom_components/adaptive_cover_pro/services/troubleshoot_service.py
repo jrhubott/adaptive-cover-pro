@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
     from ..diagnostics.triage import Finding
 
-from ..const import CONF_SENSOR_TYPE, CoverType
+from ..const import CONF_SENSOR_TYPE
 from ..diagnostics.resolve import build_troubleshoot_result, read_from_coordinator
 from ..diagnostics.triage import wiki_anchor_for
 from ..reason_i18n import reason_to_dict, render
@@ -51,10 +51,24 @@ async def async_handle_get_troubleshooting(call: ServiceCall) -> dict:
     the options-flow Troubleshoot step uses, so findings never diverge between
     the two surfaces. Never triggers an update cycle.
 
-    A single targeted instance failing (a bad options shape, an unexpected
-    ``build_troubleshoot_result`` exception) degrades that one entry to an
-    ``error`` entry rather than losing the whole response — the other
-    targeted instances still come back (issue #1059).
+    Every entry has exactly one shape — ``config_entry_id``, ``name``,
+    ``source``, ``report``, ``findings``, ``error`` — regardless of whether
+    the read succeeded (issue #1059 audit, findings #1/#2). ``error`` is
+    ``None`` on a fully healthy entry; any other value means something
+    degraded, and ``source`` says how far triage got:
+
+    - ``"coordinator"`` / ``"built"`` / ``"cache"`` — a full, trustworthy
+      read; ``error`` is ``None``.
+    - ``"unavailable"`` — diagnostics weren't ready yet, so only the CONFIG
+      rules ran; ``findings``/``report`` reflect that partial (but valid)
+      result, and ``error`` carries the read failure that produced it.
+    - ``"error"`` — building the troubleshoot result itself raised (a bad
+      options shape, an unexpected exception): nothing ran at all, so
+      ``findings`` is ``[]`` and ``report`` is a human-readable failure
+      message rather than blank.
+
+    A single targeted instance failing must not sink the whole response — the
+    other targeted instances still come back (issue #1059).
     """
     hass: HomeAssistant = call.hass
 
@@ -78,18 +92,11 @@ async def async_handle_get_troubleshooting(call: ServiceCall) -> dict:
                     entry_id,
                     read.error,
                 )
-            # A group/orchestrator or a not-yet-configured cover can carry no
-            # sensor_type; get_policy(None) raises, so fall back to BLIND —
-            # the same default the options flow uses (config_flow.py
-            # OptionsFlowHandler.__init__).
-            sensor_type = (
-                coord.config_entry.data.get(CONF_SENSOR_TYPE) or CoverType.BLIND
-            )
             result = build_troubleshoot_result(
                 hass,
                 read,
                 options=coord.config_entry.options,
-                sensor_type=sensor_type,
+                sensor_type=coord.config_entry.data.get(CONF_SENSOR_TYPE),
                 labels=labels,
             )
         except Exception as exc:  # noqa: BLE001 - one bad entry must not sink the batch
@@ -101,20 +108,21 @@ async def async_handle_get_troubleshooting(call: ServiceCall) -> dict:
             entries[entry_id] = {
                 "config_entry_id": entry_id,
                 "name": name,
+                "source": "error",
+                "report": f"⚠️ Troubleshooting could not run for this cover: {exc}",
+                "findings": [],
                 "error": f"troubleshoot_unavailable: {exc!r}",
             }
             continue
 
-        entry: dict[str, object] = {
+        entries[entry_id] = {
             "config_entry_id": entry_id,
             "name": name,
             "source": result.source,
             "report": result.report,
             "findings": [_finding_to_dict(f, labels) for f in result.findings],
+            "error": read.error,
         }
-        if read.error is not None:
-            entry["error"] = read.error
-        entries[entry_id] = entry
 
     from . import _build_response_envelope  # noqa: PLC0415
 

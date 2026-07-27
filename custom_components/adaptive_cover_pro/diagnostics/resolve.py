@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..const import DIAG_CACHE_KEY
+from ..const import DIAG_CACHE_KEY, CoverType
 from ..helpers import check_cover_capabilities
 from . import triage
 
@@ -130,6 +130,15 @@ def build_troubleshoot_result(
     translated ``troubleshoot_i18n`` bundle (or ``None`` for English); language
     resolution is the caller's concern.
 
+    A falsy ``sensor_type`` falls back to ``CoverType.BLIND`` — the same
+    default ``OptionsFlowHandler.__init__`` applies to ``self.sensor_type`` —
+    so ``get_policy(None)`` never raises here. The fallback lives here, once,
+    rather than in each caller (issue #1059 audit, nit A): the options flow
+    already resolves a real ``sensor_type`` before this function ever runs, so
+    the fallback is a no-op there; it only matters for the
+    ``get_troubleshooting`` service, which passes a raw config-entry value
+    through unchanged.
+
     When ``read.source == "unavailable"`` there is no runtime payload, so only
     the CONFIG rules run (they read options + capabilities alone) and the
     report leads with the "diagnostics aren't available" preamble, followed by
@@ -138,6 +147,7 @@ def build_troubleshoot_result(
     """
     from ..cover_types import get_policy  # noqa: PLC0415
 
+    sensor_type = sensor_type or CoverType.BLIND
     cap_map, _ = check_cover_capabilities(options, sensor_type, hass)
     view: dict = {
         "options": dict(options),

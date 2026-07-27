@@ -189,6 +189,38 @@ async def test_group_config_entry_id_raises_service_validation_error():
 
 
 @pytest.mark.asyncio
+async def test_building_profile_config_entry_id_raises_service_validation_error():
+    """Explicitly targeting a Building Profile's config_entry_id raises
+    ``ServiceValidationError`` instead of silently resolving to no entries
+    (issue #1059 audit, finding #3).
+
+    A Building Profile is a virtual config entry: ``async_setup_entry``
+    returns early for it (``not policy.controls_cover``) without ever setting
+    ``entry.runtime_data``, so it is absent from BOTH ``cover_coordinators``
+    AND ``loaded_coordinators`` — unlike a cover group, which sets
+    ``runtime_data`` to a ``GroupCoordinator`` and is only filtered out of the
+    former. Before this fix, ``_resolve_by_config_entry`` had no branch
+    covering this case and silently dropped the entry from the response.
+    """
+    from homeassistant.exceptions import ServiceValidationError
+
+    entry = MagicMock()
+    entry.entry_id = "profile-1"
+    entry.runtime_data = None  # never set, per async_setup_entry for a profile
+    entry.state = ConfigEntryState.LOADED
+
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    hass.config_entries.async_get_entry.return_value = MagicMock(
+        domain=DOMAIN, entry_id="profile-1"
+    )
+    call = make_call(hass, data={"config_entry_id": ["profile-1"]})
+
+    with pytest.raises(ServiceValidationError):
+        await async_handle_get_troubleshooting(call)
+
+
+@pytest.mark.asyncio
 async def test_explicit_config_entry_id_targets_single_coordinator():
     """config_entry_id field bypasses entity/device target resolution."""
     coord1 = make_coordinator(entry_id="e1", name="North")
@@ -213,6 +245,13 @@ async def test_one_bad_entry_does_not_blank_the_others():
     other targeted coordinator still comes back, and the failing one degrades
     to an error entry rather than losing the whole response (issue #1059,
     finding #3).
+
+    Both entries share exactly one shape (issue #1059 audit, finding #1): every
+    key — ``config_entry_id``, ``name``, ``source``, ``report``, ``findings``,
+    ``error`` — is always present. The degraded entry's ``source`` is
+    ``"error"`` (nothing ran at all), distinct from ``"unavailable"`` (a
+    partial-but-valid CONFIG-only result) — finding #2's structural
+    discriminator.
     """
     good = make_coordinator(entry_id="good-1", name="Good Cover")
     bad = make_coordinator(
@@ -226,12 +265,17 @@ async def test_one_bad_entry_does_not_blank_the_others():
     assert result["count"] == 2
     good_entry = result["entries"]["good-1"]
     assert "findings" in good_entry
-    assert "error" not in good_entry
+    assert good_entry["error"] is None
     bad_entry = result["entries"]["bad-1"]
     assert bad_entry["config_entry_id"] == "bad-1"
     assert bad_entry["name"] == "Bad Cover"
+    assert bad_entry["source"] == "error"
+    assert bad_entry["findings"] == []
+    assert "Troubleshooting could not run" in bad_entry["report"]
     assert "error" in bad_entry
-    assert "findings" not in bad_entry
+    assert "troubleshoot_unavailable" in bad_entry["error"]
+    # Every entry has the same key set, whichever branch produced it.
+    assert set(good_entry.keys()) == set(bad_entry.keys())
 
 
 @pytest.mark.asyncio
@@ -248,7 +292,7 @@ async def test_missing_sensor_type_falls_back_to_blind_without_raising():
     result = await async_handle_get_troubleshooting(call)
 
     entry = result["entries"]["e1"]
-    assert "error" not in entry
+    assert entry["error"] is None
     assert entry["findings"] == []
 
 
@@ -273,6 +317,38 @@ async def test_read_error_is_surfaced_not_discarded():
     assert "error" in entry
     assert "diagnostics_unavailable" in entry["error"]
     assert "Diagnostics aren't available" in entry["report"]
+
+
+@pytest.mark.asyncio
+async def test_response_is_json_serializable_in_every_shape():
+    """The response crosses the HA websocket API, so it must be JSON-safe in
+    every shape the service can produce: a fully healthy entry, a
+    degraded-by-exception entry (``source == "error"``), and a
+    degraded-by-read-error entry (``source == "unavailable"``) — issue #1059
+    audit findings #1/#2. Uses ``homeassistant.helpers.json.json_dumps``, the
+    same serializer the websocket API uses, rather than the stdlib ``json``
+    module.
+    """
+    from homeassistant.helpers.json import json_dumps
+
+    healthy = make_coordinator(
+        entry_id="healthy-1", diagnostics={"debug_config": {"dry_run": True}}
+    )
+    unavailable = make_coordinator(entry_id="unavailable-1")
+    unavailable.data = None
+    unavailable.build_diagnostic_data.side_effect = RuntimeError("update in progress")
+    errored = make_coordinator(entry_id="errored-1", cover_type="not_a_real_cover_type")
+    hass = make_hass(healthy, unavailable, errored)
+    call = make_call(hass)
+
+    result = await async_handle_get_troubleshooting(call)
+
+    assert result["entries"]["healthy-1"]["error"] is None
+    assert result["entries"]["unavailable-1"]["source"] == "unavailable"
+    assert result["entries"]["errored-1"]["source"] == "error"
+
+    serialized = json_dumps(result)
+    assert isinstance(serialized, str)
 
 
 def test_translations_contain_get_troubleshooting_key():
