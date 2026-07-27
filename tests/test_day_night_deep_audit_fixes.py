@@ -8,7 +8,13 @@ Guards the behavioral corrections layered on top of Models A/B/C:
 * MED — a deferred blend update landing in the back-rotate suppression window is
   RECORDED pending + a refresh scheduled, never dropped (#756 parity).
 * MED — the Model C middle-rail remap stays consistent with the ACTUAL space of
-  the dispatched value (bypass / floor-clamp / interpolation skip inversion).
+  the dispatched value. The cached ``_dual_entity_inverse`` mirrors only the
+  main dispatch, and post-#1036/#1043 ``interp`` is the only lever left that
+  forces ``axis_inverted`` False while inverse is configured —
+  ``_cache_dual_entity`` derives the flag from ``axis_inverted(...)`` alone,
+  dropping the floor-clamp/bypass exclusion it used to carry. The broadcast
+  seams keep their own space regardless: pass ``inverted=`` explicitly rather
+  than letting ``resolve_entity_target`` fall back to the cache.
 * LOW — the ``dual_entity`` capability warning names the dual-entity model.
 """
 
@@ -413,16 +419,8 @@ class TestBroadcastSeamInverseSpace:
         # physically pass below the bottom rail. The seam's wire value is the
         # logical position mapped into its OWN inversion space.
         policy = DayNightShadePolicy()
-        if cached_true:
-            _cache_dual(policy, position=logical_pos, blend=blend, inverse=True)
-        else:
-            _cache_dual(
-                policy,
-                position=logical_pos,
-                blend=blend,
-                inverse=True,
-                floor_clamp=True,
-            )
+        _cache_dual(policy, position=logical_pos, blend=blend, inverse=cached_true)
+        assert policy._dual_entity_inverse is cached_true
 
         bottom_wire = inverse_state(logical_pos) if seam_inverted else logical_pos
         middle_wire = policy.resolve_entity_target(
@@ -439,7 +437,7 @@ class TestBroadcastSeamInverseSpace:
         # inverse_state(100)=0; the middle must stay physically >= the bottom
         # rail (open-space 100), never drop to open-space 50 (the buggy cross).
         policy = DayNightShadePolicy()
-        _cache_dual(policy, position=100, blend=50, inverse=True, floor_clamp=True)
+        _cache_dual(policy, position=100, blend=50, inverse=True)
         middle_wire = policy.resolve_entity_target(_MIDDLE, 0, inverted=True)
         assert inverse_state(middle_wire) >= 100
 
