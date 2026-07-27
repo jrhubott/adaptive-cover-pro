@@ -16,6 +16,7 @@ import pytest
 import custom_components.adaptive_cover_pro.services as services
 from custom_components.adaptive_cover_pro.const import DIAG_CACHE_KEY, CoverType
 from custom_components.adaptive_cover_pro.diagnostics.resolve import (
+    RESOLVE_READ_SOURCES,
     DiagnosticsRead,
     build_troubleshoot_result,
     read_diagnostics,
@@ -44,6 +45,15 @@ def test_diagnostics_read_error_defaults_none():
     """Error defaults to None when omitted."""
     read = DiagnosticsRead(payload={"a": 1}, source="coordinator")
     assert read.error is None
+
+
+def test_resolve_read_sources_enumerates_the_vocabulary():
+    """RESOLVE_READ_SOURCES is the one authoritative list of every value
+    DiagnosticsRead/TroubleshootResult ``source`` can carry (issue #1059
+    audit round 3, nit #4) — locked against a literal so a new source value
+    added to one docstring but not the other can't slip through silently.
+    """
+    assert RESOLVE_READ_SOURCES == ("coordinator", "built", "cache", "unavailable")
 
 
 # ---------------------------------------------------------------------------

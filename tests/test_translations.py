@@ -658,6 +658,25 @@ def test_service_field_descriptions_icu_safe(lang_file: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
+def test_get_diagnostics_and_get_troubleshooting_config_entry_id_descriptions_match(
+    lang_file: Path,
+) -> None:
+    """get_diagnostics and get_troubleshooting expose the identical
+    config_entry_id escape hatch, so the action picker must show one text for
+    it, not two (issue #1059 audit round 3, nit #5).
+    """
+    services = _load(lang_file)["services"]
+    diag_desc = services["get_diagnostics"]["fields"]["config_entry_id"]["description"]
+    troubleshoot_desc = services["get_troubleshooting"]["fields"]["config_entry_id"][
+        "description"
+    ]
+    assert diag_desc == troubleshoot_desc, (
+        f"{lang_file.name}: get_diagnostics and get_troubleshooting "
+        "config_entry_id descriptions must be identical"
+    )
+
+
 @pytest.mark.unit
 def test_manual_override_duration_mode_options_translated_in_en():
     """All five duration-mode values need a non-empty English selector label (#1044)."""

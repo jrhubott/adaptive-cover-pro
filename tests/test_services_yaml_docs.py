@@ -50,6 +50,19 @@ def test_set_blind_spot_service_description_mentions_window_normal():
     assert "window normal" in desc
 
 
+def test_get_diagnostics_and_get_troubleshooting_config_entry_id_descriptions_match():
+    """Both services expose the identical config_entry_id escape hatch — the
+    field description must read identically in the action picker rather than
+    presenting two texts for the same thing (issue #1059 audit round 3, nit #5).
+    """
+    services = _load()
+    diag_desc = services["get_diagnostics"]["fields"]["config_entry_id"]["description"]
+    troubleshoot_desc = services["get_troubleshooting"]["fields"]["config_entry_id"][
+        "description"
+    ]
+    assert diag_desc == troubleshoot_desc
+
+
 def test_set_blind_spot_en_json_fields_match_services_yaml():
     """en.json set_blind_spot.fields must document exactly the yaml fields.
 

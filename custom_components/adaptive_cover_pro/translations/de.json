@@ -1941,7 +1941,7 @@
       "fields": {
         "config_entry_id": {
           "name": "Konfigurationseintrag",
-          "description": "Explizite Konfigurations-Eintrags-IDs zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl. Kein Ziel gibt alle ACP-Instanzen zurück."
+          "description": "Explizite Konfigurations-Eintrags-ID(s) zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl (Entität/Gerät/Bereich). Ganz ohne Ziel werden alle ACP-Instanzen zurückgegeben."
         }
       }
     },

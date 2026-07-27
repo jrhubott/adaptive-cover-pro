@@ -131,68 +131,149 @@ async def test_unknown_explicit_entry_raises():
         await async_handle_get_diagnostics(call)
 
 
+def _make_unresolvable_entry(entry_id, state, runtime_data=None):
+    """Build a MagicMock ``ConfigEntry`` for an id that must NOT resolve to a
+    cover coordinator — used by the three degrade-not-raise cases below.
+    """
+    entry = MagicMock()
+    entry.entry_id = entry_id
+    entry.domain = DOMAIN
+    entry.title = entry_id
+    entry.state = state
+    entry.runtime_data = runtime_data
+    return entry
+
+
+def _make_multi_entry_hass(good_coord, *unresolvable_entries):
+    """Build a hass whose ``config_entries`` roster mixes one real cover
+    coordinator with one or more unresolvable entries (issue #1059 audit
+    round 3, defect #1: multiple entries in one explicit ``config_entry_id``
+    call — a single unresolvable one must not sink the others).
+    """
+    good_entry = MagicMock()
+    good_entry.entry_id = good_coord.config_entry.entry_id
+    good_entry.domain = DOMAIN
+    good_entry.title = good_coord.config_entry.data.get("name")
+    good_entry.runtime_data = good_coord
+    good_entry.state = ConfigEntryState.LOADED
+
+    all_entries = [good_entry, *unresolvable_entries]
+    by_id = {entry.entry_id: entry for entry in all_entries}
+
+    hass = MagicMock()
+    hass.config_entries.async_entries = MagicMock(return_value=all_entries)
+    hass.config_entries.async_get_entry.side_effect = lambda eid: by_id.get(eid)
+    return hass
+
+
 @pytest.mark.asyncio
-async def test_group_config_entry_id_raises_service_validation_error():
-    """Explicitly targeting a cover group's config_entry_id raises a clear
-    ServiceValidationError instead of an AttributeError from ``coord.data.diagnostics``
-    (issue #1059, finding #1). ``_resolve_by_config_entry`` must resolve through
+async def test_group_config_entry_id_degrades_instead_of_raising():
+    """Explicitly targeting a cover group's config_entry_id degrades to a
+    per-entry error entry instead of raising ``ServiceValidationError`` for
+    the WHOLE call — and the other explicitly-targeted, resolvable entry in
+    the same call still comes back (issue #1059 audit round 3, defect #1: an
+    ``else: raise`` here previously made an explicit multi-entry call
+    all-or-nothing). ``_resolve_by_config_entry`` must resolve through
     ``cover_coordinators`` (which filters out groups/building profiles) rather
     than ``loaded_coordinators`` (which does not) — a ``GroupCoordinator``'s
     ``.data`` is ``GroupAggregates``, which has no ``diagnostics`` attribute.
     """
-    from homeassistant.exceptions import ServiceValidationError
-
     from custom_components.adaptive_cover_pro.group_coordinator import (
         GroupCoordinator,
     )
 
+    good = make_coordinator(entry_id="good-1", name="Good Cover")
     group_coord = MagicMock()
     group_coord.__class__ = GroupCoordinator  # isinstance(..., GroupCoordinator) → True
     group_coord.config_entry.entry_id = "group-1"
-
-    entry = MagicMock()
-    entry.entry_id = "group-1"
-    entry.runtime_data = group_coord
-    entry.state = ConfigEntryState.LOADED
-
-    hass = MagicMock()
-    hass.config_entries.async_entries = MagicMock(return_value=[entry])
-    hass.config_entries.async_get_entry.return_value = MagicMock(
-        domain=DOMAIN, entry_id="group-1"
+    group_entry = _make_unresolvable_entry(
+        "group-1", ConfigEntryState.LOADED, runtime_data=group_coord
     )
-    call = make_call(hass, data={"config_entry_id": ["group-1"]})
+    hass = _make_multi_entry_hass(good, group_entry)
+    call = make_call(hass, data={"config_entry_id": ["good-1", "group-1"]})
 
-    with pytest.raises(ServiceValidationError):
-        await async_handle_get_diagnostics(call)
+    result = await async_handle_get_diagnostics(call)
+
+    assert result["count"] == 2
+    assert "error" not in result["entries"]["good-1"]["diagnostics"]
+    group_result = result["entries"]["group-1"]
+    assert group_result["config_entry_id"] == "group-1"
+    assert group_result["diagnostics"]["error"]
+    assert "cover group" in group_result["diagnostics"]["error"].lower()
 
 
 @pytest.mark.asyncio
-async def test_building_profile_config_entry_id_raises_service_validation_error():
-    """Explicitly targeting a Building Profile's config_entry_id raises
-    ``ServiceValidationError`` instead of silently resolving to no entries
-    (issue #1059 audit, finding #3).
+async def test_building_profile_config_entry_id_degrades_instead_of_raising():
+    """Explicitly targeting a Building Profile's config_entry_id degrades to a
+    per-entry error entry instead of raising (issue #1059 audit round 3,
+    defect #1) — and the other explicitly-targeted, resolvable entry in the
+    same call still comes back.
 
     A Building Profile is a virtual config entry: ``async_setup_entry``
     returns early for it (``not policy.controls_cover``) without ever setting
     ``entry.runtime_data``, so it is absent from BOTH ``cover_coordinators``
     AND ``loaded_coordinators`` — unlike a cover group, which sets
     ``runtime_data`` to a ``GroupCoordinator`` and is only filtered out of the
-    former. Before this fix, ``_resolve_by_config_entry`` had no branch
-    covering this case and silently dropped the entry from the response.
+    former.
+    """
+    good = make_coordinator(entry_id="good-1", name="Good Cover")
+    profile_entry = _make_unresolvable_entry(
+        "profile-1", ConfigEntryState.LOADED, runtime_data=None
+    )
+    hass = _make_multi_entry_hass(good, profile_entry)
+    call = make_call(hass, data={"config_entry_id": ["good-1", "profile-1"]})
+
+    result = await async_handle_get_diagnostics(call)
+
+    assert result["count"] == 2
+    assert "error" not in result["entries"]["good-1"]["diagnostics"]
+    profile_result = result["entries"]["profile-1"]
+    assert profile_result["config_entry_id"] == "profile-1"
+    assert profile_result["diagnostics"]["error"]
+    assert "building profile" in profile_result["diagnostics"]["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_not_loaded_config_entry_id_degrades_instead_of_raising():
+    """Explicitly targeting a config entry that is mid-reload / ``SETUP_RETRY``
+    / disabled (state is not ``LOADED``) degrades to a per-entry error entry
+    instead of raising — and the other explicitly-targeted, resolvable entry
+    in the same call still comes back (issue #1059 audit round 3, defect #1:
+    the widened ``else: raise`` regressed exactly this case, which shipped
+    working on ``develop`` — a single mid-reload instance used to zero the
+    whole multi-entry response; ``get_diagnostics`` must be no worse than
+    ``develop`` here).
+    """
+    good = make_coordinator(entry_id="good-1", name="Good Cover")
+    retry_entry = _make_unresolvable_entry(
+        "retry-1", ConfigEntryState.SETUP_RETRY, runtime_data=None
+    )
+    hass = _make_multi_entry_hass(good, retry_entry)
+    call = make_call(hass, data={"config_entry_id": ["good-1", "retry-1"]})
+
+    result = await async_handle_get_diagnostics(call)
+
+    assert result["count"] == 2
+    assert "error" not in result["entries"]["good-1"]["diagnostics"]
+    retry_result = result["entries"]["retry-1"]
+    assert retry_result["config_entry_id"] == "retry-1"
+    assert "not currently loaded" in retry_result["diagnostics"]["error"].lower()
+    assert "setup_retry" in retry_result["diagnostics"]["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_unknown_explicit_entry_still_raises_alongside_other_entries():
+    """An id that is not an ACP config entry at all (typo, wrong integration,
+    nonexistent) is a genuine caller error with no instance to attach a
+    degraded entry to — it still raises ``ServiceValidationError`` immediately,
+    unlike the three degrade-not-raise cases above (issue #1059 audit round 3,
+    defect #1 design decision).
     """
     from homeassistant.exceptions import ServiceValidationError
 
-    entry = MagicMock()
-    entry.entry_id = "profile-1"
-    entry.runtime_data = None  # never set, per async_setup_entry for a profile
-    entry.state = ConfigEntryState.LOADED
-
-    hass = MagicMock()
-    hass.config_entries.async_entries = MagicMock(return_value=[entry])
-    hass.config_entries.async_get_entry.return_value = MagicMock(
-        domain=DOMAIN, entry_id="profile-1"
-    )
-    call = make_call(hass, data={"config_entry_id": ["profile-1"]})
+    good = make_coordinator(entry_id="good-1", name="Good Cover")
+    hass = _make_multi_entry_hass(good)
+    call = make_call(hass, data={"config_entry_id": ["good-1", "nonexistent-id"]})
 
     with pytest.raises(ServiceValidationError):
         await async_handle_get_diagnostics(call)

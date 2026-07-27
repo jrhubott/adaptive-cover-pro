@@ -44,16 +44,33 @@ TROUBLESHOOT_UNAVAILABLE = (
     "ℹ️ Diagnostics aren't available yet for this cover — it may not have "
     "completed a first update cycle. Re-check once it has run at least once."
 )
+# A third envelope string, alongside the two above: the get_troubleshooting
+# service's per-entry failure text for an instance where building the
+# troubleshoot result raised entirely (a bad options shape, an unexpected
+# exception, or an explicitly-targeted config entry with no cover coordinator
+# — issue #1059 audit round 3, nit #3). ``{reason}`` is filled in at the call
+# site with the human-readable form of whatever went wrong, so the same
+# representation appears in both the ``report`` and ``error`` fields of the
+# degraded entry rather than one carrying ``str(exc)`` and the other ``repr(exc)``.
+TROUBLESHOOT_BUILD_FAILED = "⚠️ Troubleshooting could not run for this cover: {reason}"
+
+# The vocabulary of resolve-layer "source" values (issue #1059 audit round 3,
+# nit #4): every :class:`DiagnosticsRead` and :class:`TroubleshootResult` this
+# module produces has a ``source`` drawn from exactly these four. The
+# get_troubleshooting service response adds one more, service-layer-only value
+# — ``"error"`` — that this module's dataclasses can never carry (see
+# ``troubleshoot_service.async_handle_get_troubleshooting``'s docstring).
+RESOLVE_READ_SOURCES: tuple[str, ...] = ("coordinator", "built", "cache", "unavailable")
 
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticsRead:
     """The outcome of a read-only diagnostics resolution.
 
-    ``source`` is one of ``"coordinator"`` (live ``coordinator.data``),
-    ``"built"`` (a read-only rebuild), ``"cache"`` (the stale snapshot), or
-    ``"unavailable"`` (nothing answered / a rebuild raised). ``error`` carries a
-    formatted message only when a rebuild raised.
+    ``source`` is one of :data:`RESOLVE_READ_SOURCES` — ``"coordinator"``
+    (live ``coordinator.data``), ``"built"`` (a read-only rebuild), ``"cache"``
+    (the stale snapshot), or ``"unavailable"`` (nothing answered / a rebuild
+    raised). ``error`` carries a formatted message only when a rebuild raised.
     """
 
     payload: dict | None
@@ -103,8 +120,12 @@ class TroubleshootResult:
 
     ``findings`` are the raw :class:`~.triage.Finding` objects (code + params +
     severity + fix_step), ``report`` is the rendered bullet report (or one of
-    the envelope strings when there is nothing to show), and ``source`` mirrors
-    the :class:`DiagnosticsRead` that fed it.
+    the envelope strings when there is nothing to show), and ``source`` is
+    copied verbatim from the :class:`DiagnosticsRead` that fed it — so it is
+    always one of :data:`RESOLVE_READ_SOURCES`, never the
+    ``get_troubleshooting`` service response's service-layer-only ``"error"``
+    value, which this dataclass is never even constructed for (that case
+    short-circuits before :func:`build_troubleshoot_result` returns anything).
     """
 
     findings: list[Finding]

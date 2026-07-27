@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
@@ -86,30 +87,56 @@ def cover_coordinators(
     }
 
 
+@dataclass(frozen=True, slots=True)
+class UnresolvedConfigEntry:
+    """An explicitly-targeted ACP config entry with no cover coordinator.
+
+    ``name`` is the entry's title — the same human-readable label
+    ``export_config``/``diagnostics/__init__.py`` already show for a raw
+    config entry with no coordinator to read a ``data["name"]`` off of.
+    ``reason`` is a per-case, human-readable explanation of why this id
+    produced no coordinator (a cover group, a Building Profile, or an entry
+    that isn't currently loaded — issue #1059 audit round 3, defect #1).
+    """
+
+    name: str
+    reason: str
+
+
 def _resolve_by_config_entry(
     hass: HomeAssistant, entry_ids: list[str]
-) -> dict[str, AdaptiveDataUpdateCoordinator]:
-    """Resolve explicit config entry IDs to {entry_id: coordinator}.
+) -> tuple[dict[str, AdaptiveDataUpdateCoordinator], dict[str, UnresolvedConfigEntry]]:
+    """Resolve explicit config entry IDs to (resolved, unresolved).
 
     Shared by ``get_diagnostics`` and ``get_troubleshooting`` — both accept an
     explicit ``config_entry_id`` escape hatch that bypasses the standard
-    entity/device/area target block. Resolves through :func:`cover_coordinators`
-    (not :func:`loaded_coordinators`) so a cover group or building profile is
-    never handed to a reader that expects a real cover coordinator's
+    entity/device/area target block. ``resolved`` maps entry_id → coordinator
+    for every id that is a real, loaded cover coordinator (resolved through
+    :func:`cover_coordinators`, never :func:`loaded_coordinators`, so a cover
+    group is never handed to a reader that expects a real cover coordinator's
     ``.data.diagnostics`` shape — a ``GroupCoordinator``'s ``.data`` is
-    ``GroupAggregates``, which has no ``diagnostics`` attribute (issue #1059).
+    ``GroupAggregates``, which has no ``diagnostics`` attribute, issue #1059).
 
-    Raises ``ServiceValidationError`` for any ID that doesn't exist, isn't
-    owned by this domain, or resolves to no cover coordinator at all — a cover
-    group, a Building Profile (a virtual entry that reaches ``LOADED`` without
-    ever setting ``runtime_data``, so it is absent from
-    :func:`loaded_coordinators` too), or any other ACP entry that isn't
-    currently usable — the same "explain the specific mistake" shape this
-    function already uses for an unknown ID, rather than silently dropping the
-    entry from the response (issue #1059 audit, finding #3).
+    ``unresolved`` maps entry_id → :class:`UnresolvedConfigEntry` for every id
+    that IS an ACP config entry but has no cover coordinator to read from — a
+    cover group, a Building Profile (a virtual entry that reaches ``LOADED``
+    without ever setting ``runtime_data``, so it is absent from
+    :func:`loaded_coordinators` too), or an entry that isn't currently
+    ``LOADED`` at all (mid-reload, ``SETUP_RETRY``, disabled). Callers degrade
+    these to a per-entry error rather than losing the whole response — a
+    single targeted instance being unresolvable must not sink an explicit
+    multi-entry call (issue #1059 audit round 3, defect #1: an ``else: raise``
+    here previously made the whole batch all-or-nothing).
+
+    An id that is not an ACP config entry at all (typo, wrong integration,
+    nonexistent) is a different class of mistake with no instance to attach a
+    degraded entry to — that still raises ``ServiceValidationError``
+    immediately, unchanged from before.
     """
     cover_coords = cover_coordinators(hass)
-    result = {}
+    all_loaded = loaded_coordinators(hass)
+    resolved: dict[str, AdaptiveDataUpdateCoordinator] = {}
+    unresolved: dict[str, UnresolvedConfigEntry] = {}
     for entry_id in entry_ids:
         entry = hass.config_entries.async_get_entry(entry_id)
         if entry is None or entry.domain != DOMAIN:
@@ -118,14 +145,30 @@ def _resolve_by_config_entry(
             )
         coord = cover_coords.get(entry_id)
         if coord is not None:
-            result[entry_id] = coord
-        else:
-            raise ServiceValidationError(
-                f"Config entry '{entry_id}' has no diagnostics or "
-                "troubleshooting data — it may be a cover group, a Building "
-                "Profile, or not currently loaded"
+            resolved[entry_id] = coord
+            continue
+        if entry_id in all_loaded:
+            # Loaded, but excluded from cover_coordinators() → a cover group.
+            reason = (
+                "This config entry is a cover group, not a single cover "
+                "instance — it has no per-instance diagnostics or "
+                "troubleshooting data."
             )
-    return result
+        elif entry.state is ConfigEntryState.LOADED:
+            # LOADED but never set runtime_data → a virtual Building Profile.
+            reason = (
+                "This config entry has no cover coordinator — it is likely "
+                "a Building Profile (a virtual entry with no cover to "
+                "control)."
+            )
+        else:
+            reason = (
+                f"This config entry is not currently loaded (state: "
+                f"{entry.state.value}) — it may be mid-reload, in a setup "
+                "retry, or disabled."
+            )
+        unresolved[entry_id] = UnresolvedConfigEntry(name=entry.title, reason=reason)
+    return resolved, unresolved
 
 
 def _resolve_targets(
@@ -240,20 +283,22 @@ TARGET_WITH_CONFIG_ENTRY_SCHEMA = vol.Schema(
 
 def _resolve_service_targets(
     hass: HomeAssistant, call: ServiceCall
-) -> dict[str, AdaptiveDataUpdateCoordinator]:
-    """Resolve a response-service call to {entry_id: coordinator}.
+) -> tuple[dict[str, AdaptiveDataUpdateCoordinator], dict[str, UnresolvedConfigEntry]]:
+    """Resolve a response-service call to (resolved, unresolved).
 
     Shared targeting preamble for ``get_diagnostics`` and
     ``get_troubleshooting`` (issue #1059): an explicit ``config_entry_id``
     list bypasses the standard entity/device/area target block via
-    :func:`_resolve_by_config_entry`; otherwise falls back to the standard
-    target block via :func:`_resolve_targets`.
+    :func:`_resolve_by_config_entry` — the only path that can produce
+    ``unresolved`` entries. The standard entity/device/area target block
+    (:func:`_resolve_targets`) only ever discovers real, loaded cover
+    coordinators, so it always pairs with an empty unresolved map.
     """
     explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
     if explicit_entry_ids:
         return _resolve_by_config_entry(hass, explicit_entry_ids)
     target_map = _resolve_targets(hass, call)
-    return {coord.config_entry.entry_id: coord for coord in target_map}
+    return {coord.config_entry.entry_id: coord for coord in target_map}, {}
 
 
 def _build_response_envelope(entries: dict) -> dict:
