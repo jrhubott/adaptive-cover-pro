@@ -29,6 +29,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_END_TIME,
     CONF_SENSOR_TYPE,
     CONF_START_TIME,
+    CUSTOM_POSITION_INPUT_HOLD_SECONDS,
     CoverType,
     DOMAIN,
 )
@@ -47,8 +48,16 @@ _OPTIONS = {
 }
 
 
-def _make_builder(mock_hass) -> PipelineSnapshotBuilder:
-    """Snapshot builder bound to the mock hass — the real sensor-read surface."""
+def _make_builder(mock_hass, *, clock=None) -> PipelineSnapshotBuilder:
+    """Snapshot builder bound to the mock hass — the real sensor-read surface.
+
+    ``clock``, when given, is an injected monotonic time source (seconds) so
+    a test can advance the per-input hold window deterministically without
+    ``sleep`` (issue #1012 finding 1). Omitted entirely for callers that
+    don't care — the builder then falls back to the real ``time.monotonic``,
+    which is what every pre-existing test in this file still relies on.
+    """
+    kwargs = {} if clock is None else {"clock": clock}
     return PipelineSnapshotBuilder(
         hass=mock_hass,
         logger=MagicMock(),
@@ -56,6 +65,7 @@ def _make_builder(mock_hass) -> PipelineSnapshotBuilder:
         toggles=MagicMock(),
         policy=MagicMock(),
         config_service=MagicMock(),
+        **kwargs,
     )
 
 
@@ -158,29 +168,244 @@ def test_template_render_failure_while_sensor_off_holds_on(mock_hass):
         assert c3.is_valid is True
 
 
+# ---------------------------------------------------------------------------
+# Per-input hold TIME BOUND (finding 1): a permanently-dead input must
+# eventually release the slot, not mask a healthy peer forever.
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.unit
-def test_both_inputs_invalid_still_uses_whole_slot_hold(mock_hass):
-    """When sensor AND template both go invalid in the same cycle, the
-    pre-existing #1005 whole-slot hold still engages — proving the new
-    per-input caches don't interfere with the pre-existing whole-slot
-    fallback for the fully-invalid case.
+def test_hold_expires_after_window_and_healthy_peer_wins(mock_hass):
+    """The audit's exact pathology: an OR-mode slot with a sensor whose
+    battery dies permanently and a template that validly opines False. The
+    per-input hold must protect a brief blip (#1012's original contract:
+    "briefly went unavailable"), but a permanently-dead sensor must
+    eventually release the slot back to the template's real opinion — else
+    the slot stays pinned forever with no release path (issue #1012,
+    finding 1).
     """
-    builder = _make_builder(mock_hass)
+    clock = [0.0]
+    builder = _make_builder(mock_hass, clock=lambda: clock[0])
 
     with patch(
         "custom_components.adaptive_cover_pro.pipeline.snapshot_builder."
         "render_condition_or_none",
-        side_effect=[True, None],
+        return_value=False,
     ):
-        # Cycle 1: sensor on, template True → valid on.
+        # Cycle 1: sensor on, template False → OR-fold True (sensor wins).
         _set_sensor_states(mock_hass, {"binary_sensor.mode": "on"})
         (c1,) = builder.read_custom_position_sensors(_OPTIONS)
         assert c1.is_on is True
         assert c1.is_valid is True
 
-        # Cycle 2: sensor invalid AND template fails to render → whole-slot
-        # invalid → #1005 hold engages → is_on held True, is_valid False.
+        # Cycle 2: sensor unavailable, clock advanced LESS than the hold
+        # window → the #1012 per-input hold still protects the blip (this is
+        # the behavior #1012 exists to preserve — it must survive finding 1).
         _set_sensor_states(mock_hass, {"binary_sensor.mode": "unavailable"})
+        clock[0] = CUSTOM_POSITION_INPUT_HOLD_SECONDS - 1.0
+        (c2,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c2.is_on is True
+        assert c2.is_valid is True
+
+        # Cycle 3: sensor STILL unavailable, clock advanced PAST the window →
+        # the per-input hold expires; the template's real, validly-opined
+        # False wins the fold again — the sensor can no longer mask it.
+        clock[0] = CUSTOM_POSITION_INPUT_HOLD_SECONDS + 1.0
+        (c3,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c3.is_on is False
+        assert c3.is_valid is True
+
+
+@pytest.mark.unit
+def test_expired_hold_recovers_when_sensor_returns(mock_hass):
+    """After the per-input hold expires and the slot releases, the sensor
+    recovering must re-arm a fresh hold window — proving expiry doesn't
+    permanently poison the slot; a later short blip is held again exactly
+    like the very first one was (issue #1012, finding 1).
+    """
+    clock = [0.0]
+    builder = _make_builder(mock_hass, clock=lambda: clock[0])
+
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder."
+        "render_condition_or_none",
+        return_value=False,
+    ):
+        # Cycle 1: sensor on → valid True, cached at t=0.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "on"})
+        (c1,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c1.is_on is True
+        assert c1.is_valid is True
+
+        # Cycle 2: sensor unavailable, clock past the window → hold expires,
+        # template's False wins → slot goes off.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "unavailable"})
+        clock[0] = CUSTOM_POSITION_INPUT_HOLD_SECONDS + 1.0
+        (c2,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c2.is_on is False
+        assert c2.is_valid is True
+
+        # Cycle 3: sensor recovers → fresh True again, re-cached at the
+        # CURRENT clock reading (not poisoned by the earlier expiry).
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "on"})
+        (c3,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c3.is_on is True
+        assert c3.is_valid is True
+
+        # Cycle 4: a later short blip, well within a NEW window measured from
+        # cycle 3's timestamp, must be held again — expiry didn't leave the
+        # slot permanently unable to hold.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "unavailable"})
+        clock[0] += 1.0
+        (c4,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c4.is_on is True
+        assert c4.is_valid is True
+
+
+@pytest.mark.unit
+def test_template_hold_expires_and_healthy_sensor_wins(mock_hass):
+    """Mirror of the expiry test for the template side: a template that
+    permanently fails to render must eventually release the slot back to a
+    validly-opined sensor's own value, rather than masking it forever
+    (issue #1012, finding 1 — symmetric direction).
+    """
+    clock = [0.0]
+    builder = _make_builder(mock_hass, clock=lambda: clock[0])
+    _set_sensor_states(mock_hass, {"binary_sensor.mode": "off"})
+
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder."
+        "render_condition_or_none",
+        side_effect=[True, None, None],
+    ):
+        # Cycle 1: sensor off, template True → OR-fold True (template wins),
+        # cached at t=0.
+        (c1,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c1.is_on is True
+        assert c1.is_valid is True
+
+        # Cycle 2: template fails to render, clock within the window → held.
+        clock[0] = CUSTOM_POSITION_INPUT_HOLD_SECONDS - 1.0
+        (c2,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c2.is_on is True
+        assert c2.is_valid is True  # sensor's valid off keeps is_valid True
+
+        # Cycle 3: template STILL fails to render, clock past the window →
+        # the template's hold expires; the sensor's real (valid) off wins.
+        clock[0] = CUSTOM_POSITION_INPUT_HOLD_SECONDS + 1.0
+        (c3,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c3.is_on is False
+        assert c3.is_valid is True
+
+
+# ---------------------------------------------------------------------------
+# AND-mode coverage (finding 3): the per-input hold must protect an AND-mode
+# slot too, not just OR — a held sensor can keep an AND slot on where,
+# pre-#1012, it would have gone off.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "mode, template_render, expected_is_on_by_cycle",
+    [
+        # OR mode: a constant-False template means the sensor's own (fresh
+        # or held) contribution alone decides is_on — the audit's original
+        # scenario.
+        ("or", False, (False, True, True, True)),
+        # AND mode: with a constant-False template, combine_with_mode's AND
+        # clause (template_truthy and others_truthy) would force is_on False
+        # on EVERY cycle regardless of the sensor, so a False-template AND
+        # scenario exercises nothing about the sensor hold at all. A
+        # constant-TRUE template instead makes is_on = template_truthy AND
+        # sensors_on — so the *held* sensor value now decides the AND
+        # result exactly as it decides the OR result above, which is what
+        # actually proves the per-input hold protects AND slots too.
+        ("and", True, (False, True, True, True)),
+    ],
+)
+def test_held_sensor_protects_or_and_and_mode(
+    mock_hass, mode, template_render, expected_is_on_by_cycle
+):
+    """The per-input sensor hold must protect both OR-mode and AND-mode
+    slots — the mode only changes which template render value makes the
+    sensor's contribution decisive, not whether the hold does its job.
+    """
+    builder = _make_builder(mock_hass)
+    options = {**_OPTIONS, "custom_position_template_mode_1": mode}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder."
+        "render_condition_or_none",
+        return_value=template_render,
+    ):
+        # Cycle 0: cold start, sensor unavailable → no prior hold to fall
+        # back on; sensor contributes its fresh (empty) reading.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "unavailable"})
+        (c0,) = builder.read_custom_position_sensors(options)
+        assert c0.is_on is expected_is_on_by_cycle[0]
+        assert c0.is_valid is True
+
+        # Cycle 1: sensor on → fresh True feeds the fold directly.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "on"})
+        (c1,) = builder.read_custom_position_sensors(options)
+        assert c1.is_on is expected_is_on_by_cycle[1]
+        assert c1.is_valid is True
+
+        # Cycle 2: sensor transiently unavailable → held to its last-valid
+        # True. This is the regression-guard assertion: without the
+        # per-input hold, the sensor's fresh False would flip is_on here.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "unavailable"})
+        (c2,) = builder.read_custom_position_sensors(options)
+        assert c2.is_on is expected_is_on_by_cycle[2]
+        assert c2.is_valid is True
+
+        # Cycle 3: sensor recovers → fresh True again.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "on"})
+        (c3,) = builder.read_custom_position_sensors(options)
+        assert c3.is_on is expected_is_on_by_cycle[3]
+        assert c3.is_valid is True
+
+
+@pytest.mark.unit
+def test_both_inputs_invalid_still_uses_whole_slot_hold(mock_hass):
+    """When sensor AND template both go invalid in the same cycle, the
+    pre-existing #1005 whole-slot hold still engages as the outer safety
+    net — proven distinctly from the per-input hold by spanning PAST the
+    per-input window (CUSTOM_POSITION_INPUT_HOLD_SECONDS): each per-input
+    hold, evaluated on its own, would itself have expired by then and
+    folded to is_on=False. The whole-slot hold (#1005) carries no time
+    bound, so is_on=True surviving here can only be explained by the
+    whole-slot cache overwriting the (already-expired) per-input fold —
+    proving the two mechanisms don't collapse into one indistinguishable
+    path (issue #1012, finding 4).
+    """
+    clock = [0.0]
+    builder = _make_builder(mock_hass, clock=lambda: clock[0])
+
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder."
+        "render_condition_or_none",
+        side_effect=[False, None],
+    ):
+        # Cycle 1: sensor on, template False → valid on (OR-fold: sensor
+        # wins). Both the per-input caches and the whole-slot cache record
+        # this at t=0.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "on"})
+        (c1,) = builder.read_custom_position_sensors(_OPTIONS)
+        assert c1.is_on is True
+        assert c1.is_valid is True
+
+        # Cycle 2: sensor invalid AND template fails to render, clock
+        # advanced PAST the per-input hold window. Each per-input hold has
+        # itself expired (sensor: unavailable past window → falls through to
+        # fresh False; template: never valid this run beyond cycle 1, and
+        # also past window → falls through to fresh False) — folded alone,
+        # that is is_on=False. Whole-slot is_valid is False this cycle, so
+        # the unbounded #1005 hold engages and overwrites is_on with the last
+        # valid COMBINED state (True) — the only mechanism left standing.
+        _set_sensor_states(mock_hass, {"binary_sensor.mode": "unavailable"})
+        clock[0] = CUSTOM_POSITION_INPUT_HOLD_SECONDS + 1.0
         (c2,) = builder.read_custom_position_sensors(_OPTIONS)
         assert c2.is_on is True
         assert c2.is_valid is False

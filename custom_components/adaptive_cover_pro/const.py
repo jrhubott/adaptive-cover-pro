@@ -1112,6 +1112,16 @@ DEFAULT_CUSTOM_POSITION_PRIORITY = 77  # default priority for a new slot
 # Default for an absent custom_position_tilt_only_<N> option (issue #514).
 DEFAULT_CUSTOM_POSITION_TILT_ONLY = False
 
+# Per-input last-valid hold window for a custom-position slot's sensor/
+# template fold (issue #1012). When a slot binds both a sensor and a
+# condition template, one input can go transiently invalid while the other
+# still opines; the fold holds that input's own last-valid contribution
+# rather than letting its fresh, coerced-to-False value silently win. This
+# window bounds the hold: past it, the held input falls through to its fresh
+# value, so a permanently-dead input (e.g. a sensor whose battery died)
+# cannot mask a healthy peer indefinitely. Fixed, not user-configurable.
+CUSTOM_POSITION_INPUT_HOLD_SECONDS = 300.0
+
 # Configurable priorities for the built-in pipeline handlers. Each key holds an
 # integer (1-99) that overrides the handler's class-default priority, letting the
 # user re-order the decision chain. An absent/cleared key falls back to the class

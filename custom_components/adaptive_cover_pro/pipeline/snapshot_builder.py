@@ -5,10 +5,15 @@ and policy-derived glare-zone configuration into a single
 :class:`PipelineSnapshot` for the pipeline registry to evaluate.
 
 It is composed by the coordinator and constructed once at coordinator
-initialisation.  The builder holds no per-cycle state: every value that
-changes per cycle (manual-override flag, motion-timeout flag, weather flag,
-time-window flag, current cover position, the cover engine, etc.) flows in
-as a method argument.  The coordinator remains the single owner of
+initialisation.  Most values that change per cycle (manual-override flag,
+motion-timeout flag, weather flag, time-window flag, current cover position,
+the cover engine, etc.) flow in as a method argument rather than being held
+on the builder.  The one exception is the custom-position "last valid" hold
+state: the builder carries per-slot (issue #1005) and per-input (issue
+#1012) last-valid caches across cycles — see ``_last_valid_custom_position``,
+``_last_valid_sensor_fold``, and ``_last_valid_template_active`` in
+``__init__`` — so a transient sensor/template blip does not fire a false
+release edge.  The coordinator remains the single owner of
 ``_weather_readings`` — the builder returns ``ClimateReadings`` from
 :meth:`read_climate` and the coordinator stores it.
 
@@ -27,6 +32,7 @@ the same composed-class pattern that Phase B established with
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, TypeVar
 from collections.abc import Callable
 
@@ -86,6 +92,7 @@ from ..const import (
     CONF_WEATHER_STATE,
     CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
+    CUSTOM_POSITION_INPUT_HOLD_SECONDS,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_CUSTOM_POSITION_ENABLED,
@@ -181,8 +188,15 @@ class PipelineSnapshotBuilder:
         policy: CoverTypePolicy,
         config_service: ConfigurationService,
         time_mgr: TimeWindowManager | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Bind the builder to its long-lived collaborators."""
+        """Bind the builder to its long-lived collaborators.
+
+        ``clock`` is a monotonic time source (seconds) for the per-input
+        custom-position hold window (issue #1012) — injected so tests can
+        advance it deterministically, matching the convention already used by
+        ``TimeWindowManager`` / ``GracefulSource`` for their grace windows.
+        """
         self._hass = hass
         self._logger = logger
         self._climate_provider = climate_provider
@@ -190,25 +204,34 @@ class PipelineSnapshotBuilder:
         self._policy = policy
         self._config_service = config_service
         self._time_mgr = time_mgr
+        self._clock = clock
         # Last VALID per-slot read, keyed by slot number (issue #1005). Written
         # only on a valid read; on an invalid read (transient unavailable /
         # unknown / missing sensor) the slot's activation is held to this so a
         # blip does not fire a false release edge. Per-instance state living on
         # the one builder the coordinator owns, so both per-cycle callers
         # (build() and the coordinator release-edge stamp) share it and agree.
-        # A config-entry reload constructs a fresh builder, clearing it.
+        # A config-entry reload constructs a fresh builder, clearing it. This
+        # whole-slot hold has NO time bound — it is the outer safety net for
+        # the fully-invalid case, unchanged by the per-input hold below.
         self._last_valid_custom_position: dict[int, CustomPositionSensorState] = {}
-        # Last VALID per-input fold state, keyed by slot number (issue #1012).
+        # Last VALID per-input fold state, keyed by slot number, each paired
+        # with the clock reading at the time it was recorded (issue #1012).
         # #1005's cache above only holds the *combined* slot state when every
         # input is invalid at once. When a slot has a sensor AND a template, one
         # input can go transiently invalid while the other still opines — the
         # combined is_valid stays True, so the #1005 hold never engages, and the
         # dropped input's fresh False silently wins the fold. These two caches
         # hold each input's own last-valid contribution, substituted only when
-        # that specific input's own validity flag is False this cycle, before
-        # the OR/AND fold runs. Written via the shared _hold_or_fresh helper.
-        self._last_valid_sensor_fold: dict[int, tuple[bool, tuple[str, ...]]] = {}
-        self._last_valid_template_active: dict[int, bool] = {}
+        # that specific input's own validity flag is False this cycle AND the
+        # hold hasn't exceeded CUSTOM_POSITION_INPUT_HOLD_SECONDS — past that, a
+        # permanently-dead input falls through to its fresh value instead of
+        # masking a healthy peer forever. Written via the shared
+        # _hold_or_fresh helper.
+        self._last_valid_sensor_fold: dict[
+            int, tuple[tuple[bool, tuple[str, ...]], float]
+        ] = {}
+        self._last_valid_template_active: dict[int, tuple[bool, float]] = {}
 
     # ---- HA reads ---------------------------------------------------------
 
@@ -298,20 +321,40 @@ class PipelineSnapshotBuilder:
 
     @staticmethod
     def _hold_or_fresh(
-        cache: dict[int, _T], slot: int, *, valid: bool, fresh: _T
+        cache: dict[int, tuple[_T, float]],
+        slot: int,
+        *,
+        valid: bool,
+        fresh: _T,
+        now: float,
+        window: float,
     ) -> _T:
-        """Return ``fresh`` when ``valid``; else the cached value for ``slot``.
+        """Return ``fresh`` when ``valid``; else the held value for ``slot``.
 
-        Writes ``fresh`` into ``cache`` whenever ``valid`` is True, so the
-        cache always reflects this input's last genuinely valid reading.
-        Falls back to ``fresh`` itself when ``slot`` was never cached (a
-        first-ever invalid read has no prior state to hold — same "no hold on
-        cold start" contract as #1005's whole-slot cache).
+        Writes ``(fresh, now)`` into ``cache`` whenever ``valid`` is True, so
+        the cache always reflects this input's last genuinely valid reading
+        and when it was observed. Falls back to ``fresh`` itself when
+        ``slot`` was never cached (a first-ever invalid read has no prior
+        state to hold — same "no hold on cold start" contract as #1005's
+        whole-slot cache).
+
+        On an invalid read, the held value is returned only while ``now -
+        cached_at`` stays within ``window`` seconds (issue #1012): past that,
+        a permanently-dead input can no longer mask a healthy peer, and the
+        expired entry is dropped so a later blip starts its own fresh hold
+        window rather than reusing the stale timestamp.
         """
         if valid:
-            cache[slot] = fresh
+            cache[slot] = (fresh, now)
             return fresh
-        return cache.get(slot, fresh)
+        cached = cache.get(slot)
+        if cached is None:
+            return fresh
+        held_value, cached_at = cached
+        if now - cached_at <= window:
+            return held_value
+        del cache[slot]
+        return fresh
 
     def read_custom_position_sensors(
         self, options: dict
@@ -336,11 +379,16 @@ class PipelineSnapshotBuilder:
         invalid this cycle, *before* the OR/AND fold runs. This prevents one
         dropped input (e.g. a sensor going transiently unavailable) from
         silently outvoting a template (or vice versa) that is still opining
-        normally. Whole-slot (issue #1005): the combined ``is_on`` is held to
-        ``_last_valid_custom_position`` only when *every* input is invalid at
-        once — the outer safety net for the fully-invalid case, unchanged by
-        the per-input hold above.
+        normally. The per-input hold is time-bounded to
+        ``CUSTOM_POSITION_INPUT_HOLD_SECONDS``: past that window a
+        permanently-dead input falls through to its fresh value instead of
+        masking a healthy peer forever. Whole-slot (issue #1005): the
+        combined ``is_on`` is held to ``_last_valid_custom_position`` — with
+        no time bound — only when *every* input is invalid at once — the
+        outer safety net for the fully-invalid case, unchanged by the
+        per-input hold above.
         """
+        now = self._clock()
         result: list[CustomPositionSensorState] = []
         for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
             enabled = bool(
@@ -363,15 +411,23 @@ class PipelineSnapshotBuilder:
             # bound sensor reported a non-invalid value.
             sensors_valid = any(v is not None for v in safe_states.values())
             # Hold the sensor side's own last-valid fold input when every
-            # bound sensor is invalid this cycle (issue #1012) — before the
+            # bound sensor is invalid this cycle, for up to
+            # CUSTOM_POSITION_INPUT_HOLD_SECONDS (issue #1012) — before the
             # OR/AND fold below, so a template opining alongside a dropped
-            # sensor can't let the sensor's fresh False silently win.
-            sensors_on, active = self._hold_or_fresh(
-                self._last_valid_sensor_fold,
-                slot,
-                valid=sensors_valid,
-                fresh=(sensors_on, active),
-            )
+            # sensor can't let the sensor's fresh False silently win. Only
+            # meaningful when at least one sensor is actually bound —
+            # symmetric with the template guard below, and it means a slot
+            # whose sensors were cleared entirely never reads back a stale
+            # hold from before the config change.
+            if sensors:
+                sensors_on, active = self._hold_or_fresh(
+                    self._last_valid_sensor_fold,
+                    slot,
+                    valid=sensors_valid,
+                    fresh=(sensors_on, active),
+                    now=now,
+                    window=CUSTOM_POSITION_INPUT_HOLD_SECONDS,
+                )
 
             template = options.get(slot_keys["template"])
             has_template = is_template_string(template)
@@ -391,6 +447,8 @@ class PipelineSnapshotBuilder:
                     slot,
                     valid=template_valid,
                     fresh=bool(template_active),
+                    now=now,
+                    window=CUSTOM_POSITION_INPUT_HOLD_SECONDS,
                 )
             mode = (
                 options.get(slot_keys["template_mode"]) or DEFAULT_TEMPLATE_COMBINE_MODE
