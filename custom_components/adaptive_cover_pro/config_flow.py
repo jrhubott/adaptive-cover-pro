@@ -228,7 +228,6 @@ from .const import (
     GLARE_ZONE_SLOTS,
     GROUP_SCENE_PRIORITY,
     MANUAL_OVERRIDE_DURATION_MODE_FIXED,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
     MANUAL_OVERRIDE_DURATION_MODES,
     OPT_OUT_ALL_SCENES,
     CONF_DEBUG_CATEGORIES,
@@ -255,7 +254,7 @@ from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
-    has_configured_window_end,
+    manual_hold_is_unanchored,
     mirror_legacy_slot_sensor_keys,
     normalize_time_string,
     resolve_sunrise_offset,
@@ -2293,10 +2292,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Same predicate the runtime resolver uses, so the ⚠️ fires for exactly the
     # configs whose hold falls back to the numeric duration — including the
     # truthy-but-unset ``BLANK_TIME`` sentinel (issue #1044).
-    manual_window_end_missing = (
-        manual_mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-        and not has_configured_window_end(config)
-    )
+    manual_window_end_missing = manual_hold_is_unanchored(config)
     # The summary's only computed-key label lookup. An out-of-schema stored mode
     # (hand-edited .storage, a value from a build that knew a mode this one
     # doesn't) must degrade to the fixed rendering the way the runtime half

@@ -13,6 +13,7 @@ instead of a fixed clock duration. Covered here:
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import zoneinfo
 from unittest.mock import MagicMock, patch
 
@@ -449,12 +450,19 @@ def _coordinator(
     time_entity_state: str | None = None,
 ):
     """Return a coordinator stub with only what ``_resolve_override_deadline`` reads."""
+    from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
 
     coord = MagicMock()
     coord.config_entry.options = options
+    # The duration mode reaches the resolver through the per-cycle
+    # ``RuntimeConfig`` mirror, never the options dict (issue #1051) — publish
+    # it here exactly as ``_update_options`` does.
+    coord.manual_override_duration_mode = RuntimeConfig.from_options(
+        options
+    ).manual_override.duration_mode
     coord.logger = MagicMock()
     coord._cover_data = None if sun_data is None else MagicMock(sun_data=sun_data)
     coord._time_mgr.end_time = window_end
@@ -944,6 +952,110 @@ class TestConfigSurface:
         assert CONF_MANUAL_OVERRIDE_DURATION_MODE in _SECTION_MANUAL_OVERRIDE
 
 
+class TestSliceIsTheSingleModeSource:
+    """``ManualOverrideSlice.duration_mode`` is the one read of the mode.
+
+    Issue #1051 item 1: the slice field was declared and written but never
+    read, while both runtime consumers went to ``config_entry.options``
+    themselves — two sources for one value, contrary to the "read options once
+    per cycle into ``RuntimeConfig``" rule. These pin the slice as the source
+    and the coordinator mirror as the only way either consumer sees the mode.
+
+    Each test deliberately sets a mirror that *contradicts* the options dict:
+    a consumer that still reads options would return the options value and
+    fail, which is what makes these tests about the wiring and not the value.
+    """
+
+    def test_update_options_publishes_the_mode_mirror(self):
+        """``_update_options`` propagates the slice like every other mirror."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock()
+        AdaptiveDataUpdateCoordinator._update_options(
+            coord,
+            {
+                CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET
+                )
+            },
+        )
+
+        assert coord.manual_override_duration_mode == (
+            MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET
+        )
+
+    def test_mirror_is_seeded_before_the_first_update_cycle(self):
+        """The end-time sensor can reach ``expiry_for`` before cycle 1.
+
+        Same reason the venetian drift-reset mirrors are seeded in ``__init__``
+        from ``_rc_attach``: an unseeded attribute is an ``AttributeError``, not
+        a stale value.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        source = inspect.getsource(AdaptiveDataUpdateCoordinator.__init__)
+        assert "self.manual_override_duration_mode" in source
+        assert "_rc_attach.manual_override.duration_mode" in source
+
+    def test_resolver_reads_the_mirror_not_the_options_dict(self):
+        """``_resolve_override_deadline`` resolves off the slice mirror."""
+        coord = _coordinator({}, sun_data=_astral_sun_data())
+        coord.manual_override_duration_mode = MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET
+
+        deadline = coord._resolve_override_deadline(
+            dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
+        )
+
+        assert deadline == dt.datetime(2026, 7, 2, 21, 0, tzinfo=dt.UTC)
+
+    def test_resolver_short_circuits_on_a_fixed_mirror(self):
+        """A ``fixed`` mirror short-circuits even when options say otherwise."""
+        coord = _coordinator(
+            {
+                CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+                    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET
+                )
+            },
+            sun_data=_astral_sun_data(),
+        )
+        coord.manual_override_duration_mode = MANUAL_OVERRIDE_DURATION_MODE_FIXED
+
+        assert (
+            coord._resolve_override_deadline(
+                dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
+            )
+            is None
+        )
+
+    def test_diagnostics_reports_the_mirror_not_the_options_dict(self):
+        """The diagnostics block reports the slice mirror."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        mgr = _manager(["cover.a"], reset_duration={"hours": 2})
+        mgr.set_last_updated(
+            "cover.a", _state(dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)), True
+        )
+        mgr.mark_manual_control("cover.a")
+
+        coord = MagicMock()
+        coord.manager = mgr
+        coord.config_entry.options = {}
+        coord.manual_override_duration_mode = (
+            MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+        )
+
+        with freeze_time("2026-07-02 13:00:00"):
+            state = AdaptiveDataUpdateCoordinator._manual_override_diagnostics(coord)
+
+        assert state["duration_mode"] == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+
+
 # ---------------------------------------------------------------------------
 # Sensor / diagnostics / restore surfaces
 # ---------------------------------------------------------------------------
@@ -1141,6 +1253,7 @@ class TestStartedAtProvenance:
 
 def _build_manual_override_diagnostics(manager, options: dict) -> dict:
     """Drive the coordinator's manual-override diagnostics block in isolation."""
+    from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -1148,4 +1261,9 @@ def _build_manual_override_diagnostics(manager, options: dict) -> dict:
     coord = MagicMock()
     coord.manager = manager
     coord.config_entry.options = options
+    # Same mirror the resolver reads — the diagnostics block reports the slice,
+    # not a second read of the option (issue #1051).
+    coord.manual_override_duration_mode = RuntimeConfig.from_options(
+        options
+    ).manual_override.duration_mode
     return AdaptiveDataUpdateCoordinator._manual_override_diagnostics(coord)

@@ -81,7 +81,6 @@ from .const import (
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
-    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_OVERRIDE_STRATEGY,
     CONF_MANUAL_THRESHOLD,
@@ -96,7 +95,6 @@ from .const import (
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
-    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MANUAL_OVERRIDE_STRATEGY,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     DIAG_CACHE_KEY,
@@ -515,6 +513,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # passed to policy.attach reads a value before the first _update_options
         # cycle; refreshed each cycle (issue #808).
         self._venetian_tilt_reset_scope = _rc_attach.venetian.tilt_reset_scope
+        # Seeded so the end-time sensor and the reboot-restore path — both of
+        # which can reach expiry_for() before the first _update_options cycle —
+        # read a real mode rather than raising AttributeError; refreshed each
+        # cycle (issue #1051). ManualOverrideSlice is the single source for the
+        # coordinator: no *runtime* consumer re-reads
+        # CONF_MANUAL_OVERRIDE_DURATION_MODE from options. The config/options
+        # flow, the field schema and the service validator still read the raw
+        # key — correctly, since none of them has a coordinator to read from.
+        self.manual_override_duration_mode = _rc_attach.manual_override.duration_mode
 
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
@@ -3087,6 +3094,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # reload; the template-change handler re-renders this live to engage on
         # the truthy edge.
         self.manual_override_input_template = rc.manual_override.input_template
+        # Per-cycle snapshot of what the hold is measured against (issue #1044).
+        # The diagnostics block and the deadline resolver both read this mirror
+        # — neither re-reads the option (issue #1051). Safe as a mirror: the key
+        # is not in _RUNTIME_APPLICABLE_OPTIONS, so changing it reloads the
+        # config entry outright rather than patching a live coordinator.
+        self.manual_override_duration_mode = rc.manual_override.duration_mode
         self.manual_threshold = rc.tracking.manual_threshold
         # Mirror the reconciliation tolerance coordinator-side so the cover
         # state-change handler can lower the override-detection threshold when
@@ -4196,10 +4209,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             }
         return {
             "reset_duration_seconds": int(reset_secs),
-            "duration_mode": (
-                self.config_entry.options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
-                or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
-            ),
+            "duration_mode": self.manual_override_duration_mode,
             "tracked_covers": sorted(self.manager.covers),
             "entries": entries,
         }
@@ -4208,10 +4218,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Resolve a manual override's end time for the configured mode (issue #1044).
 
         The HA-side half of the rule, injected into ``AdaptiveCoverManager`` via
-        ``set_deadline_resolver`` so the manager itself stays HA-free: it reads
-        the duration mode, the sunset/sunrise override entities and offsets, and
-        the operating window's resolved end, then hands the arithmetic to the
-        pure :func:`.helpers.resolve_override_deadline`.
+        ``set_deadline_resolver`` so the manager itself stays HA-free: it takes
+        the duration mode from the per-cycle ``RuntimeConfig`` mirror, reads the
+        sunset/sunrise override entities and offsets and the operating window's
+        resolved end, then hands the arithmetic to the pure
+        :func:`.helpers.resolve_override_deadline`.
 
         ``fixed`` — the default, and what an install that never touched the
         option gets — short-circuits before any state read, so the common case
@@ -4229,10 +4240,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         options = self.config_entry.options
-        mode = (
-            options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
-            or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
-        )
+        mode = self.manual_override_duration_mode
         if mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED:
             return None
 
