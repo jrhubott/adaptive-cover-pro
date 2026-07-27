@@ -533,7 +533,7 @@
         },
         "data_description": {
           "manual_override_duration": "Wie lange (in Minuten) die automatische Steuerung nach manueller Anpassung pausiert werden soll. Wenn Sie die Beschattung manuell verschieben, wird die automatische Steuerung unterbrochen. Typische Werte: 10-15 min (kurze Pause, bald zur Verfolgung zurückkehren), 30 min (mittlere Pause, ausgewogen), 60-120 min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort zur automatischen Steuerung zurückkehren - nicht empfohlen). Ermöglicht Ihnen die Kontrolle, wenn Sie sie wünschen, und setzt die Automatisierung später fort.",
-          "manual_override_duration_mode": "Legen Sie fest, ob die oben eingestellte Haltezeit eine feste Zeitspanne ist oder bis zu einer Sonnen- bzw. Zeitplangrenze läuft. \u201eFeste Dauer\u201c verwendet unverändert die Dauer von oben \u2014 das ist die Standardeinstellung und entspricht dem bisherigen Verhalten der manuellen Übersteuerung. Die übrigen Optionen halten bis zum ersten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben. Genau das braucht man für den Fall \u201eabends die Beschattung schließen\u201c: Sie bleibt die ganze Nacht geschlossen, statt um 2 Uhr wieder zu öffnen. Sonnenuntergang und Sonnenaufgang bezeichnen dieselben Zeitpunkte wie im übrigen Adaptive Cover Pro, einschließlich eigener Sonnenuntergangs-/Sonnenaufgangs-Entitäten und Versätze, die Sie konfiguriert haben. Lässt sich diese Grenze nicht ermitteln \u2014 zum Beispiel \u201eBis das Zeitfenster endet\u201c ohne gesetzte Endzeit \u2014, wird die Dauer von oben als Rückfallwert verwendet, sodass die Übersteuerung niemals unbegrenzt hält.",
+          "manual_override_duration_mode": "Legen Sie fest, ob die oben eingestellte Haltezeit eine feste Zeitspanne ist oder bis zu einer Sonnen- bzw. Zeitplangrenze läuft. „Feste Dauer“ verwendet unverändert die Dauer von oben — das ist die Standardeinstellung und entspricht dem bisherigen Verhalten der manuellen Übersteuerung. Die übrigen Optionen halten bis zum ersten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben. Genau das braucht man für den Fall „abends die Beschattung schließen“: Sie bleibt die ganze Nacht geschlossen, statt um 2 Uhr wieder zu öffnen. Sonnenuntergang und Sonnenaufgang bezeichnen dieselben Zeitpunkte wie im übrigen Adaptive Cover Pro, einschließlich eigener Sonnenuntergangs-/Sonnenaufgangs-Entitäten und Versätze, die Sie konfiguriert haben. Lässt sich diese Grenze nicht ermitteln — zum Beispiel „Bis das Zeitfenster endet“ ohne gesetzte Endzeit —, wird die Dauer von oben als Rückfallwert verwendet, sodass die Übersteuerung niemals unbegrenzt hält.",
           "manual_override_reset": "Setzen Sie den Timer für die manuelle Übersteuerung nach jeder manuellen Anpassung zurück. Wenn aktiviert, wird die Übersteuerungsdauer bei jeder manuellen Änderung neu gestartet. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie diese Option, wenn Sie möchten, dass der Übersteuerungszeitraum sich mit jedem manuellen Eingriff 'erneuert'.",
           "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' zählt (Standard: 1 %). Wenn Sie die Beschattung um diesen Betrag manuell verschieben, wird die Übersteuerungserkennung ausgelöst. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
           "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um die Übersteuerungserkennung von Übergangspositionen zu verhindern, während die Beschattung zu Ihrer Zielposition wechselt. Nützlich, wenn Ihre Beschattung während der Bewegung viele Zwischenwerte meldet.",
@@ -1038,6 +1038,10 @@
           "glare_zone_radius": "Schutzradius um die Zonenmitte. Wird in der für Home Assistant konfigurierten Einheit angezeigt.",
           "glare_zone_z": "Zielhohe über dem Boden (z.B. Schreibtischoberfläche ≈ 0,75 m, sitzende Augen ≈ 1,1 m, Wand-Fernseher ≈ 1,5 m). Standard 0 schützt den Boden. Wird in der für Home Assistant konfigurierten Einheit angezeigt."
         }
+      },
+      "delete_slot": {
+        "title": "Eintrag löschen",
+        "description": "Wählen Sie den Eintrag aus, den Sie löschen möchten. Alle gespeicherten Einstellungen werden entfernt — Auslösesensoren, Vorlage, Position, Priorität, Achsengrenzen und alle Flags, die von der Karte oder einem Service gesetzt wurden. Dies kann nicht rückgängig gemacht werden. Die Slot-Nummer wird für einen neuen Eintrag verfügbar."
       }
     },
     "abort": {
@@ -1529,7 +1533,7 @@
     },
     "set_custom_position": {
       "name": "Custom-Position-Slot einstellen",
-      "description": "Einen Custom-Position-Slot (1–5) aktualisieren. Ein Slot ist aktiv, wenn er einen Auslöser (Sensoren und/oder Template) und eine Position hat. Priorität 100 erteilt dem Slot Sicherheitssemantik (wirkt außerhalb des Zeitfensters, umgeht Delta-Gatter).",
+      "description": "Aktualisieren Sie einen Custom-Position-Slot (1–10). Ein Slot ist aktiv, wenn er einen Auslöser (Sensoren und/oder Vorlage) und eine Achsenforderung hat — eine Position oder eine der Einschränkungen position_max / tilt_min / tilt_max. Nur die übermittelten Felder werden geändert. Um einen Slot vollständig zu deaktivieren, löschen Sie seinen Auslöser und jede Achsenforderung (position, position_max, tilt_min, tilt_max) — oder verwenden Sie 🗑️ Löschen auf der Custom-Positionen-Optionsseite, die den gesamten Slot auf einmal löscht. Priorität 100 erteilt dem Slot Sicherheitssemantik (wirkt außerhalb des Zeitfensters, umgeht Delta-Gatter).",
       "fields": {
         "slot": {
           "name": "Slot",
@@ -1725,7 +1729,7 @@
           "name": "Übersteuerungs-Dauer"
         },
         "manual_override_duration_mode": {
-          "description": "Woran die Haltezeit gemessen wird. \u201eFeste Dauer\u201c verwendet die Dauer von oben. Die übrigen Modi halten bis zum nächsten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben, und greifen auf die Dauer von oben zurück, wenn diese Grenze nicht ermittelt werden kann.",
+          "description": "Woran die Haltezeit gemessen wird. „Feste Dauer“ verwendet die Dauer von oben. Die übrigen Modi halten bis zum nächsten Sonnenuntergang, Sonnenaufgang, Sonnenereignis oder Ende des Betriebsfensters nach dem Zeitpunkt, an dem Sie die Beschattung bewegt haben, und greifen auf die Dauer von oben zurück, wenn diese Grenze nicht ermittelt werden kann.",
           "name": "Modus der Übersteuerungs-Dauer"
         },
         "manual_override_reset": {

@@ -254,6 +254,8 @@ from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
 from .troubleshoot_i18n import load_troubleshoot_labels
 from .helpers import (
     check_cover_capabilities,
+    clear_custom_position_slot,
+    clear_slot,
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
@@ -4361,17 +4363,24 @@ class OptionsFlowHandler(OptionsFlow):
         # authored once. Keyed by area name (custom_position/blind_spot/
         # glare_zone).
         self._active_slot: dict[str, int] = {}
+        # Which area the delete chooser (issue #1071) was opened from. Same
+        # trick as ``_active_slot``: the three areas share one ``delete_slot``
+        # step id so the translation block is authored once, so the area lives
+        # here instead of in the step id.
+        self._delete_area: str = ""
 
     def __getattr__(self, name: str):
         """Dispatch dynamic per-slot options steps (issue #945).
 
         HA resolves a step via ``getattr(handler, f"async_step_{step_id}")``, so
-        the per-slot menu entries (``custom_position_slot_3``) and the "Add"
-        entries (``add_blind_spot``) resolve here instead of 17 hand-written
-        near-identical methods. Only the two exact shapes match; every other
-        miss raises ``AttributeError`` so ``hasattr`` probes behave normally and
-        there is no recursion (the returned coroutine touches ``self`` only when
-        awaited, after ``__init__`` has run).
+        the per-slot menu entries (``custom_position_slot_3``), the "Add"
+        entries (``add_blind_spot``) and the delete entries (``delete_glare_zone``
+        for the chooser, ``delete_glare_zone_slot_2`` for one slot — issue
+        #1071) resolve here instead of dozens of hand-written near-identical
+        methods. Only those exact shapes match; every other miss raises
+        ``AttributeError`` so ``hasattr`` probes behave normally and there is no
+        recursion (the returned coroutine touches ``self`` only when awaited,
+        after ``__init__`` has run).
         """
         slot_match = re.fullmatch(
             r"async_step_(custom_position|blind_spot|glare_zone)_slot_(\d+)", name
@@ -4395,10 +4404,34 @@ class OptionsFlowHandler(OptionsFlow):
                 free = self._lowest_free_slot(_area)
                 if free is None:  # every slot full — fall back to the sub-menu
                     return await getattr(self, f"async_step_{_area_menu(_area)}")()
+                # A slot can be un-configured yet still hold inert keys left by
+                # an older blank-out (issue #1071) — and such a slot never
+                # appears on the menu, so Delete cannot reach it. Wipe on reuse.
+                self._clear_slot_keys(_area, free)
                 self._active_slot[_area] = free
                 return await getattr(self, f"_render_{_area}_slot")(user_input)
 
             return _add_slot
+
+        delete_match = re.fullmatch(
+            r"async_step_delete_(custom_position|blind_spot|glare_zone)"
+            r"(?:_slot_(\d+))?",
+            name,
+        )
+        if delete_match:
+            area, slot_n = delete_match.group(1), delete_match.group(2)
+            if slot_n is None:  # "Delete…" row → the per-area delete chooser
+
+                async def _delete_menu(user_input=None, _area=area):
+                    self._delete_area = _area
+                    return self._slot_menu(_area, delete=True)
+
+                return _delete_menu
+
+            async def _delete_one(user_input=None, _area=area, _n=int(slot_n)):
+                return await self._delete_slot(_area, _n)
+
+            return _delete_one
 
         raise AttributeError(name)
 
@@ -4689,24 +4722,65 @@ class OptionsFlowHandler(OptionsFlow):
             return f"{n} · edges {left}° / {right}°"
         return f"{n} · {self.options.get(keys['name'])}"
 
-    def _slot_menu(self, area: str) -> FlowResult:
-        """Render an area's slot sub-menu: configured slots + Add + Back."""
+    def _slot_menu(self, area: str, *, delete: bool = False) -> FlowResult:
+        """Render an area's slot sub-menu, or its delete chooser (issue #1071).
+
+        The sub-menu lists configured slots + Add + Delete + Back; the chooser
+        (``delete=True``) is the confirm step — one row per configured slot plus
+        Cancel. Both share the configured-slot scan and the label builder.
+        """
         numbers, _ = _SLOT_AREA_META[area]
-        menu_options: dict[str, str] = {
-            f"{area}_slot_{n}": self._slot_label(area, n)
-            for n in numbers
-            if self._slot_configured(area, n)
-        }
-        if area == "custom_position" and self._custom_position_include_tilt():
-            menu_options["custom_position_tilt_defaults"] = "🎚️ Default & sunset tilt"
-        if self._lowest_free_slot(area) is not None:
-            menu_options[f"add_{area}"] = "➕ Add…"
-        menu_options["init"] = "⬅️ Back"
+        configured = [n for n in numbers if self._slot_configured(area, n)]
+        if delete:
+            menu_options: dict[str, str] = {
+                f"delete_{area}_slot_{n}": f"🗑️ {self._slot_label(area, n)}"
+                for n in configured
+            }
+            menu_options[_area_menu(area)] = "⬅️ Cancel"
+            step_id = "delete_slot"
+        else:
+            menu_options = {
+                f"{area}_slot_{n}": self._slot_label(area, n) for n in configured
+            }
+            if area == "custom_position" and self._custom_position_include_tilt():
+                menu_options["custom_position_tilt_defaults"] = (
+                    "🎚️ Default & sunset tilt"
+                )
+            if self._lowest_free_slot(area) is not None:
+                menu_options[f"add_{area}"] = "➕ Add…"
+            if configured:
+                menu_options[f"delete_{area}"] = "🗑️ Delete…"
+            menu_options["init"] = "⬅️ Back"
+            step_id = _area_menu(area)
         return self.async_show_menu(  # type: ignore[return-value]
-            step_id=_area_menu(area),
+            step_id=step_id,
             menu_options=menu_options,
             description_placeholders={"learn_more": _SLOT_AREA_WIKI[area]},
         )
+
+    async def async_step_delete_slot(self, user_input: dict[str, Any] | None = None):
+        """Re-render the shared delete chooser (area in ``_delete_area``, #1071).
+
+        The three areas share one step id so the chooser's translation block is
+        authored once — the same shape as ``async_step_<area>_slot``, whose slot
+        number lives in ``_active_slot`` rather than in the step id. HA requires
+        every returned ``step_id`` to resolve to a handler method, so this must
+        exist even though a menu selection routes straight to its target step.
+        """
+        return self._slot_menu(self._delete_area, delete=True)
+
+    def _clear_slot_keys(self, area: str, n: int) -> None:
+        """Drop every stored option key owned by slot *n* of *area* (#1071)."""
+        _, slots = _SLOT_AREA_META[area]
+        if area == "custom_position":
+            clear_custom_position_slot(self.options, n)
+        else:
+            clear_slot(self.options, slots[n])
+
+    async def _delete_slot(self, area: str, n: int) -> FlowResult:
+        """Erase slot *n* and return to the area sub-menu (issue #1071)."""
+        self._clear_slot_keys(area, n)
+        return await getattr(self, f"async_step_{_area_menu(area)}")()
 
     # ── Custom positions ────────────────────────────────────────────────
 

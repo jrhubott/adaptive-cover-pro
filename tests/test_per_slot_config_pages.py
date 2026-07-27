@@ -17,6 +17,7 @@ from custom_components.adaptive_cover_pro.const import (
     BLIND_SPOT_SLOTS,
     CUSTOM_POSITION_FORM_KEYS,
     CUSTOM_POSITION_SLOTS,
+    DEFAULT_CUSTOM_POSITION_ENABLED,
     GLARE_ZONE_FORM_KEYS,
     GLARE_ZONE_SLOT_NUMBERS,
     GLARE_ZONE_SLOTS,
@@ -205,3 +206,235 @@ async def test_blind_spot_slot_saves_only_its_slot():
     assert flow.options["blind_spot_left_gamma_2"] == 35
     assert flow.options["blind_spot_right_gamma_2"] == -15
     assert "blind_spot_left_gamma" not in flow.options  # slot-1 untouched
+
+
+# ---------------------------------------------------------------------------
+# Slot delete — full-key-map clear (issue #1071)
+# ---------------------------------------------------------------------------
+
+
+def _populate(options: dict, slot_keys: dict[str, str], marker: str) -> None:
+    """Store a distinguishable value under every wire key a slot owns."""
+    for sub, wire in slot_keys.items():
+        options[wire] = f"{marker}:{sub}"
+
+
+def test_clear_slot_pops_every_stored_key():
+    from custom_components.adaptive_cover_pro.helpers import clear_slot
+
+    for slots, target, sibling in (
+        (CUSTOM_POSITION_SLOTS, 3, 1),
+        (BLIND_SPOT_SLOTS, 2, 1),
+        (GLARE_ZONE_SLOTS, 2, 1),
+    ):
+        options: dict = {}
+        _populate(options, slots[target], "target")
+        _populate(options, slots[sibling], "sibling")
+
+        clear_slot(options, slots[target])
+
+        for wire in slots[target].values():
+            # Absent, not None — a present-but-falsy key is not a cleared slot.
+            assert wire not in options, f"{wire} survived the clear"
+        for wire in slots[sibling].values():
+            assert options[wire].startswith("sibling"), f"{wire} was collateral damage"
+
+    # Blind spot's legacy FOV-relative edges never appear on the form, so only a
+    # full-key-map clear can reach them.
+    options = {}
+    _populate(options, BLIND_SPOT_SLOTS[2], "target")
+    clear_slot(options, BLIND_SPOT_SLOTS[2])
+    assert "blind_spot_left_2" not in options
+    assert "blind_spot_right_2" not in options
+
+
+def test_clear_slot_pops_enabled_rather_than_nulling_it():
+    from custom_components.adaptive_cover_pro.helpers import clear_slot
+
+    keys = CUSTOM_POSITION_SLOTS[3]
+    options = {keys["enabled"]: False}
+
+    clear_slot(options, keys)
+
+    assert keys["enabled"] not in options
+    # `enabled` is opt-out: a stored None would read as present-but-falsy and
+    # leave the reused slot silently disabled.
+    assert options.get(keys["enabled"], DEFAULT_CUSTOM_POSITION_ENABLED) is True
+
+
+def test_clear_custom_position_slot_drops_the_legacy_sensor_mirror():
+    from custom_components.adaptive_cover_pro.helpers import clear_custom_position_slot
+
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    slot3 = CUSTOM_POSITION_SLOTS[3]
+    options = {
+        slot1["sensors"]: ["binary_sensor.one"],
+        slot1["sensor"]: "binary_sensor.one",
+        slot3["sensors"]: ["binary_sensor.x"],
+        slot3["sensor"]: "binary_sensor.x",
+    }
+
+    clear_custom_position_slot(options, 3)
+
+    assert slot3["sensors"] not in options
+    assert slot3["sensor"] not in options
+    assert options[slot1["sensors"]] == ["binary_sensor.one"]
+    assert options[slot1["sensor"]] == "binary_sensor.one"
+
+
+# A value for every sub-key a custom-position slot owns. `sensor` mirrors
+# `sensors[0]` so the mirror pass leaves an untouched slot byte-identical.
+_CUSTOM_POSITION_SAMPLE: dict[str, object] = {
+    "name": "Movie night",
+    "sensor": "binary_sensor.trigger",
+    "sensors": ["binary_sensor.trigger"],
+    "template": "{{ true }}",
+    "template_mode": "or",
+    "position": 25,
+    "priority": 60,
+    "min_mode": True,
+    "use_my": True,
+    "tilt": 30,
+    "tilt_only": True,
+    "position_max": 80,
+    "tilt_min": 10,
+    "tilt_max": 90,
+    "enabled": False,
+}
+
+
+def _seed_custom_position(options: dict, n: int) -> None:
+    """Populate every stored key of custom-position slot *n*."""
+    keys = CUSTOM_POSITION_SLOTS[n]
+    # A newly added sub-key must be covered here or the delete guard goes blind.
+    assert set(_CUSTOM_POSITION_SAMPLE) == set(keys)
+    for sub, value in _CUSTOM_POSITION_SAMPLE.items():
+        options[keys[sub]] = value
+
+
+@pytest.mark.asyncio
+async def test_delete_slot_step_clears_only_its_slot():
+    # ── custom positions ───────────────────────────────────────────────
+    options: dict = {}
+    _seed_custom_position(options, 2)
+    _seed_custom_position(options, 3)
+    flow = _options_flow(options)
+    flow.async_step_custom_position = AsyncMock(return_value={"type": "menu"})
+
+    result = await flow.async_step_delete_custom_position_slot_3()
+
+    assert result["type"] == "menu"
+    for wire in CUSTOM_POSITION_SLOTS[3].values():
+        assert wire not in flow.options, f"{wire} survived the delete"
+    for sub, wire in CUSTOM_POSITION_SLOTS[2].items():
+        assert flow.options[wire] == _CUSTOM_POSITION_SAMPLE[sub]
+
+    # ── blind spots ────────────────────────────────────────────────────
+    options = {}
+    _populate(options, BLIND_SPOT_SLOTS[1], "sibling")
+    _populate(options, BLIND_SPOT_SLOTS[2], "target")
+    flow = _options_flow(options)
+    flow.async_step_blind_spot = AsyncMock(return_value={"type": "menu"})
+
+    result = await flow.async_step_delete_blind_spot_slot_2()
+
+    assert result["type"] == "menu"
+    for wire in BLIND_SPOT_SLOTS[2].values():
+        assert wire not in flow.options, f"{wire} survived the delete"
+    # The legacy FOV-relative edges are not on the form; only a full-key-map
+    # clear reaches them.
+    assert "blind_spot_left_2" not in flow.options
+    assert "blind_spot_right_2" not in flow.options
+    for wire in BLIND_SPOT_SLOTS[1].values():
+        assert flow.options[wire].startswith("sibling")
+
+    # ── glare zones ────────────────────────────────────────────────────
+    options = {}
+    _populate(options, GLARE_ZONE_SLOTS[1], "sibling")
+    _populate(options, GLARE_ZONE_SLOTS[2], "target")
+    flow = _options_flow(options)
+    flow.async_step_glare_zones = AsyncMock(return_value={"type": "menu"})
+
+    result = await flow.async_step_delete_glare_zone_slot_2()
+
+    assert result["type"] == "menu"
+    for wire in GLARE_ZONE_SLOTS[2].values():
+        assert wire not in flow.options, f"{wire} survived the delete"
+    for wire in GLARE_ZONE_SLOTS[1].values():
+        assert flow.options[wire].startswith("sibling")
+
+
+@pytest.mark.asyncio
+async def test_delete_chooser_lists_configured_slots_and_cancel():
+    options: dict = {}
+    _seed_custom_position(options, 1)
+    _seed_custom_position(options, 3)
+    flow = _options_flow(options)
+
+    result = await flow.async_step_delete_custom_position()
+
+    assert result["step_id"] == "delete_slot"
+    menu = result["menu_options"]
+    assert "delete_custom_position_slot_1" in menu
+    assert "delete_custom_position_slot_3" in menu
+    assert "delete_custom_position_slot_2" not in menu  # unconfigured
+    assert "custom_position" in menu  # ⬅️ Cancel → the area sub-menu
+
+    # Glare zones cancel back to the plural historical step id.
+    flow = _options_flow({GLARE_ZONE_SLOTS[2]["name"]: "Desk"})
+
+    result = await flow.async_step_delete_glare_zone()
+
+    assert result["step_id"] == "delete_slot"
+    menu = result["menu_options"]
+    assert "delete_glare_zone_slot_2" in menu
+    assert "glare_zones" in menu
+    assert "glare_zone" not in menu
+
+
+def test_slot_menu_offers_delete_only_when_a_slot_is_configured():
+    flow = _options_flow({})
+
+    empty = flow._slot_menu("custom_position")["menu_options"]
+    assert "delete_custom_position" not in empty
+    assert "add_custom_position" in empty
+
+    options: dict = {}
+    _seed_custom_position(options, 1)
+    flow = _options_flow(options)
+
+    populated = flow._slot_menu("custom_position")["menu_options"]
+    assert "delete_custom_position" in populated
+    assert "add_custom_position" in populated
+    assert list(populated)[-1] == "init"  # Back stays last
+
+
+def test_getattr_rejects_non_slot_delete_names():
+    flow = _options_flow({})
+
+    assert hasattr(flow, "async_step_delete_bogus") is False
+    assert hasattr(flow, "async_step_delete_glare_zones") is False
+    assert hasattr(flow, "async_step_delete_custom_position_slot_x") is False
+
+
+@pytest.mark.asyncio
+async def test_add_slot_wipes_inert_keys_before_reuse():
+    # A slot holding only inert leftovers is NOT configured, so it never shows
+    # on the menu and Delete cannot reach it — but Add hands it straight back.
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    inert = {
+        slot1["enabled"]: False,
+        slot1["min_mode"]: True,
+        slot1["use_my"]: True,
+        slot1["tilt_only"]: True,
+    }
+    flow = _options_flow(dict(inert))
+    assert flow._lowest_free_slot("custom_position") == 1
+
+    result = await flow.async_step_add_custom_position()
+
+    for wire in inert:
+        assert wire not in flow.options, f"{wire} leaked into the reused slot"
+    assert result["type"] == "form"
+    assert result["step_id"] == "custom_position_slot"
+    assert result["description_placeholders"]["slot"] == "1"

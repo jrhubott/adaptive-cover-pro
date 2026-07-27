@@ -506,9 +506,12 @@ set_custom_position:
   description: >-
     Update one custom position slot (1–10). A slot is active when it has a
     trigger (sensors and/or template) and a claim on an axis — a position, or
-    one of the position_max / tilt_min / tilt_max constraints. Pass an empty
-    list and null position to clear the slot. Priority 100 gives the slot safety
-    semantics: it acts outside the time window and bypasses delta gates.
+    one of the position_max / tilt_min / tilt_max constraints. Only the fields
+    you pass are changed. To retire a slot completely, clear its trigger **and**
+    every axis claim (position, position_max, tilt_min, tilt_max) — or use
+    🗑️ Delete on the Custom Positions options page, which erases the whole slot
+    in one action. Priority 100 gives the slot safety semantics: it acts outside
+    the time window and bypasses delta gates.
   target:
     entity:
       integration: adaptive_cover_pro

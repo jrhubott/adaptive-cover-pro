@@ -292,6 +292,35 @@ def mirror_legacy_slot_sensor_keys(options: dict) -> None:
             options[slot_keys["sensor"]] = None
 
 
+def clear_slot(options: dict[str, Any], slot_keys: Mapping[str, str]) -> None:
+    """Remove every stored option key owned by one slot (issue #1071).
+
+    Single source of truth for "this slot no longer exists". Pops the FULL
+    stored key map (``CUSTOM_POSITION_SLOTS[n]`` / ``BLIND_SPOT_SLOTS[n]`` /
+    ``GLARE_ZONE_SLOTS[n]``), never the narrower ``*_FORM_KEYS`` subset the
+    save path merges, so non-form keys — custom position's card-controlled
+    ``enabled``, blind spot's legacy FOV-relative ``left``/``right`` — cannot
+    survive into the slot number the next "Add" hands out.
+
+    Keys are POPPED, not set to ``None``: ``enabled`` is opt-out, read as
+    ``options.get(key, DEFAULT_CUSTOM_POSITION_ENABLED)``, so a stored ``None``
+    is a present-but-falsy key that would leave the reused slot disabled.
+    """
+    for key in slot_keys.values():
+        options.pop(key, None)
+
+
+def clear_custom_position_slot(options: dict[str, Any], slot: int) -> None:
+    """Clear custom-position slot *slot*, legacy sensor mirror included.
+
+    The one entry point for "erase this custom-position slot" — the config
+    flow's delete/reuse paths call it, and a future ``clear_custom_position``
+    service should call exactly this rather than re-deriving the key list.
+    """
+    clear_slot(options, CUSTOM_POSITION_SLOTS[slot])
+    mirror_legacy_slot_sensor_keys(options)
+
+
 # Sub-keys whose presence gives a slot something to contribute on its own,
 # even without a `position` claim (issue #943). A trigger + "minimum tilt 50%"
 # is a complete slot: it constrains the axis and lets the pipeline resolve the

@@ -599,6 +599,10 @@
         "title": "Custom Positions",
         "description": "Up to 10 independent position slots. Each configured slot is listed below — pick one to edit it, or add a new one. Each slot has its own trigger sensors, optional template, target position and priority.\n\n[Learn more]({learn_more})"
       },
+      "delete_slot": {
+        "title": "Delete an entry",
+        "description": "Pick the entry to delete. Every stored setting for it is removed — trigger sensors, template, position, priority, axis limits, and any flags set from the card or a service. This cannot be undone. The slot number becomes free for a new entry."
+      },
       "motion_override": {
         "title": "Occupancy Detection",
         "description": "Enable occupancy-based control. When all configured sources report no occupancy, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any source detects occupancy, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used, plus media players (a player that is on counts as occupancy). The logic is OR — any single active source counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
@@ -1599,7 +1603,7 @@
     },
     "set_custom_position": {
       "name": "Set custom position slot",
-      "description": "Update one custom position slot (1–5). A slot is active when it has a trigger (sensors and/or template) and a position. Priority 100 gives the slot safety semantics (acts outside the time window, bypasses delta gates).",
+      "description": "Update one custom position slot (1–10). A slot is active when it has a trigger (sensors and/or template) and a claim on an axis — a position, or one of the position_max / tilt_min / tilt_max constraints. Only the fields you pass are changed. To retire a slot completely, clear its trigger and every axis claim (position, position_max, tilt_min, tilt_max) — or use 🗑️ Delete on the Custom Positions options page, which erases the whole slot in one action. Priority 100 gives the slot safety semantics (acts outside the time window, bypasses delta gates).",
       "fields": {
         "slot": {
           "name": "Slot",
