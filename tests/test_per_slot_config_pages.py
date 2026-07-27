@@ -472,6 +472,8 @@ async def test_add_slot_preserves_partial_form_data_but_drops_inert_keys():
             # BooleanSelectors on the page — pre-filled, so not silent.
             slot1["min_mode"]: True,
             slot1["use_my"]: True,
+            # Not on this page: `enabled` has no field on any cover type, and a
+            # blind's page hides the tilt block. Both must go.
             slot1["tilt_only"]: True,
             slot1["enabled"]: False,
         }

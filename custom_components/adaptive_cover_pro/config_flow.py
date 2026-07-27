@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -3856,7 +3857,7 @@ _SLOT_AREA_META: dict[str, tuple[tuple[int, ...], dict[int, dict[str, str]]]] = 
 # membership in the map alone is not enough, because parts of a page are gated
 # per instance (custom position's tilt block renders only for tilt-capable
 # cover types).
-_SLOT_AREA_FORM_KEYS: dict[str, dict[str, str]] = {
+_SLOT_AREA_FORM_KEYS: Mapping[str, Mapping[str, str]] = {
     "custom_position": CUSTOM_POSITION_FORM_KEYS,
     "blind_spot": BLIND_SPOT_FORM_KEYS,
     "glare_zone": GLARE_ZONE_FORM_KEYS,
