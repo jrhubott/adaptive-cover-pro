@@ -1254,7 +1254,10 @@ BLANK_TIME = "00:00:00"
 #     source entry disabled since before the v3.12 migration shipped never
 #     ran it and can still hold a raw value (issue #1057).
 # Entries written before any of this existed are repaired by the v3.11 → v3.12
-# migration in ``__init__.py``.
+# migration in ``__init__.py`` — but only once HA sets the entry up; one
+# ``disabled_by``-set before v3.12 shipped never reaches that setup call, so
+# the migration never runs for it. That is exactly why the copy site above
+# carries its own guard instead of trusting the migration to have run first.
 #
 # Three deliberate choices, each closing a way a near-miss value slips through:
 #   * ``\Z``, not ``$`` — ``$`` also matches before a trailing newline, so

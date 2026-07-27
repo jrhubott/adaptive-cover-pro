@@ -1,7 +1,9 @@
 """Tests for duplicate and sync cover features."""
 
-import pytest
+import types
 from unittest.mock import MagicMock
+
+import pytest
 
 from custom_components.adaptive_cover_pro.config_flow import (
     SYNC_CATEGORIES,
@@ -65,7 +67,11 @@ from custom_components.adaptive_cover_pro.const import (
 
 def _make_entry(options: dict) -> MagicMock:
     entry = MagicMock()
-    entry.options = options
+    # MappingProxyType matches the real HA ConfigEntry.options type (see
+    # homeassistant.config_entries.ConfigEntry.options: MappingProxyType) —
+    # a read-only view catches any code under test that tries to normalize
+    # the source in place instead of returning a new dict.
+    entry.options = types.MappingProxyType(dict(options))
     return entry
 
 
@@ -183,6 +189,8 @@ class TestExtractSharedOptionsTimeNormalization:
         entry = _make_entry({CONF_START_TIME: "7:30", CONF_HEIGHT_WIN: 2.1})
         result = _extract_shared_options(entry)
         assert result[CONF_START_TIME] == "07:30:00"
+        # The source entry's own options must not be mutated by extraction.
+        assert entry.options[CONF_START_TIME] == "7:30"
 
     def test_normalizes_noncanonical_end_time(self):
         """A shorthand end_time is canonicalized to HH:MM:SS."""
@@ -196,6 +204,8 @@ class TestExtractSharedOptionsTimeNormalization:
         result = _extract_shared_options(entry)
         assert CONF_START_TIME not in result
         assert result[CONF_HEIGHT_WIN] == 2.1
+        # The source entry's own options must not be mutated by extraction.
+        assert entry.options[CONF_START_TIME] == "not-a-time"
 
     def test_leaves_canonical_time_untouched(self):
         """An already-canonical time value passes through unchanged."""

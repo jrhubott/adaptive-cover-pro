@@ -3667,7 +3667,11 @@ def _extract_shared_options(
     v3.11 -> v3.12 repair, or one that was ``disabled_by``-set before that
     migration shipped (so it never ran), can still carry a raw value like
     ``"7:30"``. Values ``normalize_time_string`` can't rescue are dropped
-    rather than copied verbatim into the new entry (issue #1057).
+    rather than copied — on Duplicate that means the key is simply absent
+    from the new entry; on Sync, where the result is merged as
+    ``{**target.options, **shared_options}``, a dropped key leaves the
+    target's own existing value in place rather than clearing it (issue
+    #1057).
     """
     if categories is None:
         result = {
@@ -3687,8 +3691,22 @@ def _extract_shared_options(
             continue  # absent-equivalent or already canonical
         canonical = normalize_time_string(value)
         if TIME_STRING_RE.match(str(canonical)):
+            _LOGGER.debug(
+                "_extract_shared_options: entry '%s' %s=%r stored as %r",
+                entry.entry_id,
+                key,
+                value,
+                canonical,
+            )
             result[key] = canonical
         else:
+            _LOGGER.warning(
+                "_extract_shared_options: entry '%s' %s=%r is not a valid time "
+                "(expected HH:MM:SS) and was dropped rather than copied",
+                entry.entry_id,
+                key,
+                value,
+            )
             del result[key]  # unrescuable — drop rather than copy garbage
     return result
 
