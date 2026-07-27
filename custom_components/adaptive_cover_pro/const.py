@@ -1248,9 +1248,11 @@ BLANK_TIME = "00:00:00"
 #   * the options flow's automation step (``config_flow``) — canonicalises; the
 #     user picked a real time, just in a shape the picker never emits. It is
 #     the only flow step rendering a TimeSelector.
-#   * the flow's Sync and Duplicate steps (``config_flow``) — copy a time key
-#     verbatim between entries. Safe only because the source is already
-#     canonical; they add no guard of their own.
+#   * the flow's Sync and Duplicate steps (``config_flow``) — both delegate to
+#     ``_extract_shared_options``, which canonicalises what
+#     ``helpers.normalize_time_string`` can parse and drops the rest; a
+#     source entry disabled since before the v3.12 migration shipped never
+#     ran it and can still hold a raw value (issue #1057).
 # Entries written before any of this existed are repaired by the v3.11 → v3.12
 # migration in ``__init__.py``.
 #

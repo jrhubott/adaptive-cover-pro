@@ -243,6 +243,8 @@ from .const import (
     MIN_TRANSIT_TIMEOUT,
     MODE2_OPEN_HORIZONTAL_PERCENT,
     DOMAIN,
+    TIME_OPTION_KEYS,
+    TIME_STRING_RE,
     CoverType,
     GroupScene,
     TemplateCombineMode,
@@ -3659,15 +3661,36 @@ def _extract_shared_options(
     Excludes per-window fields: CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID.
     When categories is None, returns all shared options (used by duplicate flow).
     When categories is a list, returns only options belonging to those categories.
+
+    Also canonicalizes any time-typed option (``TIME_OPTION_KEYS``) that isn't
+    already in the one accepted wire format: a source entry predating the
+    v3.11 -> v3.12 repair, or one that was ``disabled_by``-set before that
+    migration shipped (so it never ran), can still carry a raw value like
+    ``"7:30"``. Values ``normalize_time_string`` can't rescue are dropped
+    rather than copied verbatim into the new entry (issue #1057).
     """
     if categories is None:
-        return {
+        result = {
             k: v for k, v in entry.options.items() if k not in _SHARED_OPTIONS_EXCLUDED
         }
-    allowed_keys = frozenset().union(
-        *(SYNC_CATEGORIES[c] for c in categories if c in SYNC_CATEGORIES)
-    )
-    return {k: v for k, v in entry.options.items() if k in allowed_keys}
+    else:
+        allowed_keys = frozenset().union(
+            *(SYNC_CATEGORIES[c] for c in categories if c in SYNC_CATEGORIES)
+        )
+        result = {k: v for k, v in entry.options.items() if k in allowed_keys}
+
+    for key in TIME_OPTION_KEYS:
+        if key not in result:
+            continue
+        value = result[key]
+        if value is None or TIME_STRING_RE.match(str(value)):
+            continue  # absent-equivalent or already canonical
+        canonical = normalize_time_string(value)
+        if TIME_STRING_RE.match(str(canonical)):
+            result[key] = canonical
+        else:
+            del result[key]  # unrescuable — drop rather than copy garbage
+    return result
 
 
 def _build_cover_entity_schema(
