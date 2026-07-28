@@ -33,6 +33,7 @@ from .const import (
     resolve_fov_left,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+    BUILDING_PROFILE_SENSOR_KEYS,
     LIGHT_CLOUD_SENSOR_KEYS,
     WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
@@ -367,9 +368,11 @@ from .profile_link import (  # noqa: E402
     _cover_entries,
     _covers_linked_to,
     clear_cover_override,
+    cleared_profile_keys,
     compute_override_keys,
     merge_profile_into_config,
     profile_for_cover,
+    propagate_profile_clears,
 )
 
 # Local Overrides step: the multi-select field key and the empty-state message.
@@ -5423,8 +5426,15 @@ class OptionsFlowHandler(OptionsFlow):
         ``async_step_create_building_profile`` sensor section.  Submitting
         returns to the profile menu (issue #1003) — only ``async_step_done``
         actually saves and closes the dialog.
+
+        Every field here is a bare no-default ``vol.Optional``, so the frontend
+        omits a cleared one from ``user_input`` rather than sending it empty;
+        ``optional_entities`` nulls those so the clear sticks (issue #1085).
+        Reaching the linked covers is ``async_step_done``'s job — see
+        ``_propagate_profile_clears``.
         """
         if user_input is not None:
+            self.optional_entities(list(BUILDING_PROFILE_SENSOR_KEYS), user_input)
             self.options.update(user_input)
             return await self.async_step_init()
 
@@ -5860,6 +5870,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def _update_options(self) -> FlowResult:
         """Update config entry options."""
         self._recompute_profile_overrides()
+        self._propagate_profile_clears()
         return self.async_create_entry(title="", data=self.options)  # type: ignore[return-value]
 
     def _recompute_profile_overrides(self) -> None:
@@ -5878,6 +5889,25 @@ class OptionsFlowHandler(OptionsFlow):
             self.options[CONF_PROFILE_SENSOR_OVERRIDES] = overrides
         else:
             self.options.pop(CONF_PROFILE_SENSOR_OVERRIDES, None)
+
+    def _propagate_profile_clears(self) -> None:
+        """Push the shared sensors this dialog emptied out to the linked covers.
+
+        Only a Building Profile has linked covers, so this is a no-op for a
+        cover's own options flow. A saved profile carries every shared key with
+        most of them blank (``optional_entities`` writes ``None`` for each field
+        the user did not fill in), so the stored value alone cannot say which
+        one the user just cleared — the set → blank transition between the
+        entry as the dialog opened it and the options about to be written can,
+        and this is the last point where both halves are in hand (issue #1085).
+        ``_async_profile_propagate`` handles the rest of the save: it re-copies
+        the profile's non-empty keys but can never remove one.
+        """
+        propagate_profile_clears(
+            self.hass,
+            self._config_entry,
+            cleared_profile_keys(self._config_entry.options, self.options),
+        )
 
     def optional_entities(self, keys: list, user_input: dict[str, Any]):
         """Set value to None if key does not exist."""
