@@ -314,9 +314,9 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         )
 
     async def _push_member_intent(
-        self, coordinator: object, intent: GroupIntent | None
+        self, coordinator: object, intent: GroupIntent | None, *, immediate: bool = True
     ) -> None:
-        """Set (or clear) this group's intent on one member and re-evaluate it now.
+        """Set (or clear) this group's intent on one member and re-evaluate it.
 
         ``async_refresh``, deliberately never ``async_request_refresh``: the
         latter goes through HA's 10-second request debouncer, so a second group
@@ -326,14 +326,24 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         until something unrelated happens to move a cover (issue #1082). The
         debounce also defers the member's re-evaluation itself, so the group
         action lands up to ten seconds late.
+
+        ``immediate=False`` is for teardown only, where the opposite holds: no
+        one will read the winner again, and a blocking refresh would run every
+        member's whole pipeline — settle sequences included — serially inside
+        HA's unload path.
         """
         coordinator.set_group_intent(self.entry.entry_id, intent)
-        await coordinator.async_refresh()
+        if immediate:
+            await coordinator.async_refresh()
+        else:
+            await coordinator.async_request_refresh()
 
-    async def _push_intent_to_members(self, intent: GroupIntent | None) -> None:
+    async def _push_intent_to_members(
+        self, intent: GroupIntent | None, *, immediate: bool = True
+    ) -> None:
         """Push one intent — or the clear — to every resolvable ACP member."""
         for _entry, coordinator in self.resolved_members():
-            await self._push_member_intent(coordinator, intent)
+            await self._push_member_intent(coordinator, intent, immediate=immediate)
 
     async def async_activate_scene(self, scene: GroupScene) -> None:
         """Fan a scene out as a pipeline intent, resolved per member (Phase 2).
@@ -429,10 +439,15 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
     async def async_set_lock(self, locked: bool) -> None:
         """Push or release the group lock (LOCK intent at safety priority).
 
-        The lock ignores per-scene opt-out — it is a safety claim on every
-        member — and applies immediately (no stagger; nothing moves). On
-        release, an active scene is re-pushed so unlocking returns the room
-        to the scene, not to unmanaged state.
+        Engaging ignores per-scene opt-out — it is a safety claim on every
+        member — and needs no stagger, because ``GroupLockHandler`` holds
+        position and emits no command. Releasing does move covers, so it
+        staggers like any other fan-out.
+
+        On release an active scene is re-pushed to each ACP member that has
+        not opted out of it, so unlocking returns the room to the scene rather
+        than to unmanaged state. Adopted (generic) covers are left where they
+        are: the lock is a pipeline intent and never claimed them.
         """
         self.group_locked = locked
         if locked:
@@ -453,10 +468,13 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             # the active scene ends on no intent rather than on the scene.
             scene = self.active_scene
             keep = self._scene_intent(scene) if scene is not None else None
+            released = 0
             for entry, coordinator in self.resolved_members():
                 opted_out = scene is not None and self._scene_opted_out(
                     entry.entry_id, scene
                 )
+                await self._stagger_gap(released)
+                released += 1
                 await self._push_member_intent(coordinator, None if opted_out else keep)
         await self.async_refresh()
 
@@ -681,8 +699,14 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """
         if entry.domain != DOMAIN:
             return
-        if self._sync_member_subscriptions():
-            self.async_update_listeners()
+        if not self._sync_member_subscriptions():
+            return
+        # The roster itself moved, so the aggregates are stale too: a departed
+        # member's covers linger in ``member_positions`` and a new one is
+        # missing from it. Repaint the live-reading sensors now and let the
+        # (debounced) refresh catch the snapshot up.
+        self.hass.async_create_task(self.async_request_refresh())
+        self.async_update_listeners()
 
     @callback
     def _handle_member_update(self) -> None:
@@ -705,8 +729,13 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         delete: a stale intent would keep claiming the member's pipeline for
         a group that no longer exists (#712/#714 lifecycle lesson).
 
-        Member subscriptions go first, so the refreshes the intent clear below
-        triggers cannot repaint entities that are being removed.
+        EVERY listener goes first. The intent clear makes members re-evaluate
+        and command their covers, and both the member subscriptions and the
+        cover-state subscription would otherwise feed that back into a
+        coordinator that is mid-teardown. The clear itself is the one push
+        that stays debounced — nothing will read the winner again, and a
+        blocking refresh per member would run their full pipelines serially
+        inside HA's unload path.
         """
         if self._unsub_entry_state is not None:
             self._unsub_entry_state()
@@ -714,13 +743,13 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         for sub in self._member_subs.values():
             sub.unsub()
         self._member_subs = {}
-        await self._push_intent_to_members(None)
         if self._unsub_state is not None:
             self._unsub_state()
             self._unsub_state = None
         for unsub in self._unsub_registry:
             unsub()
         self._unsub_registry = []
+        await self._push_intent_to_members(None, immediate=False)
         self._cmd_svc.stop()
         await super().async_shutdown()
 

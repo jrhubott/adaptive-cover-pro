@@ -581,11 +581,10 @@ async def test_lock_release_inside_debounce_window_refreshes_members(hass) -> No
         pytest.param(lambda c: c.async_clear_scene(), id="scene_clear"),
         pytest.param(lambda c: c.async_set_lock(True), id="lock_engage"),
         pytest.param(lambda c: c.async_set_lock(False), id="lock_release"),
-        pytest.param(lambda c: c.async_shutdown(), id="shutdown"),
     ],
 )
 async def test_intent_pushes_use_the_non_debounced_refresh(group_setup, action) -> None:
-    """Every group→member intent push re-evaluates the member immediately.
+    """Every user-facing group→member intent push re-evaluates the member now.
 
     ``async_request_refresh`` would route the push through HA's 10-second
     request debouncer, which is what left the who-won sensor stale (#1082).
@@ -597,6 +596,79 @@ async def test_intent_pushes_use_the_non_debounced_refresh(group_setup, action) 
     for member in (blind_coord, awning_coord):
         member.async_refresh.assert_awaited()
         member.async_request_refresh.assert_not_awaited()
+
+
+async def test_shutdown_intent_clear_stays_debounced(group_setup) -> None:
+    """Teardown is the one push that must NOT block on a member refresh.
+
+    Nothing reads the winner after an unload, while a blocking refresh would
+    run every member's full pipeline — settle sequences included — serially
+    inside HA's unload path.
+    """
+    coordinator, blind_coord, awning_coord = group_setup
+
+    await coordinator.async_shutdown()
+
+    for member in (blind_coord, awning_coord):
+        member.set_group_intent.assert_called_once_with("group_01", None)
+        member.async_request_refresh.assert_awaited_once()
+        member.async_refresh.assert_not_awaited()
+
+
+async def test_lock_release_staggers_but_engage_does_not(hass) -> None:
+    """Release moves covers so it staggers; engage holds position so it does not."""
+    from custom_components.adaptive_cover_pro import group_coordinator as gc_module
+
+    coordinator, _, _ = _group_with_options(
+        hass, {CONF_GROUP_STAGGER_DELAY: 1.5}, entry_id="group_12"
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        sleeper = AsyncMock()
+        mp.setattr(gc_module.asyncio, "sleep", sleeper)
+        await coordinator.async_set_lock(True)
+        assert sleeper.await_count == 0
+
+        await coordinator.async_set_lock(False)
+
+    # 2 ACP members → 1 gap. Generic covers are not touched by the lock.
+    assert sleeper.await_count == 1
+    sleeper.assert_awaited_with(1.5)
+
+
+async def test_roster_change_refreshes_aggregates(hass) -> None:
+    """A member joining mid-run must also recompute the position aggregates.
+
+    Repainting alone would publish ``member_positions`` for the old roster.
+    """
+    member_entry = _member_entry(
+        hass,
+        "joining_member",
+        CoverType.BLIND,
+        [BLIND_ENTITY],
+        state=ConfigEntryState.NOT_LOADED,
+    )
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["joining_member"], CONF_MEMBER_COVERS: []},
+        entry_id="group_join",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+    await coordinator._async_setup()
+
+    member_coord = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = member_coord
+    with patch.object(coordinator, "async_request_refresh", AsyncMock()) as refresh:
+        member_entry.mock_state(hass, ConfigEntryState.LOADED)
+        await hass.async_block_till_done()
+
+    refresh.assert_awaited()
+
+    await coordinator.async_shutdown()
+    await member_coord.async_shutdown()
 
 
 async def test_unlock_with_active_scene_pushes_once_per_member(group_setup) -> None:
