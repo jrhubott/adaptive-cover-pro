@@ -1181,6 +1181,66 @@ class TestForecastShimSecondaryAxes:
         assert factory(40, 0.0, 0.0, _NOW) == {}
 
 
+class TestForecastShimAnticipationHorizon:
+    """build_forecast_for_coord threads CONF_DELTA_TIME through as time_threshold_minutes (#1091).
+
+    The shim coerces the raw option with the same helper the live snapshot
+    builder uses (``pipeline.snapshot_builder._delta_time_minutes``), so a
+    malformed value (e.g. a legacy duration dict) safely disables
+    anticipation instead of crashing the forecast — mirrored here rather
+    than re-derived, so a future coercion-rule change can't drift between
+    the live path and the forecast.
+    """
+
+    def _stub_coord(self, *, options):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+        coord.config_entry = MagicMock()
+        coord.config_entry.options = options
+        coord.logger = MagicMock()
+        coord.hass = MagicMock()
+        coord.hass.config.time_zone = "UTC"
+        sun_data = _make_sun_data()
+        coord._sun_provider = MagicMock()
+        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
+        coord._config_service = MagicMock()
+        coord._config_service.get_common_data = MagicMock(return_value=_make_config())
+        coord._policy = MagicMock()
+        coord._policy.position_axis_supported = MagicMock(return_value=False)
+        coord._snapshot = MagicMock()
+        coord._snapshot.cover_capabilities = {}
+        coord._time_mgr = MagicMock()
+        coord._time_mgr.end_time = None
+        return coord
+
+    def _run(self, coord):
+        from custom_components.adaptive_cover_pro import forecast as fc_mod
+
+        spy = MagicMock(return_value=MagicMock(name="Forecast"))
+        with patch.object(fc_mod, "build_forecast", spy):
+            fc_mod.build_forecast_for_coord(coord)
+        return spy
+
+    def test_passes_delta_time_as_horizon(self):
+        from custom_components.adaptive_cover_pro.const import CONF_DELTA_TIME
+
+        coord = self._stub_coord(options={CONF_DELTA_TIME: 15})
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["time_threshold_minutes"] == 15
+
+    def test_malformed_delta_time_disables_anticipation(self):
+        from custom_components.adaptive_cover_pro.const import CONF_DELTA_TIME
+
+        coord = self._stub_coord(options={CONF_DELTA_TIME: {"hours": 1}})
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["time_threshold_minutes"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Phase D: forecast is scheduled, not recomputed on every refresh
 # ---------------------------------------------------------------------------
