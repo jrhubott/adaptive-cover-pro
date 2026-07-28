@@ -18,7 +18,9 @@ from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
 )
 
-pytestmark = pytest.mark.unit
+# No module-level pytestmark: one test here drives a real options flow and marks
+# itself `integration`, which collided with a blanket `unit` mark. The conftest
+# hook derives the right marker per test.
 
 
 def _make_manager(covers: list[str]) -> AdaptiveCoverManager:
