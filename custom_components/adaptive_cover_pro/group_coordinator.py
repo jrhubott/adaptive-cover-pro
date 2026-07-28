@@ -32,11 +32,12 @@ from homeassistant.components.cover import (
     DOMAIN as COVER_DOMAIN,
     SERVICE_SET_COVER_TILT_POSITION,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SIGNAL_CONFIG_ENTRY_CHANGED, ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_STOP_COVER, Platform
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -95,6 +96,19 @@ class GroupAggregates:
     member_positions: dict[str, int | None]
 
 
+@dataclass(frozen=True, slots=True)
+class _MemberSubscription:
+    """One live subscription to a member coordinator's update notifications.
+
+    The coordinator is kept alongside its unsub because *identity* is what
+    ``_sync_member_subscriptions`` diffs on — a reloaded member keeps its entry
+    id but gets a new coordinator object.
+    """
+
+    coordinator: object
+    unsub: CALLBACK_TYPE
+
+
 class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
     """Runtime orchestrator for one cover-group config entry."""
 
@@ -111,6 +125,8 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         self.group_locked: bool = False
         self._unsub_state: CALLBACK_TYPE | None = None
         self._unsub_registry: list[CALLBACK_TYPE] = []
+        self._unsub_entry_state: CALLBACK_TYPE | None = None
+        self._member_subs: dict[str, _MemberSubscription] = {}
         self._roster_snapshot: tuple[tuple[str, ...], tuple[str, ...]] | None = None
         self._adopt_policy = get_policy(_ADOPT_COVER_TYPE)
         self._grace_mgr = GracePeriodManager(_LOGGER)
@@ -288,6 +304,37 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             commands += 1
             await generic_action(entity_id)
 
+    def _scene_intent(self, scene: GroupScene) -> GroupIntent:
+        """Build this group's SCENE intent — the one construction site."""
+        return GroupIntent(
+            kind=GroupIntentKind.SCENE,
+            scene=scene,
+            priority=GROUP_SCENE_PRIORITY,
+            group_id=self.entry.entry_id,
+        )
+
+    async def _push_member_intent(
+        self, coordinator: object, intent: GroupIntent | None
+    ) -> None:
+        """Set (or clear) this group's intent on one member and re-evaluate it now.
+
+        ``async_refresh``, deliberately never ``async_request_refresh``: the
+        latter goes through HA's 10-second request debouncer, so a second group
+        action inside that window leaves the member's pipeline still holding the
+        PREVIOUS winner at the instant this group publishes to its own
+        listeners. The who-won sensor snapshots that stale winner and keeps it
+        until something unrelated happens to move a cover (issue #1082). The
+        debounce also defers the member's re-evaluation itself, so the group
+        action lands up to ten seconds late.
+        """
+        coordinator.set_group_intent(self.entry.entry_id, intent)
+        await coordinator.async_refresh()
+
+    async def _push_intent_to_members(self, intent: GroupIntent | None) -> None:
+        """Push one intent — or the clear — to every resolvable ACP member."""
+        for _entry, coordinator in self.resolved_members():
+            await self._push_member_intent(coordinator, intent)
+
     async def async_activate_scene(self, scene: GroupScene) -> None:
         """Fan a scene out as a pipeline intent, resolved per member (Phase 2).
 
@@ -296,18 +343,12 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         pipeline and are commanded directly with the adopt-policy target.
         Per-member opt-out and the stagger gap apply to both kinds.
         """
-        intent = GroupIntent(
-            kind=GroupIntentKind.SCENE,
-            scene=scene,
-            priority=GROUP_SCENE_PRIORITY,
-            group_id=self.entry.entry_id,
-        )
+        intent = self._scene_intent(scene)
         adopt_target = self._adopt_policy.position_for_scene(scene)
         trigger = f"group_scene_{scene}"
 
         async def _member(_entry, coordinator) -> None:
-            coordinator.set_group_intent(self.entry.entry_id, intent)
-            await coordinator.async_request_refresh()
+            await self._push_member_intent(coordinator, intent)
 
         async def _generic(entity_id: str) -> None:
             await self._cmd_svc.apply_position(
@@ -381,9 +422,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
 
     async def async_clear_scene(self) -> None:
         """Release this group's scene claim — members return to their pipeline."""
-        for _entry, coordinator in self.resolved_members():
-            coordinator.set_group_intent(self.entry.entry_id, None)
-            await coordinator.async_request_refresh()
+        await self._push_intent_to_members(None)
         self.active_scene = None
         await self.async_refresh()
 
@@ -397,21 +436,28 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """
         self.group_locked = locked
         if locked:
-            intent = GroupIntent(
-                kind=GroupIntentKind.LOCK,
-                scene=None,
-                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
-                group_id=self.entry.entry_id,
+            await self._push_intent_to_members(
+                GroupIntent(
+                    kind=GroupIntentKind.LOCK,
+                    scene=None,
+                    priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                    group_id=self.entry.entry_id,
+                )
             )
-            for _entry, coordinator in self.resolved_members():
-                coordinator.set_group_intent(self.entry.entry_id, intent)
-                await coordinator.async_request_refresh()
         else:
-            for _entry, coordinator in self.resolved_members():
-                coordinator.set_group_intent(self.entry.entry_id, None)
-                await coordinator.async_request_refresh()
-            if self.active_scene is not None:
-                await self.async_activate_scene(self.active_scene)
+            # Hand each member the intent it should END on, in ONE push. Clearing
+            # first and re-pushing the scene second makes every member evaluate
+            # once un-scened — solar or default wins and commands the cover — a
+            # visible jog that the request-refresh debouncer used to swallow
+            # (issue #1082). Opt-out still applies: a member that opted out of
+            # the active scene ends on no intent rather than on the scene.
+            scene = self.active_scene
+            keep = self._scene_intent(scene) if scene is not None else None
+            for entry, coordinator in self.resolved_members():
+                opted_out = scene is not None and self._scene_opted_out(
+                    entry.entry_id, scene
+                )
+                await self._push_member_intent(coordinator, None if opted_out else keep)
         await self.async_refresh()
 
     def member_winners(self) -> dict[str, str | None]:
@@ -537,13 +583,19 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """Subscribe to member-state and (with an area) registry changes.
 
         The registry subscriptions keep area membership live: covers moved
-        into or out of the area re-resolve the rosters.
+        into or out of the area re-resolve the rosters. The config-entry
+        subscription keeps the *member coordinator* subscriptions live — see
+        :meth:`_handle_config_entry_change`.
         """
         entities = self.member_cover_entities()
         if entities:
             self._unsub_state = async_track_state_change_event(
                 self.hass, entities, self._handle_member_state_change
             )
+        self._sync_member_subscriptions()
+        self._unsub_entry_state = async_dispatcher_connect(
+            self.hass, SIGNAL_CONFIG_ENTRY_CHANGED, self._handle_config_entry_change
+        )
         if self.entry.options.get(CONF_GROUP_AREA):
             self._roster_snapshot = self._current_roster_snapshot()
             self._unsub_registry = [
@@ -581,8 +633,70 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
 
     @callback
     def _handle_member_state_change(self, _event: Event) -> None:
-        """Recompute aggregates when any member cover moves."""
+        """Recompute aggregates when any member cover moves.
+
+        Debounced on purpose, unlike the intent pushes: a scene fan-out emits
+        one state event per member cover, and collapsing those into a single
+        aggregate recompute is exactly what the request debouncer is for.
+        """
         self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _sync_member_subscriptions(self) -> bool:
+        """Subscribe to exactly the member coordinators that exist right now.
+
+        Idempotent, so it can run on every config-entry state change. Returns
+        whether the subscription set changed. The identity check — not the entry
+        id — is what catches a member *reload*: the id is unchanged but
+        ``runtime_data`` holds a brand-new coordinator, and a listener left on
+        the old one is dead. ``resolved_members`` stays the single "is this
+        member real yet" predicate (``helpers.usable_coordinator``, #1063).
+        """
+        live = {entry.entry_id: coord for entry, coord in self.resolved_members()}
+        changed = False
+        for entry_id, sub in list(self._member_subs.items()):
+            if live.get(entry_id) is not sub.coordinator:
+                sub.unsub()
+                del self._member_subs[entry_id]
+                changed = True
+        for entry_id, coordinator in live.items():
+            if entry_id in self._member_subs:
+                continue
+            self._member_subs[entry_id] = _MemberSubscription(
+                coordinator=coordinator,
+                unsub=coordinator.async_add_listener(self._handle_member_update),
+            )
+            changed = True
+        return changed
+
+    @callback
+    def _handle_config_entry_change(self, _change: object, entry: ConfigEntry) -> None:
+        """Re-sync member subscriptions when any ACP entry changes state.
+
+        ``ConfigEntry._async_set_state`` dispatches on every transition, so this
+        one subscription covers a member finishing setup after the group did, a
+        member reload swapping its coordinator out, and an unload or removal.
+        Roster *membership* changes need no hook here: an options edit and an
+        area-registry change both reload this entry, which re-runs setup.
+        """
+        if entry.domain != DOMAIN:
+            return
+        if self._sync_member_subscriptions():
+            self.async_update_listeners()
+
+    @callback
+    def _handle_member_update(self) -> None:
+        """Repaint the group's entities when a member coordinator updates.
+
+        ``async_update_listeners``, not a refresh: ``member_winners`` and
+        ``member_climate_modes`` read live off the member coordinators, and
+        nothing in :class:`GroupAggregates` can have moved — member positions
+        come from cover states, which ``_handle_member_state_change`` already
+        watches. There is nothing to re-fetch, only to re-render, and routing
+        this through the group's own request debouncer would reintroduce the
+        staleness on the other side (issue #1082).
+        """
+        self.async_update_listeners()
 
     async def async_shutdown(self) -> None:
         """Tear down listeners, the command service, and any live intents.
@@ -590,10 +704,17 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         Clearing this group's intent from every member matters on reload and
         delete: a stale intent would keep claiming the member's pipeline for
         a group that no longer exists (#712/#714 lifecycle lesson).
+
+        Member subscriptions go first, so the refreshes the intent clear below
+        triggers cannot repaint entities that are being removed.
         """
-        for _entry, coordinator in self.resolved_members():
-            coordinator.set_group_intent(self.entry.entry_id, None)
-            await coordinator.async_request_refresh()
+        if self._unsub_entry_state is not None:
+            self._unsub_entry_state()
+            self._unsub_entry_state = None
+        for sub in self._member_subs.values():
+            sub.unsub()
+        self._member_subs = {}
+        await self._push_intent_to_members(None)
         if self._unsub_state is not None:
             self._unsub_state()
             self._unsub_state = None
