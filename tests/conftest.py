@@ -61,6 +61,7 @@ def make_snapshot_for_cover(
     )
 
 
+from ._helpers.markers import uses_real_hass
 from .cover_helpers import (  # noqa: F401 — re-exported for convenience
     build_horizontal_cover,
     build_tilt_cover,
@@ -70,6 +71,32 @@ from .cover_helpers import (  # noqa: F401 — re-exported for convenience
     make_tilt_config,
     make_vertical_config,
 )
+
+
+def pytest_collection_modifyitems(items):
+    """Give every test a `unit` or `integration` marker, derived from its fixtures.
+
+    61% of the suite carried no marker at all, which made both `-m unit` and
+    `-m "not integration"` unreliable — the first missed most unit tests, the
+    second silently swept in every unmarked one. Deriving the marker here beats
+    editing 322 files, and it cannot drift the way hand-applied markers do.
+
+    Conservative by construction: an item that already declares either marker is
+    left exactly as authored, so this hook cannot change which fixtures any
+    existing test receives. Only previously-unmarked items are touched, and of
+    those the ones that gain `integration` are precisely the ones already
+    building a real HomeAssistant — so the autouse fixtures below start firing
+    for tests that genuinely need them.
+
+    Any marker applied here must be registered in `pyproject.toml`; with
+    `--strict-markers` an unregistered one fails the whole run at collection.
+    """
+    for item in items:
+        if item.get_closest_marker("unit") or item.get_closest_marker("integration"):
+            continue
+        item.add_marker(
+            pytest.mark.integration if uses_real_hass(item) else pytest.mark.unit
+        )
 
 
 @pytest.fixture(autouse=True)
