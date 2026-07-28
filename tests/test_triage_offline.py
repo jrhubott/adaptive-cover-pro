@@ -5,8 +5,9 @@ the ``acp-diagnose`` skill run the SAME ``run_triage`` engine against a file a
 user downloaded from HA — closing the loop so a gap in the in-product step is a
 gap in offline triage too. It unwraps HA's ``{"data": {...}}`` diagnostics
 envelope, folds ``config_options`` + the ``diagnostics`` payload into one view,
-and documents the offline seam: ``capabilities`` / ``axis_requirements`` are NOT
-in the download, so rules 8a and 13 cannot fire offline.
+and documents the offline seam: ``capabilities`` / ``axis_requirements`` /
+``open_blocks_sun`` are NOT in the download, so rules 8a, 13, and 26 cannot fire
+offline.
 """
 
 from __future__ import annotations
@@ -65,11 +66,13 @@ def test_build_offline_view_omits_latest_version_by_default() -> None:
 
 def test_offline_view_has_no_capabilities_or_axis_requirements() -> None:
     # The offline seam: the download carries neither capabilities (rule 8a) nor
-    # policy-derived axis_requirements (rule 13), so those config rules cannot
-    # fire offline — only their runtime counterparts (8b) do.
+    # policy-derived axis_requirements (rule 13) or open_blocks_sun (rule 26),
+    # so those config rules cannot fire offline — only their runtime
+    # counterparts (8b) do.
     view = build_offline_view(_download())
     assert "capabilities" not in view
     assert "axis_requirements" not in view
+    assert "open_blocks_sun" not in view
 
 
 def test_offline_view_feeds_run_triage_and_config_rule_fires() -> None:

@@ -737,6 +737,7 @@
           "geometry": "📐 Cover Geometry",
           "behavior": "🎛️ Behaviour & Timing",
           "glare_zones": "🔆 Glare Zones",
+          "weather_override": "🌧️ Weather Override",
           "debug": "🔍 Debug & Diagnostics",
           "troubleshoot": "🔁 Re-check",
           "init": "⬅️ Back to menu"

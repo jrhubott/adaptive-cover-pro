@@ -1939,6 +1939,8 @@ class TriageCode(StrEnum):
     MIXED_TEMP_UNITS = "triage.mixed_temp_units"
     # -- rule 25: an endpoint open/close command never moved current_position
     ENDPOINT_POSITION_NOT_TRACKING = "triage.endpoint_position_not_tracking"
+    # -- rule 26: a weather override deploys the cover instead of protecting it
+    WEATHER_OVERRIDE_INVERTED = "triage.weather_override_inverted"
     # -- fragment (NOT a rule): the localized "N minutes ago" clause the three
     # skip findings splice in when a skip timestamp is known. Rendered only as a
     # nested param of the skip templates, never emitted as a top-level finding —

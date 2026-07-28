@@ -1460,6 +1460,124 @@ def test_rule14_ignores_non_temperature_local_sensors() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Rule 26 — WEATHER_OVERRIDE_INVERTED (CONFIG, issues #953/#1094)
+# ---------------------------------------------------------------------------
+
+
+def test_rule26_fires_on_blind_at_override_0_default_100() -> None:
+    view = {
+        "options": {
+            "weather_enabled": True,
+            "weather_wind_speed_sensor": "sensor.wind",
+            "weather_override_position": 0,
+            "default_percentage": 100,
+            "weather_override_min_mode": False,
+        },
+        "open_blocks_sun": False,
+    }
+    findings = _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view)
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.WARNING
+    assert findings[0].fix_step == "weather_override"
+    assert dict(findings[0].reason.params) == {
+        "default": 100,
+        "override": 0,
+        "safe": 100,
+    }
+
+
+def test_rule26_near_miss_awning_at_default() -> None:
+    # Awning: open_blocks_sun=True, override matches the (also 0) default — no
+    # inversion, just an unusual-but-consistent all-the-way-retracted default.
+    view = {
+        "options": {
+            "weather_enabled": True,
+            "weather_wind_speed_sensor": "sensor.wind",
+            "weather_override_position": 0,
+            "default_percentage": 0,
+            "weather_override_min_mode": False,
+        },
+        "open_blocks_sun": True,
+    }
+    assert _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view) == []
+
+
+def test_rule26_near_miss_blind_at_default() -> None:
+    # Blind: override matches the default — not inverted.
+    view = {
+        "options": {
+            "weather_enabled": True,
+            "weather_wind_speed_sensor": "sensor.wind",
+            "weather_override_position": 100,
+            "default_percentage": 100,
+            "weather_override_min_mode": False,
+        },
+        "open_blocks_sun": False,
+    }
+    assert _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view) == []
+
+
+def test_rule26_near_miss_override_min_mode_on() -> None:
+    # #463: min_mode treats weather_override_position as a floor clamp, not a
+    # target position, so the polarity check does not apply.
+    view = {
+        "options": {
+            "weather_enabled": True,
+            "weather_wind_speed_sensor": "sensor.wind",
+            "weather_override_position": 0,
+            "default_percentage": 100,
+            "weather_override_min_mode": True,
+        },
+        "open_blocks_sun": False,
+    }
+    assert _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view) == []
+
+
+def test_rule26_near_miss_weather_disabled() -> None:
+    view = {
+        "options": {
+            "weather_enabled": False,
+            "weather_wind_speed_sensor": "sensor.wind",
+            "weather_override_position": 0,
+            "default_percentage": 100,
+            "weather_override_min_mode": False,
+        },
+        "open_blocks_sun": False,
+    }
+    assert _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view) == []
+
+
+def test_rule26_near_miss_no_trigger_source_configured() -> None:
+    # weather_enabled is on but no wind/rain/severe sensor or template is set —
+    # the override can never actually fire, so it is not a live misconfiguration.
+    view = {
+        "options": {
+            "weather_enabled": True,
+            "weather_override_position": 0,
+            "default_percentage": 100,
+            "weather_override_min_mode": False,
+        },
+        "open_blocks_sun": False,
+    }
+    assert _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view) == []
+
+
+def test_rule26_near_miss_open_blocks_sun_absent() -> None:
+    # Mirrors rule 13's test_rule13_near_miss_axis_requirements_absent: the
+    # policy-derived key is simply not in the view (offline/legacy caller).
+    view = {
+        "options": {
+            "weather_enabled": True,
+            "weather_wind_speed_sensor": "sensor.wind",
+            "weather_override_position": 0,
+            "default_percentage": 100,
+            "weather_override_min_mode": False,
+        }
+    }
+    assert _fire(TriageCode.WEATHER_OVERRIDE_INVERTED, view) == []
+
+
+# ---------------------------------------------------------------------------
 # Step 4 — meta-test over the whole table
 # ---------------------------------------------------------------------------
 
