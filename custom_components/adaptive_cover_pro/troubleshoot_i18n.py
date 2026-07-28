@@ -204,6 +204,13 @@ _TRIAGE_TEMPLATES_EN: dict[str, str] = {
         "Turn off 'Use open/close at endpoints' so the integration sends "
         "set_cover_position instead."
     ),
+    # Rule 26
+    TriageCode.WEATHER_OVERRIDE_INVERTED: (
+        "⚠️ The weather override moves the cover to {override}%, which is further "
+        "closed than its default position of {default}%. Weather override is a "
+        "safety retraction; on this cover type the retracted position is {safe}%. "
+        "As configured, wind or rain will deploy the cover instead of protecting it."
+    ),
 }
 
 

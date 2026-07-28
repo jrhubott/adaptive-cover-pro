@@ -170,6 +170,7 @@ def build_troubleshoot_result(
 
     sensor_type = sensor_type or CoverType.BLIND
     cap_map, _ = check_cover_capabilities(options, sensor_type, hass)
+    policy = get_policy(sensor_type)
     view: dict = {
         "options": dict(options),
         "capabilities": cap_map,
@@ -177,7 +178,13 @@ def build_troubleshoot_result(
         # (COVER_FEATURE_MISMATCH): folded in here at the HA boundary where
         # get_policy lives, so the pure triage engine never branches on the
         # cover-type string (CODING_GUIDELINES § cover-type boundary).
-        "axis_requirements": get_policy(sensor_type).axis_requirements(),
+        "axis_requirements": policy.axis_requirements(),
+        # Policy-derived axis polarity for rule 26 (WEATHER_OVERRIDE_INVERTED),
+        # folded in the same way and for the same reason as axis_requirements
+        # above. ``axes`` is empty for the group/building_profile default
+        # policy, which read_diagnostics already filters out of the live
+        # troubleshoot path — but guard it anyway rather than index blindly.
+        "open_blocks_sun": policy.axes[0].open_blocks_sun if policy.axes else None,
         **(read.payload or {}),
     }
     unavailable = read.source == "unavailable"

@@ -9,7 +9,7 @@ called.
 from __future__ import annotations
 
 import dataclasses
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -272,3 +272,37 @@ def test_build_troubleshoot_result_unavailable_gates_out_mixed_config_runtime_ru
     )
     available_codes = [f.reason.code for f in available_result.findings]
     assert "triage.cloud_or_semantics" in available_codes
+
+
+def test_troubleshoot_view_carries_open_blocks_sun():
+    # Rule 26 (WEATHER_OVERRIDE_INVERTED) reads a policy-derived
+    # ``open_blocks_sun`` field folded into the view at the HA boundary — NOT a
+    # cover-type string in the triage engine. Mirrors
+    # test_troubleshoot_view_carries_policy_axis_requirements (rule 13, in
+    # test_config_flow_troubleshoot.py) but proves the injection through this
+    # module's own seam, build_troubleshoot_result.
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    captured: dict = {}
+
+    def _spy_run_triage(view, **kwargs):
+        captured["view"] = view
+        return []
+
+    with patch(
+        "custom_components.adaptive_cover_pro.diagnostics.triage.run_triage",
+        side_effect=_spy_run_triage,
+    ):
+        build_troubleshoot_result(
+            MagicMock(),
+            DiagnosticsRead(payload={}, source="coordinator"),
+            options={},
+            sensor_type=CoverType.BLIND,
+            labels=None,
+        )
+
+    assert "open_blocks_sun" in captured["view"]
+    assert (
+        captured["view"]["open_blocks_sun"]
+        == get_policy(CoverType.BLIND).axes[0].open_blocks_sun
+    )

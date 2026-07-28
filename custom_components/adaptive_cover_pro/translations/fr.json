@@ -681,6 +681,7 @@
           "geometry": "📐 Géométrie du store",
           "behavior": "🎛️ Comportement & minuterie",
           "glare_zones": "🔆 Zones d'éblouissement",
+          "weather_override": "🌧️ Dérogation météo",
           "debug": "🔍 Débogage et diagnostics",
           "troubleshoot": "🔁 Vérifier à nouveau",
           "init": "⬅️ Retour au menu"

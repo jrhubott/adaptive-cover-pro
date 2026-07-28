@@ -681,6 +681,7 @@
           "geometry": "📐 Beschattungsgeometrie",
           "behavior": "🎛️ Verhalten & Timing",
           "glare_zones": "🔆 Blendungszonen",
+          "weather_override": "🌧️ Wetter-Übersteuerung",
           "debug": "🔍 Debug und Diagnose",
           "troubleshoot": "🔁 Erneut prüfen",
           "init": "⬅️ Zurück zum Menü"

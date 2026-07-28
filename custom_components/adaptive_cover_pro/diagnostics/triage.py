@@ -54,10 +54,22 @@ from ..const import (
     CONF_START_TIME,
     CONF_SUNSET_POS,
     CONF_TRANSPARENT_BLIND,
+    CONF_WEATHER_ENABLED,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_OVERRIDE_MIN_MODE,
+    CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_DEFAULT_HEIGHT,
     GLARE_ZONE_SLOTS,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -326,6 +338,24 @@ def _slot_configured(options: Mapping, keys: Mapping[str, str]) -> bool:
     if not _slot_has_trigger(options, keys):
         return False
     return any(options.get(keys[sub]) is not None for sub in _CLAIM_KEYS)
+
+
+def _weather_has_trigger_source(options: Mapping) -> bool:
+    """Whether at least one weather trigger source is configured.
+
+    Mirrors WeatherManager.is_feature_configured's source check — duplicated
+    because that module imports Home Assistant and this one may not.
+    """
+    return bool(
+        options.get(CONF_WEATHER_WIND_SPEED_SENSOR)
+        or options.get(CONF_WEATHER_RAIN_SENSOR)
+        or options.get(CONF_WEATHER_IS_RAINING_SENSOR)
+        or _is_template(options.get(CONF_WEATHER_IS_RAINING_TEMPLATE))
+        or options.get(CONF_WEATHER_IS_WINDY_SENSOR)
+        or _is_template(options.get(CONF_WEATHER_IS_WINDY_TEMPLATE))
+        or options.get(CONF_WEATHER_SEVERE_SENSORS)
+        or _is_template(options.get(CONF_WEATHER_SEVERE_TEMPLATE))
+    )
 
 
 def _iter_custom_slots(
@@ -623,6 +653,46 @@ def _check_enable_min_backwards(data: Mapping) -> Iterable[Mapping]:
         and min_position > 0
     ):
         yield {"min": min_position}
+
+
+def _check_weather_override_inverted(data: Mapping) -> Iterable[Mapping]:
+    """Rule 26 — the weather override deploys the cover instead of protecting it.
+
+    ``weather_override_position`` has no cover-type polarity of its own — its
+    schema default of 0 is the safe/retracted endpoint for an awning but the
+    deployed endpoint for a blind/venetian/tilt (issue #953/#1094). Compares
+    the override's "how deployed is this position" against the default's on
+    the cover's own axis polarity (``open_blocks_sun``, folded into the view
+    at the HA boundary — mirrors rule 13's ``axis_requirements``).
+    """
+    options = _get(data, "options")
+    if not isinstance(options, Mapping):
+        return
+    if not options.get(CONF_WEATHER_ENABLED):
+        return
+    if not _weather_has_trigger_source(options):
+        return
+    if options.get(CONF_WEATHER_OVERRIDE_MIN_MODE):
+        return
+    open_blocks_sun = _get(data, "open_blocks_sun")
+    if not isinstance(open_blocks_sun, bool):
+        return
+    default = options.get(CONF_DEFAULT_HEIGHT, DEFAULT_DEFAULT_HEIGHT)
+    override = options.get(CONF_WEATHER_OVERRIDE_POSITION, 0)
+    if not isinstance(default, int | float) or isinstance(default, bool):
+        return
+    if not isinstance(override, int | float) or isinstance(override, bool):
+        return
+
+    def _deployment(pos: float) -> float:
+        return pos if open_blocks_sun else 100 - pos
+
+    if _deployment(override) > _deployment(default):
+        yield {
+            "default": default,
+            "override": override,
+            "safe": 0 if open_blocks_sun else 100,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -1258,6 +1328,15 @@ TRIAGE_RULES: tuple[TriageRule, ...] = (
         wiki="Troubleshooting-Findings#endpoint-position-not-tracking",
         issues=(1026,),
         check=_check_endpoint_position_not_tracking,
+    ),
+    TriageRule(
+        code=TriageCode.WEATHER_OVERRIDE_INVERTED,
+        severity=Severity.WARNING,
+        inputs=RuleInput.CONFIG,
+        fix_step="weather_override",
+        wiki="Troubleshooting-Findings#weather-override-inverted",
+        issues=(953, 1094),
+        check=_check_weather_override_inverted,
     ),
 )
 
