@@ -4,17 +4,9 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-# Activate the virtual environment. A linked worktree has no venv/ of its own,
-# so fall back to the main checkout's — git-common-dir points at the shared
-# .git directory, whose parent is the main working tree.
-if [[ -d "venv" ]]; then
-    source venv/bin/activate
-else
-    main_checkout="$(dirname "$(git rev-parse --git-common-dir)")"
-    if [[ -d "$main_checkout/venv" ]]; then
-        source "$main_checkout/venv/bin/activate"
-    fi
-fi
+# shellcheck source=scripts/_venv.sh
+source scripts/_venv.sh
+activate_venv || true
 
 for tool in ruff black; do
     if ! command -v "$tool" >/dev/null 2>&1; then

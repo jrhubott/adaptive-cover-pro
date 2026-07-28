@@ -9,12 +9,12 @@ echo "Stopping any running Home Assistant instances..."
 "${PWD}/scripts/stop"
 
 # Activate virtual environment
-if [[ ! -d "venv" ]]; then
+# shellcheck source=scripts/_venv.sh
+source scripts/_venv.sh
+if ! activate_venv; then
     echo "Error: venv directory not found. Run ./scripts/setup first."
     exit 1
 fi
-
-source venv/bin/activate
 
 # Create config dir if not present
 if [[ ! -d "${PWD}/config" ]]; then

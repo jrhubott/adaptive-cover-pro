@@ -20,6 +20,7 @@ jobs:
   lint:
     name: Lint (Ruff + Black)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -50,6 +51,7 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }} / HA ${{ matrix.ha-channel }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
@@ -116,10 +118,13 @@ jobs:
           )
           PY
 
-      - name: Run tests with coverage
-        run: |
-          pytest -n auto --cov --cov-report=xml --cov-report=term \
-            --junitxml=junit.xml -o junit_family=legacy
+      # Coverage and junit output are consumed only by the Codecov upload steps
+      # below, which run on the stable leg alone. Tracing costs ~29% of the run,
+      # so the min and dev legs go bare and report pass/fail sooner.
+      - name: Run tests
+        env:
+          REPORT_ARGS: "${{ matrix.ha-channel == 'stable' && '--cov --cov-report=xml --cov-report=term --junitxml=junit.xml -o junit_family=legacy' || '' }}"
+        run: pytest -n auto $REPORT_ARGS
 
       - name: Upload coverage to Codecov (stable only)
         if: matrix.python-version == '3.14' && matrix.ha-channel == 'stable'
