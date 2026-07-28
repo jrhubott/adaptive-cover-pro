@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.config_dynamic import (
 )
 from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
 from custom_components.adaptive_cover_pro.const import (
+    BUILDING_PROFILE_SENSOR_KEYS,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLIMATE_MODE,
     CONF_CLOUDY_POSITION,
@@ -122,6 +123,41 @@ def test_linked_cover_shows_profile_pickers() -> None:
     assert CONF_LUX_ENTITY in lc_unlinked
     assert CONF_LUX_ENTITY in lc_linked
     assert CONF_CLOUDY_POSITION in lc_linked
+
+
+# ---------------------------------------------------------------------------
+# const ⇄ schema equality lock (issue #1085)
+# ---------------------------------------------------------------------------
+
+
+def test_profile_sensor_keys_match_schema_so_saves_never_clear_a_key() -> None:
+    """Every ``BUILDING_PROFILE_SENSOR_KEYS`` entry must render in the schema.
+
+    ``async_step_profile_sensors`` hands the whole const to
+    ``optional_entities``, which nulls every listed key the frontend did not
+    send back (that is what makes a cleared field stick — issue #1085). A key
+    in the const that ``building_profile_sensors_schema()`` never renders can
+    never be in ``user_input``, so it is nulled on *every* profile save,
+    ``cleared_profile_keys`` reports it as a clear, and
+    ``propagate_profile_clears`` then deletes it from every linked cover.
+
+    The reverse direction matters too: the schema filters its selectors on the
+    const today, but a rendered key the const does not own would be silently
+    dropped from copy-on-link and propagation.
+    """
+    rendered = _schema_keys(building_profile_sensors_schema())
+    owned = set(BUILDING_PROFILE_SENSOR_KEYS)
+
+    assert rendered == owned, (
+        "BUILDING_PROFILE_SENSOR_KEYS and building_profile_sensors_schema() have "
+        f"diverged.\n  Owned but not rendered: {sorted(owned - rendered)} — add a "
+        "selector for each to building_profile_sensors_schema() "
+        "(config_dynamic.py), or drop the key from BUILDING_PROFILE_SENSOR_KEYS "
+        "(const.py). Left as-is, every profile save nulls the key and propagates "
+        "that as a clear to every linked cover.\n  Rendered but not owned: "
+        f"{sorted(rendered - owned)} — add each to BUILDING_PROFILE_SENSOR_KEYS, "
+        "or the profile screen will collect a value nothing ever copies."
+    )
 
 
 # ---------------------------------------------------------------------------
