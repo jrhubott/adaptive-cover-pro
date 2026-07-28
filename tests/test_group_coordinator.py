@@ -7,7 +7,7 @@ the position/state aggregates the group sensors read.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
@@ -36,7 +36,9 @@ from custom_components.adaptive_cover_pro.const import (
     GroupState,
 )
 from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
+from custom_components.adaptive_cover_pro.pipeline.handlers import GroupLockHandler
 from custom_components.adaptive_cover_pro.pipeline.types import GroupIntent
+from tests._helpers.group_members import UNCLAIMED_WINNER, RealMemberCoordinator
 
 pytestmark = pytest.mark.integration
 
@@ -173,7 +175,7 @@ async def test_activate_scene_pushes_intent_and_refreshes(group_setup) -> None:
     )
     for member in (blind_coord, awning_coord):
         member.set_group_intent.assert_called_once_with("group_01", expected)
-        member.async_request_refresh.assert_awaited_once()
+        member.async_refresh.assert_awaited_once()
         member.async_apply_user_position.assert_not_awaited()
 
 
@@ -400,7 +402,7 @@ async def test_clear_scene_removes_intents(group_setup) -> None:
     assert coordinator.active_scene is None
     for member in (blind_coord, awning_coord):
         member.set_group_intent.assert_called_once_with("group_01", None)
-        member.async_request_refresh.assert_awaited_once()
+        member.async_refresh.assert_awaited_once()
 
 
 async def test_lock_pushes_and_clears_lock_intent(group_setup) -> None:
@@ -508,6 +510,323 @@ async def test_unlock_repushes_active_scene(group_setup) -> None:
     ]
     assert pushed and pushed[-1].kind is GroupIntentKind.SCENE
     assert pushed[-1].scene is GroupScene.PRIVACY
+
+
+# ---------------------------------------------------------------------------
+# Issue #1082 — intent pushes must re-evaluate the member immediately
+# ---------------------------------------------------------------------------
+
+
+def _group_with_real_members(hass, entry_id="group_20"):
+    """Build a group whose members carry real listener + debouncer plumbing."""
+    blind_entry = _member_entry(
+        hass, f"{entry_id}_blind", CoverType.BLIND, [BLIND_ENTITY]
+    )
+    awning_entry = _member_entry(
+        hass, f"{entry_id}_awning", CoverType.AWNING, [AWNING_ENTITY]
+    )
+    blind_coord = RealMemberCoordinator(hass, blind_entry)
+    awning_coord = RealMemberCoordinator(hass, awning_entry)
+    blind_entry.runtime_data = blind_coord
+    awning_entry.runtime_data = awning_coord
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": entry_id, CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={
+            CONF_MEMBER_ENTRIES: [f"{entry_id}_blind", f"{entry_id}_awning"],
+            CONF_MEMBER_COVERS: [],
+        },
+        entry_id=entry_id,
+        title=entry_id,
+    )
+    group_entry.add_to_hass(hass)
+    return GroupCoordinator(hass, group_entry), blind_coord, awning_coord
+
+
+async def test_lock_release_inside_debounce_window_refreshes_members(hass) -> None:
+    """Releasing the lock seconds after engaging it still re-evaluates members.
+
+    ``async_request_refresh`` is debounced (10s cooldown, ``immediate=True``), so
+    a second push inside that window is DEFERRED: the member still reports the
+    lock as its winner at the instant the group publishes to its listeners, and
+    the who-won sensor latches that stale value (issue #1082). The two toggles
+    below are milliseconds apart — trivially inside the cooldown, which is why
+    the live report toggled at 19:23:45 and 19:23:47 and stuck.
+    """
+    coordinator, blind_coord, awning_coord = _group_with_real_members(hass)
+
+    await coordinator.async_set_lock(True)
+    assert coordinator.member_winners() == {
+        BLIND_ENTITY: GroupLockHandler.name,
+        AWNING_ENTITY: GroupLockHandler.name,
+    }
+
+    await coordinator.async_set_lock(False)
+    assert coordinator.member_winners() == {
+        BLIND_ENTITY: UNCLAIMED_WINNER,
+        AWNING_ENTITY: UNCLAIMED_WINNER,
+    }
+
+    await coordinator.async_shutdown()
+    for member in (blind_coord, awning_coord):
+        await member.async_shutdown()
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        pytest.param(
+            lambda c: c.async_activate_scene(GroupScene.PRIVACY), id="scene_activate"
+        ),
+        pytest.param(lambda c: c.async_clear_scene(), id="scene_clear"),
+        pytest.param(lambda c: c.async_set_lock(True), id="lock_engage"),
+        pytest.param(lambda c: c.async_set_lock(False), id="lock_release"),
+        pytest.param(lambda c: c.async_shutdown(), id="shutdown"),
+    ],
+)
+async def test_intent_pushes_use_the_non_debounced_refresh(group_setup, action) -> None:
+    """Every group→member intent push re-evaluates the member immediately.
+
+    ``async_request_refresh`` would route the push through HA's 10-second
+    request debouncer, which is what left the who-won sensor stale (#1082).
+    """
+    coordinator, blind_coord, awning_coord = group_setup
+
+    await action(coordinator)
+
+    for member in (blind_coord, awning_coord):
+        member.async_refresh.assert_awaited()
+        member.async_request_refresh.assert_not_awaited()
+
+
+async def test_lock_release_staggers_but_engage_does_not(hass) -> None:
+    """Release moves covers so it staggers; engage holds position so it does not."""
+    from custom_components.adaptive_cover_pro import group_coordinator as gc_module
+
+    coordinator, _, _ = _group_with_options(
+        hass, {CONF_GROUP_STAGGER_DELAY: 1.5}, entry_id="group_12"
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        sleeper = AsyncMock()
+        mp.setattr(gc_module.asyncio, "sleep", sleeper)
+        await coordinator.async_set_lock(True)
+        assert sleeper.await_count == 0
+
+        await coordinator.async_set_lock(False)
+
+    # 2 ACP members → 1 gap. Generic covers are not touched by the lock.
+    assert sleeper.await_count == 1
+    sleeper.assert_awaited_with(1.5)
+
+
+async def test_roster_change_refreshes_aggregates(hass) -> None:
+    """A member joining mid-run must also recompute the position aggregates.
+
+    Repainting alone would publish ``member_positions`` for the old roster.
+    """
+    member_entry = _member_entry(
+        hass,
+        "joining_member",
+        CoverType.BLIND,
+        [BLIND_ENTITY],
+        state=ConfigEntryState.NOT_LOADED,
+    )
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["joining_member"], CONF_MEMBER_COVERS: []},
+        entry_id="group_join",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+    await coordinator._async_setup()
+
+    member_coord = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = member_coord
+    with patch.object(coordinator, "async_request_refresh", AsyncMock()) as refresh:
+        member_entry.mock_state(hass, ConfigEntryState.LOADED)
+        await hass.async_block_till_done()
+
+    refresh.assert_awaited()
+
+    await coordinator.async_shutdown()
+    await member_coord.async_shutdown()
+
+
+async def test_unlock_with_active_scene_pushes_once_per_member(group_setup) -> None:
+    """Releasing the lock hands each member its FINAL intent in one push.
+
+    Clearing and then re-pushing the scene would make every member evaluate
+    once un-scened in between — with immediate refreshes that is a visible jog
+    the request debouncer used to swallow (#1082).
+    """
+    coordinator, blind_coord, awning_coord = group_setup
+    await coordinator.async_activate_scene(GroupScene.PRIVACY)
+    await coordinator.async_set_lock(True)
+
+    for member in (blind_coord, awning_coord):
+        member.reset_mock()
+    await coordinator.async_set_lock(False)
+
+    for member in (blind_coord, awning_coord):
+        assert member.set_group_intent.call_count == 1
+        assert member.async_refresh.await_count == 1
+        intent = member.set_group_intent.call_args.args[1]
+        assert intent.kind is GroupIntentKind.SCENE
+        assert intent.scene is GroupScene.PRIVACY
+
+
+async def test_unlock_leaves_opted_out_member_unscened(hass) -> None:
+    """A member opted out of the active scene ends on no intent, in one push."""
+    coordinator, blind_coord, awning_coord = _group_with_options(
+        hass, {CONF_GROUP_MEMBER_OPT_OUT: {"group_10_blind": [OPT_OUT_ALL_SCENES]}}
+    )
+    await coordinator.async_activate_scene(GroupScene.PRIVACY)
+    await coordinator.async_set_lock(True)
+
+    for member in (blind_coord, awning_coord):
+        member.reset_mock()
+    await coordinator.async_set_lock(False)
+
+    assert blind_coord.set_group_intent.call_count == 1
+    assert blind_coord.set_group_intent.call_args.args[1] is None
+    assert awning_coord.set_group_intent.call_args.args[1].scene is GroupScene.PRIVACY
+
+
+# ---------------------------------------------------------------------------
+# Issue #1082 — member-coordinator subscriptions track the roster's lifecycle
+# ---------------------------------------------------------------------------
+
+
+async def test_member_loaded_after_group_setup_is_subscribed(hass) -> None:
+    """A member that finishes setup after the group did still gets subscribed.
+
+    HA loads entries independently, so the group can reach ``_async_setup``
+    while a member is still ``NOT_LOADED`` and invisible to ``resolved_members``.
+    """
+    member_entry = _member_entry(
+        hass,
+        "late_member",
+        CoverType.BLIND,
+        [BLIND_ENTITY],
+        state=ConfigEntryState.NOT_LOADED,
+    )
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["late_member"], CONF_MEMBER_COVERS: []},
+        entry_id="group_late",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+
+    await coordinator._async_setup()
+    assert coordinator._member_subs == {}
+
+    member_coord = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = member_coord
+    member_entry.mock_state(hass, ConfigEntryState.LOADED)
+    await hass.async_block_till_done()
+
+    assert list(coordinator._member_subs) == ["late_member"]
+
+    await coordinator.async_shutdown()
+    await member_coord.async_shutdown()
+
+
+async def test_member_reload_swaps_the_subscription(hass) -> None:
+    """A reloaded member keeps its entry id but gets a NEW coordinator object.
+
+    Diffing on the entry id alone would leave the listener on the dead
+    coordinator, so the group would stop hearing from the live one.
+    """
+    member_entry = _member_entry(hass, "member_a", CoverType.BLIND, [BLIND_ENTITY])
+    first = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = first
+    group_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "G", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["member_a"], CONF_MEMBER_COVERS: []},
+        entry_id="group_reload",
+        title="G",
+    )
+    group_entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, group_entry)
+
+    await coordinator._async_setup()
+    assert coordinator._member_subs["member_a"].coordinator is first
+
+    member_entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
+    await hass.async_block_till_done()
+    assert coordinator._member_subs == {}
+
+    second = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = second
+    member_entry.mock_state(hass, ConfigEntryState.LOADED)
+    await hass.async_block_till_done()
+
+    assert coordinator._member_subs["member_a"].coordinator is second
+
+    await coordinator.async_shutdown()
+    for member in (first, second):
+        await member.async_shutdown()
+
+
+async def test_shutdown_unsubscribes_member_listeners(hass) -> None:
+    """Teardown releases the member and config-entry subscriptions."""
+    coordinator, blind_coord, awning_coord = _group_with_real_members(
+        hass, entry_id="group_21"
+    )
+    await coordinator._async_setup()
+    assert len(coordinator._member_subs) == 2
+    assert coordinator._unsub_entry_state is not None
+
+    await coordinator.async_shutdown()
+
+    assert coordinator._member_subs == {}
+    assert coordinator._unsub_entry_state is None
+    for member in (blind_coord, awning_coord):
+        assert not member._listeners
+        await member.async_shutdown()
+
+
+async def test_member_subscription_sync_is_idempotent(hass) -> None:
+    """Re-syncing an unchanged roster keeps the same subscriptions.
+
+    The config-entry signal fires on every transition of every ACP entry, so a
+    re-sync that churned subscriptions would resubscribe constantly and report
+    a change that entity listeners would then act on.
+    """
+    coordinator, blind_coord, awning_coord = _group_with_real_members(
+        hass, entry_id="group_22"
+    )
+    await coordinator._async_setup()
+    before = dict(coordinator._member_subs)
+
+    assert coordinator._sync_member_subscriptions() is False
+    assert coordinator._member_subs == before
+
+    await coordinator.async_shutdown()
+    for member in (blind_coord, awning_coord):
+        await member.async_shutdown()
+
+
+async def test_config_entry_change_ignores_other_domains(hass, group_setup) -> None:
+    """A non-ACP entry changing state is not this group's business."""
+    coordinator, _, _ = group_setup
+    await coordinator._async_setup()
+
+    other = MockConfigEntry(domain="light", entry_id="other_01", title="Other")
+    other.add_to_hass(hass)
+    with patch.object(coordinator, "_sync_member_subscriptions") as sync:
+        coordinator._handle_config_entry_change(None, other)
+
+    sync.assert_not_called()
+
+    await coordinator.async_shutdown()
 
 
 # ---------------------------------------------------------------------------

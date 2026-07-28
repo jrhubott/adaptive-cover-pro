@@ -11,10 +11,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro import button, select, sensor, switch
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ENTITIES,
     CONF_MEMBER_COVERS,
     CONF_MEMBER_ENTRIES,
     CONF_SENSOR_TYPE,
@@ -30,6 +32,8 @@ from custom_components.adaptive_cover_pro.group_coordinator import (
 from custom_components.adaptive_cover_pro.const import (
     GROUP_SCENE_SELECT_AUTO as SCENE_SELECT_AUTO,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers import GroupLockHandler
+from tests._helpers.group_members import MemberData, RealMemberCoordinator
 
 pytestmark = pytest.mark.integration
 
@@ -279,6 +283,109 @@ async def test_who_won_sensor_reads_member_winners(hass, group_entry) -> None:
         "cover.awning1": "weather_override",
         "cover.tilt1": "group_lock",
     }
+
+
+# ---------------------------------------------------------------------------
+# Issue #1082 — group entities must repaint when a MEMBER coordinator updates
+# ---------------------------------------------------------------------------
+
+
+MEMBER_COVER = "cover.member_blind1"
+
+
+@pytest.fixture
+def group_with_real_member(hass):
+    """Build a group entry backed by one member with real listener plumbing."""
+    member_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Member", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={CONF_ENTITIES: [MEMBER_COVER]},
+        entry_id="member_blind",
+        title="Member",
+        state=ConfigEntryState.LOADED,
+    )
+    member_entry.add_to_hass(hass)
+    member_coord = RealMemberCoordinator(hass, member_entry)
+    member_entry.runtime_data = member_coord
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Living Room", CONF_SENSOR_TYPE: CoverType.GROUP},
+        options={CONF_MEMBER_ENTRIES: ["member_blind"], CONF_MEMBER_COVERS: []},
+        entry_id="group_01",
+        title="Living Room",
+    )
+    entry.add_to_hass(hass)
+    coordinator = GroupCoordinator(hass, entry)
+    entry.runtime_data = coordinator
+    return entry, coordinator, member_coord
+
+
+def _member_winner_changed(member) -> None:
+    """Settle the member's pipeline on the group lock, then notify."""
+    member.pipeline_winner_name = GroupLockHandler.name
+    member.async_update_listeners()
+
+
+def _member_climate_changed(member) -> None:
+    """Publish winter-mode diagnostics from the member (this notifies)."""
+    member.async_set_updated_data(
+        MemberData(diagnostics={"climate_conditions": {"is_winter": True}})
+    )
+
+
+@pytest.mark.parametrize(
+    ("unique_id", "mutate", "expected"),
+    [
+        pytest.param("group_01_group_who_won", _member_winner_changed, 1, id="who_won"),
+        pytest.param(
+            "group_01_group_climate_mode",
+            _member_climate_changed,
+            "winter_mode",
+            id="climate_mode",
+        ),
+    ],
+)
+async def test_member_update_repaints_group_sensor(
+    hass, group_with_real_member, unique_id, mutate, expected
+) -> None:
+    """A member's own update must reach the group's live-reading sensors.
+
+    Both sensors read straight off the MEMBER coordinator but subscribe to the
+    GROUP one, and a member's winner or climate mode can change with no cover
+    movement at all — a lock release, a motion timeout expiring. Without the
+    group subscribing to its members, nothing ever triggers the write (#1082).
+
+    Assert on the WRITE, not on ``native_value``: the value is a live read off
+    the member and is already correct today even while the entity shows a stale
+    state. That is exactly why the mocked
+    ``test_who_won_sensor_reads_member_winners`` above cannot catch this.
+    """
+    entry, coordinator, member = group_with_real_member
+    await coordinator._async_setup()
+    await coordinator.async_refresh()
+
+    sensors = {e.unique_id: e for e in await _added_entities(sensor, hass, entry)}
+    target = sensors[unique_id]
+    target.hass = hass
+    target.entity_id = f"sensor.{unique_id}"
+    await target.async_added_to_hass()
+
+    # Prime the render-signature cache: the FIRST coordinator update always
+    # writes (the cache starts on a sentinel), so without a baseline the
+    # assertion below would pass on any notification at all rather than on one
+    # caused by the change.
+    target.async_write_ha_state = MagicMock()
+    member.async_update_listeners()
+    target.async_write_ha_state.reset_mock()
+
+    mutate(member)
+
+    target.async_write_ha_state.assert_called()
+    assert target.native_value == expected
+
+    await coordinator.async_shutdown()
+    await member.async_shutdown()
 
 
 # ---------------------------------------------------------------------------
