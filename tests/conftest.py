@@ -106,8 +106,17 @@ async def _auto_unload_config_entries(request, verify_cleanup):
     Explicitly depends on verify_cleanup so this fixture is set up AFTER it and
     therefore tears down BEFORE it — guaranteeing entries are unloaded before
     verify_cleanup checks for lingering timer handles.
+
+    Gated on the test actually resolving the real ``hass`` fixture, not just on
+    the marker. 160 ``integration``-marked tests never build a HomeAssistant —
+    they call validators or schema builders directly — and the bare
+    ``getfixturevalue("hass")`` below was *creating* one for them purely to have
+    something to clean up. There is nothing to unload in that case: without
+    ``hass`` in the fixture closure a test has no route to create a config entry.
     """
-    if not request.node.get_closest_marker("integration"):
+    if not (
+        request.node.get_closest_marker("integration") and uses_real_hass(request.node)
+    ):
         yield
         return
 
@@ -182,10 +191,13 @@ def neutralize_venetian_delays(monkeypatch):
 def _auto_enable_custom_integrations(request):
     """Auto-enable custom integration discovery for real HA integration tests.
 
-    Only activates when the test is marked @pytest.mark.integration,
-    avoiding overhead for the fast mock-hass unit tests.
+    Gated on the test actually resolving the real ``hass`` fixture as well as on
+    the marker. PHCC's ``enable_custom_integrations`` takes ``hass``, so
+    requesting it forces a HomeAssistant into existence — which is wasted work
+    for the 160 ``integration``-marked tests that never touch one, and whose
+    assertions cannot observe the effect either way.
     """
-    if request.node.get_closest_marker("integration"):
+    if request.node.get_closest_marker("integration") and uses_real_hass(request.node):
         # Request the plugin's fixture by name via indirect call
         request.getfixturevalue("enable_custom_integrations")
 
