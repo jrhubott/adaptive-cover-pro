@@ -41,6 +41,16 @@ class ClimateContext:
     covers, which never consult the tilt position fns).
     ``tracking_seasons`` mirrors the per-instance season-scope option: the set
     of seasons in which glare tracking is permitted (defaults to all).
+
+    ⚠️ **No slat-tilt rule may branch on ``gamma_deg``.** Slats rotate about a
+    horizontal axis parallel to the facade, so the sun's left/right offset
+    reaches the slat geometry only through ``beta`` (via ``cos(gamma)``, which is
+    even). A tilt answer that varies with the *sign* of gamma is unphysical and
+    can only be right on one side — issue #1088, where the ``gamma >= 0`` branch
+    picked the hemisphere that lets direct sun through. The field stays because
+    it is genuine precomputed geometry, and
+    ``tests/test_cover_types/test_tilt_aperture.py`` pins that no tilt rule reads
+    it.
     """
 
     data: Any
@@ -158,7 +168,6 @@ def _tilt_summer(ctx: ClimateContext) -> int:
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
         mode=ctx.cover.mode,
-        gamma_deg=ctx.gamma_deg,
     )
 
 
@@ -166,17 +175,15 @@ def _tilt_default(ctx: ClimateContext) -> int:
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=CLIMATE_DEFAULT_TILT_ANGLE,
         mode=ctx.cover.mode,
-        gamma_deg=ctx.gamma_deg,
     )
 
 
 def _tilt_winter_mode2(ctx: ClimateContext) -> int:
-    # MODE2 winter heating opens the slat toward the sun; passing gamma_deg=0.0
-    # preserves the historical positive-hemisphere answer.
+    # MODE2 winter heating mirrors the profile angle across horizontal, landing
+    # the slat parallel to the beam (maximum transmission).
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=ctx.beta_deg,
         mode=ctx.cover.mode,
-        gamma_deg=0.0,
         sun_through=True,
     )
 
