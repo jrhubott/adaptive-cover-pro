@@ -579,8 +579,13 @@ class PipelineSnapshotBuilder:
             # would make the eventual fully-invalid outcome depend on
             # whether a slot's inputs happened to die in the same cycle or
             # one cycle apart — same physical situation, different result,
-            # decided only by cycle alignment (#1012 review). Idempotent
-            # across the two same-cycle callers (same value both times).
+            # decided only by cycle alignment (#1012 review). Effectively
+            # idempotent across the two same-cycle callers: each samples the
+            # clock separately, so they can straddle a per-input hold's expiry
+            # boundary and disagree — a window of the microseconds between the
+            # two reads out of the whole 300 s hold. When it happens the slot's
+            # release edge is spent a cycle early and the move falls back to
+            # the normal delta/time gates.
             if is_valid:
                 self._last_valid_custom_position[slot] = state
             result.append(state)

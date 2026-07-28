@@ -3358,6 +3358,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             weather_override_active=self.is_weather_override_active,
             # Pure property read — the ad-hoc/preemption build must NOT
             # re-evaluate the managers (that would advance latches off-cycle).
+            # One latch it does advance: the custom-position per-input hold
+            # (#1012) arms on any read, so an ad-hoc build can anchor the hold
+            # window at the tap rather than at the next regular cycle. That is
+            # the documented contract — the window starts at the first
+            # indeterminate sighting, and the tap is one — but it also means no
+            # hold wake is scheduled here.
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
