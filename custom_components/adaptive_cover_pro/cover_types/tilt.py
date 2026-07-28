@@ -8,7 +8,6 @@ import voluptuous as vol
 from homeassistant.helpers import selector
 
 from ..const import (
-    CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET,
     CONF_MAX_TILT,
     CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
@@ -30,6 +29,7 @@ from ..const import (
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_TILT_SAFETY_MARGIN,
     MIN_TILT_SAFETY_MARGIN,
+    TILT_HORIZONTAL_DEG,
     VENETIAN_TILT_TRANSFORMS,
 )
 from ..engine.covers import AdaptiveTiltCover
@@ -242,20 +242,21 @@ class TiltPolicy(CoverTypePolicy, register=True):
         *,
         angle_deg: float,
         mode: TiltMode | str,
-        gamma_deg: float,
         sun_through: bool = False,
     ) -> int:
         """Convert a target slat angle to a tilt percentage that blocks the sun.
 
         Single source of truth for the climate handler's angle → percent
-        translation across MODE1/MODE2 and positive/negative sun hemispheres.
+        translation across MODE1/MODE2.
+
+        Takes no sun-azimuth argument on purpose. Slat tilt is even in gamma —
+        the sun's left/right offset enters the slat geometry only through the
+        profile angle, via ``cos(gamma)`` — so an answer that varied with the
+        *sign* of gamma could only be wrong on one side. It was (issue #1088).
 
         Args:
             angle_deg: Target slat angle in degrees (e.g. CLIMATE_SUMMER_TILT_ANGLE).
             mode: Tilt mode — TiltMode enum value or its string ("mode1"/"mode2").
-            gamma_deg: Sun azimuth offset from window normal, in degrees.
-                When negative, the sun is on the opposite hemisphere and MODE2 must
-                flip its answer onto the other closed side.
             sun_through: When True, return the OPEN hemisphere instead of closed
                 (winter heating: let sun reach the window).  Mirrors the
                 ``sun_through`` flag on ``position_for_intent``.
@@ -271,23 +272,21 @@ class TiltPolicy(CoverTypePolicy, register=True):
             return round((angle_deg / TiltMode.MODE1.max_degrees) * 100)
 
         # MODE2: bi-directional 0–180° scale where 50% is horizontal/open.
-        # Choose hemisphere by sun side (gamma) and intent (sun_through).
+        # Intent alone picks the hemisphere — NOT the sun's left/right side.
+        # Slats rotate about a horizontal axis parallel to the facade, so the
+        # sun's azimuth offset reaches the geometry only through the profile
+        # angle beta = arctan(tan(elev)/cos(gamma)), and cos is even. A branch on
+        # sign(gamma) is therefore unphysical; it made the answer discontinuous
+        # at gamma = 0 and, on the gamma >= 0 side, selected the hemisphere that
+        # lets direct sun through (issue #1088).
         max_degrees = TiltMode.MODE2.max_degrees
-        # Closed-hemisphere mapping for MODE2:
-        #   gamma >= 0 → angle on the positive-side closed hemisphere
-        #               → (180 - angle) / 180 * 100  (== 100 - mode1_pct/2)
-        #   gamma <  0 → angle on the negative-side closed hemisphere
-        #               → angle / 180 * 100
-        # sun_through (winter heating) flips to the open hemisphere by mirroring
-        # the angle across horizontal (+90° offset).
         if sun_through:
-            effective_angle = (
-                CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET + angle_deg
-                if gamma_deg >= 0
-                else CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET - angle_deg
-            )
+            # Winter heating: mirror the angle across horizontal, which lands the
+            # slat parallel to the beam — the exact maximum-transmission angle.
+            effective_angle = TILT_HORIZONTAL_DEG + angle_deg
         else:
-            effective_angle = max_degrees - angle_deg if gamma_deg >= 0 else angle_deg
+            # Blocking: the closed hemisphere containing the profile angle.
+            effective_angle = angle_deg
         return round((effective_angle / max_degrees) * 100)
 
     def targets_full_mechanical_endpoint(

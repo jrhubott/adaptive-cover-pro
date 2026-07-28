@@ -1118,9 +1118,16 @@ class TestIssue373PipelineGlareControl:
     ) -> None:
         """Tilt MODE2 + min_pos=50 + sun out of FOV + summer climate → GLARE_CONTROL.
 
-        Pre-fix the raw helper output was 44 → clamped to 50 (horizontal floor).
-        Post-fix with positive gamma the helper returns (180-80)/180*100 ≈ 56,
-        which survives the clamp and yields a meaningful blocking position.
+        The raw helper output is 44 — the blocking hemisphere — and the user's
+        min_position=50 floor clamps it up to horizontal. That collapse is the
+        documented ``mode2_min_position`` footgun (see the config-summary ⚠️
+        warning), not a defect in the handler.
+
+        This asserted >50 until #1088. #405 had flipped the positive-gamma side
+        to 56% so it escaped the floor, but 56% points the slats at the
+        hemisphere that lets direct sun through, and the negative-gamma side
+        stayed clamped anyway. Post-#1088 the helper is gamma-independent and
+        both sides return the blocking 44%.
 
         ``inverse_state`` is applied above the handler in coordinator.py, so
         this test asserts the un-inverted handler output.  The companion
@@ -1152,14 +1159,10 @@ class TestIssue373PipelineGlareControl:
         )
         result = self.handler.evaluate(snap)
         assert result is not None
-        # Post-fix: helper returns 56 (positive hemisphere, MODE2 GLARE_CONTROL
-        # for angle=80, gamma>=0). 56 > 50 so the min_pos=50 clamp doesn't fire.
-        assert result.position != 50, (
-            f"Position must escape the horizontal floor (50%) — pre-fix was "
-            f"clamped here. Got {result.position}."
-        )
-        assert result.position > 50, (
-            f"Positive-gamma hemisphere must yield > 50 (blocking direction), "
-            f"got {result.position}."
+        # The helper's raw answer is the blocking hemisphere (44%), which sits
+        # below the user's min_position floor and is therefore raised to 50%.
+        assert result.position == 50, (
+            f"Expected 50 — min_position=50 swallows the blocking answer in "
+            f"MODE2, the documented footgun. Got {result.position}."
         )
         assert result.climate_strategy == ClimateStrategy.GLARE_CONTROL
