@@ -314,9 +314,9 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         )
 
     async def _push_member_intent(
-        self, coordinator: object, intent: GroupIntent | None, *, immediate: bool = True
+        self, coordinator: object, intent: GroupIntent | None
     ) -> None:
-        """Set (or clear) this group's intent on one member and re-evaluate it.
+        """Set (or clear) this group's intent on one member and re-evaluate it now.
 
         ``async_refresh``, deliberately never ``async_request_refresh``: the
         latter goes through HA's 10-second request debouncer, so a second group
@@ -327,23 +327,19 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         debounce also defers the member's re-evaluation itself, so the group
         action lands up to ten seconds late.
 
-        ``immediate=False`` is for teardown only, where the opposite holds: no
-        one will read the winner again, and a blocking refresh would run every
-        member's whole pipeline — settle sequences included — serially inside
-        HA's unload path.
+        Teardown uses this same path. Routing it through the request debouncer
+        instead would not actually defer anything — that debouncer is
+        ``immediate=True``, and every direct refresh cancels its cooldown timer,
+        so it runs inline anyway — it would only make the intent clear's timing
+        depend on how recently the last group action happened.
         """
         coordinator.set_group_intent(self.entry.entry_id, intent)
-        if immediate:
-            await coordinator.async_refresh()
-        else:
-            await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
 
-    async def _push_intent_to_members(
-        self, intent: GroupIntent | None, *, immediate: bool = True
-    ) -> None:
+    async def _push_intent_to_members(self, intent: GroupIntent | None) -> None:
         """Push one intent — or the clear — to every resolvable ACP member."""
         for _entry, coordinator in self.resolved_members():
-            await self._push_member_intent(coordinator, intent, immediate=immediate)
+            await self._push_member_intent(coordinator, intent)
 
     async def async_activate_scene(self, scene: GroupScene) -> None:
         """Fan a scene out as a pipeline intent, resolved per member (Phase 2).
@@ -732,10 +728,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         EVERY listener goes first. The intent clear makes members re-evaluate
         and command their covers, and both the member subscriptions and the
         cover-state subscription would otherwise feed that back into a
-        coordinator that is mid-teardown. The clear itself is the one push
-        that stays debounced — nothing will read the winner again, and a
-        blocking refresh per member would run their full pipelines serially
-        inside HA's unload path.
+        coordinator that is mid-teardown.
         """
         if self._unsub_entry_state is not None:
             self._unsub_entry_state()
@@ -749,7 +742,7 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         for unsub in self._unsub_registry:
             unsub()
         self._unsub_registry = []
-        await self._push_intent_to_members(None, immediate=False)
+        await self._push_intent_to_members(None)
         self._cmd_svc.stop()
         await super().async_shutdown()
 

@@ -581,10 +581,11 @@ async def test_lock_release_inside_debounce_window_refreshes_members(hass) -> No
         pytest.param(lambda c: c.async_clear_scene(), id="scene_clear"),
         pytest.param(lambda c: c.async_set_lock(True), id="lock_engage"),
         pytest.param(lambda c: c.async_set_lock(False), id="lock_release"),
+        pytest.param(lambda c: c.async_shutdown(), id="shutdown"),
     ],
 )
 async def test_intent_pushes_use_the_non_debounced_refresh(group_setup, action) -> None:
-    """Every user-facing group→member intent push re-evaluates the member now.
+    """Every group→member intent push re-evaluates the member immediately.
 
     ``async_request_refresh`` would route the push through HA's 10-second
     request debouncer, which is what left the who-won sensor stale (#1082).
@@ -596,23 +597,6 @@ async def test_intent_pushes_use_the_non_debounced_refresh(group_setup, action) 
     for member in (blind_coord, awning_coord):
         member.async_refresh.assert_awaited()
         member.async_request_refresh.assert_not_awaited()
-
-
-async def test_shutdown_intent_clear_stays_debounced(group_setup) -> None:
-    """Teardown is the one push that must NOT block on a member refresh.
-
-    Nothing reads the winner after an unload, while a blocking refresh would
-    run every member's full pipeline — settle sequences included — serially
-    inside HA's unload path.
-    """
-    coordinator, blind_coord, awning_coord = group_setup
-
-    await coordinator.async_shutdown()
-
-    for member in (blind_coord, awning_coord):
-        member.set_group_intent.assert_called_once_with("group_01", None)
-        member.async_request_refresh.assert_awaited_once()
-        member.async_refresh.assert_not_awaited()
 
 
 async def test_lock_release_staggers_but_engage_does_not(hass) -> None:
