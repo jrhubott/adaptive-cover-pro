@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from .const import (
+    CONF_DELTA_TIME,
     CONF_END_OF_WINDOW_POS,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MINIMIZE_MOVEMENTS,
@@ -37,9 +38,10 @@ from .const import (
 )
 from .helpers import compute_effective_default
 from .pipeline.helpers import (
+    anticipated_solar_position_from_geometry,
     default_position_with_limits,
-    solar_position_from_geometry,
 )
+from .pipeline.snapshot_builder import _delta_time_minutes
 
 if TYPE_CHECKING:
     from .config_types import CoverConfig
@@ -129,6 +131,7 @@ def build_forecast(
     end_of_window_pos: int | None = None,
     end_of_window_time: datetime | None = None,
     secondary_axis_factory: SecondaryAxisFactory | None = None,
+    time_threshold_minutes: int = 0,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
@@ -137,12 +140,15 @@ def build_forecast(
     and sample strip share the same time axis.
 
     Each sample's position is computed through the **same** shared primitives
-    the live pipeline uses (``solar_position_from_geometry`` /
+    the live pipeline uses (``anticipated_solar_position_from_geometry`` /
     ``default_position_with_limits`` in :mod:`pipeline.helpers`), so the
     forecast strip matches what the cover is actually commanded to — including
-    min/max position limits, the 1 % floor, movement minimization, and the
-    sunset-aware effective default. *config* and *policy* supply everything
-    those primitives need.
+    min/max position limits, the 1 % floor, movement minimization, the
+    look-ahead anticipation horizon, and the sunset-aware effective default.
+    *config* and *policy* supply everything those primitives need;
+    *time_threshold_minutes* supplies the anticipation look-ahead horizon
+    (mirrors the live path's ``PipelineSnapshot.time_threshold_minutes``,
+    sourced from ``CONF_DELTA_TIME`` — see :func:`build_forecast_for_coord`).
 
     ``cover_factory`` is a closure that builds a cover engine for an
     arbitrary (sol_azi, sol_elev) pair; the caller is responsible for
@@ -177,6 +183,7 @@ def build_forecast(
         end_of_window_pos=end_of_window_pos,
         end_of_window_time=end_of_window_time,
         secondary_axis_factory=secondary_axis_factory,
+        time_threshold_minutes=time_threshold_minutes,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -197,6 +204,7 @@ def _build_samples(
     end_of_window_pos: int | None = None,
     end_of_window_time: datetime | None = None,
     secondary_axis_factory: SecondaryAxisFactory | None = None,
+    time_threshold_minutes: int = 0,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -206,11 +214,17 @@ def _build_samples(
     elevation chart regardless of what time ``build_forecast`` is called.
 
     Each sample routes through the same ``pipeline.helpers`` primitives the live
-    pipeline uses, so positions are identical to runtime. The effective default
-    (and whether the sunset position is active) is recomputed at *each sample's*
-    time via :func:`compute_effective_default`, mirroring the live snapshot
-    builder rather than holding a static default. Note: the forecast projects
-    solar tracking whenever the sun is in the FOV regardless of the
+    pipeline uses, so positions are identical to runtime — including the
+    look-ahead anticipation horizon (``time_threshold_minutes``, issue #1091):
+    solar samples call :func:`~.pipeline.helpers.anticipated_solar_position_from_geometry`,
+    the same primitive the live ``SolarHandler`` calls via
+    :func:`~.pipeline.helpers.anticipated_solar_position`. At horizon 0 (the
+    default) that primitive is identical to the plain, non-anticipated
+    ``solar_position_from_geometry``. The effective default (and whether the
+    sunset position is active) is recomputed at *each sample's* time via
+    :func:`compute_effective_default`, mirroring the live snapshot builder
+    rather than holding a static default. Note: the forecast projects solar
+    tracking whenever the sun is in the FOV regardless of the
     ``enable_sun_tracking`` toggle — the card's purpose is to show where the
     cover *would* sit, so that mode gate is deliberately not applied here.
     For the same reason the operational *start*-time window is not modeled,
@@ -246,9 +260,10 @@ def _build_samples(
         # and every sample collapses to the default position (issue #516).
         cover.eval_time = t
         if cover.direct_sun_valid:
-            pos = solar_position_from_geometry(
+            pos = anticipated_solar_position_from_geometry(
                 cover,
                 config,
+                horizon_minutes=time_threshold_minutes,
                 minimize_movements=minimize_movements,
                 max_coverage_steps=max_coverage_steps,
                 policy=policy,
@@ -474,6 +489,13 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
     )
 
+    # Anticipation look-ahead horizon (issue #1091): the same
+    # CONF_DELTA_TIME-derived horizon the live SolarHandler anticipates
+    # across via PipelineSnapshot.time_threshold_minutes, coerced with the
+    # single shared helper so the forecast never drifts from the live
+    # coercion rules (non-numeric / bool values safely disable anticipation).
+    time_threshold_minutes = _delta_time_minutes(options.get(CONF_DELTA_TIME))
+
     # Secondary-axis projection (#724): build the closure from the polymorphic
     # policy hook — the shim never branches on the cover type. Single-axis
     # policies inherit the base no-op returning ``{}``; venetian projects tilt.
@@ -508,4 +530,5 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         end_of_window_pos=eow_pos,
         end_of_window_time=eow_time,
         secondary_axis_factory=make_secondary_axes,
+        time_threshold_minutes=time_threshold_minutes,
     )
