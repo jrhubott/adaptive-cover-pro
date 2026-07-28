@@ -1020,45 +1020,86 @@ async def test_async_recompute_forecast_swallows_exceptions(monkeypatch):
     assert coord.data.position_forecast is None
 
 
+def _stub_forecast_coord(
+    *,
+    options: dict | None = None,
+    policy=None,
+    end_time: datetime | None = None,
+    config=None,
+    sun_data=None,
+):
+    """Build a MagicMock coordinator stub for build_forecast_for_coord tests.
+
+    Shared scaffolding for the TestForecastShim* classes below — they all
+    stub the same coordinator surface (config_entry.options, hass, the sun
+    provider, config service, policy, snapshot, and time manager) and only
+    vary a handful of inputs. Defaults reproduce the plain-vanilla case: no
+    options, a single-axis policy, no end-of-window gate, and a default
+    config/sun_data pair. Callers override only the parameters their
+    scenario cares about. Returns ``(coord, sun_data)`` since some tests
+    assert against the sun_data instance passed through to the policy hook.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {} if options is None else options
+    coord.logger = MagicMock()
+    coord.hass = MagicMock()
+    coord.hass.config.time_zone = "UTC"
+    if sun_data is None:
+        sun_data = _make_sun_data()
+    coord._sun_provider = MagicMock()
+    coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
+    coord._config_service = MagicMock()
+    coord._config_service.get_common_data = MagicMock(
+        return_value=_make_config() if config is None else config
+    )
+    if policy is None:
+        policy = MagicMock()
+        policy.position_axis_supported = MagicMock(return_value=False)
+    coord._policy = policy
+    coord._snapshot = MagicMock()
+    coord._snapshot.cover_capabilities = {}
+    coord._time_mgr = MagicMock()
+    coord._time_mgr.end_time = end_time
+    return coord, sun_data
+
+
+def _run_shim_spy(coord):
+    """Run build_forecast_for_coord with build_forecast replaced by a spy.
+
+    Returns the spy so callers can inspect the kwargs the shim threaded
+    through to build_forecast.
+    """
+    from custom_components.adaptive_cover_pro import forecast as fc_mod
+
+    spy = MagicMock(return_value=MagicMock(name="Forecast"))
+    with patch.object(fc_mod, "build_forecast", spy):
+        fc_mod.build_forecast_for_coord(coord)
+    return spy
+
+
 class TestForecastShimEndOfWindow:
     """build_forecast_for_coord threads the eow option through, gated on return_sunset."""
 
     def _stub_coord(self, *, options, end_time):
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        coord.config_entry = MagicMock()
-        coord.config_entry.options = options
-        coord.logger = MagicMock()
-        coord.hass = MagicMock()
-        coord.hass.config.time_zone = "UTC"
         sun_data = _make_sun_data(
             sunrise=_DAY_START + timedelta(hours=6),
             sunset=_DAY_START + timedelta(hours=20),
         )
-        coord._sun_provider = MagicMock()
-        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
-        coord._config_service = MagicMock()
-        coord._config_service.get_common_data = MagicMock(
-            return_value=_make_config(h_def=80, sunset_pos=20)
+        coord, _ = _stub_forecast_coord(
+            options=options,
+            end_time=end_time,
+            config=_make_config(h_def=80, sunset_pos=20),
+            sun_data=sun_data,
         )
-        coord._policy = MagicMock()
-        coord._policy.position_axis_supported = MagicMock(return_value=False)
-        coord._snapshot = MagicMock()
-        coord._snapshot.cover_capabilities = {}
-        coord._time_mgr = MagicMock()
-        coord._time_mgr.end_time = end_time
         return coord
 
     def _run(self, coord):
-        from custom_components.adaptive_cover_pro import forecast as fc_mod
-
-        spy = MagicMock(return_value=MagicMock(name="Forecast"))
-        with patch.object(fc_mod, "build_forecast", spy):
-            fc_mod.build_forecast_for_coord(coord)
-        return spy
+        return _run_shim_spy(coord)
 
     def test_passes_eow_pos_and_time_when_gate_on(self):
         from custom_components.adaptive_cover_pro.const import (
@@ -1118,35 +1159,10 @@ class TestForecastShimSecondaryAxes:
     """
 
     def _stub_coord(self, *, policy):
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        coord.config_entry = MagicMock()
-        coord.config_entry.options = {}
-        coord.logger = MagicMock()
-        coord.hass = MagicMock()
-        coord.hass.config.time_zone = "UTC"
-        sun_data = _make_sun_data()
-        coord._sun_provider = MagicMock()
-        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
-        coord._config_service = MagicMock()
-        coord._config_service.get_common_data = MagicMock(return_value=_make_config())
-        coord._policy = policy
-        coord._snapshot = MagicMock()
-        coord._snapshot.cover_capabilities = {}
-        coord._time_mgr = MagicMock()
-        coord._time_mgr.end_time = None
-        return coord, sun_data
+        return _stub_forecast_coord(policy=policy)
 
     def _run(self, coord):
-        from custom_components.adaptive_cover_pro import forecast as fc_mod
-
-        spy = MagicMock(return_value=MagicMock(name="Forecast"))
-        with patch.object(fc_mod, "build_forecast", spy):
-            fc_mod.build_forecast_for_coord(coord)
-        return spy
+        return _run_shim_spy(coord)
 
     def test_shim_passes_secondary_axis_factory_for_venetian(self):
         policy = MagicMock()
@@ -1193,36 +1209,11 @@ class TestForecastShimAnticipationHorizon:
     """
 
     def _stub_coord(self, *, options):
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        coord.config_entry = MagicMock()
-        coord.config_entry.options = options
-        coord.logger = MagicMock()
-        coord.hass = MagicMock()
-        coord.hass.config.time_zone = "UTC"
-        sun_data = _make_sun_data()
-        coord._sun_provider = MagicMock()
-        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
-        coord._config_service = MagicMock()
-        coord._config_service.get_common_data = MagicMock(return_value=_make_config())
-        coord._policy = MagicMock()
-        coord._policy.position_axis_supported = MagicMock(return_value=False)
-        coord._snapshot = MagicMock()
-        coord._snapshot.cover_capabilities = {}
-        coord._time_mgr = MagicMock()
-        coord._time_mgr.end_time = None
+        coord, _ = _stub_forecast_coord(options=options)
         return coord
 
     def _run(self, coord):
-        from custom_components.adaptive_cover_pro import forecast as fc_mod
-
-        spy = MagicMock(return_value=MagicMock(name="Forecast"))
-        with patch.object(fc_mod, "build_forecast", spy):
-            fc_mod.build_forecast_for_coord(coord)
-        return spy
+        return _run_shim_spy(coord)
 
     def test_passes_delta_time_as_horizon(self):
         from custom_components.adaptive_cover_pro.const import CONF_DELTA_TIME
