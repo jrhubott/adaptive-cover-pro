@@ -65,7 +65,11 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
 )
 
-pytestmark = pytest.mark.integration
+# No module-level pytestmark: most of this file drives a real config-entry flow,
+# but a handful of tests only exercise schema builders. A blanket `integration`
+# mark collided with their explicit `@pytest.mark.unit`, leaving them tagged both
+# and unreachable via either selector. The conftest hook derives the right marker
+# per test from whether it resolves the real `hass` fixture.
 
 
 # ---------------------------------------------------------------------------
