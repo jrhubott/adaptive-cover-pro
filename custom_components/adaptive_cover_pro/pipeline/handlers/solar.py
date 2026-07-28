@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from ...const import ControlMethod, ReasonCode
-from ...reason_i18n import Reason
+from ...const import ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import anticipated_solar_position
 from ..types import PipelineResult, PipelineSnapshot
@@ -29,21 +28,19 @@ class SolarHandler(OverrideHandler):
             return None
 
         position = anticipated_solar_position(snapshot)
-        suffix: Reason | str = ""
+        reason = f"sun in FOV — position {position}%"
         if getattr(snapshot, "minimize_movements", False):
             steps = getattr(snapshot, "max_coverage_steps", 1)
-            suffix = Reason(ReasonCode.FRAGMENT_COVERAGE_STEP, {"steps": steps})
+            reason += f" (coverage step, max {steps})"
         return PipelineResult(
             position=position,
             control_method=ControlMethod.SOLAR,
-            reason_payload=Reason(
-                ReasonCode.SOLAR_TRACKING, {"position": position, "suffix": suffix}
-            ),
+            reason=reason,
             raw_calculated_position=position,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when solar handler does not match."""
         if not snapshot.in_time_window:
-            return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
-        return Reason(ReasonCode.SKIP_SUN_OUTSIDE)
+            return "outside time window"
+        return "sun not in FOV or outside elevation limits"

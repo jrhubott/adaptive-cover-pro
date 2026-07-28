@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy import tan
+from numpy import cos, tan
+from numpy import radians as rad
 
 from ...config_types import TiltConfig
 from ...const import (
@@ -17,35 +18,7 @@ from ...const import (
 )
 from ...geometry import SafetyMarginCalculator
 from ...position_utils import PositionConverter
-from ..sun_geometry import foreshortened_slope
 from .base import AdaptiveGeneralCover
-
-
-def slat_cutoff_angle(
-    beta: float, slat_distance: float, depth: float
-) -> tuple[float, float, bool]:
-    """Solve the venetian slat cut-off angle for a profile angle ``beta``.
-
-    Single source of truth for the MDPI cut-off expression
-    (https://www.mdpi.com/1996-1073/13/7/1731) plus its negative-discriminant
-    guard, shared by :class:`AdaptiveTiltCover` (vertical-facade profile angle)
-    and the louvered-roof engine (pitched-plane profile angle). Only ``beta``
-    changes between callers; the slat geometry solve is identical.
-
-    Returns ``(slat_angle_deg, discriminant, negative_discriminant)``:
-
-    * ``negative_discriminant`` is ``True`` when the slat_distance/depth ratio is
-      large relative to ``tan(beta)`` (``sqrt`` of a negative). NumPy would
-      return ``nan`` silently; the caller returns ``0.0`` (closed) instead, so
-      the angle is ``0.0`` in that case.
-    * otherwise the angle is ``2·arctan((tan β + √disc)/(1 + ratio))`` in degrees.
-    """
-    ratio = slat_distance / depth
-    discriminant = (tan(beta) ** 2) - (ratio**2) + 1
-    if discriminant < 0:
-        return 0.0, float(discriminant), True
-    slat = 2 * np.arctan((tan(beta) + np.sqrt(discriminant)) / (1 + ratio))
-    return float(np.rad2deg(slat)), float(discriminant), False
 
 
 @dataclass
@@ -53,14 +26,6 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
     """Calculate state for tilted blinds."""
 
     tilt_config: TiltConfig = None  # type: ignore[assignment]
-    # When True (tilt-only / louvered-roof), ``calculate_percentage`` self-applies
-    # the shared tilt-axis limits (``[min_tilt, max_tilt]`` + the ``*_sun_only``
-    # flags + ``tilt_transform``) via ``PositionConverter.apply_tilt_limits``
-    # (issue #964). Venetian composes this engine and applies the identical limits
-    # itself downstream at ``VenetianCoverCalculation._clamp_tilt``, so it builds
-    # its sub-engine with ``apply_tilt_axis_limits=False`` to avoid clamping twice
-    # (a double proportional remap would otherwise compress the band twice).
-    apply_tilt_axis_limits: bool = True
 
     @property
     def slat_distance(self) -> float:
@@ -85,85 +50,18 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         perspective, accounting for both sun elevation and horizontal angle (gamma).
         Used in slat tilt calculation to block direct sun while maximizing view/light.
 
-        The argument is the shared ``foreshortened_slope`` VSA tangent. This copy
-        had drifted — it divided by a raw ``cos(gamma)`` with no guard at all, so
-        past ``|gamma| = 90`` it returned ``≈ −π/2`` instead of ``+π/2`` and the
-        cut-off solve collapsed the slat angle 180° → 0° (#1030).
-
         Returns:
             Beta angle in radians.
 
         """
-        return float(np.arctan(foreshortened_slope(self.sol_elev, self.gamma)))
+        beta = np.arctan(tan(rad(self.sol_elev)) / cos(rad(self.gamma)))
+        return beta
 
-    def _max_degrees(self) -> float:
+    def _max_degrees(self) -> int:
         """Resolve max slat degrees for the configured mode (string or enum)."""
-        if self._is_specify_angles():
-            return float(TiltMode.MODE2.max_degrees)
         if isinstance(self.mode, TiltMode):
-            return float(self.mode.max_degrees)
-        return float(TiltMode(self.mode).max_degrees)
-
-    @property
-    def angle_0(self) -> float:
-        """Raw slat angle represented by 0% tilt."""
-        return float(self.tilt_config.angle_0)
-
-    @property
-    def angle_100(self) -> float:
-        """Raw slat angle represented by 100% tilt."""
-        return float(self.tilt_config.angle_100)
-
-    def _is_specify_angles(self) -> bool:
-        """Return True when endpoint-angle mapping is configured."""
-        return self.mode == TiltMode.SPECIFY_ANGLES or self.mode == (
-            TiltMode.SPECIFY_ANGLES.value
-        )
-
-    def _specified_target_angle(self, raw_angle: float) -> float:
-        """Return the useful raw target angle for explicit endpoint calibration."""
-        return max(0.0, min(180.0, float(raw_angle)))
-
-    def _percentage_from_specified_angles(self, raw_angle: float) -> float:
-        """Map a target raw slat angle to the configured tilt percentage.
-
-        The solver and the configured endpoints both use ACP's raw/card angle
-        convention: 0° closed downward, 90° horizontal, 180° closed upward.
-        """
-        travel = self.angle_100 - self.angle_0
-        if travel == 0:
-            return 0.0
-
-        target_angle = self._specified_target_angle(raw_angle)
-        return ((target_angle - self.angle_0) / travel) * 100.0
-
-    def _effective_max_degrees(self) -> float:
-        """Ceiling + percentage denominator for the slat angle.
-
-        Polymorphic hook. Base: the tilt mode's max (90 for MODE1, 180 for
-        MODE2). The louvered-roof engine overrides this to honour a configurable
-        physical ``max_slat_angle`` for pergola drives whose mechanical travel
-        is neither 90° nor 180°.
-        """
-        return self._max_degrees()
-
-    def _blocking_depth(self) -> float:
-        """Slat depth used in the cut-off solve.
-
-        Polymorphic hook. Base: the nominal chord (vertical venetian slats shade
-        tip-to-tip). The louvered-roof engine overrides this to account for the
-        interlock overlap of bioclimatic-pergola lamellae (#830).
-        """
-        return self.depth
-
-    def _resolve_slat_angle(self, cutoff_angle: float) -> float:
-        """Map the magnitude cut-off angle to the physical slat angle.
-
-        Polymorphic hook. Base: identity — the vertical-facade venetian/tilt
-        angle IS the physical slat angle. The louvered-roof engine overrides
-        this to realize far-side sun as the flipped face (``180° − θ``).
-        """
-        return cutoff_angle
+            return self.mode.max_degrees
+        return TiltMode(self.mode).max_degrees
 
     def _build_trace(
         self,
@@ -173,7 +71,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         negative_discriminant: bool,
         slat_angle_raw_deg: float | None,
         nan_result: bool,
-        max_degrees: float,
+        max_degrees: int,
         result: float,
         safety_margin: float = 1.0,
     ) -> dict:
@@ -197,7 +95,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 None if slat_angle_raw_deg is None else float(slat_angle_raw_deg)
             ),
             "nan_result": bool(nan_result),
-            "max_degrees": float(max_degrees),
+            "max_degrees": int(max_degrees),
             "tilt_mode": str(mode_value),
             "safety_margin": float(safety_margin),
         }
@@ -221,18 +119,13 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         """
         beta = self.beta
-        max_degrees = self._effective_max_degrees()
+        max_degrees = self._max_degrees()
 
         # Guard: discriminant can be negative when slat_distance/depth ratio is
         # large relative to tan(beta), making sqrt of a negative.  NumPy returns
-        # nan silently; we return 0.0 (closed) as a safe fallback instead. The
-        # cut-off math is shared with the louvered-roof engine via
-        # ``slat_cutoff_angle`` (only ``beta`` and the ``_blocking_depth()`` hook
-        # differ between them — the roof widens the depth for interlock overlap).
-        result, discriminant, negative_discriminant = slat_cutoff_angle(
-            beta, self.slat_distance, self._blocking_depth()
-        )
-        if negative_discriminant:
+        # nan silently; we return 0.0 (closed) as a safe fallback instead.
+        discriminant = (tan(beta) ** 2) - ((self.slat_distance / self.depth) ** 2) + 1
+        if discriminant < 0:
             self.logger.debug(
                 "Tilt calc: negative discriminant (%.4f) — returning 0° (closed)",
                 float(discriminant),
@@ -247,6 +140,11 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 result=0.0,
             )
             return 0.0
+
+        slat = 2 * np.arctan(
+            (tan(beta) + np.sqrt(discriminant)) / (1 + self.slat_distance / self.depth)
+        )
+        result = np.rad2deg(slat)
 
         # Additional nan guard in case of unexpected floating-point edge cases
         if np.isnan(result):
@@ -267,10 +165,6 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             )
             return 0.0
 
-        # Realize the physical slat angle from the magnitude cut-off (identity
-        # for tilt/venetian; the louvered-roof engine flips the far-side face to
-        # ``180° − θ`` here, before the safety margin closes it toward 180).
-        result = self._resolve_slat_angle(result)
         slat_angle_raw_deg = float(result)
 
         # Configurable safety margin (issue #783): reuse the vertical axis'
@@ -319,89 +213,15 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             Position as percentage (0-100).
 
         """
-        # Legacy modes use a fixed degree range. The custom mode uses explicit
-        # raw endpoint angles and interpolates the target angle into that
-        # calibrated range.
+        # 0 degrees is closed, 90 degrees is open (mode1), 180 degrees is closed (mode2)
         position = self.calculate_position()
 
-        # The specify-angles mode maps the solved raw slat angle into a
-        # user-calibrated endpoint range via an affine transform — an offset
-        # (angle_0) plus a scale — which the pure ``max_degrees`` denominator
-        # below cannot express. Handle it here, before the polymorphic base
-        # path, and correct the trace's position percentage in place.
-        if self._is_specify_angles():
-            percentage = self._percentage_from_specified_angles(position)
-            if hasattr(self, "_last_calc_details"):
-                self._last_calc_details[TRACE_KEY_POSITION_PCT] = float(percentage)
-                self._last_calc_details["target_angle_deg"] = (
-                    self._specified_target_angle(position)
-                )
-                self._last_calc_details["tilt_angle_0_deg"] = self.angle_0
-                self._last_calc_details["tilt_angle_100_deg"] = self.angle_100
-            pct = max(0.0, min(100.0, percentage))
+        # Handle both string and TiltMode enum for backward compatibility
+        if isinstance(self.mode, TiltMode):
+            max_degrees = self.mode.max_degrees
         else:
-            # Same effective ceiling the position solve clamps to (the mode max
-            # for tilt/venetian; a configurable physical max for the louvered roof).
-            pct = float(
-                PositionConverter.to_percentage(position, self._effective_max_degrees())
-            )
+            # Convert string to TiltMode
+            mode_enum = TiltMode(self.mode)
+            max_degrees = mode_enum.max_degrees
 
-        return self._apply_tilt_axis_limits(pct)
-
-    def calculate_raw_percentage(self) -> float:
-        """Unrounded tilt fraction for directional rounding (issue #978).
-
-        Mirrors :meth:`calculate_percentage` but skips the ``round()`` inside
-        ``PositionConverter.to_percentage`` on the legacy/custom-max path, so
-        :func:`pipeline.helpers.solar_position_from_geometry` sees the true
-        fraction instead of an already-rounded value (which would neutralise the
-        floor/ceil direction signal). The specify-angles path already yields an
-        unrounded percentage — and populates the diagnostics trace — so it is
-        reused as-is. ``_apply_tilt_axis_limits`` returns the exact float at the
-        default band and only rounds when the band actually moves the tilt,
-        matching :meth:`calculate_percentage`.
-        """
-        if self._is_specify_angles():
-            return self.calculate_percentage()
-        position = self.calculate_position()
-        pct = (float(position) / self._effective_max_degrees()) * 100.0
-        return self._apply_tilt_axis_limits(pct)
-
-    def _apply_tilt_axis_limits(self, pct: float) -> float:
-        """Clamp the sun-derived tilt % to the configured tilt-axis band.
-
-        Routes through the shared :meth:`PositionConverter.apply_tilt_limits`
-        seam (issue #503/#957) so a tilt-only or louvered-roof cover honors the
-        same ``[min_tilt, max_tilt]`` band, ``*_sun_only`` flags, and
-        ``tilt_transform`` venetian already reaches (issue #964). The engine
-        path is always sun-tracking, so ``sun_valid=True``. A no-op at defaults
-        (``min_tilt=0``/``max_tilt=100``/``clamp``), preserving the exact raw %.
-
-        Only the return value is limited — the diagnostics trace keeps the raw
-        geometry percentage, matching how venetian's ``_clamp_tilt`` leaves the
-        tilt engine's trace untouched.
-
-        Venetian's composed sub-engine sets ``apply_tilt_axis_limits=False`` and
-        applies the identical limits itself, so this is skipped there.
-        """
-        if not self.apply_tilt_axis_limits:
-            return pct
-        cfg = self.tilt_config
-        limited = PositionConverter.apply_tilt_limits(
-            int(round(pct)),
-            cfg.min_tilt,
-            cfg.max_tilt,
-            cfg.min_tilt_sun_only,
-            cfg.max_tilt_sun_only,
-            sun_valid=True,
-            transform=cfg.tilt_transform,
-        )
-        # The shared primitive is int-valued, but ``calculate_percentage`` has
-        # always returned a float — specify-angles yields a fractional percent
-        # the pipeline rounds downstream. When the band leaves the rounded value
-        # untouched (a no-op / within-band clamp), keep the exact float so that
-        # precision is preserved byte-for-byte; only substitute the primitive's
-        # value when it actually moved the tilt (a cap, floor, or transform bit).
-        if limited == int(round(pct)):
-            return pct
-        return float(limited)
+        return PositionConverter.to_percentage(position, max_degrees)

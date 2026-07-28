@@ -16,11 +16,10 @@ from custom_components.adaptive_cover_pro.config_types import (
 from custom_components.adaptive_cover_pro.engine.covers.vertical import (
     AdaptiveVerticalCover,
 )
-from custom_components.adaptive_cover_pro.const import ControlMethod, ReasonCode
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
 )
-from custom_components.adaptive_cover_pro.reason_i18n import render_en
 from tests.test_pipeline.conftest import make_snapshot
 
 
@@ -47,9 +46,6 @@ def _make_vertical_cover(
     cover.gamma = gamma
     cover.sol_elev = sol_elev
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
-    cover.calculate_raw_percentage = MagicMock(
-        return_value=float(calculate_percentage_return)
-    )
     cover.config = MagicMock()
     cover.config.min_pos = None
     cover.config.max_pos = None
@@ -94,19 +90,7 @@ class TestGlareZoneHandlerGating:
             active_zone_names={"desk"},
             in_time_window=False,
         )
-        assert render_en(self.handler.describe_skip(snap)) == "outside time window"
-
-    def test_describe_skip_payload_outside_time_window(self) -> None:
-        """describe_skip returns a skip.outside_window payload outside the window."""
-        cover = _make_vertical_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=_make_glare_config(),
-            active_zone_names={"desk"},
-            in_time_window=False,
-        )
-        assert self.handler.describe_skip(snap).code == ReasonCode.SKIP_OUTSIDE_WINDOW
+        assert self.handler.describe_skip(snap) == "outside time window"
 
     def test_matches_inside_time_window(self) -> None:
         """Returns result when in_time_window is True and all conditions met."""
@@ -753,10 +737,9 @@ class TestGlareZoneDescribeSkip:
             in_time_window=True,
         )
         assert (
-            render_en(self.handler.describe_skip(snap))
-            == "no active glare zones or sun outside acceptance angle"
+            self.handler.describe_skip(snap)
+            == "no active glare zones or sun not in FOV"
         )
-        assert self.handler.describe_skip(snap).code == ReasonCode.SKIP_NO_GLARE_ZONES
 
     def test_describe_skip_sun_not_valid(self) -> None:
         """Sun not in FOV → same 'no active glare zones' message."""
@@ -772,10 +755,9 @@ class TestGlareZoneDescribeSkip:
             in_time_window=True,
         )
         assert (
-            render_en(self.handler.describe_skip(snap))
-            == "no active glare zones or sun outside acceptance angle"
+            self.handler.describe_skip(snap)
+            == "no active glare zones or sun not in FOV"
         )
-        assert self.handler.describe_skip(snap).code == ReasonCode.SKIP_NO_GLARE_ZONES
 
 
 class TestGlareZoneReasonString:
@@ -850,57 +832,6 @@ class TestGlareZoneReasonString:
         assert result is not None
         assert "position" in result.reason
         assert "%" in result.reason
-
-    def test_reason_payload_code_and_params(self) -> None:
-        """The payload carries glare.protection with zone names, distance, position."""
-        cover = _make_vertical_cover(
-            distance=5.0,
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=30.0,
-        )
-        glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="my_monitor", x=0.0, y=1.0, radius=0.0)],
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"my_monitor"},
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.GLARE_PROTECTION
-        assert result.reason_payload.params["zones"] == "my_monitor"
-        assert result.reason_payload.params["distance"] == pytest.approx(1.0, abs=0.01)
-        assert result.reason_payload.params["z_suffix"] == ""
-
-    def test_reason_payload_z_suffix_fragment_when_zone_has_z(self) -> None:
-        """The z_suffix param is a z_adjusted fragment when a contributing zone has Z>0."""
-        cover = _make_vertical_cover(
-            distance=5.0,
-            gamma=0.0,
-            sol_elev=45.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=30.0,
-        )
-        glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="eye", x=0.0, y=1.0, radius=0.0, z=1.1)],
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"eye"},
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        z_suffix = result.reason_payload.params["z_suffix"]
-        assert z_suffix.code == ReasonCode.FRAGMENT_Z_ADJUSTED
 
     def test_reason_includes_z_adjusted_suffix_when_contributing_zone_has_z(
         self,
@@ -981,7 +912,7 @@ class TestGlareZoneLargeRadius:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.GLARE_ZONE
-        first_call = cover.calculate_raw_percentage.call_args_list[0]
+        first_call = cover.calculate_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
         assert override == pytest.approx(0.10, abs=0.01)
 
@@ -1037,7 +968,7 @@ class TestGlareZoneRegressionMaxVsMin:
         )
         result = self.handler.evaluate(snap)
         assert result is not None
-        first_call = cover.calculate_raw_percentage.call_args_list[0]
+        first_call = cover.calculate_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
         assert override == pytest.approx(0.5, abs=0.01), (
             f"Expected 0.5 m (closest zone), got {override} — "
@@ -1068,214 +999,3 @@ class TestGlareZoneRegressionMaxVsMin:
             active_zone_names={"couch"},
         )
         assert self.handler.evaluate(snap) is None
-
-
-# ---------------------------------------------------------------------------
-# Issue #213 — distance selection: closest zone wins, farther zones fall through
-#
-# Folded in from the former test_glare_zone_handler_fix.py, whose `_fix` suffix
-# said nothing a year on and whose `_make_vertical_cover` was a verbatim copy of
-# the one above.
-#
-# Geometry refresher:
-# - calculate_position returns blind height = (distance/cos(gamma)) * tan(elev)
-# - Larger distance -> higher position% -> LESS blind deployed -> LESS protection
-# - A blind set to block depth d allows sun to penetrate up to d from the window
-# - A zone CLOSER than base_distance is illuminated and needs protection
-# - A zone FARTHER than base_distance is already in shadow from SolarHandler
-#
-# Units: all glare zone coordinates and window_width are metres.
-# ---------------------------------------------------------------------------
-
-
-handler = GlareZoneHandler()
-
-
-class TestZoneCloserThanBaseShouldOverride:
-    """Zone closer than base_distance is in the illuminated zone — handler MUST fire."""
-
-    def test_zone_closer_than_base_fires_handler(self) -> None:
-        """Zone at 0.9m with base_distance=10m: zone is illuminated, handler must fire.
-
-        SolarHandler would compute position for 10m (very open, ~high %).
-        The zone at 0.9m is well within the illuminated area and needs protection.
-        GlareZoneHandler must override with a more protective (lower %) position.
-        """
-        cover = _make_vertical_cover(
-            distance=10.0,  # base distance 10m — SolarHandler allows sun deep into room
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=5.0,  # glare zone position would be very closed
-        )
-        glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.1)],  # 0.9m
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"desk"},
-        )
-        result = handler.evaluate(snap)
-        # Zone at 0.9m < base 10m → zone is illuminated → handler MUST fire
-        assert result is not None
-        assert result.control_method == ControlMethod.GLARE_ZONE
-
-    def test_zone_at_1m_base_at_3m_fires_handler(self) -> None:
-        """Reporter's scenario: zone 1m deep, base_distance 3m.
-
-        SolarHandler with base=3m allows sun to penetrate up to 3m.
-        Zone at 1m is illuminated. GlareZoneHandler must override.
-        """
-        cover = _make_vertical_cover(
-            distance=3.0,
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=15.0,
-        )
-        glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],  # 1.0m
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"desk"},
-        )
-        result = handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.GLARE_ZONE
-
-
-class TestZoneFartherThanBaseShouldFallThrough:
-    """Zone farther than base_distance is already in shadow — handler should NOT fire."""
-
-    def test_zone_farther_than_base_falls_through(self) -> None:
-        """Zone at ~3.7m with base_distance=1m: zone is already in shadow.
-
-        SolarHandler with base=1m computes a very closed position (low %).
-        Sun cannot penetrate beyond ~1m. Zone at 3.7m is safely in shadow.
-        GlareZoneHandler should NOT override — it would make things WORSE
-        (computing a higher position for the 3.7m distance = less blind).
-        """
-        cover = _make_vertical_cover(
-            distance=1.0,  # base distance 1m — SolarHandler blocks beyond 1m
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=80.0,
-        )
-        glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=4.0, radius=0.3)],  # 3.7m
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"desk"},
-        )
-        result = handler.evaluate(snap)
-        # Zone at ~3.7m > base 1m → zone is in shadow → fall through
-        assert result is None
-
-
-class TestMinDistanceUsedNotMax:
-    """With multiple zones, the CLOSEST zone dictates the position (most restrictive)."""
-
-    def test_closest_zone_determines_position(self) -> None:
-        """Two zones at 0.5m and 2m, base_distance=3m.
-
-        Both zones are closer than base (illuminated). The 0.5m zone needs
-        the most blind (lowest position%). Handler must use min distance (0.5m),
-        not max distance (2m).
-        """
-        cover = _make_vertical_cover(
-            distance=3.0,
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=10.0,
-        )
-        zone_near = GlareZone(name="monitor", x=0.0, y=0.5, radius=0.0)  # 0.5m
-        zone_far = GlareZone(name="desk", x=0.0, y=2.0, radius=0.0)  # 2.0m
-        glare_cfg = GlareZonesConfig(
-            zones=[zone_near, zone_far],
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"monitor", "desk"},
-        )
-        result = handler.evaluate(snap)
-        assert result is not None
-        # The handler must have called calculate_raw_percentage with the CLOSEST
-        # zone distance (0.5m), not the farthest (2.0m).
-        # Note: calculate_raw_percentage is called once by the handler with
-        # effective_distance_override. Check the first call.
-        first_call = cover.calculate_raw_percentage.call_args_list[0]
-        override = first_call.kwargs.get("effective_distance_override")
-        assert (
-            override == 0.5
-        ), f"Expected effective_distance_override=0.5 (closest zone), got {override}"
-
-    def test_contributing_zone_is_closest(self) -> None:
-        """The reason string should name the closest zone, not the farthest."""
-        cover = _make_vertical_cover(
-            distance=5.0,
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=8.0,
-        )
-        zone_near = GlareZone(name="monitor", x=0.0, y=0.8, radius=0.0)  # 0.8m
-        zone_far = GlareZone(name="desk", x=0.0, y=3.0, radius=0.0)  # 3.0m
-        glare_cfg = GlareZonesConfig(
-            zones=[zone_near, zone_far],
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"monitor", "desk"},
-        )
-        result = handler.evaluate(snap)
-        assert result is not None
-        assert "monitor" in result.reason
-
-
-class TestMixedZonesAboveAndBelowBase:
-    """When some zones are closer than base and some farther, only closer ones matter."""
-
-    def test_only_zones_closer_than_base_trigger_override(self) -> None:
-        """Zone at 0.5m (needs protection) and zone at 8m (already in shadow).
-
-        base_distance=3m. Only the 0.5m zone needs protection.
-        The 8m zone is in shadow and irrelevant.
-        """
-        cover = _make_vertical_cover(
-            distance=3.0,
-            gamma=0.0,
-            direct_sun_valid=True,
-            calculate_percentage_return=5.0,
-        )
-        zone_needs_protection = GlareZone(name="monitor", x=0.0, y=0.5, radius=0.0)
-        zone_in_shadow = GlareZone(name="couch", x=0.0, y=8.0, radius=0.0)
-        glare_cfg = GlareZonesConfig(
-            zones=[zone_needs_protection, zone_in_shadow],
-            window_width=2.0,
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=glare_cfg,
-            active_zone_names={"monitor", "couch"},
-        )
-        result = handler.evaluate(snap)
-        assert result is not None
-        # Must use the closest zone (0.5m) for the override
-        first_call = cover.calculate_raw_percentage.call_args_list[0]
-        override = first_call.kwargs.get("effective_distance_override")
-        assert override == 0.5

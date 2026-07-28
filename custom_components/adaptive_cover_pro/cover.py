@@ -2,14 +2,9 @@
 
 When ``CONF_ENABLE_PROXY_COVER`` is True, one ``AdaptiveProxyCover`` entity is
 created per source cover in ``CONF_ENTITIES``. The proxy mirrors source state
-and routes user commands through ``Coordinator.async_apply_user_position`` so
-min-mode custom-position floors are honoured. ``stop_cover`` forwards directly
-to the source.
-
-The proxy speaks the logical frame in both directions: its slider value is a
-logical position that the coordinator maps into the cover's dispatch frame, and
-``current_cover_position`` maps the source's reading back. Tilt is mirrored
-verbatim — only the position axis is re-framed (#1027 / #1028).
+verbatim (no inverse-state transform) and routes user commands through
+``Coordinator.async_apply_user_position`` so min-mode custom-position floors
+are honoured. ``stop_cover`` forwards directly to the source.
 """
 
 from __future__ import annotations
@@ -31,12 +26,7 @@ from homeassistant.util import slugify
 from .const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
-    CONF_GROUP_ENABLE_COVER_ENTITY,
-    CONF_SENSOR_TYPE,
     DEFAULT_ENABLE_PROXY_COVER,
-    DEFAULT_GROUP_ENABLE_COVER_ENTITY,
-    POSITION_CLOSED,
-    POSITION_OPEN,
     TRIGGER_PROXY_CLOSE,
     TRIGGER_PROXY_OPEN,
     TRIGGER_PROXY_POSITION,
@@ -49,7 +39,6 @@ from .cover_types.base import (
     caps_get,
 )
 from .entity_base import _SENTINEL, AdaptiveCoverBaseEntity
-from .position_utils import flip_if
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -68,20 +57,6 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up proxy cover entities for an ACP config entry."""
-    # Cover groups expose the opt-in aggregate cover, never a proxy.
-    from .cover_types import get_policy
-
-    if get_policy(entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
-        if entry.options.get(
-            CONF_GROUP_ENABLE_COVER_ENTITY, DEFAULT_GROUP_ENABLE_COVER_ENTITY
-        ):
-            from .group_entities import build_group_covers
-
-            async_add_entities(
-                build_group_covers(entry.entry_id, hass, entry, entry.runtime_data)
-            )
-        return
-
     if not entry.options.get(CONF_ENABLE_PROXY_COVER, DEFAULT_ENABLE_PROXY_COVER):
         return
 
@@ -178,59 +153,23 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         state = self._source_state()
         return state is not None and state.state == CoverState.CLOSING
 
-    def _logical_axis_value(self, attr: str, *, inverted: bool) -> int | None:
-        """Read *attr* off the source and express it in the logical frame.
-
-        One read path for both axes so the un-inversion is written once and
-        only the *predicate* differs — each axis asks the coordinator whether
-        the value it is about to publish was re-framed on the way out.
-
-        Only inversion is undone. Interpolation is NOT unwound: mapping a motor
-        reading back onto the linear scale is #925's opt-in
-        ``CONF_PROXY_LINEAR_SCALE``, and the coordinator's inversion predicates
-        already report False whenever interpolation is active on that axis.
-        """
+    @property
+    def current_cover_position(self) -> int | None:
+        """Mirror source current_position verbatim (no inverse transform)."""
         state = self._source_state()
         if state is None:
             return None
-        value = state.attributes.get(attr)
-        if value is None:
-            return None
-        return flip_if(int(value), inverted=inverted)
-
-    @property
-    def current_cover_position(self) -> int | None:
-        """Source ``current_position`` expressed in the logical frame.
-
-        The proxy is an ordinary HA cover, so both the number it publishes and
-        the number its slider accepts are logical (0 = closed, 100 = open). On
-        an install whose position axis is effectively inverted, the source's
-        raw attribute is the cover-frame value the dispatch produced, so it is
-        mapped back here — the read side of the same predicate
-        ``_to_cover_frame`` uses, which is what keeps the round trip closed
-        (#1027 / #1028).
-        """
-        return self._logical_axis_value(
-            STATE_ATTR_POSITION, inverted=self.coordinator.position_axis_inverted
-        )
+        value = state.attributes.get(STATE_ATTR_POSITION)
+        return int(value) if value is not None else None
 
     @property
     def current_cover_tilt_position(self) -> int | None:
-        """Source ``current_tilt_position`` expressed in the logical frame.
-
-        Every write that reaches the tilt attribute was re-framed by exactly
-        one transform, and this read owes that transform its inverse — a
-        venetian / day-night shade's slats via the dual-axis sequencer's
-        ``_to_wire`` on ``inverse_tilt``, a tilt-PRIMARY cover or a
-        position-only cover bound to tilt-only hardware via ``_to_cover_frame``
-        on ``inverse_state`` (#1027 / #1034). ``tilt_read_inverted`` resolves
-        which one ran; the source's capabilities are passed because the last
-        case is a routing decision, not a config one.
-        """
-        return self._logical_axis_value(
-            STATE_ATTR_TILT_POSITION,
-            inverted=self.coordinator.tilt_read_inverted(self._source_caps()),
-        )
+        """Mirror source current_tilt_position verbatim."""
+        state = self._source_state()
+        if state is None:
+            return None
+        value = state.attributes.get(STATE_ATTR_TILT_POSITION)
+        return int(value) if value is not None else None
 
     @property
     def supported_features(self) -> CoverEntityFeature:
@@ -319,11 +258,11 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        """Open command routed through the helper as the logical open endpoint."""
+        """Open command routed through the helper as position=100."""
         if not self._source_available():
             return
         await self.coordinator.async_apply_user_position(
-            self._source_entity_id, POSITION_OPEN, trigger=TRIGGER_PROXY_OPEN
+            self._source_entity_id, 100, trigger=TRIGGER_PROXY_OPEN
         )
 
     async def async_close_cover(self, **kwargs: Any) -> None:
@@ -331,7 +270,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         if not self._source_available():
             return
         await self.coordinator.async_apply_user_position(
-            self._source_entity_id, POSITION_CLOSED, trigger=TRIGGER_PROXY_CLOSE
+            self._source_entity_id, 0, trigger=TRIGGER_PROXY_CLOSE
         )
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:

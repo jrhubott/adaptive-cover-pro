@@ -1,9 +1,7 @@
 """Tests for duplicate and sync cover features."""
 
-import types
-from unittest.mock import MagicMock
-
 import pytest
+from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.config_flow import (
     SYNC_CATEGORIES,
@@ -27,7 +25,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DEVICE_ID,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
-    CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -48,7 +45,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_SENSOR_TYPE,
-    CONF_START_TIME,
     CONF_SUNSET_TILT,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -67,11 +63,7 @@ from custom_components.adaptive_cover_pro.const import (
 
 def _make_entry(options: dict) -> MagicMock:
     entry = MagicMock()
-    # MappingProxyType matches the real HA ConfigEntry.options type (see
-    # homeassistant.config_entries.ConfigEntry.options: MappingProxyType) —
-    # a read-only view catches any code under test that tries to normalize
-    # the source in place instead of returning a new dict.
-    entry.options = types.MappingProxyType(dict(options))
+    entry.options = options
     return entry
 
 
@@ -95,19 +87,6 @@ class TestExtractSharedOptions:
         entry = _make_entry({CONF_DEVICE_ID: "abc123", CONF_HEIGHT_WIN: 2.1})
         result = _extract_shared_options(entry)
         assert CONF_DEVICE_ID not in result
-
-    def test_duplicate_flow_drops_temp_entity(self):
-        """Duplicating a cover must not copy the per-room indoor temp sensor (#786).
-
-        The temp sensor is room-specific; a clone in another area should not
-        inherit the source cover's sensor. Area auto-resolution fills the gap.
-        """
-        entry = _make_entry(
-            {CONF_TEMP_ENTITY: "sensor.bedroom_temp", CONF_HEIGHT_WIN: 2.1}
-        )
-        result = _extract_shared_options(entry)
-        assert CONF_TEMP_ENTITY not in result
-        assert result[CONF_HEIGHT_WIN] == 2.1
 
     def test_includes_window_dimensions(self):
         """Verify window dimension options are included in the returned dict."""
@@ -172,57 +151,6 @@ class TestExtractSharedOptions:
         result = _extract_shared_options(entry)
         result[CONF_HEIGHT_WIN] = 99.0
         assert entry.options[CONF_HEIGHT_WIN] == 2.1
-
-
-class TestExtractSharedOptionsTimeNormalization:
-    """Tests for time-key normalization in _extract_shared_options (#1057).
-
-    Duplicate and Sync both copy options through this function. A source
-    entry that predates the v3.11 -> v3.12 repair (or was disabled_by-set
-    before that migration shipped, so it never ran) can still carry a
-    non-canonical start_time/end_time. This normalizes on the way out so
-    neither call site copies a malformed value into a fresh entry.
-    """
-
-    def test_normalizes_noncanonical_start_time(self):
-        """A shorthand start_time is canonicalized to HH:MM:SS."""
-        entry = _make_entry({CONF_START_TIME: "7:30", CONF_HEIGHT_WIN: 2.1})
-        result = _extract_shared_options(entry)
-        assert result[CONF_START_TIME] == "07:30:00"
-        # The source entry's own options must not be mutated by extraction.
-        assert entry.options[CONF_START_TIME] == "7:30"
-
-    def test_normalizes_noncanonical_end_time(self):
-        """A shorthand end_time is canonicalized to HH:MM:SS."""
-        entry = _make_entry({CONF_END_TIME: "00:00", CONF_HEIGHT_WIN: 2.1})
-        result = _extract_shared_options(entry)
-        assert result[CONF_END_TIME] == "00:00:00"
-
-    def test_drops_unrescuable_time(self):
-        """A time value normalize_time_string can't parse is dropped, not copied."""
-        entry = _make_entry({CONF_START_TIME: "not-a-time", CONF_HEIGHT_WIN: 2.1})
-        result = _extract_shared_options(entry)
-        assert CONF_START_TIME not in result
-        assert result[CONF_HEIGHT_WIN] == 2.1
-        # The source entry's own options must not be mutated by extraction.
-        assert entry.options[CONF_START_TIME] == "not-a-time"
-
-    def test_leaves_canonical_time_untouched(self):
-        """An already-canonical time value passes through unchanged."""
-        entry = _make_entry({CONF_END_TIME: "07:30:00"})
-        result = _extract_shared_options(entry)
-        assert result[CONF_END_TIME] == "07:30:00"
-
-    def test_sync_category_path_also_normalizes(self):
-        """Sync (categories=[...]) inherits the same guard as Duplicate.
-
-        This is the test that must fail if normalization were bolted onto
-        only one call site instead of the shared _extract_shared_options
-        function both Duplicate and Sync delegate to.
-        """
-        entry = _make_entry({CONF_START_TIME: "7:30", CONF_HEIGHT_WIN: 2.1})
-        result = _extract_shared_options(entry, categories=["automation"])
-        assert result[CONF_START_TIME] == "07:30:00"
 
 
 class TestSyncCategorySplit:

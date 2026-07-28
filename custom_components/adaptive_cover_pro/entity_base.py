@@ -69,7 +69,7 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
             entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, self._device_id)},
             name=self._name,
-            manufacturer="Jason Rhubottom",
+            manufacturer="BasHeijermans",
             model=f"Adaptive {type_display} Cover",
             configuration_url="https://github.com/jrhubott/adaptive-cover-pro",
         )

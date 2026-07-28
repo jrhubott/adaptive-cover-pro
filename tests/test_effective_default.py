@@ -807,7 +807,7 @@ class TestEntityOverrideTimezone:
         """
         from unittest.mock import MagicMock as _MagicMock
 
-        from custom_components.adaptive_cover_pro.helpers import _read_time_entity
+        from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
 
         paris = self._paris_tz()
         sun = _make_sun_data(sunset_hour=20, sunrise_hour=4, day=dt.date(2026, 6, 7))
@@ -856,7 +856,7 @@ class TestEntityOverrideTimezone:
         """
         from unittest.mock import MagicMock as _MagicMock
 
-        from custom_components.adaptive_cover_pro.helpers import _read_time_entity
+        from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
 
         paris = self._paris_tz()
         sun = _make_sun_data(sunset_hour=21, sunrise_hour=5, day=dt.date(2026, 6, 7))

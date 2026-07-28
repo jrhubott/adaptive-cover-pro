@@ -51,10 +51,8 @@ Section index
 """
 
 import logging
-import re
 from dataclasses import dataclass
 from enum import Enum, StrEnum
-from typing import Any
 
 # =============================================================================
 # 1. Module Identity & Logging
@@ -98,53 +96,6 @@ CONF_PROFILE_SENSOR_OVERRIDES = "profile_sensor_overrides"
 # multi-select becomes an exclude list instead of an include list).
 CONF_SYNC_SELECT_ALL = "select_all_targets"
 
-# Cover-group membership rosters, stored on the GROUP entry only (issue #790).
-# Two lists because the member kinds are structural: ACP members are config
-# entries (orchestrated through their own coordinator — an ACP instance may
-# expose no cover entity at all when the proxy is off), generic members are
-# plain ``cover.*`` entity_ids (adopt mode, commanded directly).
-CONF_MEMBER_ENTRIES = "member_entries"  # ACP member config-entry ids
-CONF_MEMBER_COVERS = "member_covers"  # generic cover entity_ids
-
-# Optional area-based membership source (issue #790, Phase 4). LIVE, not a
-# one-shot seed: the effective rosters are the static lists ∪ the area's
-# resolved members (ACP entries with a controlled cover in the area; free
-# ``cover.*`` entities in the area), re-resolved on registry changes.
-CONF_GROUP_AREA = "group_area"
-
-# Per-member scene opt-out, stored on the GROUP entry keyed by member
-# entry_id so a member removal prunes cleanly: {member_id: [scene, ...]}.
-# The sentinel OPT_OUT_ALL_SCENES ("*") opts a member out of every scene.
-# Enforced group-side at intent-push time (the member handler stays dumb);
-# the group lock ignores opt-out — it is a safety claim on every member.
-CONF_GROUP_MEMBER_OPT_OUT = "group_member_opt_out"
-OPT_OUT_ALL_SCENES = "*"
-
-# Seconds between successive member commands during a group fan-out
-# (scene activation). 0 = simultaneous. Issue #790 Phase 2.
-CONF_GROUP_STAGGER_DELAY = "group_stagger_delay"
-DEFAULT_GROUP_STAGGER_DELAY = 0.0
-_RANGE_GROUP_STAGGER = (0.0, 30.0)
-
-# The scene select's "no scene" option (wire-stable select state). Not a
-# GroupScene member — it is the absence of a scene: choosing it clears the
-# group's claim so members return to their own pipelines.
-GROUP_SCENE_SELECT_AUTO = "auto"
-
-# Entity-exposure toggles for a group entry (issue #790, Phase 3). The
-# aggregate cover entity defaults ON so a group is controllable as a single
-# cover out of the box; users opt out per-group to reduce dashboard/voice
-# clutter. The sensors also default ON. The active-scene sensor, scene
-# controls, and bulk switches are always created (primary control surface,
-# no toggle).
-CONF_GROUP_ENABLE_COVER_ENTITY = "group_enable_cover_entity"
-DEFAULT_GROUP_ENABLE_COVER_ENTITY = True
-CONF_GROUP_ENABLE_POSITION_SENSOR = "group_enable_position_sensor"
-CONF_GROUP_ENABLE_STATE_SENSOR = "group_enable_state_sensor"
-CONF_GROUP_ENABLE_CLIMATE_SENSOR = "group_enable_climate_sensor"
-CONF_GROUP_ENABLE_WHO_WON_SENSOR = "group_enable_who_won_sensor"
-DEFAULT_GROUP_ENABLE_SENSOR = True  # shared default for the four sensor toggles
-
 # Default name prefix used by the config flow when auto-naming a cover from its
 # entity's friendly name (no linked device available) — see config_flow.py's
 # cover_entities auto-fill and async_step_update finalization fallback (#771).
@@ -172,136 +123,10 @@ CONF_ROOF_HEIGHT_ABOVE = (
 )
 DEFAULT_ROOF_PITCH = 40  # degrees — typical Velux roof window pitch
 DEFAULT_ROOF_HEIGHT_ABOVE = 0.0  # metres — 0 disables the ridge occlusion gate
-# Sliding-curtain shade-area geometry (#829, Part 2). A horizontal sliding
-# curtain can close a continuous fraction across the window from a two-point
-# shade area given in floor Cartesian coordinates (x = along the wall, signed,
-# positive = right facing the window from inside; y = depth into the room, > 0)
-# — the SAME frame as glare zones. When the shade area is disabled the curtain
-# falls back to the Part 1 binary open/close. ``SlideDirection`` / the default
-# live in the enums block near ``CoverType`` (needed before the config_fields
-# import); the flat point/width keys reuse the shared ``window_width`` field.
-CONF_SLIDING_ENABLE_SHADE_AREA = "sliding_enable_shade_area"  # bool master toggle
-CONF_SLIDING_SLIDE_DIRECTION = (
-    "sliding_slide_direction"  # one of SLIDING_SLIDE_DIRECTIONS
-)
-CONF_SLIDING_POINT1_X = "sliding_point1_x"  # shade point 1, along-wall x, m (signed)
-CONF_SLIDING_POINT1_Y = "sliding_point1_y"  # shade point 1, depth into room, m (>0)
-CONF_SLIDING_POINT2_X = "sliding_point2_x"  # shade point 2, along-wall x, m (signed)
-CONF_SLIDING_POINT2_Y = "sliding_point2_y"  # shade point 2, depth into room, m (>0)
-DEFAULT_SLIDING_ENABLE_SHADE_AREA = False
-DEFAULT_SLIDING_POINT_X = 0.0  # metres
-DEFAULT_SLIDING_POINT_Y = 0.0  # metres — y <= 0 → curtain fully open (guard)
-# Louvered (lamella) roof plane pitch default (#830). A louvered roof reuses
-# CONF_ROOF_PITCH / _RANGE_ROOF_PITCH but defaults to a FLAT plane (0° from
-# horizontal), unlike the roof window's 40° glass default.
-DEFAULT_LOUVERED_ROOF_PITCH = 0  # degrees from horizontal — 0 = flat roof
-# Louvered-roof physical max slat angle (#830 follow-up). Optional override of
-# the tilt-mode's 90°/180° ceiling for pergola drives whose mechanical travel is
-# neither (e.g. a 0–160° motor). 0 (the sentinel default) = use the tilt mode's
-# max. When set it becomes BOTH the clamp ceiling AND the tilt%→angle denominator.
-CONF_MAX_SLAT_ANGLE = "max_slat_angle"  # degrees; 0 = use tilt-mode max
-DEFAULT_MAX_SLAT_ANGLE = 0  # 0 sentinel → tilt mode's 90/180
-# Louvered-roof slat geometry defaults (#830 follow-up). Pergola lamellae are
-# far larger than interior venetian slats (whose defaults stay 3.0/2.0 cm), so
-# the louvered schema overrides these two markers only. Values are the #830
-# reference rig (17 cm deep, 15 cm apart → 0.88 spacing ratio), in canonical cm.
-DEFAULT_LOUVERED_SLAT_DEPTH_CM = 17.0  # CONF_TILT_DEPTH default for louvered roofs
-DEFAULT_LOUVERED_SLAT_DISTANCE_CM = 15.0  # CONF_TILT_DISTANCE default, louvered roofs
-# Day/Night shade (#993, Model A) — a single HA entity carrying two stacked
-# fabrics (a light-filtering "sheer" band and an opaque "blackout" band). The
-# blend axis rides ``result.tilt``: 100 = all sheer (light-filtering fully
-# deployed), 0 = all blackout. ``opacity_sheer`` / ``opacity_blackout`` are the
-# fabrics' light-blocking percentages, consumed ONLY as the filtering-estimate
-# input and the blackout-engage decision — never as hard coverage gates.
-# ``blackout_threshold`` is the sheer-opacity below which summer direct sun
-# escalates the fabric choice from sheer to blackout.
-CONF_DAY_NIGHT_OPACITY_SHEER = "day_night_opacity_sheer"  # sheer fabric opacity %
-CONF_DAY_NIGHT_OPACITY_BLACKOUT = "day_night_opacity_blackout"  # blackout opacity %
-CONF_DAY_NIGHT_BLACKOUT_THRESHOLD = "day_night_blackout_threshold"  # engage %
-DEFAULT_DAY_NIGHT_OPACITY_SHEER = 30  # % — a light-filtering voile
-DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT = 100  # % — fully opaque
-DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD = 65  # % — below this, hot sun → blackout
-# Day/Night control model — how the abstract (position, fabric-blend) pair maps
-# onto the physical HA entity (#993, Model B). ``position_tilt`` (default): drive
-# BOTH ``set_cover_position`` and ``set_cover_tilt_position``, the blend riding
-# the tilt axis (Model A). ``split_range``: a single-axis cover whose position
-# range encodes both coverage AND fabric — the blackout fabric lives in the lower
-# half (0–50 %) and the sheer fabric in the upper half (50–100 %), so no tilt axis
-# is driven. ``DAY_NIGHT_SPLIT_MIDPOINT`` is that 0/100 fabric boundary.
-CONF_DAY_NIGHT_CONTROL_MODEL = "day_night_control_model"
-DAY_NIGHT_MODEL_POSITION_TILT = "position_tilt"  # dual-axis (Model A)
-DAY_NIGHT_MODEL_SPLIT_RANGE = "split_range"  # single-axis split range (Model B)
-# Model C: two separate HA cover entities — a bottom rail (the primary /
-# total-coverage position) and a middle rail. Both are ``set_cover_position``
-# axes; the abstract fabric blend is folded into the middle rail's absolute
-# position at dispatch (``CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY`` names it). The
-# no-pass invariant guarantees the middle rail never drops below the bottom
-# rail (open-percent space). Implements the awning/TDBU absolute-rail model.
-DAY_NIGHT_MODEL_DUAL_ENTITY = "dual_entity"  # two cover.* rail entities (Model C)
-DEFAULT_DAY_NIGHT_CONTROL_MODEL = DAY_NIGHT_MODEL_POSITION_TILT
-DAY_NIGHT_CONTROL_MODELS = (
-    DAY_NIGHT_MODEL_POSITION_TILT,
-    DAY_NIGHT_MODEL_SPLIT_RANGE,
-    DAY_NIGHT_MODEL_DUAL_ENTITY,
-)
-DAY_NIGHT_SPLIT_MIDPOINT = 50  # % — split-range fabric boundary (blackout below)
-# Model C middle-rail entity: which of the instance's cover entities is the
-# middle rail (the other configured cover is the bottom rail / primary).
-CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
-
-# --- Dual-panel shade (#996) ------------------------------------------------
-# Two INDEPENDENT HA shade entities over one window: a sheer FRONT that
-# sun-tracks like a plain vertical blind, and a blackout BACK that deploys only
-# when one of the configured triggers is active. ``CONF_DUAL_PANEL_FRONT_ENTITY``
-# names which of the instance's covers is the front/sheer one (the remainder is
-# the back/blackout); ``CONF_DUAL_PANEL_BLACKOUT_TRIGGERS`` is the user-selected
-# subset of the trigger set that drives the blackout. Unlike day/night Model C
-# the two panels are NOT coupled — there is no ``M >= P`` no-pass invariant.
-CONF_DUAL_PANEL_FRONT_ENTITY = "dual_panel_front_entity"
-CONF_DUAL_PANEL_BLACKOUT_TRIGGERS = "dual_panel_blackout_triggers"
-# The three conditions that can deploy the blackout back. ``heat`` fires on a
-# climate summer / extreme-heat full block; ``privacy`` fires in the sunset
-# window; ``night`` fires when the sun is below the horizon.
-DUAL_PANEL_TRIGGER_HEAT = "heat"
-DUAL_PANEL_TRIGGER_PRIVACY = "privacy"
-DUAL_PANEL_TRIGGER_NIGHT = "night"
-DUAL_PANEL_BLACKOUT_TRIGGERS = (
-    DUAL_PANEL_TRIGGER_HEAT,
-    DUAL_PANEL_TRIGGER_PRIVACY,
-    DUAL_PANEL_TRIGGER_NIGHT,
-)
-# Default: no trigger selected → the back never deploys until the user opts in.
-DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS: tuple[str, ...] = ()
-
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
 DEFAULT_FOV_RIGHT = 90  # degrees; matches config flow default
-
-
-def resolve_fov_left(options: dict) -> int:
-    """Return ``fov_left`` from *options*, tolerant of a present-but-``None`` key.
-
-    ``int(options.get(CONF_FOV_LEFT, 90))`` raises ``TypeError`` when the key is
-    present but ``None`` (a cleared field) — and this now runs inside
-    ``async_migrate_entry`` at startup, where it could brick entry loading. This
-    is the single None-tolerant resolver, mirroring ``CoverConfig.from_options``;
-    every fov-reading site (migration, blind-spot clamp/schema, config-summary,
-    services) delegates here so they can never diverge.
-    """
-    v = options.get(CONF_FOV_LEFT)
-    return int(v) if v is not None else DEFAULT_FOV_LEFT
-
-
-def resolve_fov_right(options: dict) -> int:
-    """Return ``fov_right`` from *options*, tolerant of a present-but-``None`` key.
-
-    Companion to :func:`resolve_fov_left`.
-    """
-    v = options.get(CONF_FOV_RIGHT)
-    return int(v) if v is not None else DEFAULT_FOV_RIGHT
-
-
 CONF_FOV_COMPUTE = "fov_compute"  # transient form button: derive fov_left/right
 # from window width + reveal depth (#565). Never persisted. Legacy ``fov_mode``
 # values left in older entries' options are inert — the engine reads
@@ -313,12 +138,6 @@ TRIGGER_PROXY_POSITION = "proxy_managed"
 TRIGGER_PROXY_OPEN = "proxy_open"
 TRIGGER_PROXY_CLOSE = "proxy_close"
 TRIGGER_PROXY_TILT = "proxy_tilt"
-# Cover-group aggregate cover entity commands (issue #790, Phase 3).
-TRIGGER_GROUP_COVER = "group_cover"
-TRIGGER_GROUP_COVER_TILT = "group_cover_tilt"
-# Apply Calculated Position button (issue #1045): force-dispatch this cycle's
-# pipeline position past the delta_position / delta_time gates.
-TRIGGER_FORCE_APPLY_CALCULATED = "force_apply_calculated"
 
 
 # =============================================================================
@@ -329,15 +148,6 @@ TRIGGER_FORCE_APPLY_CALCULATED = "force_apply_calculated"
 CONF_HEIGHT_AWNING = "height_awning"  # mount height above ground, metres
 CONF_LENGTH_AWNING = "length_awning"  # extension length, metres (0.3-6.0)
 CONF_AWNING_ANGLE = "angle"  # tilt from horizontal, degrees (0-45)
-
-# Awning shade strategy (issue #1025). "window" (default) computes the overhang
-# projection that shades the window glass; "area" keeps the awning fully extended
-# across the whole field of view (patio / area shading), retracting only when the
-# sun leaves the FOV entirely.
-CONF_AWNING_SHADE_MODE = "awning_shade_mode"
-AWNING_SHADE_MODE_WINDOW = "window"  # shade the window glass (overhang projection)
-AWNING_SHADE_MODE_AREA = "area"  # keep fully extended over the area in front
-DEFAULT_AWNING_SHADE_MODE = AWNING_SHADE_MODE_WINDOW
 
 # Oscillating (drop-arm / pivoting) awning geometry. Unlike the fixed-angle
 # awning, the arm sweeps through an arc as it opens, so the fabric angle is a
@@ -379,13 +189,9 @@ OSCILLATING_ARC_SCAN_SAMPLES = 1801
 # =============================================================================
 # Slat dimensions used to compute tilt angle, plus min/max tilt clamps.
 
-CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-30.0)
-CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-30.0)
+CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-15.0)
+CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-15.0)
 CONF_TILT_MODE = "tilt_mode"  # tilt strategy identifier
-CONF_TILT_ANGLE_0 = "tilt_angle_0"  # raw slat angle at 0% tilt, degrees
-CONF_TILT_ANGLE_100 = "tilt_angle_100"  # raw slat angle at 100% tilt, degrees
-DEFAULT_TILT_ANGLE_0 = 0  # degrees — downward closed endpoint at 0% tilt
-DEFAULT_TILT_ANGLE_100 = 180  # degrees — upward closed endpoint at 100% tilt
 CONF_MAX_TILT = "max_tilt"  # cap on sun-derived tilt %, 0-100
 DEFAULT_MAX_TILT = 100  # default: no upper cap
 CONF_MIN_TILT = "min_tilt"  # floor on sun-derived tilt %, 0-100
@@ -403,41 +209,13 @@ DEFAULT_MAX_TILT_SUN_ONLY = False
 # the safety-margin transform closes away from. MODE1: 90° = fully open.
 TILT_HORIZONTAL_DEG = 90
 
-# Configurable tilt safety margin (issue #783, generalized to every tilt-axis
-# cover in #964): scales the automatic angle-dependent geometry margin
-# (0.0 = no-op = today's exact grazing angle, 1.0 = full geometry margin applied
-# in the closing direction). Shared by tilt-only, louvered-roof, and venetian
-# covers, so the key is neutral rather than venetian-prefixed.
-CONF_TILT_SAFETY_MARGIN = "tilt_safety_margin"
-DEFAULT_TILT_SAFETY_MARGIN = 0.0
-MIN_TILT_SAFETY_MARGIN = 0.0
-MAX_TILT_SAFETY_MARGIN = 1.0
-# Legacy key (migration-read-only, #964). Pre-#964 entries stored the margin
-# under the venetian-prefixed key; the v3.10 migration copies it into
-# CONF_TILT_SAFETY_MARGIN and the configuration-service read falls back to it.
-# Kept only for those reads — the old key is never written and is left untouched
-# on migration so a rollback to an older build finds its config unchanged. The
-# DEFAULT/MIN/MAX aliases point at the neutral values so existing references
-# resolve identically.
+# Configurable venetian tilt safety margin (issue #783): scales the automatic
+# angle-dependent geometry margin (0.0 = no-op = today's exact grazing angle,
+# 1.0 = full geometry margin applied in the closing direction).
 CONF_VENETIAN_TILT_SAFETY_MARGIN = "venetian_tilt_safety_margin"
-DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = DEFAULT_TILT_SAFETY_MARGIN
-MIN_VENETIAN_TILT_SAFETY_MARGIN = MIN_TILT_SAFETY_MARGIN
-MAX_VENETIAN_TILT_SAFETY_MARGIN = MAX_TILT_SAFETY_MARGIN
-
-# Proportional tilt output transform (issue #957). Chooses how the sun-tracking
-# tilt demand is fitted into the ``[min_tilt, max_tilt]`` band. ``clamp``
-# (default, back-compat) flat-caps the value at the band edges — today's exact
-# behaviour. ``proportional`` linearly remaps the full 0–100% solar demand onto
-# the band so a calculated 50% with a band of [0, 40] becomes 20% instead of
-# flat-lining at 40%. Venetian-only enum.
-CONF_VENETIAN_TILT_TRANSFORM = "venetian_tilt_transform"  # one of below
-VENETIAN_TILT_TRANSFORM_CLAMP = "clamp"  # flat cap at band edges (default)
-VENETIAN_TILT_TRANSFORM_PROPORTIONAL = "proportional"  # linear remap into band
-DEFAULT_VENETIAN_TILT_TRANSFORM = VENETIAN_TILT_TRANSFORM_CLAMP  # back-compat
-VENETIAN_TILT_TRANSFORMS = (
-    VENETIAN_TILT_TRANSFORM_CLAMP,
-    VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
-)
+DEFAULT_VENETIAN_TILT_SAFETY_MARGIN = 0.0
+MIN_VENETIAN_TILT_SAFETY_MARGIN = 0.0
+MAX_VENETIAN_TILT_SAFETY_MARGIN = 1.0
 
 
 # =============================================================================
@@ -549,11 +327,11 @@ CONF_SUNSET_TILT = (
 # 8a. Forecast Timeline
 # =============================================================================
 # Sampling cadence and boundary-event vocabulary for the dashboard forecast
-# strip built by ``forecast.build_forecast``. 10-minute steps over the full
+# strip built by ``forecast.build_forecast``. 15-minute steps over the full
 # local calendar day (00:00 → 24:00) are dense enough to read smoothly and
 # cheap enough to compute in well under a second on a Pi 4.
 
-FORECAST_STEP_MINUTES = 10  # cadence between forecast samples, minutes
+FORECAST_STEP_MINUTES = 15  # cadence between forecast samples, minutes
 
 EVENT_SUNRISE = "sunrise"  # boundary event: sun rises above horizon
 EVENT_SUNSET = "sunset"  # boundary event: sun sets below horizon
@@ -568,19 +346,8 @@ EVENT_FOV_EXIT = "fov_exit"  # boundary event: sun leaves window FOV
 # so direct-sun handling switches off even if geometry says otherwise.
 
 CONF_ENABLE_BLIND_SPOT = "blind_spot"  # master enable
-# --- Legacy FOV-relative edges (migration-read-only, issue #247) -------------
-# These measure the wedge as an offset INWARD from the left acceptance edge.
-# As of v3.8 writers emit the signed-gamma keys below; these are retained only
-# so a rolled-back older build keeps reading its untouched config (additive,
-# rollback-safe). ``blind_spot_legacy_to_gamma`` converts them on read.
-CONF_BLIND_SPOT_LEFT = "blind_spot_left"  # legacy left offset, deg 0-359
-CONF_BLIND_SPOT_RIGHT = "blind_spot_right"  # legacy right offset, deg 0-360
-# --- Signed gamma from the window normal (primary storage, issue #247) -------
-# Same frame as ``gamma`` / ``fov_left`` / ``fov_right``: 0 = straight ahead,
-# positive = toward the left acceptance edge. The engine wedge is simply
-# ``-blind_spot_right_gamma <= gamma <= blind_spot_left_gamma``.
-CONF_BLIND_SPOT_LEFT_GAMMA = "blind_spot_left_gamma"  # upper gamma edge
-CONF_BLIND_SPOT_RIGHT_GAMMA = "blind_spot_right_gamma"  # negated lower gamma edge
+CONF_BLIND_SPOT_LEFT = "blind_spot_left"  # left edge, azimuth deg 0-359
+CONF_BLIND_SPOT_RIGHT = "blind_spot_right"  # right edge, azimuth deg 0-360
 # Sun elevation below which the blind-spot wedge applies, degrees 0-90.
 CONF_BLIND_SPOT_ELEVATION = "blind_spot_elevation"
 
@@ -609,74 +376,9 @@ CONF_BLIND_SPOT_ELEVATION_MODE = "blind_spot_elevation_mode"
 BLIND_SPOT_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3)  # slot 1 = legacy keys
 
 
-def blind_spot_legacy_to_gamma(
-    fov_left: float, old_left: float, old_right: float
-) -> tuple[int, int]:
-    """Convert legacy FOV-relative blind-spot edges to signed gamma (issue #247).
-
-    The ONE conversion formula — used by both the v3.8 config migration and the
-    runtime legacy fallback in :meth:`CoverConfig.from_options`, so the two can
-    never drift (single-source-of-truth rule).
-
-    Legacy semantics: the wedge is ``fov_left - old_right <= gamma <=
-    fov_left - old_left`` (offsets inward from the left acceptance edge).
-    Signed-gamma semantics: ``-new_right <= gamma <= new_left``. Substituting
-
-        new_left  = fov_left - old_left
-        new_right = old_right - fov_left
-
-    reproduces the identical interval. (The formula in issue #247's notes is
-    wrong — it swaps sides; this derivation is verified bit-for-bit.)
-    """
-    return int(fov_left) - int(old_left), int(old_right) - int(fov_left)
-
-
-def clamp_gamma_pair(
-    left: Any,
-    right: Any,
-    fov_left: int,
-    fov_right: int,
-) -> tuple[int | None, int | None]:
-    """Clamp a signed-gamma blind-spot ``(left, right)`` edge pair to the FOV.
-
-    The ONE clamp-arithmetic source (single-source-of-truth rule): the config
-    migration, the config-flow clamp-on-save, and any schema-bound derivation
-    delegate here so the bounds and the empty-wedge repair can never drift.
-
-    ``left`` (upper edge) is clamped to ``[-fov_right, fov_left]`` and ``right``
-    (negated lower edge) to ``[-fov_left, fov_right]`` — the same bounds the
-    slider schema exposes. Either edge may be ``None`` (that side stays ``None``
-    and no repair runs).
-
-    Non-empty repair (issue #247, finding 3): a wedge is non-empty only when
-    ``left + right > 0``. When BOTH edges are present and the clamp collapses a
-    *previously* non-empty wedge into an empty one (e.g. the default 1° sliver
-    at a wide FOV, re-clamped after the FOV narrows), the right edge — then the
-    left edge if still needed — is nudged back out to restore a minimal 1°
-    sliver, so a valid or default wedge can never be clamped into the
-    empty-wedge lockout that hard-blocks the options step. An input wedge that
-    was ALREADY empty is left exactly as configured.
-    """
-    new_left = None if left is None else max(-fov_right, min(int(left), fov_left))
-    new_right = None if right is None else max(-fov_left, min(int(right), fov_right))
-    if new_left is not None and new_right is not None:
-        was_non_empty = int(left) + int(right) > 0
-        if was_non_empty and new_left + new_right <= 0:
-            new_right = min(fov_right, 1 - new_left)
-            if new_left + new_right <= 0:
-                new_left = min(fov_left, 1 - new_right)
-    return new_left, new_right
-
-
 @dataclass(frozen=True, slots=True)
 class BlindSpot:
-    """One blind-spot wedge, stored as signed gamma from the window normal.
-
-    ``left`` is the upper gamma edge and ``right`` is the NEGATED lower gamma
-    edge, so the containment test is ``-right <= gamma <= left`` (issue #247) —
-    the same frame as ``gamma`` / ``fov_left`` / ``fov_right``. For a legacy
-    FOV-relative config the values are converted on read via
-    :func:`blind_spot_legacy_to_gamma`.
+    """One blind-spot wedge.
 
     ``elevation`` (None = applies at all elevations). ``elevation_mode``
     (issue #702) selects which side of ``elevation`` the wedge applies to:
@@ -696,17 +398,12 @@ def _blind_spot_slot_keys(n: int) -> dict[str, str]:
     """Return the wire-format option keys for blind-spot slot *n*.
 
     Slot 1 keeps the legacy unsuffixed keys (no data migration); slots 2+ are
-    suffixed ``_<n>``. Each slot carries BOTH the legacy FOV-relative edges
-    (``left`` / ``right``, migration-read-only) and the primary signed-gamma
-    edges (``left_gamma`` / ``right_gamma``, issue #247).
+    suffixed ``_<n>``.
     """
     s = "" if n == 1 else f"_{n}"
     return {
         "left": f"blind_spot_left{s}",
         "right": f"blind_spot_right{s}",
-        # Signed-gamma edges (issue #247) — the primary storage as of v3.8.
-        "left_gamma": f"blind_spot_left_gamma{s}",
-        "right_gamma": f"blind_spot_right_gamma{s}",
         "elevation": f"blind_spot_elevation{s}",
         # Per-slot below/above elevation selector (issue #702).
         "elevation_mode": f"blind_spot_elevation_mode{s}",
@@ -718,16 +415,6 @@ BLIND_SPOT_SLOTS: dict[int, dict[str, str]] = {
     n: _blind_spot_slot_keys(n) for n in BLIND_SPOT_SLOT_NUMBERS
 }
 
-# Generic (un-suffixed) field keys for the single-slot blind-spot options page
-# (issue #945). The per-slot page renders these slot-agnostic keys so the
-# translation block is authored once; GET seeds them from a slot's stored keys
-# and POST maps them back. They coincide with slot 1's storage keys (whose wire
-# format is already un-suffixed), so editing slot 1 is an identity mapping.
-BLIND_SPOT_FORM_KEYS: dict[str, str] = {
-    sub: _blind_spot_slot_keys(1)[sub]
-    for sub in ("left_gamma", "right_gamma", "elevation", "elevation_mode")
-}
-
 
 # =============================================================================
 # 10. Glare Zones
@@ -735,39 +422,6 @@ BLIND_SPOT_FORM_KEYS: dict[str, str] = {
 # Optional glare-zone handler (priority 45 in the override pipeline).
 
 CONF_ENABLE_GLARE_ZONES = "enable_glare_zones"  # activate glare-zone handler
-
-# Up to four floor glare zones, each with a name and x/y/radius/z geometry
-# (issue #945). Mirrors CUSTOM_POSITION_SLOTS / BLIND_SPOT_SLOTS so the slot
-# count lives in one place instead of a hard-coded range(1, 5) scattered across
-# the schema builder, specs, runtime parse, and summary.
-GLARE_ZONE_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3, 4)
-
-
-def _glare_zone_slot_keys(n: int) -> dict[str, str]:
-    """Return the wire-format option keys for glare-zone slot *n*."""
-    return {
-        "name": f"glare_zone_{n}_name",
-        "x": f"glare_zone_{n}_x",
-        "y": f"glare_zone_{n}_y",
-        "radius": f"glare_zone_{n}_radius",
-        "z": f"glare_zone_{n}_z",
-    }
-
-
-# {slot_number: {sub_key: wire_key}}
-GLARE_ZONE_SLOTS: dict[int, dict[str, str]] = {
-    n: _glare_zone_slot_keys(n) for n in GLARE_ZONE_SLOT_NUMBERS
-}
-
-# Generic (un-suffixed) field keys for the single-slot glare-zone options page
-# (issue #945) — the translation block is authored once against these.
-GLARE_ZONE_FORM_KEYS: dict[str, str] = {
-    "name": "glare_zone_name",
-    "x": "glare_zone_x",
-    "y": "glare_zone_y",
-    "radius": "glare_zone_radius",
-    "z": "glare_zone_z",
-}
 
 
 # =============================================================================
@@ -782,10 +436,6 @@ CONF_TEMP_ENTITY = "temp_entity"  # indoor temp sensor entity_id
 CONF_TEMP_LOW = "temp_low"  # "cold" threshold, sensor unit (0-90)
 CONF_TEMP_HIGH = "temp_high"  # "hot" threshold, sensor unit (0-90)
 CONF_OUTSIDETEMP_ENTITY = "outside_temp"  # outdoor temp sensor entity_id
-# Which outdoor-temperature reading climate mode uses (issue #547): one of
-# OutsideTempSource — live (default), forecast_max, or max_of_live_and_forecast.
-# Reuses the configured CONF_WEATHER_ENTITY as the forecast source.
-CONF_OUTSIDE_TEMP_SOURCE = "outside_temp_source"
 # Outdoor temp threshold for summer/winter mode switch (range 0-100).
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_PRESENCE_ENTITY = "presence_entity"  # presence/occupancy sensor entity_id
@@ -801,69 +451,6 @@ CONF_WINTER_CLOSE_INSULATION = "winter_close_insulation"
 # True to let summer climate-close ignore the sun-in-FOV min floor
 # (min_position_sun_tracking) and reach the global min_position instead.
 CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR = "summer_close_bypass_sun_floor"
-# When no explicit CONF_TEMP_ENTITY is set, fall back to the cover's HA area
-# configured temperature entity (issue #786). Defaults True (opt-out).
-CONF_AUTO_RESOLVE_TEMP_FROM_AREA = "auto_resolve_temp_from_area"
-DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA = True
-
-# Repair issue id (issue_registry) raised when the effective indoor temperature
-# sensor stays unavailable/missing beyond the debounce window (issue #786).
-ISSUE_TEMP_SENSOR_UNAVAILABLE = "temp_sensor_unavailable"
-# Non-sensor health-check Repair ids (issue #975), all informational
-# (is_fixable=False, WARNING, auto-clear on recovery) and debounced on the same
-# DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS window. Per-config-entry namespaced at
-# raise time (`{id}_{entry_id}` — A1 also appends the cover entity_id).
-ISSUE_COVER_UNAVAILABLE = "cover_unavailable"  # a controlled cover is unavailable
-ISSUE_SUN_UNAVAILABLE = "sun_unavailable"  # sun.sun is unavailable/missing
-ISSUE_CONFIG_POSITION_ENVELOPE = "config_position_envelope"  # min>max or slot outside
-ISSUE_CONFIG_TIME_WINDOW = "config_time_window"  # start >= end
-ISSUE_COVER_NOT_MOVING = (
-    "cover_not_moving"  # commanded but not reaching target (issue #990)
-)
-ISSUE_COVER_TILT_UNSUPPORTED = (
-    "cover_tilt_unsupported"  # tilt cover type bound to a non-tilt device (issue #991)
-)
-# Generous debounce so integration restarts / device re-adds don't nag before
-# a genuinely dead sensor is flagged.
-DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0
-
-# Extreme-heat mode (issue #766): an all-day, sun-independent force-hold that
-# pre-empts every other climate strategy (including winter heating) whenever the
-# OUTSIDE temperature exceeds this threshold. None/unset = feature off.
-CONF_TEMP_EXTREME_HEAT = "temp_extreme_heat"  # outside-temp threshold, sensor unit
-# Position the cover holds during extreme heat. None/unset defaults to
-# DEFAULT_EXTREME_HEAT_POSITION (fully closed); an explicit 0 is honored.
-CONF_EXTREME_HEAT_POSITION = "extreme_heat_position"
-# Fully closed by default — the whole point of extreme-heat mode is to block
-# heat. A literal default is a constant declaration, per coding guidelines.
-DEFAULT_EXTREME_HEAT_POSITION = POSITION_CLOSED
-
-# Season-scope control for glare tracking. Glare tracking (Priority 4) is only
-# reachable when the current season is one of the selected seasons; in any
-# deselected season the cover returns to its default position instead of
-# tracking the sun. See the ``TrackingSeason`` enum and DEFAULT_TRACKING_SEASONS
-# (defined with the other enums below) for the season values and the
-# all-seasons default that preserves existing behaviour.
-CONF_TRACKING_SEASONS = "tracking_seasons"
-
-# Climate-mode temperature smoothing (issue #917) — the temperature analogue of
-# the cloud-suppression smoothing (issue #864). All default to today's
-# instantaneous, single-crossing behaviour so an absent key changes nothing on
-# upgrade/rollback (additive-only, no migration).
-# Aggregate hold-time (seconds): a changed season-flag must persist this long
-# before it takes effect. 0 = flip immediately (no debounce).
-CONF_CLIMATE_TEMP_HOLD_TIME = "climate_temp_hold_time"
-# Per-crossing hysteresis release edges (number-or-template, blank = off). When
-# set they widen each temperature crossing into a Schmitt band: the season flag
-# engages at the existing threshold and only clears once the value passes the
-# release edge. temp_low/temp_high release edges compare the current temperature;
-# the outside/extreme-heat edges compare the outdoor temperature.
-CONF_TEMP_LOW_RELEASE_THRESHOLD = "temp_low_release_threshold"
-CONF_TEMP_HIGH_RELEASE_THRESHOLD = "temp_high_release_threshold"
-CONF_OUTSIDE_THRESHOLD_RELEASE = "outside_threshold_release"
-CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD = "temp_extreme_heat_release_threshold"
-
-DEFAULT_CLIMATE_TEMP_HOLD_TIME = 0  # seconds; 0 = instantaneous (back-compat)
 
 STRATEGY_MODE_BASIC = "basic"  # geometry only, no climate inputs
 STRATEGY_MODE_CLIMATE = "climate"  # climate-aware (temps/presence/weather)
@@ -910,21 +497,7 @@ CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
 CONF_CLOUD_SUPPRESSION = "cloud_suppression"  # master enable
 CONF_CLOUDY_POSITION = "cloudy_position"  # position while suppressed (0-100)
 
-# Smoothing controls (issue #864). All default to today's instantaneous,
-# single-crossing behaviour so an absent key changes nothing on upgrade/rollback.
-# Aggregate hold-time (seconds): a changed suppression state must persist this
-# long before it takes effect. 0 = flip immediately (no debounce).
-CONF_CLOUD_SUPPRESSION_HOLD_TIME = "cloud_suppression_hold_time"
-# Per-trigger hysteresis release edges (number-or-template, blank = off). When
-# set they widen each numeric trigger into a Schmitt band: suppression activates
-# at the existing threshold and only clears once the value passes the release
-# edge (lux/irradiance must rise above it; cloud coverage must fall below it).
-CONF_LUX_RELEASE_THRESHOLD = "lux_release_threshold"
-CONF_IRRADIANCE_RELEASE_THRESHOLD = "irradiance_release_threshold"
-CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD = "cloud_coverage_release_threshold"
-
 DEFAULT_CLOUD_COVERAGE_THRESHOLD = 75  # default: 75% cover = overcast
-DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME = 0  # seconds; 0 = instantaneous (back-compat)
 
 
 # =============================================================================
@@ -960,26 +533,10 @@ CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = tuple(
 # bypass the delta-position/delta-time send gates (issue #563).
 CUSTOM_POSITION_SAFETY_PRIORITY = 100
 
-# Cover-group scene intents claim the pipeline at this priority (issue #790,
-# Phase 2): above manual_override (80) so "put the room in Privacy" wins over
-# a stale per-cover manual state, below weather (90) so wind/rain safety on an
-# outdoor member still overrides a group scene. Declared on GroupSceneHandler;
-# the const exists so the config-flow chain summary and tests import it. Not
-# user-overridable (group-injected handler, not one of HANDLER_PRIORITY_CONF).
-# The group lock reuses CUSTOM_POSITION_SAFETY_PRIORITY (100); a member's own
-# safety slot wins ties via handler build order.
-GROUP_SCENE_PRIORITY = 85
-
 
 def _custom_position_slot_keys(n: int) -> dict[str, str]:
     """Return the wire-format option keys for slot *n*."""
     return {
-        # Optional user-configured label (issue #867). When set, overrides the
-        # slot's label everywhere it's surfaced (reason string, decision_trace
-        # attribute, floor/tilt-axis traces, card snapshot). Absent = no name
-        # (fully backward-compatible; the sensor's friendly_name is used as
-        # before).
-        "name": f"custom_position_name_{n}",
         # Legacy single-sensor key. Still read as a fallback when the `sensors`
         # list key is absent, and mirrored (first list element) on every save
         # so a rollback to the previous integration version keeps working.
@@ -1000,23 +557,6 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         # position. Reuses the slot's existing `tilt` value as the slat angle
         # (issue #514). Venetian-only; gated on custom_position_includes_tilt.
         "tilt_only": f"custom_position_tilt_only_{n}",
-        # Axis constraints (issue #943). All optional — an absent key means the
-        # constraint is off, so every pre-#943 entry keeps its exact behavior.
-        # Values live in the same pre-inversion canonical space as `position` /
-        # `tilt` (0 = closed, 100 = open), deliberately NOT named
-        # "minimum open"/"maximum closed": the physical meaning flips with
-        # inverse_state / inverse_tilt.
-        #
-        # While the slot's trigger is active:
-        #   position_max — clamps the normally-resolved position DOWN to at
-        #                  most this (the mirror of `min_mode`'s clamp-up).
-        #   tilt_min     — clamps the final tilt UP to at least this.
-        #   tilt_max     — clamps the final tilt DOWN to at most this.
-        # These are priority-independent clamps: the pipeline resolves normally
-        # and the clamp composes on top (pipeline/axis_constraints.py).
-        "position_max": f"custom_position_position_max_{n}",
-        "tilt_min": f"custom_position_tilt_min_{n}",
-        "tilt_max": f"custom_position_tilt_max_{n}",
         # `enabled` is opt-out: existing entries lack the key and behave as
         # enabled. Set to False to silence a slot without clearing its
         # configuration — used by the companion card's slot toggle UI.
@@ -1032,27 +572,6 @@ DEFAULT_CUSTOM_POSITION_ENABLED = True
 # {slot_number: {sub_key: wire_key}}
 CUSTOM_POSITION_SLOTS: dict[int, dict[str, str]] = {
     n: _custom_position_slot_keys(n) for n in CUSTOM_POSITION_SLOT_NUMBERS
-}
-
-# Generic (un-suffixed) field keys for the single-slot custom-position options
-# page (issue #945). Only the user-editable sub-keys appear (the legacy single
-# `sensor` mirror and the card-controlled `enabled` flag are handled at save
-# time, not on the form). GET seeds these from a slot's stored suffixed keys;
-# POST maps them back so storage stays the flat per-slot format.
-CUSTOM_POSITION_FORM_KEYS: dict[str, str] = {
-    "name": "custom_position_name",
-    "sensors": "custom_position_sensors",
-    "template": "custom_position_template",
-    "template_mode": "custom_position_template_mode",
-    "position": "custom_position",
-    "priority": "custom_position_priority",
-    "min_mode": "custom_position_min_mode",
-    "use_my": "custom_position_use_my",
-    "tilt": "custom_position_tilt",
-    "tilt_only": "custom_position_tilt_only",
-    "position_max": "custom_position_position_max",
-    "tilt_min": "custom_position_tilt_min",
-    "tilt_max": "custom_position_tilt_max",
 }
 
 
@@ -1112,22 +631,6 @@ DEFAULT_CUSTOM_POSITION_PRIORITY = 77  # default priority for a new slot
 # Default for an absent custom_position_tilt_only_<N> option (issue #514).
 DEFAULT_CUSTOM_POSITION_TILT_ONLY = False
 
-# Per-input last-valid hold window for a custom-position slot's sensor/
-# template fold (issue #1012). When a slot binds both a sensor and a
-# condition template, one input can go transiently invalid while the other
-# still opines; the fold holds that input's own last-valid contribution
-# rather than letting its fresh, coerced-to-False value silently win. The
-# window is measured from that input's own FIRST INVALID SIGHTING, not from
-# its last-valid reading (see GracefulSource's module docstring's "Anchor
-# point" section) — so it is cadence-independent: an arbitrarily long gap
-# between "last known good" and "first observed bad" (ACP has no
-# update_interval; sun.sun's own update cadence can be 20 minutes at night)
-# does not itself eat into the 300s window. Past the window, the held input
-# falls through to its fresh value, so a permanently-dead input (e.g. a
-# sensor whose battery died) cannot mask a healthy peer indefinitely. Fixed,
-# not user-configurable.
-CUSTOM_POSITION_INPUT_HOLD_SECONDS = 300.0
-
 # Configurable priorities for the built-in pipeline handlers. Each key holds an
 # integer (1-99) that overrides the handler's class-default priority, letting the
 # user re-order the decision chain. An absent/cleared key falls back to the class
@@ -1171,13 +674,6 @@ CONF_WEATHER_IS_RAINING_TEMPLATE_MODE = "weather_is_raining_template_mode"
 CONF_WEATHER_IS_WINDY_TEMPLATE = "weather_is_windy_template"  # truthy = windy
 CONF_WEATHER_IS_WINDY_TEMPLATE_MODE = "weather_is_windy_template_mode"
 CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"  # severe-weather list
-# Optional Jinja condition template + combine mode for the severe-weather
-# override (issue #974): truthy = severe. Folds with the severe sensor list via
-# TemplateCombineMode (OR default). A template-only override (no companion
-# sensors) engages and reacts the instant the template flips, tracked via
-# async_track_template_result. Mode reuses DEFAULT_TEMPLATE_COMBINE_MODE.
-CONF_WEATHER_SEVERE_TEMPLATE = "weather_severe_template"  # truthy = severe
-CONF_WEATHER_SEVERE_TEMPLATE_MODE = "weather_severe_template_mode"
 # Position commanded during weather override (range 0-100).
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
 # If True, weather override is only enforced as a min position.
@@ -1247,44 +743,6 @@ CONF_END_ENTITY = "end_entity"  # input_datetime overriding end_time
 # true None, so a cleared field coerces to midnight. Treated as "no time set"
 # everywhere (see issue #492).
 BLANK_TIME = "00:00:00"
-# The one accepted wire format for a time-typed option. A value in any other
-# shape — ``"00:00"``, ``"0:00:00"`` — compares unequal to BLANK_TIME and
-# silently flips every sentinel check that keys off it (issue #1049).
-#
-# HA's TimeSelector is NOT an enforcer — it validates via ``dt_util.parse_time``
-# and then stores the submission **unnormalized**, so it happily persists
-# ``"00:00"`` or ``"7:30"`` from any non-frontend flow client. Each write path
-# into ``config_entry.options`` that can carry a time key therefore handles it
-# itself:
-#   * ``set_options`` (``services.options_service``) — matches this pattern and
-#     rejects; the caller wrote the patch by hand and can fix it.
-#   * ``import_config`` (``services.import_service``) — canonicalises what
-#     ``helpers.normalize_time_string`` can parse and errors on the rest; an
-#     export file has no caller to send back to.
-#   * the options flow's automation step (``config_flow``) — canonicalises; the
-#     user picked a real time, just in a shape the picker never emits. It is
-#     the only flow step rendering a TimeSelector.
-#   * the flow's Sync and Duplicate steps (``config_flow``) — both delegate to
-#     ``_extract_shared_options``, which canonicalises what
-#     ``helpers.normalize_time_string`` can parse and drops the rest; a
-#     source entry disabled since before the v3.12 migration shipped never
-#     ran it and can still hold a raw value (issue #1057).
-# Entries written before any of this existed are repaired by the v3.11 → v3.12
-# migration in ``__init__.py`` — but only once HA sets the entry up; one
-# ``disabled_by``-set before v3.12 shipped never reaches that setup call, so
-# the migration does not run while it stays disabled (re-enabling it reloads
-# the entry and does run the repair). That is exactly why the copy site above
-# carries its own guard instead of trusting the migration to have run first.
-#
-# Three deliberate choices, each closing a way a near-miss value slips through:
-#   * ``\Z``, not ``$`` — ``$`` also matches before a trailing newline, so
-#     ``"00:00:00\n"`` would pass while comparing unequal to BLANK_TIME.
-#   * ``[0-9]``, not ``\d`` — ``\d`` matches any Unicode decimal digit, so
-#     ``"٠٠:٠٠:٠٠"`` would pass and then parse to midnight.
-#   * real clock bounds, not ``{2}`` — the hour/minute/second alternations
-#     reject ``"25:00:00"``, which is shape-valid but raises in
-#     ``get_datetime_from_str`` on every coordinator cycle once stored.
-TIME_STRING_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\Z")
 
 
 # =============================================================================
@@ -1310,26 +768,6 @@ CONF_INTERP_LIST_NEW = "interp_list_new"  # new-format control points
 # How long a manual override stays active before automation resumes.
 CONF_MANUAL_OVERRIDE_DURATION = "manual_override_duration"
 DEFAULT_MANUAL_OVERRIDE_DURATION: dict = {"hours": 2}  # default hold duration
-# What the manual-override hold is measured against (issue #1044): a fixed
-# clock duration, or the next sun / schedule boundary after the moment the user
-# touched the cover. ``fixed`` is byte-for-byte the legacy behaviour, so an
-# absent key needs no config-entry migration. In every non-fixed mode the
-# numeric duration above becomes the FALLBACK used when the mode's anchor
-# cannot be resolved.
-CONF_MANUAL_OVERRIDE_DURATION_MODE = "manual_override_duration_mode"
-MANUAL_OVERRIDE_DURATION_MODE_FIXED = "fixed"
-MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET = "until_sunset"
-MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE = "until_sunrise"
-MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT = "until_next_sun_event"
-MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END = "until_window_end"
-MANUAL_OVERRIDE_DURATION_MODES: tuple[str, ...] = (
-    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT,
-    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
-)
-DEFAULT_MANUAL_OVERRIDE_DURATION_MODE = MANUAL_OVERRIDE_DURATION_MODE_FIXED
 # If True, the manual override is reset when end_time is reached.
 CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"  # % delta = manual touch, 0-99
@@ -1343,11 +781,6 @@ CONF_MANUAL_IGNORE_EXTERNAL = "manual_ignore_external"
 # input (e.g. Shelly binary_sensor.*_cover_input_0) act as the manual-override
 # trigger instead of inferring intent from cover state/position changes.
 CONF_MANUAL_OVERRIDE_INPUT_ENTITIES = "manual_override_input_entities"
-# Optional Jinja condition template whose truthy render engages manual override
-# on every cover in the instance (issue #974). Edge-triggered like the input
-# entities above — engage-on-truthy, no combine mode and no companion sensor,
-# tracked via async_track_template_result. Empty = feature off.
-CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE = "manual_override_input_template"
 # Which manual-override detection strategy to use. Maps to a registered
 # OverrideDetector via managers.manual_override.get_detector. Changing this
 # selects a different detection pattern; takes effect on config-entry reload.
@@ -1726,229 +1159,6 @@ class ClimateInactiveReason:
     READINGS_UNAVAILABLE = "readings_unavailable"  # sensors misconfigured/unavailable
 
 
-class ReasonCode(StrEnum):
-    """Stable identifiers for every human-readable reason/explanation string.
-
-    Each value is the join key into the ``reason_i18n/`` template bundle
-    (mirrors the ``summary_i18n/`` mechanism): the integration renders the
-    English template on the ``sensor.*`` reason attributes and the Lovelace
-    card localizes the same codes+params into the user's language.
-
-    These are FROZEN identifiers exposed in diagnostics and consumed by the
-    card; do not rename without updating both ``reason_i18n/*.json`` and the
-    downstream card templates. Dotted values group by emitter
-    (``solar.*``, ``manual.*``, ``registry.*``, ``builder.*``, ``engine.*``,
-    ``skip.*``, ``fragment.*``).
-    """
-
-    # -- fragments: composed sub-phrases rendered inline into a parent template
-    FRAGMENT_SUNSET_POSITION = "fragment.sunset_position"
-    FRAGMENT_DEFAULT_POSITION = "fragment.default_position"
-    FRAGMENT_CLOUDY_POSITION = "fragment.cloudy_position"
-    FRAGMENT_COVERAGE_STEP = "fragment.coverage_step"
-    FRAGMENT_Z_ADJUSTED = "fragment.z_adjusted"
-    FRAGMENT_BYPASS_NOTE = "fragment.bypass_note"
-    FRAGMENT_SEASON_EXTREME_HEAT = "fragment.season_extreme_heat"
-    FRAGMENT_SEASON_TRACKING_OFF = "fragment.season_tracking_off"
-    FRAGMENT_SEASON_SUMMER = "fragment.season_summer"
-    FRAGMENT_SEASON_WINTER = "fragment.season_winter"
-    FRAGMENT_SEASON_GLARE_LOW_LIGHT = "fragment.season_glare_low_light"
-    FRAGMENT_SEASON_GLARE = "fragment.season_glare"
-    FRAGMENT_TRIGGER_NOT_SUNNY = "fragment.trigger_not_sunny"
-    FRAGMENT_TRIGGER_LUX_BELOW = "fragment.trigger_lux_below"
-    FRAGMENT_TRIGGER_IRRADIANCE_BELOW = "fragment.trigger_irradiance_below"
-    FRAGMENT_TRIGGER_CLOUD_ABOVE = "fragment.trigger_cloud_above"
-    FRAGMENT_TRIGGER_SMOOTHING_HOLD = "fragment.trigger_smoothing_hold"
-    FRAGMENT_TRIGGER_TEMPLATE = "fragment.trigger_template"
-    FRAGMENT_TRIGGER_FALLBACK = "fragment.trigger_fallback"
-
-    # -- solar handler
-    SOLAR_TRACKING = "solar.tracking"
-
-    # -- manual override handler
-    MANUAL_HOLDING_SOLAR = "manual.holding_solar"
-    MANUAL_SOLAR_ONLY = "manual.solar_only"
-    MANUAL_HOLDING_LABEL = "manual.holding_label"
-    MANUAL_LABEL_ONLY = "manual.label_only"
-
-    # -- motion/occupancy timeout handler (#881 wording)
-    OCCUPANCY_HOLDING = "occupancy.holding"
-    OCCUPANCY_LABEL = "occupancy.label"
-
-    # -- climate handler
-    CLIMATE_ACTIVE = "climate.active"
-
-    # -- glare zone handler
-    GLARE_PROTECTION = "glare.protection"
-
-    # -- cloud suppression handler
-    CLOUD_SUPPRESSION = "cloud.suppression"
-
-    # -- weather override handler
-    WEATHER_ACTIVE = "weather.active"
-
-    # -- custom position handler
-    CUSTOM_HEAD_NAMED = "custom.head_named"
-    CUSTOM_HEAD_SLOT = "custom.head_slot"
-    CUSTOM_USE_MY = "custom.use_my"
-    CUSTOM_POSITION = "custom.position"
-
-    # -- default handler
-    DEFAULT_SUNSET_USE_MY = "default.sunset_use_my"
-    DEFAULT_NO_CONDITION = "default.no_condition"
-
-    # -- group handlers
-    GROUP_LOCK = "group.lock"
-    GROUP_SCENE = "group.scene"
-
-    # -- registry composition (outprioritized / floor / tilt-axis passes)
-    REGISTRY_OUTPRIORITIZED = "registry.outprioritized"
-    REGISTRY_FLOOR_RAISED = "registry.floor_raised"
-    REGISTRY_FLOOR_INACTIVE = "registry.floor_inactive"
-    REGISTRY_TILT_APPLIED = "registry.tilt_applied"
-    REGISTRY_TILT_DEFERRED = "registry.tilt_deferred"
-    # Axis constraints (issue #943). The ceiling codes mirror the floor pair
-    # above; the tilt pair covers a bound that clamped and one still pending
-    # because the tilt resolves after the pipeline (venetian engine tilt).
-    REGISTRY_CEILING_LOWERED = "registry.ceiling_lowered"
-    REGISTRY_CEILING_INACTIVE = "registry.ceiling_inactive"
-    # A ceiling the floor beat: the clamp applies the floor last, so the cover
-    # ends up *above* the ceiling. "inactive" would read as a lie in exactly the
-    # conflict the config summary already warns about.
-    REGISTRY_CEILING_OVERRIDDEN = "registry.ceiling_overridden"
-    # The floor side of the same conflict: when the floor beats the ceiling and
-    # the winner started *above* the floor, the net move is a lowering — so
-    # "floor raised winner from 80% to 60%" would contradict itself. This names
-    # the floor as the determining bound without implying a direction from the
-    # winner (audit finding C).
-    REGISTRY_FLOOR_OVERRIDES_CEILING = "registry.floor_overrides_ceiling"
-    REGISTRY_TILT_BOUND_ACTIVE = "registry.tilt_bound_active"
-    # A tilt bound that was active but did not bind — the tilt-axis analog of
-    # floor_inactive / ceiling_inactive. Emitted so an out-composed or
-    # already-satisfied tilt bound still explains itself instead of vanishing
-    # from the trace (audit findings A / B).
-    REGISTRY_TILT_BOUND_INACTIVE = "registry.tilt_bound_inactive"
-    REGISTRY_TILT_CLAMPED = "registry.tilt_clamped"
-
-    # -- diagnostics builder (control-state reason + position explanation)
-    BUILDER_UNKNOWN = "builder.unknown"
-    BUILDER_CONTROL_OCCUPANCY_TIMEOUT = "builder.control_occupancy_timeout"
-    BUILDER_CONTROL_MANUAL_OVERRIDE = "builder.control_manual_override"
-    BUILDER_CONTROL_TRACKING_OFF_SEASON = "builder.control_tracking_off_season"
-    BUILDER_CONTROL_TILT_FIXED = "builder.control_tilt_fixed"
-    BUILDER_OUTSIDE_WINDOW = "builder.outside_window"
-    BUILDER_MANUAL_DIVERGENCE = "builder.manual_divergence"
-    BUILDER_TILT_FIXED = "builder.tilt_fixed"
-    BUILDER_INTERPOLATED = "builder.interpolated"
-    BUILDER_INVERSED = "builder.inversed"
-
-    # -- engine control_state_reason (pure calc layer — codes resolved at boundary)
-    ENGINE_DIRECT_SUN = "engine.direct_sun"
-    ENGINE_DEFAULT_SUNSET_OFFSET = "engine.default_sunset_offset"
-    ENGINE_DEFAULT_ELEVATION_LIMIT = "engine.default_elevation_limit"
-    ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT = "engine.default_acceptance_angle_exit"
-    ENGINE_DEFAULT_SUN_BEHIND_PLANE = "engine.default_sun_behind_plane"
-    ENGINE_DEFAULT_BLIND_SPOT = "engine.default_blind_spot"
-    ENGINE_DEFAULT = "engine.default"
-
-    # -- describe_skip / inactive-reason prose
-    SKIP_OUTSIDE_WINDOW = "skip.outside_window"
-    SKIP_SUN_OUTSIDE = "skip.sun_outside"
-    SKIP_MANUAL_NOT_ACTIVE = "skip.manual_not_active"
-    SKIP_OCCUPANCY_DISABLED = "skip.occupancy_disabled"
-    SKIP_OCCUPANCY_NOT_ACTIVE = "skip.occupancy_not_active"
-    SKIP_CLIMATE_MODE_OFF = "skip.climate_mode_off"
-    SKIP_CLIMATE_READINGS_UNAVAILABLE = "skip.climate_readings_unavailable"
-    SKIP_CLIMATE_DEFERRED = "skip.climate_deferred"
-    SKIP_NO_GLARE_ZONES = "skip.no_glare_zones"
-    SKIP_CLOUD_SKIPPED = "skip.cloud_skipped"
-    SKIP_CLOUD_INACTIVE = "skip.cloud_inactive"
-    SKIP_WEATHER_NOT_ACTIVE = "skip.weather_not_active"
-    SKIP_CUSTOM_NOT_ACTIVE = "skip.custom_not_active"
-    SKIP_ALWAYS_MATCHES = "skip.always_matches"
-    SKIP_GROUP_SCENE_NOT_LOCK = "skip.group_scene_not_lock"
-    SKIP_NO_GROUP_LOCK = "skip.no_group_lock"
-    SKIP_GROUP_LOCK_NOT_SCENE = "skip.group_lock_not_scene"
-    SKIP_NO_GROUP_SCENE = "skip.no_group_scene"
-    SKIP_NOT_ACTIVE = "skip.not_active"
-
-
-class TriageCode(StrEnum):
-    """Stable identifiers for every diagnostics-triage finding (issue #970).
-
-    Each value is the join key into the ``troubleshoot_i18n/`` template bundle
-    (mirrors :class:`ReasonCode` + the ``reason_i18n/`` mechanism): a triage
-    rule emits a ``Reason(code, params)`` and both the integration's troubleshoot
-    step and the config summary render the English template — or the Lovelace
-    card localizes the same code+params into the user's language.
-
-    These are FROZEN identifiers; do not rename without updating both
-    ``troubleshoot_i18n/*.json`` and ``troubleshoot_i18n._TRIAGE_TEMPLATES_EN``.
-    """
-
-    # -- rule 1: a safety-priority custom position bypasses every gate (#711/#716)
-    CUSTOM_SAFETY_BYPASS = "triage.custom_safety_bypass"
-    # -- rule 2: a higher-priority handler out-ran the solar handler
-    HIGHER_PRIORITY_WON = "triage.higher_priority_won"
-    # -- rule 3: the active-window schedule looks misconfigured
-    TIME_WINDOW_SUSPECT = "triage.time_window_suspect"
-    # -- rule 4: climate mode on but the inside temperature is unavailable
-    CLIMATE_TEMP_NONE = "triage.climate_temp_none"
-    # -- rule 5: summer + presence but the blind never closes
-    SUMMER_WONT_CLOSE = "triage.summer_wont_close"
-    # -- rule 6: climate mode on with presence defaulting to always-present
-    PRESENCE_DEFAULTS_TRUE = "triage.presence_defaults_true"
-    # -- rule 7: more than one cloud/low-light input — OR semantics may surprise
-    CLOUD_OR_SEMANTICS = "triage.cloud_or_semantics"
-    # -- rule 8a: a configured cover is not ready (unavailable) — CONFIG side
-    COVER_NOT_READY = "triage.cover_not_ready"
-    # -- rule 8b: a configured sensor/cover entity is unavailable — RUNTIME side
-    ENTITY_UNAVAILABLE = "triage.entity_unavailable"
-    # -- rule 9: a min-position floor is bypassed by a lower fixed position
-    MIN_FLOOR_BYPASSED = "triage.min_floor_bypassed"
-    # -- rule 10: enable_min_position reads backwards (False = always enforce)
-    ENABLE_MIN_BACKWARDS = "triage.enable_min_backwards"
-    # -- rule 15: a low max_elevation truncates the sun-tracking window
-    TRACKING_WINDOW_TRUNCATED = "triage.tracking_window_truncated"
-    # -- rule 16: a near-zero shaded distance makes the position near-binary
-    GEOMETRY_NEAR_BINARY = "triage.geometry_near_binary"
-    # -- rule 19: a special default (0/100) with a wide delta bypasses fine moves
-    SPECIAL_POSITION_DELTA_BYPASS = "triage.special_position_delta_bypass"
-    # -- rule 22: a custom slot outranks manual override (but is not safety)
-    CUSTOM_ABOVE_MANUAL = "triage.custom_above_manual"
-    # -- rule 12: a glare zone sits beyond the shaded distance so it never fires
-    GLARE_ZONE_NEVER_FIRES = "triage.glare_zone_never_fires"
-    # -- rule 23: position matching is off while a manual override holds
-    POSITION_MATCHING_OFF = "triage.position_matching_off"
-    # -- rule 17: dry-run mode is still enabled, so commands are logged not sent
-    DRY_RUN_LEFT_ON = "triage.dry_run_left_on"
-    # -- rule 21: automatic control is off, so overrides are blocked from acting
-    OVERRIDE_BLOCKED_AUTO_OFF = "triage.override_blocked_auto_off"
-    # -- rule 11: sun is up but outside the FOV and only the default handler ran
-    AZIMUTH_FOV_MISMATCH = "triage.azimuth_fov_mismatch"
-    # -- rule 18: a cover gave up chasing its target after repeated retries
-    ENDPOINT_CHASE = "triage.endpoint_chase"
-    # -- rule 13: a bound cover lacks a capability its cover type requires
-    COVER_FEATURE_MISMATCH = "triage.cover_feature_mismatch"
-    # -- rule 20a: the last cover command was skipped because the call failed
-    SKIP_SERVICE_CALL_FAILED = "triage.skip_service_call_failed"
-    # -- rule 20b: the last cover command found no capable service to call
-    SKIP_NO_CAPABLE_SERVICE = "triage.skip_no_capable_service"
-    # -- rule 20c: the last cover command was skipped because the cover is down
-    SKIP_COVER_UNAVAILABLE = "triage.skip_cover_unavailable"
-    # -- rule 24: a newer integration release is available (CalVer compare)
-    STALE_VERSION = "triage.stale_version"
-    # -- rule 14: inside/outside temperature sensors report different units
-    MIXED_TEMP_UNITS = "triage.mixed_temp_units"
-    # -- rule 25: an endpoint open/close command never moved current_position
-    ENDPOINT_POSITION_NOT_TRACKING = "triage.endpoint_position_not_tracking"
-    # -- fragment (NOT a rule): the localized "N minutes ago" clause the three
-    # skip findings splice in when a skip timestamp is known. Rendered only as a
-    # nested param of the skip templates, never emitted as a top-level finding —
-    # so it has a template but no rule row (mirrors ReasonCode's FRAGMENT_*).
-    SKIP_AGE = "triage.skip_age"
-
-
 # =============================================================================
 # 24. Geometric Accuracy (calc engine)
 # =============================================================================
@@ -2006,15 +1216,6 @@ MAX_WINDOW_DEPTH = 5.0  # metres — UI cap for window depth
 MAX_AWNING_ANGLE = 45  # degrees — UI cap for awning tilt
 DEGREES_IN_CIRCLE = 360  # used for azimuth/wind-direction wrap-around math
 
-# Minimum cos(gamma) before the foreshortening division ``tan(elev)/cos γ``
-# (gamma ≈ 89.43°). ``d/cos γ → ∞`` as ``γ → 90⁻`` is real geometry — a ray
-# parallel to the wall never reaches depth ``d`` — so the magnitude gets a floor
-# rather than a reformulation. The floor is ONE-SIDED: the illumination gate on
-# ``AdaptiveGeneralCover`` (``cos(AOI) > 0``) makes ``|γ| > 90`` unreachable, so
-# a negative cosine never arrives here (#1030). Cross-file: consumed by the
-# shared helpers in ``engine/sun_geometry.py``.
-MIN_COS_GAMMA_CLAMP = 0.01
-
 
 # =============================================================================
 # 26. Numeric Option Ranges (single source of truth)
@@ -2041,8 +1242,6 @@ DEFAULT_GLARE_ZONE_Z = 0.0  # default — protects a floor disk (current behavio
 # Geometry — awning.
 _RANGE_LENGTH_AWNING = (0.3, 6.0)  # CONF_LENGTH_AWNING, metres
 _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
-_RANGE_TILT_ANGLE_0 = (-180, 180)  # CONF_TILT_ANGLE_0, degrees
-_RANGE_TILT_ANGLE_100 = (0, 360)  # CONF_TILT_ANGLE_100, degrees
 
 # Geometry — oscillating (drop-arm) awning.
 _RANGE_ARM_LENGTH = (0.1, 6.0)  # CONF_ARM_LENGTH, metres
@@ -2053,20 +1252,16 @@ _RANGE_AWNING_PIVOT_OFFSET = (0.0, 2.0)  # CONF_AWNING_PIVOT_OFFSET, metres
 # Geometry — roof / skylight window (#212).
 _RANGE_ROOF_PITCH = (0, 90)  # CONF_ROOF_PITCH, degrees (0=flat, 90=vertical)
 _RANGE_ROOF_HEIGHT_ABOVE = (0.0, 10.0)  # CONF_ROOF_HEIGHT_ABOVE, metres
-# Geometry — louvered roof (#830 follow-up).
-_RANGE_MAX_SLAT_ANGLE = (0, 180)  # CONF_MAX_SLAT_ANGLE, degrees (0 = use tilt mode)
 
 # Geometry — tilt / venetian slats.
-_RANGE_TILT_DEPTH = (0.1, 30.0)  # CONF_TILT_DEPTH, cm (raised to 300 mm for #830)
-_RANGE_TILT_DISTANCE = (0.1, 30.0)  # CONF_TILT_DISTANCE, cm (raised to 300 mm, #830)
+_RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm
+_RANGE_TILT_DISTANCE = (0.1, 15.0)  # CONF_TILT_DISTANCE, cm
 _RANGE_MAX_TILT = (0, 100)  # CONF_MAX_TILT, percent
 _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
-_RANGE_TILT_SAFETY_MARGIN = (
-    MIN_TILT_SAFETY_MARGIN,
-    MAX_TILT_SAFETY_MARGIN,
-)  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
-# Legacy alias (#964) so any name-based lookup of the old range still resolves.
-_RANGE_VENETIAN_TILT_SAFETY_MARGIN = _RANGE_TILT_SAFETY_MARGIN
+_RANGE_VENETIAN_TILT_SAFETY_MARGIN = (
+    MIN_VENETIAN_TILT_SAFETY_MARGIN,
+    MAX_VENETIAN_TILT_SAFETY_MARGIN,
+)  # CONF_VENETIAN_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
 
 # Sun tracking.
 _RANGE_AZIMUTH = (0, 359)  # CONF_AZIMUTH, degrees
@@ -2074,24 +1269,10 @@ _RANGE_FOV = (0, 180)  # CONF_FOV_LEFT / CONF_FOV_RIGHT, degrees
 _RANGE_ELEVATION = (0, 90)  # min/max elevation, degrees
 _RANGE_DISTANCE = (0.0, 50.0)  # CONF_DISTANCE, metres
 
-# Geometry — sliding-curtain shade area (#829, Part 2). y (depth into the room)
-# reuses the 0–50 m distance span; x (along the wall) is signed — no existing
-# signed range spans a wide window's half-width (glare-zone x is only ±5 m), so a
-# dedicated ±25 m bound (half the 50 m max window width) is added here.
-_RANGE_SLIDING_POINT_X = (-25.0, 25.0)  # CONF_SLIDING_POINT{1,2}_X, metres (signed)
-_RANGE_SLIDING_POINT_Y = _RANGE_DISTANCE  # CONF_SLIDING_POINT{1,2}_Y, metres (0–50)
-
 # Blind spot.
-# Legacy FOV-relative edges (migration-read-only): asymmetric LEFT vs RIGHT
-# bounds are a historical quirk; the ranges are kept so OPTION_RANGES still
-# validates the read-only legacy keys.
+# Asymmetric LEFT vs RIGHT bounds are a historical quirk; preserved for compat.
 _RANGE_BLIND_SPOT_LEFT = (0, 359)  # CONF_BLIND_SPOT_LEFT, degrees
 _RANGE_BLIND_SPOT_RIGHT = (0, 360)  # CONF_BLIND_SPOT_RIGHT, degrees
-# Signed gamma from the window normal (issue #247): the effective per-slot
-# slider bounds are FOV-aware ([-fov_right, fov_left] / [-fov_left, fov_right]),
-# but the coarse OPTION_RANGES / service bound is the full signed span.
-_RANGE_BLIND_SPOT_LEFT_GAMMA = (-180, 180)  # CONF_BLIND_SPOT_LEFT_GAMMA, degrees
-_RANGE_BLIND_SPOT_RIGHT_GAMMA = (-180, 180)  # CONF_BLIND_SPOT_RIGHT_GAMMA, degrees
 _RANGE_BLIND_SPOT_ELEVATION = (0, 90)  # CONF_BLIND_SPOT_ELEVATION, degrees
 
 # Position limits & sunset.
@@ -2124,9 +1305,6 @@ _RANGE_CUSTOM_POSITION = (0, 100)  # per-slot custom position, percent
 _RANGE_CUSTOM_PRIORITY = (1, 100)  # per-slot custom priority (100 = safety)
 _RANGE_HANDLER_PRIORITY = (1, 99)  # built-in handler priority (100 reserved=safety)
 _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
-# Day/Night shade (#993): fabric opacity + blackout-engage threshold, all percent.
-_RANGE_DAY_NIGHT_OPACITY = (0, 100)
-_RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD = (0, 100)
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
@@ -2136,7 +1314,6 @@ _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
 # 78°F warm threshold sits in this range).
 _RANGE_TEMPERATURE = (0, 150)  # temp_low / temp_high (sensor unit)
 _RANGE_OUTSIDE_THRESHOLD = (0, 150)  # CONF_OUTSIDE_THRESHOLD (sensor unit)
-_RANGE_EXTREME_HEAT_POSITION = (0, 100)  # CONF_EXTREME_HEAT_POSITION, percent
 
 # Weather safety.
 _RANGE_WEATHER_WIND_SPEED = (0, 200)  # wind-speed threshold (sensor unit)
@@ -2144,12 +1321,6 @@ _RANGE_WEATHER_WIND_DIRECTION_TOLERANCE = (5, 180)  # wind-direction tol, deg
 _RANGE_WEATHER_RAIN = (0, 100)  # rain threshold (sensor unit)
 _RANGE_WEATHER_OVERRIDE_POSITION = (0, 100)  # weather-override pos, percent
 _RANGE_WEATHER_TIMEOUT = (0, 3600)  # weather-resume timeout, seconds
-
-# Cloud-suppression smoothing (issue #864).
-_RANGE_CLOUD_SUPPRESSION_HOLD_TIME = (0, 3600)  # hold-time, seconds
-
-# Climate-mode temperature smoothing (issue #917).
-_RANGE_CLIMATE_TEMP_HOLD_TIME = (0, 3600)  # hold-time, seconds
 
 # Venetian sequencing.
 _RANGE_VENETIAN_POST_SETTLE_HOLD = (0.0, 10.0)  # post-settle hold, seconds
@@ -2194,49 +1365,6 @@ DEFAULT_TEMPLATE_COMBINE_MODE = TemplateCombineMode.OR.value
 DEFAULT_MOTION_TEMPLATE_MODE = DEFAULT_TEMPLATE_COMBINE_MODE
 
 
-class OutsideTempSource(StrEnum):
-    """Which outdoor-temperature reading feeds climate mode (issue #547).
-
-    ``LIVE`` (default) preserves today's behaviour — the outdoor sensor state,
-    or the configured weather entity's ``temperature`` attribute (the *current*
-    temp). ``FORECAST_MAX`` uses today's forecast daily high fetched from the
-    configured weather entity via ``weather.get_forecasts`` (falling back to the
-    live read when no forecast is available). ``MAX_OF_LIVE_AND_FORECAST`` takes
-    the larger of the two so a cool morning that will heat up still trips summer
-    close. Wire-stable identifiers stored in the cover's options.
-    """
-
-    LIVE = "live"
-    FORECAST_MAX = "forecast_max"
-    MAX_OF_LIVE_AND_FORECAST = "max_of_live_and_forecast"
-
-
-# Default outdoor-temp source: LIVE, so upgrades are inert (issue #547).
-DEFAULT_OUTSIDE_TEMP_SOURCE = OutsideTempSource.LIVE.value
-
-
-# Defined here (above the ``config_fields`` import at the bottom of this module)
-# because ``config_fields`` reads ``SLIDING_SLIDE_DIRECTIONS`` at its own import
-# time for the slide-direction ``FieldSpec`` select options.
-class SlideDirection(StrEnum):
-    """Which way a horizontal sliding curtain draws its fabric (#829, Part 2).
-
-    Wire-stable identifiers stored in the cover's options. ``LEFT`` / ``RIGHT``
-    are single-slide leaves anchored to one window edge; ``BI_PART`` parts from
-    the centre (both edges covered, a central gap opens). Governs how a covered
-    along-wall interval maps to an open percentage.
-    """
-
-    LEFT = "left"
-    RIGHT = "right"
-    BI_PART = "bi_part"
-
-
-# Default slide direction: centre-parting, the most common curtain layout.
-DEFAULT_SLIDING_SLIDE_DIRECTION = SlideDirection.BI_PART.value
-SLIDING_SLIDE_DIRECTIONS = tuple(d.value for d in SlideDirection)
-
-
 # ``OPTION_RANGES`` is now assembled from the single field registry in
 # ``config_fields`` (each ``FieldSpec`` carries its own ``rng``). It is
 # re-exported here so the many ``from .const import OPTION_RANGES`` call sites
@@ -2248,7 +1376,7 @@ SLIDING_SLIDE_DIRECTIONS = tuple(d.value for d in SlideDirection)
 # name ``config_fields`` needs is already defined above. ``config_fields`` does
 # ``from . import const`` (the partially-initialised module is fine — it only
 # reads names defined before this line).
-from .config_fields import OPTION_RANGES, TIME_OPTION_KEYS  # noqa: E402, F401
+from .config_fields import OPTION_RANGES  # noqa: E402, F401
 
 # =============================================================================
 # 27. Enumerations (semantic identifiers)
@@ -2274,19 +1402,10 @@ class CoverType(StrEnum):
     VENETIAN = "cover_venetian"
     OSCILLATING_AWNING = "cover_oscillating_awning"
     ROOF_WINDOW = "cover_roof_window"
-    SLIDING_CURTAIN = "cover_sliding_curtain"
-    LOUVERED_ROOF = "cover_louvered_roof"
-    DAY_NIGHT_SHADE = "cover_day_night_shade"
-    DUAL_PANEL = "cover_dual_panel"
     # Virtual entry type — not a physical cover. Holds shared building-level
     # sensor entity IDs that linked covers copy into their own options. Its
     # policy registers no platforms (``controls_cover = False``).
     BUILDING_PROFILE = "cover_building_profile"
-    # Virtual entry type — orchestrates a roster of member covers (ACP
-    # entries + generic ``cover.*`` entities). Controls covers
-    # (``controls_cover = True``) but is not geometry-driven: setup branches
-    # on ``is_orchestrator`` to a ``GroupCoordinator`` (issue #790).
-    GROUP = "cover_group"
 
     @property
     def display_name(self) -> str:
@@ -2303,83 +1422,8 @@ class CoverType(StrEnum):
             self.VENETIAN: "Venetian",
             self.OSCILLATING_AWNING: "Oscillating Awning",
             self.ROOF_WINDOW: "Roof Window",
-            self.SLIDING_CURTAIN: "Sliding Curtain",
-            self.LOUVERED_ROOF: "Louvered Roof",
-            self.DAY_NIGHT_SHADE: "Day/Night Shade",
-            self.DUAL_PANEL: "Dual Panel Shade",
             self.BUILDING_PROFILE: "Building Profile",
-            self.GROUP: "Cover Group",
         }[self]
-
-
-class AxisConstraintMode(StrEnum):
-    """How one custom-position slot claims one axis (issue #943).
-
-    **Derived, never stored.** The wire format stays the ``min_mode`` /
-    ``tilt_only`` booleans plus the optional numeric constraint keys — that is
-    the rollback contract (an older build must find its config exactly as it
-    left it). ``SnapshotBuilder.read_custom_position_sensors`` derives a mode
-    per axis at the single normalization site, replacing the hand-rolled
-    boolean precedence that was straining at three flags.
-
-    Semantics per mode, while the slot's trigger is active:
-
-    ``NONE``   The slot makes no claim on this axis — it defers entirely.
-    ``FIXED``  The slot names an exact value. Highest-priority slot wins, and
-               the value is applied fill-when-unset (today's ``tilt_only`` /
-               exact-position behavior).
-    ``MIN``    The slot names a floor. Composed max-of-mins across slots and
-               applied as an always-clamp (today's ``min_mode``).
-    ``MAX``    The slot names a ceiling. Composed min-of-maxes; always-clamp.
-    ``RANGE``  Both a floor and a ceiling.
-    """
-
-    NONE = "none"
-    FIXED = "fixed"
-    MIN = "min"
-    MAX = "max"
-    RANGE = "range"
-
-
-class GroupScene(StrEnum):
-    """Built-in cover-group scenes (issue #790, Phase 1).
-
-    Wire-stable identifiers: stored as the group's active-scene state and the
-    scene ``select``/``button`` option values. Each scene is a semantic intent
-    resolved per member cover type via ``CoverTypePolicy.position_for_scene``
-    — never an absolute position shared across a mixed group.
-    """
-
-    ALL_OPEN = "all_open"
-    ALL_CLOSED = "all_closed"
-    PRIVACY = "privacy"
-
-
-class GroupIntentKind(StrEnum):
-    """What a cover-group intent asks of a member's pipeline (issue #790).
-
-    ``SCENE`` — claim the position axis at ``GROUP_SCENE_PRIORITY`` with the
-    member policy's resolution of the intent's scene. ``LOCK`` — freeze the
-    member at ``CUSTOM_POSITION_SAFETY_PRIORITY``: the handler wins the
-    pipeline but sends no command, so the cover holds its position.
-    """
-
-    SCENE = "scene"
-    LOCK = "lock"
-
-
-class GroupState(StrEnum):
-    """Aggregate open/closed classification of a cover group's members.
-
-    Wire-stable: the group state sensor reports these values. ``MIXED`` covers
-    every non-uniform roster (members disagree, or sit between endpoints);
-    ``UNKNOWN`` means no member position was readable.
-    """
-
-    OPEN = "open"
-    CLOSED = "closed"
-    MIXED = "mixed"
-    UNKNOWN = "unknown"
 
 
 # =============================================================================
@@ -2391,7 +1435,7 @@ class GroupState(StrEnum):
 # ``BUILDING_PROFILE_SENSOR_KEYS`` is the set of option keys a Building Profile
 # owns and copies into each linked cover. Threshold/reaction keys, presence,
 # and the sunrise/sunset OFFSETS are deliberately excluded — they stay per-cover.
-# The five ``*_template_mode`` keys are profile-owned (moved from per-cover in
+# The four ``*_template_mode`` keys are profile-owned (moved from per-cover in
 # issue #720): they render in the profile screen, are copied to linked covers,
 # and are hidden on the per-cover weather/light/behavior forms.
 
@@ -2418,8 +1462,6 @@ WEATHER_OVERRIDE_SENSOR_KEYS = frozenset(
         CONF_WEATHER_IS_WINDY_SENSOR,
         CONF_WEATHER_IS_WINDY_TEMPLATE,
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
-        CONF_WEATHER_SEVERE_TEMPLATE,
-        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         CONF_WEATHER_SEVERE_SENSORS,
     }
 )
@@ -2439,24 +1481,12 @@ BUILDING_PROFILE_SENSOR_KEYS = (
     )
 )
 
-# Entity-valued subset of the shared keys — the sensor-source diagnostics
-# blocks catalogue only these. Template bodies (``*_template``) and combine
-# modes (``*_template_mode``, a TemplateCombineMode scalar like "or"/"and")
-# are config, not entities; cataloguing their values as entity_ids made the
-# Troubleshoot step flag them as unavailable sensors (issue #1017).
-BUILDING_PROFILE_ENTITY_KEYS = frozenset(
-    k
-    for k in BUILDING_PROFILE_SENSOR_KEYS
-    if not (k.endswith("_template") or k.endswith("_template_mode"))
-)
-
 
 class TiltMode(StrEnum):
     """Tilt mode for venetian blinds (slat travel range)."""
 
     MODE1 = "mode1"  # Single direction (0-90°)
     MODE2 = "mode2"  # Bi-directional (0-180°)
-    SPECIFY_ANGLES = "specify_angles"  # Explicit physical endpoint angles
 
     @property
     def max_degrees(self) -> int:
@@ -2480,38 +1510,14 @@ class PresenceDomain(StrEnum):
     INPUT_BOOLEAN = "input_boolean"
 
 
-class TrackingSeason(StrEnum):
-    """Seasons in which glare tracking may run (season-scope control).
-
-    Derived from the climate temperatures: ``SUMMER`` when above the high
-    threshold (and outside high), ``WINTER`` when below the low threshold,
-    ``INTERMEDIATE`` otherwise. Stored as a list of these string values under
-    ``CONF_TRACKING_SEASONS``; the all-seasons default preserves the original
-    always-track behaviour.
-    """
-
-    WINTER = "winter"
-    INTERMEDIATE = "intermediate"
-    SUMMER = "summer"
-
-
-# Ordered all-seasons default (member order). Selecting every season is the
-# backward-compatible "track in every season" behaviour.
-DEFAULT_TRACKING_SEASONS: list[str] = [s.value for s in TrackingSeason]
-
-
 class ClimateStrategy(Enum):
     """Climate control strategies (winter/summer/glare/low-light branches)."""
 
-    EXTREME_HEAT = "extreme_heat"  # All-day force-hold above outside-temp threshold
     WINTER_HEATING = "winter_heating"  # Open for solar heating
     WINTER_INSULATION = "winter_insulation"  # Close for heat retention
     SUMMER_COOLING = "summer_cooling"  # Close for heat blocking
     LOW_LIGHT = "low_light"  # Use default position
     GLARE_CONTROL = "glare_control"  # Use calculated position
-    TRACKING_SEASON_GATE = (
-        "tracking_season_gate"  # season-scope gate suppressed tracking
-    )
 
 
 class ControlMethod(StrEnum):
@@ -2529,10 +1535,6 @@ class ControlMethod(StrEnum):
 
     WINTER = "winter"
     """Climate mode: temperature below min threshold; cover opens for solar heat gain."""
-
-    EXTREME_HEAT = "extreme_heat"
-    """Climate mode: outside temperature exceeds the extreme-heat threshold; cover
-    force-holds a fixed position all day, pre-empting every other season strategy."""
 
     DEFAULT = "default"
     """Sun is outside FOV, elevation limits, blind spot, or sunset offset window."""
@@ -2559,12 +1561,6 @@ class ControlMethod(StrEnum):
 
     GLARE_ZONE = "glare_zone"
     """Glare zone protection active; cover extends to shield a floor zone."""
-
-    GROUP_SCENE = "group_scene"
-    """A cover-group scene intent claims the position (issue #790, Phase 2)."""
-
-    GROUP_LOCK = "group_lock"
-    """A cover-group lock freezes the cover in place (issue #790, Phase 2)."""
 
 
 class SunState(StrEnum):

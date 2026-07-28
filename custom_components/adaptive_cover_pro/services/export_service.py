@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 from ..const import (
     CONF_AWNING_ANGLE,
-    CONF_AWNING_SHADE_MODE,
-    DEFAULT_AWNING_SHADE_MODE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_ELEVATION_MODE,
@@ -43,8 +41,6 @@ from ..const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
-    CONF_TILT_ANGLE_0,
-    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
@@ -52,7 +48,6 @@ from ..const import (
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
     DOMAIN,
 )
-from ..helpers import resolve_sunrise_offset, resolve_sunset_offset
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,8 +97,10 @@ async def async_handle_export(call: ServiceCall) -> dict:
             CONF_FOV_RIGHT: options.get(CONF_FOV_RIGHT),
             CONF_DEFAULT_HEIGHT: options.get(CONF_DEFAULT_HEIGHT),
             CONF_SUNSET_POS: options.get(CONF_SUNSET_POS),
-            CONF_SUNSET_OFFSET: resolve_sunset_offset(options),
-            CONF_SUNRISE_OFFSET: resolve_sunrise_offset(options),
+            CONF_SUNSET_OFFSET: options.get(CONF_SUNSET_OFFSET, 0),
+            CONF_SUNRISE_OFFSET: options.get(
+                CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET, 0)
+            ),
             CONF_MAX_POSITION: options.get(CONF_MAX_POSITION, 100),
             CONF_MIN_POSITION: options.get(CONF_MIN_POSITION, 0),
             CONF_MIN_POSITION_SUN_TRACKING: options.get(CONF_MIN_POSITION_SUN_TRACKING),
@@ -128,16 +125,12 @@ async def async_handle_export(call: ServiceCall) -> dict:
         "horizontal": {
             CONF_LENGTH_AWNING: options.get(CONF_LENGTH_AWNING),
             CONF_AWNING_ANGLE: options.get(CONF_AWNING_ANGLE, 0),
-            CONF_AWNING_SHADE_MODE: options.get(CONF_AWNING_SHADE_MODE)
-            or DEFAULT_AWNING_SHADE_MODE,
         },
         "tilt": {
             # Stored in cm as entered in UI — notebook divides by 100 to get meters
             CONF_TILT_DISTANCE: options.get(CONF_TILT_DISTANCE),
             CONF_TILT_DEPTH: options.get(CONF_TILT_DEPTH),
             CONF_TILT_MODE: options.get(CONF_TILT_MODE),
-            CONF_TILT_ANGLE_0: options.get(CONF_TILT_ANGLE_0),
-            CONF_TILT_ANGLE_100: options.get(CONF_TILT_ANGLE_100),
         },
     }
 

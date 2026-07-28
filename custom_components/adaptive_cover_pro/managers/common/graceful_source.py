@@ -10,34 +10,13 @@ asyncio-free: no ``hass``, no entities, no tasks, no knowledge of what
 "fall back" means (astronomical sunset, a safe position, "assume present", …).
 The caller feeds it a tri-state verdict each cycle and maps the returned
 :class:`SourceResolution` onto its own policy. This is what lets opposite-
-direction consumers (fail-open gate vs. fail-closed safety) reuse it later —
-and, since issue #1012, differently-*shaped* payloads too: the verdict is a
-generic ``T`` (``bool`` for the daytime gate; ``bool`` or ``tuple[bool,
-tuple[str, ...]]`` for a custom-position slot's sensor/template fold), with
-``None`` reserved as the indeterminate sentinel. This works even when ``T``
-itself can be "falsy" (an empty tuple, ``False``) because the sentinel check is
-always ``is not None``, never truthiness — a valid-but-falsy payload is never
-confused with "no opinion this cycle".
+direction consumers (fail-open gate vs. fail-closed safety) reuse it later.
 
 Time is injected as a ``clock`` callable (defaults to :func:`time.monotonic`) so
 tests drive the grace window deterministically. Evaluation is stateless re-eval:
-:meth:`observe` is idempotent within a cycle — the grace anchor is fixed once
-per indeterminate run and never advanced by repeat calls at the same clock
-value. Managers compose this; they do not inherit from it.
-
-**Anchor point**: the grace window is always measured from the *first
-indeterminate sighting* — never from the source's last known-good
-observation. This is cadence-independent by construction: a caller with a
-sparse or irregular observation cadence (no fixed ``update_interval``) can go
-an arbitrarily long time between "last known good" and "first observed bad"
-without that gap eating into the grace window at all — only how long the
-source has been continuously indeterminate *since first noticed* counts.
-:class:`~managers.time_window.TimeWindowManager` (the daytime gate, issue
-#742) and the custom-position per-input hold (issue #1012) both rely on this
-same anchor. ``tests/test_graceful_source.py`` and
-``tests/test_time_window_manager.py`` (``test_seconds_until_gate_fallback_
-phases``, which asserts a *full* grace window remains at the first
-indeterminate reading) lock it in.
+:meth:`observe` is idempotent within a cycle — the grace anchor is fixed at the
+first indeterminate sighting and never advanced by repeat calls at the same
+clock value. Managers compose this; they do not inherit from it.
 """
 
 from __future__ import annotations
@@ -57,7 +36,7 @@ class SourceResolution(Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class Resolution[T]:
+class Resolution:
     """The outcome of one :meth:`GracefulSource.observe` call.
 
     ``value`` carries the verdict to use: the live verdict for DETERMINATE, the
@@ -66,16 +45,16 @@ class Resolution[T]:
     """
 
     state: SourceResolution
-    value: T | None
+    value: bool | None
 
 
-class GracefulSource[T]:
+class GracefulSource:
     """Track a tri-state verdict source through a grace window.
 
-    Feed :meth:`observe` the source's verdict each cycle (a real ``T`` value
-    for a real verdict, ``None`` when the source is indeterminate). The
-    returned :class:`Resolution` tells the caller whether to use the live
-    verdict, hold the last-known one, or apply its own fallback.
+    Feed :meth:`observe` the source's verdict each cycle (``True``/``False`` for
+    a real verdict, ``None`` when the source is indeterminate). The returned
+    :class:`Resolution` tells the caller whether to use the live verdict, hold
+    the last-known one, or apply its own fallback.
     """
 
     def __init__(
@@ -87,39 +66,32 @@ class GracefulSource[T]:
         """Initialize with the grace window length and an injectable clock.
 
         Args:
-            grace_seconds: How long to hold the last-known verdict before
-                reporting FELL_BACK — measured from the first indeterminate
-                sighting (see the module docstring's "Anchor point" section).
+            grace_seconds: How long to hold the last-known verdict after the
+                source first goes indeterminate, before reporting FELL_BACK.
             clock: Monotonic time source returning seconds. Injected so tests
                 can advance time deterministically.
 
         """
         self._grace_seconds = grace_seconds
         self._clock = clock
-        self._last_known: T | None = None
+        self._last_known: bool | None = None
         self._indeterminate_since: float | None = None
 
-    def observe(self, verdict: T | None, *, now: float | None = None) -> Resolution[T]:
+    def observe(self, verdict: bool | None, *, now: float | None = None) -> Resolution:
         """Record this cycle's verdict and resolve how it should be applied.
 
         Args:
-            verdict: A real ``T`` value for a real verdict; ``None`` when the
-                source is indeterminate this cycle. ``None`` is the sentinel —
-                a falsy-but-real payload (``False``, an empty tuple) is never
-                mistaken for indeterminate.
+            verdict: ``True``/``False`` for a real verdict; ``None`` when the
+                source is indeterminate this cycle.
             now: Optional clock override (seconds). Defaults to the injected
-                clock — supplied mainly for callers that already sampled time
-                once for the whole cycle, so every source they resolve agrees
-                on "now" to the same instant.
+                clock — supplied mainly for callers that already sampled time.
 
         Returns:
-            A :class:`Resolution`. A real verdict records last-known and
-            clears the indeterminate anchor, returning DETERMINATE. ``None``
-            with no last-known ever returns FELL_BACK without arming the
-            timer. ``None`` with a last-known fixes the grace anchor at the
-            first indeterminate sighting and returns HOLDING until
-            ``grace_seconds`` elapse (measured from that anchor), then
-            FELL_BACK.
+            A :class:`Resolution`. A real verdict records last-known, clears the
+            grace anchor, and returns DETERMINATE. ``None`` with no last-known
+            ever returns FELL_BACK without arming the timer. ``None`` with a
+            last-known fixes the grace anchor on first sight and returns HOLDING
+            until ``grace_seconds`` elapse, then FELL_BACK.
 
         """
         if verdict is not None:
@@ -155,7 +127,7 @@ class GracefulSource[T]:
         return remaining if remaining > 0 else None
 
     @property
-    def last_known(self) -> T | None:
+    def last_known(self) -> bool | None:
         """The most recent real verdict observed, or ``None`` if never seen."""
         return self._last_known
 

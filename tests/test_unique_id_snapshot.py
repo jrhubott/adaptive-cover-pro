@@ -115,7 +115,6 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         # --- button platform ---
         "Reset Manual Override",
         "my_position",
-        "apply_calculated_position",
         # --- number platform ---
         "my_position_value",
     ]

@@ -10,9 +10,6 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
-    CONF_INTERP,
-    CONF_INTERP_LIST,
-    CONF_INTERP_LIST_NEW,
     CONF_INVERSE_STATE,
     CONF_SENSOR_TYPE,
     DOMAIN,
@@ -149,70 +146,20 @@ async def test_proxy_state_updates_on_source_state_change(hass) -> None:
     assert state.attributes.get("current_position") == 25
 
 
-async def test_proxy_position_reports_logical_frame_under_inverse_state(hass) -> None:
-    """With ``CONF_INVERSE_STATE=True`` the proxy un-inverts the source reading.
+async def test_proxy_does_not_double_invert_position(hass) -> None:
+    """Even with ``CONF_INVERSE_STATE=True``, the proxy mirrors the source value verbatim.
 
-    Revised for #1027. This test previously asserted a verbatim mirror on the
-    rationale that "the integration's set_position path inverts internally" —
-    which was false at the time: the user path dispatched raw, so command and
-    read were accidentally self-consistent. Now that the command path really
-    does invert, a verbatim read would break the round trip: drag the proxy to
-    30, the source is driven to 70, and the proxy would read back 70.
-
-    The proxy is a normal HA cover, so it publishes the logical frame in both
-    directions. Source reports 30 → proxy shows 70.
+    The integration's set_position path inverts internally; the proxy must
+    not invert on the read side too. If source reports 30%, proxy shows 30%.
     """
     _, proxy_eid = await _setup_single(
         hass,
         attrs={"current_position": 30, "supported_features": 143},
-        entry_id="proxy_mirror_logical_frame",
+        entry_id="proxy_mirror_no_double_inv",
         extra_options={CONF_INVERSE_STATE: True},
-    )
-    state = hass.states.get(proxy_eid)
-    assert state.attributes.get("current_position") == 70
-
-
-async def test_proxy_position_verbatim_when_interpolation_active(hass) -> None:
-    """Interpolation suppresses position inversion, so the read stays verbatim.
-
-    Effective inversion is ``inverse_state AND NOT interpolation`` — the same
-    predicate the dispatch uses — so with both configured the proxy must not
-    invert. It must not rescale through the calibration curve either: mapping
-    the motor reading back onto the linear scale is #925's opt-in
-    ``CONF_PROXY_LINEAR_SCALE``, deliberately out of scope here.
-    """
-    _, proxy_eid = await _setup_single(
-        hass,
-        attrs={"current_position": 30, "supported_features": 143},
-        entry_id="proxy_mirror_interp_verbatim",
-        extra_options={
-            CONF_INVERSE_STATE: True,
-            CONF_INTERP: True,
-            CONF_INTERP_LIST: [0, 25, 58, 100],
-            CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
-        },
     )
     state = hass.states.get(proxy_eid)
     assert state.attributes.get("current_position") == 30
-
-
-async def test_proxy_is_closed_logical_frame(hass) -> None:
-    """``is_closed`` follows the logical position, not the raw source attribute.
-
-    On an inverted cover a source reading of 100 means fully closed. The proxy
-    reports position 0, and ``is_closed`` derives from that with no code of its
-    own.
-    """
-    _, proxy_eid = await _setup_single(
-        hass,
-        attrs={"current_position": 100, "supported_features": 143},
-        entry_id="proxy_mirror_is_closed_logical",
-        extra_options={CONF_INVERSE_STATE: True},
-    )
-    entity_obj = _get_proxy_entity(hass, proxy_eid)
-    assert entity_obj is not None
-    assert entity_obj.current_cover_position == 0
-    assert entity_obj.is_closed is True
 
 
 # ---- transient-state tests (is_opening / is_closing) ------------------- #

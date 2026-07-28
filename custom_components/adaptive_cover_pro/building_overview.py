@@ -51,7 +51,6 @@ from .const import (
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_OVERRIDE_DURATION,
-    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
@@ -84,20 +83,17 @@ from .const import (
     DEFAULT_DELTA_POSITION,
     DEFAULT_DELTA_TIME,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
-    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_WEATHER_ENABLED,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
-    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
 )
 from .cover_types import get_policy
 from .helpers import (
     custom_position_slot_configured,
     is_template_string,
-    manual_hold_is_unanchored,
     motion_entities,
 )
 from .profile_link import classify_profile_sensor_source
@@ -136,15 +132,6 @@ _LABELS: dict[str, str] = {
     "inherit_from_profile": "- {label}: `{value}` (from profile)",
     "inherit_overridden": "- {label}: `{value}` — overridden (profile: `{profile}`)",
     "inherit_local": "- {label}: `{value}` (profile not set — local)",
-    # What the manual-override hold is measured against (issue #1044). Verbatim
-    # copies of the selector option labels in translations/en.json — this module
-    # is English-only and cannot read the bundle, so the copy is deliberate and
-    # locked against drift by test_mode_labels_match_the_selector_translations.
-    # ``fixed`` has no entry: it renders the numeric duration instead.
-    "manual_hold.until_sunset": "Until the next sunset",
-    "manual_hold.until_sunrise": "Until the next sunrise",
-    "manual_hold.until_next_sun_event": "Until the next sunrise or sunset",
-    "manual_hold.until_window_end": "Until the time window ends",
 }
 
 # Friendly labels for the shared-sensor keys. Falls back to a humanized key.
@@ -169,7 +156,7 @@ _SENSOR_LABELS: dict[str, str] = {
 }
 
 # Shared-sensor keys shown in the "Shared sensors" listing, in display order.
-# The five *_template_mode combine-mode keys live in BUILDING_PROFILE_SENSOR_KEYS
+# The four *_template_mode combine-mode keys live in BUILDING_PROFILE_SENSOR_KEYS
 # but are toggles, not sensors — they are excluded from these views.
 _SHARED_DISPLAY_KEYS: tuple[str, ...] = (
     CONF_WEATHER_ENTITY,
@@ -398,41 +385,6 @@ def _fmt_duration(value: Any) -> str:
     return " ".join(parts) if parts else _NONE
 
 
-def _manual_override_hold(options: Mapping) -> str:
-    """Render what the manual-override hold is measured against (issue #1044).
-
-    ``fixed`` — the default — prints the numeric duration exactly as it always
-    has. Any other mode prints its label instead: the duration is then only the
-    fallback for an unresolvable boundary, so showing it would misrepresent the
-    configured behaviour in a side-by-side comparison.
-
-    Two cases degrade back to the numeric duration rather than printing a
-    boundary the hold will never reach (issue #1051). Both mirror what the
-    runtime actually does — ``resolve_override_deadline`` returns ``None``, and
-    the caller falls back to the duration:
-
-    * A mode with no label: one this build does not know — a hand-edited
-      ``.storage``, or a value written by a newer build.
-    * A mode whose boundary this config cannot resolve. Decided by
-      ``manual_hold_is_unanchored``, the one predicate the config summary's ⚠️
-      reads too, so the two surfaces cannot describe the same config
-      differently — the truthy-but-unset ``BLANK_TIME`` sentinel included.
-    """
-    mode = (
-        _eff(options, CONF_MANUAL_OVERRIDE_DURATION_MODE, None)
-        or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
-    )
-    if mode != MANUAL_OVERRIDE_DURATION_MODE_FIXED and not manual_hold_is_unanchored(
-        options
-    ):
-        label = _LABELS.get(f"manual_hold.{mode}")
-        if label is not None:
-            return label
-    return _fmt_duration(
-        _eff(options, CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION)
-    )
-
-
 def _count_custom_slots(options: Mapping) -> int:
     return sum(
         custom_position_slot_configured(options, slot_keys)
@@ -494,7 +446,7 @@ _COMPARISON_SPECS: tuple[_DiffSpec, ...] = (
     ),
     _DiffSpec(
         "Manual override",
-        lambda r: f"{_manual_override_hold(r.options)}"
+        lambda r: f"{_fmt_duration(_eff(r.options, CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION))}"
         f" / {_fmt(_eff(r.options, CONF_MANUAL_THRESHOLD, None))}%",
     ),
     _DiffSpec(

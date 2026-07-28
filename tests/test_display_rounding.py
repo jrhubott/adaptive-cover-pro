@@ -12,7 +12,6 @@ import numpy as np
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverSensorEntity,
     AdaptiveCoverSunPositionSensor,
@@ -41,15 +40,11 @@ class TestCoordinatorStateIntCoercion:
         pr = SimpleNamespace(
             position=pipeline_position,
             bypass_auto_control=False,
-            position_constraint_applied=False,
+            floor_clamp_applied=False,
         )
         coord._pipeline_result = pr
         coord._use_interpolation = True
         coord._inverse_state = False
-        # `state` derives the effective inversion from the entry options via
-        # the policy's position axis (#1028); empty options → not inverted.
-        coord._policy = get_policy("cover_blind")
-        coord.config_entry = SimpleNamespace(options={})
         # Interpolation args — values don't matter since we patch the function
         coord.start_value = 0
         coord.end_value = 100
@@ -86,13 +81,11 @@ class TestCoordinatorStateIntCoercion:
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
         pr = SimpleNamespace(
-            position=55, bypass_auto_control=False, position_constraint_applied=False
+            position=55, bypass_auto_control=False, floor_clamp_applied=False
         )
         coord._pipeline_result = pr
         coord._use_interpolation = False
         coord._inverse_state = False
-        coord._policy = get_policy("cover_blind")
-        coord.config_entry = SimpleNamespace(options={})
 
         result = AdaptiveDataUpdateCoordinator.state.fget(coord)
         assert isinstance(result, int)
@@ -105,16 +98,8 @@ class TestCoordinatorStateIntCoercion:
         )
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        pr = SimpleNamespace(
-            position=0, bypass_auto_control=True, position_constraint_applied=False
-        )
+        pr = SimpleNamespace(position=0, bypass_auto_control=True)
         coord._pipeline_result = pr
-        # A safety winner runs the same frame transform as any other (#1036),
-        # so the fixture needs the same frame inputs as its sibling above.
-        coord._use_interpolation = False
-        coord._inverse_state = False
-        coord._policy = get_policy("cover_blind")
-        coord.config_entry = SimpleNamespace(options={})
 
         result = AdaptiveDataUpdateCoordinator.state.fget(coord)
         assert isinstance(result, int)

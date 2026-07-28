@@ -19,7 +19,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_BLIND_SPOT_ELEVATION,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
-    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
@@ -31,8 +30,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_DISTANCE,
-    CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
-    CONF_DUAL_PANEL_FRONT_ENTITY,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
@@ -52,7 +49,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_OVERRIDE_DURATION,
-    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_ELEVATION,
@@ -64,7 +60,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_TEMPLATE,
     CONF_MOTION_TIMEOUT,
     CONF_OUTSIDETEMP_ENTITY,
-    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -104,7 +99,6 @@ from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     CoverType,
-    OutsideTempSource,
 )
 
 # ---------------------------------------------------------------------------
@@ -146,8 +140,8 @@ def _full_vertical() -> dict:
             CONF_MIN_ELEVATION: 5,
             CONF_MAX_ELEVATION: 70,
             CONF_ENABLE_BLIND_SPOT: True,
-            "blind_spot_left_gamma": 35,  # signed gamma (#247) → wedge [15, 35]
-            "blind_spot_right_gamma": -15,
+            CONF_BLIND_SPOT_LEFT: 10,
+            CONF_BLIND_SPOT_RIGHT: 20,
             CONF_BLIND_SPOT_ELEVATION: 30,
             CONF_START_TIME: "07:30",
             CONF_END_TIME: "20:00",
@@ -331,26 +325,6 @@ def test_geometry_awning_shows_awning_fields():
     assert "15°" in summary
 
 
-def test_geometry_awning_shows_shade_mode():
-    """Awning shade mode renders in the geometry summary (issue #1025)."""
-    from custom_components.adaptive_cover_pro.const import (
-        AWNING_SHADE_MODE_AREA,
-        AWNING_SHADE_MODE_WINDOW,
-        CONF_AWNING_SHADE_MODE,
-    )
-
-    window_cfg = {
-        CONF_LENGTH_AWNING: 3.0,
-        CONF_AWNING_SHADE_MODE: AWNING_SHADE_MODE_WINDOW,
-    }
-    assert "shade window glass" in _build_config_summary(window_cfg, CoverType.AWNING)
-
-    area_cfg = {CONF_LENGTH_AWNING: 3.0, CONF_AWNING_SHADE_MODE: AWNING_SHADE_MODE_AREA}
-    assert "shade area in front (patio)" in _build_config_summary(
-        area_cfg, CoverType.AWNING
-    )
-
-
 def test_geometry_tilt_shows_tilt_fields():
     """Tilt slat dimensions appear."""
     cfg = {CONF_TILT_DEPTH: 3.0, CONF_TILT_DISTANCE: 4.0, CONF_TILT_MODE: "mode1"}
@@ -358,23 +332,6 @@ def test_geometry_tilt_shows_tilt_fields():
     assert "slat depth 3.0cm" in summary
     assert "spacing 4.0cm" in summary
     assert "mode1" in summary
-
-
-def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
-    """Louvered roof renders the shared slat block plus the roof-plane pitch."""
-    from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH
-
-    cfg = {
-        CONF_TILT_DEPTH: 3.0,
-        CONF_TILT_DISTANCE: 2.0,
-        CONF_TILT_MODE: "mode2",
-        CONF_ROOF_PITCH: 15,
-    }
-    summary = _build_config_summary(cfg, CoverType.LOUVERED_ROOF)
-    assert "slat depth 3.0cm" in summary
-    assert "spacing 2.0cm" in summary
-    assert "roof pitch 15° from horizontal" in summary
-    assert "Louvered Roof" in summary
 
 
 def test_geometry_venetian_shows_retract_threshold_default():
@@ -440,24 +397,6 @@ def test_geometry_venetian_shows_min_tilt_custom():
     cfg = {CONF_MIN_TILT: 15}
     summary = _build_config_summary(cfg, CoverType.VENETIAN)
     assert "min tilt 15%" in summary
-
-
-def test_geometry_venetian_shows_tilt_transform_when_proportional():
-    """Venetian summary shows the proportional-transform line when opted in (#957)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_VENETIAN_TILT_TRANSFORM,
-        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
-    )
-
-    cfg = {CONF_VENETIAN_TILT_TRANSFORM: VENETIAN_TILT_TRANSFORM_PROPORTIONAL}
-    summary = _build_config_summary(cfg, CoverType.VENETIAN)
-    assert "proportional tilt remap" in summary
-
-
-def test_geometry_venetian_omits_tilt_transform_when_clamp():
-    """Default clamp transform renders no extra summary line."""
-    summary = _build_config_summary({}, CoverType.VENETIAN)
-    assert "proportional tilt remap" not in summary
 
 
 def test_geometry_venetian_shows_post_settle_hold_default():
@@ -567,26 +506,6 @@ def test_geometry_roof_window_ridge_height_omitted_when_zero():
     cfg = {CONF_ROOF_PITCH: 40, CONF_ROOF_HEIGHT_ABOVE: 0.0}
     summary = _build_config_summary(cfg, CoverType.ROOF_WINDOW)
     assert "roof above window" not in summary
-
-
-def test_geometry_dual_panel_shows_front_entity_and_triggers():
-    """Dual-panel summary renders the front-panel designator + trigger list (#996)."""
-    cfg = {
-        CONF_HEIGHT_WIN: 2.0,
-        CONF_DISTANCE: 0.5,
-        CONF_DUAL_PANEL_FRONT_ENTITY: "cover.sheer_front",
-        CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["heat", "night"],
-    }
-    summary = _build_config_summary(cfg, CoverType.DUAL_PANEL)
-    assert "front (sheer) panel: cover.sheer_front" in summary
-    assert "blackout deploys on: heat, night" in summary
-
-
-def test_geometry_dual_panel_shows_no_triggers_when_empty():
-    """With no triggers configured the summary says so (back never deploys)."""
-    cfg = {CONF_HEIGHT_WIN: 2.0, CONF_DISTANCE: 0.5}
-    summary = _build_config_summary(cfg, CoverType.DUAL_PANEL)
-    assert "blackout deploys on: no triggers" in summary
 
 
 # ---------------------------------------------------------------------------
@@ -883,43 +802,29 @@ def test_blind_spot_hidden_when_disabled():
 
 
 def test_blind_spot_shown_when_enabled():
-    """Blind spot bullet shows the signed-gamma wedge range (#247)."""
+    """Blind spot bullet shows the degree range."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        "blind_spot_left_gamma": 35,  # wedge [15, 35]
-        "blind_spot_right_gamma": -15,
+        CONF_BLIND_SPOT_LEFT: 10,
+        CONF_BLIND_SPOT_RIGHT: 20,
         CONF_BLIND_SPOT_ELEVATION: 40,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "Blind spot" in summary
-    assert "15°" in summary
-    assert "35°" in summary
+    assert "10°" in summary
+    assert "20°" in summary
     assert "40°" in summary
-    assert "window normal" in summary
+    assert "FOV left" in summary
     # Single slot renders exactly one blind-spot line.
     assert summary.count("Blind spot") == 1
-
-
-def test_blind_spot_legacy_keys_still_render_via_conversion():
-    """Legacy-only options still render (converted to the gamma wedge)."""
-    cfg = {
-        CONF_ENABLE_BLIND_SPOT: True,
-        CONF_FOV_LEFT: 45,
-        CONF_BLIND_SPOT_LEFT: 10,  # → gamma [15, 35]
-        CONF_BLIND_SPOT_RIGHT: 30,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Blind spot" in summary
-    assert "15°" in summary
-    assert "35°" in summary
 
 
 def test_blind_spot_below_mode_wording():
     """A 'below' (default) elevation slot reads 'up to {elev}°' (#702)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        "blind_spot_left_gamma": 35,
-        "blind_spot_right_gamma": -15,
+        CONF_BLIND_SPOT_LEFT: 10,
+        CONF_BLIND_SPOT_RIGHT: 20,
         CONF_BLIND_SPOT_ELEVATION: 40,
         "blind_spot_elevation_mode": "below",
     }
@@ -932,8 +837,8 @@ def test_blind_spot_above_mode_wording():
     """An 'above' elevation slot reads 'above {elev}°' (#702)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        "blind_spot_left_gamma": 35,
-        "blind_spot_right_gamma": -15,
+        CONF_BLIND_SPOT_LEFT: 10,
+        CONF_BLIND_SPOT_RIGHT: 20,
         CONF_BLIND_SPOT_ELEVATION: 40,
         "blind_spot_elevation_mode": "above",
     }
@@ -946,15 +851,15 @@ def test_blind_spot_multiple_slots_render_one_line_each():
     """Two configured slots produce two blind-spot summary lines (#701)."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
-        "blind_spot_left_gamma": 35,  # slot 1 wedge [15, 35]
-        "blind_spot_right_gamma": -15,
-        "blind_spot_left_gamma_2": 5,  # slot 2 wedge [-15, 5]
-        "blind_spot_right_gamma_2": 15,
+        CONF_BLIND_SPOT_LEFT: 10,
+        CONF_BLIND_SPOT_RIGHT: 20,
+        "blind_spot_left_2": 40,
+        "blind_spot_right_2": 60,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert summary.count("Blind spot") == 2
-    assert "15°" in summary
-    assert "35°" in summary
+    assert "10°" in summary
+    assert "60°" in summary
 
 
 # ---------------------------------------------------------------------------
@@ -1035,42 +940,6 @@ def test_climate_mode_shown():
     assert "sensor.temp" in summary
 
 
-def test_climate_line_shows_area_resolved_sensor():
-    """With no explicit temp sensor and auto-resolve on, the climate line notes
-    the sensor is taken from the cover's area (issue #786).
-    """
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_TEMP_LOW: 16,
-        CONF_TEMP_HIGH: 24,
-        # No CONF_TEMP_ENTITY; auto-resolve defaults on.
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "area temperature sensor" in summary
-    assert "using sensor." not in summary
-
-
-def test_climate_line_area_resolve_suppressed_when_explicit_sensor():
-    """An explicit temp sensor takes precedence — no area note."""
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_TEMP_ENTITY: "sensor.explicit",
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "sensor.explicit" in summary
-    assert "area temperature sensor" not in summary
-
-
-def test_climate_line_no_area_note_when_auto_resolve_disabled():
-    """Auto-resolve off and no explicit sensor → no area note."""
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_AUTO_RESOLVE_TEMP_FROM_AREA: False,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "area temperature sensor" not in summary
-
-
 def test_climate_weather_entity_shown():
     """Weather entity appears in climate bullet."""
     cfg = {CONF_CLIMATE_MODE: True, CONF_WEATHER_ENTITY: "weather.home"}
@@ -1102,120 +971,6 @@ def test_climate_cloud_coverage_shown():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "60%" in summary
     assert "Cloud suppression" in summary
-
-
-def test_cloud_suppression_hold_time_shown_when_positive():
-    """A non-zero hold-time renders a smoothing-hold suffix (issue #864)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
-    )
-
-    cfg = {
-        CONF_CLOUD_SUPPRESSION: True,
-        CONF_LUX_ENTITY: "sensor.lux",
-        CONF_LUX_THRESHOLD: 500,
-        CONF_CLOUD_SUPPRESSION_HOLD_TIME: 120,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "smoothing hold 120s" in summary
-
-
-def test_cloud_suppression_hold_time_hidden_when_zero():
-    """A zero hold-time (default) renders no smoothing-hold suffix (issue #864)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
-    )
-
-    cfg = {
-        CONF_CLOUD_SUPPRESSION: True,
-        CONF_LUX_ENTITY: "sensor.lux",
-        CONF_LUX_THRESHOLD: 500,
-        CONF_CLOUD_SUPPRESSION_HOLD_TIME: 0,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "smoothing hold" not in summary
-
-
-def test_cloud_suppression_release_band_shown_when_set():
-    """Configured release thresholds render a hysteresis release detail (#864)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
-        CONF_LUX_RELEASE_THRESHOLD,
-    )
-
-    cfg = {
-        CONF_CLOUD_SUPPRESSION: True,
-        CONF_LUX_ENTITY: "sensor.lux",
-        CONF_LUX_THRESHOLD: 500,
-        CONF_LUX_RELEASE_THRESHOLD: 8000,
-        CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
-        CONF_CLOUD_COVERAGE_THRESHOLD: 75,
-        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD: 50,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "8000" in summary
-    assert "50" in summary
-    # The release detail is labelled as a release/hysteresis clause.
-    assert "release" in summary.lower()
-
-
-def test_climate_temp_hold_time_shown_when_positive():
-    """A non-zero climate hold-time renders a smoothing-hold suffix (issue #917)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_CLIMATE_TEMP_HOLD_TIME,
-        CONF_TEMP_HIGH,
-        CONF_TEMP_LOW,
-    )
-
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_TEMP_LOW: 20,
-        CONF_TEMP_HIGH: 25,
-        CONF_CLIMATE_TEMP_HOLD_TIME: 300,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "smoothing hold 300s" in summary
-
-
-def test_climate_temp_hold_time_hidden_when_zero():
-    """A zero climate hold-time (default) renders no smoothing suffix (#917)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_CLIMATE_TEMP_HOLD_TIME,
-    )
-
-    cfg = {CONF_CLIMATE_MODE: True, CONF_CLIMATE_TEMP_HOLD_TIME: 0}
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    # The climate line must not carry a smoothing-hold suffix.
-    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
-    assert "smoothing hold" not in climate_line
-
-
-def test_climate_temp_release_band_shown_when_set():
-    """Configured climate release edges render a release detail (issue #917)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_OUTSIDE_THRESHOLD_RELEASE,
-        CONF_TEMP_LOW_RELEASE_THRESHOLD,
-    )
-
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_TEMP_LOW_RELEASE_THRESHOLD: 23,
-        CONF_OUTSIDE_THRESHOLD_RELEASE: 30,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
-    assert "23" in climate_line
-    assert "30" in climate_line
-    assert "release" in climate_line.lower()
-
-
-def test_climate_line_unchanged_when_smoothing_absent():
-    """With no smoothing keys the climate line carries no smoothing/release text."""
-    cfg = {CONF_CLIMATE_MODE: True}
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
-    assert "smoothing hold" not in climate_line
-    assert "release when" not in climate_line
 
 
 def test_light_sensors_without_suppression_noted():
@@ -1444,36 +1199,6 @@ def test_manual_override_input_entities_omitted_when_unset():
     assert "input-sensor override" not in summary
 
 
-def test_manual_override_input_template_only_counts_one():
-    """A template-only manual-input trigger shows the part with count 1 (#974)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
-    )
-
-    cfg = {CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: "{{ true }}"}
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    mo_line = next((ln for ln in summary.splitlines() if "Manual override" in ln), None)
-    assert mo_line is not None
-    assert "input-sensor override: 1 sensor(s)" in mo_line
-
-
-def test_manual_override_input_template_adds_to_sensor_count():
-    """Input sensors + a template count together (#974)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
-        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
-    )
-
-    cfg = {
-        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.a"],
-        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: "{{ true }}",
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    mo_line = next((ln for ln in summary.splitlines() if "Manual override" in ln), None)
-    assert mo_line is not None
-    assert "input-sensor override: 2 sensor(s)" in mo_line
-
-
 # ---------------------------------------------------------------------------
 # Section 2: Motion Timeout
 # ---------------------------------------------------------------------------
@@ -1487,7 +1212,7 @@ def test_motion_sensors_count_shown():
         CONF_DEFAULT_HEIGHT: 60,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "🚶 Occupancy" in summary
+    assert "Motion-based" in summary
     assert "300s" in summary
     assert "60%" in summary
 
@@ -1496,7 +1221,7 @@ def test_motion_section_hidden_when_no_sensors():
     """Motion bullet absent when no motion sensors configured."""
     cfg = {CONF_MOTION_SENSORS: []}
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "🚶 Occupancy" not in summary
+    assert "Motion-based" not in summary
 
 
 # ---------------------------------------------------------------------------
@@ -1548,32 +1273,6 @@ def test_weather_override_binary_sensors_shown():
     assert "is-raining" in summary
     assert "is-windy" in summary
     assert "severe weather" in summary
-
-
-def test_weather_override_severe_template_only_counts_one():
-    """A template-only severe source shows the severe part with count 1 (#974)."""
-    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_SEVERE_TEMPLATE
-
-    cfg = {
-        CONF_WEATHER_SEVERE_TEMPLATE: "{{ true }}",
-        CONF_WEATHER_OVERRIDE_POSITION: 0,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Weather safety" in summary
-    assert "1 severe weather sensor" in summary
-
-
-def test_weather_override_severe_template_adds_to_sensor_count():
-    """Severe sensors + a template count together (#974)."""
-    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_SEVERE_TEMPLATE
-
-    cfg = {
-        CONF_WEATHER_SEVERE_SENSORS: ["binary_sensor.hail"],
-        CONF_WEATHER_SEVERE_TEMPLATE: "{{ true }}",
-        CONF_WEATHER_OVERRIDE_POSITION: 0,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "2 severe weather sensor" in summary
 
 
 # --- Master toggle warning (issue #719) ---
@@ -1849,19 +1548,6 @@ def test_priority_safety_slot_in_chain():
     assert "✅Custom#5(100)" in summary
 
 
-def test_priority_custom_slot_named_shown_in_decision_priority():
-    """A named custom slot renders its name, not Custom#N (issue #910)."""
-    cfg = {
-        "custom_position_sensors_2": ["binary_sensor.protection_solaire_canicule"],
-        "custom_position_2": 10,
-        "custom_position_priority_2": 75,
-        "custom_position_name_2": "Canicule",
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "✅Canicule(75)" in summary
-    assert "Custom#2" not in summary
-
-
 def test_priority_no_force_entry_remains():
     """The standalone Force chain entry is gone (merged into custom slots, #563)."""
     summary = _build_config_summary({}, CoverType.BLIND)
@@ -1974,9 +1660,9 @@ def test_full_vertical_config_smoke():
     assert "sill 0.5m" in summary
     # Sun tracking
     assert "180°" in summary
-    # Blind spot (signed gamma → wedge [15, 35])
+    # Blind spot
     assert "Blind spot" in summary
-    assert "15°" in summary
+    assert "10°" in summary
     # Timing
     assert "07:30" in summary
     assert "20:00" in summary
@@ -1985,7 +1671,7 @@ def test_full_vertical_config_smoke():
     # Manual override
     assert "120 min" in summary
     # Motion
-    assert "🚶 Occupancy" in summary
+    assert "Motion-based" in summary
     assert "300s" in summary
     # Weather
     assert "Weather safety" in summary
@@ -2497,106 +2183,16 @@ def test_priority_badges_on_every_rule():
 
 
 def test_priority_badge_default_zero():
-    """Default fallback line shows the [0] badge as a bold leading prefix."""
+    """Default fallback line shows the [0] badge."""
     summary = _build_config_summary({}, CoverType.BLIND)
     assert "🌙 Default (no rule matches) → 0%" in summary
-    # The badge leads the line as a bold **[0]** prefix (issue #923)
+    # [0] appears on the same line as the default fallback
     for line in summary.splitlines():
         if "🌙 Default" in line:
-            assert line.startswith("**[0]** ")
+            assert "[0]" in line
             break
     else:
         raise AssertionError("No default fallback line found")
-
-
-# ---------------------------------------------------------------------------
-# Issue #923 — sort How It Decides by descending priority + bold badge prefix
-# ---------------------------------------------------------------------------
-
-
-def test_how_it_decides_sorted_by_descending_priority():
-    """Rules render by descending priority, incl. custom slots by their own value.
-
-    Slot 1 is configured at priority 77 and slot 3 at priority 80; despite slot 1
-    coming first in slot order, slot 3 (80) must render above slot 1 (77), and both
-    below Manual (80) — the built-in wins the 80 tie.
-    """
-    cfg = _full_vertical()
-    cfg["custom_position_sensor_1"] = "binary_sensor.a"
-    cfg["custom_position_1"] = 10
-    cfg["custom_position_priority_1"] = 77
-    cfg["custom_position_sensor_3"] = "binary_sensor.b"
-    cfg["custom_position_3"] = 100
-    cfg["custom_position_priority_3"] = 80
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    manual_idx = summary.index("✋ Manual override")
-    c3_idx = summary.index("🎯 Custom #3")
-    c1_idx = summary.index("🎯 Custom #1")
-    assert manual_idx < c3_idx < c1_idx
-
-
-def test_priority_badge_is_bold_prefix():
-    """The priority badge is a bold **[N]** prefix at the start of the rule line."""
-    summary = _build_config_summary({}, CoverType.BLIND)
-    default_line = next(
-        ln for ln in summary.splitlines() if "🌙 Default (no rule matches)" in ln
-    )
-    assert default_line.startswith("**[0]** ")
-
-
-def test_how_it_decides_default_priority_category_order():
-    """Regression guard for PR #110: at class-default priorities with no custom
-    slots, categories keep the evaluation order weather > manual > motion > cloud
-    > climate > glare > solar > default.
-    """
-    cfg = _full_vertical()
-    # Strip the safety custom slot so only built-in rules remain.
-    for key in list(cfg):
-        if key.startswith("custom_position"):
-            del cfg[key]
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    order = [
-        "🌧️ Weather safety",
-        "✋ Manual override",
-        "🚶 Occupancy",
-        "☁️ Cloud suppression",
-        "🌡️ Climate mode",
-        "🔆 Glare zones",
-        "☀️ Tracks the sun",
-        "🌙 Default (no rule matches)",
-    ]
-    indices = [summary.index(sub) for sub in order]
-    assert indices == sorted(indices)
-
-
-def test_custom_slot_warning_travels_with_its_slot_after_sort():
-    """A slot's warning renders immediately after that slot's line even when the
-    slot is not the highest-priority one (warnings move with their block).
-    """
-    cfg = {
-        # Higher-priority slot, no warning.
-        "custom_position_sensor_2": "binary_sensor.high",
-        "custom_position_2": 50,
-        "custom_position_priority_2": 90,
-        # Lower-priority slot with a tilt-only mutual-exclusion warning.
-        "custom_position_sensor_1": "binary_sensor.low",
-        "custom_position_1": 30,
-        "custom_position_priority_1": 60,
-        "custom_position_tilt_1": 30,
-        "custom_position_tilt_only_1": True,
-        "custom_position_min_mode_1": True,
-    }
-    summary = _build_config_summary(cfg, CoverType.VENETIAN)
-    lines = summary.splitlines()
-    slot2_idx = next(i for i, ln in enumerate(lines) if "🎯 Custom #2" in ln)
-    slot1_idx = next(i for i, ln in enumerate(lines) if "🎯 Custom #1" in ln)
-    warn_idx = next(
-        i
-        for i, ln in enumerate(lines)
-        if "⚠️ Custom #1" in ln and "tilt only" in ln.lower()
-    )
-    assert slot2_idx < slot1_idx  # 90 before 60
-    assert warn_idx == slot1_idx + 1  # warning immediately follows its slot line
 
 
 # ---------------------------------------------------------------------------
@@ -2877,40 +2473,6 @@ def test_summer_close_bypass_sun_floor_note_on_climate_line():
     assert "closes fully in summer heat" in climate_line
 
 
-def test_extreme_heat_note_on_climate_line():
-    """CONF_TEMP_EXTREME_HEAT adds an all-day hold note with position + threshold (#766)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_EXTREME_HEAT_POSITION,
-        CONF_TEMP_EXTREME_HEAT,
-    )
-
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_TEMP_EXTREME_HEAT: 35,
-        CONF_EXTREME_HEAT_POSITION: 20,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    climate_line = next(ln for ln in summary.splitlines() if "Climate mode" in ln)
-    assert "holds 20% all day above 35°C outside" in climate_line
-
-
-def test_extreme_heat_note_defaults_hold_to_closed_when_position_unset():
-    """With only the threshold set, the note shows the fully-closed default hold (#766)."""
-    from custom_components.adaptive_cover_pro.const import CONF_TEMP_EXTREME_HEAT
-
-    cfg = {CONF_CLIMATE_MODE: True, CONF_TEMP_EXTREME_HEAT: 35}
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    climate_line = next(ln for ln in summary.splitlines() if "Climate mode" in ln)
-    assert "holds 0% all day above 35°C outside" in climate_line
-
-
-def test_extreme_heat_absent_when_threshold_unset():
-    """No extreme-heat note appears when the threshold is not configured (#766)."""
-    cfg = {CONF_CLIMATE_MODE: True}
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "all day above" not in summary
-
-
 def test_open_close_threshold_in_position_limits():
     """CONF_OPEN_CLOSE_THRESHOLD renders under Position Limits."""
     from custom_components.adaptive_cover_pro.const import CONF_OPEN_CLOSE_THRESHOLD
@@ -3121,37 +2683,6 @@ def test_cloudy_position_no_warning_when_suppression_on():
 
 
 # ---------------------------------------------------------------------------
-# Forecast outdoor-temp source without a weather entity (issue #912)
-# ---------------------------------------------------------------------------
-
-
-def test_forecast_source_no_weather_entity_shows_warning():
-    """⚠️ warning when the outdoor-temp source is forecast-based but no
-    weather entity is configured — it silently degrades to the live reading.
-    """
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_OUTSIDE_TEMP_SOURCE: OutsideTempSource.FORECAST_MAX.value,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "⚠️" in summary
-    assert "weather entity" in summary.lower()
-
-
-def test_forecast_source_no_warning_when_weather_entity_set():
-    """No warning when a weather entity is configured alongside the forecast source."""
-    cfg = {
-        CONF_CLIMATE_MODE: True,
-        CONF_OUTSIDE_TEMP_SOURCE: OutsideTempSource.MAX_OF_LIVE_AND_FORECAST.value,
-        CONF_WEATHER_ENTITY: "weather.home",
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    climate_line = next((ln for ln in summary.splitlines() if "Climate mode" in ln), "")
-    assert "⚠️" not in climate_line
-    assert "forecast will silently fall back" not in summary
-
-
-# ---------------------------------------------------------------------------
 # Tilt MODE2 + min_position footgun warning (issue #373)
 # ---------------------------------------------------------------------------
 
@@ -3216,7 +2747,7 @@ def test_motion_summary_default_mode_says_return_to_default():
         CONF_DEFAULT_HEIGHT: 45,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
     assert "return to default" in motion_line.lower()
 
 
@@ -3228,7 +2759,7 @@ def test_motion_summary_template_only():
         CONF_DEFAULT_HEIGHT: 45,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
     assert "occupancy template" in motion_line
 
 
@@ -3241,7 +2772,7 @@ def test_motion_summary_sensors_plus_template():
         CONF_DEFAULT_HEIGHT: 45,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
     assert "1 source" in motion_line
     assert "occupancy template" in motion_line
 
@@ -3257,7 +2788,7 @@ def test_motion_summary_hold_mode_says_hold_position():
         CONF_MOTION_TIMEOUT_MODE: "hold_position",
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    motion_line = next((ln for ln in summary.splitlines() if "🚶 Occupancy" in ln), "")
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
     assert "hold" in motion_line.lower()
 
 
@@ -3610,7 +3141,7 @@ def test_summary_building_profile_line_when_linked() -> None:
             self.title = title
 
     class _FakeStates:
-        """Minimal hass.states stub so check_cover_capabilities doesn't crash."""
+        """Minimal hass.states stub so _check_cover_capabilities doesn't crash."""
 
         def get(self, entity_id: str):  # noqa: D102
             return None
@@ -3645,394 +3176,3 @@ def test_summary_building_profile_line_absent_when_unlinked() -> None:
     assert (
         "building profile" not in summary.lower()
     ), "Summary must not mention 'building profile' for an unlinked cover"
-
-
-# ---------------------------------------------------------------------------
-# Cover Group summary (issue #790)
-# ---------------------------------------------------------------------------
-
-
-def test_summary_group_shows_header_and_member_counts():
-    """A group renders its own compact summary, never the cover chain."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MEMBER_COVERS,
-        CONF_MEMBER_ENTRIES,
-    )
-
-    summary = _build_config_summary(
-        {
-            CONF_MEMBER_ENTRIES: ["entry_a", "entry_b"],
-            CONF_MEMBER_COVERS: ["cover.generic"],
-        },
-        CoverType.GROUP,
-    )
-
-    assert "**Cover Group**" in summary
-    assert "2 ACP member(s)" in summary
-    assert "1 generic cover(s)" in summary
-    assert "cover.generic" in summary
-    # None of the cover-chain sections appear for a group.
-    assert "How It Decides" not in summary
-
-
-def test_summary_group_empty_roster_warns():
-    """An empty group is called out — it will not command anything."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MEMBER_COVERS,
-        CONF_MEMBER_ENTRIES,
-    )
-
-    summary = _build_config_summary(
-        {CONF_MEMBER_ENTRIES: [], CONF_MEMBER_COVERS: []},
-        CoverType.GROUP,
-    )
-
-    assert "**Cover Group**" in summary
-    assert "no members" in summary
-
-
-def test_summary_group_shows_arbitration_lines():
-    """Phase 2: scene/lock priorities and the stagger, from the imported consts."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_GROUP_STAGGER_DELAY,
-        CONF_MEMBER_COVERS,
-        CONF_MEMBER_ENTRIES,
-        CUSTOM_POSITION_SAFETY_PRIORITY,
-        GROUP_SCENE_PRIORITY,
-    )
-
-    summary = _build_config_summary(
-        {
-            CONF_MEMBER_ENTRIES: ["entry_a"],
-            CONF_MEMBER_COVERS: [],
-            CONF_GROUP_STAGGER_DELAY: 2.5,
-        },
-        CoverType.GROUP,
-    )
-
-    assert f"priority {GROUP_SCENE_PRIORITY}" in summary
-    assert f"priority {CUSTOM_POSITION_SAFETY_PRIORITY}" in summary
-    assert "2.5" in summary
-
-
-def test_summary_group_omits_stagger_line_when_zero():
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MEMBER_COVERS,
-        CONF_MEMBER_ENTRIES,
-    )
-
-    summary = _build_config_summary(
-        {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []},
-        CoverType.GROUP,
-    )
-
-    assert "apart" not in summary
-
-
-def test_summary_group_shows_cover_entity_line_when_enabled():
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_GROUP_ENABLE_COVER_ENTITY,
-        CONF_MEMBER_COVERS,
-        CONF_MEMBER_ENTRIES,
-    )
-
-    base = {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []}
-    without = _build_config_summary(
-        {**base, CONF_GROUP_ENABLE_COVER_ENTITY: False}, CoverType.GROUP
-    )
-    assert "Aggregate cover entity" not in without
-
-    with_cover = _build_config_summary(
-        {**base, CONF_GROUP_ENABLE_COVER_ENTITY: True}, CoverType.GROUP
-    )
-    assert "Aggregate cover entity" in with_cover
-
-    # Default (key absent) now enables the cover, so the line appears.
-    by_default = _build_config_summary(base, CoverType.GROUP)
-    assert "Aggregate cover entity" in by_default
-
-
-def test_summary_group_shows_area_line_when_configured():
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_GROUP_AREA,
-        CONF_MEMBER_COVERS,
-        CONF_MEMBER_ENTRIES,
-    )
-
-    base = {CONF_MEMBER_ENTRIES: ["entry_a"], CONF_MEMBER_COVERS: []}
-    without = _build_config_summary(base, CoverType.GROUP)
-    assert "area" not in without.lower()
-
-    with_area = _build_config_summary(
-        {**base, CONF_GROUP_AREA: "living_room"}, CoverType.GROUP
-    )
-    assert "living_room" in with_area
-
-
-# ---------------------------------------------------------------------------
-# Axis constraints on the custom-slot lines — issue #943
-# ---------------------------------------------------------------------------
-
-
-def _custom_line(cfg, slot=1, cover_type=CoverType.BLIND):
-    summary = _build_config_summary(cfg, cover_type)
-    return next(ln for ln in summary.splitlines() if f"Custom #{slot}" in ln)
-
-
-def test_custom_position_max_shows_its_value():
-    """A position ceiling names its number, like the tilt-bound fragments do.
-
-    Audit finding 6: '(as maximum)' was a bare suffix — the ceiling's value only
-    appeared inside the min>max conflict warning.
-    """
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.movie"],
-        "custom_position_position_max_1": 60,
-    }
-    assert "at most 60%" in _custom_line(cfg)
-
-
-def test_custom_position_min_and_max_both_shown():
-    """A two-sided position bound names both ends."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.movie"],
-        "custom_position_1": 30,
-        "custom_position_min_mode_1": True,
-        "custom_position_position_max_1": 70,
-    }
-    line = _custom_line(cfg)
-    assert "(as minimum)" in line
-    assert "at most 70%" in line
-
-
-def test_fixed_position_slot_never_claims_a_ceiling():
-    """An exact position outranks position_max, so the line must not show one.
-
-    Audit finding 5: the slot renders '→ 70%' and the stored ceiling does
-    nothing — advertising it implied 70 was capped at 50.
-    """
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.movie"],
-        "custom_position_1": 70,
-        "custom_position_position_max_1": 50,
-    }
-    line = _custom_line(cfg)
-    assert "70%" in line
-    assert "maximum" not in line
-    assert "at most" not in line
-
-
-def test_custom_tilt_min_note_shown():
-    """A minimum tilt is surfaced on the slot line."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.door"],
-        "custom_position_tilt_min_1": 50,
-    }
-    line = _custom_line(cfg, cover_type=CoverType.VENETIAN)
-    assert "tilt at least 50%" in line
-
-
-def test_custom_tilt_max_note_shown():
-    """A maximum tilt is surfaced on the slot line."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.door"],
-        "custom_position_tilt_max_1": 60,
-    }
-    assert "tilt at most 60%" in _custom_line(cfg, cover_type=CoverType.VENETIAN)
-
-
-def test_custom_tilt_range_note_shown():
-    """A two-sided tilt bound renders as a range."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.door"],
-        "custom_position_tilt_min_1": 40,
-        "custom_position_tilt_max_1": 80,
-    }
-    assert "tilt 40–80%" in _custom_line(cfg, cover_type=CoverType.VENETIAN)
-
-
-def test_custom_position_conflict_warning():
-    """A ceiling below the floor is a footgun — the floor silently wins."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.movie"],
-        "custom_position_1": 70,
-        "custom_position_min_mode_1": True,
-        "custom_position_position_max_1": 40,
-    }
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "⚠️" in summary
-    assert any(
-        "maximum" in ln and "minimum" in ln and "⚠️" in ln
-        for ln in summary.splitlines()
-    )
-
-
-def test_no_constraint_note_without_constraints():
-    """A legacy slot's line is unchanged."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.movie"],
-        "custom_position_1": 40,
-    }
-    line = _custom_line(cfg)
-    assert "at most" not in line
-    assert "tilt at least" not in line
-
-
-def test_constraint_only_slot_renders_without_a_position():
-    """The reporter's config: a trigger and a tilt minimum, no position."""
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.door"],
-        "custom_position_tilt_min_1": 50,
-    }
-    line = _custom_line(cfg, cover_type=CoverType.VENETIAN)
-    assert "tilt at least 50%" in line
-
-
-def test_min_mode_without_position_shows_no_as_minimum():
-    """Finding D: a min_mode toggle with no stored position contributes no floor.
-
-    The derived mode is MAX (a lone ceiling), so the phantom '(as minimum)'
-    fragment must not appear — it would claim a floor that does not exist.
-    """
-    cfg = {
-        "custom_position_sensors_1": ["binary_sensor.movie"],
-        "custom_position_min_mode_1": True,
-        "custom_position_position_max_1": 50,
-    }
-    line = _custom_line(cfg)
-    assert "(as minimum)" not in line
-    assert "at most 50%" in line
-    assert "the calculated position" in line
-
-
-# ---------------------------------------------------------------------------
-# Manual-override duration mode (issue #1044)
-# ---------------------------------------------------------------------------
-
-
-def _manual_block(cfg):
-    """Return the manual-override line plus any of its continuation lines."""
-    lines = _build_config_summary(cfg, CoverType.BLIND).splitlines()
-    start = next(i for i, ln in enumerate(lines) if "Manual override" in ln)
-    block = [lines[start]]
-    for ln in lines[start + 1 :]:
-        # A new badged rule block, or the end of the rules section.
-        if ln.startswith("**") or not ln.strip():
-            break
-        block.append(ln)
-    return "\n".join(block)
-
-
-def test_manual_override_summary_renders_fixed_duration_when_mode_absent():
-    """No mode key → the numeric duration renders exactly as it always has."""
-    from custom_components.adaptive_cover_pro.const import (
-        MANUAL_OVERRIDE_DURATION_MODE_FIXED,
-    )
-
-    cfg = {CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3}}
-    absent = _manual_block(cfg)
-    explicit = _manual_block(
-        {**cfg, CONF_MANUAL_OVERRIDE_DURATION_MODE: MANUAL_OVERRIDE_DURATION_MODE_FIXED}
-    )
-
-    assert "pauses for 3 h" in absent
-    assert explicit == absent
-
-
-def test_manual_override_summary_renders_until_sunset_mode():
-    """A sun mode replaces the duration phrase — the duration is only the fallback."""
-    from custom_components.adaptive_cover_pro.const import (
-        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
-    )
-
-    block = _manual_block(
-        {
-            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
-                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET
-            ),
-        }
-    )
-
-    assert "sunset" in block
-    assert "pauses for 3 h" not in block
-
-
-def test_manual_override_summary_renders_until_window_end_mode():
-    """``until_window_end`` with a real end time renders the mode, no warning."""
-    from custom_components.adaptive_cover_pro.const import (
-        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
-    )
-
-    block = _manual_block(
-        {
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
-                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-            ),
-            CONF_END_TIME: "22:00:00",
-        }
-    )
-
-    assert "window" in block
-    assert "⚠️" not in block
-
-
-def test_manual_override_summary_warns_when_until_window_end_has_no_configured_end():
-    """A silent no-op config must be surfaced as a ⚠️ line."""
-    from custom_components.adaptive_cover_pro.const import (
-        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
-    )
-
-    block = _manual_block(
-        {
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
-                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-            ),
-            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
-        }
-    )
-
-    assert "⚠️" in block
-    assert "3 h" in block
-
-
-def test_manual_override_summary_warns_when_end_time_is_the_blank_sentinel():
-    """``"00:00:00"`` is the UNSET sentinel — truthy, but not a configured end.
-
-    This is precisely the config whose ``until_window_end`` hold falls back to
-    the numeric duration at runtime, so the ⚠️ has to fire for it too.
-    """
-    from custom_components.adaptive_cover_pro.const import (
-        BLANK_TIME,
-        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
-    )
-
-    block = _manual_block(
-        {
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: (
-                MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END
-            ),
-            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
-            CONF_END_TIME: BLANK_TIME,
-        }
-    )
-
-    assert "⚠️" in block
-    assert "3 h" in block
-
-
-def test_manual_override_summary_tolerates_an_unknown_duration_mode():
-    """An out-of-schema stored mode must degrade, not break the whole form.
-
-    The runtime half already degrades (unrecognised mode → no candidates →
-    the fixed fallback); the summary's one computed label lookup must too.
-    """
-    cfg = {
-        CONF_MANUAL_OVERRIDE_DURATION_MODE: "not_a_real_mode",
-        CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
-    }
-
-    summary = _build_config_summary(cfg, CoverType.BLIND)
-
-    assert isinstance(summary, str)
-    assert "pauses for 3 h" in _manual_block(cfg)

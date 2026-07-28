@@ -286,7 +286,6 @@ class TestClimateDataPropagation:
         cover.direct_sun_valid = True
         cover.valid = True
         cover.calculate_percentage = MagicMock(return_value=60.0)
-        cover.calculate_raw_percentage = MagicMock(return_value=60.0)
         cover.logger = MagicMock()
         config = MagicMock()
         config.min_pos = None
@@ -338,7 +337,6 @@ class TestClimateDataPropagation:
         cover.direct_sun_valid = True
         cover.valid = True
         cover.calculate_percentage = MagicMock(return_value=55.0)
-        cover.calculate_raw_percentage = MagicMock(return_value=55.0)
         cover.logger = MagicMock()
         config = MagicMock()
         config.min_pos = None
@@ -1134,7 +1132,6 @@ class TestClimateStrategyEndToEnd:
         cover.direct_sun_valid = True
         cover.valid = True
         cover.calculate_percentage = MagicMock(return_value=50.0)
-        cover.calculate_raw_percentage = MagicMock(return_value=50.0)
         cover.logger = MagicMock()
         config = MagicMock()
         config.min_pos = None
@@ -1221,9 +1218,6 @@ def _make_glare_climate_cover(calculate_percentage_return: float = 91.0):
     cover.gamma = 0.0
     cover.sol_elev = 45.0
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
-    cover.calculate_raw_percentage = MagicMock(
-        return_value=float(calculate_percentage_return)
-    )
     config = MagicMock()
     config.min_pos = None
     config.max_pos = None

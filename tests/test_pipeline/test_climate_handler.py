@@ -5,19 +5,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
-from custom_components.adaptive_cover_pro.const import (
-    DEFAULT_TRACKING_SEASONS,
-    ClimateStrategy,
-    ControlMethod,
-)
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateHandler,
 )
-from custom_components.adaptive_cover_pro.pipeline.types import (
-    ClimateOptions,
-    ClimateTempFlags,
-)
+from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -51,9 +44,6 @@ def _make_options(
     transparent_blind=False,
     temp_summer_outside=None,
     winter_close_insulation=False,
-    temp_extreme_heat=None,
-    extreme_heat_position=None,
-    tracking_seasons=frozenset(DEFAULT_TRACKING_SEASONS),
 ) -> ClimateOptions:
     return ClimateOptions(
         temp_low=temp_low,
@@ -63,9 +53,6 @@ def _make_options(
         temp_summer_outside=temp_summer_outside,
         cloud_suppression_enabled=False,
         winter_close_insulation=winter_close_insulation,
-        temp_extreme_heat=temp_extreme_heat,
-        extreme_heat_position=extreme_heat_position,
-        tracking_seasons=tracking_seasons,
     )
 
 
@@ -77,7 +64,6 @@ def _make_blind_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=60.0)
-    cover.calculate_raw_percentage = MagicMock(return_value=60.0)
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -94,7 +80,6 @@ def _make_awning_cover(direct_sun_valid=True):
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=60.0)
-    cover.calculate_raw_percentage = MagicMock(return_value=60.0)
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -132,64 +117,6 @@ class TestClimateHandlerGating:
             climate_options=None,
         )
         assert self.handler.evaluate(snap) is None
-
-
-class TestClimateHandlerSmoothedFlags:
-    """_build_climate_data threads snapshot.climate_temp_flags (issue #917)."""
-
-    handler = ClimateHandler()
-
-    def test_smoothed_flags_win_over_raw_temps(self) -> None:
-        """Raw temps read cold (winter) but smoothed flags force summer."""
-        cover = _make_blind_cover()
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            # Raw inside 10 < temp_low 18 → raw is_winter. temp_high 26.
-            climate_readings=_make_readings(inside_temperature=10.0),
-            climate_options=_make_options(
-                temp_low=18.0, temp_high=26.0, transparent_blind=True
-            ),
-            climate_temp_flags=ClimateTempFlags(
-                winter=False, summer_warm=True, outside_high=True, extreme_heat=False
-            ),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.SUMMER
-
-    def test_flags_none_uses_raw_behaviour(self) -> None:
-        """With climate_temp_flags None the handler classifies from raw temps."""
-        cover = _make_blind_cover()
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=10.0),
-            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
-            climate_temp_flags=None,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.WINTER
-
-    def test_is_summer_needs_both_smoothed_warm_and_outside(self) -> None:
-        """summer_warm True but outside_high False ⇒ not summer (composite)."""
-        cover = _make_blind_cover()
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=30.0),
-            climate_options=_make_options(temp_high=26.0, transparent_blind=True),
-            climate_temp_flags=ClimateTempFlags(
-                winter=False,
-                summer_warm=True,
-                outside_high=False,
-                extreme_heat=False,
-            ),
-        )
-        result = self.handler.evaluate(snap)
-        # Not summer → transparent blind no longer force-closes; defers to glare.
-        assert result is None or result.control_method != ControlMethod.SUMMER
 
 
 class TestClimateHandlerSummerStrategy:
@@ -235,71 +162,6 @@ class TestClimateHandlerSummerStrategy:
         assert result is not None
         assert result.climate_state is not None
         assert isinstance(result.climate_state, int)
-
-
-class TestClimateHandlerExtremeHeat:
-    """Extreme-heat force-hold: outside temp above the extreme threshold (#766)."""
-
-    handler = ClimateHandler()
-
-    def test_extreme_heat_uses_extreme_heat_control_method(self) -> None:
-        """Outside temp above threshold → EXTREME_HEAT method + configured hold."""
-        cover = _make_blind_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            # Intermediate inside temp: neither summer nor winter would fire.
-            climate_readings=_make_readings(
-                inside_temperature=22.0, outside_temperature=40.0
-            ),
-            climate_options=_make_options(
-                temp_low=18.0,
-                temp_high=26.0,
-                temp_extreme_heat=35.0,
-                extreme_heat_position=30,
-            ),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.EXTREME_HEAT
-        assert result.position == 30
-        assert result.climate_strategy == ClimateStrategy.EXTREME_HEAT
-        assert "extreme heat" in result.reason.lower()
-
-    def test_extreme_heat_pre_empts_winter_label(self) -> None:
-        """A cold inside (winter) but hot outside labels EXTREME_HEAT, not WINTER."""
-        cover = _make_blind_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(
-                inside_temperature=15.0, outside_temperature=40.0
-            ),
-            climate_options=_make_options(
-                temp_low=18.0,
-                temp_high=26.0,
-                temp_extreme_heat=35.0,
-                extreme_heat_position=30,
-            ),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.EXTREME_HEAT
-
-    def test_disabled_when_threshold_unset(self) -> None:
-        """No extreme threshold configured → normal winter label resumes."""
-        cover = _make_blind_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(
-                inside_temperature=15.0, outside_temperature=40.0
-            ),
-            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.WINTER
 
 
 class TestClimateHandlerWinterStrategy:
@@ -364,30 +226,6 @@ class TestClimateHandlerGlareControl:
         result = self.handler.evaluate(snap)
         assert result is not None
 
-    def test_tracking_season_gate_uses_default_control_method(self) -> None:
-        """Intermediate sunny branch blocked by season gate reports DEFAULT."""
-        cover = _make_blind_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            default_position=42,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=22.0),
-            climate_options=_make_options(
-                temp_low=18.0,
-                temp_high=26.0,
-                tracking_seasons=frozenset({"summer"}),
-            ),
-        )
-        result = self.handler.evaluate(snap)
-
-        assert result is not None
-        assert result.control_method == ControlMethod.DEFAULT
-        assert result.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
-        assert (
-            result.reason
-            == "climate mode active (default: tracking off this season) — position 42%"
-        )
-
     def test_describe_skip_defer_reason(self) -> None:
         """describe_skip returns defer message when climate mode is on and deferred."""
         cover = _make_blind_cover(direct_sun_valid=True)
@@ -397,9 +235,7 @@ class TestClimateHandlerGlareControl:
             climate_readings=_make_readings(inside_temperature=22.0, is_presence=True),
             climate_options=_make_options(temp_low=18.0, temp_high=26.0),
         )
-        from custom_components.adaptive_cover_pro.reason_i18n import render_en
-
-        assert "deferred" in render_en(self.handler.describe_skip(snap)).lower()
+        assert "deferred" in self.handler.describe_skip(snap).lower()
 
 
 class TestClimateHandlerMetadata:
@@ -419,53 +255,6 @@ class TestClimateHandlerMetadata:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.climate_strategy is not None
-
-    def test_winning_reason_payload_carries_season_fragment(self) -> None:
-        """The winning result's reason_payload is CLIMATE_ACTIVE with a nested season fragment."""
-        from custom_components.adaptive_cover_pro.const import ReasonCode
-        from custom_components.adaptive_cover_pro.reason_i18n import Reason
-
-        cover = _make_blind_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=15.0),
-            climate_options=_make_options(temp_low=18.0),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        payload = result.reason_payload
-        assert payload is not None
-        assert payload.code == ReasonCode.CLIMATE_ACTIVE
-        assert payload.params["position"] == result.position
-        season = payload.params["season"]
-        assert isinstance(season, Reason)
-        # Cold inside (15 < temp_low 18) → winter season fragment.
-        assert season.code == ReasonCode.FRAGMENT_SEASON_WINTER
-
-    def test_winning_reason_payload_summer_fragment(self) -> None:
-        """Hot inside above temp_high labels the season fragment as summer."""
-        from custom_components.adaptive_cover_pro.const import ReasonCode
-        from custom_components.adaptive_cover_pro.reason_i18n import Reason
-
-        cover = _make_blind_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=30.0),
-            climate_options=_make_options(
-                temp_low=18.0, temp_high=26.0, transparent_blind=True
-            ),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.SUMMER
-        payload = result.reason_payload
-        assert payload is not None
-        assert payload.code == ReasonCode.CLIMATE_ACTIVE
-        season = payload.params["season"]
-        assert isinstance(season, Reason)
-        assert season.code == ReasonCode.FRAGMENT_SEASON_SUMMER
 
     def test_priority_is_50(self) -> None:
         """ClimateHandler has priority 50."""
@@ -723,10 +512,8 @@ class TestClimateHandlerTimeWindow:
 
     def test_describe_skip_outside_window(self) -> None:
         """describe_skip() should mention 'time window' when outside window."""
-        from custom_components.adaptive_cover_pro.reason_i18n import render_en
-
         snap = self._active_snap(in_time_window=False)
-        reason = render_en(self.handler.describe_skip(snap))
+        reason = self.handler.describe_skip(snap)
         assert (
             "time window" in reason.lower()
         ), f"Expected 'time window' in describe_skip reason but got: {reason!r}"
@@ -1094,7 +881,6 @@ def _make_tilt_mode2_cover(*, gamma_deg: float, valid: bool, min_pos: int):
     cover.direct_sun_valid = valid
     cover.valid = valid
     cover.calculate_percentage = MagicMock(return_value=50.0)
-    cover.calculate_raw_percentage = MagicMock(return_value=50.0)
     cover.calculate_position = MagicMock(return_value=90.0)
     cover.gamma = gamma_deg  # SunGeometry.gamma is in degrees
     cover.beta = 0.0

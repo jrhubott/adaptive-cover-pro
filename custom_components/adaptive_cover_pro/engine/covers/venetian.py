@@ -57,11 +57,6 @@ class VenetianCoverCalculation:
             sun_data=sun_data,
             config=config,
             tilt_config=tilt_config,
-            # The dual-axis path applies the tilt-axis limits itself at
-            # ``_clamp_tilt`` (below), so the sub-engine must not also clamp in
-            # ``calculate_percentage`` — a double proportional remap would
-            # otherwise compress the band twice (issue #964).
-            apply_tilt_axis_limits=False,
         )
 
     def calculate_dual(self) -> DualAxisResult:
@@ -74,7 +69,7 @@ class VenetianCoverCalculation:
             DualAxisResult with position (0-100) and tilt (0-100)
 
         """
-        position = math.floor(self._vertical.calculate_raw_percentage())
+        position = round(self._vertical.calculate_percentage())
         return DualAxisResult(position=position, tilt=self._compute_tilt())
 
     def tilt_for_position(self, position: int) -> int:
@@ -101,11 +96,6 @@ class VenetianCoverCalculation:
         DefaultHandler default-tilt clamp (#503). With ``sun_valid=True`` the
         limits always apply regardless of the ``*_sun_only`` toggles, preserving
         the original unconditional ``max(min, min(v, max))`` behavior.
-
-        ``cfg.tilt_transform`` selects clamp (default, unchanged) vs the
-        proportional remap into ``[min_tilt, max_tilt]`` (#957). This is the only
-        seam that opts into the proportional transform; the default-tilt path
-        stays on clamp.
         """
         cfg = self._tilt.tilt_config
         return PositionConverter.apply_tilt_limits(
@@ -115,7 +105,6 @@ class VenetianCoverCalculation:
             cfg.min_tilt_sun_only,
             cfg.max_tilt_sun_only,
             sun_valid=True,
-            transform=cfg.tilt_transform,
         )
 
     def _compute_tilt(self) -> int:

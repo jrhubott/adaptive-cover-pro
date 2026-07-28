@@ -75,7 +75,6 @@ def _make_cover_factory(*, solar_valid: bool, percentage: int = 40):
         cover = MagicMock()
         cover.direct_sun_valid = solar_valid
         cover.calculate_percentage = MagicMock(return_value=percentage)
-        cover.calculate_raw_percentage = MagicMock(return_value=float(percentage))
         return cover
 
     return factory
@@ -123,7 +122,7 @@ class TestBuildForecastSamples:
             config=_make_config(h_def=10),
             now=_NOW,
         )
-        # Full calendar day (00:00 → 24:00) at 10-minute steps inclusive = 24 * 60 / 10 + 1 = 145.
+        # Full calendar day (00:00 → 24:00) at 15-minute steps inclusive = 24 * 60 / 15 + 1 = 97.
         expected = (24 * 60 // FORECAST_STEP_MINUTES) + 1
         assert len(f.samples) == expected
         # All samples carry the configured default since solar isn't valid.
@@ -251,9 +250,6 @@ class _EvalTimeCover:
     def calculate_percentage(self) -> int:
         return 40
 
-    def calculate_raw_percentage(self) -> float:
-        return 40.0
-
 
 class TestForecastEvaluatesPerSampleTime:
     """Regression for #516: per-sample sunset gate, not wall-clock now."""
@@ -331,7 +327,7 @@ class TestBuildForecastEvents:
     def test_handler_switch_emits_fov_enter_and_exit(self):
         """Cover-factory swings direct_sun_valid mid-window → enter + exit events."""
         sd = _make_sun_data()
-        # solar valid during minutes 20-60 (i.e. samples 2-6 at 10-min step).
+        # solar valid during minutes 30-90 (i.e. samples 2-6 at 15-min step).
         valid_window_start = _NOW + timedelta(minutes=30)
         valid_window_end = _NOW + timedelta(minutes=90)
 
@@ -354,7 +350,6 @@ class TestBuildForecastEvents:
             cover = MagicMock()
             cover.direct_sun_valid = toggle_points[0] <= idx < toggle_points[1]
             cover.calculate_percentage = MagicMock(return_value=50)
-            cover.calculate_raw_percentage = MagicMock(return_value=50.0)
             return cover
 
         # Silence linters: factory + tick variables are intentionally unused.
@@ -376,10 +371,9 @@ class TestBuildForecastEvents:
         """FOV-enter event lands on the true crossing time, not the first solar sample.
 
         Pre-fix the event was placed at the first sample where handler='solar',
-        which can lag the real FOV crossing by up to one full sample step
-        (``FORECAST_STEP_MINUTES``, 10 min by default). Post-fix the event time
-        is the SunData grid point where ``direct_sun_valid`` actually flips
-        True — accurate to the 5-min grid.
+        which lags the real FOV crossing by up to one full sample step (15 min).
+        Post-fix the event time is the SunData grid point where
+        ``direct_sun_valid`` actually flips True — accurate to the 5-min grid.
         """
         # Full calendar day at 5-min step = 289 samples (00:00 → 24:00).
         n_samples = 24 * 60 // 5 + 1
@@ -387,11 +381,9 @@ class TestBuildForecastEvents:
         # Encode "time" into azimuth so a factory ignoring ele can decide by azi.
         sd.solar_azimuth = [float(i) for i in range(n_samples)]
 
-        # Crossing index 20 = 100 min from _DAY_START (00:00). At a coarser
-        # forecast cadence a naive enter event (first sample where
-        # handler='solar') can lag the true crossing; refinement rescans the
-        # 5-min grid between the bracketing samples to recover the exact
-        # crossing time regardless of the configured cadence.
+        # Crossing index 20 = 100 min from _DAY_START (00:00); 15-min samples bracket
+        # it at 90 min (azi 18) and 105 min (azi 21) — so a naive enter event
+        # would land at 105 min, but the true crossing is at 100 min.
         crossing_idx = 20
         crossing_time = _DAY_START + timedelta(minutes=crossing_idx * 5)
 
@@ -399,7 +391,6 @@ class TestBuildForecastEvents:
             cover = MagicMock()
             cover.direct_sun_valid = azi >= crossing_idx
             cover.calculate_percentage = MagicMock(return_value=50)
-            cover.calculate_raw_percentage = MagicMock(return_value=50.0)
             return cover
 
         f = build_forecast(
@@ -456,85 +447,6 @@ class TestForecastToAttrs:
         ]
 
 
-class TestForecastSecondaryAxes:
-    """ForecastSample carries a generic secondary-axis map (issue #724).
-
-    The primary ``position`` scalar is unchanged; multi-axis covers (venetian)
-    project their non-primary axes into ``axes`` keyed by ``CoverAxis.name``.
-    ``to_attrs()`` spreads the map additively so single-axis covers emit a
-    byte-identical wire shape.
-    """
-
-    def test_sample_defaults_to_no_secondary_axes(self):
-        assert ForecastSample(t=_NOW, position=40, handler="default").axes == {}
-
-    def test_to_attrs_spreads_secondary_axes_additively(self):
-        f = Forecast(
-            samples=(
-                ForecastSample(t=_NOW, position=55, handler="solar", axes={"tilt": 30}),
-                ForecastSample(t=_NOW, position=40, handler="default"),
-            ),
-            events=(),
-        )
-        attrs = f.to_attrs()
-        # Non-empty axes → the secondary key is spread into the sample dict.
-        assert attrs["forecast"][0] == {
-            "t": _NOW.isoformat(),
-            "position": 55,
-            "handler": "solar",
-            "tilt": 30,
-        }
-        # Empty axes → no extra keys (byte-identical to the pre-#724 shape).
-        assert attrs["forecast"][1] == {
-            "t": _NOW.isoformat(),
-            "position": 40,
-            "handler": "default",
-        }
-
-    def test_solar_samples_get_secondary_axes_from_factory(self):
-        sd = _make_sun_data()
-        f = build_forecast(
-            sun_data=sd,
-            cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
-            config=_make_config(),
-            policy=_make_policy(),
-            now=_NOW,
-            secondary_axis_factory=lambda pos, azi, ele, t: {"tilt": 30},
-        )
-        solar = [s for s in f.samples if s.handler == "solar"]
-        assert solar  # at least one solar sample was produced
-        assert all(s.axes == {"tilt": 30} for s in solar)
-
-    def test_default_samples_have_no_secondary_axes(self):
-        # A stub factory that would raise if the default branch ever calls it.
-        def _boom(pos, azi, ele, t):  # noqa: ARG001
-            raise AssertionError("factory must not run on default samples")
-
-        sd = _make_sun_data()
-        f = build_forecast(
-            sun_data=sd,
-            cover_factory=_make_cover_factory(solar_valid=False),
-            config=_make_config(),
-            policy=_make_policy(),
-            now=_NOW,
-            secondary_axis_factory=_boom,
-        )
-        assert f.samples
-        assert all(s.axes == {} for s in f.samples)
-
-    def test_no_factory_yields_empty_axes(self):
-        sd = _make_sun_data()
-        f = build_forecast(
-            sun_data=sd,
-            cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
-            config=_make_config(),
-            policy=_make_policy(),
-            now=_NOW,
-        )
-        assert f.samples
-        assert all(s.axes == {} for s in f.samples)
-
-
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
@@ -571,7 +483,6 @@ def _solar_cover_factory(percentage):
         cover = MagicMock()
         cover.direct_sun_valid = True
         cover.calculate_percentage = MagicMock(return_value=percentage)
-        cover.calculate_raw_percentage = MagicMock(return_value=float(percentage))
         return cover
 
     return factory
@@ -728,7 +639,7 @@ class TestForecastEndOfWindowPosition:
         # Before window-end → daytime default.
         assert pos_at[_DAY_START + timedelta(hours=12)] == 80
         # After window-end but before astral sunset → end-of-window (phase 1).
-        assert pos_at[_DAY_START + timedelta(hours=19, minutes=40)] == 0
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 0
         # After astral sunset → astral sunset position (phase 2 handoff).
         assert pos_at[_DAY_START + timedelta(hours=22)] == 20
 
@@ -747,7 +658,7 @@ class TestForecastEndOfWindowPosition:
         )
         pos_at = {s.t: s.position for s in f.samples}
         assert pos_at[_DAY_START + timedelta(hours=12)] == 80
-        assert pos_at[_DAY_START + timedelta(hours=19, minutes=40)] == 0
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 0
         assert pos_at[_DAY_START + timedelta(hours=22)] == 0
 
     def test_omitting_eow_kwargs_is_no_regression(self):
@@ -762,106 +673,36 @@ class TestForecastEndOfWindowPosition:
         )
         pos_at = {s.t: s.position for s in f.samples}
         # Without the feature: daytime default before sunset, sunset pos after.
-        assert pos_at[_DAY_START + timedelta(hours=19, minutes=40)] == 80
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 80
         assert pos_at[_DAY_START + timedelta(hours=22)] == 20
 
 
 class TestForecastMatchesLivePipeline:
     """Anti-drift lock: forecast samples == the live snapshot-based helpers."""
 
-    def test_solar_sample_equals_anticipated_solar_position(self):
-        """Anti-drift lock (#1091): forecast solar branch must match the live
-        anticipation-aware primitive, at a nonzero look-ahead horizon.
-
-        PR #556's original lock (``test_solar_sample_equals_compute_solar_position``)
-        compared against the non-anticipated ``compute_solar_position`` using a
-        snapshot that never set ``time_threshold_minutes`` (defaulting to 0), so
-        anticipation was a no-op inside the lock itself — it kept passing straight
-        through PR #617 switching the live handler to the anticipation-aware
-        primitive while the forecast was never updated to match (#1091). This
-        lock uses a nonzero horizon and a sun sweep where anticipation provably
-        changes the result, so a future primitive swap on either side breaks it.
-        """
-        from custom_components.adaptive_cover_pro.cover_types import get_policy
+    def test_solar_sample_equals_compute_solar_position(self):
         from custom_components.adaptive_cover_pro.pipeline.helpers import (
-            anticipated_solar_position,
             compute_solar_position,
         )
 
         from tests.conftest import make_snapshot_for_cover
-        from tests.cover_helpers import build_vertical_cover
 
-        # Sun sweeps from off-axis (220 deg) toward the window centre (180 deg)
-        # over the horizon — the same divergence geometry as
-        # test_solar_anticipation.py::test_vertical_anticipates_more_protective_future_sample,
-        # anchored at 10:00 (mid-day) so the sunset/sunrise gate never trips.
-        day_start = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
-        step = timedelta(minutes=5)
-        azimuths = [220.0, 210.0, 200.0, 190.0, 180.0, 180.0]
-        elevations = [45.0] * 6
-        sd = MagicMock()
-        sd.times = [day_start + i * step for i in range(6)]
-        sd.solar_azimuth = azimuths
-        sd.solar_elevation = elevations
-        sd.sunrise = MagicMock(return_value=day_start.replace(hour=5))
-        sd.sunset = MagicMock(return_value=day_start.replace(hour=21))
-        sd.next_sunrise = MagicMock(return_value=None)
-
-        def make_cover(azi: float, ele: float):
-            return build_vertical_cover(
-                logger=MagicMock(),
-                sol_azi=azi,
-                sol_elev=ele,
-                sunset_pos=0,
-                sunset_off=0,
-                sunrise_off=0,
-                sun_data=sd,
-                fov_left=90,
-                fov_right=90,
-                win_azi=180,
-                h_def=50,
-                max_pos=100,
-                min_pos=0,
-                max_pos_bool=False,
-                min_pos_bool=False,
-                blind_spot_left=None,
-                blind_spot_right=None,
-                blind_spot_elevation=None,
-                blind_spot_on=False,
-                min_elevation=None,
-                max_elevation=None,
-                distance=0.5,
-                h_win=2.0,
-            )
-
-        policy = get_policy("cover_blind")
-        horizon = 25
-
-        live_cover = make_cover(220.0, 45.0)
-        live_cover.eval_time = sd.times[0]
+        config = _make_config(min_pos=30, max_pos=90)
+        # Live snapshot over an equivalent cover at the same geometry/config.
+        live_cover = MagicMock()
+        live_cover.config = config
+        live_cover.calculate_percentage = MagicMock(return_value=10)
         snapshot = make_snapshot_for_cover(live_cover)
-        snapshot.policy = policy
-        snapshot.minimize_movements = False
-        snapshot.max_coverage_steps = 1
-        snapshot.solar_floor_active = True
-        snapshot.time_threshold_minutes = horizon
-        live_anticipated = anticipated_solar_position(snapshot)
+        live = compute_solar_position(snapshot)
 
-        # Sanity: the horizon must make anticipation diverge from the plain
-        # (non-anticipated) primitive, or this lock would be inert (#1091).
-        assert live_anticipated != compute_solar_position(snapshot)
-
+        sd = _make_sun_data()
         f = build_forecast(
             sun_data=sd,
-            cover_factory=make_cover,
-            config=live_cover.config,
-            policy=policy,
-            now=sd.times[0],
-            step_minutes=5,
-            time_threshold_minutes=horizon,
+            cover_factory=_solar_cover_factory(10),
+            config=config,
+            now=_NOW,
         )
-        first_solar_sample = next(s for s in f.samples if s.handler == "solar")
-        assert first_solar_sample.position == live_anticipated
+        assert all(s.position == live for s in f.samples)
 
     def test_default_sample_equals_compute_default_position(self):
         from custom_components.adaptive_cover_pro.pipeline.helpers import (
@@ -1020,86 +861,45 @@ async def test_async_recompute_forecast_swallows_exceptions(monkeypatch):
     assert coord.data.position_forecast is None
 
 
-def _stub_forecast_coord(
-    *,
-    options: dict | None = None,
-    policy=None,
-    end_time: datetime | None = None,
-    config=None,
-    sun_data=None,
-):
-    """Build a MagicMock coordinator stub for build_forecast_for_coord tests.
-
-    Shared scaffolding for the TestForecastShim* classes below — they all
-    stub the same coordinator surface (config_entry.options, hass, the sun
-    provider, config service, policy, snapshot, and time manager) and only
-    vary a handful of inputs. Defaults reproduce the plain-vanilla case: no
-    options, a single-axis policy, no end-of-window gate, and a default
-    config/sun_data pair. Callers override only the parameters their
-    scenario cares about. Returns ``(coord, sun_data)`` since some tests
-    assert against the sun_data instance passed through to the policy hook.
-    """
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
-    )
-
-    coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-    coord.config_entry = MagicMock()
-    coord.config_entry.options = {} if options is None else options
-    coord.logger = MagicMock()
-    coord.hass = MagicMock()
-    coord.hass.config.time_zone = "UTC"
-    if sun_data is None:
-        sun_data = _make_sun_data()
-    coord._sun_provider = MagicMock()
-    coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
-    coord._config_service = MagicMock()
-    coord._config_service.get_common_data = MagicMock(
-        return_value=_make_config() if config is None else config
-    )
-    if policy is None:
-        policy = MagicMock()
-        policy.position_axis_supported = MagicMock(return_value=False)
-    coord._policy = policy
-    coord._snapshot = MagicMock()
-    coord._snapshot.cover_capabilities = {}
-    coord._time_mgr = MagicMock()
-    coord._time_mgr.end_time = end_time
-    return coord, sun_data
-
-
-def _run_shim_spy(coord):
-    """Run build_forecast_for_coord with build_forecast replaced by a spy.
-
-    Returns the spy so callers can inspect the kwargs the shim threaded
-    through to build_forecast.
-    """
-    from custom_components.adaptive_cover_pro import forecast as fc_mod
-
-    spy = MagicMock(return_value=MagicMock(name="Forecast"))
-    with patch.object(fc_mod, "build_forecast", spy):
-        fc_mod.build_forecast_for_coord(coord)
-    return spy
-
-
 class TestForecastShimEndOfWindow:
     """build_forecast_for_coord threads the eow option through, gated on return_sunset."""
 
     def _stub_coord(self, *, options, end_time):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+        coord.config_entry = MagicMock()
+        coord.config_entry.options = options
+        coord.logger = MagicMock()
+        coord.hass = MagicMock()
+        coord.hass.config.time_zone = "UTC"
         sun_data = _make_sun_data(
             sunrise=_DAY_START + timedelta(hours=6),
             sunset=_DAY_START + timedelta(hours=20),
         )
-        coord, _ = _stub_forecast_coord(
-            options=options,
-            end_time=end_time,
-            config=_make_config(h_def=80, sunset_pos=20),
-            sun_data=sun_data,
+        coord._sun_provider = MagicMock()
+        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
+        coord._config_service = MagicMock()
+        coord._config_service.get_common_data = MagicMock(
+            return_value=_make_config(h_def=80, sunset_pos=20)
         )
+        coord._policy = MagicMock()
+        coord._policy.position_axis_supported = MagicMock(return_value=False)
+        coord._snapshot = MagicMock()
+        coord._snapshot.cover_capabilities = {}
+        coord._time_mgr = MagicMock()
+        coord._time_mgr.end_time = end_time
         return coord
 
     def _run(self, coord):
-        return _run_shim_spy(coord)
+        from custom_components.adaptive_cover_pro import forecast as fc_mod
+
+        spy = MagicMock(return_value=MagicMock(name="Forecast"))
+        with patch.object(fc_mod, "build_forecast", spy):
+            fc_mod.build_forecast_for_coord(coord)
+        return spy
 
     def test_passes_eow_pos_and_time_when_gate_on(self):
         from custom_components.adaptive_cover_pro.const import (
@@ -1148,88 +948,6 @@ class TestForecastShimEndOfWindow:
         _, kwargs = spy.call_args
         assert kwargs["end_of_window_pos"] is None
         assert kwargs["end_of_window_time"] is None
-
-
-class TestForecastShimSecondaryAxes:
-    """build_forecast_for_coord builds the secondary-axis factory from the policy hook (#724).
-
-    The shim never asks "is this venetian" — it wires ``policy.forecast_secondary_axes``
-    into a closure and passes it as ``secondary_axis_factory``. Single-axis
-    policies inherit the base no-op, so the same closure returns ``{}``.
-    """
-
-    def _stub_coord(self, *, policy):
-        return _stub_forecast_coord(policy=policy)
-
-    def _run(self, coord):
-        return _run_shim_spy(coord)
-
-    def test_shim_passes_secondary_axis_factory_for_venetian(self):
-        policy = MagicMock()
-        policy.position_axis_supported = MagicMock(return_value=False)
-        policy.forecast_secondary_axes = MagicMock(return_value={"tilt": 30})
-        coord, sun_data = self._stub_coord(policy=policy)
-        spy = self._run(coord)
-        _, kwargs = spy.call_args
-        factory = kwargs["secondary_axis_factory"]
-        assert factory is not None
-        # Calling the closure routes straight to policy.forecast_secondary_axes.
-        assert factory(55, 180.0, 45.0, _NOW) == {"tilt": 30}
-        policy.forecast_secondary_axes.assert_called_once()
-        call_kwargs = policy.forecast_secondary_axes.call_args.kwargs
-        assert call_kwargs["position"] == 55
-        assert call_kwargs["sol_azi"] == 180.0
-        assert call_kwargs["sol_elev"] == 45.0
-        assert call_kwargs["sun_data"] is sun_data
-        assert call_kwargs["config_service"] is coord._config_service
-        assert "minimize_movements" in call_kwargs
-        assert "max_coverage_steps" in call_kwargs
-
-    def test_shim_single_axis_policy_still_passes_factory_returning_empty(self):
-        policy = MagicMock()
-        policy.position_axis_supported = MagicMock(return_value=False)
-        policy.forecast_secondary_axes = MagicMock(return_value={})
-        coord, _ = self._stub_coord(policy=policy)
-        spy = self._run(coord)
-        _, kwargs = spy.call_args
-        factory = kwargs["secondary_axis_factory"]
-        assert factory is not None
-        assert factory(40, 0.0, 0.0, _NOW) == {}
-
-
-class TestForecastShimAnticipationHorizon:
-    """build_forecast_for_coord threads CONF_DELTA_TIME through as time_threshold_minutes (#1091).
-
-    The shim coerces the raw option with the same helper the live snapshot
-    builder uses (``pipeline.snapshot_builder._delta_time_minutes``), so a
-    malformed value (e.g. a legacy duration dict) safely disables
-    anticipation instead of crashing the forecast — mirrored here rather
-    than re-derived, so a future coercion-rule change can't drift between
-    the live path and the forecast.
-    """
-
-    def _stub_coord(self, *, options):
-        coord, _ = _stub_forecast_coord(options=options)
-        return coord
-
-    def _run(self, coord):
-        return _run_shim_spy(coord)
-
-    def test_passes_delta_time_as_horizon(self):
-        from custom_components.adaptive_cover_pro.const import CONF_DELTA_TIME
-
-        coord = self._stub_coord(options={CONF_DELTA_TIME: 15})
-        spy = self._run(coord)
-        _, kwargs = spy.call_args
-        assert kwargs["time_threshold_minutes"] == 15
-
-    def test_malformed_delta_time_disables_anticipation(self):
-        from custom_components.adaptive_cover_pro.const import CONF_DELTA_TIME
-
-        coord = self._stub_coord(options={CONF_DELTA_TIME: {"hours": 1}})
-        spy = self._run(coord)
-        _, kwargs = spy.call_args
-        assert kwargs["time_threshold_minutes"] == 0
 
 
 # ---------------------------------------------------------------------------

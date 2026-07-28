@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS, ControlMethod
-from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
@@ -46,10 +45,6 @@ def _make_coord(
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._toggles = ToggleManager()
-    # The dispatch seam routes each target through the polymorphic
-    # ``_entity_target`` → ``policy.resolve_entity_target`` (identity for every
-    # non-dual-entity cover type). A blind policy supplies that identity.
-    coord._policy = get_policy("cover_blind")
     coord.automatic_control = automatic_control
     coord._track_end_time = track_end_time
     coord._inverse_state = inverse_state

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import datetime as dt
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -48,48 +48,17 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod
-from .position_utils import flip_if
+from .managers.manual_override.expiry import (
+    expiry_for_started_at,
+    started_at_for_expiry,
+)
 from .helpers import (
     custom_position_slot_configured,
-    custom_position_slot_name,
     custom_position_slot_sensors,
     motion_entities,
 )
-from .reason_i18n import Reason, render, reason_to_dict
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
-
-
-def _localized_reason(
-    coordinator: AdaptiveDataUpdateCoordinator,
-    payload: Reason | None,
-    fallback: str,
-) -> str:
-    """Render a reason payload in the instance language (issue #882).
-
-    Uses the coordinator's primed ``_reason_labels`` overlay (``None`` → English
-    defaults, byte-identical). Legacy payload-less reasons keep their English
-    ``fallback`` string. Shared by the cover-position and decision-trace sensors
-    so the render path lives in exactly one place.
-    """
-    if payload is None:
-        return fallback
-    return render(payload, coordinator._reason_labels)  # noqa: SLF001
-
-
-def _reason_to_dict_attrs(payload: Reason) -> dict[str, Any]:
-    """Map a reason payload to the additive ``reason_code`` + ``reason_params`` attrs.
-
-    ``reason_to_dict`` yields a JSON-safe ``{"code", "params"}`` payload (nested
-    fragments preserved); this flattens it into the two attribute names the
-    companion card reads to localize with its own templates (issue #882).
-    """
-    payload_dict = reason_to_dict(payload)
-    return {
-        "reason_code": payload_dict["code"],
-        "reason_params": payload_dict["params"],
-    }
-
 
 # ---------------------------------------------------------------------------
 # Description dataclass
@@ -295,7 +264,9 @@ class _ManualOverrideEndSensor(_ACPRestorableDiagnosticSensor):
             expiry = dt.datetime.fromisoformat(expiry_iso)
             if expiry <= now:
                 continue
-            manager.restore_override(eid, expiry)
+            started_at = started_at_for_expiry(expiry, manager.reset_duration)
+            manager.manual_control[eid] = True
+            manager.manual_control_time[eid] = started_at
             manager._record_event(  # noqa: SLF001
                 eid,
                 "restored",
@@ -362,14 +333,10 @@ def _compute_distance_attrs(
 ) -> dict[str, Any] | None:
     """Build target_distance / actual_distances / distance_unit, or None to skip.
 
-    Translates a position percentage into a physical distance using the policy's
-    lift-axis travel range. A distance is a physical quantity, so it is always
-    computed on the LOGICAL frame (issue #1028): on an inverse-state instance the
-    percentages reaching this helper are cover-frame values, and doing literal
-    arithmetic on them reports the physical opposite — a fully-extended 3 m awning
-    sitting at cover-frame 0 would claim 0.00 m of extension. Converting first
-    means 100 % of physical travel is reported for a physically extended cover,
-    whichever frame the underlying number arrived in.
+    Translates the published position percentage into a physical distance using
+    the policy's lift-axis travel range. Inverse-agnostic: 100% always maps to
+    the full configured dimension regardless of inverse_state, since the value
+    is literal arithmetic on what the sensor publishes.
     """
     options = coordinator.config_entry.options
     dim_m = coordinator._policy.lift_travel_metres(  # noqa: SLF001
@@ -382,20 +349,19 @@ def _compute_distance_attrs(
     except (TypeError, ValueError):
         return None
     hass = coordinator.hass
-    inverted = coordinator.position_axis_inverted
-
-    def _display_distance(pct: float) -> float:
-        """Physical travel for *pct*, rebased onto the logical frame if needed."""
-        logical = flip_if(pct, inverted=inverted)
-        return round(to_display_length(dim_m * logical / 100.0, hass), 2)
-
     attrs: dict[str, Any] = {
-        "target_distance": _display_distance(target_pct),
+        "target_distance": round(
+            to_display_length(dim_m * target_pct / 100.0, hass), 2
+        ),
         "distance_unit": length_display_unit(hass),
     }
     if snapshot and snapshot.cover_positions:
         attrs["actual_distances"] = {
-            eid: (None if pos is None else _display_distance(pos))
+            eid: (
+                None
+                if pos is None
+                else round(to_display_length(dim_m * pos / 100.0, hass), 2)
+            )
             for eid, pos in snapshot.cover_positions.items()
         }
     return attrs
@@ -406,19 +372,13 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
     attrs["control_method"] = s.data.states.get("control")
     pipeline_result = s.coordinator._pipeline_result  # noqa: SLF001
     if pipeline_result is not None:
-        attrs["reason"] = _localized_reason(
-            s.coordinator, pipeline_result.reason_payload, pipeline_result.reason
-        )
+        attrs["reason"] = pipeline_result.reason
     diagnostics = s.coordinator.data.diagnostics if s.coordinator.data else None
     if diagnostics:
         position_explanation = diagnostics.get("position_explanation")
         if position_explanation is not None:
             attrs["position_explanation"] = position_explanation
         attrs["raw_calculated_position"] = diagnostics.get("calculated_position")
-        # Pre-interpolation target in the logical (HA-convention) frame on every
-        # cycle (issues #911, #1028); the companion card shows this as the
-        # primary position, demoting the motor-frame `state`.
-        attrs["linear_position"] = diagnostics.get("linear_position")
         calc_details = diagnostics.get("calculation_details")
         if calc_details:
             attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
@@ -428,31 +388,10 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
             # cover_position sensor — map it back so the card stays byte-identical.
             attrs["effective_distance"] = calc_details.get("effective_distance_m")
 
-    # Synthetic opening/closing indicator for no-feedback covers. Present only
-    # while a cover is mid-transit (gated on ``waiting`` inside transit_states),
-    # so the companion card can render "Opening…/Closing…" on covers that report
-    # neither position nor an opening/closing state. Emitted only when non-empty
-    # to keep the attribute set lean.
-    transit = s.coordinator._cmd_svc.transit_states()  # noqa: SLF001
-    if transit:
-        attrs["transit_states"] = transit
-
     snapshot = s.coordinator._snapshot  # noqa: SLF001
     if snapshot and snapshot.cover_positions:
         actual_positions = dict(snapshot.cover_positions)
         attrs["actual_positions"] = actual_positions
-
-        # Logical-frame sibling of actual_positions (issue #1028). The raw dict
-        # above stays in the cover's own frame — the delta gates, the assumed
-        # position surface (#888) and the command-target restore (#1022) all
-        # depend on that — so the flipped view ships alongside it instead of
-        # replacing it, letting a consumer put an actual and `linear_position`
-        # on one scale. Identity when the axis is not effectively inverted.
-        inverted = s.coordinator.position_axis_inverted
-        attrs["linear_actual_positions"] = {
-            eid: (flip_if(pos, inverted=inverted) if pos is not None else pos)
-            for eid, pos in actual_positions.items()
-        }
 
         # all_at_target: True when every cover with a known position is within
         # tolerance of the coordinator's current target position.
@@ -577,14 +516,6 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         # every active slot.
         ranges: list[list[float]] = []
         for keys in BLIND_SPOT_SLOTS.values():
-            # Signed-gamma keys are the primary source (issue #247): the wedge is
-            # -right_gamma..left_gamma, so the emitted [right, left] pair is
-            # [-right_gamma, left_gamma] — byte-identical to the legacy formula.
-            lg = config.get(keys["left_gamma"])
-            rg = config.get(keys["right_gamma"])
-            if lg is not None and rg is not None:
-                ranges.append([-rg, lg])
-                continue
             bs_left = config.get(keys["left"])
             bs_right = config.get(keys["right"])
             if bs_left is None or bs_right is None:
@@ -620,10 +551,6 @@ def _control_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         "reason": diagnostics.get("control_state_reason"),
         "automatic_control_enabled": s.coordinator.automatic_control,
         "cover_type": s._cover_type,  # noqa: SLF001 — consumed by Lovelace card to flip cover-fill polarity for awnings
-        # Additive self-discovery descriptor (issue #725): full axis list +
-        # labels + ranges + per-axis supported flags. cover_type above is left
-        # untouched so older card versions are unaffected.
-        "cover_discovery": asdict(s.coordinator.build_axis_discovery()),
     }
 
     time_window = diagnostics.get("time_window", {})
@@ -713,30 +640,25 @@ def _last_action_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     return attrs
 
 
-def _manual_override_expiries(s: _ManualOverrideEndSensor) -> dict[str, dt.datetime]:
-    """Per-entity resolved override end times, via the manager's single authority."""
-    manager = s.coordinator.manager
-    return {
-        entity_id: expiry
-        for entity_id in manager.manual_control_time
-        if (expiry := manager.expiry_for(entity_id)) is not None
-    }
-
-
 def _manual_override_end_value(s: _ManualOverrideEndSensor) -> dt.datetime | None:
-    expiries = _manual_override_expiries(s)
-    return max(expiries.values()) if expiries else None
+    times = s.coordinator.manager.manual_control_time
+    if not times:
+        return None
+    duration = s.coordinator.manager.reset_duration
+    return max(expiry_for_started_at(t, duration) for t in times.values())
 
 
 def _manual_override_end_attrs(
     s: _ManualOverrideEndSensor,
 ) -> Mapping[str, Any] | None:
-    expiries = _manual_override_expiries(s)
-    if not expiries:
+    times = s.coordinator.manager.manual_control_time
+    if not times:
         return None
+    duration = s.coordinator.manager.reset_duration
     return {
         "per_entity": {
-            entity_id: expiry.isoformat() for entity_id, expiry in expiries.items()
+            entity_id: expiry_for_started_at(t, duration).isoformat()
+            for entity_id, t in times.items()
         }
     }
 
@@ -810,9 +732,16 @@ def _motion_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
 
 
 def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
-    from .helpers import climate_mode_from_diagnostics
-
-    return climate_mode_from_diagnostics(s.data.diagnostics)
+    if s.data.diagnostics is None:
+        return None
+    data = s.data.diagnostics.get("climate_conditions")
+    if data is None:
+        return None
+    if data.get("is_summer"):
+        return "summer_mode"
+    if data.get("is_winter"):
+        return "winter_mode"
+    return "intermediate"
 
 
 def _round_threshold(value: float | str | None) -> float | None:
@@ -1057,14 +986,7 @@ def _build_custom_position_slots_snapshot(
                     else None
                 ),
                 "sensor_name": sensor_name,
-                # User-configured slot label (issue #867); overrides sensor_name
-                # in the reason/decision_trace/card when set. None = unset.
-                "custom_name": custom_position_slot_name(options, slot_keys),
-                # None for a constraint-only slot — configured, but making no
-                # position claim (issue #943).
-                "position": (
-                    int(position) if configured and position is not None else None
-                ),
+                "position": int(position) if configured else None,
                 "priority": (
                     int(
                         options.get(slot_keys["priority"])
@@ -1078,12 +1000,6 @@ def _build_custom_position_slots_snapshot(
                     if configured
                     else None
                 ),
-                # Axis constraints (issue #943). None = the constraint is off,
-                # which is also what an unconfigured slot reports.
-                **{
-                    sub: (options.get(slot_keys[sub]) if configured else None)
-                    for sub in ("position_max", "tilt_min", "tilt_max")
-                },
             }
         )
     return snapshot
@@ -1097,11 +1013,7 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             {
                 "handler": step.handler,
                 "matched": step.matched,
-                # Localized to the instance language (issue #882); falls back to
-                # the step's English ``reason`` for legacy payload-less steps.
-                "reason": _localized_reason(
-                    s.coordinator, step.reason_payload, step.reason
-                ),
+                "reason": step.reason,
                 "position": step.position,
                 **({"tilt": step.tilt} if step.tilt is not None else {}),
                 **(
@@ -1109,22 +1021,10 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
                     if step.held_position is not None
                     else {}
                 ),
-                # Additive card payload (issue #882): the stable code + params so
-                # the companion card can localize with its own templates. Omitted
-                # on legacy steps that carry only an English ``reason`` string.
-                **(
-                    _reason_to_dict_attrs(step.reason_payload)
-                    if step.reason_payload is not None
-                    else {}
-                ),
             }
             for step in result.decision_trace
         ]
-        attrs["reason"] = _localized_reason(
-            s.coordinator, result.reason_payload, result.reason
-        )
-        if result.reason_payload is not None:
-            attrs.update(_reason_to_dict_attrs(result.reason_payload))
+        attrs["reason"] = result.reason
         attrs["bypass_auto_control"] = result.bypass_auto_control
         attrs["default_position"] = result.default_position
         attrs["is_sunset_active"] = result.is_sunset_active
@@ -1228,12 +1128,7 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         attrs_fn=_cover_position_attrs,
         diagnostic=False,
         unrecorded_attributes=frozenset(
-            {
-                "actual_positions",
-                "linear_actual_positions",
-                "actual_distances",
-                "position_explanation",
-            }
+            {"actual_positions", "actual_distances", "position_explanation"}
         ),
     ),
     _SensorSpec(
@@ -1361,7 +1256,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
     ),
     _SensorSpec(
         suffix="motion_status",
-        display_name="Occupancy Status",
+        display_name="Motion Status",
         icon="mdi:motion-sensor",
         translation_key="motion_status",
         device_class=SensorDeviceClass.ENUM,
@@ -1434,17 +1329,6 @@ async def async_setup_entry(
 ) -> None:
     """Initialize Adaptive Cover Pro config entry."""
     coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
-
-    # Cover groups expose their own aggregate sensors, never the cover set.
-    from .cover_types import get_policy
-
-    if get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
-        from .group_entities import build_group_sensors
-
-        async_add_entities(
-            build_group_sensors(config_entry.entry_id, hass, config_entry, coordinator)
-        )
-        return
 
     entities: list[SensorEntity] = []
 

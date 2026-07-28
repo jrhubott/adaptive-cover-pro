@@ -8,15 +8,16 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
-    GLARE_ZONE_SLOT_NUMBERS,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
@@ -27,7 +28,7 @@ from .const import (
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
-from .helpers import climate_mode_configured, motion_entities, restored_bool
+from .helpers import motion_entities
 from .services.options_service import apply_options_patch, validate_options_patch
 
 
@@ -58,7 +59,7 @@ class _SwitchSpec:
 
 
 def _has_climate_mode(entry: ConfigEntry) -> bool:
-    return climate_mode_configured(entry.options)
+    return bool(entry.options.get(CONF_CLIMATE_MODE))
 
 
 def _has_climate_temp_source(entry: ConfigEntry) -> bool:
@@ -187,7 +188,7 @@ def _glare_zone_specs(entry: ConfigEntry) -> list[_SwitchSpec]:
 
     specs: list[_SwitchSpec] = []
     zone_counter = 0
-    for idx in GLARE_ZONE_SLOT_NUMBERS:  # idx is 1-based (matches config option keys)
+    for idx in range(1, 5):  # idx is 1-based (matches config option keys)
         zone_name = entry.options.get(f"glare_zone_{idx}_name", "")
         if not zone_name:
             continue
@@ -209,15 +210,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up the demo switch platform."""
     coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
-
-    # Cover groups expose the bulk automation switch, never the cover set.
-    if get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
-        from .group_entities import build_group_switches
-
-        async_add_entities(
-            build_group_switches(config_entry.entry_id, hass, config_entry, coordinator)
-        )
-        return
 
     specs: list[_SwitchSpec] = [
         spec for spec in _SWITCH_SPECS if spec.enabled_when(config_entry)
@@ -267,6 +259,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
     ) -> None:
         """Initialize the switch."""
         super().__init__(entry_id, hass, config_entry, coordinator)
+        self._state: bool | None = None
         self._key = key
         self._attr_translation_key = key
         self._switch_name = display_name or switch_name
@@ -289,32 +282,6 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
 
         Option-backed switches read config_entry.options so service/options-flow
         changes are reflected without RestoreEntity state drift.
-
-        Every other switch reads the coordinator attribute named by ``_key``
-        (issue #1063). A local ``_attr_is_on`` was only ever written by this
-        entity's own turn_on/turn_off, so a caller that set the coordinator
-        directly — the group's bulk controls, the integration_enable /
-        integration_disable / emergency_stop services — changed behavior while
-        the entity kept reporting its old value. Since the rendered state is
-        what RestoreEntity hands back, that stale value then won at the next
-        restart and silently undid the change.
-
-        The ``getattr`` default covers two unset cases: ``ToggleManager`` seeds
-        most toggles to ``None`` until a switch restores, and the dynamic
-        ``glare_zone_N`` attributes do not exist at all until first written
-        (``coordinator._is_glare_zone_enabled`` reads them defensively for the
-        same reason). Both fall back to the spec's declared initial state.
-
-        That fallback deliberately does NOT model each toggle's runtime
-        ``None``-semantics, which are not uniform: ``enabled_toggle`` maps
-        ``None`` to True (``coordinator.py``, ``_cmd_svc.enabled``) and so
-        agrees with its initial state, but ``automatic_control``,
-        ``manual_toggle``, ``lux_toggle`` and ``irradiance_toggle`` are read as
-        plain falsy while declaring ``initial_state=True`` — so for those four
-        an unset coordinator renders ``on`` while the gate they feed is closed.
-        The window is the sliver before ``async_added_to_hass`` restores, which
-        is why one shared default beats a per-toggle map here; if that window
-        ever widens, the map is the fix, not a wider default.
         """
         if self._option_key is not None:
             return bool(
@@ -323,10 +290,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     self._initial_state,
                 )
             )
-        value = getattr(self.coordinator, self._key, None)
-        if value is None:
-            return self._initial_state
-        return bool(value)
+        return self._attr_is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -334,6 +298,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         if self._option_key is not None:
             await self._async_set_option(True)
             return
+        self._attr_is_on = True
         setattr(self.coordinator, self._key, True)
         if self._key == "automatic_control" and kwargs.get("added") is not True:
             # Issue #33 defense-in-depth: invalidate the venetian sequencer's
@@ -363,6 +328,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         if self._option_key is not None:
             await self._async_set_option(False)
             return
+        self._attr_is_on = False
         setattr(self.coordinator, self._key, False)
         if self._key == "enabled_toggle" and kwargs.get("added") is not True:
             # Stop any ACP-in-flight cover moves FIRST (before the gate closes),
@@ -399,44 +365,15 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     ctx = self.coordinator._build_position_context(
                         entity, options, force=True, bypass_auto_control=True
                     )
-                    # Per-entity remap keeps this broadcast return-to-default
-                    # loop consistent with the other dispatch seams: a Model C
-                    # day/night middle rail is remapped polymorphically via
-                    # ``_entity_target`` (identity for every other type). This
-                    # loop NEVER inverts the raw default, so the remap must
-                    # un-invert in open-percent space (``inverted=False``), not
-                    # the cached main-pipeline flag (#993).
                     await self.coordinator._cmd_svc.apply_position(
-                        entity,
-                        self.coordinator._entity_target(
-                            entity, default_position, inverted=False
-                        ),
-                        "auto_control_off",
-                        context=ctx,
+                        entity, default_position, "auto_control_off", context=ctx
                     )
 
         await self.coordinator.async_refresh()
         self.schedule_update_ha_state()
 
     async def async_added_to_hass(self) -> None:
-        """Call when entity about to be added to hass.
-
-        Restored state seeds the coordinator, not the other way round — and
-        that direction is deliberate even though ``is_on`` now derives from the
-        coordinator (issue #1063). Several toggles carry a static non-``None``
-        default (``switch_mode`` from ``CONF_CLIMATE_MODE``, ``motion_control``
-        from ``ToggleManager``), so a "coordinator wins at add time" rule would
-        make those ignore the user's last runtime toggle after every restart.
-        The defect was never the direction: it was that the value being
-        restored came from a local field no caller updated. With ``is_on``
-        reading the coordinator, what gets recorded — and therefore what gets
-        restored here — is the value the coordinator last actually held.
-
-        ``restored_bool`` guards the other half: this path *writes* the
-        coordinator, so an ``unavailable``/``unknown`` snapshot read as ``off``
-        would not merely display wrong, it would disable the toggle. Only real
-        on/off history counts; anything else keeps the spec's initial state.
-        """
+        """Call when entity about to be added to hass."""
         await super().async_added_to_hass()
 
         if self._option_key is not None:
@@ -448,7 +385,9 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
 
         last_state = await self.async_get_last_state()
         self.coordinator.logger.debug("%s: last state is %s", self._name, last_state)
-        if restored_bool(last_state, self._initial_state):
+        if (last_state is None and self._initial_state) or (
+            last_state is not None and last_state.state == STATE_ON
+        ):
             await self.async_turn_on(added=True)
         else:
             await self.async_turn_off(added=True)

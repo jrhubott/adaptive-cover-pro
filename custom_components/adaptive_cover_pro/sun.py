@@ -223,22 +223,3 @@ class SunData:
             return datetime(
                 tomorrow.year, tomorrow.month, tomorrow.day, 0, 1, 0
             )  # noqa: DTZ001
-
-    def next_sunset(self) -> datetime:
-        """Fetch tomorrow's sunset time.
-
-        The roll-forward counterpart to :meth:`next_sunrise`. A manual override
-        engaged after today's sunset must resolve "until sunset" to *tomorrow's*
-        sunset rather than a moment already in the past (issue #1044).
-
-        Returns a far-future sentinel (23:59:59 tomorrow) at polar latitudes
-        during midnight sun when astral raises ValueError.
-        """
-        tomorrow = date.today() + timedelta(days=1)
-        try:
-            return self.location.sunset(tomorrow, local=False)
-        except (ValueError, AttributeError):
-            # Polar midnight sun: sun never sets — treat as end of day
-            return datetime(
-                tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 59
-            )  # noqa: DTZ001

@@ -29,9 +29,6 @@
     "button": {
       "reset_manual_override": {
         "default": "mdi:hand-back-left-off"
-      },
-      "apply_calculated_position": {
-        "default": "mdi:target-variant"
       }
     },
     "sensor": {

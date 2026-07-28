@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import pytest
-import voluptuous as vol
 
 from custom_components.adaptive_cover_pro import config_flow as cf
-from custom_components.adaptive_cover_pro.config_dynamic import (
-    sun_tracking_schema,
-    temperature_climate_schema,
-)
+from custom_components.adaptive_cover_pro.config_dynamic import sun_tracking_schema
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
@@ -33,16 +29,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNSET_TIME_ENTITY,
     CONF_TRANSIT_TIMEOUT,
     CONF_VENETIAN_MODE,
-    CONF_VENETIAN_POST_SETTLE_MODE,
-    CONF_VENETIAN_TILT_RESET_DIRECTION,
-    CONF_VENETIAN_TILT_RESET_SCOPE,
-    CONF_VENETIAN_TILT_SKIP_MODE,
-    CONF_ENABLE_PROXY_COVER,
-    CONF_ENTITIES,
-    CONF_OUTSIDE_TEMP_SOURCE,
-    DEFAULT_ENABLE_PROXY_COVER,
-    CoverType,
-    OutsideTempSource,
 )
 
 
@@ -167,37 +153,6 @@ def test_venetian_mode_in_geometry_venetian_schema() -> None:
 
     keys = _schema_keys(GEOMETRY_VENETIAN_SCHEMA)
     assert CONF_VENETIAN_MODE in keys
-
-
-@pytest.mark.parametrize(
-    "conf_key, expected_translation_key",
-    [
-        (CONF_VENETIAN_MODE, "venetian_mode"),
-        (CONF_VENETIAN_TILT_RESET_DIRECTION, "venetian_tilt_reset_direction"),
-        (CONF_VENETIAN_TILT_RESET_SCOPE, "venetian_tilt_reset_scope"),
-        (CONF_VENETIAN_TILT_SKIP_MODE, "venetian_tilt_skip_mode"),
-        (CONF_VENETIAN_POST_SETTLE_MODE, "venetian_post_settle_mode"),
-    ],
-)
-def test_venetian_select_fields_use_selector_with_translation_key(
-    conf_key: str, expected_translation_key: str
-) -> None:
-    """The 5 venetian enum fields must render via SelectSelector(translation_key=...),
-    not a bare vol.In(...), or the frontend shows raw enum values instead of
-    translated labels (issue: untranslated venetian select options).
-    """
-    from homeassistant.helpers import selector as ha_selector
-
-    from custom_components.adaptive_cover_pro.cover_types.venetian import (
-        GEOMETRY_VENETIAN_SCHEMA,
-    )
-
-    marker = next(k for k in GEOMETRY_VENETIAN_SCHEMA.schema if str(k) == conf_key)
-    value_validator = GEOMETRY_VENETIAN_SCHEMA.schema[marker]
-    assert isinstance(
-        value_validator, ha_selector.SelectSelector
-    ), f"{conf_key} must use SelectSelector, not vol.In"
-    assert value_validator.config.get("translation_key") == expected_translation_key
 
 
 def test_tilt_sun_only_toggles_in_venetian_schema_default_false() -> None:
@@ -359,47 +314,6 @@ def test_sunset_tilt_absent_in_blind_schema() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Per-slot custom name (issue #867) — optional label overriding the reason/
-# decision_trace/card label everywhere. Cover-type-agnostic (no tilt gating).
-# ---------------------------------------------------------------------------
-
-
-def test_custom_position_name_key_in_schema_for_every_slot() -> None:
-    """custom_position_name_N must be present in the custom-position schema
-    for every configured slot, regardless of cover type.
-    """
-    from custom_components.adaptive_cover_pro.const import (
-        CUSTOM_POSITION_SLOTS,
-        CoverType,
-    )
-
-    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
-    keys = {str(k) for k in schema}
-    for slot_keys in CUSTOM_POSITION_SLOTS.values():
-        assert slot_keys["name"] in keys, f"{slot_keys['name']} missing from schema"
-
-
-def test_custom_position_name_1_in_all_slots_schema() -> None:
-    """Slot 1's name key is present verbatim (spot-check the literal key)."""
-    from custom_components.adaptive_cover_pro.const import CoverType
-
-    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
-    keys = {str(k) for k in schema}
-    assert "custom_position_name_1" in keys
-
-
-def test_custom_position_name_in_optional_keys_round_trips_absent() -> None:
-    """custom_position_name_N has no schema default, so a cleared text box
-    must round-trip to absent — it must be listed in
-    _CUSTOM_POSITION_OPTIONAL_KEYS the same way "template" is.
-    """
-    from custom_components.adaptive_cover_pro.const import CUSTOM_POSITION_SLOTS
-
-    for slot_keys in CUSTOM_POSITION_SLOTS.values():
-        assert slot_keys["name"] in cf._CUSTOM_POSITION_OPTIONAL_KEYS
-
-
-# ---------------------------------------------------------------------------
 # Daytime gate (issue #632) — lives on the L2b BEHAVIOR step beside the
 # sunset-timing options it overrides (relocated from positions in the #613 split).
 # ---------------------------------------------------------------------------
@@ -519,66 +433,3 @@ def test_weather_enabled_is_first_key_with_default_false() -> None:
     first_key = next(iter(schema.schema))
     assert str(first_key) == CONF_WEATHER_ENABLED
     assert first_key.default() is False
-
-
-# ---------------------------------------------------------------------------
-# Proxy-cover toggle on the cover-entity step
-#
-# Folded in from the former test_config_flow_proxy_cover.py.
-# ---------------------------------------------------------------------------
-
-
-def _schema_defaults(schema) -> dict[str, object]:
-    """Return {key_name: default_value} for every Optional key in ``schema``."""
-    out: dict[str, object] = {}
-    for key in schema.schema:
-        if isinstance(key, vol.Optional):
-            default = key.default
-            out[str(key)] = default() if callable(default) else default
-    return out
-
-
-def test_cover_entity_schema_contains_enable_proxy_cover_field() -> None:
-    """``_build_cover_entity_schema`` exposes the opt-in toggle."""
-    schema = cf._build_cover_entity_schema(CoverType.BLIND)
-    assert CONF_ENABLE_PROXY_COVER in [str(k) for k in schema.schema]
-
-
-def test_proxy_cover_defaults_to_false() -> None:
-    """The toggle defaults to the DEFAULT_ENABLE_PROXY_COVER value (False)."""
-    defaults = _schema_defaults(cf._build_cover_entity_schema(CoverType.BLIND))
-    assert (
-        defaults.get(CONF_ENABLE_PROXY_COVER) is DEFAULT_ENABLE_PROXY_COVER
-    ), f"expected default False; got {defaults!r}"
-
-
-def test_proxy_cover_schema_validates_boolean_round_trip() -> None:
-    """User input of ``True`` round-trips through the schema."""
-    schema = cf._build_cover_entity_schema(CoverType.BLIND)
-    out = schema({CONF_ENTITIES: [], CONF_ENABLE_PROXY_COVER: True})
-    assert out[CONF_ENABLE_PROXY_COVER] is True
-
-
-# ---------------------------------------------------------------------------
-# Outdoor-temp source selector on the climate step (issue #547)
-#
-# Folded in from the former test_config_flow_outside_temp_source.py.
-# ---------------------------------------------------------------------------
-
-
-def _key(schema, name: str):
-    return next((k for k in schema.schema if str(k) == name), None)
-
-
-def test_schema_contains_outside_temp_source_with_default_live() -> None:
-    key = _key(temperature_climate_schema(), CONF_OUTSIDE_TEMP_SOURCE)
-    assert key is not None, "CONF_OUTSIDE_TEMP_SOURCE missing from climate schema"
-    assert key.default() == OutsideTempSource.LIVE.value
-
-
-def test_selector_offers_three_options() -> None:
-    schema = temperature_climate_schema()
-    selector = schema.schema[_key(schema, CONF_OUTSIDE_TEMP_SOURCE)]
-    raw_options = selector.config["options"]
-    option_values = {(o["value"] if isinstance(o, dict) else o) for o in raw_options}
-    assert option_values == {"live", "forecast_max", "max_of_live_and_forecast"}

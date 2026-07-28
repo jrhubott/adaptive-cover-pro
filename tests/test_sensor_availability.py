@@ -48,7 +48,6 @@ import custom_components.adaptive_cover_pro.binary_sensor  # noqa: F401
 import custom_components.adaptive_cover_pro.switch  # noqa: F401
 import custom_components.adaptive_cover_pro.button  # noqa: F401
 import custom_components.adaptive_cover_pro.cover  # noqa: F401
-import custom_components.adaptive_cover_pro.select  # noqa: F401
 
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
@@ -69,28 +68,11 @@ from custom_components.adaptive_cover_pro.binary_sensor import (
 )
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 from custom_components.adaptive_cover_pro.button import (
-    AdaptiveCoverApplyCalculatedPositionButton,
     AdaptiveCoverButton,
     AdaptiveCoverMyPositionButton,
 )
 from custom_components.adaptive_cover_pro.cover import AdaptiveProxyCover
 from custom_components.adaptive_cover_pro.number import AdaptiveCoverMyPositionNumber
-from custom_components.adaptive_cover_pro.const import GroupScene
-from custom_components.adaptive_cover_pro.group_entities import (
-    AdaptiveGroupCover,
-    GroupActiveSceneSensor,
-    GroupAutomationSwitch,
-    GroupClearOverridesButton,
-    GroupClimateSensor,
-    GroupClimateSwitch,
-    GroupLockSwitch,
-    GroupPositionSensor,
-    GroupSceneButton,
-    GroupSceneSelect,
-    GroupStateSensor,
-    GroupStopButton,
-    GroupWhoWonSensor,
-)
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -246,12 +228,6 @@ ENTITY_FACTORIES: dict[type, object] = {
         config_entry=_make_config_entry(),
         coordinator=_make_coordinator(),
     ),
-    AdaptiveCoverApplyCalculatedPositionButton: lambda: AdaptiveCoverApplyCalculatedPositionButton(
-        entry_id="test_avail_entry",
-        hass=_make_hass(),
-        config_entry=_make_config_entry(),
-        coordinator=_make_coordinator(),
-    ),
     # --- number.py ---
     AdaptiveCoverMyPositionNumber: lambda: AdaptiveCoverMyPositionNumber(
         entry_id="test_avail_entry",
@@ -269,91 +245,6 @@ ENTITY_FACTORIES: dict[type, object] = {
         coordinator=_make_coordinator(),
         source_entity_id="cover.test_source",
         multi=False,
-    ),
-    # --- group_entities.py (issue #790) ---
-    GroupPositionSensor: lambda: GroupPositionSensor(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-        "group_position",
-    ),
-    GroupStateSensor: lambda: GroupStateSensor(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-        "group_state",
-    ),
-    GroupActiveSceneSensor: lambda: GroupActiveSceneSensor(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-        "group_active_scene",
-    ),
-    GroupAutomationSwitch: lambda: GroupAutomationSwitch(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-    ),
-    GroupSceneButton: lambda: GroupSceneButton(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-        GroupScene.ALL_OPEN,
-    ),
-    GroupClearOverridesButton: lambda: GroupClearOverridesButton(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-    ),
-    GroupSceneSelect: lambda: GroupSceneSelect(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-    ),
-    GroupLockSwitch: lambda: GroupLockSwitch(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-    ),
-    GroupWhoWonSensor: lambda: GroupWhoWonSensor(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-        "group_who_won",
-    ),
-    GroupClimateSensor: lambda: GroupClimateSensor(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-        "group_climate_mode",
-    ),
-    GroupClimateSwitch: lambda: GroupClimateSwitch(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-    ),
-    GroupStopButton: lambda: GroupStopButton(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
-    ),
-    AdaptiveGroupCover: lambda: AdaptiveGroupCover(
-        "test_avail_entry",
-        _make_hass(),
-        _make_config_entry(),
-        _make_coordinator(),
     ),
 }
 

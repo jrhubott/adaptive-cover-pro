@@ -11,16 +11,16 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
 from custom_components.adaptive_cover_pro.cover_types import get_policy
-from custom_components.adaptive_cover_pro.diagnostics.builder import (
-    DiagnosticContext,
-    DiagnosticsBuilder,
-)
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )
+from custom_components.adaptive_cover_pro.diagnostics.builder import (
+    DiagnosticContext,
+    DiagnosticsBuilder,
+)
+from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
@@ -626,14 +626,14 @@ class TestBuildPositionExplanation:
         """Motion timeout active → explains default position."""
         pr = _make_pr(
             control_method=ControlMethod.MOTION,
-            reason="occupancy timeout active — default position 30%",
+            reason="motion timeout active — default position 30%",
             position=30,
             default_position=30,
         )
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(pipeline_result=pr)
         )
-        assert "occupancy" in result.lower()
+        assert "motion" in result.lower()
         assert "30%" in result
 
     def test_manual_override(self, builder):
@@ -695,21 +695,6 @@ class TestBuildPositionExplanation:
         )
         assert "default position" in result.lower()
         assert "100%" in result
-
-    def test_tracking_season_gate_control_state_reason(self, builder):
-        """Season gate reports a specific default-position tracker reason."""
-        pr = _make_pr(
-            control_method=ControlMethod.DEFAULT,
-            climate_strategy=ClimateStrategy.TRACKING_SEASON_GATE,
-        )
-        result = DiagnosticsBuilder._get_control_state_reason(
-            _base_ctx(
-                cover=_make_cover(control_state_reason="Sun in FOV"),
-                pipeline_result=pr,
-            )
-        )
-
-        assert result == "Default: Tracking Off This Season"
 
     def test_sun_tracking_no_limits(self, builder):
         """Sun tracking, no limits → reason from solar handler."""
@@ -816,7 +801,6 @@ class TestPositionExplanationChangeDetection:
         coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
         coord._diagnostics_builder = DiagnosticsBuilder()
         coord._last_position_explanation = ""
-        coord._reason_labels = None
         coord.logger = MagicMock()
 
         # Minimal stubs for DiagnosticContext construction
@@ -824,7 +808,6 @@ class TestPositionExplanationChangeDetection:
         coord._cover_data = _make_cover()
         coord._position_forecast = None
         coord._climate_mode = False
-        coord._weather_readings = None
         coord._pipeline_result = _make_pr()
         type(coord).check_adaptive_time = PropertyMock(return_value=True)
         type(coord).after_start_time = PropertyMock(return_value=True)

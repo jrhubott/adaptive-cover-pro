@@ -110,10 +110,6 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     coord._toggles = ToggleManager()
     coord.automatic_control = False
     coord.entities = [MagicMock()]
-    coord._group_intents = {}
-    # object.__new__ skips __init__, which seeds this to None. The hold-aware
-    # dispatch seam reads it, so a bare mock coordinator must carry it too.
-    coord._pipeline_result = None
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
@@ -130,7 +126,6 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
         bypass_auto_control=False,
         sun_just_appeared=False,
         use_my_position=False,
-        user_command=False,
     ):
         return PositionContext(
             auto_control=False,  # reflects automatic_control=False
@@ -143,7 +138,6 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
             is_safety=is_safety,
             bypass_auto_control=bypass_auto_control,
             use_my_position=use_my_position,
-            user_command=user_command,
         )
 
     coord._build_position_context = _fake_build_ctx
@@ -151,12 +145,6 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     manager = MagicMock()
     manager.is_cover_manual.return_value = False
     coord.manager = manager
-
-    # The real coordinator always carries a policy (set in __init__); the
-    # per-entity dispatch seam delegates to it. A blind policy is identity.
-    from custom_components.adaptive_cover_pro.cover_types import get_policy
-
-    coord._policy = get_policy("cover_blind")
 
     return coord
 
@@ -217,26 +205,7 @@ async def _trigger_manual_override_expiry(coord):
     coord._time_mgr = MagicMock()
     coord._time_mgr.is_active = True  # inside time window
     coord._check_sun_validity_transition = MagicMock(return_value=False)
-    await coord._async_force_send_pipeline_position(50, {})
-
-
-async def _trigger_force_apply_calculated_position(coord):
-    """Trigger: the Apply Calculated Position button is pressed (issue #1045).
-
-    An explicit press is a user command, so it bypasses the auto_control gate
-    via ``bypass_auto_control=True`` — never ``is_safety=True``, which would
-    tag the target and have reconciliation resend it outside the window
-    (#215/#216).
-    """
-    from unittest.mock import patch as _patch  # noqa: PLC0415
-
-    coord.async_refresh = AsyncMock()
-    coord.config_entry = MagicMock()
-    coord.config_entry.options = {}
-    coord._time_mgr = MagicMock()
-    coord._check_sun_validity_transition = MagicMock(return_value=False)
-    with _patch.object(AdaptiveDataUpdateCoordinator, "state", new_callable=lambda: 50):
-        await coord.async_force_apply_calculated_position()
+    await coord._async_send_after_override_clear(50, {})
 
 
 async def _trigger_state_change_safety_custom_position(coord):
@@ -405,6 +374,7 @@ async def _trigger_switch_auto_control_off_return(coord):
     switch._key = "automatic_control"
     switch._name = "automatic_control"
     switch._initial_state = True
+    switch._attr_is_on = True
     switch.schedule_update_ha_state = MagicMock()
 
     await switch.async_turn_off()
@@ -423,11 +393,6 @@ async def _trigger_async_apply_user_position(coord):
     coord.config_entry.options = {}
     # After fix #643, async_apply_user_position falls back to _resolved_options.
     coord._resolved_options = {}
-    # Dispatch-frame inputs the user-command path reads (#1027). This is a real
-    # coordinator object, so ``position_axis_inverted`` and ``_entity_target``
-    # resolve for free from the (empty) options and the blind policy.
-    coord._inverse_state = False
-    coord._use_interpolation = False
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors = MagicMock(return_value=[])
     # Floor composition reads from a real PipelineSnapshot (#463).
@@ -442,9 +407,6 @@ async def _trigger_async_apply_user_position(coord):
     coord._cover_data = MagicMock()
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
-    coord._cloud_mgr = MagicMock()
-    coord._climate_smoothing_mgr = MagicMock()
-    coord._climate_smoothing_mgr.resolved_flags = None
     coord._compute_mean_cover_position = MagicMock(return_value=None)
     # is_motion_timeout_active / is_weather_override_active / check_adaptive_time
     # are properties — patch them at the class level for this call.
@@ -559,18 +521,6 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         setup=lambda _: None,
         trigger=_trigger_async_apply_user_position,
     ),
-    MatrixCase(
-        # Issue #1045: the Apply Calculated Position button. An explicit press
-        # is a user command, so it rides bypass_auto_control=True through the
-        # auto_control gate with force=True for the delta gates — but the
-        # target is NOT safety-tagged, so reconciliation will not resend it
-        # outside the time window (#215/#216).
-        id="force_apply_calculated_position",
-        is_safety_bypass=True,
-        is_safety_target=False,
-        setup=lambda _: None,
-        trigger=_trigger_force_apply_calculated_position,
-    ),
 ]
 
 
@@ -622,7 +572,7 @@ async def test_auto_control_gate(case: MatrixCase):
         assert not forced, (
             f"[{case.id}] Non-bypass path called apply_position(context.force=True) "
             f"with automatic_control=False — add an automatic_control gate before the "
-            f"apply_position call (see _async_force_send_pipeline_position for the pattern). "
+            f"apply_position call (see _async_send_after_override_clear for the pattern). "
             f"Offending calls: {forced}"
         )
 

@@ -5,23 +5,12 @@ and policy-derived glare-zone configuration into a single
 :class:`PipelineSnapshot` for the pipeline registry to evaluate.
 
 It is composed by the coordinator and constructed once at coordinator
-initialisation.  Most values that change per cycle (manual-override flag,
-motion-timeout flag, weather flag, time-window flag, current cover position,
-the cover engine, etc.) flow in as a method argument rather than being held
-on the builder.  The one exception is the custom-position "last valid" hold
-state: the builder carries a per-slot whole-slot cache (issue #1005,
-``_last_valid_custom_position``) and per-slot, per-input
-:class:`~managers.common.graceful_source.GracefulSource` instances (issue
-#1012, ``_sensor_fold_sources`` and ``_template_active_sources``) across
-cycles — see ``__init__`` — so a transient sensor/template blip does not fire
-a false release edge.  The coordinator remains the single owner of
+initialisation.  The builder holds no per-cycle state: every value that
+changes per cycle (manual-override flag, motion-timeout flag, weather flag,
+time-window flag, current cover position, the cover engine, etc.) flows in
+as a method argument.  The coordinator remains the single owner of
 ``_weather_readings`` — the builder returns ``ClimateReadings`` from
 :meth:`read_climate` and the coordinator stores it.
-
-The one manager it holds a reference to is ``TimeWindowManager``: the
-effective-default fallback needs live window state (grace windows, latched
-gate holds) that cannot be recomputed from ``hass`` + ``options``, so the
-manager itself is injected and read through pure properties (issue #1055).
 
 Background: this code lived inline on the coordinator as five private
 methods (``_read_climate_state``, ``_build_climate_options``,
@@ -33,31 +22,26 @@ the same composed-class pattern that Phase B established with
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from homeassistant.const import ATTR_FRIENDLY_NAME, STATE_ON
 
 from ..const import (
-    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_CLOUD_COVERAGE_ENTITY,
-    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_TIME,
-    CONF_DEVICE_ID,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
-    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
-    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_TILT,
@@ -67,37 +51,29 @@ from ..const import (
     CONF_MINIMIZE_MOVEMENTS,
     CONF_MOTION_TIMEOUT_MODE,
     CONF_MY_POSITION_VALUE,
-    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
-    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
-    CONF_EXTREME_HEAT_POSITION,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_SUNRISE_OFFSET,
+    CONF_SUNSET_OFFSET,
+    CONF_SUNSET_POS,
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
-    CONF_TEMP_EXTREME_HEAT,
-    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
-    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
-    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_STATE,
-    CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
-    CUSTOM_POSITION_INPUT_HOLD_SECONDS,
     CUSTOM_POSITION_SLOTS,
-    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_CUSTOM_POSITION_ENABLED,
-    DEFAULT_TRACKING_SEASONS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
     DEFAULT_MAX_COVERAGE_STEPS,
@@ -107,24 +83,22 @@ from ..const import (
     DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_MOTION_TIMEOUT_MODE,
-    DEFAULT_OUTSIDE_TEMP_SOURCE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
-from ..cover_types.base import axis_inverted
 from ..helpers import (
-    _read_current_effective_default,
+    compute_effective_default,
     custom_position_slot_configured,
-    custom_position_slot_name,
     custom_position_slot_sensors,
     get_safe_state,
 )
-from ..managers.common.graceful_source import GracefulSource, SourceResolution
-from ..templates import combine_with_mode, is_template_string, render_condition_or_none
+from ..templates import (
+    combine_with_mode,
+    is_template_string,
+    render_condition_or_none,
+)
 from .types import (
     ClimateOptions,
-    ClimateTempFlags,
     CustomPositionSensorState,
-    GroupIntent,
     PipelineSnapshot,
 )
 
@@ -134,7 +108,6 @@ if TYPE_CHECKING:
     from ..config_types import ConfigContextAdapter
     from ..cover_types.base import CoverTypePolicy
     from ..engine.covers.base import AdaptiveGeneralCover
-    from ..managers.time_window import TimeWindowManager
     from ..managers.toggles import ToggleManager
     from ..services.configuration_service import ConfigurationService
     from ..state.climate_provider import ClimateProvider, ClimateReadings
@@ -155,27 +128,8 @@ def _delta_time_minutes(value: object) -> int:
     return int(value)
 
 
-def _opt_int(options: dict, key: str) -> int | None:
-    """Read an optional numeric option as ``int``, or ``None`` when absent.
-
-    Absent means "the constraint is off" (issue #943) — there is deliberately
-    no ``DEFAULT_*`` for the axis-constraint keys, so a missing key and an
-    explicitly cleared one both read as None. ``0`` is a meaningful value and
-    must survive, so this tests ``is None`` rather than truthiness.
-    """
-    raw = options.get(key)
-    return int(raw) if raw is not None else None
-
-
 class PipelineSnapshotBuilder:
-    """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`.
-
-    ``time_mgr`` is the one manager the builder holds a reference to, for
-    :meth:`build`'s effective-default fallback (issue #1055). It is read
-    through pure properties only — never advanced — which is the same contract
-    ``async_apply_user_position`` already relies on for every other manager
-    flag it threads in: an ad-hoc build must not re-evaluate the managers.
-    """
+    """Aggregate HA reads + manager state into a :class:`PipelineSnapshot`."""
 
     def __init__(
         self,
@@ -186,59 +140,26 @@ class PipelineSnapshotBuilder:
         toggles: ToggleManager,
         policy: CoverTypePolicy,
         config_service: ConfigurationService,
-        time_mgr: TimeWindowManager | None = None,
-        clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Bind the builder to its long-lived collaborators.
-
-        ``clock`` is a monotonic time source (seconds) for the per-input
-        custom-position hold window (issue #1012) — injected so tests can
-        advance it deterministically, matching the convention already used by
-        ``TimeWindowManager`` / ``GracefulSource`` for their grace windows.
-        """
+        """Bind the builder to its long-lived collaborators."""
         self._hass = hass
         self._logger = logger
         self._climate_provider = climate_provider
         self._toggles = toggles
         self._policy = policy
         self._config_service = config_service
-        self._time_mgr = time_mgr
-        self._clock = clock
         # Last VALID per-slot read, keyed by slot number (issue #1005). Written
         # only on a valid read; on an invalid read (transient unavailable /
         # unknown / missing sensor) the slot's activation is held to this so a
         # blip does not fire a false release edge. Per-instance state living on
         # the one builder the coordinator owns, so both per-cycle callers
         # (build() and the coordinator release-edge stamp) share it and agree.
-        # A config-entry reload constructs a fresh builder, clearing it. This
-        # whole-slot hold has NO time bound — it is the outer safety net for
-        # the fully-invalid case, unchanged by the per-input hold below.
+        # A config-entry reload constructs a fresh builder, clearing it.
         self._last_valid_custom_position: dict[int, CustomPositionSensorState] = {}
-        # Per-slot, per-input grace-window state machines (issue #1012),
-        # lazily created on first use (see _hold_or_fresh). #1005's cache
-        # above only holds the *combined* slot state when every input is
-        # invalid at once. When a slot has a sensor AND a template, one input
-        # can go transiently invalid while the other still opines — the
-        # combined is_valid stays True, so the #1005 hold never engages, and
-        # the dropped input's fresh False silently wins the fold. Each of
-        # these two dicts holds one GracefulSource per slot, tracking that
-        # input's own last-valid contribution and substituting it only while
-        # that specific input's own validity flag is False this cycle AND the
-        # hold hasn't exceeded CUSTOM_POSITION_INPUT_HOLD_SECONDS, measured
-        # from that input's own FIRST INVALID SIGHTING (cadence-independent —
-        # see GracefulSource's module docstring) — past that, a permanently-
-        # dead input falls through to its fresh value instead of masking a
-        # healthy peer forever.
-        self._sensor_fold_sources: dict[
-            int, GracefulSource[tuple[bool, tuple[str, ...]]]
-        ] = {}
-        self._template_active_sources: dict[int, GracefulSource[bool]] = {}
 
     # ---- HA reads ---------------------------------------------------------
 
-    def read_climate(
-        self, options: dict, *, forecast_max_outside: float | None = None
-    ) -> ClimateReadings:
+    def read_climate(self, options: dict) -> ClimateReadings:
         """Read all climate-related entities into a fresh ``ClimateReadings``.
 
         Single call to :meth:`ClimateProvider.read` for each update cycle.
@@ -251,11 +172,6 @@ class PipelineSnapshotBuilder:
         lux/irradiance are read whenever cloud suppression is enabled and the
         corresponding entity is configured — even if the climate-mode toggles
         are off.
-
-        ``forecast_max_outside`` is the coordinator's pre-fetched forecast
-        daily-high (issue #547). It is threaded through to the provider so
-        the ``outside_temp_source`` switch can source it; the builder stays
-        stateless (the fetch itself lives on the coordinator).
         """
         cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
         lux_entity = options.get(CONF_LUX_ENTITY)
@@ -268,18 +184,7 @@ class PipelineSnapshotBuilder:
         )
         return self._climate_provider.read(
             temp_entity=options.get(CONF_TEMP_ENTITY),
-            temp_device_id=options.get(CONF_DEVICE_ID),
-            auto_resolve_temp_from_area=bool(
-                options.get(
-                    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
-                    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
-                )
-            ),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
-            outside_temp_source=options.get(
-                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
-            ),
-            forecast_max_outside=forecast_max_outside,
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
             presence_template=options.get(CONF_PRESENCE_TEMPLATE),
             presence_template_mode=options.get(CONF_PRESENCE_TEMPLATE_MODE)
@@ -289,95 +194,17 @@ class PipelineSnapshotBuilder:
             use_lux=use_lux,
             lux_entity=lux_entity,
             lux_threshold=options.get(CONF_LUX_THRESHOLD),
-            lux_release_threshold=options.get(CONF_LUX_RELEASE_THRESHOLD),
             use_irradiance=use_irradiance,
             irradiance_entity=irradiance_entity,
             irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
-            irradiance_release_threshold=options.get(CONF_IRRADIANCE_RELEASE_THRESHOLD),
             use_cloud_coverage=cloud_suppression_enabled,
             cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
             cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
-            cloud_coverage_release_threshold=options.get(
-                CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD
-            ),
             is_sunny_sensor=options.get(CONF_IS_SUNNY_SENSOR),
             is_sunny_template=options.get(CONF_IS_SUNNY_TEMPLATE),
             is_sunny_template_mode=options.get(CONF_IS_SUNNY_TEMPLATE_MODE)
             or DEFAULT_TEMPLATE_COMBINE_MODE,
-            # Temperature-season crossing inputs (issue #917). temp_switch comes
-            # from the runtime toggle (same source build_climate_options uses),
-            # thresholds/release edges straight from options.
-            temp_switch=bool(self._toggles.temp_toggle),
-            temp_low=options.get(CONF_TEMP_LOW),
-            temp_high=options.get(CONF_TEMP_HIGH),
-            outside_threshold=options.get(CONF_OUTSIDE_THRESHOLD),
-            temp_extreme_heat=options.get(CONF_TEMP_EXTREME_HEAT),
-            temp_low_release_threshold=options.get(CONF_TEMP_LOW_RELEASE_THRESHOLD),
-            temp_high_release_threshold=options.get(CONF_TEMP_HIGH_RELEASE_THRESHOLD),
-            outside_threshold_release=options.get(CONF_OUTSIDE_THRESHOLD_RELEASE),
-            temp_extreme_heat_release_threshold=options.get(
-                CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD
-            ),
         )
-
-    def _hold_or_fresh[T](
-        self,
-        sources: dict[int, GracefulSource[T]],
-        slot: int,
-        *,
-        valid: bool,
-        fresh: T,
-        now: float,
-    ) -> T:
-        """Return this cycle's value for one per-input fold through its slot's source.
-
-        Lazily creates the slot's :class:`GracefulSource` (window
-        ``CUSTOM_POSITION_INPUT_HOLD_SECONDS``, anchored at this input's own
-        first indeterminate sighting — cadence-independent, see the "Anchor
-        point" note in ``graceful_source``'s module docstring) on first use,
-        then feeds it this cycle's verdict: ``fresh`` when ``valid``, ``None``
-        (indeterminate) otherwise.
-
-        DETERMINATE and FELL_BACK both resolve to ``fresh`` — FELL_BACK's own
-        ``Resolution.value`` is ``None`` (the kernel's generic "no caller
-        context" answer), but this caller always has this cycle's live
-        reading in hand, so that is its own, more useful fallback than the
-        kernel's ``None``. A first-ever invalid read has no prior state to
-        hold either (FELL_BACK, same "no hold on cold start" contract as
-        #1005's whole-slot cache). Only HOLDING substitutes the genuinely
-        held last-known value.
-        """
-        source = sources.setdefault(
-            slot,
-            GracefulSource(CUSTOM_POSITION_INPUT_HOLD_SECONDS, clock=self._clock),
-        )
-        resolution = source.observe(fresh if valid else None, now=now)
-        if resolution.state is SourceResolution.HOLDING:
-            return resolution.value
-        return fresh
-
-    def seconds_until_custom_position_hold_fallback(self) -> float | None:
-        """Seconds until the soonest active per-input hold falls back to fresh.
-
-        ``None`` when no configured slot currently has a HOLDING per-input
-        source — every input is either determinate, has never spoken, or has
-        already fallen back. Mirrors ``TimeWindowManager.
-        seconds_until_gate_fallback`` (issue #742) for the custom-position
-        per-input hold (issue #1012): while a source is HOLDING, nothing else
-        would prompt a refresh at the exact moment it falls back to its own
-        (possibly different) fresh reading, until the next state-change or
-        periodic cycle — the coordinator uses this to arm a single prompt
-        wake instead.
-        """
-        remainings = [
-            r
-            for source in (
-                *self._sensor_fold_sources.values(),
-                *self._template_active_sources.values(),
-            )
-            if (r := source.remaining()) is not None
-        ]
-        return min(remainings) if remainings else None
 
     def read_custom_position_sensors(
         self, options: dict
@@ -394,24 +221,7 @@ class PipelineSnapshotBuilder:
         ``use_my`` defaults to False (when True the slot triggers the cover's
         hardware "My" preset via ``stop_cover`` instead of the slot's numeric
         position).
-
-        Two layers of "hold last-valid" protect against transient invalid
-        reads. Per-input (issue #1012): the sensor-OR and the template
-        opinion are each held to their own last-valid contribution — via
-        :meth:`_hold_or_fresh` — whenever that specific input alone is
-        invalid this cycle, *before* the OR/AND fold runs. This prevents one
-        dropped input (e.g. a sensor going transiently unavailable) from
-        silently outvoting a template (or vice versa) that is still opining
-        normally. The per-input hold is time-bounded to
-        ``CUSTOM_POSITION_INPUT_HOLD_SECONDS``: past that window a
-        permanently-dead input falls through to its fresh value instead of
-        masking a healthy peer forever. Whole-slot (issue #1005): the
-        combined ``is_on`` is held to ``_last_valid_custom_position`` — with
-        no time bound — only when *every* input is invalid at once — the
-        outer safety net for the fully-invalid case, unchanged by the
-        per-input hold above.
         """
-        now = self._clock()
         result: list[CustomPositionSensorState] = []
         for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
             enabled = bool(
@@ -433,26 +243,6 @@ class PipelineSnapshotBuilder:
             # The slot has a usable sensor input this cycle when at least one
             # bound sensor reported a non-invalid value.
             sensors_valid = any(v is not None for v in safe_states.values())
-            # Hold the sensor side's own last-valid fold input when every
-            # bound sensor is invalid this cycle, for up to
-            # CUSTOM_POSITION_INPUT_HOLD_SECONDS (issue #1012) — before the
-            # OR/AND fold below, so a template opining alongside a dropped
-            # sensor can't let the sensor's fresh False silently win. Only
-            # meaningful when at least one sensor is actually bound —
-            # symmetric with the template guard below; behaviour-neutral in
-            # practice, since a reconfiguration that clears a slot's sensors
-            # always reaches this via a fresh builder (async_reload — none of
-            # the custom_position_* keys are in _RUNTIME_APPLICABLE_OPTIONS),
-            # which starts with empty caches anyway.
-            if sensors:
-                sensor_fold = self._hold_or_fresh(
-                    self._sensor_fold_sources,
-                    slot,
-                    valid=sensors_valid,
-                    fresh=(sensors_on, active),
-                    now=now,
-                )
-                sensors_on, active = sensor_fold
 
             template = options.get(slot_keys["template"])
             has_template = is_template_string(template)
@@ -464,16 +254,6 @@ class PipelineSnapshotBuilder:
             )
             template_active = bool(template_opinion) if has_template else None
             template_valid = template_opinion is not None
-            # Symmetric hold for the template side (issue #1012): only
-            # meaningful when a template is actually configured.
-            if has_template:
-                template_active = self._hold_or_fresh(
-                    self._template_active_sources,
-                    slot,
-                    valid=template_valid,
-                    fresh=bool(template_active),
-                    now=now,
-                )
             mode = (
                 options.get(slot_keys["template_mode"]) or DEFAULT_TEMPLATE_COMBINE_MODE
             )
@@ -505,9 +285,6 @@ class PipelineSnapshotBuilder:
             sensor_name = (
                 name_source.attributes.get(ATTR_FRIENDLY_NAME) if name_source else None
             )
-            # Optional user-configured label (issue #867); empty string (a
-            # cleared text box) normalizes to None, same as an absent key.
-            custom_name = custom_position_slot_name(options, slot_keys)
 
             priority = int(
                 options.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
@@ -528,32 +305,10 @@ class PipelineSnapshotBuilder:
             if tilt_only:
                 min_mode = False
                 use_my = False
-
-            # --- Axis constraints (issue #943) --------------------------------
-            # A constraint-only slot (e.g. trigger → minimum tilt) carries no
-            # position; None means "makes no position claim", distinct from 0.
-            position = _opt_int(options, slot_keys["position"])
-            position_max = _opt_int(options, slot_keys["position_max"])
-            tilt_min = _opt_int(options, slot_keys["tilt_min"])
-            tilt_max = _opt_int(options, slot_keys["tilt_max"])
-            # Same mutual-exclusion pass as min_mode / use_my above: tilt_only
-            # fixes the slat angle and lets the position pipeline drive the
-            # carriage, so the slot carries no bounds on either axis. The My
-            # path is hardware-pinned — a position ceiling cannot apply to it.
-            # Normalizing the stored values here (rather than only deriving
-            # around them) keeps what diagnostics surface honest about what is
-            # actually in effect.
-            if tilt_only:
-                position_max = None
-                tilt_min = None
-                tilt_max = None
-            elif use_my:
-                position_max = None
-
             state = CustomPositionSensorState(
                 entity_ids=tuple(sensors),
                 is_on=is_on,
-                position=position,
+                position=int(options.get(slot_keys["position"])),
                 priority=priority,
                 min_mode=min_mode,
                 use_my=use_my,
@@ -563,29 +318,11 @@ class PipelineSnapshotBuilder:
                 slot=slot,
                 active_entity_ids=active,
                 template_active=template_active,
-                custom_name=custom_name,
-                position_max=position_max,
-                tilt_min=tilt_min,
-                tilt_max=tilt_max,
                 is_valid=is_valid,
             )
-            # Remember the last valid read so a later fully-invalid read can
-            # hold it (issue #1005). Written on every valid-combined-read
-            # cycle, whether or not a per-input hold contributed to this
-            # cycle's fold — a per-input hold still reflects a genuine
-            # combined verdict (the other input spoke fresh), so it is as
-            # trustworthy as any other valid read. This is deliberate:
-            # suppressing the write whenever a per-input hold contributed
-            # would make the eventual fully-invalid outcome depend on
-            # whether a slot's inputs happened to die in the same cycle or
-            # one cycle apart — same physical situation, different result,
-            # decided only by cycle alignment (#1012 review). Effectively
-            # idempotent across the two same-cycle callers: each samples the
-            # clock separately, so they can straddle a per-input hold's expiry
-            # boundary and disagree — a window of the microseconds between the
-            # two reads out of the whole 300 s hold. When it happens the slot's
-            # release edge is spent a cycle early and the move falls back to
-            # the normal delta/time gates.
+            # Remember the last valid read so the next invalid read can hold it.
+            # Written only on a valid read → idempotent across the two same-cycle
+            # callers (same value both times).
             if is_valid:
                 self._last_valid_custom_position[slot] = state
             result.append(state)
@@ -609,17 +346,6 @@ class PipelineSnapshotBuilder:
                 options.get(CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, False)
             ),
             cloudy_position=options.get(CONF_CLOUDY_POSITION),
-            temp_extreme_heat=options.get(CONF_TEMP_EXTREME_HEAT),
-            extreme_heat_position=options.get(CONF_EXTREME_HEAT_POSITION),
-            # Absent / None falls back to all-seasons (unchanged behaviour for
-            # installs that never saw this option). An explicit list is honoured
-            # literally — including the empty list, which means "never track"
-            # (glare tracking is suppressed in every season).
-            tracking_seasons=(
-                frozenset(DEFAULT_TRACKING_SEASONS)
-                if options.get(CONF_TRACKING_SEASONS) is None
-                else frozenset(options[CONF_TRACKING_SEASONS])
-            ),
         )
 
     def build(
@@ -635,32 +361,18 @@ class PipelineSnapshotBuilder:
         in_time_window: bool,
         current_cover_position: int | None,
         is_glare_zone_enabled: Callable[[int], bool],
-        cloud_suppression_active: bool = False,
-        climate_temp_flags: ClimateTempFlags | None = None,
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
         cover_capabilities: dict | None = None,
-        group_intent: GroupIntent | None = None,
     ) -> PipelineSnapshot:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
-        ``effective_default`` / ``is_sunset_active``, when omitted, come from
-        :func:`helpers._read_current_effective_default` — the single source of
-        truth the coordinator's own ``_compute_current_effective_default``
-        delegates to as well. That covers the configured sunrise/sunset time
-        entities (issue #1048, up to two ``hass.states.get()`` reads; an
-        instance with neither configured reads no state at all) *and* the four
-        live window-state inputs this branch used to drop: the daytime gate
-        (#632), the explicit window-start signal (#438/#492), and the
-        end-of-window position with its active flag (#625). Until issue #1055
-        the branch hand-rolled a narrower call, so it could report a different
-        position than the update cycle for the very same instant.
-
-        The fallback exists so that ``async_apply_user_position`` (which
-        evaluates a preemption check outside the update cycle) can still build
-        a valid snapshot without knowing those values. A ``None`` ``time_mgr``
-        (test / legacy construction) degrades each window-state input to the
-        pure formula's own default.
+        ``effective_default`` / ``is_sunset_active`` are recomputed from
+        ``options`` and ``cover_data.sun_data`` when omitted — preserving the
+        fallback the original ``_build_pipeline_snapshot`` used so that
+        ``async_apply_user_position`` (which evaluates a preemption check
+        outside the update cycle) can still build a valid snapshot without
+        knowing those values.
 
         ``is_glare_zone_enabled(idx)`` returns the current state of the
         per-instance glare-zone master switch for zone ``idx``.  The coordinator
@@ -676,8 +388,18 @@ class PipelineSnapshotBuilder:
         / empty leaves the floor active.
         """
         if effective_default is None or is_sunset_active is None:
-            effective_default, is_sunset_active = _read_current_effective_default(
-                self._hass, options, cover_data.sun_data, self._time_mgr
+            h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+            sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+            sunrise_off = int(
+                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+            )
+            effective_default, is_sunset_active = compute_effective_default(
+                h_def=h_def,
+                sunset_pos=sunset_pos_cfg,
+                sun_data=cover_data.sun_data,
+                sunset_off=sunset_off,
+                sunrise_off=sunrise_off,
             )
 
         glare_zones_cfg = self._policy.glare_zones_config(self._config_service, options)
@@ -732,9 +454,7 @@ class PipelineSnapshotBuilder:
                 CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
             ),
             current_cover_position=current_cover_position,
-            position_axis_inverted=axis_inverted(self._policy.axes[0], options),
             policy=self._policy,
-            group_intent=group_intent,
             minimize_movements=bool(
                 options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
             ),
@@ -753,6 +473,4 @@ class PipelineSnapshotBuilder:
             ),
             solar_floor_active=solar_floor_active,
             time_threshold_minutes=_delta_time_minutes(options.get(CONF_DELTA_TIME)),
-            cloud_suppression_active=cloud_suppression_active,
-            climate_temp_flags=climate_temp_flags,
         )

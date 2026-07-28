@@ -170,23 +170,3 @@ def test_prime_cache_warms_ensure_today():
     sd.prime_cache()
     assert sd._cache_day is not None  # warm after call
     assert sd._cache_times is not None
-
-
-@pytest.mark.unit
-def test_next_sunset_returns_tomorrows_sunset():
-    """`SunData.next_sunset()` asks astral for TOMORROW's sunset.
-
-    Mirrors `next_sunrise()`: the "till sunset" manual-override mode needs a
-    roll-forward candidate when today's sunset has already passed (issue #1044).
-    """
-    sd = _make_sun_data()
-    today = date.today()
-    tomorrow = today + timedelta(days=1)
-    sd.location.sunset.side_effect = lambda d, local=False: datetime(
-        d.year, d.month, d.day, 21, 0, 0
-    )
-
-    result = sd.next_sunset()
-
-    assert result == datetime(tomorrow.year, tomorrow.month, tomorrow.day, 21, 0, 0)
-    assert result > sd.sunset()
