@@ -14,29 +14,15 @@ import numpy as np
 
 from ...cover_types import get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
-from ...engine.climate_crossings import (
-    extreme_heat_crossing,
-    outside_high_crossing,
-    resolve_current_temperature,
-    summer_warm_crossing,
-    winter_crossing,
-)
 from ...engine.covers import AdaptiveTiltCover
-from ...const import (
-    DEFAULT_TRACKING_SEASONS,
-    ClimateInactiveReason,
-    ClimateStrategy,
-    ControlMethod,
-    ReasonCode,
-)
-from ...reason_i18n import Reason, _REASON_TEMPLATES_EN
+from ...const import ClimateInactiveReason, ClimateStrategy, ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
     compute_raw_calculated_position,
     compute_solar_position,
 )
-from ..types import DecisionStep, PipelineResult, PipelineSnapshot
+from ..types import PipelineResult, PipelineSnapshot
 from .climate_modes import (
     NORMAL_WITH_PRESENCE,
     NORMAL_WITHOUT_PRESENCE,
@@ -75,88 +61,48 @@ class ClimateCoverData:
     winter_close_insulation: bool
     summer_close_bypass_sun_floor: bool = False
     cloud_coverage_above_threshold: bool = False
-    # Extreme-heat mode (issue #766). ``temp_extreme_heat`` None = feature off.
-    temp_extreme_heat: float | None = None
-    extreme_heat_position: int | None = None
-    tracking_seasons: frozenset[str] = field(
-        default_factory=lambda: frozenset(DEFAULT_TRACKING_SEASONS)
-    )
-    # Smoothed season-crossing flags (issue #917). None = smoothing off / not
-    # threaded → the season properties fall back to the raw single-crossing so
-    # every pre-#917 install and every direct-constructor test is byte-identical.
-    # When the coordinator's ClimateSmoothingManager resolves a flag, it is
-    # threaded in here and wins over the raw comparison.
-    winter_active: bool | None = None
-    summer_warm_active: bool | None = None
-    outside_high_active: bool | None = None
-    extreme_heat_active: bool | None = None
 
     @property
     def get_current_temperature(self) -> float | None:
         """Get temperature based on configured source (outside/inside)."""
-        return resolve_current_temperature(
-            self.outside_temperature,
-            self.inside_temperature,
-            temp_switch=self.temp_switch,
-        )
+        if self.temp_switch and self.outside_temperature is not None:
+            try:
+                return float(self.outside_temperature)
+            except (ValueError, TypeError):
+                return None
+        if self.inside_temperature is not None:
+            try:
+                return float(self.inside_temperature)
+            except (ValueError, TypeError):
+                return None
+        return None
 
     @property
     def is_winter(self) -> bool:
-        """True when current temperature is below temp_low.
-
-        Returns the smoothed flag (``winter_active``) when the coordinator has
-        resolved one; otherwise falls back to the raw single-crossing (via
-        ``engine.climate_crossings``) so pure-data tests and hold=0 / blank-release
-        installs behave byte-identically to before smoothing existed.
-        """
-        if self.winter_active is not None:
-            return self.winter_active
-        return winter_crossing(self.get_current_temperature, self.temp_low, None)[0]
+        """True when current temperature is below temp_low."""
+        if self.temp_low is not None and self.get_current_temperature is not None:
+            return self.get_current_temperature < self.temp_low
+        return False
 
     @property
     def outside_high(self) -> bool:
-        """True when outdoor temperature exceeds temp_summer_outside.
-
-        Smoothed flag wins when present; else the raw fail-open-to-True crossing.
-        """
-        if self.outside_high_active is not None:
-            return self.outside_high_active
-        return outside_high_crossing(
-            self.outside_temperature, self.temp_summer_outside, None
-        )[0]
+        """True when outdoor temperature exceeds temp_summer_outside."""
+        if (
+            self.temp_summer_outside is not None
+            and self.outside_temperature is not None
+        ):
+            try:
+                return float(self.outside_temperature) > self.temp_summer_outside
+            except (ValueError, TypeError):
+                return True
+        return True
 
     @property
     def is_summer(self) -> bool:
-        """True when current temperature is above temp_high AND outside_high.
-
-        The composite ANDs the (possibly smoothed) summer-warm edge with the
-        (possibly smoothed) outside-high edge — the manager smooths crossings,
-        not seasons, so composition stays here.
-        """
-        if self.summer_warm_active is not None:
-            warm = self.summer_warm_active
-        else:
-            warm = summer_warm_crossing(
-                self.get_current_temperature, self.temp_high, None
-            )[0]
-        return warm and self.outside_high
-
-    @property
-    def is_extreme_heat(self) -> bool:
-        """True when the OUTSIDE temperature exceeds the extreme-heat threshold.
-
-        Keys on ``outside_temperature`` (mirroring ``outside_high``), NOT
-        ``get_current_temperature`` — extreme heat is about the outdoor load and
-        must never flip to the inside sensor via ``temp_switch`` (issue #766).
-        Returns the smoothed flag when present; else the raw crossing, which is
-        False when the feature is off (threshold None), the outside reading is
-        unavailable (None), or either value is non-numeric.
-        """
-        if self.extreme_heat_active is not None:
-            return self.extreme_heat_active
-        return extreme_heat_crossing(
-            self.outside_temperature, self.temp_extreme_heat, None
-        )[0]
+        """True when current temperature is above temp_high AND outside_high."""
+        if self.temp_high is not None and self.get_current_temperature is not None:
+            return self.get_current_temperature > self.temp_high and self.outside_high
+        return False
 
     @property
     def lux(self) -> bool:
@@ -244,11 +190,8 @@ class ClimateCoverState:
 
         ``gamma_deg``/``beta_deg`` are computed once here for tilt covers — the
         same ``float(tilt_cover.gamma)`` / ``np.rad2deg(tilt_cover.beta)`` the
-        original routers used, still evaluated unconditionally. Past the #1030
-        illumination gate ``beta_deg`` is no longer meaningful (the clamped
-        cosine changes it, e.g. −49° → +89° at ``γ = 120``), but its only
-        consumer — ``_tilt_winter_mode2`` — sits behind ``cover_valid``, so the
-        value is discarded there rather than acted on.
+        original routers used, evaluated regardless of validity to match the
+        prior behavior.
         """
         gamma_deg = 0.0
         beta_deg = 0.0
@@ -264,7 +207,6 @@ class ClimateCoverState:
             solar_position=self._solar_position,
             gamma_deg=gamma_deg,
             beta_deg=beta_deg,
-            tracking_seasons=self.climate_data.tracking_seasons,
         )
 
     def _run(self, rules: tuple[ClimateRule, ...], *, tilt: bool) -> int | None:
@@ -306,63 +248,23 @@ class ClimateCoverState:
 
 
 # ---------------------------------------------------------------------------
-# Inactive-reason ↔ reason-code mapping — shared by ClimateHandler and sensor.py
+# Inactive-reason slug derivation — shared by ClimateHandler and sensor.py
 # ---------------------------------------------------------------------------
 
-# Each ClimateInactiveReason slug that has describe_skip prose maps to a frozen
-# ReasonCode (issue #882). The CODE — never the localized prose — is the join
-# key, so describe_skip and the reverse derivation below both stay
-# language-independent. ACTIVE and OTHER_MODE_ACTIVE have no describe_skip code
-# (the handler wins / is outprioritized before describe_skip runs).
-_INACTIVE_REASON_TO_CODE: dict[str, str] = {
-    ClimateInactiveReason.MODE_OFF: ReasonCode.SKIP_CLIMATE_MODE_OFF,
-    ClimateInactiveReason.OUTSIDE_TIME_WINDOW: ReasonCode.SKIP_OUTSIDE_WINDOW,
-    ClimateInactiveReason.READINGS_UNAVAILABLE: (
-        ReasonCode.SKIP_CLIMATE_READINGS_UNAVAILABLE
-    ),
-    ClimateInactiveReason.THRESHOLDS_NOT_MET: ReasonCode.SKIP_CLIMATE_DEFERRED,
+# Maps each ClimateInactiveReason slug to a human-readable prose string.
+# This is the single source of truth so that describe_skip and the slug helper
+# stay in sync without duplicating branch logic.
+_SLUG_TO_PROSE: dict[str, str] = {
+    ClimateInactiveReason.MODE_OFF: "climate mode not enabled",
+    ClimateInactiveReason.OUTSIDE_TIME_WINDOW: "outside time window",
+    ClimateInactiveReason.READINGS_UNAVAILABLE: "climate readings or options unavailable",
+    ClimateInactiveReason.THRESHOLDS_NOT_MET: "deferred glare-control to solar/glare handlers",
+    # ACTIVE and OTHER_MODE_ACTIVE have no describe_skip prose (handler wins / outprioritized)
 }
 
-# Reverse map: derive the inactive-reason slug from a decision step's frozen
-# reason CODE. Built once from the forward map so the two stay in sync.
-_CODE_TO_INACTIVE_REASON: dict[str, str] = {
-    code: slug for slug, code in _INACTIVE_REASON_TO_CODE.items()
-}
-
-# Defensive fallback for legacy, payload-less decision steps (pre-#882 steps
-# carrying only English prose). Built from the English templates so no prose
-# literal is duplicated here. Production steps always carry reason_payload, so
-# this only fires for hand-constructed or historical steps.
-_LEGACY_PROSE_TO_INACTIVE_REASON: dict[str, str] = {
-    _REASON_TEMPLATES_EN[code]: slug
-    for code, slug in _CODE_TO_INACTIVE_REASON.items()
-    if code in _REASON_TEMPLATES_EN
-}
-
-
-def _climate_step_inactive_reason(step: DecisionStep) -> str:
-    """Derive a ClimateInactiveReason from a non-winning climate decision step.
-
-    Keys on the frozen ``reason_payload.code`` (language-independent) — the
-    "outprioritized" case is detected by code equality with
-    ``ReasonCode.REGISTRY_OUTPRIORITIZED``, not by matching prose. Falls back to
-    English-prose matching only for legacy payload-less steps (defensive).
-    """
-    if step.matched:
-        return ClimateInactiveReason.ACTIVE
-    payload = step.reason_payload
-    if payload is not None:
-        if payload.code == ReasonCode.REGISTRY_OUTPRIORITIZED:
-            return ClimateInactiveReason.OTHER_MODE_ACTIVE
-        return _CODE_TO_INACTIVE_REASON.get(
-            payload.code, ClimateInactiveReason.THRESHOLDS_NOT_MET
-        )
-    # Legacy payload-less step: match the English prose (defensive only).
-    if step.reason.startswith("outprioritized by"):
-        return ClimateInactiveReason.OTHER_MODE_ACTIVE
-    return _LEGACY_PROSE_TO_INACTIVE_REASON.get(
-        step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET
-    )
+# Reverse map for deriving a slug from a describe_skip prose string (sensor.py use).
+# Built once at module load from _SLUG_TO_PROSE — stays in sync automatically.
+_PROSE_TO_SLUG: dict[str, str] = {v: k for k, v in _SLUG_TO_PROSE.items()}
 
 
 def inactive_reason(
@@ -392,13 +294,16 @@ def inactive_reason(
     if snapshot.climate_readings is None or snapshot.climate_options is None:
         return ClimateInactiveReason.READINGS_UNAVAILABLE
 
-    # Inspect the decision trace for the climate step. The distinction between
-    # ACTIVE / OTHER_MODE_ACTIVE / THRESHOLDS_NOT_MET is derived from the step's
-    # frozen reason CODE (see _climate_step_inactive_reason), not its prose.
+    # Inspect the decision trace for the climate step.
     if pipeline_result is not None:
         for step in pipeline_result.decision_trace:
             if step.handler == "climate":
-                return _climate_step_inactive_reason(step)
+                if step.matched:
+                    return ClimateInactiveReason.ACTIVE
+                if step.reason.startswith("outprioritized by"):
+                    return ClimateInactiveReason.OTHER_MODE_ACTIVE
+                # Present but not matched and not outprioritized → deferred
+                return ClimateInactiveReason.THRESHOLDS_NOT_MET
 
     # No climate step in trace (e.g. climate deferred without a trace entry)
     return ClimateInactiveReason.THRESHOLDS_NOT_MET
@@ -409,10 +314,9 @@ def inactive_reason_from_result(
 ) -> str:
     """Derive a ClimateInactiveReason slug from a PipelineResult alone.
 
-    Used by sensor.py where no PipelineSnapshot is in scope. Inspects the
-    decision_trace climate step and maps its frozen ``reason_payload.code`` back
-    to a slug via _CODE_TO_INACTIVE_REASON. Keying on the CODE — not the
-    (now localizable) prose — keeps this join language-independent (issue #882).
+    Used by sensor.py where no PipelineSnapshot is in scope.  Inspects the
+    decision_trace climate step and maps via _PROSE_TO_SLUG (the reverse of
+    the _SLUG_TO_PROSE map that describe_skip uses) — single source of truth.
 
     Falls back to MODE_OFF when the result is None or has no climate step.
     """
@@ -421,7 +325,14 @@ def inactive_reason_from_result(
 
     for step in pipeline_result.decision_trace:
         if step.handler == "climate":
-            return _climate_step_inactive_reason(step)
+            if step.matched:
+                return ClimateInactiveReason.ACTIVE
+            if step.reason.startswith("outprioritized by"):
+                return ClimateInactiveReason.OTHER_MODE_ACTIVE
+            # Map the prose reason back to a slug via the reverse map.
+            return _PROSE_TO_SLUG.get(
+                step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET
+            )
 
     # No climate step in trace → climate was never considered → mode off or not applicable.
     return ClimateInactiveReason.MODE_OFF
@@ -464,9 +375,6 @@ class ClimateHandler(OverrideHandler):
 
         opts = snapshot.climate_options
         r = snapshot.climate_readings
-        # Smoothed season-crossing flags (issue #917). None → each season
-        # property falls back to its raw single-crossing (pre-#917 behaviour).
-        flags = snapshot.climate_temp_flags
         return ClimateCoverData(
             temp_low=opts.temp_low,
             temp_high=opts.temp_high,
@@ -483,13 +391,6 @@ class ClimateHandler(OverrideHandler):
             winter_close_insulation=opts.winter_close_insulation,
             summer_close_bypass_sun_floor=opts.summer_close_bypass_sun_floor,
             cloud_coverage_above_threshold=r.cloud_coverage_above_threshold,
-            temp_extreme_heat=opts.temp_extreme_heat,
-            extreme_heat_position=opts.extreme_heat_position,
-            tracking_seasons=opts.tracking_seasons,
-            winter_active=flags.winter if flags is not None else None,
-            summer_warm_active=flags.summer_warm if flags is not None else None,
-            outside_high_active=flags.outside_high if flags is not None else None,
-            extreme_heat_active=flags.extreme_heat if flags is not None else None,
         )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
@@ -506,46 +407,27 @@ class ClimateHandler(OverrideHandler):
 
         position = round(raw_position)
 
-        if climate_cover_state.climate_strategy == ClimateStrategy.EXTREME_HEAT:
-            # Checked FIRST: extreme heat is an all-day force-hold that pre-empts
-            # every season strategy (issue #766). The hold position already rode
-            # get_state()/apply_snapshot_limits above — this branch only sets the
-            # label + control method, never a short-circuit before get_state().
-            method = ControlMethod.EXTREME_HEAT
-            season_code = ReasonCode.FRAGMENT_SEASON_EXTREME_HEAT
-        elif (
-            climate_cover_state.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
-        ):
-            # Season-scope gate fired: glare tracking is not permitted in the
-            # current season, so the cover holds its default position. Checked
-            # before is_summer/is_winter because the gate can fire in any season
-            # the user deselected, and DEFAULT is the honest control method.
-            method = ControlMethod.DEFAULT
-            season_code = ReasonCode.FRAGMENT_SEASON_TRACKING_OFF
-        elif climate_data.is_summer:
+        if climate_data.is_summer:
             method = ControlMethod.SUMMER
-            season_code = ReasonCode.FRAGMENT_SEASON_SUMMER
+            season = "summer"
         elif climate_data.is_winter:
             method = ControlMethod.WINTER
-            season_code = ReasonCode.FRAGMENT_SEASON_WINTER
+            season = "winter"
         elif climate_cover_state.climate_strategy == ClimateStrategy.LOW_LIGHT:
             # Low-light / no-sun branch — the cover returns to its default
             # position rather than tracking the sun.  Emitting SOLAR here
             # would cause VenetianPolicy to synthesise a tilt from the
             # still-drifting azimuth even when the sun has set (issue #33).
             method = ControlMethod.DEFAULT
-            season_code = ReasonCode.FRAGMENT_SEASON_GLARE_LOW_LIGHT
+            season = "glare control (low light)"
         else:
             method = ControlMethod.SOLAR
-            season_code = ReasonCode.FRAGMENT_SEASON_GLARE
+            season = "glare control"
 
         return PipelineResult(
             position=position,
             control_method=method,
-            reason_payload=Reason(
-                ReasonCode.CLIMATE_ACTIVE,
-                {"season": Reason(season_code), "position": position},
-            ),
+            reason=f"climate mode active ({season}) — position {position}%",
             climate_state=position,
             climate_strategy=climate_cover_state.climate_strategy,
             climate_data=climate_data,
@@ -564,15 +446,13 @@ class ClimateHandler(OverrideHandler):
             return {}
         return {"climate_data": climate_data}
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when climate handler does not match.
 
         Delegates to the inactive_reason slug helper (single source of truth)
-        and maps each slug to its frozen ReasonCode via _INACTIVE_REASON_TO_CODE
-        so the registry can localize it (issue #882). The other_mode_active and
-        active slugs never reach describe_skip (those paths win the handler), so
-        their codes are omitted from the map.
+        and maps each slug to its prose via _SLUG_TO_PROSE.  The other_mode_active
+        and active slugs never reach describe_skip (those paths win the handler),
+        so their prose entries are omitted from the map.
         """
         slug = inactive_reason(snapshot, pipeline_result=None)
-        code = _INACTIVE_REASON_TO_CODE.get(slug, ReasonCode.SKIP_NOT_ACTIVE)
-        return Reason(code)
+        return _SLUG_TO_PROSE.get(slug, slug)

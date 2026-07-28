@@ -27,16 +27,10 @@
   "python.linting.flake8Enabled": false,
 
   // Pytest Configuration
-  // Deliberately no `-n auto` here: these args are reused by "Debug Test", and
-  // debugpy cannot attach through an xdist worker, so breakpoints would stop
-  // working. For a fast full-suite run use the "Run All Tests" task, which goes
-  // through ./scripts/test (parallel, ~13s vs ~49s).
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestArgs": ["tests", "--no-cov"],
-  // Re-collecting 322 test modules costs ~4s, which is too much to pay on
-  // every save. Discovery still runs on demand from the Test Explorer.
-  "python.testing.autoTestDiscoverOnSaveEnabled": false,
+  "python.testing.pytestArgs": ["tests", "-v", "--no-cov"],
+  "python.testing.autoTestDiscoverOnSaveEnabled": true,
 
   // Terminal Integration (macOS/Linux)
   "terminal.integrated.env.osx": {

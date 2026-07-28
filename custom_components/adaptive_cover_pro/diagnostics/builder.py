@@ -9,19 +9,11 @@ never accesses the coordinator directly.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from ..const import ControlStatus
-from ..const import (
-    ClimateStrategy,
-    ControlMethod,
-    FORECAST_STEP_MINUTES,
-    ReasonCode,
-    SunState,
-)
-from ..reason_i18n import Reason, render
+from ..const import ClimateStrategy, ControlMethod, FORECAST_STEP_MINUTES, SunState
 
 # Sensor state classifications (issue #693, Q3).
 _SENSOR_STATE_NOT_CONFIGURED = "not_configured"
@@ -46,7 +38,6 @@ class SensorSource:
     entity_id: Any  # str | list | None — the raw option value
     source: str
     state: str
-    unit_of_measurement: str | None = None  # issue #969 (rule 14)
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +80,6 @@ class DiagnosticContext:
     switch_mode: bool = False
     inverse_state: bool = False
     use_interpolation: bool = False
-    # Whether the position axis is EFFECTIVELY inverted this cycle — i.e.
-    # inverse-state is configured and interpolation is not suppressing it
-    # (issue #1028). Not the same as ``inverse_state`` above, which is the raw
-    # config flag. Defaults False so contexts built without it are unaffected.
-    position_axis_inverted: bool = False
     final_state: int = 0  # coordinator.state (after interpolation/inverse)
 
     # Solar-tracking-only forecast for the rest of today (issue #437 cache).
@@ -162,35 +148,12 @@ class DiagnosticContext:
     # default_position diagnostics block to disambiguate sunset-vs-eow.
     end_of_window_active: bool = False
 
-    # issue #786: the effective indoor temperature sensor and its provenance,
-    # threaded from the cycle's ClimateReadings. ``source`` is "explicit" /
-    # "area" / "none"; ``area_id`` is set only for the "area" source. Surfaced
-    # in the climate block so a user can see why a cover reacts to a sensor
-    # they never configured on it.
-    temp_sensor_entity_id: str | None = None
-    temp_sensor_source: str = "none"
-    temp_sensor_area_id: str | None = None
-
-    # issue #547: provenance of the outdoor temperature actually used —
-    # "live", "forecast_max", "max_of_live_and_forecast", or "live_fallback".
-    # Threaded from the cycle's ClimateReadings; surfaced in temperature_details
-    # so a user can see whether climate mode reacted to the forecast or the
-    # live reading.
-    outside_temp_source: str = "live"
-
-    # issue #882: the instance-language reason-template overlay, primed once at
-    # setup by the coordinator (``coordinator._reason_labels``). ``None`` → the
-    # English defaults, so ``render(...)`` output is byte-identical on an EN
-    # install. Kept HA-free (a plain mapping) so the builder stays unit-testable.
-    reason_labels: Mapping[str, str] | None = None
-
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
 # ---------------------------------------------------------------------------
 
 _CLIMATE_STRATEGY_LABELS: dict[ClimateStrategy, str] = {
-    ClimateStrategy.EXTREME_HEAT: "Extreme Heat",
     ClimateStrategy.WINTER_HEATING: "Winter Heating",
     ClimateStrategy.SUMMER_COOLING: "Summer Cooling",
     ClimateStrategy.LOW_LIGHT: "Low Light",
@@ -208,7 +171,6 @@ _METHOD_TO_STATUS: dict[ControlMethod, str] = {
     ControlMethod.MANUAL: ControlStatus.MANUAL_OVERRIDE,
     # All other methods → pipeline is running normally
     ControlMethod.CLOUD: ControlStatus.ACTIVE,
-    ControlMethod.EXTREME_HEAT: ControlStatus.ACTIVE,
     ControlMethod.SUMMER: ControlStatus.ACTIVE,
     ControlMethod.WINTER: ControlStatus.ACTIVE,
     ControlMethod.SOLAR: ControlStatus.ACTIVE,
@@ -280,51 +242,21 @@ class DiagnosticsBuilder:
 
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:
-        """Get the current control state reason from pipeline result or cover geometry.
-
-        Renders through the instance-language ``ctx.reason_labels`` overlay
-        (issue #882); ``None`` → English defaults, byte-identical to the legacy
-        prose. The builder-owned control-state labels emit ``Reason(builder.*)``
-        codes; the cover-geometry branch prefers the engine's stable
-        ``control_state_reason_code`` (rendered with labels) and falls back to
-        the cover's English ``control_state_reason`` prose when no code is
-        exposed (e.g. legacy test doubles).
-        """
-        labels = ctx.reason_labels
+        """Get the current control state reason from pipeline result or cover geometry."""
         result = ctx.pipeline_result
         if result is not None and result.control_method == ControlMethod.MOTION:
-            reason = render(
-                Reason(ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT), labels
-            )
+            reason = "Motion Timeout"
         elif result is not None and result.control_method == ControlMethod.MANUAL:
-            reason = render(Reason(ReasonCode.BUILDER_CONTROL_MANUAL_OVERRIDE), labels)
-        elif (
-            result is not None
-            and result.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
-        ):
-            reason = render(
-                Reason(ReasonCode.BUILDER_CONTROL_TRACKING_OFF_SEASON), labels
-            )
+            reason = "Manual Override"
         elif ctx.cover:
-            code = getattr(ctx.cover, "control_state_reason_code", None)
-            reason = (
-                render(Reason(code), labels)
-                if code is not None
-                else ctx.cover.control_state_reason
-            )
+            reason = ctx.cover.control_state_reason
         else:
-            reason = render(Reason(ReasonCode.BUILDER_UNKNOWN), labels)
+            reason = "Unknown"
 
         # An applied tilt-only custom slot is otherwise invisible on the tracker
         # entity because the position winner owns the status (#667).
         if result is not None and result.tilt_only_slot is not None:
-            reason = render(
-                Reason(
-                    ReasonCode.BUILDER_CONTROL_TILT_FIXED,
-                    {"reason": reason, "slot": result.tilt_only_slot},
-                ),
-                labels,
-            )
+            reason = f"{reason} — tilt fixed by Custom #{result.tilt_only_slot}"
         return reason
 
     @staticmethod
@@ -337,36 +269,20 @@ class DiagnosticsBuilder:
         When manual override is active and the cover's physical position diverges
         from the solar calculation, the divergence is surfaced explicitly.
         """
-        labels = ctx.reason_labels
         result = ctx.pipeline_result
         if result is None:
-            return render(Reason(ReasonCode.BUILDER_UNKNOWN), labels)
+            return "Unknown"
 
         # Outside time window — pipeline ran but commands are gated
         if not ctx.check_adaptive_time:
             pos = result.default_position
-            pos_label = Reason(
-                ReasonCode.FRAGMENT_SUNSET_POSITION
-                if result.is_sunset_active
-                else ReasonCode.FRAGMENT_DEFAULT_POSITION
+            pos_label = (
+                "sunset position" if result.is_sunset_active else "default position"
             )
-            return render(
-                Reason(
-                    ReasonCode.BUILDER_OUTSIDE_WINDOW,
-                    {"pos_label": pos_label, "pos": pos},
-                ),
-                labels,
-            )
+            return f"Outside time window → {pos_label} {pos}% (commands paused)"
 
-        # Base explanation is the pipeline reason (already human-readable). Prefer
-        # the structured payload so the base localizes; fall back to the legacy
-        # English ``reason`` string when a result carries no payload.
-        base = (
-            render(result.reason_payload, labels)
-            if result.reason_payload is not None
-            else result.reason
-        )
-        parts: list[str] = [base]
+        # Base explanation is the pipeline reason (already human-readable)
+        parts: list[str] = [result.reason]
 
         # Surface the divergence between the physical held position and the solar calc
         # only when they differ — avoids noise when the cover happens to be at the
@@ -377,43 +293,23 @@ class DiagnosticsBuilder:
             and result.held_position != result.raw_calculated_position
         ):
             parts.append(
-                render(
-                    Reason(
-                        ReasonCode.BUILDER_MANUAL_DIVERGENCE,
-                        {
-                            "held": result.held_position,
-                            "raw": result.raw_calculated_position,
-                        },
-                    ),
-                    labels,
-                )
+                f"manual override active — holding cover at {result.held_position}%"
+                f" (solar would be {result.raw_calculated_position}%)"
             )
 
         # Surface an applied tilt-only custom slot alongside the position winner
         # so it is visible in the Control Status string (#667).
         if result.tilt_only_slot is not None:
             parts.append(
-                render(
-                    Reason(
-                        ReasonCode.BUILDER_TILT_FIXED,
-                        {"tilt": result.tilt, "slot": result.tilt_only_slot},
-                    ),
-                    labels,
-                )
+                f"tilt fixed at {result.tilt}% by Custom #{result.tilt_only_slot}"
             )
 
         # Append post-processing transforms if they changed the value
         final = ctx.final_state
         if ctx.use_interpolation:
-            parts.append(
-                render(
-                    Reason(ReasonCode.BUILDER_INTERPOLATED, {"final": final}), labels
-                )
-            )
+            parts.append(f"interpolated → {final}%")
         elif ctx.inverse_state and final != result.position:
-            parts.append(
-                render(Reason(ReasonCode.BUILDER_INVERSED, {"final": final}), labels)
-            )
+            parts.append(f"inversed → {final}%")
 
         return " → ".join(parts)
 
@@ -447,26 +343,6 @@ class DiagnosticsBuilder:
         diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
         return diagnostics
 
-    @staticmethod
-    def _logical_position(ctx: DiagnosticContext) -> int:
-        """Return the winner's position in the logical frame (issue #1028).
-
-        ``PipelineResult.position`` is contractually logical for every winner —
-        ``coordinator.state`` maps all of them through ``_to_cover_frame`` on
-        the way to the wire — so this is the identity.
-
-        Kept as a named method rather than inlined: it is the single place that
-        states which frame ``linear_position`` publishes, and the guarantee it
-        carries (#1028) is unchanged. Until #1036 the guarantee was delivered by
-        un-flipping bypass / floor-clamped winners, because ``state`` handed
-        those to the cover verbatim; that un-flip was compensating for the
-        carve-out, not for a real frame difference, and went away with it.
-        """
-        result = ctx.pipeline_result
-        if result is None:
-            return 0
-        return result.position
-
     @classmethod
     def _build_position_base(cls, ctx: DiagnosticContext) -> dict:
         """Build calculated position, control status/reason, optional flags, and explanation."""
@@ -474,15 +350,6 @@ class DiagnosticsBuilder:
         result = ctx.pipeline_result
         raw_pos = result.raw_calculated_position if result is not None else 0
         diagnostics["calculated_position"] = raw_pos
-        # Pre-interpolation target in the LOGICAL (HA-convention) frame on every
-        # cycle (issues #911, #1028): the position the pipeline decided, before
-        # interpolation maps it onto the motor curve.
-        #
-        # It equals the motor value ``coordinator.state`` publishes only when
-        # neither interpolation nor inverse-state is in play. Every winner's
-        # position is logical regardless of which handler won (#1036), so the
-        # field's frame never depends on provenance.
-        diagnostics["linear_position"] = cls._logical_position(ctx)
 
         if result is not None and result.climate_state is not None:
             diagnostics["calculated_position_climate"] = result.climate_state
@@ -675,21 +542,6 @@ class DiagnosticsBuilder:
     def _build_climate(ctx: DiagnosticContext) -> dict:
         """Build climate mode diagnostics."""
         diagnostics: dict = {}
-
-        # Effective indoor temp sensor + provenance (issue #786). Surfaced
-        # whenever a sensor resolved (explicit or auto-resolved from the area)
-        # so a user can trace why a cover reacts to a sensor they never
-        # configured on it. Absent when nothing resolved (source "none").
-        if ctx.temp_sensor_source and ctx.temp_sensor_source != "none":
-            diagnostics["temp_sensor"] = {
-                "entity_id": ctx.temp_sensor_entity_id,
-                "source": ctx.temp_sensor_source,
-                "area_id": ctx.temp_sensor_area_id,
-                "unit_of_measurement": DiagnosticsBuilder._read_unit_of_measurement(
-                    ctx.hass, ctx.temp_sensor_entity_id
-                ),
-            }
-
         result = ctx.pipeline_result
         if ctx.climate_mode and result is not None and result.climate_data is not None:
             climate_data = result.climate_data
@@ -711,7 +563,6 @@ class DiagnosticsBuilder:
             diagnostics["temperature_details"] = {
                 "inside_temperature": _round_temp(climate_data.inside_temperature),
                 "outside_temperature": _round_temp(climate_data.outside_temperature),
-                "outside_temperature_source": ctx.outside_temp_source,
                 "temp_switch": climate_data.temp_switch,
             }
 
@@ -726,7 +577,6 @@ class DiagnosticsBuilder:
                 "lux_below_threshold": climate_data.lux_below_threshold,
                 "irradiance_below_threshold": climate_data.irradiance_below_threshold,
                 "cloud_coverage_above_threshold": climate_data.cloud_coverage_above_threshold,
-                "tracking_seasons": sorted(climate_data.tracking_seasons),
             }
 
         return diagnostics
@@ -899,7 +749,7 @@ class DiagnosticsBuilder:
                 "description": (
                     "Solar-tracking-only projection for the rest of today. "
                     "Holds window geometry constant and walks the sun forward; "
-                    "does NOT model manual override, occupancy, weather safety, "
+                    "does NOT model manual override, motion, weather safety, "
                     "climate, or custom-position handlers. Use it to validate "
                     "sun/FOV geometry and timing, not to explain a specific "
                     "command — see decision_trace for that."
@@ -1027,7 +877,7 @@ class DiagnosticsBuilder:
     def _build_sensor_sources(cls, ctx: DiagnosticContext) -> dict:
         """Build the two shared-sensor source/state subsections (issue #693, Q3).
 
-        Every key in ``BUILDING_PROFILE_ENTITY_KEYS`` is classified per cover via
+        Every key in ``BUILDING_PROFILE_SENSOR_KEYS`` is classified per cover via
         the three-way ``classify_profile_sensor_source``: ``"profile"`` (inherited
         from the profile), ``"override"`` (profile defines it but the cover
         overrides it locally), or ``"local"`` (profile leaves it blank, cover keeps
@@ -1042,7 +892,7 @@ class DiagnosticsBuilder:
         flat ``configuration`` dict is untouched so current consumers keep
         working.
         """
-        from ..const import BUILDING_PROFILE_ENTITY_KEYS, CONF_BUILDING_PROFILE_ID
+        from ..const import BUILDING_PROFILE_SENSOR_KEYS, CONF_BUILDING_PROFILE_ID
         from ..profile_link import classify_profile_sensor_source
 
         options = ctx.config_options or {}
@@ -1052,7 +902,7 @@ class DiagnosticsBuilder:
 
         profile_block: list[dict] = []
         local_block: list[dict] = []
-        for key in sorted(BUILDING_PROFILE_ENTITY_KEYS):
+        for key in sorted(BUILDING_PROFILE_SENSOR_KEYS):
             source, entity_id = classify_profile_sensor_source(
                 key, options, profile_options
             )
@@ -1062,7 +912,6 @@ class DiagnosticsBuilder:
                 entity_id=entity_id,
                 source=source,
                 state=cls._classify_sensor_state(ctx.hass, entity_id),
-                unit_of_measurement=cls._read_unit_of_measurement(ctx.hass, entity_id),
             )
             bucket.append(asdict(descriptor))
 
@@ -1109,21 +958,6 @@ class DiagnosticsBuilder:
             if state is not None and state.state not in _UNAVAILABLE_HA_STATES:
                 return _SENSOR_STATE_AVAILABLE
         return _SENSOR_STATE_UNAVAILABLE
-
-    @staticmethod
-    def _read_unit_of_measurement(hass: Any, entity_id: Any) -> str | None:
-        """Return a scalar entity's ``unit_of_measurement`` attribute, or None.
-
-        None when hass is absent, entity_id is falsy, or entity_id is a list
-        (the multi-entity gate/severe-sensor keys have no single unit to
-        report). ``getattr`` guards state stand-ins lacking ``.attributes``.
-        """
-        if hass is None or not entity_id or isinstance(entity_id, list):
-            return None
-        state = hass.states.get(entity_id)
-        if state is None:
-            return None
-        return getattr(state, "attributes", {}).get("unit_of_measurement")
 
     @staticmethod
     def _templated_thresholds(ctx: DiagnosticContext) -> dict:

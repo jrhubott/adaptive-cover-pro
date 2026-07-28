@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from ...const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
-    AxisConstraintMode,
     ControlMethod,
-    ReasonCode,
     custom_position_handler_name,
 )
-from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
 from ..types import CustomPositionSensorState, PipelineResult, PipelineSnapshot
@@ -44,7 +41,7 @@ class CustomPositionHandler(OverrideHandler):
     def __init__(
         self,
         slot: int,
-        position: int | None,
+        position: int,
         priority: int,
         tilt: int | None = None,
     ) -> None:
@@ -52,8 +49,7 @@ class CustomPositionHandler(OverrideHandler):
 
         Args:
             slot:      1-based slot number (1–10).  Used to build ``name``.
-            position:  Cover position (0–100 %) to apply when the trigger is on,
-                       or None for a constraint-only slot that names no position.
+            position:  Cover position (0–100 %) to apply when the trigger is on.
             priority:  Pipeline evaluation priority (1–100).  Higher = evaluated first.
             tilt:      Explicit tilt (0–100 %) for venetian covers. None = solar tilt.
 
@@ -76,73 +72,45 @@ class CustomPositionHandler(OverrideHandler):
         return self.priority >= CUSTOM_POSITION_SAFETY_PRIORITY
 
     @staticmethod
-    def _trigger_param(state: CustomPositionSensorState) -> object:
-        """Describe what activated the slot, as a reason-template param.
+    def _trigger_label(state: CustomPositionSensorState) -> str:
+        """Describe what activated the slot, for reason strings.
 
-        Active sensor entity ids stay scalar strings (never translated); a
-        template activation contributes a ``trigger_template`` fragment. When
-        both are present the value is a tuple rendered joined by ``", "`` (the
-        old force-override reason format). A slot with neither falls back to the
-        ``trigger_fallback`` fragment.
+        Active sensors are joined like the old force-override reason; a
+        template-only activation reads ``template``.
         """
-        parts: list[object] = list(state.active_entity_ids)
+        parts = list(state.active_entity_ids)
         if state.template_active:
-            parts.append(Reason(ReasonCode.FRAGMENT_TRIGGER_TEMPLATE))
-        if parts:
-            return tuple(parts)
-        return Reason(ReasonCode.FRAGMENT_TRIGGER_FALLBACK)
-
-    def _reason_head(self, state: CustomPositionSensorState) -> Reason:
-        """Return the leading-clause fragment of the reason (issue #867).
-
-        A configured slot name renders ``"<name> active"`` (the name is a raw
-        scalar, never translated); otherwise falls back to today's exact
-        ``"custom position #N active (trigger)"`` form. Single source of truth
-        for both PipelineResult reason branches below.
-        """
-        if state.custom_name:
-            return Reason(ReasonCode.CUSTOM_HEAD_NAMED, {"name": state.custom_name})
-        return Reason(
-            ReasonCode.CUSTOM_HEAD_SLOT,
-            {"slot": self._slot, "trigger": self._trigger_param(state)},
-        )
+            parts.append("template")
+        return ", ".join(parts) if parts else "trigger"
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's trigger is active.
 
-        The handler only claims the position axis when the slot names an
-        *exact* position (``position_mode`` is ``FIXED``). Every other mode —
-        a floor (``min_mode``, issue #463), a ceiling or range, or no position
-        claim at all (issue #943) — defers by returning ``None`` so the
-        registry can compose the constraint onto whichever handler actually
-        wins. That is what makes a constraint priority-independent.
-
-        The ``use_my`` path is the exception: it is hardware-pinned, ignores
-        constraint semantics entirely, and always claims.
+        In ``min_mode`` (and not on the ``use_my`` path), the handler defers
+        by returning ``None``. The registry then composes the configured
+        position as a post-decision floor clamp on whichever lower-priority
+        handler wins (issue #463).
         """
         # Find our slot in the snapshot's sensor list.
         for state in snapshot.custom_position_sensors:
             if state.slot == self._slot:
                 if state.is_on:
-                    # Defer to the axis-constraint composition pass — see
-                    # pipeline/axis_constraints.py. Covers today's tilt-only
-                    # (#514) and floor (#463) deferrals plus the ceiling /
-                    # range / no-claim modes, with identical outcomes for
-                    # every pre-#943 configuration.
-                    if (
-                        state.position_mode is not AxisConstraintMode.FIXED
-                        and not state.use_my
-                    ):
+                    # Tilt-only mode defers to the tilt-axis overlay pass — the
+                    # slot fixes the slat angle but never claims position
+                    # (issue #514). See pipeline/tilt_axis.py.
+                    if state.tilt_only:
+                        return None
+                    # Floor mode (without use_my) defers to the floor-clamp
+                    # composition pass — see pipeline/floors.py.
+                    if state.min_mode and not state.use_my:
                         return None
                     raw = compute_raw_calculated_position(snapshot)
-                    reason_head = self._reason_head(state)
+                    trigger = self._trigger_label(state)
                     # Issue #767: only the priority-100 safety slot bypasses the
                     # Automatic-Control-OFF gate. Ordinary slots respect the switch.
                     bypass_auto_control = self._is_safety
-                    bypass_note: Reason | str = (
-                        Reason(ReasonCode.FRAGMENT_BYPASS_NOTE)
-                        if bypass_auto_control
-                        else ""
+                    bypass_note = (
+                        " [bypasses automatic control]" if bypass_auto_control else ""
                     )
                     # "Use My" path: route through the cover's hardware-stored My preset.
                     # my_position_value acts as both the target and the reason annotation.
@@ -156,45 +124,34 @@ class CustomPositionHandler(OverrideHandler):
                             bypass_auto_control=bypass_auto_control,
                             is_safety=self._is_safety,
                             control_method=ControlMethod.CUSTOM_POSITION,
-                            reason_payload=Reason(
-                                ReasonCode.CUSTOM_USE_MY,
-                                {
-                                    "head": reason_head,
-                                    "position": pos,
-                                    "bypass_note": bypass_note,
-                                },
+                            reason=(
+                                f"custom position #{self._slot} active ({trigger})"
+                                f" — use My position ({pos}%)"
+                                f"{bypass_note}"
                             ),
                             raw_calculated_position=raw,
                             custom_position_active_slot=self._slot,
                             custom_position_minimum_mode=None,
-                            custom_position_active_slot_name=state.slot_name,
+                            custom_position_active_slot_name=state.sensor_name,
                         )
                     # Exact-position branch (state.min_mode is False here —
-                    # floor mode defers above). A ``use_my`` slot reaches here
-                    # even with no position of its own; when its My value is
-                    # also unavailable there is nothing to send, so defer rather
-                    # than close the cover with a phantom 0 (audit finding 3).
+                    # floor mode defers above).
                     pos = self._position
-                    if pos is None:
-                        return None
                     return PipelineResult(
                         position=pos,
                         tilt=self._tilt,
                         bypass_auto_control=bypass_auto_control,
                         is_safety=self._is_safety,
                         control_method=ControlMethod.CUSTOM_POSITION,
-                        reason_payload=Reason(
-                            ReasonCode.CUSTOM_POSITION,
-                            {
-                                "head": reason_head,
-                                "position": pos,
-                                "bypass_note": bypass_note,
-                            },
+                        reason=(
+                            f"custom position #{self._slot} active ({trigger})"
+                            f" — position {pos}%"
+                            f"{bypass_note}"
                         ),
                         raw_calculated_position=raw,
                         custom_position_active_slot=self._slot,
                         custom_position_minimum_mode=None,
-                        custom_position_active_slot_name=state.slot_name,
+                        custom_position_active_slot_name=state.sensor_name,
                     )
                 # Slot found but not active — pass through
                 return None
@@ -202,6 +159,6 @@ class CustomPositionHandler(OverrideHandler):
         # Slot not found in snapshot — configuration mismatch or not yet loaded
         return None
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
         """Reason when this slot's trigger is not active."""
-        return Reason(ReasonCode.SKIP_CUSTOM_NOT_ACTIVE, {"slot": self._slot})
+        return f"custom position #{self._slot} not active"

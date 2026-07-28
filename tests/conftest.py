@@ -5,19 +5,6 @@
 # load our custom integration from the local ``custom_components/`` directory.
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
-# --- HA / pytest-homeassistant-custom-component compatibility shim ---
-# PHCC's ``disable_http_server`` fixture runs
-# ``patch("homeassistant.components.http.start_http_server_and_save_config")``
-# with no ``create=True``. That symbol only exists in a narrow band of HA
-# releases, so on the HA versions our CI matrix installs (min / stable / dev)
-# the patch raises AttributeError and every test using the ``hass`` fixture
-# errors at setup. Pre-create a harmless stub when HA lacks the symbol so the
-# patch target exists; when HA already defines it we leave the real one alone.
-import homeassistant.components.http as _ha_http
-
-if not hasattr(_ha_http, "start_http_server_and_save_config"):
-    _ha_http.start_http_server_and_save_config = lambda *args, **kwargs: None
-
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
@@ -61,7 +48,6 @@ def make_snapshot_for_cover(
     )
 
 
-from ._helpers.markers import uses_real_hass
 from .cover_helpers import (  # noqa: F401 — re-exported for convenience
     build_horizontal_cover,
     build_tilt_cover,
@@ -73,32 +59,6 @@ from .cover_helpers import (  # noqa: F401 — re-exported for convenience
 )
 
 
-def pytest_collection_modifyitems(items):
-    """Give every test a `unit` or `integration` marker, derived from its fixtures.
-
-    61% of the suite carried no marker at all, which made both `-m unit` and
-    `-m "not integration"` unreliable — the first missed most unit tests, the
-    second silently swept in every unmarked one. Deriving the marker here beats
-    editing 322 files, and it cannot drift the way hand-applied markers do.
-
-    Conservative by construction: an item that already declares either marker is
-    left exactly as authored, so this hook cannot change which fixtures any
-    existing test receives. Only previously-unmarked items are touched, and of
-    those the ones that gain `integration` are precisely the ones already
-    building a real HomeAssistant — so the autouse fixtures below start firing
-    for tests that genuinely need them.
-
-    Any marker applied here must be registered in `pyproject.toml`; with
-    `--strict-markers` an unregistered one fails the whole run at collection.
-    """
-    for item in items:
-        if item.get_closest_marker("unit") or item.get_closest_marker("integration"):
-            continue
-        item.add_marker(
-            pytest.mark.integration if uses_real_hass(item) else pytest.mark.unit
-        )
-
-
 @pytest.fixture(autouse=True)
 async def _auto_unload_config_entries(request, verify_cleanup):
     """Unload config entries created during integration tests to prevent lingering timers.
@@ -106,17 +66,8 @@ async def _auto_unload_config_entries(request, verify_cleanup):
     Explicitly depends on verify_cleanup so this fixture is set up AFTER it and
     therefore tears down BEFORE it — guaranteeing entries are unloaded before
     verify_cleanup checks for lingering timer handles.
-
-    Gated on the test actually resolving the real ``hass`` fixture, not just on
-    the marker. 160 ``integration``-marked tests never build a HomeAssistant —
-    they call validators or schema builders directly — and the bare
-    ``getfixturevalue("hass")`` below was *creating* one for them purely to have
-    something to clean up. There is nothing to unload in that case: without
-    ``hass`` in the fixture closure a test has no route to create a config entry.
     """
-    if not (
-        request.node.get_closest_marker("integration") and uses_real_hass(request.node)
-    ):
+    if not request.node.get_closest_marker("integration"):
         yield
         return
 
@@ -191,13 +142,10 @@ def neutralize_venetian_delays(monkeypatch):
 def _auto_enable_custom_integrations(request):
     """Auto-enable custom integration discovery for real HA integration tests.
 
-    Gated on the test actually resolving the real ``hass`` fixture as well as on
-    the marker. PHCC's ``enable_custom_integrations`` takes ``hass``, so
-    requesting it forces a HomeAssistant into existence — which is wasted work
-    for the 160 ``integration``-marked tests that never touch one, and whose
-    assertions cannot observe the effect either way.
+    Only activates when the test is marked @pytest.mark.integration,
+    avoiding overhead for the fast mock-hass unit tests.
     """
-    if request.node.get_closest_marker("integration") and uses_real_hass(request.node):
+    if request.node.get_closest_marker("integration"):
         # Request the plugin's fixture by name via indirect call
         request.getfixturevalue("enable_custom_integrations")
 

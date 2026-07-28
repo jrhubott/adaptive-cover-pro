@@ -5,12 +5,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from math import cos, radians
 
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
-from ...const import ReasonCode
-from ...reason_i18n import Reason, render_en
 from ...sun import SunData
 from ..sun_geometry import SunGeometry, azimuth_within_fov
 
@@ -64,13 +61,8 @@ class AdaptiveGeneralCover(ABC):
         field: the base carries no default field of its own (subclasses add
         non-default config fields after it, which would break dataclass field
         ordering). The forecast sets ``cover.eval_time`` dynamically per sample
-        so its time-dependent gates are evaluated at the projected time. The
-        live anticipation look-ahead
-        (:func:`pipeline.helpers.anticipated_solar_position_from_geometry`,
-        since PR #617) sets it the same way on the ``dataclasses.replace`` copies
-        it probes; the *current* cover instance is never given an
-        ``eval_time`` of its own, so its gates still evaluate at wall-clock
-        now.
+        so its time-dependent gates are evaluated at the projected time; the
+        live path never sets it, so it stays ``None`` → wall-clock now.
         """
         return SunGeometry(
             self.sol_azi,
@@ -154,39 +146,9 @@ class AdaptiveGeneralCover(ABC):
         return self.solar.gamma
 
     @property
-    def cos_aoi(self) -> float:
-        """Cosine of the angle of incidence on this cover's own plane (``s·n``).
-
-        Polymorphic hook, same shape as :attr:`fov_angle`. The default is the
-        vertical facade, ``cos(elev)·cos(gamma)``; cover types whose working
-        plane is not vertical (roof window, louvered roof) override it with the
-        pitched-plane form. Positive means the sun strikes the outer face.
-        """
-        return cos(radians(self.sol_elev)) * cos(radians(self.gamma))
-
-    @property
-    def sun_behind_plane(self) -> bool:
-        """Whether the sun is on the far side of this cover's plane (#1030).
-
-        The single predicate both the illumination gate and the reason branch
-        read. ``cos(AOI) <= 0`` means the face receives no direct sun at all, so
-        the shading projection has no answer — asking it anyway is what made
-        ``tan(elev)/cos(gamma)`` flip sign past ``|gamma| = 90`` and slam
-        vertical / tilt / venetian covers to an endpoint (and drive a drop-arm
-        awning to full extension). Cover types whose shade target is not the
-        glass — an area-mode patio awning — override this.
-        """
-        return self.cos_aoi <= 0.0
-
-    @property
     def valid_elevation(self) -> bool:
-        """Configured elevation bounds AND the sun striking the outer face.
-
-        The bounds come from ``SunGeometry``; the illumination clause is added
-        here because "is this plane lit?" is a per-geometry question that
-        ``SunGeometry`` (cover-type agnostic) deliberately does not answer.
-        """
-        return bool(self.solar.valid_elevation and not self.sun_behind_plane)
+        """Delegate to SunGeometry.valid_elevation."""
+        return self.solar.valid_elevation
 
     @property
     def sunset_valid(self) -> bool:
@@ -195,16 +157,8 @@ class AdaptiveGeneralCover(ABC):
 
     @property
     def is_sun_in_blind_spot(self) -> bool:
-        """Whether the sun is in a blind spot, in the acceptance frame (#913).
-
-        Evaluates the blind-spot wedge in the SAME frame the FOV gate accepts —
-        the polymorphic ``fov_angle`` — so an obstruction the glass physically
-        responds to is reachable. For vertical / awning / tilt / venetian covers
-        ``fov_angle == gamma``, so this is bit-for-bit identical to the raw
-        ``SunGeometry.is_sun_in_blind_spot``; for a pitched roof window it uses
-        the tilted-plane effective gamma.
-        """
-        return self.solar.is_sun_in_blind_spot_at(self.fov_angle)
+        """Delegate to SunGeometry.is_sun_in_blind_spot."""
+        return self.solar.is_sun_in_blind_spot
 
     @property
     def fov_angle(self) -> float:
@@ -276,38 +230,19 @@ class AdaptiveGeneralCover(ABC):
         return result
 
     @property
-    def control_state_reason_code(self) -> ReasonCode:
-        """Return the stable :class:`ReasonCode` for the current control state.
-
-        The pure engine emits a frozen code (no HA, no translation); the prose
-        is resolved at the diagnostics/sensor boundary. Branches mirror
-        :attr:`control_state_reason` exactly.
-        """
-        if self.direct_sun_valid:
-            return ReasonCode.ENGINE_DIRECT_SUN
-        if self.sunset_valid:
-            return ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET
-        if not self.valid:
-            # An unlit face outranks the elevation clause: reporting "Elevation
-            # Limit" for a sun behind the plane sends the user to a bound that
-            # is satisfied (#1030 — also the roof window's pre-existing
-            # mis-attribution).
-            if self.sun_behind_plane:
-                return ReasonCode.ENGINE_DEFAULT_SUN_BEHIND_PLANE
-            if not self.valid_elevation:
-                return ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT
-            return ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT
-        if self.is_sun_in_blind_spot:
-            return ReasonCode.ENGINE_DEFAULT_BLIND_SPOT
-        return ReasonCode.ENGINE_DEFAULT
-
-    @property
     def control_state_reason(self) -> str:
-        """Determine why the cover is tracking the sun or using the default position.
-
-        Byte-identical English shim over :attr:`control_state_reason_code`.
-        """
-        return render_en(Reason(self.control_state_reason_code))
+        """Determine why the cover is tracking the sun or using the default position."""
+        if self.direct_sun_valid:
+            return "Direct Sun"
+        if self.sunset_valid:
+            return "Default: Sunset Offset"
+        if not self.valid:
+            if not self.valid_elevation:
+                return "Default: Elevation Limit"
+            return "Default: FOV Exit"
+        if self.is_sun_in_blind_spot:
+            return "Default: Blind Spot"
+        return "Default"
 
     @abstractmethod
     def calculate_position(self) -> float:
@@ -316,19 +251,3 @@ class AdaptiveGeneralCover(ABC):
     @abstractmethod
     def calculate_percentage(self) -> int:
         """Calculate percentage from position."""
-
-    def calculate_raw_percentage(self) -> float:
-        """Raw geometry percentage before final integer rounding (issue #978).
-
-        Default delegates to ``calculate_percentage()``. That is only correct
-        for subclasses whose ``calculate_percentage`` already returns an
-        unrounded float — oscillating (arc solve) and the sliding curtain
-        (continuous interval solve). Subclasses that round internally override
-        this to expose the unrounded fraction: vertical and horizontal round via
-        ``PositionConverter.to_percentage``; tilt rounds on its legacy/custom-max
-        path. Exposing the raw fraction lets
-        :func:`pipeline.helpers.solar_position_from_geometry` apply directional
-        (conservative) rounding without the pre-rounding neutralising the
-        direction signal.
-        """
-        return float(self.calculate_percentage())

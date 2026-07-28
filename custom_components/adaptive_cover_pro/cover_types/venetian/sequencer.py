@@ -63,7 +63,7 @@ from ...managers.cover_command.gates import (
     filter_endpoint_specials,
 )
 from ...managers.cover_command.transit import is_state_in_transit
-from ...position_utils import inverse_state
+from ...managers.manual_override import inverse_state
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant

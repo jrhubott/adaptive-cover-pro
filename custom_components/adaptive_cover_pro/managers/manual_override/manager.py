@@ -34,12 +34,7 @@ from .detector import (
     StopToMy,
     UserContextChange,
 )
-from .expiry import (
-    STARTED_AT_SOURCE_DERIVED,
-    STARTED_AT_SOURCE_ENGAGED,
-    expiry_for_started_at,
-    started_at_for_expiry,
-)
+from .expiry import expiry_for_started_at, started_at_for_expiry
 from .position_delta import PositionDeltaDetector
 from .secondary_axis import SecondaryAxisCheck
 
@@ -102,21 +97,7 @@ class AdaptiveCoverManager:
         self.covers: set[str] = set()
 
         self.manual_control: dict[str, bool] = {}
-        # When the user touched the cover — the honest override start, and the
-        # anchor every non-pinned deadline is resolved from.
         self.manual_control_time: dict[str, dt.datetime] = {}
-        # PINNED absolute end times (issue #1044): the ``engage_manual_override``
-        # service's explicit ``end_time``/``duration``, and the expiry restored
-        # after a reboot. A pin outranks the configured duration mode; an entity
-        # absent here has its end derived by :meth:`expiry_for`.
-        self.manual_control_expiry: dict[str, dt.datetime] = {}
-        # How each entity's ``manual_control_time`` was obtained — see
-        # ``expiry.STARTED_AT_SOURCE_*``. Display/diagnostics only: nothing
-        # branches on it. It exists because the engage paths record the honest
-        # engage moment while the restore path can only reconstruct one, so the
-        # same override reports a different ``started_at`` across a restart and
-        # a consumer needs to be told which it is looking at.
-        self.manual_control_start_source: dict[str, str] = {}
         self.reset_duration = dt.timedelta(**reset_duration)
         self.logger = logger
         self._event_buffer: EventBuffer = (
@@ -147,19 +128,6 @@ class AdaptiveCoverManager:
         # ACP-origin predicate over a context id; the coordinator wires the
         # real one. Default treats nothing as ACP-originated.
         self._is_acp_context_fn: Callable[[str | None], bool] = lambda _cid: False
-        # Display-only assumed-position invalidator (issue #888). The coordinator
-        # wires this to ``CoverCommandService.clear_assumed_position`` so the
-        # stashed My/assumed value is dropped the moment the override resets or a
-        # real numeric position read arrives. Default is a no-op.
-        self._invalidate_assumed: Callable[[str], None] = lambda _eid: None
-        # Deadline resolver for the configured duration mode (issue #1044). The
-        # coordinator wires the real one; it performs the HA reads (sun
-        # boundaries, window end) so this manager stays HA-free. Returning
-        # ``None`` means "no resolvable deadline" and selects the fixed
-        # ``reset_duration`` fallback — which is exactly the ``fixed`` default.
-        self._deadline_resolver: Callable[[dt.datetime], dt.datetime | None] = (
-            lambda _anchor: None
-        )
 
     # --- wiring -----------------------------------------------------------
 
@@ -176,23 +144,6 @@ class AdaptiveCoverManager:
     def set_acp_context_predicate(self, fn: Callable[[str | None], bool]) -> None:
         """Register the predicate that recognises ACP-originated context ids."""
         self._is_acp_context_fn = fn
-
-    def set_assumed_invalidator(self, fn: Callable[[str], None]) -> None:
-        """Register the callback that drops a cover's assumed display position (#888)."""
-        self._invalidate_assumed = fn
-
-    def set_deadline_resolver(
-        self, fn: Callable[[dt.datetime], dt.datetime | None]
-    ) -> None:
-        """Register the duration-mode deadline resolver (issue #1044).
-
-        *fn* takes the override start as a tz-aware UTC datetime and returns the
-        resolved absolute end (also tz-aware UTC), or ``None`` when the
-        configured mode has no resolvable anchor — ``fixed``, a sun mode before
-        the first coordinator cycle, or ``until_window_end`` with no window
-        configured. ``None`` selects the ``reset_duration`` fallback.
-        """
-        self._deadline_resolver = fn
 
     def update_config(self, config: DetectorConfig) -> None:
         """Apply an options change at runtime (no reload).
@@ -505,15 +456,6 @@ class AdaptiveCoverManager:
             if old_state_obj is not None
             else None
         )
-        # Issue #888 follow-up: drop the display-only assumed value only on a
-        # GENUINE position transition. For assumed-state open/close covers (Somfy
-        # RTS) "open"/"closed" is the last-command signal; a same-value re-report
-        # ("open"→"open") must NOT wipe the assumed My value, or the card snaps
-        # back off My. A real move to a different endpoint (or a differing numeric
-        # read) still supersedes it. Both reads above pass no ``assumed`` so they
-        # compare raw open/close values (§3b), never the assumed fallback.
-        if new_position is not None and new_position != old_position:
-            self._invalidate_assumed(entity_id)
 
         now = dt.datetime.now(dt.UTC)
         ctx_obj = getattr(new_state, "context", None)
@@ -615,7 +557,7 @@ class AdaptiveCoverManager:
         context_user_id: str | None = None,
         context_id: str | None = None,
         context_parent_id: str | None = None,
-    ) -> bool:
+    ) -> None:
         """Mark manual override when a user-initiated cover.stop_cover is detected.
 
         Delegates to the active detector's ``on_stop_to_my`` hook (default: mark
@@ -633,15 +575,9 @@ class AdaptiveCoverManager:
             context_id:       id of the stop_cover call's originating HA Context.
             context_parent_id: parent_id of the originating HA Context, if any.
 
-        Returns:
-            True when the stop engaged the manual override (the cover is taken to
-            be at My), False when it was ignored (untracked, or the #875
-            wait-for-target gate declined). The coordinator uses this to decide
-            whether to record the display-only assumed My position (#888).
-
         """
         if entity_id not in self.covers:
-            return False
+            return
         decision = self._detector.on_stop_to_my(
             StopToMy(
                 entity_id=entity_id,
@@ -657,7 +593,7 @@ class AdaptiveCoverManager:
                 "handle_stop_service_call: ignoring stop for %s — wait_for_target active",
                 entity_id,
             )
-            return False
+            return
         self.logger.debug(
             "Manual override via user stop_cover for %s (My position = %d%%)",
             entity_id,
@@ -666,11 +602,10 @@ class AdaptiveCoverManager:
         self._apply_decision(
             entity_id,
             decision,
-            set_timestamp=lambda: self._arm(
-                entity_id, timestamp=dt.datetime.now(dt.UTC), overwrite=False
+            set_timestamp=lambda: self.manual_control_time.setdefault(
+                entity_id, dt.datetime.now(dt.UTC)
             ),
         )
-        return True
 
     def set_last_updated(self, entity_id, new_state, allow_reset):
         """Set last updated time for manual control.
@@ -688,9 +623,7 @@ class AdaptiveCoverManager:
         """
         if entity_id not in self.manual_control_time or allow_reset:
             last_updated = new_state.last_updated
-            # Re-arm from the touch moment; a fresh physical move must not
-            # inherit a pin left behind by a service call or a restore.
-            self._arm(entity_id, timestamp=last_updated)
+            self.manual_control_time[entity_id] = last_updated
             self.logger.debug(
                 "Updating last updated for manual control to %s for %s. Allow reset:%s",
                 last_updated,
@@ -704,111 +637,6 @@ class AdaptiveCoverManager:
                 allow_reset,
             )
 
-    # --- override arming / end-time authority -----------------------------
-
-    def _arm(
-        self,
-        entity_id: str,
-        *,
-        timestamp: dt.datetime,
-        expiry: dt.datetime | None = None,
-        overwrite: bool = True,
-        start_source: str = STARTED_AT_SOURCE_ENGAGED,
-    ) -> None:
-        """Write one cover's override start (and optional pinned end).
-
-        The single seam every arming path goes through, so ``manual_control_time``,
-        ``manual_control_expiry`` and ``manual_control_start_source`` can never
-        disagree about which cover is armed (CODING_GUIDELINES.md §
-        no-duplication).
-
-        Args:
-            entity_id: Cover entity ID.
-            timestamp: The override start — when the user touched the cover.
-            expiry: Optional ABSOLUTE end that outranks the configured duration
-                mode. ``None`` with ``overwrite=True`` **clears** any stale pin,
-                so a re-arm resolves fresh from the mode.
-            overwrite: ``True`` re-arms (extend semantics). ``False`` is
-                ``setdefault`` on all three stores — the "do not extend the
-                window" behaviour ``allow_reset=False`` and ``mark_user_command``
-                rely on.
-            start_source: Provenance of ``timestamp`` (``expiry.STARTED_AT_SOURCE_*``).
-                Defaults to ``engaged`` — every path except the reboot restore
-                knows the real moment. Display-only.
-
-        """
-        if not overwrite:
-            self.manual_control_time.setdefault(entity_id, timestamp)
-            self.manual_control_start_source.setdefault(entity_id, start_source)
-            if expiry is not None:
-                self.manual_control_expiry.setdefault(entity_id, expiry)
-            return
-        self.manual_control_time[entity_id] = timestamp
-        self.manual_control_start_source[entity_id] = start_source
-        if expiry is None:
-            self.manual_control_expiry.pop(entity_id, None)
-        else:
-            self.manual_control_expiry[entity_id] = expiry
-
-    def expiry_for(self, entity_id: str) -> dt.datetime | None:
-        """Return when *entity_id*'s manual override ends, or ``None`` if it isn't held.
-
-        The single end-time authority (issue #1044) — the sensor value and
-        attributes, the diagnostics countdown, and the expiry poll all read
-        through here instead of each re-deriving ``start + duration``.
-
-        Precedence:
-
-        1. Not under manual override → ``None``.
-        2. A pinned absolute end (service ``end_time``/``duration``, or an
-           expiry restored after a reboot) → that value.
-        3. The configured duration mode's resolved deadline.
-        4. Fallback: ``start + reset_duration`` — i.e. ``fixed`` behaviour,
-           which is also what every unresolvable mode degrades to.
-
-        The result is always tz-aware UTC.
-        """
-        started_at = self.manual_control_time.get(entity_id)
-        if started_at is None:
-            return None
-        pinned = self.manual_control_expiry.get(entity_id)
-        if pinned is not None:
-            return pinned
-        anchor = (
-            started_at
-            if started_at.tzinfo is not None
-            else started_at.replace(tzinfo=dt.UTC)
-        )
-        resolved = self._deadline_resolver(anchor)
-        if resolved is not None:
-            return resolved
-        return expiry_for_started_at(anchor, self.reset_duration)
-
-    def restore_override(self, entity_id: str, expiry: dt.datetime) -> None:
-        """Rehydrate one cover's override from a persisted absolute expiry (#1019).
-
-        The persisted payload is an absolute end, so it is pinned directly
-        rather than pushed through an inverse that no longer round-trips in the
-        sun modes. The derived start is still written so the diagnostics
-        ``started_at`` field and the restore round-trip keep their shape.
-
-        That derived start is a RECONSTRUCTION, not the moment the user touched
-        the cover: only the expiry was ever persisted (a per-entity ISO string —
-        the payload shape a rolled-back build still parses), so the true start
-        is unrecoverable here. Under a pinned service deadline or a non-``fixed``
-        duration mode it will differ from what the engage path reported for the
-        very same override before the restart. It is therefore tagged
-        ``derived_from_expiry`` so diagnostics can say so rather than silently
-        change meaning; the exact end remains available as ``expires_at``.
-        """
-        self.manual_control[entity_id] = True
-        self._arm(
-            entity_id,
-            timestamp=started_at_for_expiry(expiry, self.reset_duration),
-            expiry=expiry,
-            start_source=STARTED_AT_SOURCE_DERIVED,
-        )
-
     def mark_manual_control(self, cover: str) -> None:
         """Mark cover as manual.
 
@@ -821,14 +649,7 @@ class AdaptiveCoverManager:
         """
         self.manual_control[cover] = True
 
-    def _engage(
-        self,
-        entity_id: str,
-        *,
-        timestamp: dt.datetime,
-        reason: str,
-        expiry: dt.datetime | None = None,
-    ) -> None:
+    def _engage(self, entity_id: str, *, timestamp: dt.datetime, reason: str) -> None:
         """Engage manual override on one cover without commanding movement.
 
         Shared engine for the wall-switch / input-sensor path
@@ -844,11 +665,9 @@ class AdaptiveCoverManager:
 
         Args:
             entity_id: Cover entity ID to engage.
-            timestamp: Value written to ``manual_control_time`` — when the user
-                touched the cover.
+            timestamp: Value written to ``manual_control_time`` — the derived
+                end time is ``timestamp + reset_duration``.
             reason: Short label recorded into the diagnostic event buffer.
-            expiry: Optional pinned absolute end. ``None`` (the default) leaves
-                the end to the configured duration mode and clears any stale pin.
 
         """
         self._apply_decision(
@@ -862,8 +681,8 @@ class AdaptiveCoverManager:
                     "reason": reason,
                 },
             ),
-            set_timestamp=lambda: self._arm(
-                entity_id, timestamp=timestamp, expiry=expiry
+            set_timestamp=lambda: self.manual_control_time.__setitem__(
+                entity_id, timestamp
             ),
         )
 
@@ -910,13 +729,12 @@ class AdaptiveCoverManager:
         2. else ``duration`` positive → EXTEND-BY: if the cover is already under
            manual override, add ``duration`` to its **current** end; otherwise
            engage fresh for ``now + duration``.
-        3. else (both absent/invalid) → no pin at all: the configured duration
-           mode owns the end, anchored on ``now``.
+        3. else (both absent/invalid) → fall back to ``now + reset_duration``
+           (i.e. ``manual_control_time = now``).
 
-        A resolved target end is PINNED, so an explicit service instruction
-        outranks the configured ``manual_override_duration_mode`` (issue #1044).
-        ``manual_control_time`` records ``now`` either way — the honest moment
-        the override was engaged, not a back-dated fiction.
+        The chosen target end is converted to the stored start via the SSOT
+        inverse :func:`.expiry.started_at_for_expiry`; the timestamp is
+        overwritten so a later call can move the end.
 
         Args:
             entity_id: Cover entity ID to engage.
@@ -939,13 +757,19 @@ class AdaptiveCoverManager:
                     entity_id,
                 )
         elif duration is not None and duration > dt.timedelta(0):
-            current_end = self.expiry_for(entity_id)
-            if self.is_cover_manual(entity_id) and current_end is not None:
+            if self.is_cover_manual(entity_id):
+                current_end = expiry_for_started_at(
+                    self.manual_control_time[entity_id], self.reset_duration
+                )
                 target_expiry = current_end + duration
             else:
                 target_expiry = now + duration
 
-        self._engage(entity_id, timestamp=now, reason=reason, expiry=target_expiry)
+        if target_expiry is not None:
+            timestamp = started_at_for_expiry(target_expiry, self.reset_duration)
+        else:
+            timestamp = now
+        self._engage(entity_id, timestamp=timestamp, reason=reason)
 
     def mark_user_command(self, entity_id: str, *, reason: str) -> None:
         """Engage manual override pre-emptively from an ACP-owned surface.
@@ -971,7 +795,7 @@ class AdaptiveCoverManager:
 
         """
         self.manual_control[entity_id] = True
-        self._arm(entity_id, timestamp=dt.datetime.now(dt.UTC), overwrite=False)
+        self.manual_control_time.setdefault(entity_id, dt.datetime.now(dt.UTC))
         self._record_event(
             entity_id,
             "manual_override_set",
@@ -983,14 +807,9 @@ class AdaptiveCoverManager:
     async def reset_if_needed(self) -> set[str]:
         """Reset expired manual overrides.
 
-        Checks all covers with manual control timestamps and resets those whose
-        end time has passed. Called on every coordinator update to ensure timely
-        automatic reset.
-
-        The end time comes from :meth:`expiry_for`, so this honours a pinned
-        service deadline and the configured duration mode alike. The comparison
-        is strictly ``>``: an override is not expired *at* its deadline, only
-        past it.
+        Checks all covers with manual control timestamps and resets those where
+        configured duration has elapsed. Called on every coordinator update to
+        ensure timely automatic reset.
 
         Returns:
             Set of entity IDs whose manual override just expired this call.
@@ -1001,13 +820,12 @@ class AdaptiveCoverManager:
         """
         expired: set[str] = set()
         current_time = dt.datetime.now(dt.UTC)
-        for entity_id in list(self.manual_control_time):
-            deadline = self.expiry_for(entity_id)
-            if deadline is not None and current_time > deadline:
+        manual_control_time_copy = dict(self.manual_control_time)
+        for entity_id, last_updated in manual_control_time_copy.items():
+            if current_time - last_updated > self.reset_duration:
                 self.logger.debug(
-                    "Resetting manual override for %s, because it expired at %s",
+                    "Resetting manual override for %s, because duration has elapsed",
                     entity_id,
-                    deadline,
                 )
                 self.reset(entity_id)
                 expired.add(entity_id)
@@ -1027,11 +845,6 @@ class AdaptiveCoverManager:
         """
         self.manual_control[entity_id] = False
         self.manual_control_time.pop(entity_id, None)
-        self.manual_control_expiry.pop(entity_id, None)
-        self.manual_control_start_source.pop(entity_id, None)
-        # Issue #888: the assumed My/display position was a stand-in while the
-        # override held the cover; clearing the override retires it too.
-        self._invalidate_assumed(entity_id)
         self.logger.debug("Reset manual override for %s", entity_id)
         self._record_event(
             entity_id,
@@ -1076,3 +889,8 @@ class AdaptiveCoverManager:
 
         """
         return [k for k, v in self.manual_control.items() if v]
+
+
+def inverse_state(state: int) -> int:
+    """Inverse state."""
+    return 100 - state

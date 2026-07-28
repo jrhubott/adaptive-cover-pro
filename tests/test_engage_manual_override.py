@@ -42,16 +42,7 @@ def _make_manager(
 # ---------------------------------------------------------------------------
 
 
-def test_expiry_helpers_are_inverses_but_not_the_expiry_authority() -> None:
-    """The arithmetic still holds — but it no longer decides when an override ends.
-
-    ``expiry_for_started_at`` still derives the ``fixed``-mode expiry and its
-    inverse still reconstructs the displayed ``started_at`` on restore, so the
-    pure round trip is real and stays locked. What changed with issue #1044 is
-    that a *pinned* deadline lives in its own store: ``manual_control_time``
-    now records the honest moment the user touched the cover, and
-    ``expiry_for()`` is the single end-time authority.
-    """
+def test_expiry_helpers_are_inverses() -> None:
     start = dt.datetime(2026, 7, 2, 12, 0, tzinfo=dt.UTC)
     dur = dt.timedelta(hours=2, minutes=15)
     expiry = expiry_for_started_at(start, dur)
@@ -59,19 +50,6 @@ def test_expiry_helpers_are_inverses_but_not_the_expiry_authority() -> None:
     assert started_at_for_expiry(expiry, dur) == start
     # Round trip both directions
     assert expiry_for_started_at(started_at_for_expiry(expiry, dur), dur) == expiry
-
-    cover = "cover.x"
-    manager = _make_manager([cover], reset_duration={"hours": 2})
-    now = dt.datetime.now(dt.UTC)
-    end_time = now + dt.timedelta(hours=1)
-    manager.engage_override(cover, end_time=end_time, duration=None, reason="service")
-
-    assert abs((manager.expiry_for(cover) - end_time).total_seconds()) < 1
-    # The start is the touch moment, so the naive inverse no longer lands on it.
-    assert abs((manager.manual_control_time[cover] - now).total_seconds()) < 1
-    assert expiry_for_started_at(
-        manager.manual_control_time[cover], manager.reset_duration
-    ) != manager.expiry_for(cover)
 
 
 # ---------------------------------------------------------------------------
@@ -90,9 +68,11 @@ def test_engage_override_absolute_end_time_sets_expiry_no_command() -> None:
     manager.engage_override(cover, end_time=end, duration=None, reason="service")
 
     assert manager.is_cover_manual(cover) is True
-    # The absolute end is pinned; the start records when the user touched it.
-    assert abs((manager.expiry_for(cover) - end).total_seconds()) < 1
-    assert abs((manager.manual_control_time[cover] - now).total_seconds()) < 1
+    # stored start = end - reset_duration (the SSOT inverse the sensor uses)
+    expected_start = end - manager.reset_duration
+    assert (
+        abs((manager.manual_control_time[cover] - expected_start).total_seconds()) < 1
+    )
     on_engaged.assert_called_once_with(cover)
 
 
@@ -131,8 +111,10 @@ def test_engage_override_naive_datetime_normalized_utc() -> None:
     manager.engage_override(cover, end_time=end_naive, duration=None, reason="service")
 
     assert manager.is_cover_manual(cover) is True
-    expected_end = end_naive.replace(tzinfo=dt.UTC)
-    assert abs((manager.expiry_for(cover) - expected_end).total_seconds()) < 1
+    expected_start = end_naive.replace(tzinfo=dt.UTC) - manager.reset_duration
+    assert (
+        abs((manager.manual_control_time[cover] - expected_start).total_seconds()) < 1
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +132,10 @@ def test_engage_override_duration_engages_fresh_for_now_plus_duration() -> None:
     )
 
     assert manager.is_cover_manual(cover) is True
-    end = manager.expiry_for(cover)
+    # end = now + 1h → stored start = now + 1h - 2h = now - 1h
+    end = expiry_for_started_at(
+        manager.manual_control_time[cover], manager.reset_duration
+    )
     assert abs((end - (now + dt.timedelta(hours=1))).total_seconds()) < 1
 
 
@@ -164,14 +149,18 @@ def test_engage_override_duration_extends_active_override() -> None:
     manager.engage_override(
         cover, end_time=None, duration=dt.timedelta(hours=1), reason="service"
     )
-    first_end = manager.expiry_for(cover)
+    first_end = expiry_for_started_at(
+        manager.manual_control_time[cover], manager.reset_duration
+    )
     assert on_engaged.call_count == 1
 
     # Extend by another 1h — end must move to first_end + 1h
     manager.engage_override(
         cover, end_time=None, duration=dt.timedelta(hours=1), reason="service"
     )
-    second_end = manager.expiry_for(cover)
+    second_end = expiry_for_started_at(
+        manager.manual_control_time[cover], manager.reset_duration
+    )
 
     assert abs((second_end - (first_end + dt.timedelta(hours=1))).total_seconds()) < 1
     # Extending an already-manual cover must NOT re-fire the engaged edge
@@ -188,7 +177,9 @@ def test_engage_override_end_time_takes_precedence_over_duration() -> None:
         cover, end_time=end, duration=dt.timedelta(hours=1), reason="service"
     )
 
-    resolved_end = manager.expiry_for(cover)
+    resolved_end = expiry_for_started_at(
+        manager.manual_control_time[cover], manager.reset_duration
+    )
     assert abs((resolved_end - end).total_seconds()) < 1
 
 

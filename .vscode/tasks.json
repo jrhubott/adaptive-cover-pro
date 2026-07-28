@@ -54,7 +54,7 @@
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/test",
+      "command": "source venv/bin/activate && python -m pytest tests/ -v",
       "problemMatcher": {
         "owner": "python",
         "fileLocation": ["relative", "${workspaceFolder}"],
@@ -74,7 +74,7 @@
     {
       "label": "Run Tests with Coverage",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/test coverage",
+      "command": "source venv/bin/activate && python -m pytest tests/ --cov=custom_components/adaptive_cover_pro --cov-report=term --cov-report=html",
       "problemMatcher": [],
       "group": "testing",
       "presentation": {

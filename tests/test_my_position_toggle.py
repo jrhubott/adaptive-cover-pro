@@ -48,9 +48,7 @@ async def test_my_position_button_not_created_when_toggle_default_false():
     assert (
         len(reset) == 1
     ), "Reset Manual Override button must remain always-on regardless of toggle"
-    # Reset Manual Override + Apply Calculated Position (#1045) are both
-    # always-on; only My Position is behind the toggle.
-    assert len(added) == 2
+    assert len(added) == 1
 
 
 @pytest.mark.asyncio

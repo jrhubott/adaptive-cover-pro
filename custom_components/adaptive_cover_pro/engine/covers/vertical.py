@@ -17,7 +17,6 @@ from ...const import (
 )
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
-from ..sun_geometry import clamped_cos_gamma, ray_x_at_window_plane
 from .base import AdaptiveGeneralCover
 
 # --- Numeric guards (file-local) ---
@@ -25,6 +24,10 @@ from .base import AdaptiveGeneralCover
 # elevation ≈ 2.9°, below which the projected shadow is geometrically
 # unbounded. Capping the divisor keeps sill_offset finite at low sun.
 MIN_TAN_ELEVATION_CLAMP = 0.05
+# Minimum |cos(gamma)| before path-length division — corresponds to gamma
+# ≈ 89.4°. Bridges the gap between the edge-case threshold (85°) and the
+# 90° singularity where cos(gamma) → 0.
+MIN_COS_GAMMA_CLAMP = 0.01
 
 
 def _elevation_offset(height_m: float, sol_elev: float) -> float:
@@ -83,7 +86,7 @@ def glare_zone_effective_distance(
 
     # Project back to find where the sun ray enters the window.
     # A ray hitting floor point (fx, fy) entered at x_w = fx + fy * tan(γ).
-    x_at_window = ray_x_at_window_plane(nearest_x, nearest_y, gamma)
+    x_at_window = nearest_x + nearest_y * float(tan(gamma_rad))
     if abs(x_at_window) > window_half_width:
         return None  # Ray enters outside the window opening — zone is naturally blocked
 
@@ -210,12 +213,11 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         onto a tilted plane without duplicating the surrounding edge-case /
         window-depth / sill / safety-margin pipeline (CODING_GUIDELINES.md
         "Code duplication is not okay").
-
-        The divisor comes from the shared one-sided ``clamped_cos_gamma`` guard
-        (#1030); the raw ``cos_gamma`` is still returned for the #682 trace.
         """
         cos_gamma = float(cos(rad(self.gamma)))
-        cos_gamma_clamped = clamped_cos_gamma(self.gamma)
+        cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
+            1 if cos_gamma >= 0 else -1
+        )
         path_length = effective_distance / cos_gamma_clamped
         base_height = path_length * float(tan(rad(self.sol_elev)))
         return base_height, cos_gamma, cos_gamma_clamped, path_length
@@ -380,17 +382,3 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             "Converting height to percentage: %s / %s * 100", position, self.h_win
         )
         return PositionConverter.to_percentage(position, self.h_win)
-
-    def calculate_raw_percentage(
-        self, effective_distance_override: float | None = None
-    ) -> float:
-        """Unrounded geometry fraction for directional rounding (issue #978).
-
-        Bypasses the ``round()`` inside ``PositionConverter.to_percentage`` so
-        that callers can apply ``floor()`` / ``ceil()`` / ``round()`` as needed.
-        Accepts the same *effective_distance_override* as
-        :meth:`calculate_percentage` so the glare-zone handler can use it
-        without the internal ``round()`` applied by that method.
-        """
-        position = self.calculate_position(effective_distance_override)
-        return (float(position) / self.h_win) * 100.0

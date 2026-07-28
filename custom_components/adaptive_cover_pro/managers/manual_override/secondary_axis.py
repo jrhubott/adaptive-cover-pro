@@ -19,12 +19,11 @@ mid-transit handler reevaluation may have changed after the command was sent:
 * Secondary (tilt/blend) axis — ``SecondaryAxisCheck.expected`` is anchored to
   the last dispatched value via the single shared rule
   :func:`resolve_dispatched_secondary_expected`. Every multi-axis policy
-  (venetian tilt, day/night-shade blend — both driving the same
-  ``DualAxisSequencer`` and its ``last_tilt_target`` store) delegates to that
-  one helper rather than mirroring the rule. When no value has been dispatched
-  the helper returns ``None`` and the check yields NO delta-based manual
-  detection on this axis — ACP has no commanded reference to police, so a
-  reevaluated ``result.tilt`` must not stand in for one.
+  (venetian tilt, driving the ``DualAxisSequencer`` and its ``last_tilt_target``
+  store) delegates to that one helper rather than mirroring the rule. When no
+  value has been dispatched the helper returns ``None`` and the check yields NO
+  delta-based manual detection on this axis — ACP has no commanded reference to
+  police, so a reevaluated ``result.tilt`` must not stand in for one.
 
 Both read sites express the same concept; the shared helper keeps them in sync
 so an in-flight movement whose expected target/tilt was recomputed mid-transit
@@ -46,8 +45,8 @@ def resolve_dispatched_secondary_expected(
     """Resolve a secondary-axis ``expected`` anchored to ACP's last DISPATCHED value.
 
     Single source of the issue #1006 anchoring rule, shared by every multi-axis
-    policy's ``secondary_axis_check`` (venetian tilt, day/night-shade blend) so
-    the rule lives in exactly one place. Returns:
+    policy's ``secondary_axis_check`` (venetian tilt) so the rule lives in
+    exactly one place. Returns:
 
     * the value ACP last DISPATCHED for this entity
       (``sequencer.last_tilt_target(entity_id)``) — the value the actuator is

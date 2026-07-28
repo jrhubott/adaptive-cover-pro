@@ -25,7 +25,6 @@ def _make_coordinator(
     h_win: float = 2.0,
     awn_length: float = 1.6,
     imperial: bool = False,
-    position_axis_inverted: bool = False,
 ):
     """Build the minimum coordinator shape ``_compute_distance_attrs`` needs."""
     config_service = MagicMock()
@@ -40,7 +39,6 @@ def _make_coordinator(
         _config_service=config_service,
         config_entry=SimpleNamespace(options={}),
         hass=hass,
-        position_axis_inverted=position_axis_inverted,
     )
 
 
@@ -66,37 +64,17 @@ def test_blind_imperial_target_distance() -> None:
 
 
 @pytest.mark.unit
-def test_blind_inverse_rebases_distance_on_logical_frame() -> None:
-    """A distance is physical, so it must be derived from the logical frame.
+def test_blind_inverse_state_is_irrelevant() -> None:
+    """Formula is literal arithmetic on the published percentage.
 
-    The percentages this helper receives are cover-frame values on an inverted
-    install. Doing literal arithmetic on them reports the physical opposite of
-    the truth, so the helper converts first: cover-frame 30 is logical 70, and
-    70 % of a 2 m window is 1.4 m (issue #1028).
+    inverse_state lives on the coordinator and affects what value gets
+    published; once a target percentage is exposed, the distance attribute
+    is purely ``dim × pos / 100``. Same percentage in → same metres out.
     """
-    coord = _make_coordinator(
-        cover_type="cover_blind", h_win=2.0, position_axis_inverted=True
-    )
-    attrs = _compute_distance_attrs(coord, _snapshot({}), target_position=30)
-    assert attrs == {"target_distance": 1.4, "distance_unit": "m"}
-
-
-@pytest.mark.unit
-def test_awning_inverse_full_extension_reports_full_length() -> None:
-    """A fully-extended 3 m awning must not report 0.00 m of extension.
-
-    On an inverted install the awning is fully out at cover-frame 0; the
-    reported distance is the full configured length (issue #1028).
-    """
-    coord = _make_coordinator(
-        cover_type="cover_awning", awn_length=3.0, position_axis_inverted=True
-    )
-    attrs = _compute_distance_attrs(
-        coord, _snapshot({"cover.awning": 0}), target_position=0
-    )
-    assert attrs is not None
-    assert attrs["target_distance"] == 3.0
-    assert attrs["actual_distances"] == {"cover.awning": 3.0}
+    coord = _make_coordinator(cover_type="cover_blind", h_win=2.0)
+    a = _compute_distance_attrs(coord, _snapshot({}), target_position=30)
+    b = _compute_distance_attrs(coord, _snapshot({}), target_position=30)
+    assert a == b == {"target_distance": 0.6, "distance_unit": "m"}
 
 
 @pytest.mark.unit

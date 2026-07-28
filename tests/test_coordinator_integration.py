@@ -30,7 +30,7 @@ def _make_pipeline_result(
     position: int = 50,
     control_method: ControlMethod = ControlMethod.SOLAR,
     bypass_auto_control: bool = False,
-    position_constraint_applied: bool = False,
+    floor_clamp_applied: bool = False,
     is_safety: bool = False,
 ) -> PipelineResult:
     return PipelineResult(
@@ -38,7 +38,7 @@ def _make_pipeline_result(
         control_method=control_method,
         reason="test",
         bypass_auto_control=bypass_auto_control,
-        position_constraint_applied=position_constraint_applied,
+        floor_clamp_applied=floor_clamp_applied,
         is_safety=is_safety,
     )
 
@@ -439,7 +439,7 @@ class TestFloorClampUnderManualOverride:
         result = _make_pipeline_result(
             position=80,
             control_method=ControlMethod.MANUAL,
-            position_constraint_applied=True,
+            floor_clamp_applied=True,
         )
         coordinator = _make_coordinator(
             entities=["cover.blind"],
@@ -475,7 +475,7 @@ class TestFloorClampUnderManualOverride:
         result = _make_pipeline_result(
             position=90,
             control_method=ControlMethod.MANUAL,
-            position_constraint_applied=False,
+            floor_clamp_applied=False,
         )
         coordinator = _make_coordinator(
             entities=["cover.blind"],

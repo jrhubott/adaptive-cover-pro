@@ -15,7 +15,7 @@ azimuth, so each case can drive a real engine while pinning gamma precisely.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from math import atan, atan2, cos, degrees, radians, sin, tan
 from unittest.mock import MagicMock
 
@@ -28,22 +28,26 @@ from custom_components.adaptive_cover_pro.engine.covers import (
     AdaptiveRoofWindowCover,
     AdaptiveVerticalCover,
 )
-from custom_components.adaptive_cover_pro.engine.sun_geometry import SunGeometry
 from custom_components.adaptive_cover_pro.engine.covers.roof_window import (
     TRACE_KEY_COS_AOI,
     TRACE_KEY_RIDGE_GATE_ENABLED,
     TRACE_KEY_RIDGE_GATE_OCCLUDED,
     TRACE_KEY_ROOF_PITCH_DEG,
     TRACE_KEY_SLOPE_RATIO,
-    roof_slope_ratio,
 )
-from tests.cover_helpers import (
-    make_cover_config,
-    make_daytime_sun_data,
-    make_vertical_config,
-)
+from tests.cover_helpers import make_cover_config, make_vertical_config
 
 _WIN_AZI = 180.0
+
+
+def _safe_sun_data() -> MagicMock:
+    """Build a sun_data mock with far-off sunset/sunrise (sunset_valid=False)."""
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    now = datetime.now(UTC)
+    sun_data.sunset.return_value = now + timedelta(hours=6)
+    sun_data.sunrise.return_value = now - timedelta(hours=6)
+    return sun_data
 
 
 def _roof(
@@ -63,7 +67,7 @@ def _roof(
         logger=MagicMock(),
         sol_azi=_WIN_AZI - gamma,
         sol_elev=sol_elev,
-        sun_data=make_daytime_sun_data(),
+        sun_data=_safe_sun_data(),
         config=make_cover_config(
             win_azi=_WIN_AZI, fov_left=fov_left, fov_right=fov_right
         ),
@@ -94,7 +98,7 @@ def _vertical(
         logger=MagicMock(),
         sol_azi=_WIN_AZI - gamma,
         sol_elev=sol_elev,
-        sun_data=make_daytime_sun_data(),
+        sun_data=_safe_sun_data(),
         config=make_cover_config(
             win_azi=_WIN_AZI, fov_left=fov_left, fov_right=fov_right
         ),
@@ -476,28 +480,6 @@ def test_projection_denominator_guard_stays_finite():
     assert 0.0 <= pos <= 2.0
 
 
-@pytest.mark.parametrize("pitch", [0.0, 30.0, 45.0])
-@pytest.mark.parametrize("gamma", [45.0, 89.0, 89.5, 90.0, 90.1, 91.0, 120.0])
-def test_slope_ratio_equals_exact_dot_products(pitch, gamma):
-    """``roof_slope_ratio`` IS ``(s·t)/(s·n)`` — including inside the clamp band (#1030).
-
-    The shipped form factored numerator and denominator by ``cos(elev)·cos γ``,
-    which introduced a ``cos γ`` divisor the exact geometry does not have. The
-    ``MIN_COS_GAMMA_CLAMP`` floor on that divisor then froze the ratio across
-    ``|γ| ∈ (89.43°, 90.57°)`` and the outer expression *compressed* the plateau
-    into a wrong finite value — 3.96 % off at pitch 30, unbounded at pitch 0,
-    where the true ratio crosses zero. Computing the dot products directly
-    removes the singularity instead of guarding it.
-    """
-    elev = 30.0
-    beta, e, g = radians(pitch), radians(elev), radians(gamma)
-    s_dot_t = -cos(beta) * cos(e) * cos(g) + sin(beta) * sin(e)
-    s_dot_n = sin(beta) * cos(e) * cos(g) + cos(beta) * sin(e)
-    assert roof_slope_ratio(gamma, elev, pitch) == pytest.approx(
-        s_dot_t / s_dot_n, abs=1e-9
-    )
-
-
 # ---------------------------------------------------------------------------
 # Policy hooks
 # ---------------------------------------------------------------------------
@@ -553,7 +535,7 @@ def test_policy_build_calc_engine_returns_roof_engine():
         logger=MagicMock(),
         sol_azi=170.0,
         sol_elev=40.0,
-        sun_data=make_daytime_sun_data(),
+        sun_data=_safe_sun_data(),
         config=make_cover_config(),
         config_service=svc,
         options=options,
@@ -604,7 +586,7 @@ def _effective_gamma(pitch: float, elev: float, gamma: float) -> float:
 def test_reporter_geometry_stays_valid_beyond_fov(gamma):
     """β=45°, FOV 85°, elev 60°: lit glass stays valid even past raw |gamma|=fov."""
     roof = _roof(roof_pitch=45, sol_elev=60.0, gamma=gamma, fov_left=85, fov_right=85)
-    assert roof.cos_aoi > 0
+    assert roof._cos_aoi() > 0
     assert roof.valid is True
     assert roof.direct_sun_valid is True
     assert roof.control_state_reason == "Direct Sun"
@@ -621,7 +603,7 @@ def test_in_fov_tracks_illumination_for_tilted_pitch(gamma):
 def test_pitch_30_stays_valid_beyond_fov(gamma):
     """A shallower pitch (β=30°) widens acceptance even further."""
     roof = _roof(roof_pitch=30, sol_elev=45.0, gamma=gamma, fov_left=85, fov_right=85)
-    assert roof.cos_aoi > 0
+    assert roof._cos_aoi() > 0
     assert roof.valid is True
 
 
@@ -646,7 +628,7 @@ def test_narrow_fov_still_rejects_far_sideways_sun():
     roof = _roof(
         roof_pitch=pitch, sol_elev=elev, gamma=gamma, fov_left=fov, fov_right=fov
     )
-    assert roof.cos_aoi > 0
+    assert roof._cos_aoi() > 0
     assert roof.valid is False
 
 
@@ -680,157 +662,6 @@ def test_wide_gamma_does_not_force_full_coverage():
     # forced-closed 0.0 the inherited edge case used to return.
     assert 0.0 < pos <= 2.0
     assert roof._last_calc_details["edge_case_detected"] is False
-
-
-# ---------------------------------------------------------------------------
-# Blind spot evaluated in the effective (acceptance) frame (#913)
-#
-# The blind-spot test must run in the SAME frame the FOV gate accepts — the
-# tilted-plane effective gamma — not raw horizontal gamma. Otherwise an
-# obstruction the near-flat glass physically responds to (raw gamma outside the
-# raw FOV, effective gamma inside it) is unreachable by any blind spot.
-# ---------------------------------------------------------------------------
-
-
-def _roof_with_blind_spot(
-    *,
-    roof_pitch: float,
-    sol_elev: float,
-    gamma: float,
-    blind_spot_left: int,
-    blind_spot_right: int,
-    fov_left: int = 90,
-    fov_right: int = 90,
-) -> AdaptiveRoofWindowCover:
-    """Build a roof-window cover with a single active blind-spot slot."""
-    return AdaptiveRoofWindowCover(
-        logger=MagicMock(),
-        sol_azi=_WIN_AZI - gamma,
-        sol_elev=sol_elev,
-        sun_data=make_daytime_sun_data(),
-        config=make_cover_config(
-            win_azi=_WIN_AZI,
-            fov_left=fov_left,
-            fov_right=fov_right,
-            blind_spot_left=blind_spot_left,
-            blind_spot_right=blind_spot_right,
-            blind_spot_on=True,
-        ),
-        vert_config=make_vertical_config(distance=1.0, h_win=2.0),
-        roof_config=RoofWindowConfig(roof_pitch=roof_pitch, roof_height_above=0.0),
-    )
-
-
-def test_blind_spot_masks_obstruction_in_effective_frame():
-    """A blind spot masks an obstruction the flat glass sees (#913).
-
-    #913 geometry: pitch 12°, FOV 90/90, low eastern sun (elev 10°, raw gamma
-    110°). The glass accepts it (effective gamma ≈ 83.8° ∈ FOV), and a blind spot
-    whose wedge covers ≈ [80, 88] in the *effective* frame now masks it. With the
-    legacy FOV-relative storage the raw-frame wedge is
-    ``[fov_left - right, fov_left - left] = [80, 88]``; before the frame fix the
-    wedge was tested against raw gamma 110 (∉ [80, 88]) and never fired.
-    """
-    from custom_components.adaptive_cover_pro.const import ReasonCode
-
-    roof = _roof_with_blind_spot(
-        roof_pitch=12,
-        sol_elev=10.0,
-        gamma=110.0,
-        blind_spot_left=88,  # signed-gamma upper edge (#247)
-        blind_spot_right=-80,  # negated lower edge → wedge [80, 88]
-    )
-    # Sanity-pin the geometry: raw gamma 110 maps into the effective FOV.
-    assert roof.gamma == pytest.approx(110.0)
-    assert roof.fov_angle == pytest.approx(83.8, abs=0.5)
-    # Glass accepts (effective gamma inside FOV), but the obstruction is masked.
-    assert roof.valid is True
-    assert roof.is_sun_in_blind_spot is True
-    assert roof.direct_sun_valid is False
-    assert roof.control_state_reason_code == ReasonCode.ENGINE_DEFAULT_BLIND_SPOT
-
-
-# ---------------------------------------------------------------------------
-# Frame-injection no-op locks (§299 β=90 anchor + vertical no-op)
-# ---------------------------------------------------------------------------
-
-
-def test_blind_spot_bit_identical_at_vertical_pitch():
-    """β=90° roof and vertical cover agree on the blind spot bit-for-bit (§299).
-
-    At vertical pitch ``fov_angle == gamma``, so routing the blind spot through
-    the acceptance frame is a pure no-op — the roof-window result equals the
-    plain vertical-cover result for the same config + sun.
-
-    The wedge (signed gamma left=25, right=-15 → ``15 <= gamma <= 25``) is chosen
-    so the test's gamma=20 sits INSIDE it: both covers report a genuine wedge HIT
-    (``True``), not a shared ``False`` miss that would never exercise the frame.
-    """
-    kwargs = {
-        "sol_elev": 30.0,
-        "gamma": 20.0,
-        "blind_spot_left": 25,
-        "blind_spot_right": -15,
-    }
-    # Guard: gamma=20 is inside the wedge (-right <= gamma <= left).
-    assert -kwargs["blind_spot_right"] <= kwargs["gamma"] <= kwargs["blind_spot_left"]
-    roof = _roof_with_blind_spot(roof_pitch=90, **kwargs)
-    vert = AdaptiveVerticalCover(
-        logger=MagicMock(),
-        sol_azi=_WIN_AZI - kwargs["gamma"],
-        sol_elev=kwargs["sol_elev"],
-        sun_data=make_daytime_sun_data(),
-        config=make_cover_config(
-            win_azi=_WIN_AZI,
-            fov_left=90,
-            fov_right=90,
-            blind_spot_left=kwargs["blind_spot_left"],
-            blind_spot_right=kwargs["blind_spot_right"],
-            blind_spot_on=True,
-        ),
-        vert_config=make_vertical_config(distance=1.0, h_win=2.0),
-    )
-    # Both must be True (a real wedge hit), and bit-identical.
-    assert roof.is_sun_in_blind_spot is True
-    assert roof.is_sun_in_blind_spot == vert.is_sun_in_blind_spot
-
-
-def test_vertical_cover_blind_spot_equals_raw_sun_geometry():
-    """A vertical cover's blind spot equals raw ``SunGeometry`` (fov_angle == gamma).
-
-    Locks the no-op claim: because ``fov_angle`` defaults to ``gamma`` for a
-    vertical cover, routing the blind spot through the acceptance frame leaves the
-    result identical to the raw-gamma ``SunGeometry`` property.
-
-    The wedge (signed gamma left=25, right=-15 → ``15 <= gamma <= 25``) puts the
-    test's gamma=20 INSIDE, so the equality compares two genuine ``True`` hits.
-    """
-    gamma, sol_elev = 20.0, 30.0
-    blind_spot_left, blind_spot_right = 25, -15
-    # Guard: gamma=20 is inside the wedge (-right <= gamma <= left).
-    assert -blind_spot_right <= gamma <= blind_spot_left
-    cover_config = make_cover_config(
-        win_azi=_WIN_AZI,
-        fov_left=90,
-        fov_right=90,
-        blind_spot_left=blind_spot_left,
-        blind_spot_right=blind_spot_right,
-        blind_spot_on=True,
-    )
-    vert = AdaptiveVerticalCover(
-        logger=MagicMock(),
-        sol_azi=_WIN_AZI - gamma,
-        sol_elev=sol_elev,
-        sun_data=make_daytime_sun_data(),
-        config=cover_config,
-        vert_config=make_vertical_config(distance=1.0, h_win=2.0),
-    )
-    sg = SunGeometry(
-        _WIN_AZI - gamma, sol_elev, make_daytime_sun_data(), cover_config, MagicMock()
-    )
-    assert vert.fov_angle == pytest.approx(sg.gamma)
-    assert vert.is_sun_in_blind_spot is True  # a real wedge hit, not a shared miss
-    assert vert.is_sun_in_blind_spot == sg.is_sun_in_blind_spot
 
 
 # ---------------------------------------------------------------------------

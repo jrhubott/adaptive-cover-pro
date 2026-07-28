@@ -5,7 +5,6 @@ from __future__ import annotations
 from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
-    ReasonCode,
 )
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
@@ -25,7 +24,6 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
     PipelineResult,
 )
-from custom_components.adaptive_cover_pro.reason_i18n import render_en
 
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -193,16 +191,9 @@ class TestSafetyCustomPositionHandler:
     def test_describe_skip_mentions_slot(self) -> None:
         """describe_skip names the slot when skipped."""
         snap = make_snapshot(custom_position_sensors=[])
-        reason = render_en(self.handler.describe_skip(snap))
+        reason = self.handler.describe_skip(snap)
         assert "#5" in reason
         assert "not active" in reason
-
-    def test_describe_skip_payload_names_slot(self) -> None:
-        """describe_skip returns a skip.custom_not_active payload naming the slot."""
-        snap = make_snapshot(custom_position_sensors=[])
-        payload = self.handler.describe_skip(snap)
-        assert payload.code == ReasonCode.SKIP_CUSTOM_NOT_ACTIVE
-        assert payload.params["slot"] == 5
 
     def test_priority_is_100(self) -> None:
         """Safety slot has priority 100 (highest)."""
@@ -389,10 +380,6 @@ class TestMotionTimeoutHandler:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.MOTION
-        # issue #723: the decision-trace reason is user-facing and must use
-        # occupancy wording, not "motion".
-        assert result.reason.startswith("occupancy timeout active")
-        assert "motion" not in result.reason.lower()
 
     def test_returns_none_when_inactive(self) -> None:
         """Return None when motion timeout is not active."""
@@ -425,44 +412,16 @@ class TestMotionTimeoutHandler:
         assert result.control_method == ControlMethod.MOTION
 
     def test_describe_skip_motion_control_disabled(self) -> None:
-        """describe_skip returns 'occupancy detection disabled' when switch is off."""
+        """describe_skip returns 'motion control disabled' when switch is off."""
         snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=False)
-        assert (
-            render_en(self.handler.describe_skip(snap))
-            == "occupancy detection disabled"
-        )
+        assert self.handler.describe_skip(snap) == "motion control disabled"
 
     def test_describe_skip_timeout_not_active(self) -> None:
         """describe_skip returns timeout-not-active message when enabled but no timeout."""
         snap = make_snapshot(motion_timeout_active=False, motion_control_enabled=True)
-        reason = render_en(self.handler.describe_skip(snap))
-        # issue #723: user-facing reason uses occupancy wording, not "motion".
-        assert "occupancy" in reason.lower()
-        assert "motion" not in reason.lower()
+        reason = self.handler.describe_skip(snap)
+        assert "motion" in reason.lower()
         assert "disabled" not in reason.lower()
-
-    def test_describe_skip_payload_occupancy_disabled(self) -> None:
-        """describe_skip returns skip.occupancy_disabled when the switch is off."""
-        snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=False)
-        payload = self.handler.describe_skip(snap)
-        assert payload.code == ReasonCode.SKIP_OCCUPANCY_DISABLED
-
-    def test_describe_skip_payload_occupancy_not_active(self) -> None:
-        """describe_skip returns skip.occupancy_not_active when enabled but no timeout."""
-        snap = make_snapshot(motion_timeout_active=False, motion_control_enabled=True)
-        payload = self.handler.describe_skip(snap)
-        assert payload.code == ReasonCode.SKIP_OCCUPANCY_NOT_ACTIVE
-
-    def test_reason_payload_occupancy_label(self) -> None:
-        """The return-to-default branch emits an occupancy.label payload."""
-        snap = make_snapshot(motion_timeout_active=True, default_position=int(20.0))
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.OCCUPANCY_LABEL
-        assert result.reason_payload.params["position"] == 20
-        pos_label = result.reason_payload.params["pos_label"]
-        assert pos_label.code == ReasonCode.FRAGMENT_DEFAULT_POSITION
 
     def test_priority_is_75(self) -> None:
         """MotionTimeoutHandler has priority 75."""
@@ -494,9 +453,6 @@ class TestMotionTimeoutHandlerHoldMode:
         assert result.position == 42
         assert result.control_method == ControlMethod.MOTION
         assert "hold" in result.reason.lower()
-        # issue #723: hold-mode reason is user-facing → occupancy wording.
-        assert result.reason.startswith("occupancy timeout")
-        assert "motion" not in result.reason.lower()
 
     def test_hold_exits_when_sun_not_valid(self) -> None:
         """hold_position + direct_sun_valid=False → fall through to default position."""
@@ -559,80 +515,6 @@ class TestMotionTimeoutHandlerHoldMode:
         assert result.position == 20
         assert result.control_method == ControlMethod.MOTION
 
-    def test_reason_payload_occupancy_holding(self) -> None:
-        """Hold-mode branch emits an occupancy.holding payload with the held position."""
-        snap = make_snapshot(
-            motion_timeout_active=True,
-            motion_timeout_mode="hold_position",
-            in_time_window=True,
-            direct_sun_valid=True,
-            current_cover_position=42,
-            default_position=10,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.OCCUPANCY_HOLDING
-        assert result.reason_payload.params["held"] == 42
-
-
-class TestOccupancyWordingLock:
-    """Issue #881 lock: the occupancy reason strings render byte-identically.
-
-    These EN strings are the exact wording #881 introduced. The i18n migration
-    (#882) must reproduce them character-for-character or #881 silently
-    regresses.
-    """
-
-    def test_occupancy_label_render_matches_881_wording(self) -> None:
-        from custom_components.adaptive_cover_pro.reason_i18n import Reason
-
-        reason = Reason(
-            ReasonCode.OCCUPANCY_LABEL,
-            {"pos_label": Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION), "position": 20},
-        )
-        assert render_en(reason) == "occupancy timeout active — default position 20%"
-
-    def test_occupancy_label_sunset_render_matches_881_wording(self) -> None:
-        from custom_components.adaptive_cover_pro.reason_i18n import Reason
-
-        reason = Reason(
-            ReasonCode.OCCUPANCY_LABEL,
-            {"pos_label": Reason(ReasonCode.FRAGMENT_SUNSET_POSITION), "position": 33},
-        )
-        assert render_en(reason) == "occupancy timeout active — sunset position 33%"
-
-    def test_occupancy_holding_render_matches_881_wording(self) -> None:
-        from custom_components.adaptive_cover_pro.reason_i18n import Reason
-
-        reason = Reason(ReasonCode.OCCUPANCY_HOLDING, {"held": 42})
-        assert render_en(reason) == (
-            "occupancy timeout — holding position 42% (sun within acceptance angle)"
-        )
-
-    def test_handler_return_to_default_reason_byte_identical(self) -> None:
-        """End-to-end: the handler's auto-derived reason equals the #881 string."""
-        snap = make_snapshot(motion_timeout_active=True, default_position=int(20.0))
-        result = MotionTimeoutHandler().evaluate(snap)
-        assert result is not None
-        assert result.reason == "occupancy timeout active — default position 20%"
-
-    def test_handler_hold_mode_reason_byte_identical(self) -> None:
-        """End-to-end: the hold-mode auto-derived reason equals the #881 string."""
-        snap = make_snapshot(
-            motion_timeout_active=True,
-            motion_timeout_mode="hold_position",
-            in_time_window=True,
-            direct_sun_valid=True,
-            current_cover_position=42,
-            default_position=10,
-        )
-        result = MotionTimeoutHandler().evaluate(snap)
-        assert result is not None
-        assert result.reason == (
-            "occupancy timeout — holding position 42% (sun within acceptance angle)"
-        )
-
 
 # ---------------------------------------------------------------------------
 # ManualOverrideHandler
@@ -675,91 +557,8 @@ class TestManualOverrideHandler:
     def test_describe_skip_meaningful(self) -> None:
         """describe_skip mentions 'manual' when skipped."""
         snap = make_snapshot(manual_override_active=False)
-        reason = render_en(self.handler.describe_skip(snap))
+        reason = self.handler.describe_skip(snap)
         assert "manual" in reason.lower()
-
-    def test_describe_skip_payload_manual_not_active(self) -> None:
-        """describe_skip returns a skip.manual_not_active payload."""
-        snap = make_snapshot(manual_override_active=False)
-        payload = self.handler.describe_skip(snap)
-        assert payload.code == ReasonCode.SKIP_MANUAL_NOT_ACTIVE
-
-    def test_reason_payload_holding_solar(self) -> None:
-        """Sun valid + held known → manual.holding_solar payload."""
-        snap = make_snapshot(
-            manual_override_active=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=60.0,
-            current_cover_position=44,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.MANUAL_HOLDING_SOLAR
-        assert result.reason_payload.params["held"] == 44
-        assert result.reason_payload.params["position"] == 60
-
-    def test_reason_payload_solar_only(self) -> None:
-        """Sun valid + held unknown → manual.solar_only payload."""
-        snap = make_snapshot(
-            manual_override_active=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=60.0,
-            current_cover_position=None,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.MANUAL_SOLAR_ONLY
-        assert result.reason_payload.params["position"] == 60
-
-    def test_reason_payload_holding_label(self) -> None:
-        """Sun invalid + held known → manual.holding_label payload with a pos_label fragment."""
-        snap = make_snapshot(
-            manual_override_active=True,
-            direct_sun_valid=False,
-            default_position=25,
-            current_cover_position=30,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.MANUAL_HOLDING_LABEL
-        assert result.reason_payload.params["held"] == 30
-        assert result.reason_payload.params["position"] == 25
-        pos_label = result.reason_payload.params["pos_label"]
-        assert pos_label.code == ReasonCode.FRAGMENT_DEFAULT_POSITION
-
-    def test_reason_payload_label_only(self) -> None:
-        """Sun invalid + held unknown → manual.label_only payload with a pos_label fragment."""
-        snap = make_snapshot(
-            manual_override_active=True,
-            direct_sun_valid=False,
-            default_position=25,
-            current_cover_position=None,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        assert result.reason_payload.code == ReasonCode.MANUAL_LABEL_ONLY
-        assert result.reason_payload.params["position"] == 25
-        pos_label = result.reason_payload.params["pos_label"]
-        assert pos_label.code == ReasonCode.FRAGMENT_DEFAULT_POSITION
-
-    def test_reason_payload_label_only_sunset(self) -> None:
-        """Sunset-active label uses the sunset fragment, not default."""
-        snap = make_snapshot(
-            manual_override_active=True,
-            direct_sun_valid=False,
-            is_sunset_active=True,
-            default_position=25,
-            current_cover_position=None,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.reason_payload is not None
-        pos_label = result.reason_payload.params["pos_label"]
-        assert pos_label.code == ReasonCode.FRAGMENT_SUNSET_POSITION
 
     def test_priority_is_80(self) -> None:
         """ManualOverrideHandler has priority 80."""
@@ -776,24 +575,58 @@ class TestManualOverrideHandler:
 
 
 class TestClimateHandler:
-    """The one ClimateHandler gating case not already covered next door.
-
-    Its disabled-mode, priority and name locks were verbatim copies of
-    ``test_climate_handler.py::TestClimateHandlerGating``; only this reading-less
-    case is unique to this file.
-    """
+    """Tests for ClimateHandler — basic gating."""
 
     handler = ClimateHandler()
+
+    def test_returns_none_when_climate_disabled(self) -> None:
+        """Climate disabled → return None."""
+        snap = make_snapshot(climate_mode_enabled=False)
+        assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_readings(self) -> None:
         """No climate readings → return None."""
         snap = make_snapshot(climate_mode_enabled=True, climate_readings=None)
         assert self.handler.evaluate(snap) is None
 
+    def test_priority_is_50(self) -> None:
+        """ClimateHandler has priority 50."""
+        assert ClimateHandler.priority == 50
 
-# SolarHandler has no class here: all four of its tests were verbatim copies of
-# tests/test_pipeline/test_solar_handler.py, which covers the same ground plus
-# eleven more cases.
+    def test_name(self) -> None:
+        """ClimateHandler name is 'climate'."""
+        assert ClimateHandler.name == "climate"
+
+
+# ---------------------------------------------------------------------------
+# SolarHandler
+# ---------------------------------------------------------------------------
+
+
+class TestSolarHandler:
+    """Tests for SolarHandler."""
+
+    handler = SolarHandler()
+
+    def test_matches_when_sun_valid(self) -> None:
+        """Sun valid → return SOLAR method."""
+        snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.SOLAR
+
+    def test_returns_none_when_sun_invalid(self) -> None:
+        """Sun invalid → return None."""
+        snap = make_snapshot(direct_sun_valid=False)
+        assert self.handler.evaluate(snap) is None
+
+    def test_priority_is_40(self) -> None:
+        """SolarHandler has priority 40."""
+        assert SolarHandler.priority == 40
+
+    def test_name(self) -> None:
+        """SolarHandler name is 'solar'."""
+        assert SolarHandler.name == "solar"
 
 
 # ---------------------------------------------------------------------------
@@ -836,9 +669,9 @@ class TestDefaultHandler:
         assert DefaultHandler.name == "default"
 
     def test_describe_skip_returns_string(self) -> None:
-        """describe_skip renders a meaningful English string."""
+        """describe_skip returns meaningful string."""
         snap = make_snapshot()
-        reason = render_en(self.handler.describe_skip(snap))
+        reason = self.handler.describe_skip(snap)
         assert isinstance(reason, str)
         assert len(reason) > 0
 

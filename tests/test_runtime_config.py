@@ -136,34 +136,6 @@ def test_weather_enabled_reads_provided_value() -> None:
     assert rc.weather.enabled is True
 
 
-def test_weather_severe_template_defaults_none() -> None:
-    """Empty options → severe template None, mode default OR (issue #974)."""
-    from custom_components.adaptive_cover_pro.const import (
-        DEFAULT_TEMPLATE_COMBINE_MODE,
-    )
-
-    rc = RuntimeConfig.from_options({})
-    assert rc.weather.severe_template is None
-    assert rc.weather.severe_template_mode == DEFAULT_TEMPLATE_COMBINE_MODE
-
-
-def test_weather_severe_template_reads_provided_value() -> None:
-    """Provided severe template + mode round-trip to the weather slice (#974)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_WEATHER_SEVERE_TEMPLATE,
-        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
-    )
-
-    rc = RuntimeConfig.from_options(
-        {
-            CONF_WEATHER_SEVERE_TEMPLATE: "{{ true }}",
-            CONF_WEATHER_SEVERE_TEMPLATE_MODE: "and",
-        }
-    )
-    assert rc.weather.severe_template == "{{ true }}"
-    assert rc.weather.severe_template_mode == "and"
-
-
 def test_enforce_delta_at_endpoints_defaults_false() -> None:
     """Empty options → endpoint delta enforcement is off by default (issue #679)."""
     rc = RuntimeConfig.from_options({})
@@ -196,26 +168,6 @@ def test_runtime_config_reads_manual_override_input_entities() -> None:
         {CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.cover_input_0"]}
     )
     assert rc.manual_override.input_entities == ["binary_sensor.cover_input_0"]
-
-
-def test_manual_override_input_template_defaults_none() -> None:
-    """Empty options → no input-template override configured (issue #974)."""
-    rc = RuntimeConfig.from_options({})
-    assert rc.manual_override.input_template is None
-
-
-def test_runtime_config_reads_manual_override_input_template() -> None:
-    """A configured input template flows through to the slice (#974)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
-    )
-
-    rc = RuntimeConfig.from_options(
-        {CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: "{{ is_state('input_boolean.x', 'on') }}"}
-    )
-    assert (
-        rc.manual_override.input_template == "{{ is_state('input_boolean.x', 'on') }}"
-    )
 
 
 def test_from_options_reads_every_field_from_provided_dict() -> None:
@@ -424,40 +376,3 @@ def test_daytime_gate_reads_provided_values() -> None:
     assert rc.time_window.gate_sensors == ["binary_sensor.bright"]
     assert rc.time_window.gate_template == "{{ is_state('sun.sun', 'above_horizon') }}"
     assert rc.time_window.gate_template_mode == "and"
-
-
-# ---------------------------------------------------------------------------
-# Outdoor temperature source (issue #547)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_outside_temp_source_enum_values() -> None:
-    from custom_components.adaptive_cover_pro.const import (
-        DEFAULT_OUTSIDE_TEMP_SOURCE,
-        OutsideTempSource,
-    )
-
-    assert {m.value for m in OutsideTempSource} == {
-        "live",
-        "forecast_max",
-        "max_of_live_and_forecast",
-    }
-    assert DEFAULT_OUTSIDE_TEMP_SOURCE == "live"
-    assert OutsideTempSource.LIVE.value == "live"
-
-
-@pytest.mark.unit
-def test_outside_temp_source_defaults_to_live() -> None:
-    rc = RuntimeConfig.from_options({})
-    assert rc.outside_temp_source == "live"
-
-
-@pytest.mark.unit
-def test_outside_temp_source_reads_set_value() -> None:
-    from custom_components.adaptive_cover_pro.const import CONF_OUTSIDE_TEMP_SOURCE
-
-    rc = RuntimeConfig.from_options(
-        {CONF_OUTSIDE_TEMP_SOURCE: "max_of_live_and_forecast"}
-    )
-    assert rc.outside_temp_source == "max_of_live_and_forecast"

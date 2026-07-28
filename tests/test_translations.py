@@ -201,149 +201,28 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
             )
 
 
-@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
-def test_no_literal_urls_in_config_and_options_step_strings(lang_file: Path) -> None:
-    """config/options step strings must not embed literal URLs — pass them as
-    description placeholders instead.
-
-    HA's hassfest rejects a literal ``http(s)://`` URL inside any ``config`` /
-    ``options`` step title/description/data string with "the string should not
-    contain URLs, please use description placeholders instead". That rule is not
-    covered by ``validate_translations.py`` or structural-parity tests, so a
-    literal wiki link slips past local CI and only fails in the Hassfest GitHub
-    job (this bit issue #945 Part 2's summary pointer). This guard reproduces
-    the rule locally: every wiki link must be authored as ``[text]({learn_more})``
-    (or similar) with the URL supplied at runtime via ``description_placeholders``.
-    """
-    data = _load(lang_file)
-    offenders: list[str] = []
-    for section in ("config", "options"):
-        steps = data.get(section, {}).get("step", {})
-        for step_id, step in steps.items():
-            # _flatten returns leaf dotpaths; re-walk each to read its value.
-            for dotpath in _flatten(step):
-                node = step
-                for part in dotpath.split("."):
-                    node = node[part]
-                if isinstance(node, str) and ("http://" in node or "https://" in node):
-                    offenders.append(f"{section}.step.{step_id}.{dotpath}")
-    assert not offenders, (
-        f"{lang_file.name}: literal URL(s) in config/options step strings — "
-        f"hassfest forbids this. Use a {{learn_more}} placeholder instead:\n"
-        + "\n".join(f"  - {o}" for o in offenders)
-    )
-
-
 # ---------------------------------------------------------------------------
-# Issue #211 Option 2 — blind_spot labels are acceptance-edge-relative, not
-# azimuth-relative. Issue #604 renamed the "FOV" frame to "acceptance edge".
+# Issue #211 Option 2 — blind_spot labels are FOV-relative, not azimuth-relative
 # ---------------------------------------------------------------------------
 
 
-def test_en_blind_spot_labels_name_window_normal_frame() -> None:
-    """EN labels for the gamma edges must name the window-normal frame (#247)."""
-    en = _load(TRANSLATIONS_DIR / "en.json")
-    # Options flow paginates blind spots into per-slot pages (#945); its editable
-    # gamma labels live on blind_spot_slot. The create flow keeps the flat form.
-    for step_key, step in (("options", "blind_spot_slot"),):
-        bs = en[step_key]["step"][step]["data"]
-        assert "window normal" in bs["blind_spot_left_gamma"].lower(), (
-            f"{step_key}.{step}.data.blind_spot_left_gamma label must name the "
-            "window-normal frame"
-        )
-        assert "window normal" in bs["blind_spot_right_gamma"].lower(), (
-            f"{step_key}.{step}.data.blind_spot_right_gamma label must name the "
-            "window-normal frame"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Issue #604 — "Field of View" renamed to "Sun acceptance angle" (SAA).
-# Display strings only; option keys (fov_left/fov_right) are unchanged.
-# ---------------------------------------------------------------------------
-
-
-def test_en_sun_acceptance_angle_labels() -> None:
-    """The fov_left/fov_right/fov_compute labels use 'Sun acceptance angle' (#604)."""
+def test_en_blind_spot_labels_name_fov_frame() -> None:
+    """EN labels for blind_spot_left/right must name the FOV reference frame."""
     en = _load(TRANSLATIONS_DIR / "en.json")
     for step_key in ("options", "config"):
-        data = en[step_key]["step"]["geometry"]["data"]
+        bs = en[step_key]["step"]["blind_spot"]["data"]
         assert (
-            data["fov_left"] == "Sun acceptance angle — left"
-        ), f"{step_key}.sun.data.fov_left must read 'Sun acceptance angle — left'"
+            "FOV" in bs["blind_spot_left"]
+        ), f"{step_key}.blind_spot.data.blind_spot_left label must mention 'FOV'"
         assert (
-            data["fov_right"] == "Sun acceptance angle — right"
-        ), f"{step_key}.sun.data.fov_right must read 'Sun acceptance angle — right'"
-        assert (
-            "sun acceptance angle" in data["fov_compute"].lower()
-        ), f"{step_key}.sun.data.fov_compute must name the sun acceptance angle"
-
-
-def test_en_has_no_field_of_view_wording() -> None:
-    """No user-facing en.json value may still say 'field of view' or the bare 'FOV' badge (#604)."""
-    en = _load(TRANSLATIONS_DIR / "en.json")
-    offenders = [
-        v
-        for v in _all_leaf_values(en)
-        if "field of view" in v.lower()
-        or "field-of-view" in v.lower()
-        or "FOV" in v
-        or "fov_left" in v
-        or "fov_right" in v
-    ]
-    assert not offenders, (
-        "en.json still contains 'Field of View' / 'FOV' wording after the #604 "
-        "rename:\n" + "\n".join(f"  - {o}" for o in offenders)
-    )
-
-
-# ---------------------------------------------------------------------------
-# Issue #938 — the FR label for the sun-acceptance-angle concept is
-# "angle d'ouverture solaire", NOT the anglicism "angle d'acceptance solaire"
-# and NOT the pre-rename "champ de vision".
-# ---------------------------------------------------------------------------
-
-
-def test_fr_sun_acceptance_angle_uses_ouverture_labels() -> None:
-    """FR fov_left/fov_right/fov_compute labels use 'ouverture solaire' (#938)."""
-    fr = _load(TRANSLATIONS_DIR / "fr.json")
-    for step_key in ("options", "config"):
-        data = fr[step_key]["step"]["geometry"]["data"]
-        assert (
-            data["fov_left"] == "Angle d'ouverture solaire — gauche"
-        ), f"{step_key}.geometry.data.fov_left must read 'Angle d'ouverture solaire — gauche'"
-        assert (
-            data["fov_right"] == "Angle d'ouverture solaire — droite"
-        ), f"{step_key}.geometry.data.fov_right must read 'Angle d'ouverture solaire — droite'"
-        assert (
-            "ouverture solaire" in data["fov_compute"].lower()
-        ), f"{step_key}.geometry.data.fov_compute must name the angle d'ouverture solaire"
-
-
-def test_fr_has_no_acceptance_anglicism_or_champ_de_vision() -> None:
-    """No FR value may use the anglicism 'd'acceptance' or the pre-rename 'champ de vision' (#938)."""
-    summary_i18n_dir = TRANSLATIONS_DIR.parent / "summary_i18n"
-    fr_files = [TRANSLATIONS_DIR / "fr.json", summary_i18n_dir / "fr.json"]
-    offenders: list[str] = []
-    for path in fr_files:
-        data = _load(path)
-        offenders += [
-            f"{path.parent.name}/{path.name}: {v}"
-            for v in _all_leaf_values(data)
-            if "d'acceptance" in v.lower() or "champ de vision" in v.lower()
-        ]
-    assert not offenders, (
-        "FR strings still contain the 'd'acceptance' anglicism or 'champ de vision' "
-        "after the #938 rename to 'ouverture':\n"
-        + "\n".join(f"  - {o}" for o in offenders)
-    )
+            "FOV" in bs["blind_spot_right"]
+        ), f"{step_key}.blind_spot.data.blind_spot_right label must mention 'FOV'"
 
 
 def test_enforce_delta_at_endpoints_strings_present() -> None:
     """en.json carries the label + description on both config and options steps (#679)."""
     en = _load(TRANSLATIONS_DIR / "en.json")
-    # Position moved out of the create wizard (#945 Part 2) — options only now.
-    for step_key in ("options",):
+    for step_key in ("config", "options"):
         pos = en[step_key]["step"]["position"]
         assert (
             "enforce_delta_at_endpoints" in pos["data"]
@@ -359,12 +238,12 @@ def test_enforce_delta_at_endpoints_strings_present() -> None:
 def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
     """Helper text must not contradict services.yaml by saying 'from window azimuth'."""
     en = _load(TRANSLATIONS_DIR / "en.json")
-    for step_key, step in (("options", "blind_spot_slot"),):
-        dd = en[step_key]["step"][step]["data_description"]
-        for key in ("blind_spot_left_gamma", "blind_spot_right_gamma"):
+    for step_key in ("options", "config"):
+        dd = en[step_key]["step"]["blind_spot"]["data_description"]
+        for key in ("blind_spot_left", "blind_spot_right"):
             assert "window azimuth" not in dd[key].lower(), (
-                f"{step_key}.{step}.data_description.{key} still references "
-                f"'window azimuth' — issue #247 requires window-normal framing"
+                f"{step_key}.blind_spot.data_description.{key} still references "
+                f"'window azimuth' — Option 2 requires FOV-left-edge framing"
             )
 
 
@@ -436,34 +315,6 @@ def test_venetian_mode_in_en_geometry_translations() -> None:
     ), "venetian_mode description missing from options.step.geometry.data_description"
 
 
-def test_venetian_select_options_translated_in_en() -> None:
-    """The 5 venetian enum fields must carry a selector.<key>.options block whose
-    keys exactly match the corresponding const tuple values, or SelectSelector's
-    translation_key lookup resolves to nothing and the frontend falls back to raw
-    enum values (issue: untranslated venetian select options).
-    """
-    from custom_components.adaptive_cover_pro.const import (
-        VENETIAN_MODES,
-        VENETIAN_POST_SETTLE_MODES,
-        VENETIAN_TILT_RESET_DIRECTIONS,
-        VENETIAN_TILT_RESET_SCOPES,
-        VENETIAN_TILT_SKIP_MODES,
-    )
-
-    en = _load(TRANSLATIONS_DIR / "en.json")
-    sel = en["selector"]
-    expected = {
-        "venetian_mode": set(VENETIAN_MODES),
-        "venetian_tilt_reset_direction": set(VENETIAN_TILT_RESET_DIRECTIONS),
-        "venetian_tilt_reset_scope": set(VENETIAN_TILT_RESET_SCOPES),
-        "venetian_tilt_skip_mode": set(VENETIAN_TILT_SKIP_MODES),
-        "venetian_post_settle_mode": set(VENETIAN_POST_SETTLE_MODES),
-    }
-    for key, option_values in expected.items():
-        assert key in sel, f"selector.{key} missing from en.json"
-        assert set(sel[key]["options"].keys()) == option_values
-
-
 def test_priority_field_documents_all_three_gates() -> None:
     """The slot-1 priority description names all three bypassed gates (#711).
 
@@ -473,19 +324,14 @@ def test_priority_field_documents_all_three_gates() -> None:
     discoverable from the field help.
     """
     en = _load(TRANSLATIONS_DIR / "en.json")
-    # Options flow paginates custom positions (#945): the priority help lives on
-    # the generic per-slot page key; the create flow keeps the slot-1 suffixed key.
-    # custom_position moved out of the create wizard (#945 Part 2); the paged
-    # options slot page is the sole home of the priority help now.
-    for step_key, step, key in (
-        ("options", "custom_position_slot", "custom_position_priority"),
-    ):
-        dd = en[step_key]["step"][step]["data_description"]
-        desc = dd[key]
+    for step_key in ("config", "options"):
+        dd = en[step_key]["step"]["custom_position"]["data_description"]
+        desc = dd["custom_position_priority_1"]
         for phrase in ("automatic-control toggle", "manual override", "time window"):
-            assert (
-                phrase in desc
-            ), f"{step_key}.{step}.data_description.{key} missing {phrase!r}"
+            assert phrase in desc, (
+                f"{step_key}.custom_position.data_description."
+                f"custom_position_priority_1 missing {phrase!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -656,41 +502,3 @@ def test_service_field_descriptions_icu_safe(lang_file: Path) -> None:
         f"an unescaped '{{'/'}}' — escape literal braces ICU-style as '{{{{' … '}}}}' "
         f"so the frontend does not raise MALFORMED_ARGUMENT. Offenders: {offending}"
     )
-
-
-@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
-def test_get_diagnostics_and_get_troubleshooting_config_entry_id_descriptions_match(
-    lang_file: Path,
-) -> None:
-    """get_diagnostics and get_troubleshooting expose the identical
-    config_entry_id escape hatch, so the action picker must show one text for
-    it, not two (issue #1059 audit round 3, nit #5).
-    """
-    services = _load(lang_file)["services"]
-    diag_desc = services["get_diagnostics"]["fields"]["config_entry_id"]["description"]
-    troubleshoot_desc = services["get_troubleshooting"]["fields"]["config_entry_id"][
-        "description"
-    ]
-    assert diag_desc == troubleshoot_desc, (
-        f"{lang_file.name}: get_diagnostics and get_troubleshooting "
-        "config_entry_id descriptions must be identical"
-    )
-
-
-@pytest.mark.unit
-def test_manual_override_duration_mode_options_translated_in_en():
-    """All five duration-mode values need a non-empty English selector label (#1044)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_MANUAL_OVERRIDE_DURATION_MODE,
-        MANUAL_OVERRIDE_DURATION_MODES,
-    )
-
-    en = _load(TRANSLATIONS_DIR / "en.json")
-    options = en["selector"][CONF_MANUAL_OVERRIDE_DURATION_MODE]["options"]
-
-    assert set(options) == set(MANUAL_OVERRIDE_DURATION_MODES)
-    assert all(str(v).strip() for v in options.values())
-
-    step = en["options"]["step"]["manual_override"]
-    assert step["data"][CONF_MANUAL_OVERRIDE_DURATION_MODE].strip()
-    assert step["data_description"][CONF_MANUAL_OVERRIDE_DURATION_MODE].strip()

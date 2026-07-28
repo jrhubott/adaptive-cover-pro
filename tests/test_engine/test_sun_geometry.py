@@ -269,13 +269,13 @@ class TestControlStateReason:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_fov_exit(self, mock_dt):
-        """Sun outside FOV returns Default: Acceptance Angle Exit."""
+        """Sun outside FOV returns Default: FOV Exit."""
         mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
         sg = SunGeometry(10.0, 45.0, sun_data, _make_config(), _make_logger())
-        assert sg.control_state_reason == "Default: Acceptance Angle Exit"
+        assert sg.control_state_reason == "Default: FOV Exit"
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_sunset_offset(self, mock_dt):
@@ -306,9 +306,9 @@ class TestControlStateReason:
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
         config = _make_config(
-            blind_spot_left=35, blind_spot_right=-15, blind_spot_on=True
+            blind_spot_left=10, blind_spot_right=30, blind_spot_on=True
         )
-        # gamma = 180 - 160 = 20, signed-gamma wedge: -right..left = 15..35 (#247)
+        # gamma = 180 - 160 = 20, blind spot: fov_left-left to fov_left-right = 35 to 15
         sg = SunGeometry(160.0, 45.0, sun_data, config, _make_logger())
         assert sg.control_state_reason == "Default: Blind Spot"
 
@@ -353,25 +353,25 @@ class TestBlindSpot:
     def test_in_blind_spot(self):
         """Sun in configured blind spot returns True."""
         config = _make_config(
-            blind_spot_left=35, blind_spot_right=-15, blind_spot_on=True
+            blind_spot_left=10, blind_spot_right=30, blind_spot_on=True
         )
-        # gamma = 180 - 160 = 20, signed-gamma wedge -right..left = [15,35] (#247)
+        # gamma = 180 - 160 = 20, blind spot edges: 45-10=35 to 45-30=15
         sg = SunGeometry(160.0, 45.0, _make_sun_data(), config, _make_logger())
         assert sg.is_sun_in_blind_spot is True
 
     def test_outside_blind_spot(self):
         """Sun outside blind spot returns False."""
         config = _make_config(
-            blind_spot_left=35, blind_spot_right=-15, blind_spot_on=True
+            blind_spot_left=10, blind_spot_right=30, blind_spot_on=True
         )
-        # gamma = 180 - 180 = 0, outside signed-gamma wedge [15,35]
+        # gamma = 180 - 180 = 0, outside blind spot range 15-35
         sg = SunGeometry(180.0, 45.0, _make_sun_data(), config, _make_logger())
         assert sg.is_sun_in_blind_spot is False
 
     def test_blind_spot_disabled(self):
         """Blind spot disabled returns False even if sun in range."""
         config = _make_config(
-            blind_spot_left=35, blind_spot_right=-15, blind_spot_on=False
+            blind_spot_left=10, blind_spot_right=30, blind_spot_on=False
         )
         sg = SunGeometry(160.0, 45.0, _make_sun_data(), config, _make_logger())
         assert sg.is_sun_in_blind_spot is False
@@ -382,9 +382,9 @@ class TestBlindSpot:
 
         config = _make_config(
             blind_spot_on=True,
-            blind_spot_left=35,  # slot 1 signed-gamma wedge [15,35]
-            blind_spot_right=-15,
-            extra_blind_spots=(BlindSpot(left=5, right=15),),  # slot 2 wedge [-15,5]
+            blind_spot_left=10,  # slot 1 wedge edges [15,35]
+            blind_spot_right=30,
+            extra_blind_spots=(BlindSpot(left=40, right=60),),  # slot 2 edges [-15,5]
         )
         # sol_azi=180 → gamma=0; slot1 misses, slot2 hits.
         sg = SunGeometry(180.0, 45.0, _make_sun_data(), config, _make_logger())
@@ -396,9 +396,9 @@ class TestBlindSpot:
 
         config = _make_config(
             blind_spot_on=True,
-            blind_spot_left=35,
-            blind_spot_right=-15,
-            extra_blind_spots=(BlindSpot(left=5, right=15),),
+            blind_spot_left=10,
+            blind_spot_right=30,
+            extra_blind_spots=(BlindSpot(left=40, right=60),),
         )
         # sol_azi=170 → gamma=10; slot1 [15,35] miss, slot2 [-15,5] miss.
         sg = SunGeometry(170.0, 45.0, _make_sun_data(), config, _make_logger())
@@ -410,7 +410,7 @@ class TestBlindSpot:
 
         config = _make_config(
             blind_spot_on=False,
-            extra_blind_spots=(BlindSpot(left=5, right=15),),
+            extra_blind_spots=(BlindSpot(left=40, right=60),),
         )
         sg = SunGeometry(180.0, 45.0, _make_sun_data(), config, _make_logger())
         assert sg.is_sun_in_blind_spot is False
@@ -421,7 +421,7 @@ class TestBlindSpot:
 
         config = _make_config(
             blind_spot_on=True,
-            extra_blind_spots=(BlindSpot(left=5, right=15, elevation=30),),
+            extra_blind_spots=(BlindSpot(left=40, right=60, elevation=30),),
         )
         # gamma=0 is inside the wedge, but sol_elev=45 > 30 → excluded.
         sg = SunGeometry(180.0, 45.0, _make_sun_data(), config, _make_logger())
@@ -441,8 +441,8 @@ class TestBlindSpot:
             blind_spot_on=True,
             extra_blind_spots=(
                 BlindSpot(
-                    left=5,
-                    right=15,
+                    left=40,
+                    right=60,
                     elevation=30,
                     elevation_mode=BLIND_SPOT_ELEV_MODE_ABOVE,
                 ),
@@ -463,8 +463,8 @@ class TestBlindSpot:
             blind_spot_on=True,
             extra_blind_spots=(
                 BlindSpot(
-                    left=5,
-                    right=15,
+                    left=40,
+                    right=60,
                     elevation=30,
                     elevation_mode=BLIND_SPOT_ELEV_MODE_ABOVE,
                 ),
@@ -488,14 +488,14 @@ class TestBlindSpot:
 
         default_cfg = _make_config(
             blind_spot_on=True,
-            extra_blind_spots=(BlindSpot(left=5, right=15, elevation=30),),
+            extra_blind_spots=(BlindSpot(left=40, right=60, elevation=30),),
         )
         explicit_cfg = _make_config(
             blind_spot_on=True,
             extra_blind_spots=(
                 BlindSpot(
-                    left=5,
-                    right=15,
+                    left=40,
+                    right=60,
                     elevation=30,
                     elevation_mode=BLIND_SPOT_ELEV_MODE_BELOW,
                 ),
@@ -506,24 +506,6 @@ class TestBlindSpot:
             low = SunGeometry(180.0, 20.0, _make_sun_data(), cfg, _make_logger())
             assert high.is_sun_in_blind_spot is False  # 45 > 30 → not blocked
             assert low.is_sun_in_blind_spot is True  # 20 <= 30 → blocked
-
-    def test_is_sun_in_blind_spot_at_uses_injected_frame(self):
-        """The wedge is evaluated against an injected frame angle, not raw gamma.
-
-        The blind-spot evaluation frame must equal the caller's acceptance frame
-        (issue #913). ``is_sun_in_blind_spot`` (raw ``gamma``) and
-        ``is_sun_in_blind_spot_at(frame_angle)`` (injected) can therefore disagree
-        when the two frames diverge: here raw gamma=0 is outside the FOV-relative
-        wedge [15, 35] while an injected frame angle of 20 lands inside it.
-        """
-        config = _make_config(
-            blind_spot_left=35, blind_spot_right=-15, blind_spot_on=True, fov_left=45
-        )
-        # gamma = 180 - 180 = 0 (outside signed-gamma wedge [15, 35]).
-        sg = SunGeometry(180.0, 45.0, _make_sun_data(), config, _make_logger())
-        assert sg.is_sun_in_blind_spot is False
-        # Inject a frame angle of 20 → inside wedge [15, 35].
-        assert sg.is_sun_in_blind_spot_at(20.0) is True
 
 
 # ------------------------------------------------------------------

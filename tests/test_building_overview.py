@@ -15,12 +15,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_DELTA_POSITION,
-    CONF_END_TIME,
     CONF_ENTITIES,
     CONF_LUX_ENTITY,
-    CONF_MANUAL_OVERRIDE_DURATION,
-    CONF_MANUAL_OVERRIDE_DURATION_MODE,
-    CONF_MANUAL_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_SENSOR_TYPE,
@@ -28,8 +24,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_DELTA_POSITION,
-    MANUAL_OVERRIDE_DURATION_MODE_FIXED,
-    MANUAL_OVERRIDE_DURATION_MODES,
     CoverType,
 )
 
@@ -287,205 +281,6 @@ def test_build_override_records():
     assert by_key[CONF_WEATHER_ENTITY].profile_text == "weather.home"
     assert by_key[CONF_LUX_ENTITY].profile_sets_it is False
     assert by_key[CONF_LUX_ENTITY].entry_id == "bedroom"
-
-
-def _manual_row(covers):
-    """Return the Manual override comparison row for ``covers``."""
-    text = build_building_overview(_profile({}), covers)
-    return next(line for line in text.splitlines() if "Manual override" in line)
-
-
-def test_manual_override_mode_renders_a_label_not_the_wire_value():
-    """The comparison table must not print the raw mode identifier (#1051).
-
-    Every other cell in the table goes through a formatter, and this same value
-    renders as a translated label on every other surface.
-    """
-    sun = _cover(
-        "Sun", options={CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_next_sun_event"}
-    )
-    fixed = _cover("Fixed", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 2}})
-
-    row = _manual_row([sun, fixed])
-
-    assert "Until the next sunrise or sunset" in row
-    assert "until_next_sun_event" not in row
-
-
-def test_every_sun_mode_renders_its_label():
-    """Every mode reaches its label — none falls through to the identifier.
-
-    Asserting the label is *present* is the load-bearing half: the degrade path
-    means a missing label silently prints the numeric duration instead, so
-    ``mode not in row`` alone would pass for a mode with no label at all.
-    """
-    from custom_components.adaptive_cover_pro.building_overview import _LABELS
-
-    for mode in MANUAL_OVERRIDE_DURATION_MODES:
-        if mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED:
-            continue
-        row = _manual_row(
-            [
-                _cover(
-                    "Sun",
-                    options={
-                        CONF_MANUAL_OVERRIDE_DURATION_MODE: mode,
-                        # ``until_window_end`` only has an anchor when a window
-                        # end exists; the other modes ignore this.
-                        CONF_END_TIME: "20:00:00",
-                    },
-                ),
-                _cover("Other", options={CONF_MANUAL_THRESHOLD: 20}),
-            ]
-        )
-        assert _LABELS[f"manual_hold.{mode}"] in row
-        assert mode not in row
-
-
-def test_window_end_mode_without_a_window_end_shows_the_duration():
-    """No window end → no anchor → the hold really is the numeric duration.
-
-    ``config_flow``'s summary already degrades this case; the overview must
-    agree, or the two surfaces describe the same config differently.
-    """
-    unanchored = _cover(
-        "Unanchored",
-        options={
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_window_end",
-            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 4},
-        },
-    )
-    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
-
-    row = _manual_row([unanchored, other])
-
-    assert "4h" in row
-    assert "Until the time window ends" not in row
-
-
-def test_window_end_mode_treats_the_blank_sentinel_as_unset():
-    """``BLANK_TIME`` is the project's UNSET sentinel, and it is truthy."""
-    from custom_components.adaptive_cover_pro.const import BLANK_TIME
-
-    unanchored = _cover(
-        "Unanchored",
-        options={
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_window_end",
-            CONF_END_TIME: BLANK_TIME,
-            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 4},
-        },
-    )
-    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
-
-    row = _manual_row([unanchored, other])
-
-    assert "4h" in row
-    assert "Until the time window ends" not in row
-
-
-def test_unanchored_hold_agrees_with_the_config_flow_summary():
-    """Both surfaces decide "this hold has no anchor" from one predicate.
-
-    A mode that needs an anchor and has none falls back to the numeric duration
-    at runtime, so both surfaces must print the duration. Two hand-rolled copies
-    of that rule would let a future anchored mode land on one surface only —
-    which is exactly how the overview came to print a boundary the hold never
-    reaches. This walks every mode against every end-time shape and asserts the
-    two agree, whatever rule either one implements.
-    """
-    from custom_components.adaptive_cover_pro.config_flow import _build_config_summary
-    from custom_components.adaptive_cover_pro.const import BLANK_TIME, CONF_END_ENTITY
-
-    end_shapes = (
-        {},
-        {CONF_END_TIME: None},
-        {CONF_END_TIME: ""},
-        {CONF_END_TIME: BLANK_TIME},
-        {CONF_END_TIME: "20:00:00"},
-        {CONF_END_ENTITY: "input_datetime.end"},
-        {CONF_END_TIME: BLANK_TIME, CONF_END_ENTITY: "input_datetime.end"},
-    )
-    for mode in MANUAL_OVERRIDE_DURATION_MODES:
-        for shape in end_shapes:
-            cfg = {
-                CONF_MANUAL_OVERRIDE_DURATION_MODE: mode,
-                CONF_MANUAL_OVERRIDE_DURATION: {"hours": 7},
-                **shape,
-            }
-            overview_shows_duration = "7h" in _manual_row(
-                [
-                    _cover("A", options=cfg),
-                    _cover("B", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}}),
-                ]
-            )
-            summary_shows_duration = "pauses for 7 h" in _build_config_summary(
-                cfg, CoverType.BLIND
-            )
-
-            assert overview_shows_duration == summary_shows_duration, (mode, shape)
-
-
-def test_window_end_mode_with_a_configured_end_shows_the_label():
-    """A genuinely configured end resolves, so the label is the honest render."""
-    anchored = _cover(
-        "Anchored",
-        options={
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_window_end",
-            CONF_END_TIME: "20:00:00",
-        },
-    )
-    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
-
-    row = _manual_row([anchored, other])
-
-    assert "Until the time window ends" in row
-
-
-def test_unknown_mode_degrades_to_the_numeric_duration():
-    """An out-of-schema stored mode renders as the fixed hold, and never raises.
-
-    Mirrors the config-flow summary's degrade, and matches runtime truth:
-    ``resolve_override_deadline`` returns ``None`` for a mode it does not know,
-    so the hold really is the numeric duration.
-    """
-    weird = _cover(
-        "Weird",
-        options={
-            CONF_MANUAL_OVERRIDE_DURATION_MODE: "until_the_cows_come_home",
-            CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3},
-        },
-    )
-    other = _cover("Other", options={CONF_MANUAL_OVERRIDE_DURATION: {"hours": 9}})
-
-    row = _manual_row([weird, other])
-
-    assert "3h" in row
-    assert "until_the_cows_come_home" not in row
-
-
-def test_mode_labels_match_the_selector_translations():
-    """The English labels are a copy of ``en.json`` — lock them against drift.
-
-    ``building_overview`` is English-only by design and cannot read the
-    translation bundle, so the strings are duplicated. This is what stops the
-    two copies diverging the next time one is reworded.
-    """
-    import json
-    from pathlib import Path
-
-    from custom_components.adaptive_cover_pro import building_overview
-
-    en = json.loads(
-        (
-            Path(building_overview.__file__).parent / "translations" / "en.json"
-        ).read_text(encoding="utf-8")
-    )
-    options = en["selector"][CONF_MANUAL_OVERRIDE_DURATION_MODE]["options"]
-
-    for mode in MANUAL_OVERRIDE_DURATION_MODES:
-        if mode == MANUAL_OVERRIDE_DURATION_MODE_FIXED:
-            continue
-        assert building_overview._LABELS[f"manual_hold.{mode}"] == options[mode]
 
 
 def test_overridden_empty_value_reads_none():

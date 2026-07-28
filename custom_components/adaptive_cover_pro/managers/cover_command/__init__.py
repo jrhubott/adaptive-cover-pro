@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
@@ -381,27 +381,8 @@ class CoverCommandService:
         return bool(s and s.waiting)
 
     def set_waiting(self, entity_id: str, value: bool) -> None:
-        """Mark an entity as waiting (or no-longer-waiting) for its target.
-
-        Clearing ``waiting`` also drops the synthetic transit direction so the
-        opening/closing indicator disappears the moment the transit window
-        closes (the ``transit_states()`` surface is gated on ``waiting``).
-        """
-        s = self.state(entity_id)
-        if value:
-            s.waiting = True
-        else:
-            self._clear_waiting(s)
-
-    def _clear_waiting(self, s: PerEntityState) -> None:
-        """Clear the waiting flag and its synthetic transit direction together.
-
-        Single funnel for every "no longer in transit" site so the
-        opening/closing indicator (``transit_direction``) never outlives the
-        ``waiting`` window it is gated on.
-        """
-        s.waiting = False
-        s.transit_direction = None
+        """Mark an entity as waiting (or no-longer-waiting) for its target."""
+        self.state(entity_id).waiting = value
 
     def waiting_entities(self) -> list[str]:
         """Return all entities currently in ``waiting=True``."""
@@ -416,139 +397,6 @@ class CoverCommandService:
         """Clear the safety flag on every tracked entity."""
         for s in self._state.values():
             s.is_safety = False
-
-    # ------------------------------------------------------------------ #
-    # Assumed display position (issue #888) — display-only fallback for
-    # open/close-only covers with no native position feedback.
-    # ------------------------------------------------------------------ #
-
-    def get_assumed_position(self, entity_id: str) -> int | None:
-        """Return the assumed display position for ``entity_id``, or None.
-
-        Display-only (issue #888): the reported-position surfaces
-        (``CoverProvider.read_positions``) fall back to this ONLY when the live
-        HA read is None. NEVER consulted by the command-dispatch read path
-        (``_read_position_with_capabilities`` / ``get_current_position``) — see
-        §3b — so the delta / same-position / endpoint gates stay raw.
-        """
-        s = self._state.get(entity_id)
-        return None if s is None else s.assumed_position
-
-    def record_assumed_position(self, entity_id: str, value: int) -> None:
-        """Store an assumed display position for ``entity_id``."""
-        self.state(entity_id).assumed_position = value
-
-    def clear_assumed_position(self, entity_id: str) -> None:
-        """Drop any stored assumed display position for ``entity_id``."""
-        s = self._state.get(entity_id)
-        if s is not None:
-            s.assumed_position = None
-
-    def _record_assumed_if_blind(
-        self, entity_id: str, routed_target: int | None, caps: Any | None = None
-    ) -> None:
-        """Record (or clear) the assumed display position after ACP drives a cover.
-
-        Single shared write for both My paths (``send_my_position`` and the
-        command-sent tail of ``apply_position``) and the coordinator's external
-        stop→My path. Gated on ``not policy.position_axis_supported(caps)`` so
-        the assumed value is confined to open/close-only covers that report no
-        native position:
-
-        - open/close-only cover → stash ``routed_target`` as the assumed value
-          (the routed My target, or the routed open/close endpoint).
-        - position-capable cover → clear any stale assumed value so a real read
-          can never be masked (dedupes the clear-on-native-command path).
-
-        Never touches the command-dispatch read path (§3b); recording happens
-        only after the command has already dispatched, so this cycle's gates —
-        which read raw HA state — are unaffected.
-        """
-        if caps is None:
-            caps = self.get_cover_capabilities(entity_id)
-        if self._policy.position_axis_supported(caps):
-            self.clear_assumed_position(entity_id)
-            return
-        if routed_target is not None:
-            self.record_assumed_position(entity_id, routed_target)
-
-    # ------------------------------------------------------------------ #
-    # Transit direction (opening/closing indicator) — display-only, for
-    # no-feedback open/close-only covers that report no position and no
-    # opening/closing state. Surfaced only during the transit-timeout window
-    # (gated on ``waiting``) so the companion card can show motion.
-    # ------------------------------------------------------------------ #
-
-    def get_transit_direction(self, entity_id: str) -> str | None:
-        """Return the synthetic travel direction for ``entity_id``, or None.
-
-        ``"opening"`` / ``"closing"`` while ACP believes an open/close-only
-        cover is mid-transit; ``None`` otherwise.
-        """
-        s = self._state.get(entity_id)
-        return None if s is None else s.transit_direction
-
-    def clear_transit_direction(self, entity_id: str) -> None:
-        """Drop any stored synthetic travel direction for ``entity_id``."""
-        s = self._state.get(entity_id)
-        if s is not None:
-            s.transit_direction = None
-
-    def transit_states(self) -> dict[str, str]:
-        """Return ``{entity_id: direction}`` for every cover mid-transit.
-
-        Gated on ``waiting`` so an entry clears exactly when the transit-timeout
-        window closes — a direction recorded on a settled cover is not surfaced.
-        """
-        return {
-            eid: s.transit_direction
-            for eid, s in self._state.items()
-            if s.waiting and s.transit_direction
-        }
-
-    def _set_transit_direction_if_blind(
-        self,
-        entity_id: str,
-        routed_target: int | None,
-        prior_position: int | None,
-        caps: Any | None = None,
-    ) -> None:
-        """Record (or clear) the synthetic travel direction after ACP drives a cover.
-
-        Confined to open/close-only covers (no native position axis): a
-        position-reporting cover animates via % and never gets a synthetic
-        direction, so its stale value is cleared. The direction falls out of a
-        raw target-vs-prior comparison in the same non-inverted display frame as
-        ``cover_positions`` (100=open, 0=closed) — higher target than prior is
-        "opening". Inverse state is NOT applied here.
-        """
-        if caps is None:
-            caps = self.get_cover_capabilities(entity_id)
-        if self._policy.position_axis_supported(caps):
-            self.clear_transit_direction(entity_id)
-            return
-        if routed_target is None or prior_position is None:
-            self.clear_transit_direction(entity_id)
-            return
-        if routed_target > prior_position:
-            self.state(entity_id).transit_direction = "opening"
-        elif routed_target < prior_position:
-            self.state(entity_id).transit_direction = "closing"
-        else:
-            self.clear_transit_direction(entity_id)
-
-    def begin_transit(self, entity_id: str, direction: str | None) -> None:
-        """Open a transit-timeout window with a pre-computed direction.
-
-        Used by the coordinator's user-stop→My path: the My move never flows
-        through ``_prepare_service_call`` (it's a bare ``stop_cover``), so this
-        marks the entity ``waiting`` and stamps ``sent_at`` + ``transit_direction``
-        so the ~45s reconciliation timer runs and the card shows motion.
-        """
-        s = self.state(entity_id)
-        s.waiting = True
-        s.sent_at = dt.datetime.now(dt.UTC)
-        s.transit_direction = direction
 
     # ------------------------------------------------------------------ #
     # Properties
@@ -712,7 +560,7 @@ class CoverCommandService:
         for eid in stale:
             s = self._state[eid]
             s.target = None
-            self._clear_waiting(s)
+            s.waiting = False
             s.retry_count = 0
             s.gave_up = False
         if stale:
@@ -725,18 +573,10 @@ class CoverCommandService:
     def discard_target(self, entity_id: str) -> None:
         """Remove all tracking state for an entity, including safety targets.
 
-        Called on both manual-override edges — start (``on_engaged``) and
-        clear (``on_cleared``, via :meth:`discard_targets`) — so that no
-        integration target (including safety-tagged end-time defaults) can be
-        resurrected by reconciliation while, or after, the user is controlling
-        the cover.
-
-        Clearing on the *cleared* edge matters because the override's own
-        command target outlives it otherwise (issue #1052): when the
-        post-cancel cycle recomputes a position the delta gates suppress —
-        the cover is already within ``min_change`` of it — nothing overwrites
-        ``target``, and the next reconcile tick drives the cover back to the
-        cancelled override's position.
+        Called when a manual override starts for an entity so that any
+        pre-existing integration target (including safety-tagged end-time
+        defaults) cannot be resurrected by reconciliation while — or after
+        — the user is controlling the cover.
 
         Args:
             entity_id: Cover entity ID to clear.
@@ -745,23 +585,9 @@ class CoverCommandService:
         existing = self._state.pop(entity_id, None)
         if existing is not None and existing.target is not None:
             self._logger.debug(
-                "Discarded stale target for %s on manual override edge",
+                "Discarded stale target for %s on manual override start",
                 entity_id,
             )
-
-    def discard_targets(self, entity_ids: Iterable[str]) -> None:
-        """Discard targets for several entities — the ``on_cleared`` edge shape.
-
-        ``ManualOverrideManager`` fires ``on_cleared`` with a list, so this is
-        the plural adapter over :meth:`discard_target` that the coordinator
-        subscribes to. Entities with no tracked state are a no-op.
-
-        Args:
-            entity_ids: Cover entity IDs whose override just cleared.
-
-        """
-        for entity_id in entity_ids:
-            self.discard_target(entity_id)
 
     # ------------------------------------------------------------------ #
     # Progress-aware transit tracking
@@ -884,7 +710,7 @@ class CoverCommandService:
             # entity is no longer in flight from ACP's perspective — clear
             # the waiting flag so the next reconciliation cycle does not
             # think a fresh command is still travelling.
-            self._clear_waiting(s)
+            s.waiting = False
             s.sent_at = None
             if sent:
                 stopped.append(eid)
@@ -952,10 +778,6 @@ class CoverCommandService:
         else:
             await self._stop_tracker.call_stop_cover(entity_id)
         now = dt.datetime.now(dt.UTC)
-        # Synthetic travel direction: read the raw prior position BEFORE the
-        # target is overwritten so the open/close-only card can show motion
-        # toward My during the transit window.
-        prior_position = self._get_current_position(entity_id)
         s = self.state(entity_id)
         s.target = target
         s.waiting = True
@@ -963,12 +785,6 @@ class CoverCommandService:
         s.last_progress_at = None
         s.retry_count = 0
         s.gave_up = False
-        # Issue #888: on covers with no native position axis, stash the My value
-        # as the display-only assumed position so the card shows My rather than
-        # ``—``. Caps was already fetched above; the helper gates on the policy
-        # predicate (no-op for position-capable covers).
-        self._record_assumed_if_blind(entity_id, target, caps)
-        self._set_transit_direction_if_blind(entity_id, target, prior_position, caps)
         self._logger.debug(
             "send_my_position: stop_cover sent to %s (My = %d%%)", entity_id, target
         )
@@ -1173,51 +989,6 @@ class CoverCommandService:
         )
         return last_target == plan.routed_target
 
-    async def _service_secondary_axis(
-        self,
-        entity_id: str,
-        *,
-        current_position: int | None,
-        context: PositionContext,
-        trigger: str,
-    ) -> None:
-        """Give the cover-type policy a chance to move its secondary axis.
-
-        Called from every gate where the carriage declines to move for a
-        *hysteresis* reason (``same_position``, ``delta_too_small``,
-        ``time_delta_too_small``). Position and tilt are independent axes
-        with independent gates; a carriage delta under ``CONF_DELTA_POSITION``
-        must gate only the carriage, not silently drop the secondary-axis
-        target too (issue #954).
-
-        Excludes ``context.manual_override`` the same place production gates
-        it: only when ``context.force`` is not set. ``PositionContext.force``
-        is documented as "skip delta/time/manual_override gates", and the
-        ``same_position`` branch above is deliberately reached even while
-        forced (it has no ``not context.force`` guard) — a safety /
-        custom-position slot or a floor clamp must still be able to land the
-        tilt on the very cycle it forces the carriage. An unforced cycle
-        keeps the exclusion: manual override is genuine hands-off intent,
-        not hysteresis, and moving tilt under an active override would
-        regress the false-manual-override family (#927/#930).
-
-        No-op on single-axis cover types via the base ``CoverTypePolicy``'s
-        no-op ``maybe_update_tilt_only`` default — this method never branches
-        on cover type itself, it only decides *that* the policy gets a
-        chance, never *what* it does with it.
-        """
-        if (
-            context.policy is not None
-            and context.tilt is not None
-            and not (context.manual_override and not context.force)
-        ):
-            await context.policy.maybe_update_tilt_only(
-                entity_id,
-                current_position=current_position,
-                context=context,
-                reason=trigger,
-            )
-
     # ------------------------------------------------------------------ #
     # Primary entry point
     # ------------------------------------------------------------------ #
@@ -1279,27 +1050,18 @@ class CoverCommandService:
 
         _current = self._get_current_position(entity_id)
 
-        # Full mechanical endpoint forcing (issue #755, generalized to any
-        # position-capable cover by #897). When the owning cover-type policy
-        # flagged this update as a full endpoint (single-axis 0/100, or a
-        # venetian's paired 0/0 or 100/100), the endpoint_use_open_close feature
-        # is on, and the cover is not actually parked at the mechanical stop (HA
-        # state not closed/open — NOT a position tolerance), bypass the
-        # same-position band and the delta/time gates so route_service_call can
-        # emit close_cover/open_cover (#697). This is cover-type-agnostic: the
-        # flag carries the decision, the manager never inspects cover type.
-        #
-        # forced_endpoint is the anti-relay latch (#897/#507): a cover that
-        # settles a step short and never reports the mechanical state (state
-        # stays "open" at 2%) would otherwise re-force every cycle. We read the
-        # latch here (old value) and write it only after a successful send, so
-        # the endpoint is forced exactly once per transition. != position lets a
-        # flip to the other endpoint re-fire.
+        # Full mechanical endpoint forcing (issue #755). When the owning
+        # cover-type policy (venetian) flagged this update as a paired full
+        # endpoint (0/0 or 100/100), the endpoint_use_open_close feature is on,
+        # and the cover is not actually parked at the mechanical stop (HA state
+        # not closed/open — NOT a position tolerance), bypass the same-position
+        # band and the delta/time gates so route_service_call can emit
+        # close_cover/open_cover (#697). This is cover-type-agnostic: the flag
+        # carries the decision, the manager never inspects cover type.
         force_endpoint = (
             context.full_endpoint_target
             and self._endpoint_use_open_close
             and not self._is_at_mechanical_stop(state_obj, position)
-            and self._get(entity_id).forced_endpoint != position
         )
 
         # Hard kill switch — blocks ALL commands, including safety overrides and
@@ -1356,15 +1118,12 @@ class CoverCommandService:
         # validity is a sentinel that we must re-confirm the cover position even
         # if it hasn't changed numerically.
         #
-        # force_endpoint is the other exception (issue #755, generalized to any
-        # position-capable cover by #897): a cover whose desired final state is a
-        # full mechanical endpoint (single-axis 0/100, or a venetian's paired
-        # 0/0 or 100/100) must NOT be swallowed by this _position_tolerance
-        # carve-out — it falls through to routing so close_cover/open_cover
-        # fires. Idempotency is owned by the HA-state mechanical-stop check plus
-        # the forced_endpoint latch above (covers that never report the
-        # mechanical state), not by tolerance, so the gap can't be reintroduced
-        # here nor can it relay-click every cycle.
+        # force_endpoint is the other exception (issue #755): a venetian whose
+        # desired final state is a full mechanical endpoint (0/0 or 100/100) must
+        # NOT be swallowed by this _position_tolerance carve-out — it falls
+        # through to routing so close_cover/open_cover fires. Idempotency for
+        # that case is owned by the HA-state mechanical-stop check above, not by
+        # tolerance, so the gap can't be reintroduced here.
         #
         # _current is None is its own exception (issue #779): Somfy RTS covers
         # (and any open/close-only cover without genuine position feedback) sit
@@ -1377,22 +1136,6 @@ class CoverCommandService:
         # covers are all handled by the one routing source of truth. Delta/time
         # gates and reconciliation deliberately keep reading the real (unknown)
         # _current — this fallback is scoped to the same-position gate only.
-        # An explicit user command (context.user_command) must ALWAYS dispatch —
-        # a user pressing Open/Close/Set from the card is never "already there"
-        # as far as ACP is entitled to decide, especially on a no-feedback cover
-        # whose raw HA state (open->100) diverges from the assumed display value
-        # (My=50). This is distinct from the generic force=True flag, which the
-        # recurring resends (custom_position, override-clear) also set and which
-        # MUST stay deduped here to avoid relay clicks (issue #290/#779). So the
-        # bypass keys on user_command, not force (issue #900).
-        #
-        # This same_position branch is ONE of three hysteresis gates that now
-        # service the secondary axis via _service_secondary_axis (issue #954):
-        # delta_too_small and time_delta_too_small below do too. A carriage
-        # delta under CONF_DELTA_POSITION (or a too-recent command) is a
-        # reason to hold the carriage still — it is not a reason to also
-        # starve the tilt axis, which owns its own independent min-delta and
-        # suppression gates downstream (VenetianPolicy/DualAxisSequencer).
         # sun_just_appeared re-confirms position even at the same numeric target
         # (feedback-poor covers, mid-range tracking) — but NOT when the target is
         # a hard mechanical endpoint the cover already physically occupies.
@@ -1409,7 +1152,6 @@ class CoverCommandService:
         if (
             not sun_reconfirm
             and not force_endpoint
-            and not context.user_command
             and (
                 (
                     _current is not None
@@ -1428,12 +1170,13 @@ class CoverCommandService:
                 )
             )
         ):
-            await self._service_secondary_axis(
-                entity_id,
-                current_position=_current,
-                context=context,
-                trigger=_trigger,
-            )
+            if context.policy is not None and context.tilt is not None:
+                await context.policy.maybe_update_tilt_only(
+                    entity_id,
+                    current_position=_current,
+                    context=context,
+                    reason=_trigger,
+                )
             return self._skip(
                 entity_id,
                 "same_position",
@@ -1452,19 +1195,6 @@ class CoverCommandService:
                 sun_just_appeared=context.sun_just_appeared,
             ):
                 _delta = abs(_current - position) if _current is not None else None
-                # Issue #954: the carriage delta gates only the carriage. The
-                # tilt axis is independent and owns its own gates downstream
-                # (VenetianPolicy.maybe_update_tilt_only ->
-                # DualAxisSequencer.update_tilt_only's target-unchanged dedup
-                # and min-delta check) — give it the same chance the
-                # same_position branch above already gives it, before this
-                # skip drops the carriage command.
-                await self._service_secondary_axis(
-                    entity_id,
-                    current_position=_current,
-                    context=context,
-                    trigger=_trigger,
-                )
                 return self._skip(
                     entity_id,
                     "delta_too_small",
@@ -1480,14 +1210,6 @@ class CoverCommandService:
 
             if not self._check_time_delta(entity_id, context.time_threshold):
                 _elapsed = self._elapsed_minutes(entity_id)
-                # Issue #954: delta_time is a carriage rate-limiter, not a
-                # tilt gate — same reasoning as delta_too_small above.
-                await self._service_secondary_axis(
-                    entity_id,
-                    current_position=_current,
-                    context=context,
-                    trigger=_trigger,
-                )
                 return self._skip(
                     entity_id,
                     "time_delta_too_small",
@@ -1502,19 +1224,6 @@ class CoverCommandService:
                 )
 
             if context.manual_override:
-                # Manual override is genuine hands-off intent, not a hysteresis
-                # gate (issue #954 scope decision). This branch only runs
-                # inside `if not context.force`, so `context.force` is False
-                # by construction here — _service_secondary_axis's guard
-                # (`not (manual_override and not force)`) therefore still
-                # excludes the tilt axis, matching the exclusion this branch
-                # itself enforces for the carriage. The user gets the cover,
-                # both axes, until the override clears — UNLESS a forced
-                # cycle (safety / custom-position slot, floor clamp) reaches
-                # the tilt axis via the same_position branch above, which is
-                # intentional: see _service_secondary_axis's docstring. The
-                # delta branches are not force-reachable; a forced cycle
-                # falls through to the send path instead.
                 return self._skip(
                     entity_id,
                     "manual_override",
@@ -1612,15 +1321,6 @@ class CoverCommandService:
             entity_id, service, position, supports_position, context.inverse_state
         )
 
-        # Anti-relay latch bookkeeping (#897/#507). Arm the latch to the forced
-        # endpoint so a cover that never reports the mechanical state (state
-        # stays "open" a step short of 0) isn't re-forced next cycle. Clear it on
-        # any non-endpoint move so a later endpoint command re-fires exactly once.
-        if force_endpoint:
-            self.state(entity_id).forced_endpoint = position
-        elif position not in (POSITION_CLOSED, POSITION_OPEN):
-            self.state(entity_id).forced_endpoint = None
-
         # Cover-type policy hook: dual-axis covers (venetian) run their
         # settle+tilt sequence here. Default policies are no-ops, so vertical /
         # awning / tilt covers carry zero overhead.
@@ -1694,7 +1394,7 @@ class CoverCommandService:
 
         target = s.target
         if self._at_target(reported_position, target):
-            self._clear_waiting(s)
+            s.waiting = False
             s.retry_count = 0
             self._logger.debug(
                 "Target reached for %s (reported=%s target=%s)",
@@ -1705,60 +1405,6 @@ class CoverCommandService:
             return True
 
         return False
-
-    def is_target_unreached(self, entity_id: str) -> bool:
-        """Read-only A2 predicate: True iff a commanded cover has settled off-target.
-
-        True when a target is set, the cover is no longer ``waiting`` (its
-        transit / grace window elapsed — a still-moving cover returns False),
-        the entity is not under manual override, its position reads, and it is
-        outside tolerance of the target. Reuses :meth:`_at_target` (the exact
-        seam :meth:`check_target_reached` uses — no re-derived tolerance).
-
-        NO side effects — never clears ``waiting`` or resets ``retry_count``,
-        and uses :meth:`_get` (the non-inserting accessor) so polling an
-        unknown entity does not pollute ``_state``. Called every cycle from the
-        coordinator health path (issue #990).
-
-        Two quiet-cases (issue #990 audit):
-
-        * Dry-run: ``_prepare_service_call`` sets ``target``/``waiting`` BEFORE
-          the dry-run gate returns, so the flags reflect a simulated command,
-          not a real one. Never nag about a cover ACP never actually commanded.
-        * Unverifiable surface: a cover that cannot report the granular axis it
-          was commanded on can only ever report an endpoint (0/100), so a
-          non-endpoint ("My" preset) target can never register as reached. We
-          cannot verify "unreached" there, so stay quiet. Gates on the *default
-          axis* the position read and command routing resolve via
-          :meth:`CoverTypePolicy.select_default_axis` (honouring the tilt
-          fallback) — NOT the primary position axis — so a blind/venetian
-          driven through ``set_cover_tilt_position`` (``has_set_position=False,
-          has_set_tilt_position=True``) reads a granular ``current_tilt_position``
-          and stays verifiable. Never a cover-type branch.
-        """
-        if self._dry_run:
-            return False
-        s = self._get(entity_id)
-        if s.target is None or s.waiting:
-            return False
-        if entity_id in self._manual_override_entities:
-            return False
-        actual = self._get_current_position(entity_id)
-        if actual is None:  # unreadable → A1 owns availability; A2 stays quiet
-            return False
-        caps = self.get_cover_capabilities(entity_id)
-        # Gate on the SAME capability signal the position read/command routing
-        # uses — the default axis's capability key (which honours the tilt
-        # fallback) — so "can this cover verify a granular target?" is answered
-        # consistently with how it is read and commanded. A cover that cannot
-        # report the axis it was commanded on can only surface an endpoint.
-        axis = self._policy.select_default_axis(caps)
-        if not caps_get(caps, axis.capability_key, default=True) and s.target not in (
-            POSITION_CLOSED,
-            POSITION_OPEN,
-        ):
-            return False
-        return not self._at_target(actual, s.target)
 
     # ------------------------------------------------------------------ #
     # Reconciliation timer
@@ -1816,7 +1462,7 @@ class CoverCommandService:
                             elapsed,
                             self._wait_for_target_timeout_seconds,
                         )
-                        self._clear_waiting(s)
+                        s.waiting = False
                     else:
                         # Cover still expected to be moving
                         continue
@@ -2210,26 +1856,8 @@ class CoverCommandService:
         # override detection, and the grace-period manager all see the same
         # target/timestamp.
         now = dt.datetime.now(dt.UTC)
-        # Synthetic travel direction (open/close-only covers): compute BEFORE the
-        # target is overwritten, from the cover's current raw position vs the
-        # routed target. Uses the command-gate read (no assumed fallback) so the
-        # comparison stays in the raw display frame.
-        prior_position = self._read_position_with_capabilities(entity, caps)
         s = self.state(entity)
         s.target = plan.routed_target
-        self._set_transit_direction_if_blind(
-            entity, plan.routed_target, prior_position, caps
-        )
-        # Issue #888: this is the single chokepoint every dispatched command
-        # (apply_position + reconciliation) flows through, so refresh the
-        # display-only assumed position here. Open/close-only covers with no
-        # native feedback (Somfy RTS) stash the routed target so the card shows
-        # where ACP drove them; position-capable covers clear any stale assumed
-        # value (dedupes clear-on-native-command). It only writes/clears the
-        # assumed store — never read by the gates, which already ran — so §3b
-        # holds. Runs before the dry-run early return so a dry-run cycle keeps
-        # the display honest too.
-        self._record_assumed_if_blind(entity, plan.routed_target, caps)
         s.waiting = True
         s.sent_at = now
         s.last_progress_at = None

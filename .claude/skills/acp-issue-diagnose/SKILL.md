@@ -13,9 +13,9 @@ For one-off analysis of a JSON file with no GitHub-issue context, use the simple
 
 ## Pick the Input Mode
 
-| User says…                                                   | Mode                                 |
-| ------------------------------------------------------------ | ------------------------------------ |
-| "issue 285", "#285", a GitHub issue URL                      | **issue mode** — fetch from GitHub   |
+| User says… | Mode |
+|------------|------|
+| "issue 285", "#285", a GitHub issue URL | **issue mode** — fetch from GitHub |
 | A path like `/tmp/foo.json`, "this file", or a paste of JSON | **local mode** — skip the fetch step |
 
 If the user says only "diagnose this" with no number, file, or attachment, ask: "Issue number (e.g. 285) or path to a diagnostics file?"
@@ -100,21 +100,12 @@ Issue context (may be empty for local-mode runs):
   ---
 
 Your job:
-1. Run the triage engine over the diagnostics file (from the repo root, with the
-   dev virtualenv — the package import pulls Home Assistant):
-
-     venv/bin/python scripts/triage_json.py <ABSOLUTE_PATH> [--latest-version <X.Y.Z>]
-
-   That runs the SAME declarative rule table as the in-product Troubleshoot step and
-   prints one line per finding plus a wiki deep link. Do NOT re-implement the checks
-   by hand — the engine owns them. Pass --latest-version when the issue names the
-   newest release so the STALE_VERSION check can fire.
-2. Read the diagnostics file (Read tool, or Bash+Python `json.load` for large files)
-   to investigate anything the engine did NOT flag. Remember the offline seam: the
-   download lacks per-entity capabilities and axis requirements, so rules 8a
-   (COVER_NOT_READY) and 13 (COVER_FEATURE_MISMATCH) cannot fire offline — check a
-   suspected capability mismatch by hand. An unexplained symptom is a missing rule
-   row: note it so the maintainer can add one (see the Developer-Triage-Rules wiki).
+1. Read the diagnostics file with the Read tool. If it exceeds the Read window, load it via Bash+Python (`json.load`) and inspect specific keys.
+2. Walk the analysis checklist defined in:
+   /home/jrhubott/src/adaptive-cover-pro/.claude/skills/acp-diagnose/SKILL.md
+   (sections "Analysis Checklist" 1–7 — Sanity/Version, Control Status, Decision Trace,
+    Cover Command Health, Position/Skip Analysis, Configuration Sanity, Climate.)
+   Do NOT re-implement the checklist — read that file and follow it.
 3. Cross-reference the reporter's described symptom against the diagnostics:
    - Does the diagnostics state corroborate the symptom? (e.g. "covers don't move" + `gave_up=true`)
    - Or contradict it? (e.g. "manual override stuck" + `manual_override_state.entries == []`)
@@ -172,7 +163,6 @@ Looked at the diagnostics — running ACP {version}, cover type `{cover_type}`, 
 
 {If `info_needed` is non-empty, add:}
 **To confirm, could you share:**
-
 - {bullet per item}
 ```
 
@@ -194,7 +184,6 @@ I don't see a diagnostics dump on this issue yet — could you attach one?
 In Home Assistant: Settings → Devices & Services → Adaptive Cover Pro → ⋮ (the row's overflow menu) → Download diagnostics. Drop the resulting `.json` file into a comment here.
 
 If you can also include:
-
 - A rough timestamp of when the misbehavior happened (so I can correlate against the diagnostics)
 - The relevant `cover.*` entity ID
 
@@ -265,6 +254,6 @@ No issue number provided — copy the draft above into your reply manually, or g
 
 ## Notes for Future Maintenance
 
-- The Sonnet subagent runs `scripts/triage_json.py` — the SAME rule engine as the in-product Troubleshoot step. New checks are added as rule rows in `diagnostics/triage.py` (see the Developer-Triage-Rules wiki), never as prose in a skill file, so both this skill and the offline `acp-diagnose` skill pick them up automatically.
+- The Sonnet subagent reads `acp-diagnose/SKILL.md` as its analysis playbook. If the diagnostics JSON schema changes, update **only** that file — this skill picks up the new logic automatically.
 - If GitHub changes the user-attachments URL format, update the regex in **Step 1**. The current pattern is `https://github.com/user-attachments/files/<id>/<filename>`.
 - HA's diagnostics download produces filenames like `config_entry-adaptive_cover_pro-<ULID>.json`. Some reporters rename to `.log` — that's why the regex accepts `.json|.log|.txt`.
