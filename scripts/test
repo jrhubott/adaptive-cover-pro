@@ -3,14 +3,30 @@
 # Test runner for Adaptive Cover Pro
 #
 # Usage:
-#   ./scripts/test              # Run all tests
-#   ./scripts/test fast         # Parallel, skip wall-clock perf-budget tests (inner loop)
-#   ./scripts/test unit         # Run only unit tests
-#   ./scripts/test coverage     # Run with detailed coverage
+#   ./scripts/test              # Everything
+#   ./scripts/test fast         # Skip wall-clock perf budgets (inner loop)
+#   ./scripts/test unit         # Only tests that need no Home Assistant instance
+#   ./scripts/test coverage     # Everything, plus a coverage report
+#   ./scripts/test serial       # Escape hatch — no xdist, so -s/--pdb/--lf work
+#
+# Extra args pass through: ./scripts/test serial -k my_test --pdb
+#
+# Every mode but `serial` runs under `pytest -n auto`. This suite takes ~50s
+# serially and ~13s parallel, and roughly two thirds of even that is per-worker
+# interpreter and homeassistant import cost, so it will not go much lower.
 
 set -e
 
 cd "$(dirname "$0")/.."
+
+# shellcheck source=scripts/_venv.sh
+source scripts/_venv.sh
+activate_venv || true
+
+if ! command -v pytest >/dev/null 2>&1; then
+    echo "pytest not found. Run ./scripts/setup, or activate a venv that has it." >&2
+    exit 1
+fi
 
 GREEN='\033[0;32m'
 RESET='\033[0m'
@@ -18,23 +34,39 @@ RESET='\033[0m'
 echo -e "${GREEN}Adaptive Cover Pro Test Runner${RESET}"
 echo ""
 
-case "${1:-all}" in
+# Consume the first argument only when it names a mode, so anything else
+# (`./scripts/test -k my_test`) passes straight through to pytest.
+mode="all"
+case "${1:-}" in
+  fast | unit | coverage | serial | all)
+    mode="$1"
+    shift
+    ;;
+esac
+
+case "$mode" in
   fast)
-    echo "Running fast inner loop (parallel, no perf budgets)..."
-    pytest -n auto -m "not perf" -q
+    echo "Running fast inner loop (no perf budgets)..."
+    pytest -n auto -m "not perf" -q "$@"
     ;;
   unit)
-    echo "Running unit tests only..."
-    pytest -m unit -v
+    # `not integration` rather than `unit`: it selects every test that does not
+    # build a HomeAssistant, which is the distinction that costs time.
+    echo "Running tests that need no Home Assistant instance..."
+    pytest -n auto -m "not integration" -q "$@"
     ;;
   coverage)
     echo "Running all tests with detailed coverage..."
-    pytest --cov --cov-report=term-missing --cov-report=html
+    pytest -n auto --cov --cov-report=term-missing --cov-report=html "$@"
     echo ""
     echo "Coverage report: htmlcov/index.html"
     ;;
-  all|*)
+  serial)
+    echo "Running serially (xdist off — -s, --pdb and --lf work here)..."
+    pytest "$@"
+    ;;
+  all)
     echo "Running all tests..."
-    pytest -v
+    pytest -n auto -q "$@"
     ;;
 esac
