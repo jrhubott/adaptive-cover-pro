@@ -1,9 +1,10 @@
 """Shared Building Profile link helpers.
 
 A neutral home for the profile/cover linkage helpers so both ``config_flow``
-(link/unlink UI) and ``__init__`` (live propagation + deletion cleanup) can
-reuse a single source. It must not live in ``helpers.py`` — that module is
-imported by ``cover_types.base``, and these helpers need ``get_policy`` from
+(link/unlink UI, plus the clear propagation a profile save drives) and
+``__init__`` (live propagation + deletion cleanup) can reuse a single source.
+It must not live in ``helpers.py`` — that module is imported by
+``cover_types.base``, and these helpers need ``get_policy`` from
 ``cover_types``, which would create an import cycle.
 """
 
@@ -131,30 +132,80 @@ def merge_profile_into_config(
     *,
     overridden: frozenset[str] = frozenset(),
 ) -> None:
-    """Merge a profile's shared-sensor keys into a plain dict.
+    """Merge a profile's non-empty shared-sensor keys into a plain dict.
 
-    Skips keys the cover has locally overridden. A key ABSENT from the
-    profile's options is left untouched on ``config_dict`` — a profile that
-    has never set a field must not touch the cover's own value. A key the
-    profile HAS set (even to an explicitly-cleared empty value — issue #1085)
-    is applied: copied when non-empty, removed when empty. That set-or-remove
-    shape mirrors ``clear_cover_override``'s handling of a single key, kept
-    consistent here for the whole subset so "profile defines this key" has one
-    meaning project-wide: present in ``profile_entry.options``, not merely
-    non-empty.
+    Skips keys the cover has locally overridden. Safe to call from both the
+    create flow (no existing entry, no overrides) and ``_copy_profile_to_cover``
+    (existing entry, may have overrides). Does NOT stamp
+    ``CONF_BUILDING_PROFILE_ID`` — callers handle that so each context can
+    write it in the right place.
 
-    Safe to call from both the create flow (no existing entry, no overrides)
-    and ``_copy_profile_to_cover`` (existing entry, may have overrides). Does
-    NOT stamp ``CONF_BUILDING_PROFILE_ID`` — callers handle that so each
-    context can write it in the right place.
+    Copy-only, never remove: a blank profile key means "the profile does not
+    define this", which is indistinguishable from "the user never filled it
+    in" once stored, so it must leave the cover's own value alone. Removing
+    the key a profile save actually emptied is a separate, save-time job —
+    ``propagate_profile_clears`` (issue #1085).
     """
-    for key, value in profile_entry.options.items():
-        if key not in BUILDING_PROFILE_SENSOR_KEYS or key in overridden:
+    subset = {
+        k: v
+        for k, v in profile_entry.options.items()
+        if k in BUILDING_PROFILE_SENSOR_KEYS and _is_set(v) and k not in overridden
+    }
+    config_dict.update(subset)
+
+
+def cleared_profile_keys(previous_options: dict, new_options: dict) -> frozenset[str]:
+    """Shared-sensor keys a profile save emptied: set before, blank after.
+
+    A stored option cannot say whether a blank field was cleared or simply
+    never filled in — the profile form writes ``None`` for both (issue #1085).
+    The transition can, so the profile's stored options are diffed against the
+    ones the options dialog is about to write. Blank in either shape counts
+    (``None``, ``""``, ``[]`` — the multi-selects clear to the last), and a key
+    that was already blank, or that the dialog re-filled before saving, is not
+    a clear.
+    """
+    return frozenset(
+        key
+        for key in BUILDING_PROFILE_SENSOR_KEYS
+        if _is_set((previous_options or {}).get(key))
+        and not _is_set((new_options or {}).get(key))
+    )
+
+
+def propagate_profile_clears(
+    hass: HomeAssistant, profile_entry: ConfigEntry, cleared: frozenset[str]
+) -> None:
+    """Drop the keys a profile save emptied from the covers inheriting them.
+
+    The counterpart to ``_copy_profile_to_cover``: that copier only ever
+    applies the profile's non-empty keys, so on its own a cleared field would
+    leave the last-copied sensor sitting on every linked cover. Only keys in
+    ``cleared`` are touched, and only where the cover was inheriting — a key in
+    the cover's ``CONF_PROFILE_SENSOR_OVERRIDES`` is that cover's own
+    deliberate choice and stays. Removing rather than blanking keeps a dropped
+    key indistinguishable from one never configured, which is what the
+    diagnostics and overview classification already expects.
+
+    Driven from the options flow's save, not from the propagation listener:
+    the listener sees only the profile's new options, where a cleared field is
+    indistinguishable from an unfilled one. Scoped by ``_covers_linked_to``, so
+    calling it for a non-profile entry is a no-op — only a Building Profile's
+    ``entry_id`` ever appears in a cover's ``CONF_BUILDING_PROFILE_ID``. Writes
+    nothing when nothing was cleared, which is the overwhelmingly common save.
+    """
+    if not cleared:
+        return
+    for cover in _covers_linked_to(hass, profile_entry):
+        drop = {
+            key
+            for key in cleared - effective_profile_overrides(cover.options)
+            if key in cover.options
+        }
+        if not drop:
             continue
-        if _is_set(value):
-            config_dict[key] = value
-        else:
-            config_dict.pop(key, None)
+        options = {k: v for k, v in cover.options.items() if k not in drop}
+        hass.config_entries.async_update_entry(cover, options=options)
 
 
 def _copy_profile_to_cover(

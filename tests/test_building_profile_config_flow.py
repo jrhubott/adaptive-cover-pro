@@ -411,6 +411,159 @@ async def test_building_profile_sensors_step_clears_previously_set_field(
     assert result2["data"].get(CONF_WEATHER_IS_RAINING_TEMPLATE) is None
 
 
+def _linked_cover(hass: HomeAssistant, entry_id: str, options: dict) -> MockConfigEntry:
+    """Add a cover entry linked to ``profile_1``."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": entry_id, CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={CONF_BUILDING_PROFILE_ID: "profile_1", **options},
+        entry_id=entry_id,
+        title=entry_id,
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+@pytest.mark.integration
+async def test_building_profile_clear_reaches_linked_covers_on_save(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing a profile field also stops the linked covers using it (#1085).
+
+    Saving the profile with the field blank is only half the fix — every cover
+    that inherited the sensor still carries the last-copied value, and the
+    propagation listener can only copy non-empty keys, never remove one. The
+    save is where the set → cleared transition is still visible, so that is
+    where the removal is driven from.
+    """
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={
+            CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+            CONF_LUX_ENTITY: "sensor.lux",
+        },
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+    inheriting = _linked_cover(
+        hass,
+        "cover_a",
+        {CONF_WEATHER_RAIN_SENSOR: "sensor.rain", CONF_LUX_ENTITY: "sensor.lux"},
+    )
+    overriding = _linked_cover(
+        hass,
+        "cover_b",
+        {
+            CONF_WEATHER_RAIN_SENSOR: "sensor.own_rain",
+            CONF_PROFILE_SENSOR_OVERRIDES: [CONF_WEATHER_RAIN_SENSOR],
+        },
+    )
+
+    flow = OptionsFlowHandler(profile)
+    flow.hass = hass
+    # Rain cleared, lux left as it was — the frontend omits the cleared key.
+    await flow.async_step_profile_sensors({CONF_LUX_ENTITY: "sensor.lux"})
+    await flow.async_step_done()
+
+    assert CONF_WEATHER_RAIN_SENSOR not in inheriting.options
+    assert inheriting.options[CONF_LUX_ENTITY] == "sensor.lux"
+    assert overriding.options[CONF_WEATHER_RAIN_SENSOR] == "sensor.own_rain"
+
+
+@pytest.mark.integration
+async def test_building_profile_save_without_clearing_leaves_covers_alone(
+    hass: HomeAssistant,
+) -> None:
+    """The common save — nothing cleared — writes no linked-cover entry."""
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={CONF_LUX_ENTITY: "sensor.lux"},
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+    _linked_cover(
+        hass,
+        "cover_a",
+        {CONF_LUX_ENTITY: "sensor.lux", CONF_OUTSIDETEMP_ENTITY: "sensor.local_out"},
+    )
+
+    flow = OptionsFlowHandler(profile)
+    flow.hass = hass
+
+    real_update = hass.config_entries.async_update_entry
+    updated: list[str] = []
+
+    def _spy(entry, **kwargs):
+        updated.append(entry.entry_id)
+        return real_update(entry, **kwargs)
+
+    hass.config_entries.async_update_entry = _spy
+    try:
+        await flow.async_step_profile_sensors(
+            {CONF_LUX_ENTITY: "sensor.lux", CONF_WEATHER_ENTITY: "weather.home"}
+        )
+        await flow.async_step_done()
+    finally:
+        hass.config_entries.async_update_entry = real_update
+
+    assert updated == []
+
+
+@pytest.mark.integration
+async def test_local_override_survives_clear_then_cover_save_then_propagation(
+    hass: HomeAssistant,
+) -> None:
+    """A cover's own sensor survives the whole clear → resave → repropagate run.
+
+    The profile clear leaves the override alone, but the cover's next save
+    recomputes its override list against the now-blank profile and drops the
+    key from it (the profile no longer defines it, so the cover simply owns it
+    outright). The following propagation must still not touch the value.
+    """
+    from custom_components.adaptive_cover_pro import _async_profile_propagate
+
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={CONF_WEATHER_RAIN_SENSOR: "sensor.rain"},
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+    cover = _linked_cover(
+        hass,
+        "cover_b",
+        {
+            CONF_WEATHER_RAIN_SENSOR: "sensor.own_rain",
+            CONF_PROFILE_SENSOR_OVERRIDES: [CONF_WEATHER_RAIN_SENSOR],
+        },
+    )
+
+    # 1. The profile clears the rain sensor and saves.
+    profile_flow = OptionsFlowHandler(profile)
+    profile_flow.hass = hass
+    await profile_flow.async_step_profile_sensors({})
+    saved = await profile_flow.async_step_done()
+    hass.config_entries.async_update_entry(profile, options=saved["data"])
+    assert cover.options[CONF_WEATHER_RAIN_SENSOR] == "sensor.own_rain"
+
+    # 2. The cover is saved again — its override list is recomputed against
+    #    the now-blank profile.
+    cover_flow = OptionsFlowHandler(cover)
+    cover_flow.hass = hass
+    resaved = await cover_flow.async_step_done()
+    hass.config_entries.async_update_entry(cover, options=resaved["data"])
+    assert CONF_PROFILE_SENSOR_OVERRIDES not in cover.options
+
+    # 3. A later profile save propagates again — the cover keeps its sensor.
+    await _async_profile_propagate(hass, profile)
+    assert cover.options[CONF_WEATHER_RAIN_SENSOR] == "sensor.own_rain"
+
+
 # ---------------------------------------------------------------------------
 # profile_line placeholder in options init step (issue #720 Part 3)
 # ---------------------------------------------------------------------------

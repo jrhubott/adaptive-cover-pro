@@ -792,6 +792,11 @@ async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> N
     subset into every linked cover via the shared copier — the ``async_update_entry``
     it performs fires each cover's self-reload listener, so linked covers pick up
     the changed sensor IDs immediately.
+
+    Copy-only: a blank profile key is left alone, because from here a field the
+    user just cleared looks exactly like one they never filled in. Removing a
+    cleared key from the linked covers happens at save time instead, where the
+    transition is still visible — ``propagate_profile_clears`` (issue #1085).
     """
     # Guard: only profiles (virtual, controls_cover == False) propagate. A real
     # cover reaching here would be a wiring bug — its own listener handles reloads.
