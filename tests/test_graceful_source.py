@@ -112,3 +112,57 @@ def test_reset_forgets_state(clock):
     assert src.last_known is None
     # With no last-known, the next indeterminacy falls back immediately.
     assert src.observe(None) == Resolution(SourceResolution.FELL_BACK, None)
+
+
+# ---------------------------------------------------------------------------
+# Generic payload (issue #1012): GracefulSource[bool] is not the only shape —
+# the custom-position per-input hold needs GracefulSource[tuple[bool,
+# tuple[str, ...]]]. The state machine mechanics (DETERMINATE / HOLDING /
+# FELL_BACK, the grace window, idempotent re-observation) must work
+# identically regardless of the payload's shape.
+# ---------------------------------------------------------------------------
+
+
+def test_generic_tuple_payload_holds_and_falls_back(clock):
+    """A non-bool payload (a 2-tuple, as the custom-position sensor fold uses)
+    goes through the exact same DETERMINATE/HOLDING/FELL_BACK mechanics as a
+    bool payload.
+    """
+    src: GracefulSource[tuple[bool, tuple[str, ...]]] = _src(clock)
+    fresh = (True, ("binary_sensor.rain",))
+    assert src.observe(fresh) == Resolution(SourceResolution.DETERMINATE, fresh)
+    assert src.last_known == fresh
+
+    # Indeterminacy begins now (t=0): the first observe(None) starts the
+    # grace window (default anchor = first indeterminate sighting).
+    assert src.observe(None) == Resolution(SourceResolution.HOLDING, fresh)
+
+    clock[0] = 121.0
+    assert src.observe(None) == Resolution(SourceResolution.FELL_BACK, None)
+
+
+def test_falsy_tuple_payload_is_not_mistaken_for_indeterminate(clock):
+    """A genuinely-read but entirely falsy payload (``False``, an empty
+    tuple) must be recorded as a real DETERMINATE verdict, never confused
+    with the ``None`` indeterminate sentinel — the sentinel check is
+    ``is not None``, not truthiness.
+    """
+    src: GracefulSource[tuple[bool, tuple[str, ...]]] = _src(clock)
+    falsy = (False, ())
+    assert src.observe(falsy) == Resolution(SourceResolution.DETERMINATE, falsy)
+    assert src.last_known == falsy
+
+    # A later indeterminate reading holds the falsy (not "missing") payload.
+    clock[0] = 10.0
+    assert src.observe(None) == Resolution(SourceResolution.HOLDING, falsy)
+
+
+def test_bool_false_payload_is_not_mistaken_for_indeterminate(clock):
+    """Same distinction for a plain ``bool`` payload: a genuine ``False``
+    verdict is DETERMINATE, not FELL_BACK — the pre-existing gate consumer
+    already relies on this (``test_determinate_records_last_known``); this
+    pins it down explicitly as part of the generic-payload contract.
+    """
+    src = _src(clock)
+    assert src.observe(False) == Resolution(SourceResolution.DETERMINATE, False)
+    assert src.last_known is False

@@ -242,6 +242,47 @@ def wire_dispatch_frame(
     return coord
 
 
+def _bare_coordinator(**overrides: Any) -> Any:
+    """Build an ``object.__new__`` coordinator stub wired for ``async_shutdown``.
+
+    ``async_shutdown`` touches a fixed set of collaborators regardless of
+    which handle a given test cares about: ``_grace_mgr.cancel_all()``,
+    ``_cancel_motion_timeout()``, ``_cancel_weather_timeout()``,
+    ``_sensor_health.shutdown()``, ``_repair.shutdown()``, ``_cmd_svc.stop()``,
+    and five ``if self._X_unsub is not None: ...`` cancel blocks
+    (``_forecast_unsub``, ``_forecast_max_unsub``, ``_gate_fallback_unsub``,
+    ``_refresh_after_unsub``, ``_custom_position_hold_unsub``). Every test
+    that exercises ``async_shutdown`` against a from-scratch stub needs all of
+    these stubbed or it raises ``AttributeError`` — this was hand-mirrored
+    across ``tests/test_issue_632_daytime_gate.py`` and
+    ``tests/test_coordinator_healthchecks.py`` and broke both files the last
+    time ``async_shutdown`` gained a new handle (issue #1012's per-input hold
+    wake). Pass keyword overrides (e.g. ``gate_fallback_unsub=my_cancel_spy``)
+    to replace any default before returning; unprefixed attribute names are
+    used (``gate_fallback_unsub``, not ``_gate_fallback_unsub``).
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._grace_mgr = MagicMock()
+    coord._cancel_motion_timeout = MagicMock()
+    coord._cancel_weather_timeout = MagicMock()
+    coord._sensor_health = MagicMock()
+    coord._repair = MagicMock()
+    coord._cmd_svc = MagicMock()
+    coord._forecast_unsub = None
+    coord._forecast_max_unsub = None
+    coord._gate_fallback_unsub = None
+    coord._refresh_after_unsub = None
+    coord._custom_position_hold_unsub = None
+    for name, value in overrides.items():
+        setattr(coord, f"_{name}", value)
+    return coord
+
+
 # ---------------------------------------------------------------------------
 # Convenience assertions
 # ---------------------------------------------------------------------------

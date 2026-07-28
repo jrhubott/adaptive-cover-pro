@@ -39,14 +39,12 @@ from custom_components.adaptive_cover_pro.const import (
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
 )
-from custom_components.adaptive_cover_pro.coordinator import (
-    AdaptiveDataUpdateCoordinator,
-)
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.repair import RepairManager
 from custom_components.adaptive_cover_pro.managers.sensor_health import (
     SensorHealthManager,
 )
+from tests.ha_helpers import _bare_coordinator
 
 pytestmark = pytest.mark.unit
 
@@ -101,10 +99,17 @@ def _make_coord(
     debounce: float = 0,
     policy=None,
 ):
-    """Build a minimal coordinator stub wired for _evaluate_health_checks."""
+    """Build a minimal coordinator stub wired for _evaluate_health_checks.
+
+    Starts from ``_bare_coordinator()`` (the async_shutdown-collaborator stub
+    shared with ``tests/test_issue_632_daytime_gate.py``) so ``async_shutdown``
+    can run against this fixture too, then layers on the health-check-specific
+    wiring, overwriting ``_sensor_health``/``_repair``/``_cmd_svc`` with the
+    real instances this module's tests actually need.
+    """
     hass = _Hass(states if states is not None else {"sun.sun": "above_horizon"})
     logger = logging.getLogger("test.coord_health")
-    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord = _bare_coordinator()
     coord.hass = hass
     coord.logger = logger
     coord.config_entry = SimpleNamespace(entry_id=_ENTRY, data={"name": "Bedroom"})
@@ -507,15 +512,9 @@ async def test_shutdown_cancels_both_managers():
         end=dt.datetime(2026, 7, 19, 8, 0),
         debounce=100,
     )
-    # Stub out the rest of async_shutdown's cleanup collaborators.
-    coord._grace_mgr = MagicMock()
-    coord._cancel_motion_timeout = MagicMock()
-    coord._cancel_weather_timeout = MagicMock()
-    coord._cmd_svc = MagicMock()
-    coord._forecast_unsub = None
-    coord._forecast_max_unsub = None
-    coord._gate_fallback_unsub = None
-    coord._refresh_after_unsub = None
+    # _make_coord's _bare_coordinator() base already stubs the rest of
+    # async_shutdown's cleanup collaborators (grace_mgr, motion/weather
+    # cancel, cmd_svc, and the unsub handles).
     with (
         patch(f"{_BASE}.ir.async_create_issue") as create,
         patch(f"{_BASE}.ir.async_delete_issue"),

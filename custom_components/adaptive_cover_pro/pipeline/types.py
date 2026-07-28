@@ -137,8 +137,18 @@ class CustomPositionSensorState:
     entity_ids: tuple[str, ...]
     # Slot activation: OR across the sensors, folded with the optional
     # condition template via templates.combine_with_mode() at snapshot time.
-    # On an *invalid* read (``is_valid`` False) this carries the last-valid
-    # activation held across the transient (issue #1005), not the current read.
+    # Two independent holds can substitute a held value here instead of this
+    # cycle's fresh fold result: the whole-slot hold (issue #1005), engaged
+    # only when EVERY input is invalid this cycle (``is_valid`` False); and
+    # the time-bounded per-input hold (issue #1012), which runs on EITHER
+    # input regardless of ``is_valid`` — most visibly while ``is_valid``
+    # stays True (the other input is still speaking), but it also runs when
+    # both inputs are invalid, in which case the whole-slot hold then
+    # overwrites whatever it produced. The per-input window is measured from
+    # that input's own FIRST INVALID SIGHTING (cadence-independent — a gap of
+    # any length between the input's last-valid reading and when it was first
+    # observed bad does not itself eat into the window), for up to
+    # CUSTOM_POSITION_INPUT_HOLD_SECONDS past that first invalid sighting.
     is_on: bool
     # The slot's position claim, in pre-inversion canonical space. ``None`` =
     # the slot makes no position claim — a constraint-only slot (e.g. trigger →
@@ -168,7 +178,11 @@ class CustomPositionSensorState:
     # Sensors currently "on" — drives reason strings (mirrors the old force
     # override's multi-sensor reason format).
     active_entity_ids: tuple[str, ...] = ()
-    # Rendered condition-template result. None = no template configured.
+    # This cycle's template opinion — normally the fresh render, but the
+    # time-bounded per-input hold (issue #1012) can substitute the template's
+    # own last-valid opinion here instead when the template alone failed to
+    # render this cycle (for up to CUSTOM_POSITION_INPUT_HOLD_SECONDS). None =
+    # no template configured (never held).
     template_active: bool | None = None
     # Optional user-configured label for this slot (issue #867). When set,
     # overrides sensor_name everywhere the slot's label is surfaced (reason
@@ -191,10 +205,15 @@ class CustomPositionSensorState:
 
     # Whether this cycle's read was usable (issue #1005). True when at least one
     # bound sensor reported a non-invalid state (not unavailable/unknown/missing)
-    # OR a condition template rendered an opinion. False = no usable input this
-    # cycle, in which case ``is_on`` / ``active_entity_ids`` are HELD to the last
-    # valid read so a transient sensor blip does not fire a false release edge.
-    # Default True so every pre-#1005 construction path stays a valid read.
+    # OR a condition template rendered an opinion. False = NEITHER input spoke
+    # this cycle, in which case ``is_on`` / ``active_entity_ids`` are HELD to the
+    # last valid combined read (whole-slot hold, no time bound) so a transient
+    # blip does not fire a false release edge. ``True`` does NOT mean every
+    # field below is fresh: the time-bounded per-input hold (issue #1012) can
+    # still be substituting one input's (sensor or template) own last-valid
+    # contribution into ``is_on`` while the *other* input keeps ``is_valid``
+    # True this cycle. Default True so every pre-#1005 construction path stays
+    # a valid read.
     is_valid: bool = True
 
     @property

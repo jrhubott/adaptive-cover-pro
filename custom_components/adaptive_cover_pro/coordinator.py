@@ -7,7 +7,7 @@ import datetime as dt
 import dataclasses
 import json
 import pathlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
@@ -659,6 +659,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # re-runs the update cycle at venetian back-rotate suppression expiry, so
         # a tilt-only update deferred while the window was open fires promptly.
         self._refresh_after_unsub: Callable[[], None] | None = None
+
+        # Issue #1012: cancel handle for the single ``async_call_later`` wake
+        # that re-runs the update cycle the moment a custom-position slot's
+        # per-input hold falls back to its own fresh (possibly different)
+        # reading — the same "otherwise nothing else would trigger it until
+        # the next state-change/periodic refresh" gap #742 closed for the
+        # daytime gate.
+        self._custom_position_hold_unsub: Callable[[], None] | None = None
 
     def _make_detector_config(self, options) -> DetectorConfig:
         """Build the manual-override DetectorConfig from raw options.
@@ -2047,6 +2055,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # single wake at grace expiry if the gate is HOLDING its last-known value.
         self._schedule_gate_fallback_wake()
 
+        # Issue #1012: same idea for the custom-position per-input hold — arm a
+        # single wake at the soonest active hold's expiry, now that this cycle's
+        # reads have resolved every slot's GracefulSource state.
+        self._schedule_custom_position_hold_wake()
+
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
             states={
@@ -3345,6 +3358,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             weather_override_active=self.is_weather_override_active,
             # Pure property read — the ad-hoc/preemption build must NOT
             # re-evaluate the managers (that would advance latches off-cycle).
+            # One latch it does advance: the custom-position per-input hold
+            # (#1012) arms on any read, so an ad-hoc build can anchor the hold
+            # window at the tap rather than at the next regular cycle. That is
+            # the documented contract — the window starts at the first
+            # indeterminate sighting, and the tap is one — but it also means no
+            # hold wake is scheduled here.
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
@@ -4310,6 +4329,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
     @callback
+    def _schedule_optional_wake(
+        self,
+        unsub: Callable[[], None] | None,
+        seconds: float | None,
+        on_due: Callable[[dt.datetime], Awaitable[None]],
+    ) -> Callable[[], None] | None:
+        """Cancel ``unsub`` if in flight, then arm one fresh wake if ``seconds`` is set.
+
+        Shared cancel-then-schedule-if-needed shape behind every "a source is
+        HOLDING its last-known verdict; nothing else would trigger its
+        fall-back to a fresh reading until the next state-change or periodic
+        refresh — arm a single ``async_call_later`` wake instead, cancelling
+        any previous one so there is never more than one outstanding" case:
+        the daytime-gate fallback wake (issue #742) and the custom-position
+        per-input hold fallback wake (issue #1012) both reduce to this.
+        ``seconds=None`` means no wake is needed this cycle (determinate,
+        never observed, or already fallen back) — any in-flight wake is still
+        cancelled, and ``None`` is returned so the caller clears its handle.
+        Callers store the return value back onto their own tracking
+        attribute; this method holds no state of its own.
+        """
+        if unsub is not None:
+            unsub()
+        if seconds is None:
+            return None
+        return async_call_later(self.hass, seconds, on_due)
+
+    @callback
     def _schedule_gate_fallback_wake(self) -> None:
         """Schedule one refresh at daytime-gate grace expiry (issue #742).
 
@@ -4320,19 +4367,41 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         in-flight wake is cancelled first so there is never more than one; a
         determinate (or already-fallen-back) gate schedules none.
         """
-        if self._gate_fallback_unsub is not None:
-            self._gate_fallback_unsub()
-            self._gate_fallback_unsub = None
-        secs = self._time_mgr.seconds_until_gate_fallback()
-        if secs is None:
-            return
-        self._gate_fallback_unsub = async_call_later(
-            self.hass, secs, self._on_gate_fallback_due
+        self._gate_fallback_unsub = self._schedule_optional_wake(
+            self._gate_fallback_unsub,
+            self._time_mgr.seconds_until_gate_fallback(),
+            self._on_gate_fallback_due,
         )
 
     async def _on_gate_fallback_due(self, _now: dt.datetime) -> None:
         """Fire when the daytime-gate grace window expires: request a refresh."""
         self._gate_fallback_unsub = None
+        await self.async_request_refresh()
+
+    @callback
+    def _schedule_custom_position_hold_wake(self) -> None:
+        """Schedule one refresh at custom-position per-input hold expiry (issue #1012).
+
+        Mirrors :meth:`_schedule_gate_fallback_wake` (issue #742): while a
+        slot's per-input hold is HOLDING a stale sensor/template
+        contribution, nothing else would trigger its fall-back to that
+        input's own fresh (possibly different) reading until the next
+        state-change or periodic refresh. Schedule a single
+        ``async_call_later`` wake at the soonest such expiry across every
+        configured slot. ``sun.sun`` is unconditionally tracked
+        (``__init__.py``), giving a de-facto heartbeat already — this wake is
+        a correctness/precision improvement for the exact expiry instant, not
+        an outage fix.
+        """
+        self._custom_position_hold_unsub = self._schedule_optional_wake(
+            self._custom_position_hold_unsub,
+            self._snapshot_builder.seconds_until_custom_position_hold_fallback(),
+            self._on_custom_position_hold_due,
+        )
+
+    async def _on_custom_position_hold_due(self, _now: dt.datetime) -> None:
+        """Fire when a custom-position per-input hold expires: request a refresh."""
+        self._custom_position_hold_unsub = None
         await self.async_request_refresh()
 
     @callback
@@ -4435,6 +4504,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._refresh_after_unsub is not None:
             self._refresh_after_unsub()
             self._refresh_after_unsub = None
+
+        # Cancel the custom-position per-input hold fallback wake (issue #1012).
+        if self._custom_position_hold_unsub is not None:
+            self._custom_position_hold_unsub()
+            self._custom_position_hold_unsub = None
 
         self.logger.debug("Coordinator shutdown complete")
 
