@@ -64,8 +64,13 @@ class AdaptiveGeneralCover(ABC):
         field: the base carries no default field of its own (subclasses add
         non-default config fields after it, which would break dataclass field
         ordering). The forecast sets ``cover.eval_time`` dynamically per sample
-        so its time-dependent gates are evaluated at the projected time; the
-        live path never sets it, so it stays ``None`` → wall-clock now.
+        so its time-dependent gates are evaluated at the projected time. The
+        live anticipation look-ahead
+        (:func:`pipeline.helpers.anticipated_solar_position_from_geometry`,
+        since #617) sets it the same way on the ``dataclasses.replace`` copies
+        it probes; the *current* cover instance is never given an
+        ``eval_time`` of its own, so its gates still evaluate at wall-clock
+        now.
         """
         return SunGeometry(
             self.sol_azi,

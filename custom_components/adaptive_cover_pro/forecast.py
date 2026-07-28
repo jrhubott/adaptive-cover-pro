@@ -214,14 +214,23 @@ def _build_samples(
     elevation chart regardless of what time ``build_forecast`` is called.
 
     Each sample routes through the same ``pipeline.helpers`` primitives the live
-    pipeline uses, so positions are identical to runtime — including the
-    look-ahead anticipation horizon (``time_threshold_minutes``, issue #1091):
-    solar samples call :func:`~.pipeline.helpers.anticipated_solar_position_from_geometry`,
-    the same primitive the live ``SolarHandler`` calls via
-    :func:`~.pipeline.helpers.anticipated_solar_position`. At horizon 0 (the
-    default) that primitive is identical to the plain, non-anticipated
-    ``solar_position_from_geometry``. The effective default (and whether the
-    sunset position is active) is recomputed at *each sample's* time via
+    pipeline uses — solar samples call
+    :func:`~.pipeline.helpers.anticipated_solar_position_from_geometry`, the same
+    primitive the live ``SolarHandler`` calls via
+    :func:`~.pipeline.helpers.anticipated_solar_position`, with the same
+    look-ahead anticipation horizon (``time_threshold_minutes``, issue #1091).
+    This is a grid-resolution approximation of runtime, not an exact match:
+    each probe time is quantized via :func:`_nearest_index` to the same
+    5-minute ``SunData`` grid this walk is itself aligned to, so at small
+    horizons (e.g. the default ``CONF_DELTA_TIME`` of 2 minutes) every probe
+    collapses onto the sample's own grid index and the anticipation is a
+    no-op — whereas the live path anticipates from an arbitrary wall-clock
+    ``now`` and can land on a later grid index the forecast never reaches. At
+    horizon 0 (the default parameter) the primitive is identical to the
+    plain, non-anticipated ``solar_position_from_geometry``.
+
+    The effective default (and whether the sunset position is active) is
+    recomputed at *each sample's* time via
     :func:`compute_effective_default`, mirroring the live snapshot builder
     rather than holding a static default. Note: the forecast projects solar
     tracking whenever the sun is in the FOV regardless of the
