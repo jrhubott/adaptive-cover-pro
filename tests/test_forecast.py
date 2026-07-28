@@ -769,30 +769,99 @@ class TestForecastEndOfWindowPosition:
 class TestForecastMatchesLivePipeline:
     """Anti-drift lock: forecast samples == the live snapshot-based helpers."""
 
-    def test_solar_sample_equals_compute_solar_position(self):
+    def test_solar_sample_equals_anticipated_solar_position(self):
+        """Anti-drift lock (#1091): forecast solar branch must match the live
+        anticipation-aware primitive, at a nonzero look-ahead horizon.
+
+        PR #556's original lock (``test_solar_sample_equals_compute_solar_position``)
+        compared against the non-anticipated ``compute_solar_position`` using a
+        snapshot that never set ``time_threshold_minutes`` (defaulting to 0), so
+        anticipation was a no-op inside the lock itself — it kept passing straight
+        through PR #617 switching the live handler to the anticipation-aware
+        primitive while the forecast was never updated to match (#1091). This
+        lock uses a nonzero horizon and a sun sweep where anticipation provably
+        changes the result, so a future primitive swap on either side breaks it.
+        """
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
         from custom_components.adaptive_cover_pro.pipeline.helpers import (
+            anticipated_solar_position,
             compute_solar_position,
         )
 
         from tests.conftest import make_snapshot_for_cover
+        from tests.cover_helpers import build_vertical_cover
 
-        config = _make_config(min_pos=30, max_pos=90)
-        # Live snapshot over an equivalent cover at the same geometry/config.
-        live_cover = MagicMock()
-        live_cover.config = config
-        live_cover.calculate_percentage = MagicMock(return_value=10)
-        live_cover.calculate_raw_percentage = MagicMock(return_value=10.0)
+        # Sun sweeps from off-axis (220 deg) toward the window centre (180 deg)
+        # over the horizon — the same divergence geometry as
+        # test_solar_anticipation.py::test_vertical_anticipates_more_protective_future_sample,
+        # anchored at 10:00 (mid-day) so the sunset/sunrise gate never trips.
+        day_start = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+        step = timedelta(minutes=5)
+        azimuths = [220.0, 210.0, 200.0, 190.0, 180.0, 180.0]
+        elevations = [45.0] * 6
+        sd = MagicMock()
+        sd.times = [day_start + i * step for i in range(6)]
+        sd.solar_azimuth = azimuths
+        sd.solar_elevation = elevations
+        sd.sunrise = MagicMock(return_value=day_start.replace(hour=5))
+        sd.sunset = MagicMock(return_value=day_start.replace(hour=21))
+        sd.next_sunrise = MagicMock(return_value=None)
+
+        def make_cover(azi: float, ele: float):
+            return build_vertical_cover(
+                logger=MagicMock(),
+                sol_azi=azi,
+                sol_elev=ele,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                sun_data=sd,
+                fov_left=90,
+                fov_right=90,
+                win_azi=180,
+                h_def=50,
+                max_pos=100,
+                min_pos=0,
+                max_pos_bool=False,
+                min_pos_bool=False,
+                blind_spot_left=None,
+                blind_spot_right=None,
+                blind_spot_elevation=None,
+                blind_spot_on=False,
+                min_elevation=None,
+                max_elevation=None,
+                distance=0.5,
+                h_win=2.0,
+            )
+
+        policy = get_policy("cover_blind")
+        horizon = 25
+
+        live_cover = make_cover(220.0, 45.0)
+        live_cover.eval_time = sd.times[0]
         snapshot = make_snapshot_for_cover(live_cover)
-        live = compute_solar_position(snapshot)
+        snapshot.policy = policy
+        snapshot.minimize_movements = False
+        snapshot.max_coverage_steps = 1
+        snapshot.solar_floor_active = True
+        snapshot.time_threshold_minutes = horizon
+        live_anticipated = anticipated_solar_position(snapshot)
 
-        sd = _make_sun_data()
+        # Sanity: the horizon must make anticipation diverge from the plain
+        # (non-anticipated) primitive, or this lock would be inert (#1091).
+        assert live_anticipated != compute_solar_position(snapshot)
+
         f = build_forecast(
             sun_data=sd,
-            cover_factory=_solar_cover_factory(10),
-            config=config,
-            now=_NOW,
+            cover_factory=make_cover,
+            config=live_cover.config,
+            policy=policy,
+            now=sd.times[0],
+            step_minutes=5,
+            time_threshold_minutes=horizon,
         )
-        assert all(s.position == live for s in f.samples)
+        first_solar_sample = next(s for s in f.samples if s.handler == "solar")
+        assert first_solar_sample.position == live_anticipated
 
     def test_default_sample_equals_compute_default_position(self):
         from custom_components.adaptive_cover_pro.pipeline.helpers import (
