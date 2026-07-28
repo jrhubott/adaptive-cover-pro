@@ -776,58 +776,24 @@ class TestManualOverrideHandler:
 
 
 class TestClimateHandler:
-    """Tests for ClimateHandler — basic gating."""
+    """The one ClimateHandler gating case not already covered next door.
+
+    Its disabled-mode, priority and name locks were verbatim copies of
+    ``test_climate_handler.py::TestClimateHandlerGating``; only this reading-less
+    case is unique to this file.
+    """
 
     handler = ClimateHandler()
-
-    def test_returns_none_when_climate_disabled(self) -> None:
-        """Climate disabled → return None."""
-        snap = make_snapshot(climate_mode_enabled=False)
-        assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_readings(self) -> None:
         """No climate readings → return None."""
         snap = make_snapshot(climate_mode_enabled=True, climate_readings=None)
         assert self.handler.evaluate(snap) is None
 
-    def test_priority_is_50(self) -> None:
-        """ClimateHandler has priority 50."""
-        assert ClimateHandler.priority == 50
 
-    def test_name(self) -> None:
-        """ClimateHandler name is 'climate'."""
-        assert ClimateHandler.name == "climate"
-
-
-# ---------------------------------------------------------------------------
-# SolarHandler
-# ---------------------------------------------------------------------------
-
-
-class TestSolarHandler:
-    """Tests for SolarHandler."""
-
-    handler = SolarHandler()
-
-    def test_matches_when_sun_valid(self) -> None:
-        """Sun valid → return SOLAR method."""
-        snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0)
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.SOLAR
-
-    def test_returns_none_when_sun_invalid(self) -> None:
-        """Sun invalid → return None."""
-        snap = make_snapshot(direct_sun_valid=False)
-        assert self.handler.evaluate(snap) is None
-
-    def test_priority_is_40(self) -> None:
-        """SolarHandler has priority 40."""
-        assert SolarHandler.priority == 40
-
-    def test_name(self) -> None:
-        """SolarHandler name is 'solar'."""
-        assert SolarHandler.name == "solar"
+# SolarHandler has no class here: all four of its tests were verbatim copies of
+# tests/test_pipeline/test_solar_handler.py, which covers the same ground plus
+# eleven more cases.
 
 
 # ---------------------------------------------------------------------------

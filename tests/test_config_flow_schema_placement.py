@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import pytest
+import voluptuous as vol
 
 from custom_components.adaptive_cover_pro import config_flow as cf
-from custom_components.adaptive_cover_pro.config_dynamic import sun_tracking_schema
+from custom_components.adaptive_cover_pro.config_dynamic import (
+    sun_tracking_schema,
+    temperature_climate_schema,
+)
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
@@ -33,6 +37,12 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_ENABLE_PROXY_COVER,
+    CONF_ENTITIES,
+    CONF_OUTSIDE_TEMP_SOURCE,
+    DEFAULT_ENABLE_PROXY_COVER,
+    CoverType,
+    OutsideTempSource,
 )
 
 
@@ -509,3 +519,66 @@ def test_weather_enabled_is_first_key_with_default_false() -> None:
     first_key = next(iter(schema.schema))
     assert str(first_key) == CONF_WEATHER_ENABLED
     assert first_key.default() is False
+
+
+# ---------------------------------------------------------------------------
+# Proxy-cover toggle on the cover-entity step
+#
+# Folded in from the former test_config_flow_proxy_cover.py.
+# ---------------------------------------------------------------------------
+
+
+def _schema_defaults(schema) -> dict[str, object]:
+    """Return {key_name: default_value} for every Optional key in ``schema``."""
+    out: dict[str, object] = {}
+    for key in schema.schema:
+        if isinstance(key, vol.Optional):
+            default = key.default
+            out[str(key)] = default() if callable(default) else default
+    return out
+
+
+def test_cover_entity_schema_contains_enable_proxy_cover_field() -> None:
+    """``_build_cover_entity_schema`` exposes the opt-in toggle."""
+    schema = cf._build_cover_entity_schema(CoverType.BLIND)
+    assert CONF_ENABLE_PROXY_COVER in [str(k) for k in schema.schema]
+
+
+def test_proxy_cover_defaults_to_false() -> None:
+    """The toggle defaults to the DEFAULT_ENABLE_PROXY_COVER value (False)."""
+    defaults = _schema_defaults(cf._build_cover_entity_schema(CoverType.BLIND))
+    assert (
+        defaults.get(CONF_ENABLE_PROXY_COVER) is DEFAULT_ENABLE_PROXY_COVER
+    ), f"expected default False; got {defaults!r}"
+
+
+def test_proxy_cover_schema_validates_boolean_round_trip() -> None:
+    """User input of ``True`` round-trips through the schema."""
+    schema = cf._build_cover_entity_schema(CoverType.BLIND)
+    out = schema({CONF_ENTITIES: [], CONF_ENABLE_PROXY_COVER: True})
+    assert out[CONF_ENABLE_PROXY_COVER] is True
+
+
+# ---------------------------------------------------------------------------
+# Outdoor-temp source selector on the climate step (issue #547)
+#
+# Folded in from the former test_config_flow_outside_temp_source.py.
+# ---------------------------------------------------------------------------
+
+
+def _key(schema, name: str):
+    return next((k for k in schema.schema if str(k) == name), None)
+
+
+def test_schema_contains_outside_temp_source_with_default_live() -> None:
+    key = _key(temperature_climate_schema(), CONF_OUTSIDE_TEMP_SOURCE)
+    assert key is not None, "CONF_OUTSIDE_TEMP_SOURCE missing from climate schema"
+    assert key.default() == OutsideTempSource.LIVE.value
+
+
+def test_selector_offers_three_options() -> None:
+    schema = temperature_climate_schema()
+    selector = schema.schema[_key(schema, CONF_OUTSIDE_TEMP_SOURCE)]
+    raw_options = selector.config["options"]
+    option_values = {(o["value"] if isinstance(o, dict) else o) for o in raw_options}
+    assert option_values == {"live", "forecast_max", "max_of_live_and_forecast"}
