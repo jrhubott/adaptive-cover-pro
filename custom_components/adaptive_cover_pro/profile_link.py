@@ -131,20 +131,30 @@ def merge_profile_into_config(
     *,
     overridden: frozenset[str] = frozenset(),
 ) -> None:
-    """Merge a profile's non-empty shared-sensor keys into a plain dict.
+    """Merge a profile's shared-sensor keys into a plain dict.
 
-    Skips keys the cover has locally overridden. Safe to call from both the
-    create flow (no existing entry, no overrides) and ``_copy_profile_to_cover``
-    (existing entry, may have overrides). Does NOT stamp
-    ``CONF_BUILDING_PROFILE_ID`` — callers handle that so each context can
-    write it in the right place.
+    Skips keys the cover has locally overridden. A key ABSENT from the
+    profile's options is left untouched on ``config_dict`` — a profile that
+    has never set a field must not touch the cover's own value. A key the
+    profile HAS set (even to an explicitly-cleared empty value — issue #1085)
+    is applied: copied when non-empty, removed when empty. That set-or-remove
+    shape mirrors ``clear_cover_override``'s handling of a single key, kept
+    consistent here for the whole subset so "profile defines this key" has one
+    meaning project-wide: present in ``profile_entry.options``, not merely
+    non-empty.
+
+    Safe to call from both the create flow (no existing entry, no overrides)
+    and ``_copy_profile_to_cover`` (existing entry, may have overrides). Does
+    NOT stamp ``CONF_BUILDING_PROFILE_ID`` — callers handle that so each
+    context can write it in the right place.
     """
-    subset = {
-        k: v
-        for k, v in profile_entry.options.items()
-        if k in BUILDING_PROFILE_SENSOR_KEYS and _is_set(v) and k not in overridden
-    }
-    config_dict.update(subset)
+    for key, value in profile_entry.options.items():
+        if key not in BUILDING_PROFILE_SENSOR_KEYS or key in overridden:
+            continue
+        if _is_set(value):
+            config_dict[key] = value
+        else:
+            config_dict.pop(key, None)
 
 
 def _copy_profile_to_cover(

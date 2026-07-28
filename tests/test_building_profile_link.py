@@ -57,11 +57,18 @@ def _schema_keys(schema):
 
 @pytest.mark.integration
 async def test_link_copies_nonempty_subset(hass) -> None:
-    """Linking copies non-empty profile keys; blank profile fields fall back."""
+    """Linking copies non-empty profile keys; a never-set key falls back.
+
+    ``CONF_IRRADIANCE_ENTITY`` is absent from the profile's options entirely —
+    the real config-flow schema never submits an explicit "" for a cleared
+    key (it omits the key, or since issue #1085 stores an explicit ``None``);
+    absence, not an empty string, is what "the profile never touched this
+    field" looks like on a config entry (issue #1085).
+    """
     profile = MockConfigEntry(
         domain=DOMAIN,
         data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
-        options={CONF_LUX_ENTITY: "sensor.lux", CONF_IRRADIANCE_ENTITY: ""},
+        options={CONF_LUX_ENTITY: "sensor.lux"},
         entry_id="profile_1",
         title="Bldg Profile",
     )
@@ -94,7 +101,7 @@ async def test_link_copies_nonempty_subset(hass) -> None:
 
     # Copied (profile non-empty).
     assert cover.options[CONF_LUX_ENTITY] == "sensor.lux"
-    # Retained (profile blank → fallback to local value).
+    # Retained (profile never set this key → fallback to local value).
     assert cover.options[CONF_IRRADIANCE_ENTITY] == "sensor.local_irr"
     # Link stamped.
     assert cover.options[CONF_BUILDING_PROFILE_ID] == "profile_1"
@@ -246,6 +253,62 @@ def test_copy_profile_to_cover_skips_overrides() -> None:
     assert opts[CONF_LUX_ENTITY] == "sensor.office"  # override preserved
     assert opts[CONF_OUTSIDETEMP_ENTITY] == "sensor.out"  # inherited key copied
     assert opts[CONF_PROFILE_SENSOR_OVERRIDES] == [CONF_LUX_ENTITY]
+
+
+def test_merge_profile_into_config_removes_explicitly_cleared_key() -> None:
+    """A profile key present-but-None (explicitly cleared) removes the cover's
+    value; a key ABSENT from the profile's options is left untouched — the
+    "a profile that leaves a field blank never wipes the cover's own value"
+    contract must survive alongside the new "clear reaches the cover" fix
+    (issue #1085).
+    """
+    from custom_components.adaptive_cover_pro.profile_link import (
+        merge_profile_into_config,
+    )
+
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={
+            CONF_WEATHER_RAIN_SENSOR: None,  # explicitly cleared
+            CONF_LUX_ENTITY: "sensor.new_lux",  # set
+            # CONF_IRRADIANCE_ENTITY intentionally absent — never touched by
+            # the profile at all.
+        },
+        entry_id="profile_1",
+    )
+
+    config: dict = {
+        CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+        CONF_LUX_ENTITY: "sensor.old_lux",
+        CONF_IRRADIANCE_ENTITY: "sensor.local_irr",
+    }
+    merge_profile_into_config(profile, config)
+
+    assert CONF_WEATHER_RAIN_SENSOR not in config
+    assert config[CONF_LUX_ENTITY] == "sensor.new_lux"
+    assert config[CONF_IRRADIANCE_ENTITY] == "sensor.local_irr"
+
+
+def test_merge_profile_into_config_skips_overridden_key_even_when_cleared() -> None:
+    """A cover's genuine local override survives a profile clear on that key."""
+    from custom_components.adaptive_cover_pro.profile_link import (
+        merge_profile_into_config,
+    )
+
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={CONF_WEATHER_RAIN_SENSOR: None},
+        entry_id="profile_1",
+    )
+
+    config: dict = {CONF_WEATHER_RAIN_SENSOR: "sensor.own_rain"}
+    merge_profile_into_config(
+        profile, config, overridden=frozenset({CONF_WEATHER_RAIN_SENSOR})
+    )
+
+    assert config[CONF_WEATHER_RAIN_SENSOR] == "sensor.own_rain"
 
 
 def test_clear_cover_override_reinherits_and_removes() -> None:

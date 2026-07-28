@@ -22,7 +22,10 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_BUILDING_PROFILE_ID,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
+    CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_SENSOR_TYPE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_RAIN_SENSOR,
     DOMAIN,
     CoverType,
 )
@@ -91,6 +94,48 @@ async def test_profile_change_propagates_to_linked_covers(hass) -> None:
     # Unlinked cover untouched.
     assert unlinked.options[CONF_LUX_ENTITY] == "sensor.local"
     assert "cover_c" not in updated
+
+
+async def test_profile_clear_propagates_to_linked_covers(hass) -> None:
+    """Clearing a shared sensor on the profile must reach linked covers (#1085).
+
+    The profile now stores an explicitly-cleared key as ``None`` (key present,
+    value empty) rather than omitting it — that is what makes the clear
+    reachable in the config-flow form at all. Propagation must remove that key
+    from a linked cover that was simply inheriting it, so the cover stops
+    reading the stale sensor. A cover with its own genuine local override on
+    the same key must keep its override untouched.
+    """
+    profile = _profile(
+        hass,
+        {CONF_WEATHER_RAIN_SENSOR: None, CONF_WEATHER_IS_WINDY_TEMPLATE: None},
+    )
+    inheriting = _cover(
+        hass,
+        "cover_a",
+        {
+            CONF_BUILDING_PROFILE_ID: "profile_1",
+            CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+            CONF_WEATHER_IS_WINDY_TEMPLATE: "{{ 'off' }}",
+        },
+    )
+    overriding = _cover(
+        hass,
+        "cover_b",
+        {
+            CONF_BUILDING_PROFILE_ID: "profile_1",
+            CONF_WEATHER_RAIN_SENSOR: "sensor.own_rain",
+            CONF_PROFILE_SENSOR_OVERRIDES: [CONF_WEATHER_RAIN_SENSOR],
+        },
+    )
+
+    await _async_profile_propagate(hass, profile)
+
+    # Inheriting cover: the cleared keys are gone, not merely stale.
+    assert CONF_WEATHER_RAIN_SENSOR not in inheriting.options
+    assert CONF_WEATHER_IS_WINDY_TEMPLATE not in inheriting.options
+    # Overriding cover: its genuine local override survives a profile clear.
+    assert overriding.options[CONF_WEATHER_RAIN_SENSOR] == "sensor.own_rain"
 
 
 async def test_profile_delete_clears_linked_cover_ids(hass) -> None:
