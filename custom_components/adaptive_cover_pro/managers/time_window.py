@@ -275,6 +275,49 @@ class TimeWindowManager:
             return time.replace(year=today.year, month=today.month, day=today.day)
         return time
 
+    def _resolve_start_datetime(self) -> dt.datetime | None:
+        """Resolve the configured start time to a datetime, clock-independent.
+
+        The pure start-resolution ``_start_has_passed`` performs, without the
+        "has it passed now?" comparison: entity → parse + normalize-to-today,
+        static non-blank config → parse. Returns ``None`` when there is no real
+        start time (no entity and the static value is unset or the blank
+        sentinel ``BLANK_TIME``) or the entity/config value could not be parsed.
+
+        """
+        if self._start_time_entity is not None:
+            time = get_datetime_from_str(
+                get_safe_state(self._hass, self._start_time_entity)
+            )
+            if time is None:
+                self.logger.debug(
+                    "Start time entity %s returned None, treating as no start set",
+                    self._start_time_entity,
+                )
+                return None
+            return self._normalize_to_today(time)
+        if self._start_time is not None and self._start_time != BLANK_TIME:
+            time = get_datetime_from_str(self._start_time)
+            if time is None:
+                self.logger.debug(
+                    "Start time config value could not be parsed, treating as no start set"
+                )
+                return None
+            return time
+        return None
+
+    @property
+    def resolved_start_time(self) -> dt.datetime | None:
+        """Resolved operational-window start datetime, or ``None`` when unset.
+
+        Clock-independent view of the start time (issue #975) — the config
+        time-window health check compares this against :pyattr:`end_time` to flag
+        a start-after-end misconfiguration without keying on the wall clock.
+        ``None`` means "no explicit start" (no entity, blank/unset static value,
+        or an unparseable value) — distinct from an explicit 00:00 start.
+        """
+        return self._resolve_start_datetime()
+
     def _start_has_passed(self) -> bool | None:
         """Evaluate the configured start time against now.
 
@@ -287,36 +330,15 @@ class TimeWindowManager:
             operational-window start" — distinct from an explicit 00:00 start.
 
         """
+        resolved = self._resolve_start_datetime()
+        if resolved is None:
+            return None
         now = dt.datetime.now()
-        if self._start_time_entity is not None:
-            time = get_datetime_from_str(
-                get_safe_state(self._hass, self._start_time_entity)
-            )
-            if time is None:
-                self.logger.debug(
-                    "Start time entity %s returned None, treating as no start set",
-                    self._start_time_entity,
-                )
-                return None
-            time = self._normalize_to_today(time)
-            self.logger.debug(
-                "Start time: %s, now: %s, now >= time: %s ", time, now, now >= time
-            )
-            self._cached_start_time = time
-            return now >= time
-        if self._start_time is not None and self._start_time != BLANK_TIME:
-            time = get_datetime_from_str(self._start_time)
-            if time is None:
-                self.logger.debug(
-                    "Start time config value could not be parsed, treating as no start set"
-                )
-                return None
-            self.logger.debug(
-                "Start time: %s, now: %s, now >= time: %s", time, now, now >= time
-            )
-            self._cached_start_time = time
-            return now >= time
-        return None
+        self.logger.debug(
+            "Start time: %s, now: %s, now >= time: %s", resolved, now, now >= resolved
+        )
+        self._cached_start_time = resolved
+        return now >= resolved
 
     @property
     def after_start_time(self) -> bool:

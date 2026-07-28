@@ -5,7 +5,7 @@ Extracted from AdaptiveGeneralCover to enable standalone testing and reuse.
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from math import atan, degrees
+from math import atan, ceil, cos, degrees, radians, sin, tan
 
 import pandas as pd
 
@@ -15,9 +15,12 @@ from ..const import (
     CONF_FOV_LEFT,
     DEFAULT_FOV_LEFT,
     DEGREES_IN_CIRCLE,
+    MIN_COS_GAMMA_CLAMP,
     OPTION_RANGES,
     BlindSpot,
+    ReasonCode,
 )
+from ..reason_i18n import Reason, render_en
 from ..sun import SunData
 
 
@@ -36,6 +39,69 @@ def _in_fov_cone(angle, fov_left, fov_right):
 def azimuth_within_fov(angle: float, fov_left: float, fov_right: float) -> bool:
     """Sun azimuth (deg, relative to window normal) inside the FOV cone."""
     return bool(_in_fov_cone(angle, fov_left, fov_right))
+
+
+def clamped_cos_gamma(gamma_deg: float) -> float:
+    """``cos γ`` with a one-sided magnitude floor of ``MIN_COS_GAMMA_CLAMP``.
+
+    The ONE guard for every ``… / cos γ`` division on a lit face (#1030). It is
+    one-sided — ``max(cos γ, ε)``, not ``sign(cos γ)·max(|cos γ|, ε)`` — because
+    the illumination gate on :class:`~engine.covers.base.AdaptiveGeneralCover`
+    (``cos(AOI) > 0``) makes ``|γ| > 90`` unreachable, so a negative cosine
+    never arrives. The two-sided form each caller used to carry faithfully
+    reproduced "sun behind the wall" as a NEGATIVE projected drop, which the
+    surrounding clamps then read as an endpoint command.
+    """
+    return max(cos(radians(gamma_deg)), MIN_COS_GAMMA_CLAMP)
+
+
+def foreshortened_slope(sol_elev: float, gamma_deg: float) -> float:
+    """Vertical Shadow Angle tangent ``f = tan(elev) / cos γ`` on a lit facade.
+
+    The vertical drop a sun ray covers per metre of in-room depth, foreshortened
+    by the surface-solar azimuth (NRC CBD-59; reviewed in #206). The formula is
+    defined only for ``|γ| < 90`` — the domain restriction #1030 supplies via the
+    illumination gate — so ``clamped_cos_gamma`` needs no sign branch.
+
+    Shared by the vertical blind's drop projection, the drop-arm awning's
+    lip-shadow slope, the tilt/venetian profile angle, and the roof window's
+    vertical-glass reduction.
+    """
+    return tan(radians(sol_elev)) / clamped_cos_gamma(gamma_deg)
+
+
+def ray_x_at_window_plane(x_floor: float, y_floor: float, gamma_deg: float) -> float:
+    """Along-wall coordinate where a sun ray crossed the window plane.
+
+    A ray arriving at surface-solar azimuth ``gamma_deg`` (degrees) and landing on
+    the floor at ``(x_floor, y_floor)`` — ``x`` along the wall (signed), ``y``
+    depth into the room — entered the window opening at along-wall coordinate
+    ``x_floor + y_floor * tan(gamma)``.
+
+    Extracted from :func:`vertical.glare_zone_effective_distance` so the
+    glare-zone projection and the sliding-curtain shade-area projection share one
+    formula (#829). Positive ``gamma`` shifts the entry point toward +x; ``gamma =
+    0`` (perpendicular sun) crosses at the floor point's own ``x``.
+
+    ``tan γ`` is expanded to ``sin γ / clamped_cos_gamma(γ)`` — the fifth copy of
+    the ``cos γ`` divisor, folded into the one shared guard (#1030). Identical to
+    ``tan γ`` for ``|γ| ≤ 89.43°``; past that it stays bounded instead of
+    reaching 3.27e16 at exactly 90.
+
+    Both consumers run behind ``direct_sun_valid`` — but that alone does not
+    bound ``γ``. The bound comes from the illumination gate collapsing to
+    ``|γ| < 90`` only on engines that keep the DEFAULT vertical-plane
+    ``cos_aoi = cos(elev)·cos γ``, and both consumers do: the sliding curtain
+    inherits it, and the glare-zone projection is reachable only via
+    ``supports_glare_zones``, True for the blind and dual-panel policies alone.
+    So the clamp band is unreachable in production today. Revisit if glare zones
+    ever extend to awnings — ``AdaptiveHorizontalCover`` overrides
+    ``sun_behind_plane`` to opt area mode out of the gate, which puts ``|γ| > 90``
+    back in reach here.
+    """
+    # Parenthesised so the ratio is formed BEFORE the multiply — that keeps the
+    # result bit-identical to the previous ``y_floor * tan(gamma)``.
+    return x_floor + y_floor * (sin(radians(gamma_deg)) / clamped_cos_gamma(gamma_deg))
 
 
 def fov_from_reveal(width_m: float, depth_m: float) -> int:
@@ -59,12 +125,17 @@ def fov_from_reveal(width_m: float, depth_m: float) -> int:
     blocks nothing, so the FOV is the full hemisphere (the default half-angle).
     The result is clamped to the configured FOV range and rounded to an integer
     because ``fov_left``/``fov_right`` are stored as integer degrees.
+
+    Ceiling (not nearest-integer) rounding is intentional: rounding down would
+    shorten the active tracking window, causing the cover to open while the sun
+    is still geometrically entering the reveal.  A 1° over-estimate keeps the
+    cover active marginally longer — the conservative side of the error.
     """
     if depth_m <= 0 or width_m <= 0:
         return DEFAULT_FOV_LEFT
     deg = degrees(atan(width_m / depth_m))
     lo, hi = OPTION_RANGES[CONF_FOV_LEFT]
-    return int(round(min(max(deg, lo), hi)))
+    return int(ceil(min(max(deg, lo), hi)))
 
 
 def computed_fov_line(
@@ -72,7 +143,7 @@ def computed_fov_line(
     depth_m: float | None,
     labels: dict[str, str] | None = None,
 ) -> str:
-    """Read-only "Computed FOV ≈ 50°/50° (…)" line for Measurements mode (#565).
+    """Read-only "Computed acceptance angle ≈ 50°/50° (…)" line for Measurements mode (#565).
 
     The single formatter shared by the sun-tracking page placeholder and the
     config-flow summary. Delegates the angle to :func:`fov_from_reveal` so the
@@ -194,6 +265,12 @@ class SunGeometry:
     def valid_elevation(self) -> bool:
         """Check if sun elevation is within configured limits.
 
+        This is the elevation bound ONLY. Whether the sun actually strikes the
+        cover's plane is per-geometry, so the illumination clause lives one layer
+        up on :class:`~engine.covers.base.AdaptiveGeneralCover`, which composes
+        ``cos(AOI) > 0`` on top of this (#1030). ``SunGeometry`` stays
+        cover-type agnostic.
+
         Returns:
             True if sun elevation within configured min/max range (or no limits set).
             False if sun below horizon or outside configured limits.
@@ -255,20 +332,36 @@ class SunGeometry:
         )
         return after_sunset or before_sunrise
 
-    def _sun_in_blind_spot(self, bs: BlindSpot) -> bool:
+    def _sun_in_blind_spot(
+        self, bs: BlindSpot, frame_angle: float | None = None
+    ) -> bool:
         """Check if the sun is inside a single blind-spot wedge.
 
-        The ONE containment computation — a horizontal wedge (``fov_left`` minus
-        the slot's left/right offsets, compared against ``gamma``) plus an
-        optional elevation clause. Looped by :pyattr:`is_sun_in_blind_spot` over
-        every active slot. The elevation clause honours the slot's
-        ``elevation_mode`` (issue #702): ``"below"`` (default) blocks LOW sun
-        (``sol_elev <= elevation``); ``"above"`` blocks HIGH sun
-        (``sol_elev >= elevation``).
+        The ONE containment computation — a signed-gamma wedge
+        ``-bs.right <= angle <= bs.left`` (issue #247) plus an optional
+        elevation clause. Looped by :pyattr:`is_sun_in_blind_spot` /
+        :meth:`is_sun_in_blind_spot_at` over every active slot.
+
+        The wedge edges are stored as signed gamma from the window normal — the
+        SAME frame as ``gamma`` / ``fov_left`` / ``fov_right`` — so no
+        ``fov_left`` term appears here anymore. The wedge is compared against
+        ``frame_angle`` — the *evaluation frame*, which must equal the caller's
+        acceptance frame (issue #913). When ``frame_angle`` is ``None`` (the
+        default) it falls back to raw ``self.gamma``, so every existing
+        direct-``SunGeometry`` caller is unchanged bit-for-bit. Cover engines
+        whose acceptance cone is not the raw horizontal azimuth (e.g. a pitched
+        roof window) inject their effective ``fov_angle`` here so the blind spot
+        is tested in the SAME frame the FOV gate accepts — mirroring the
+        ``fov_angle_series`` injection in :meth:`solar_times_with_position`.
+        ``SunGeometry`` stays cover-type agnostic: it never computes the
+        effective angle itself.
+
+        The elevation clause honours the slot's ``elevation_mode`` (issue #702):
+        ``"below"`` (default) blocks LOW sun (``sol_elev <= elevation``);
+        ``"above"`` blocks HIGH sun (``sol_elev >= elevation``).
         """
-        left_edge = self.config.fov_left - bs.left
-        right_edge = self.config.fov_left - bs.right
-        inside = (self.gamma <= left_edge) & (self.gamma >= right_edge)
+        angle = self.gamma if frame_angle is None else frame_angle
+        inside = (angle >= -bs.right) & (angle <= bs.left)
         if bs.elevation is not None:
             if bs.elevation_mode == BLIND_SPOT_ELEV_MODE_ABOVE:
                 inside = inside & (self.sol_elev >= bs.elevation)
@@ -276,9 +369,16 @@ class SunGeometry:
                 inside = inside & (self.sol_elev <= bs.elevation)
         return bool(inside)
 
-    @property
-    def is_sun_in_blind_spot(self) -> bool:
-        """Check if sun is currently within any configured blind spot area.
+    def is_sun_in_blind_spot_at(self, frame_angle: float) -> bool:
+        """Check if the sun is in any blind spot, evaluated in ``frame_angle``.
+
+        The injectable-frame counterpart of :pyattr:`is_sun_in_blind_spot`. The
+        evaluation frame ``frame_angle`` must equal the caller's acceptance frame
+        (issue #913): a cover engine passes its polymorphic ``fov_angle`` so the
+        wedge is tested in the same frame the FOV gate accepts. For vertical /
+        awning / tilt / venetian covers ``fov_angle == gamma``, so this is
+        identical to :pyattr:`is_sun_in_blind_spot`; for a pitched roof window it
+        uses the tilted-plane effective gamma.
 
         Returns:
             True if sun is within any active blind spot wedge and blind spot
@@ -288,9 +388,26 @@ class SunGeometry:
         """
         if not self.config.blind_spot_on:
             return False
-        result = any(self._sun_in_blind_spot(bs) for bs in self.config.blind_spots)
+        result = any(
+            self._sun_in_blind_spot(bs, frame_angle) for bs in self.config.blind_spots
+        )
         self.logger.debug("Is sun in blind spot? %s", result)
         return result
+
+    @property
+    def is_sun_in_blind_spot(self) -> bool:
+        """Check if sun is currently within any configured blind spot area.
+
+        Raw-``gamma`` default frame for direct ``SunGeometry`` consumers;
+        delegates to :meth:`is_sun_in_blind_spot_at` so both share one code path.
+
+        Returns:
+            True if sun is within any active blind spot wedge and blind spot
+            enabled. False if blind spot not configured, disabled, or sun
+            outside every wedge.
+
+        """
+        return self.is_sun_in_blind_spot_at(self.gamma)
 
     @property
     def direct_sun_valid(self) -> bool:
@@ -312,25 +429,48 @@ class SunGeometry:
         return result
 
     @property
-    def control_state_reason(self) -> str:
-        """Determine why the cover is tracking the sun or using the default position.
+    def control_state_reason_code(self) -> ReasonCode:
+        """Return the stable :class:`ReasonCode` for the current control state.
+
+        The pure engine emits a frozen code (no HA, no translation); the prose
+        is resolved at the diagnostics/sensor boundary. Branches mirror
+        :attr:`control_state_reason` exactly.
+
+        Cover-agnostic by design: there is deliberately no
+        ``DEFAULT_SUN_BEHIND_PLANE`` branch here, because this class does not
+        know the cover's plane. ``AdaptiveGeneralCover`` adds that branch on top
+        (#1030), so this keeps its original two-way azimuth/elevation split.
 
         Returns:
-            Reason string: "Direct Sun", "Default: FOV Exit", "Default: Elevation Limit",
-            "Default: Sunset Offset", or "Default: Blind Spot".
+            One of ``ReasonCode.ENGINE_*``: DIRECT_SUN, DEFAULT_SUNSET_OFFSET,
+            DEFAULT_ELEVATION_LIMIT, DEFAULT_ACCEPTANCE_ANGLE_EXIT,
+            DEFAULT_BLIND_SPOT, or DEFAULT.
 
         """
         if self.direct_sun_valid:
-            return "Direct Sun"
+            return ReasonCode.ENGINE_DIRECT_SUN
         if self.sunset_valid:
-            return "Default: Sunset Offset"
+            return ReasonCode.ENGINE_DEFAULT_SUNSET_OFFSET
         if not self.valid:
             if not self.valid_elevation:
-                return "Default: Elevation Limit"
-            return "Default: FOV Exit"
+                return ReasonCode.ENGINE_DEFAULT_ELEVATION_LIMIT
+            return ReasonCode.ENGINE_DEFAULT_ACCEPTANCE_ANGLE_EXIT
         if self.is_sun_in_blind_spot:
-            return "Default: Blind Spot"
-        return "Default"
+            return ReasonCode.ENGINE_DEFAULT_BLIND_SPOT
+        return ReasonCode.ENGINE_DEFAULT
+
+    @property
+    def control_state_reason(self) -> str:
+        """Determine why the cover is tracking the sun or using the default position.
+
+        Byte-identical English shim over :attr:`control_state_reason_code`.
+
+        Returns:
+            Reason string: "Direct Sun", "Default: Acceptance Angle Exit", "Default: Elevation Limit",
+            "Default: Sunset Offset", or "Default: Blind Spot".
+
+        """
+        return render_en(Reason(self.control_state_reason_code))
 
     # ------------------------------------------------------------------
     # FOV helpers

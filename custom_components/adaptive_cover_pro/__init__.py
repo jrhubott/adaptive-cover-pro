@@ -17,6 +17,10 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.template import Template
 
 from .const import (
+    BLIND_SPOT_SLOTS,
+    DEFAULT_AWNING_SHADE_MODE,
+    GLARE_ZONE_SLOT_NUMBERS,
+    CONF_AWNING_SHADE_MODE,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
@@ -26,18 +30,24 @@ from .const import (
     CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_TIME,
     CONF_ENTITIES,
     CONF_START_ENTITY,
+    CONF_START_TIME,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
+    CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
+    CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
     CONF_MOTION_TEMPLATE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_TEMP_ENTITY,
+    CONF_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_WEATHER_ENABLED,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -46,6 +56,7 @@ from .const import (
     CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_WIDTH,
@@ -53,15 +64,22 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DIAG_CACHE_KEY,
     DOMAIN,
+    TIME_STRING_RE,
     _LOGGER,
+    blind_spot_legacy_to_gamma,
+    clamp_gamma_pair,
+    resolve_fov_left,
+    resolve_fov_right,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
+from .group_coordinator import GroupCoordinator
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
     custom_position_slot_sensors,
     manual_override_input_entities,
     motion_entities,
+    normalize_time_string,
 )
 from .profile_link import _copy_profile_to_cover, _covers_linked_to
 from .templates import is_template_string
@@ -79,6 +97,17 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.COVER,
     Platform.NUMBER,
+]
+# Platform set for cover-group entries (``is_orchestrator = True``). A group
+# exposes aggregate sensors, bulk switches, scene buttons, the scene select,
+# and the opt-in aggregate cover — no number or binary sensor. Setup and
+# unload must use the same list (load/unload symmetry, the #712/#714 lesson).
+GROUP_PLATFORMS = [
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.BUTTON,
+    Platform.SELECT,
+    Platform.COVER,
 ]
 CONF_SUN = ["sun.sun"]
 
@@ -134,8 +163,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     # guard stays unambiguous. Register a propagation update-listener so a change
     # to the profile reaches its linked covers, then return without forwarding
     # platforms.
-    if not get_policy(entry.data[CONF_SENSOR_TYPE]).controls_cover:
+    policy = get_policy(entry.data[CONF_SENSOR_TYPE])
+    if not policy.controls_cover:
         entry.async_on_unload(entry.add_update_listener(_async_profile_propagate))
+        return True
+
+    # Cover groups (``is_orchestrator = True``) control covers but are not
+    # geometry-driven: build the GroupCoordinator and forward only the group
+    # platform set — never the sun/geometry coordinator below.
+    if policy.is_orchestrator:
+        group_coordinator = GroupCoordinator(hass, entry)
+        entry.runtime_data = group_coordinator
+        await hass.config_entries.async_forward_entry_setups(entry, GROUP_PLATFORMS)
+        await group_coordinator.async_config_entry_first_refresh()
+        entry.async_on_unload(entry.add_update_listener(_async_group_update_listener))
         return True
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
@@ -230,6 +271,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
             )
         )
 
+    # Register the optional manual-override input template (issue #974). The
+    # template counterpart to the input sensors above: tracking the rendered
+    # result engages manual override the instant the template flips truthy, with
+    # sensor-grade immediacy and no polling.
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
+        coordinator.async_check_manual_override_input_template_change,
+        "Manual override input template",
+    )
+
     # Register the optional occupancy template (issue #577 follow-up). Tracking
     # the rendered result means the cover reacts the instant the template flips
     # truthy — same immediacy as a motion sensor, no polling. Re-registered on
@@ -284,6 +337,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     for _weather_template in [
         entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
         entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+        entry.options.get(CONF_WEATHER_SEVERE_TEMPLATE),
     ]:
         _register_template_tracker(
             hass,
@@ -308,6 +362,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
 
+    # Register cleanup for the health-check debounce timers (issues #786, #975).
+    # Their shutdown lives only inside coordinator.async_shutdown, which is not
+    # wired to unload, so an unhealthy condition (e.g. sun.sun missing) would
+    # otherwise leak a 900s TimeoutController task across every reload/unload.
+    entry.async_on_unload(coordinator._sensor_health.shutdown)
+    entry.async_on_unload(coordinator._repair.shutdown)
+
     # Register cleanup for the periodic position-forecast recompute timer
     # (scheduled in async_config_entry_first_refresh — see issue #437). Wrap
     # in a closure because the unsub handle isn't created until after this
@@ -318,6 +379,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
             coordinator._forecast_unsub = None
 
     entry.async_on_unload(_cancel_forecast_timer)
+
+    # Prime the instance-language reason-template overlay once (issue #882),
+    # mirroring the summary_i18n priming: resolve the language the same way
+    # (the HA instance language, #905 semantics) and offload the bundle file
+    # read to the executor so no JSON I/O runs on the event loop. The resolved
+    # mapping is cached on the coordinator, threaded into the DiagnosticContext,
+    # and read by sensor.py to localize decision-trace reason strings.
+    from .reason_i18n import async_prime as _async_prime_reason_labels
+
+    coordinator._reason_labels = await _async_prime_reason_labels(
+        hass, hass.config.language or "en"
+    )
 
     # Store coordinator before platform setup so sensor async_added_to_hass can
     # access it during RestoreEntity rehydration (must run before first_refresh).
@@ -373,13 +446,26 @@ async def async_unload_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) ->
     """Unload a config entry."""
     # Virtual entry types (Building Profile, controls_cover == False) forwarded
     # no platforms in async_setup_entry, so unloading platforms would raise
-    # "Config entry was never loaded!". Mirror the setup short-circuit.
-    if not get_policy(entry.data[CONF_SENSOR_TYPE]).controls_cover:
+    # "Config entry was never loaded!". Mirror the setup short-circuit, and
+    # unload exactly the platform set setup forwarded (groups use their own).
+    policy = get_policy(entry.data[CONF_SENSOR_TYPE])
+    if not policy.controls_cover:
         await async_unload_services(hass)
         return True
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+    platforms = GROUP_PLATFORMS if policy.is_orchestrator else PLATFORMS
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, platforms):
         await async_unload_services(hass)
     return unload_ok
+
+
+async def _async_group_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload a group entry when its options (membership) change.
+
+    The group holds no long-running state worth preserving across an options
+    edit, so a full reload is the simplest way to re-resolve the roster and
+    rebuild the per-scene entities.
+    """
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -414,7 +500,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 _CM_TO_M_SENTINEL = 5.0
 _GLARE_ZONE_DIMENSION_KEYS = tuple(
     f"glare_zone_{i}_{suffix}"
-    for i in range(1, 5)
+    for i in GLARE_ZONE_SLOT_NUMBERS
     for suffix in ("x", "y", "radius", "z")
 )
 
@@ -451,6 +537,70 @@ def _merge_force_override_into_slot_5(options: dict) -> bool:
     options[slot5["priority"]] = CUSTOM_POSITION_SAFETY_PRIORITY
     options[slot5["min_mode"]] = bool(options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False))
     return True
+
+
+def _seed_signed_gamma_blind_spots(options: dict) -> bool:
+    """Seed signed-gamma blind-spot keys from the legacy edges (issue #247).
+
+    For every slot whose BOTH legacy FOV-relative edges are present, compute the
+    signed-gamma pair via the shared ``blind_spot_legacy_to_gamma`` helper (so
+    migration and the runtime fallback in ``CoverConfig.from_options`` can never
+    diverge) and ``setdefault`` it into the new keys, clamped to the signed
+    bounds ``[-fov_right, fov_left]`` / ``[-fov_left, fov_right]``.
+
+    Additive on purpose: the legacy ``blind_spot_*`` keys are left untouched so a
+    rollback to the previous integration version keeps reading its exact config
+    (old code ignores the unknown gamma keys). Returns True when any key seeded.
+    """
+    fov_left = resolve_fov_left(options)
+    fov_right = resolve_fov_right(options)
+    seeded = False
+    for keys in BLIND_SPOT_SLOTS.values():
+        old_left = options.get(keys["left"])
+        old_right = options.get(keys["right"])
+        if old_left is None or old_right is None:
+            continue  # slot inactive on the legacy path — nothing to convert
+        new_left, new_right = blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+        new_left, new_right = clamp_gamma_pair(new_left, new_right, fov_left, fov_right)
+        if keys["left_gamma"] not in options:
+            options[keys["left_gamma"]] = new_left
+            seeded = True
+        if keys["right_gamma"] not in options:
+            options[keys["right_gamma"]] = new_right
+            seeded = True
+    return seeded
+
+
+def _repair_malformed_times(options: dict) -> list[str]:
+    """Rewrite non-canonical start/end times to ``HH:MM:SS`` (issue #1049).
+
+    A value that parses is canonicalised. A value that does **not** parse —
+    ``"25:00:00"``, ``"garbage"`` — is dropped rather than left alone: the old
+    ``set_options`` regex accepted shape-valid impossible clock times and import
+    validated no time at all, so both are reachable in stored options, and
+    ``get_datetime_from_str`` runs ``dateutil.parser.parse`` on them with no
+    guard — raising on every coordinator cycle. Dropping the key is the #492
+    "no time set" state, which is what an unusable window bound already means.
+
+    Returns a description of each change, for the migration log. See the
+    v3.11 → v3.12 block in ``async_migrate_entry`` for why this one migration
+    rewrites in place and why that stays rollback-safe.
+    """
+    changes: list[str] = []
+    for key in (CONF_START_TIME, CONF_END_TIME):
+        if key not in options:
+            continue
+        original = options[key]
+        if original is None or TIME_STRING_RE.match(str(original)):
+            continue  # absent-equivalent or already canonical
+        canonical = normalize_time_string(original)
+        if TIME_STRING_RE.match(str(canonical)):
+            options[key] = canonical
+            changes.append(f"{key}: {original!r} → {canonical!r}")
+        else:
+            del options[key]
+            changes.append(f"{key}: {original!r} → unset (unparsable)")
+    return changes
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -536,6 +686,87 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_options.setdefault(CONF_WEATHER_ENABLED, True)
         new_minor = 6
 
+    # v3.6 → v3.7: added the additive outside_temp_source option (issue #547).
+    # An absent key already reads as "live" (the default), so nothing needs
+    # seeding — this is a no-op minor bump kept only to advance entries sitting
+    # at minor 6 to 7 so they stop re-triggering migration every restart.
+    if new_version == 3 and new_minor < 7:
+        new_minor = 7
+
+    # v3.7 → v3.8: convert legacy FOV-relative blind-spot edges to signed gamma
+    # from the window normal (issue #247). Additive + rollback-safe: the new
+    # ``blind_spot_*_gamma`` keys are setdefault-seeded from the untouched legacy
+    # edges via the shared conversion helper; a rollback keeps reading the legacy
+    # keys. New installs write the gamma keys directly via the config flow.
+    if new_version == 3 and new_minor < 8:
+        if _seed_signed_gamma_blind_spots(new_options):
+            _LOGGER.info(
+                "Migrated blind-spot edges of %s to signed gamma from the window normal",
+                entry.data.get("name", entry.entry_id),
+            )
+        new_minor = 8
+
+    # v3.8 → v3.9: added the additive per-slot axis-constraint options —
+    # custom_position_position_max_N / _tilt_min_N / _tilt_max_N (issue #943).
+    # An absent key already reads as "constraint off", so nothing needs seeding
+    # — this is a no-op minor bump kept only to advance entries sitting at minor
+    # 8 to 9 so they stop re-triggering migration every restart (the v3.6 → v3.7
+    # precedent). Rollback-safe: min_mode / tilt_only remain the stored wire
+    # format and are untouched, so an older build finds its config exactly as it
+    # left it and simply ignores the new keys.
+    if new_version == 3 and new_minor < 9:
+        new_minor = 9
+
+    # v3.9 → v3.10: the tilt safety margin was renamed from the venetian-prefixed
+    # key to the neutral CONF_TILT_SAFETY_MARGIN now that tilt-only and
+    # louvered-roof covers share it (issue #964). Additive + rollback-safe: copy
+    # the legacy value into the new key when present; the old key is left
+    # untouched so an older build still reads its exact config, and the
+    # configuration-service read falls back to the old key regardless.
+    if new_version == 3 and new_minor < 10:
+        if CONF_VENETIAN_TILT_SAFETY_MARGIN in new_options:
+            new_options.setdefault(
+                CONF_TILT_SAFETY_MARGIN,
+                new_options[CONF_VENETIAN_TILT_SAFETY_MARGIN],
+            )
+        new_minor = 10
+
+    # v3.10 → v3.11: added the awning shade-mode option (issue #1025). Seed the
+    # window-glass default ONLY for fixed-awning entries — detected by the
+    # awning-only geometry key CONF_LENGTH_AWNING, mirroring the key-presence gate
+    # of the v3.9→v3.10 block — so non-awning entries stay untouched. Additive +
+    # rollback-safe: an absent key already reads as "window" via the configuration
+    # service, and an older build simply ignores the key. setdefault-only.
+    if new_version == 3 and new_minor < 11:
+        if CONF_LENGTH_AWNING in new_options:
+            new_options.setdefault(CONF_AWNING_SHADE_MODE, DEFAULT_AWNING_SHADE_MODE)
+        new_minor = 11
+
+    # v3.11 → v3.12: repair start_time/end_time already stored in a non-canonical
+    # shape (issue #1049). Validating the write paths stops new bad values but
+    # leaves an already-bitten entry with e.g. "00:00", which fails every literal
+    # BLANK_TIME comparison while TimeWindowManager resolves it to tomorrow's
+    # midnight — the until_window_end deadline recedes a day at every local
+    # midnight and the override never expires.
+    #
+    # This is the rare migration that rewrites an existing key rather than only
+    # seeding one, so the rollback contract (CLAUDE.md § "Rollback-Safe Config
+    # Migrations") deserves an explicit answer: the rewrite is a repair *into*
+    # the format every release — old and new — already expects. An older build
+    # reading the canonical "00:00:00" applies the unset semantics it always
+    # intended; before the repair it read a phantom configured window end. So a
+    # rollback is strictly better off, never worse, and no key is renamed.
+    # A value no parser can rescue is dropped instead — see
+    # ``_repair_malformed_times`` for why leaving it is not the safe option.
+    if new_version == 3 and new_minor < 12:
+        if repaired := _repair_malformed_times(new_options):
+            _LOGGER.info(
+                "Repaired malformed time options of %s (%s)",
+                entry.data.get("name", entry.entry_id),
+                ", ".join(repaired),
+            )
+        new_minor = 12
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )
@@ -561,6 +792,11 @@ async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> N
     subset into every linked cover via the shared copier — the ``async_update_entry``
     it performs fires each cover's self-reload listener, so linked covers pick up
     the changed sensor IDs immediately.
+
+    Copy-only: a blank profile key is left alone, because from here a field the
+    user just cleared looks exactly like one they never filled in. Removing a
+    cleared key from the linked covers happens at save time instead, where the
+    transition is still visible — ``propagate_profile_clears`` (issue #1085).
     """
     # Guard: only profiles (virtual, controls_cover == False) propagate. A real
     # cover reaching here would be a wiring bug — its own listener handles reloads.

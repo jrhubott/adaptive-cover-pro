@@ -53,6 +53,9 @@ def _climate_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -214,6 +217,86 @@ def test_custom_position_floor_above_climate_is_inert() -> None:
     )
     cp_step = next(s for s in result.decision_trace if s.handler == "custom_position_1")
     assert cp_step.matched is False
+
+
+def test_floor_raised_step_carries_reason_payload_code() -> None:
+    """The floor_clamp step carries a registry.floor_raised code + params,
+    while its English reason stays byte-identical to the legacy f-string.
+    """
+    from custom_components.adaptive_cover_pro.const import ReasonCode
+
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_summer_options(),
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    registry = _registry_with_custom([_cp_handler(1, 60)])
+    result = registry.evaluate(snap)
+    clamp = next(
+        s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
+    )
+    from_pos = clamp.reason_payload.params["from_pos"]
+    assert clamp.reason_payload is not None
+    assert clamp.reason_payload.code == ReasonCode.REGISTRY_FLOOR_RAISED
+    assert clamp.reason_payload.params == {
+        "from_pos": from_pos,
+        "to_pos": 60,
+        "label": "Table",
+    }
+    assert clamp.reason == f"floor raised winner from {from_pos}% to 60% by Table"
+
+
+def test_floor_inactive_step_carries_reason_payload_code() -> None:
+    """The inactive-floor step carries a registry.floor_inactive code + params,
+    while its English reason stays byte-identical to the legacy f-string.
+    """
+    from custom_components.adaptive_cover_pro.const import ReasonCode
+
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=22.0,
+            is_presence=False,
+            is_sunny=False,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        ),
+        climate_options=_summer_options(),
+        default_position=80,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    registry = _registry_with_custom([_cp_handler(1, 60)])
+    result = registry.evaluate(snap)
+    cp_step = next(s for s in result.decision_trace if s.handler == "custom_position_1")
+    assert cp_step.reason_payload is not None
+    assert cp_step.reason_payload.code == ReasonCode.REGISTRY_FLOOR_INACTIVE
+    assert cp_step.reason_payload.params == {"floor_pos": 60, "winner_pos": 80}
+    assert cp_step.reason == "floor 60% inactive (winner 80% above floor)"
 
 
 def test_two_custom_floors_pick_highest() -> None:
@@ -529,8 +612,8 @@ def test_floor_inactive_when_sensor_off() -> None:
     assert not any(s.handler == "floor_clamp" for s in result.decision_trace)
 
 
-def test_floor_clamp_sets_floor_clamp_applied_flag() -> None:
-    """Active floor that raises the winner sets ``floor_clamp_applied=True`` (issue #469)."""
+def test_floor_clamp_sets_position_constraint_applied_flag() -> None:
+    """Active floor raising the winner sets ``position_constraint_applied`` (#469)."""
     cover = _climate_cover(direct_sun_valid=False)
     snap = make_snapshot(
         cover=cover,
@@ -551,11 +634,11 @@ def test_floor_clamp_sets_floor_clamp_applied_flag() -> None:
     handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
-    assert result.floor_clamp_applied is True
+    assert result.position_constraint_applied is True
 
 
-def test_no_clamp_keeps_floor_clamp_applied_false() -> None:
-    """With no active floors, ``floor_clamp_applied`` stays False (issue #469)."""
+def test_no_clamp_keeps_position_constraint_applied_false() -> None:
+    """With no active floors, ``position_constraint_applied`` stays False (issue #469)."""
     cover = _climate_cover(direct_sun_valid=False)
     snap = make_snapshot(
         cover=cover,
@@ -566,7 +649,7 @@ def test_no_clamp_keeps_floor_clamp_applied_false() -> None:
     )
     registry = _registry_with_custom([])
     result = registry.evaluate(snap)
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
 
 
 def test_inactive_floor_below_winner_keeps_flag_false() -> None:
@@ -601,7 +684,7 @@ def test_inactive_floor_below_winner_keeps_flag_false() -> None:
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     assert result.position == 80
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
 
 
 def test_floor_raises_manual_override_held_below_floor() -> None:
@@ -640,7 +723,7 @@ def test_floor_raises_manual_override_held_below_floor() -> None:
     )
     assert winner_step.handler == "manual_override"
     assert result.position == 80
-    assert result.floor_clamp_applied is True
+    assert result.position_constraint_applied is True
     # The floor raise must reach the cover: a manual-override hold sets
     # skip_command=True, but the composed floor result clears it (#809/#534).
     assert result.skip_command is False
@@ -684,7 +767,7 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
     )
     assert winner_step.handler == "manual_override"
     # No clamp: the held physical position (85) is already above the floor (80).
-    assert result.floor_clamp_applied is False
+    assert result.position_constraint_applied is False
     # The manual-override hold is inert-floor: it genuinely holds the cover, so
     # skip_command stays set (no floor raise to clear it)  (#809).
     assert result.skip_command is True
@@ -729,7 +812,7 @@ def test_floor_equal_to_would_be_but_above_held_still_raises() -> None:
     )
     assert winner_step.handler == "manual_override"
     assert result.position == 100
-    assert result.floor_clamp_applied is True
+    assert result.position_constraint_applied is True
     assert result.skip_command is False
 
 
@@ -762,6 +845,32 @@ def test_floor_label_falls_back_to_entity_id_then_template() -> None:
     assert floors[1].label == "template"
 
 
+def test_floor_label_uses_custom_name_when_set() -> None:
+    """A configured custom_name wins over sensor_name for the floor label (issue #867)."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            CustomPositionSensorState(
+                entity_ids=("binary_sensor.cp1",),
+                is_on=True,
+                position=60,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                min_mode=True,
+                use_my=False,
+                sensor_name="Table extension",
+                slot=1,
+                active_entity_ids=("binary_sensor.cp1",),
+                custom_name="Movie night floor",
+            ),
+        ]
+    )
+    floors = gather_active_floors(snap)
+    assert floors[0].label == "Movie night floor"
+
+
 def test_decision_trace_does_not_mislabel_winner() -> None:
     """Only the underlying handler is marked as the non-clamp winner (no double-winner)."""
     cover = _climate_cover(direct_sun_valid=False)
@@ -790,3 +899,175 @@ def test_decision_trace_does_not_mislabel_winner() -> None:
     ]
     assert len(non_clamp_matched) == 1
     assert non_clamp_matched[0].handler == "climate"
+
+
+# ---------------------------------------------------------------------------
+# Issue #472: FloorClampInfo carries the contributing floor's priority so the
+# user-move clamp can gate on it (floor must outrank manual override to clamp).
+# ---------------------------------------------------------------------------
+
+
+def test_floor_clamp_info_carries_priority() -> None:
+    """FloorClampInfo exposes a ``priority`` field."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import FloorClampInfo
+
+    info = FloorClampInfo(
+        source="custom_position_1", label="Table", position=60, priority=82
+    )
+    assert info.priority == 82
+
+
+def test_gather_active_floors_populates_custom_slot_priority() -> None:
+    """gather_active_floors copies each custom slot's priority onto the floor."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                priority=82,
+                slot=1,
+            ),
+            _cp_state(
+                "binary_sensor.cp2",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                priority=77,
+                slot=2,
+            ),
+        ]
+    )
+    floors = gather_active_floors(snap)
+    assert [(f.source, f.priority) for f in floors] == [
+        ("custom_position_1", 82),
+        ("custom_position_2", 77),
+    ]
+
+
+def test_gather_active_floors_weather_uses_handler_priority() -> None:
+    """The weather floor takes WeatherOverrideHandler's declared priority (90)."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        weather_override_active=True,
+        weather_override_position=60,
+        weather_override_min_mode=True,
+    )
+    floors = gather_active_floors(snap)
+    assert len(floors) == 1
+    assert floors[0].source == "weather"
+    assert floors[0].priority == WeatherOverrideHandler.priority
+
+
+def test_effective_floor_returns_winning_floor_priority() -> None:
+    """effective_floor returns the highest floor's FloorClampInfo with its priority."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        effective_floor,
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                priority=77,
+                slot=1,
+            ),
+            _cp_state(
+                "binary_sensor.cp2",
+                is_on=True,
+                position=65,
+                min_mode=True,
+                priority=82,
+                slot=2,
+            ),
+        ]
+    )
+    pos, info = effective_floor(gather_active_floors(snap))
+    assert pos == 65
+    assert info is not None
+    assert info.priority == 82
+
+
+# ---------------------------------------------------------------------------
+# The frame a floor is compared IN (issue #1036)
+# ---------------------------------------------------------------------------
+
+
+class TestFloorComparesInLogicalFrame:
+    """A logical floor must be compared against a logical held position.
+
+    ``held_position`` is a RAW cover-frame read (``snapshot.current_cover_position``
+    straight off the entity), while a configured floor is a logical
+    pre-inversion value (``CustomPositionSensorState.position``). Comparing them
+    directly means that on an ``inverse_state`` install the registry asks
+    "is 25%-open above 75%-open?" — and answers wrong in both directions.
+
+    Both assertions are on the registry's own composed LOGICAL ``position``, with
+    no transform written into the assertion, so they cannot be satisfied by
+    restating the conversion.
+    """
+
+    @staticmethod
+    def _registry() -> PipelineRegistry:
+        return PipelineRegistry(
+            [
+                ManualOverrideHandler(),
+                _cp_handler(1, 25),
+                ClimateHandler(),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
+
+    @staticmethod
+    def _snapshot(*, current_cover_position: int):
+        return make_snapshot(
+            manual_override_active=True,
+            current_cover_position=current_cover_position,
+            position_axis_inverted=True,
+            default_position=80,
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.floor",
+                    is_on=True,
+                    position=25,
+                    min_mode=True,
+                    slot=1,
+                )
+            ],
+        )
+
+    def test_compliant_hold_is_not_lowered_by_the_floor(self) -> None:
+        """Raw 20 on an inverse cover IS logical 80 — already above a logical-25 floor.
+
+        Nothing should bind. Before #1036 the registry compared the logical floor
+        (25) against the raw read (20), called it a raise, and drove an
+        already-compliant cover from logical 80 down to logical 25.
+        """
+        result = self._registry().evaluate(self._snapshot(current_cover_position=20))
+
+        assert result.position == 80
+        assert result.position_constraint_applied is False
+
+    def test_non_compliant_hold_is_still_raised_by_the_floor(self) -> None:
+        """Mirror case, so the fix cannot be "never clamp a held cover".
+
+        Raw 90 on an inverse cover is logical 10 — genuinely below the logical-25
+        floor — so the floor must bind and lift it to 25.
+        """
+        result = self._registry().evaluate(self._snapshot(current_cover_position=90))
+
+        assert result.position == 25
+        assert result.position_constraint_applied is True

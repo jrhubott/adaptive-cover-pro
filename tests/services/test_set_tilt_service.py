@@ -13,11 +13,29 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import voluptuous as vol
 
+from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
+)
+
 
 def _make_coord(*, entities: list[str] | None = None):
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
     coord = MagicMock()
     coord.entities = entities or ["cover.venetian"]
     coord.async_apply_user_tilt = AsyncMock(return_value=("sent", ""))
+    coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
+    # set_tilt now routes through the axis collapse point (issue #725); bind the
+    # real dispatcher so it forwards to the mocked async_apply_user_tilt, keeping
+    # these delegation assertions a true parity guard for the tilt path.
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
+    )
     return coord
 
 
@@ -231,3 +249,123 @@ async def test_unknown_entity_id_silently_skipped() -> None:
         return_value={},
     ):
         await async_handle_set_tilt(call)
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: a tilt-only cover falls back to the position path, so the frame
+# transform has to reach it too.
+# ---------------------------------------------------------------------------
+
+
+def _make_fallback_coord(options: dict):
+    """Build a ``cover_tilt`` coord that reaches the real position dispatch boundary.
+
+    ``cover_tilt``'s primary axis IS the tilt, so ``apply_user_tilt`` returns
+    not-handled and ``async_apply_user_tilt`` falls back to
+    ``async_apply_user_position`` (coordinator.py). Bind both real methods so
+    the value that actually leaves the coordinator is observable.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+    from tests.ha_helpers import wire_dispatch_frame
+    from tests.test_pipeline.conftest import make_snapshot
+
+    coord = MagicMock()
+    coord.entities = ["cover.slats"]
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = options
+    wire_dispatch_frame(coord, options, cover_type="cover_tilt")
+    coord._resolved_options = options
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.build = MagicMock(return_value=make_snapshot())
+    ctx = MagicMock(name="position_context")
+    coord._build_position_context.return_value = ctx
+    coord._cmd_svc = MagicMock()
+    coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    coord._pipeline_bypasses_auto_control = False
+    coord.async_apply_user_position = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    )
+    coord.async_apply_user_tilt = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_tilt.__get__(coord)
+    )
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
+    )
+    coord._ctx = ctx
+
+    def _auto_state(logical: int) -> int:
+        coord._pipeline_result = PipelineResult(
+            position=logical, control_method=ControlMethod.SOLAR, reason="solar"
+        )
+        return AdaptiveDataUpdateCoordinator.state.fget(coord)
+
+    coord._auto_state = _auto_state
+    return coord
+
+
+async def _call_set_tilt(coord, tilt: int) -> None:
+    from custom_components.adaptive_cover_pro.services.set_tilt_service import (
+        async_handle_set_tilt,
+    )
+
+    call = MagicMock()
+    call.data = {"tilt": tilt, "force": True}
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_tilt_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_tilt(call)
+
+
+_TILT_INTERP_OPTIONS = {
+    CONF_INTERP: True,
+    CONF_INTERP_LIST: [0, 25, 58, 100],
+    CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+}
+
+
+@pytest.mark.asyncio
+async def test_set_tilt_cover_tilt_fallback_interpolates() -> None:
+    """``set_tilt: 25`` on a calibrated tilt-only cover dispatches motor 45.
+
+    The fallback into the position path must carry the same logical → cover
+    frame mapping the automatic path applies (#1027), not the raw request.
+    """
+    coord = _make_fallback_coord(dict(_TILT_INTERP_OPTIONS))
+
+    await _call_set_tilt(coord, 25)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.slats", 45, "set_tilt", coord._ctx
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "options",
+    [
+        pytest.param({CONF_INVERSE_STATE: True}, id="inverse_state"),
+        pytest.param(dict(_TILT_INTERP_OPTIONS), id="interpolation"),
+    ],
+)
+async def test_set_tilt_cover_tilt_fallback_dispatches_same_frame_as_state(
+    options: dict,
+) -> None:
+    """The tilt fallback and the automatic path agree on the dispatched frame.
+
+    This is #1027's whole contract stated directly: for one logical value, the
+    number the user path hands ``CoverCommandService`` must equal the number
+    ``coordinator.state`` publishes for the same value. Asserting the
+    invariant rather than a literal keeps the guard honest for ``cover_tilt``,
+    whose axis-level inversion key is a separate open question (#1028).
+    """
+    coord = _make_fallback_coord(options)
+
+    await _call_set_tilt(coord, 25)
+
+    dispatched = coord._cmd_svc.apply_position.await_args.args[1]
+    assert dispatched == coord._auto_state(25)

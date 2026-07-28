@@ -76,6 +76,118 @@ class TestOutsideTemperature:
 
 
 # ---------------------------------------------------------------------------
+# Temperature-season crossings (issue #917)
+# ---------------------------------------------------------------------------
+
+
+class TestTemperatureCrossings:
+    """read() emits (activate, release_cleared) pairs for the four crossings."""
+
+    def _states(self, mock_hass, mapping):
+        """Route mock_hass.states.get by entity_id via a dict."""
+        mock_hass.states.get.side_effect = lambda eid: mapping.get(eid)
+
+    @pytest.mark.unit
+    def test_default_field_values_match_asymmetry(self):
+        """A bare ClimateReadings reproduces each legacy property's fail value."""
+        r = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        # winter / summer-warm / extreme fail to (inactive, cleared).
+        assert r.temp_below_low_threshold is False
+        assert r.temp_low_release_cleared is True
+        assert r.temp_above_high_threshold is False
+        assert r.temp_high_release_cleared is True
+        assert r.outside_above_extreme_heat is False
+        assert r.extreme_heat_release_cleared is True
+        # outside-high FAILS OPEN (active, held).
+        assert r.outside_above_threshold is True
+        assert r.outside_release_cleared is False
+
+    @pytest.mark.unit
+    def test_winter_activate_blank_release(self, provider, mock_hass):
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "18")})
+        r = provider.read(
+            outside_entity="sensor.out",
+            temp_switch=True,
+            temp_low=21,
+        )
+        assert r.temp_below_low_threshold is True
+        assert r.temp_low_release_cleared is False  # blank release → not activate
+
+    @pytest.mark.unit
+    def test_outside_high_activate(self, provider, mock_hass):
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "33")})
+        r = provider.read(outside_entity="sensor.out", outside_threshold=32)
+        assert r.outside_above_threshold is True
+        assert r.outside_release_cleared is False
+
+    @pytest.mark.unit
+    def test_outside_high_release_band_holds(self, provider, mock_hass):
+        # 31 sits in the [30, 32] band — the reporter's fix.
+        self._states(mock_hass, {"sensor.out": _mock_state("sensor.out", "31")})
+        r = provider.read(
+            outside_entity="sensor.out",
+            outside_threshold=32,
+            outside_threshold_release=30,
+        )
+        assert r.outside_above_threshold is False
+        assert r.outside_release_cleared is False  # in band → latch holds
+
+    @pytest.mark.unit
+    def test_outside_high_unavailable_fails_open(self, provider, mock_hass):
+        self._states(mock_hass, {})  # outside reads None
+        r = provider.read(outside_entity="sensor.out", outside_threshold=32)
+        assert r.outside_above_threshold is True
+        assert r.outside_release_cleared is False
+
+    @pytest.mark.unit
+    def test_extreme_heat_keyed_on_outside_despite_switch(self, provider, mock_hass):
+        # temp_switch False so current temp uses inside, but extreme heat must
+        # still key on the OUTSIDE reading.
+        self._states(
+            mock_hass,
+            {
+                "sensor.out": _mock_state("sensor.out", "41"),
+                "sensor.in": _mock_state("sensor.in", "20"),
+            },
+        )
+        r = provider.read(
+            outside_entity="sensor.out",
+            temp_entity="sensor.in",
+            auto_resolve_temp_from_area=False,
+            temp_switch=False,
+            temp_extreme_heat=40,
+        )
+        assert r.outside_above_extreme_heat is True
+        assert r.extreme_heat_release_cleared is False
+
+    @pytest.mark.unit
+    def test_summer_warm_uses_inside_when_no_switch(self, provider, mock_hass):
+        self._states(
+            mock_hass,
+            {
+                "sensor.out": _mock_state("sensor.out", "20"),
+                "sensor.in": _mock_state("sensor.in", "26"),
+            },
+        )
+        r = provider.read(
+            outside_entity="sensor.out",
+            temp_entity="sensor.in",
+            auto_resolve_temp_from_area=False,
+            temp_switch=False,
+            temp_high=25,
+        )
+        assert r.temp_above_high_threshold is True
+
+
+# ---------------------------------------------------------------------------
 # Inside temperature
 # ---------------------------------------------------------------------------
 
@@ -105,6 +217,81 @@ class TestInsideTemperature:
         """Return None when no temp entity configured."""
         readings = provider.read()
         assert readings.inside_temperature is None
+
+
+# ---------------------------------------------------------------------------
+# Resolved temperature source (issue #786)
+# ---------------------------------------------------------------------------
+
+
+def _patch_area(*, device_area_id=None, area_temp_entity=None):
+    """Patch the device + area registries the AreaSensorResolver reads."""
+    device = MagicMock()
+    device.area_id = device_area_id
+    device_reg = MagicMock()
+    device_reg.async_get.return_value = device if device_area_id is not None else None
+    area = MagicMock()
+    area.temperature_entity_id = area_temp_entity
+    area_reg = MagicMock()
+    area_reg.async_get_area.return_value = area if device_area_id is not None else None
+    mod = "custom_components.adaptive_cover_pro.state.area_resolver"
+    return (
+        patch(f"{mod}.dr.async_get", return_value=device_reg),
+        patch(f"{mod}.ar.async_get", return_value=area_reg),
+    )
+
+
+class TestResolvedTempSource:
+    """ClimateReadings carries the resolved temp entity_id + provenance."""
+
+    @pytest.mark.unit
+    def test_explicit_source(self, provider, mock_hass):
+        """Explicit temp entity → source 'explicit', entity surfaced."""
+        mock_hass.states.get.return_value = _mock_state("sensor.temp", "23.0")
+        readings = provider.read(temp_entity="sensor.temp", temp_device_id="dev1")
+        assert readings.inside_temperature == "23.0"
+        assert readings.inside_temperature_entity_id == "sensor.temp"
+        assert readings.inside_temperature_source == "explicit"
+
+    @pytest.mark.unit
+    def test_area_resolved_source(self, provider, mock_hass):
+        """No explicit entity → area's temp entity resolved and read."""
+        mock_hass.states.get.return_value = _mock_state("sensor.bedroom_temp", "19.5")
+        dev_patch, area_patch = _patch_area(
+            device_area_id="area_bedroom", area_temp_entity="sensor.bedroom_temp"
+        )
+        with dev_patch, area_patch:
+            readings = provider.read(temp_entity=None, temp_device_id="dev1")
+        assert readings.inside_temperature == "19.5"
+        assert readings.inside_temperature_entity_id == "sensor.bedroom_temp"
+        assert readings.inside_temperature_source == "area"
+
+    @pytest.mark.unit
+    def test_none_source_when_unresolved(self, provider):
+        """No explicit entity and no area temp → source 'none'."""
+        dev_patch, area_patch = _patch_area(device_area_id=None)
+        with dev_patch, area_patch:
+            readings = provider.read(temp_entity=None, temp_device_id="dev1")
+        assert readings.inside_temperature is None
+        assert readings.inside_temperature_entity_id is None
+        assert readings.inside_temperature_source == "none"
+
+    @pytest.mark.unit
+    def test_auto_resolve_disabled_skips_area(self, provider, mock_hass):
+        """auto_resolve off → area sensor ignored, source 'none'."""
+        mock_hass.states.get.return_value = _mock_state("sensor.bedroom_temp", "19.5")
+        dev_patch, area_patch = _patch_area(
+            device_area_id="area_bedroom", area_temp_entity="sensor.bedroom_temp"
+        )
+        with dev_patch, area_patch:
+            readings = provider.read(
+                temp_entity=None,
+                temp_device_id="dev1",
+                auto_resolve_temp_from_area=False,
+            )
+        assert readings.inside_temperature is None
+        assert readings.inside_temperature_entity_id is None
+        assert readings.inside_temperature_source == "none"
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +544,114 @@ class TestSunnySensor:
 
 
 # ---------------------------------------------------------------------------
+# is_sunny transient-invalid HOLD (issue #1014) — mirrors #1010's pattern: a
+# transient unavailable/unknown/missing read on a configured, previously-valid
+# source must hold the last opinion instead of falling through to weather.
+# ---------------------------------------------------------------------------
+
+
+class TestSunnyTransientHold:
+    """A configured sensor that was valid must HOLD across a transient blip."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("invalid_value", ["unavailable", "unknown", None])
+    def test_transient_unavailable_sensor_holds_last_valid_off(
+        self, provider, mock_hass, invalid_value
+    ):
+        """Sensor off → valid False; sensor blips invalid → HELD False, not weather True."""
+        states = {
+            "binary_sensor.sunny": _mock_state("binary_sensor.sunny", "off"),
+            "weather.home": _mock_state("weather.home", "sunny"),
+        }
+        mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+        # Cycle 1: sensor off → valid, authoritative.
+        readings1 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings1.is_sunny is False
+
+        # Cycle 2: sensor transiently invalid → HELD to the last-valid False,
+        # NOT the weather fall-through (which would report sunny → True).
+        if invalid_value is None:
+            states.pop("binary_sensor.sunny", None)
+        else:
+            states["binary_sensor.sunny"] = _mock_state(
+                "binary_sensor.sunny", invalid_value
+            )
+        readings2 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings2.is_sunny is False  # fails today: weather fallback → True
+
+    @pytest.mark.unit
+    def test_valid_off_after_transient_hold_still_releases(self, provider, mock_hass):
+        """A genuine off read after a held transient still reports off."""
+        states = {
+            "binary_sensor.sunny": _mock_state("binary_sensor.sunny", "off"),
+            "weather.home": _mock_state("weather.home", "sunny"),
+        }
+        mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        states["binary_sensor.sunny"] = _mock_state(
+            "binary_sensor.sunny", "unavailable"
+        )
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+
+        states["binary_sensor.sunny"] = _mock_state("binary_sensor.sunny", "off")
+        readings3 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings3.is_sunny is False
+
+    @pytest.mark.unit
+    def test_off_to_on_still_releases(self, provider, mock_hass):
+        """After holding off across a blip, a genuine on read must flip True."""
+        states = {
+            "binary_sensor.sunny": _mock_state("binary_sensor.sunny", "off"),
+            "weather.home": _mock_state("weather.home", "rainy"),
+        }
+        mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        states["binary_sensor.sunny"] = _mock_state(
+            "binary_sensor.sunny", "unavailable"
+        )
+        provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+
+        states["binary_sensor.sunny"] = _mock_state("binary_sensor.sunny", "on")
+        readings3 = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_sensor="binary_sensor.sunny",
+        )
+        assert readings3.is_sunny is True
+
+
+# ---------------------------------------------------------------------------
 # is_sunny condition template (issue #639) — needs a real hass to render Jinja
 # ---------------------------------------------------------------------------
 
@@ -457,6 +752,60 @@ class TestSunnyTemplate:
             is_sunny_template="just text",
         )
         assert readings.is_sunny is False
+
+
+class TestSunnyTemplateTransientHold:
+    """A template-only source that was valid must HOLD across a render failure."""
+
+    async def test_transient_template_failure_holds_last_valid(self, hass):
+        """Template renders True, then fails, then renders True again.
+
+        Weather is configured to a NON-sunny condition so the pre-fix
+        fall-through and the fixed hold produce visibly different results:
+        the buggy fall-through would report False (weather rainy) on the
+        middle cycle, while the fix must hold the last-valid True.
+        """
+        hass.states.async_set("weather.home", "rainy")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+
+        sunny_template = "{{ states('sensor.elev') | float > 10 }}"
+        render_results = iter([True, None, True])
+
+        def fake_render(_hass, template_str):
+            # Only intercept the is_sunny template read; a bare call also
+            # runs for the (unused) presence template each cycle and must
+            # keep returning None like the real function does for "no
+            # template configured", not consume our side-effect sequence.
+            if template_str == sunny_template:
+                return next(render_results)
+            return None
+
+        with patch(
+            "custom_components.adaptive_cover_pro.templates.render_condition_or_none",
+            side_effect=fake_render,
+        ):
+            readings1 = p.read(
+                weather_entity="weather.home",
+                weather_condition=["sunny"],
+                is_sunny_template=sunny_template,
+            )
+            readings2 = p.read(
+                weather_entity="weather.home",
+                weather_condition=["sunny"],
+                is_sunny_template=sunny_template,
+            )
+            readings3 = p.read(
+                weather_entity="weather.home",
+                weather_condition=["sunny"],
+                is_sunny_template=sunny_template,
+            )
+
+        assert readings1.is_sunny is True
+        assert (
+            readings2.is_sunny is True
+        )  # fails today: falls through to weather → False
+        assert readings3.is_sunny is True
 
 
 # ---------------------------------------------------------------------------
@@ -753,3 +1102,135 @@ class TestCloudCoverage:
             cloud_coverage_threshold=75,
         )
         assert readings.cloud_coverage_above_threshold is False
+
+
+# ---------------------------------------------------------------------------
+# Hysteresis release-cleared fields (issue #864)
+# ---------------------------------------------------------------------------
+
+
+class TestReleaseClearedHysteresis:
+    """Release-cleared edges the manager latch consumes (issue #864).
+
+    The provider stays pure: it reports whether a trigger's *activate* edge is
+    met and whether the value has cleared its *release* edge in the SAME read.
+    A blank release threshold collapses the band to zero width, so
+    ``release_cleared == (not activate_met)`` — exact back-compat.
+    """
+
+    @pytest.mark.unit
+    def test_readings_expose_release_cleared_fields(self):
+        """ClimateReadings carries the three release-cleared booleans."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        # Defaulted fields exist and default to "cleared" (no latch held).
+        assert readings.lux_release_cleared is True
+        assert readings.irradiance_release_cleared is True
+        assert readings.cloud_coverage_release_cleared is True
+
+    @pytest.mark.unit
+    def test_lux_blank_release_mirrors_not_activate_dark(self, provider, mock_hass):
+        """Dark (below activate) + blank release → not cleared (latch would hold)."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "4000")
+        readings = provider.read(
+            use_lux=True, lux_entity="sensor.lux", lux_threshold=5000
+        )
+        assert readings.lux_below_threshold is True
+        assert readings.lux_release_cleared == (not readings.lux_below_threshold)
+        assert readings.lux_release_cleared is False
+
+    @pytest.mark.unit
+    def test_lux_blank_release_mirrors_not_activate_bright(self, provider, mock_hass):
+        """Bright (above activate) + blank release → cleared."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "6000")
+        readings = provider.read(
+            use_lux=True, lux_entity="sensor.lux", lux_threshold=5000
+        )
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared == (not readings.lux_below_threshold)
+        assert readings.lux_release_cleared is True
+
+    @pytest.mark.unit
+    def test_lux_value_in_band_holds_latch(self, provider, mock_hass):
+        """Value between activate and release → neither activate nor cleared."""
+        # activate 5000, release 8000 → band (5000, 8000). value 6500 is inside.
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "6500")
+        readings = provider.read(
+            use_lux=True,
+            lux_entity="sensor.lux",
+            lux_threshold=5000,
+            lux_release_threshold=8000,
+        )
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared is False
+
+    @pytest.mark.unit
+    def test_lux_value_above_release_clears(self, provider, mock_hass):
+        """Value at/above release edge → cleared."""
+        mock_hass.states.get.return_value = _mock_state("sensor.lux", "8000")
+        readings = provider.read(
+            use_lux=True,
+            lux_entity="sensor.lux",
+            lux_threshold=5000,
+            lux_release_threshold=8000,
+        )
+        assert readings.lux_below_threshold is False
+        assert readings.lux_release_cleared is True
+
+    @pytest.mark.unit
+    def test_irradiance_value_in_band_holds_latch(self, provider, mock_hass):
+        """Irradiance between activate and release → latch would hold."""
+        mock_hass.states.get.return_value = _mock_state("sensor.solar", "400")
+        readings = provider.read(
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
+            irradiance_release_threshold=500,
+        )
+        assert readings.irradiance_below_threshold is False
+        assert readings.irradiance_release_cleared is False
+
+    @pytest.mark.unit
+    def test_cloud_value_in_band_holds_latch(self, provider, mock_hass):
+        """Cloud coverage between release and activate → latch would hold.
+
+        Cloud activate is "at or above" (overcast), so the band is inverted:
+        release < activate. A value between them is neither overcast nor clear.
+        """
+        # activate 75 (overcast), release 50 (clear). value 60 is inside band.
+        mock_hass.states.get.return_value = _mock_state("sensor.cloud", "60")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+            cloud_coverage_release_threshold=50,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+        assert readings.cloud_coverage_release_cleared is False
+
+    @pytest.mark.unit
+    def test_cloud_value_below_release_clears(self, provider, mock_hass):
+        """Cloud coverage at/below release edge → cleared."""
+        mock_hass.states.get.return_value = _mock_state("sensor.cloud", "50")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+            cloud_coverage_release_threshold=50,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+        assert readings.cloud_coverage_release_cleared is True
+
+    @pytest.mark.unit
+    def test_disabled_trigger_is_cleared(self, provider):
+        """A disabled trigger reports cleared so no latch can hold."""
+        readings = provider.read(use_lux=False, use_irradiance=False)
+        assert readings.lux_release_cleared is True
+        assert readings.irradiance_release_cleared is True

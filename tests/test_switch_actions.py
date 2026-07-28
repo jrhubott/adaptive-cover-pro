@@ -42,6 +42,9 @@ def _make_coordinator(mock_hass=None):
     coord.entities = []
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.apply_position = AsyncMock()
+    # Return-to-default routes each target through the polymorphic
+    # ``_entity_target`` (identity for every non-dual-entity cover type).
+    coord._entity_target = lambda _entity, position, *, inverted=None: position
     coord.manager = MagicMock()
     coord.manager.is_cover_manual = MagicMock(return_value=False)
     coord.manager.manual_controlled = []

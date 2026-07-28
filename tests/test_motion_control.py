@@ -538,7 +538,7 @@ def test_determine_control_status_motion_timeout():
     pipeline_result = PipelineResult(
         position=60,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active",
+        reason="occupancy timeout active",
     )
 
     ctx = DiagnosticContext(
@@ -609,7 +609,13 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     coordinator.logger = MagicMock()
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
     coordinator._pipeline_bypasses_auto_control = False
+    # `state` delegates post-processing to the shared logical → cover-frame
+    # helper (#1027) — bind the real one so the mock does not intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
 
     # Mock property access for direct checks in state property
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
@@ -618,7 +624,7 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     coordinator._pipeline_result = PipelineResult(
         position=10,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active — default position 10%",
+        reason="occupancy timeout active — default position 10%",
     )
 
     result = AdaptiveDataUpdateCoordinator.state.fget(coordinator)
@@ -638,6 +644,13 @@ def test_state_property_safety_custom_position_precedence():
     coordinator.logger = MagicMock()
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
+    # A safety winner runs the same frame transform as any other (#1036), so
+    # bind the real logical → cover-frame helper instead of letting the bare
+    # MagicMock intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
 
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
 

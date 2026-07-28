@@ -302,8 +302,9 @@ def _create_flow(sensor_type: str = CoverType.BLIND) -> ConfigFlowHandler:
     flow.hass.states.get.return_value = None
     flow.type_blind = sensor_type
     flow.config = {}
-    flow.async_step_sun_tracking = AsyncMock(
-        return_value={"type": "form", "step_id": "sun_tracking"}
+    # Minimal wizard (#945 Part 2): geometry advances straight to the summary.
+    flow.async_step_summary = AsyncMock(
+        return_value={"type": "form", "step_id": "summary"}
     )
     return flow
 
@@ -325,7 +326,7 @@ async def test_create_flow_button_press_then_save():
     assert result1["step_id"] == "geometry"
     assert _suggested(result1, CONF_FOV_LEFT) == 76
 
-    # Plain submit → advance to sun_tracking, persisting the fov values.
+    # Plain submit → advance to the summary, persisting the fov values.
     result2 = await flow.async_step_geometry(
         {
             CONF_WINDOW_WIDTH: 2.0,
@@ -335,7 +336,7 @@ async def test_create_flow_button_press_then_save():
             "distance_shaded_area": 0.5,
         }
     )
-    assert result2["step_id"] == "sun_tracking"
+    assert result2["step_id"] == "summary"
     assert flow.config[CONF_FOV_LEFT] == 76
     assert CONF_FOV_COMPUTE not in flow.config
 

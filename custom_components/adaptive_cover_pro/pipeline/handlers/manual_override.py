@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...const import ControlMethod
+from ...const import ControlMethod, ReasonCode
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import (
     compute_default_position,
@@ -38,29 +39,40 @@ class ManualOverrideHandler(OverrideHandler):
         if snapshot.cover.direct_sun_valid:
             position = compute_solar_position(snapshot)
             if held_position is not None:
-                reason = (
-                    f"manual override active — holding {held_position}%"
-                    f" (solar would-be {position}%)"
+                reason_payload = Reason(
+                    ReasonCode.MANUAL_HOLDING_SOLAR,
+                    {"held": held_position, "position": position},
                 )
             else:
-                reason = f"manual override active — solar would-be {position}%"
+                reason_payload = Reason(
+                    ReasonCode.MANUAL_SOLAR_ONLY, {"position": position}
+                )
         else:
             position = compute_default_position(snapshot)
-            pos_label = (
-                "sunset position" if snapshot.is_sunset_active else "default position"
+            pos_label = Reason(
+                ReasonCode.FRAGMENT_SUNSET_POSITION
+                if snapshot.is_sunset_active
+                else ReasonCode.FRAGMENT_DEFAULT_POSITION
             )
             if held_position is not None:
-                reason = (
-                    f"manual override active — holding {held_position}%"
-                    f" ({pos_label} would be {position}%)"
+                reason_payload = Reason(
+                    ReasonCode.MANUAL_HOLDING_LABEL,
+                    {
+                        "held": held_position,
+                        "pos_label": pos_label,
+                        "position": position,
+                    },
                 )
             else:
-                reason = f"manual override active — {pos_label} {position}%"
+                reason_payload = Reason(
+                    ReasonCode.MANUAL_LABEL_ONLY,
+                    {"pos_label": pos_label, "position": position},
+                )
 
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MANUAL,
-            reason=reason,
+            reason_payload=reason_payload,
             raw_calculated_position=compute_raw_calculated_position(snapshot),
             held_position=held_position,
             # When the cover's physical position is known, genuinely hold there:
@@ -72,6 +84,6 @@ class ManualOverrideHandler(OverrideHandler):
             skip_command=held_position is not None,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:  # noqa: ARG002
         """Reason when manual override is not active."""
-        return "manual override not active"
+        return Reason(ReasonCode.SKIP_MANUAL_NOT_ACTIVE)

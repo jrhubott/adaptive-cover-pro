@@ -172,32 +172,31 @@ class TestAdaptiveGeneralCoverProperties:
     @pytest.mark.unit
     def test_is_sun_in_blind_spot_true(self, vertical_cover_instance):
         """Test blind spot detection when sun is in spot."""
-        vertical_cover_instance.blind_spot_left = 25
-        vertical_cover_instance.blind_spot_right = 35
+        vertical_cover_instance.blind_spot_left = 20  # signed-gamma wedge [10, 20]
+        vertical_cover_instance.blind_spot_right = -10
         vertical_cover_instance.blind_spot_elevation = 50
         vertical_cover_instance.blind_spot_on = True
         vertical_cover_instance.sol_azi = 165.0  # gamma = 15°
         vertical_cover_instance.sol_elev = 30.0
-        # left_edge = 45 - 25 = 20, right_edge = 45 - 35 = 10
-        # gamma=15 is between 10 and 20, elev 30 <= 50
+        # gamma=15 is inside [10, 20], elev 30 <= 50 (#247)
         assert vertical_cover_instance.is_sun_in_blind_spot is True
 
     @pytest.mark.unit
     def test_is_sun_in_blind_spot_elevation_too_high(self, vertical_cover_instance):
         """Test blind spot detection when elevation too high."""
-        vertical_cover_instance.blind_spot_left = 30
-        vertical_cover_instance.blind_spot_right = 20
+        vertical_cover_instance.blind_spot_left = 30  # signed-gamma wedge [20, 30]
+        vertical_cover_instance.blind_spot_right = -20
         vertical_cover_instance.blind_spot_elevation = 50
         vertical_cover_instance.blind_spot_on = True
-        vertical_cover_instance.sol_azi = 155.0  # gamma = 25°
-        vertical_cover_instance.sol_elev = 60.0  # Above threshold
+        vertical_cover_instance.sol_azi = 155.0  # gamma = 25° (inside wedge)
+        vertical_cover_instance.sol_elev = 60.0  # Above threshold → excluded
         assert vertical_cover_instance.is_sun_in_blind_spot is False
 
     @pytest.mark.unit
     def test_is_sun_in_blind_spot_outside_area(self, vertical_cover_instance):
         """Test blind spot detection when sun outside area."""
-        vertical_cover_instance.blind_spot_left = 30
-        vertical_cover_instance.blind_spot_right = 20
+        vertical_cover_instance.blind_spot_left = 30  # signed-gamma wedge [20, 30]
+        vertical_cover_instance.blind_spot_right = -20
         vertical_cover_instance.blind_spot_on = True
         vertical_cover_instance.sol_azi = 180.0  # gamma = 0° (outside spot)
         vertical_cover_instance.sol_elev = 30.0

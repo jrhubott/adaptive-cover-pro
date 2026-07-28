@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    FORECAST_STEP_MINUTES,
     ControlStatus,
 )
 from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
@@ -75,6 +76,7 @@ def _make_pr(
     configured_sunset_pos: int | None = None,
     configured_cloudy_pos: int | None = None,
     bypass_auto_control: bool = False,
+    position_constraint_applied: bool = False,
     is_safety: bool = False,
     tilt: int | None = None,
     tilt_only_slot: int | None = None,
@@ -94,6 +96,7 @@ def _make_pr(
         configured_sunset_pos=configured_sunset_pos,
         configured_cloudy_pos=configured_cloudy_pos,
         bypass_auto_control=bypass_auto_control,
+        position_constraint_applied=position_constraint_applied,
         is_safety=is_safety,
         tilt=tilt,
         tilt_only_slot=tilt_only_slot,
@@ -274,7 +277,7 @@ class TestControlStateReason:
         """Motion timeout reason string."""
         pr = _make_pr(control_method=ControlMethod.MOTION)
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
-        assert diag["control_state_reason"] == "Motion Timeout"
+        assert diag["control_state_reason"] == "Occupancy Timeout"
 
     def test_manual_override(self, builder: DiagnosticsBuilder):
         """Manual override reason string."""
@@ -318,11 +321,11 @@ class TestPositionExplanation:
         """Motion timeout produces correct explanation."""
         pr = _make_pr(
             control_method=ControlMethod.MOTION,
-            reason="motion timeout active — default position 30%",
+            reason="occupancy timeout active — default position 30%",
             position=30,
         )
         _, explanation = builder.build(_base_ctx(pipeline_result=pr))
-        assert "motion" in explanation.lower()
+        assert "occupancy" in explanation.lower()
         assert "30%" in explanation
 
     def test_manual_override_explanation(self, builder: DiagnosticsBuilder):
@@ -717,6 +720,97 @@ class TestClimateDiagnostics:
         conditions = diag["climate_conditions"]
         assert "cloud_coverage_above_threshold" in conditions
         assert conditions["cloud_coverage_above_threshold"] is False
+
+    def test_climate_diagnostics_include_resolved_temp_sensor(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Area-resolved temp sensor + provenance surface in climate diagnostics (#786)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                temp_sensor_entity_id="sensor.bedroom_temp",
+                temp_sensor_source="area",
+                temp_sensor_area_id="area_bedroom",
+            )
+        )
+        assert diag["temp_sensor"] == {
+            "entity_id": "sensor.bedroom_temp",
+            "source": "area",
+            "area_id": "area_bedroom",
+            "unit_of_measurement": None,
+        }
+
+    def test_temp_sensor_includes_unit_of_measurement(
+        self, builder: DiagnosticsBuilder
+    ):
+        """temp_sensor carries the resolved entity's unit_of_measurement (#969)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        state = SimpleNamespace(state="21.5", attributes={"unit_of_measurement": "°C"})
+        hass = SimpleNamespace(
+            states=SimpleNamespace(get=lambda entity_id: state),
+        )
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                hass=hass,
+                temp_sensor_entity_id="sensor.bedroom_temp",
+                temp_sensor_source="area",
+                temp_sensor_area_id="area_bedroom",
+            )
+        )
+        assert diag["temp_sensor"]["unit_of_measurement"] == "°C"
+
+    def test_temp_sensor_unit_of_measurement_none_without_hass(
+        self, builder: DiagnosticsBuilder
+    ):
+        """No hass on the context -> unit_of_measurement resolves to None (#969)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                temp_sensor_entity_id="sensor.bedroom_temp",
+                temp_sensor_source="area",
+                temp_sensor_area_id="area_bedroom",
+            )
+        )
+        assert diag["temp_sensor"]["unit_of_measurement"] is None
+
+    def test_temperature_details_include_outside_temp_source(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Outdoor-temp source provenance surfaces in temperature_details (#547)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                outside_temp_source="forecast_max",
+            )
+        )
+        assert diag["temperature_details"]["outside_temperature_source"] == (
+            "forecast_max"
+        )
+
+    def test_temp_sensor_absent_when_source_none(self, builder: DiagnosticsBuilder):
+        """No temp_sensor block when nothing resolved (source none)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(control_method=ControlMethod.WINTER, climate_data=cd)
+        diag, _ = builder.build(
+            _base_ctx(
+                climate_mode=True,
+                pipeline_result=pr,
+                temp_sensor_source="none",
+            )
+        )
+        assert "temp_sensor" not in diag
 
     def test_climate_conditions_cloud_coverage_true_when_active(
         self, builder: DiagnosticsBuilder
@@ -1370,7 +1464,11 @@ class TestForecast:
                     t=t0 + dt.timedelta(minutes=15), position=0, handler="default"
                 ),
             ),
-            events=(ForecastEvent(t=t0, kind="fov_exit", label="Sun leaves FOV"),),
+            events=(
+                ForecastEvent(
+                    t=t0, kind="fov_exit", label="Sun exits acceptance angle"
+                ),
+            ),
         )
 
     def test_omitted_when_no_forecast(self, builder: DiagnosticsBuilder):
@@ -1383,7 +1481,7 @@ class TestForecast:
         ctx = _base_ctx(position_forecast=self._make_forecast())
         diag, _ = builder.build(ctx)
         section = diag["position_forecast"]
-        assert section["step_minutes"] == 15
+        assert section["step_minutes"] == FORECAST_STEP_MINUTES
         assert section["forecast"][0] == {
             "t": "2026-06-14T12:00:00+00:00",
             "position": 40,
@@ -1574,14 +1672,14 @@ class TestCalculationDetailsFallback:
             calc_details=None,
             valid=False,
             direct_sun_valid=False,
-            control_state_reason="Default: FOV Exit",
+            control_state_reason="Default: Acceptance Angle Exit",
             sol_elev=-3.21,
             gamma=41.04,
         )
         diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
         details = diag["calculation_details"]
         assert details["position_pct"] is None
-        assert details["status"] == "Default: FOV Exit"
+        assert details["status"] == "Default: Acceptance Angle Exit"
         assert details["cover_type"] == "cover_blind"
 
     def test_fallback_sun_inputs_rounded(self, builder: DiagnosticsBuilder):
@@ -1704,3 +1802,133 @@ class TestCalculationDetailsAllCoverTypes:
         assert "beta_rad" in details["tilt"]
         # Top-level position axis present.
         assert "position_pct" in details
+
+
+# ---------------------------------------------------------------------------
+# linear_position — pre-interpolation logical target (issue #911)
+# ---------------------------------------------------------------------------
+
+
+class TestLinearPosition:
+    """`linear_position` exposes the pipeline's logical target, pre-interpolation."""
+
+    def test_equals_pipeline_position_when_interpolating(
+        self, builder: DiagnosticsBuilder
+    ):
+        """When interpolation maps 10 -> 31, linear_position stays the logical 10."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=10),
+                use_interpolation=True,
+                final_state=31,
+            )
+        )
+        assert diag["linear_position"] == 10
+        # Decoupled from the interpolated motor value.
+        assert diag["linear_position"] != 31
+
+    def test_equals_final_state_when_not_interpolating(
+        self, builder: DiagnosticsBuilder
+    ):
+        """With interpolation off, linear_position matches the motor value."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=40),
+                use_interpolation=False,
+                final_state=40,
+            )
+        )
+        assert diag["linear_position"] == 40
+
+    def test_is_plain_int(self, builder: DiagnosticsBuilder):
+        """linear_position is a plain int, never a numpy scalar."""
+        diag, _ = builder.build(_base_ctx(pipeline_result=_make_pr(position=10)))
+        # isinstance still rejects numpy scalars (np.int64 is not an int subclass).
+        assert isinstance(diag["linear_position"], int)
+
+    def test_present_for_safety_winner(self, builder: DiagnosticsBuilder):
+        """Safety winners (interpolation bypassed) still carry linear_position."""
+        diag, _ = builder.build(
+            _base_ctx(pipeline_result=_make_pr(position=10, is_safety=True))
+        )
+        assert diag["linear_position"] == 10
+
+    def test_present_for_bypass_winner(self, builder: DiagnosticsBuilder):
+        """Bypass winners still carry linear_position."""
+        diag, _ = builder.build(
+            _base_ctx(pipeline_result=_make_pr(position=10, bypass_auto_control=True))
+        )
+        assert diag["linear_position"] == 10
+
+    def test_bypass_winner_normalized_to_logical_under_inverse(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A bypass winner's position is already logical — publish it unchanged.
+
+        The requirement is unchanged (#1028): ``linear_position`` publishes the
+        LOGICAL frame regardless of which handler won. What changed is what
+        delivers it. ``coordinator.state`` used to return a bypass winner's
+        position verbatim, so the builder had to flip it back; now ``state``
+        maps every winner through ``_to_cover_frame``, which means the winner's
+        position was logical all along and the un-flip was compensating for the
+        carve-out rather than for a real frame difference (#1036).
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=10, bypass_auto_control=True),
+                position_axis_inverted=True,
+            )
+        )
+        assert diag["linear_position"] == 10
+
+    def test_floor_clamp_winner_normalized_to_logical_under_inverse(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A floor-clamped winner is logical too — same guarantee, same identity.
+
+        A configured floor is a pre-inversion canonical value (0 = closed,
+        100 = open), so composing it onto ``PipelineResult.position`` keeps the
+        field logical. ``linear_position`` must publish the number the user
+        typed, not its cover-frame mirror (#1028 / #1036).
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=25, position_constraint_applied=True),
+                position_axis_inverted=True,
+            )
+        )
+        assert diag["linear_position"] == 25
+
+    def test_solar_winner_unchanged_under_inverse(self, builder: DiagnosticsBuilder):
+        """An ordinary winner's position is already logical — never touch it."""
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=40),
+                position_axis_inverted=True,
+            )
+        )
+        assert diag["linear_position"] == 40
+
+    def test_interpolation_bypass_winner_passes_through(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Under interpolation the bypass value is a motor value — pass it through.
+
+        ``position_axis_inverted`` is False whenever interpolation is on, so no
+        flip happens; un-interpolating a motor value is #925's scope.
+        """
+        diag, _ = builder.build(
+            _base_ctx(
+                pipeline_result=_make_pr(position=10, bypass_auto_control=True),
+                use_interpolation=True,
+                position_axis_inverted=False,
+            )
+        )
+        assert diag["linear_position"] == 10
+
+    def test_defaults_to_zero_without_pipeline_result(
+        self, builder: DiagnosticsBuilder
+    ):
+        """No pipeline result -> linear_position defaults to 0, like calculated_position."""
+        diag, _ = builder.build(_base_ctx(pipeline_result=None))
+        assert diag["linear_position"] == 0

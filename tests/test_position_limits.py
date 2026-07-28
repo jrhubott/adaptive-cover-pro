@@ -426,3 +426,172 @@ def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
 
         # Test that it's using 'and' by verifying the type is bool
         assert isinstance(cover.direct_sun_valid, bool)
+
+
+# ---------------------------------------------------------------------------
+# apply_tilt_limits proportional transform (issue #957)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_tilt_limits_transform_defaults_to_clamp():
+    """No ``transform`` arg = today's flat clamp: v=50 on [0,40] → 40."""
+    result = PositionConverter.apply_tilt_limits(
+        50, 0, 40, False, False, sun_valid=True
+    )
+    assert result == 40
+
+
+def test_apply_tilt_limits_proportional_remaps_into_band():
+    """Proportional: v=50 on [0,40] → 20 (reporter's worked example)."""
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    result = PositionConverter.apply_tilt_limits(
+        50,
+        0,
+        40,
+        False,
+        False,
+        sun_valid=True,
+        transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+    assert result == 20
+
+
+def test_apply_tilt_limits_proportional_identity_on_full_band():
+    """Proportional on [0,100] is the identity across the range."""
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    for v in (0, 25, 50, 75, 100):
+        assert (
+            PositionConverter.apply_tilt_limits(
+                v,
+                0,
+                100,
+                False,
+                False,
+                sun_valid=True,
+                transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+            )
+            == v
+        )
+
+
+def test_apply_tilt_limits_proportional_is_monotonic_ascending():
+    """Proportional remap is monotonic non-decreasing across a 0–100 sweep."""
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    results = [
+        PositionConverter.apply_tilt_limits(
+            v,
+            0,
+            40,
+            False,
+            False,
+            sun_valid=True,
+            transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+        for v in range(0, 101)
+    ]
+    assert all(b >= a for a, b in zip(results, results[1:]))
+    assert results[0] == 0
+    assert results[-1] == 40
+
+
+def test_apply_tilt_limits_proportional_v_zero_maps_to_lo():
+    """Proportional: v=0 on [10,40] → the band floor 10."""
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    result = PositionConverter.apply_tilt_limits(
+        0,
+        10,
+        40,
+        False,
+        False,
+        sun_valid=True,
+        transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+    assert result == 10
+
+
+def test_apply_tilt_limits_proportional_reversed_band_degrades_to_clamp():
+    """Reversed band (min>max) must NOT ramp descending — fall back to clamp.
+
+    With min=50, max=30 the proportional formula would produce a descending
+    ramp (more sun → less tilt), diverging from clamp. The degenerate guard
+    (hi <= lo) instead takes the clamp path so proportional == clamp here.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    for v in (0, 50, 100):
+        proportional = PositionConverter.apply_tilt_limits(
+            v,
+            50,
+            30,
+            False,
+            False,
+            sun_valid=True,
+            transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+        clamp = PositionConverter.apply_tilt_limits(
+            v, 50, 30, False, False, sun_valid=True
+        )
+        assert proportional == clamp
+
+
+def test_apply_tilt_limits_proportional_equal_band_is_constant():
+    """Equal band (min==max) returns that constant for any v, matching clamp."""
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    for v in (0, 25, 50, 75, 100):
+        proportional = PositionConverter.apply_tilt_limits(
+            v,
+            40,
+            40,
+            False,
+            False,
+            sun_valid=True,
+            transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+        clamp = PositionConverter.apply_tilt_limits(
+            v, 40, 40, False, False, sun_valid=True
+        )
+        assert proportional == clamp == 40
+
+
+def test_apply_tilt_limits_proportional_with_sun_invalid_falls_back_to_clamp():
+    """Proportional + sun_valid=False must fall through to clamp behavior.
+
+    Characterization test locking the existing ``and sun_valid`` guard: with
+    the sun not tracked, the proportional remap is NOT applied — the result
+    equals the clamp-mode result for the same inputs.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    )
+
+    for v in (0, 50, 100):
+        proportional = PositionConverter.apply_tilt_limits(
+            v,
+            10,
+            40,
+            False,
+            False,
+            sun_valid=False,
+            transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+        clamp = PositionConverter.apply_tilt_limits(
+            v, 10, 40, False, False, sun_valid=False
+        )
+        assert proportional == clamp

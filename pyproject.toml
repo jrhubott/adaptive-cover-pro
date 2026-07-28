@@ -26,3 +26,17 @@ markers = [
     "integration: Integration tests (slower, may require Home Assistant)",
     "perf: Wall-clock performance-budget tests (flaky on loaded hosts; skip with -m 'not perf')",
 ]
+# Hang watchdog. The whole suite runs in ~13s parallel and ~50s serially, so
+# nothing legitimate comes near this — it exists so a deadlocked test fails with
+# a traceback in two minutes instead of burning a CI job's full timeout.
+# Signal-based (the default on Unix); do NOT switch to timeout_method = "thread",
+# which would spawn a timer thread for each of the 9,000+ tests.
+timeout = 120
+
+[tool.coverage.run]
+# Without this, `--cov` has no source filter and measures whatever gets imported
+# — which means tests/ supplies ~78% of the denominator and the reported number
+# mostly reflects tests executing their own lines. Scoping to the integration is
+# what makes the Codecov project gate, and any before/after coverage diff,
+# actually mean something.
+source = ["custom_components/adaptive_cover_pro"]

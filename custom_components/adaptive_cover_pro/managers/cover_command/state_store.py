@@ -44,6 +44,30 @@ class PerEntityState:
     gave_up: bool = False
     is_safety: bool = False
     last_reconcile_at: dt.datetime | None = None
+    # Display-only assumed position (issue #888). Set on covers with no native
+    # position axis (Somfy-RTS-style open/close-only) when ACP drives them — an
+    # ACP My move or an external stop that engaged the #875 override. A pure
+    # fallback the reported-position surfaces return ONLY when the live HA read
+    # is None; NEVER consulted by the command-dispatch gates (§3b).
+    assumed_position: int | None = None
+    # Synthetic travel direction for no-feedback covers. Set alongside
+    # ``waiting`` on open/close-only covers (Somfy-RTS-style: no position, no
+    # opening/closing state) so the companion card can render "Opening…" /
+    # "Closing…" during ACP's transit-timeout window. Values: ``"opening"``,
+    # ``"closing"``, or ``None``. Computed in the non-inverted display frame
+    # (100=open, 0=closed) and cleared whenever ``waiting`` clears — the
+    # ``transit_states()`` surface is gated on ``waiting`` so it disappears
+    # exactly when the transit window closes.
+    transit_direction: str | None = None
+    # Anti-relay latch for full-mechanical-endpoint forcing (issue #897). Holds
+    # the endpoint (0 or 100) that ``apply_position`` last force-routed via
+    # close_cover/open_cover. Read BEFORE computing force_endpoint and written
+    # only after a successful send, so a cover that never reports the mechanical
+    # state (state stays "open" at 2%) is forced exactly once instead of
+    # relay-clicking every cycle (#507 preserved). Cleared when a non-endpoint
+    # move fires; a flip to the other endpoint re-fires because the latched
+    # value differs from the new target.
+    forced_endpoint: int | None = None
 
 
 @dataclasses.dataclass
@@ -70,6 +94,16 @@ class PositionContext:
     )
     bypass_auto_control: bool = (
         False  # Sanctioned one-shot bypass of auto_control gate (e.g. switch return-to-default)
+    )
+    user_command: bool = (
+        # An explicit user-initiated command (card Open/Close/Set, set_position /
+        # set_axes service, My button). Unlike the generic ``force`` flag — which
+        # recurring resends (custom_position, override-clear) also set and which
+        # MUST stay deduped by the same-position gate to avoid relay clicks
+        # (issue #290) — a user command must ALWAYS dispatch, even when ACP's raw
+        # view already matches the target. On a no-feedback cover ACP cannot know
+        # the true position, so it must trust the user (issue #900).
+        False
     )
     use_my_position: bool = (
         False  # Route through send_my_position() on non-position-capable covers

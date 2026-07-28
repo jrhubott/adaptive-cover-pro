@@ -1,0 +1,118 @@
+{
+  "fragment": {
+    "sunset_position": "Sonnenuntergang-Position",
+    "default_position": "Standardposition",
+    "cloudy_position": "bewölkte Position",
+    "coverage_step": " (Abdeckungsschritt, max {steps})",
+    "z_adjusted": " (Z-angepasst)",
+    "bypass_note": " [umgeht automatische Steuerung]",
+    "season_extreme_heat": "extreme Hitze",
+    "season_tracking_off": "Standard: Verfolgung diese Saison aus",
+    "season_summer": "Sommer",
+    "season_winter": "Winter",
+    "season_glare_low_light": "Blendungsschutz (schwaches Licht)",
+    "season_glare": "Blendungsschutz",
+    "trigger_not_sunny": "Wetter nicht sonnig",
+    "trigger_lux_below": "Lux unter Schwelle",
+    "trigger_irradiance_below": "Bestrahlungsstärke unter Schwelle",
+    "trigger_cloud_above": "Wolkenbedeckung über Schwelle",
+    "trigger_smoothing_hold": "Glättungshalt",
+    "trigger_template": "Vorlage",
+    "trigger_fallback": "Auslöser"
+  },
+  "solar": {
+    "tracking": "Sonne im Akzeptanzwinkel — Position {position}%{suffix}"
+  },
+  "manual": {
+    "holding_solar": "manuelle Übersteuerung aktiv — halten {held}% (Sonne würde {position}% sein)",
+    "solar_only": "manuelle Übersteuerung aktiv — Sonne würde {position}% sein",
+    "holding_label": "manuelle Übersteuerung aktiv — halten {held}% ({pos_label} würde {position}% sein)",
+    "label_only": "manuelle Übersteuerung aktiv — {pos_label} {position}%"
+  },
+  "occupancy": {
+    "holding": "Anwesenheits-Timeout — Position halten {held}% (Sonne im Akzeptanzwinkel)",
+    "label": "Anwesenheits-Timeout aktiv — {pos_label} {position}%"
+  },
+  "climate": {
+    "active": "Klimamodus aktiv ({season}) — Position {position}%"
+  },
+  "glare": {
+    "protection": "Blendungszone-Schutz ({zones}) — effektive Entfernung {distance:.2f}m{z_suffix} → Position {position}%"
+  },
+  "cloud": {
+    "suppression": "Wolken-/Schwachlicht-Unterdrückung — {triggers} → {pos_label} {position}%"
+  },
+  "weather": {
+    "active": "Wetter-Außerkraftsetzung aktiv — Position {position}%{bypass_note}"
+  },
+  "custom": {
+    "head_named": "{name} aktiv",
+    "head_slot": "benutzerdefinierte Position #{slot} aktiv ({trigger})",
+    "use_my": "{head} — Meine Position verwenden ({position}%){bypass_note}",
+    "position": "{head} — Position {position}%{bypass_note}"
+  },
+  "default": {
+    "sunset_use_my": "Sonnenuntergang-Position — Meine Position verwenden ({position}%)",
+    "no_condition": "keine aktive Bedingung — {pos_label} {position}%"
+  },
+  "group": {
+    "lock": "Gruppensperrung von Gruppe {group_id} — Position halten {position}%",
+    "scene": "Gruppenszenario '{scene}' von Gruppe {group_id} → {position}%"
+  },
+  "registry": {
+    "outprioritized": "von {handler} übergeordnet",
+    "floor_raised": "Untergrenze angehobener Gewinner von {from_pos}% zu {to_pos}% durch {label}",
+    "floor_inactive": "Untergrenze {floor_pos}% inaktiv (Gewinner {winner_pos}% über Untergrenze)",
+    "tilt_applied": "nur Neigung: Lamellen-Winkel fest bei {tilt}% durch {label}; Position gesteuert durch {handler}",
+    "tilt_deferred": "nur Neigung {tilt}% verschoben — {handler} hat bereits Neigung {winner_tilt}% gesetzt",
+    "ceiling_lowered": "Obergrenze abgesenkter Gewinner von {from_pos}% zu {to_pos}% durch {label}",
+    "ceiling_inactive": "Obergrenze {ceiling_pos}% inaktiv (Endposition {to_pos}% auf oder unter Obergrenze)",
+    "ceiling_overridden": "Obergrenze {ceiling_pos}% überschrieben — eine Untergrenze hat die Abdeckung auf {to_pos}% angehoben",
+    "floor_overrides_ceiling": "Untergrenze auf {to_pos}% angehoben über Obergrenze {ceiling_pos}% durch {label} (Gewinner war {from_pos}%)",
+    "tilt_bound_active": "Neigungsgrenze {low_label}–{high_label} aktiv durch {label}; wartet auf die aufgelöste Neigung",
+    "tilt_bound_inactive": "Neigungsgrenze {low_label}–{high_label} inaktiv durch {label}; aufgelöste Neigung {tilt}% bereits innerhalb",
+    "tilt_clamped": "Neigung begrenzt von {from_tilt}% auf {to_tilt}% durch {label}"
+  },
+  "builder": {
+    "unknown": "Unbekannt",
+    "control_occupancy_timeout": "Anwesenheits-Timeout",
+    "control_manual_override": "Manuelle Übersteuerung",
+    "control_tracking_off_season": "Standard: Verfolgung diese Saison aus",
+    "control_tilt_fixed": "{reason} — Neigung fixiert durch Benutzer #{slot}",
+    "outside_window": "Außerhalb des Zeitfensters → {pos_label} {pos}% (Befehle pausiert)",
+    "manual_divergence": "manuelle Übersteuerung aktiv — Beschattung halten bei {held}% (Sonne würde {raw}% sein)",
+    "tilt_fixed": "Neigung fixiert bei {tilt}% durch Benutzer #{slot}",
+    "interpolated": "interpoliert → {final}%",
+    "inversed": "invertiert → {final}%"
+  },
+  "engine": {
+    "direct_sun": "Direkte Sonne",
+    "default_sunset_offset": "Standard: Sonnenuntergang-Versatz",
+    "default_elevation_limit": "Standard: Höhenlimit",
+    "default_acceptance_angle_exit": "Standard: Akzeptanzwinkel-Ausgang",
+    "default_sun_behind_plane": "Standard: Sonne hinter der Ebene",
+    "default_blind_spot": "Standard: Blinder Fleck",
+    "default": "Standard"
+  },
+  "skip": {
+    "outside_window": "außerhalb des Zeitfensters",
+    "sun_outside": "Sonne außerhalb des Akzeptanzwinkels oder Höhenlimits",
+    "manual_not_active": "manuelle Übersteuerung nicht aktiv",
+    "occupancy_disabled": "Anwesenheitserkennung deaktiviert",
+    "occupancy_not_active": "Anwesenheits-Timeout nicht aktiv",
+    "climate_mode_off": "Klimamodus nicht aktiviert",
+    "climate_readings_unavailable": "Klimamesswerte oder Optionen nicht verfügbar",
+    "climate_deferred": "Blendungsschutz zu Solar-/Blendungszone-Handlern verschoben",
+    "no_glare_zones": "keine aktiven Blendungszonen oder Sonne außerhalb des Akzeptanzwinkels",
+    "cloud_skipped": "Wolkenunterdrückung übersprungen (Sonne außerhalb des Akzeptanzwinkels)",
+    "cloud_inactive": "Wolkenunterdrückung inaktiv (direkte Sonne vorhanden oder Funktion deaktiviert)",
+    "weather_not_active": "Wetter-Außerkraftsetzung nicht aktiv",
+    "custom_not_active": "benutzerdefinierte Position #{slot} nicht aktiv",
+    "always_matches": "entspricht immer",
+    "group_scene_not_lock": "Gruppenszenario ist keine Sperre",
+    "no_group_lock": "keine Gruppensperrung",
+    "group_lock_not_scene": "Gruppensperrung ist kein Szenario",
+    "no_group_scene": "kein Gruppenszenario",
+    "not_active": "nicht aktiv"
+  }
+}

@@ -19,9 +19,12 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_DAYTIME_GATE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+    CONF_WEATHER_IS_WINDY_SENSOR,
 )
 from custom_components.adaptive_cover_pro.diagnostics.builder import DiagnosticsBuilder
 
@@ -51,6 +54,10 @@ class _FakeConfigEntries:
 
 def _state(value: str) -> SimpleNamespace:
     return SimpleNamespace(state=value)
+
+
+def _state_with_unit(value: str, unit: str) -> SimpleNamespace:
+    return SimpleNamespace(state=value, attributes={"unit_of_measurement": unit})
 
 
 def _entry(entry_id: str, options: dict) -> SimpleNamespace:
@@ -142,6 +149,34 @@ def test_linked_emits_two_subsections(builder: DiagnosticsBuilder):
     assert CONF_OUTSIDETEMP_ENTITY not in local
 
 
+def test_sensor_source_entries_carry_unit_of_measurement(builder: DiagnosticsBuilder):
+    """Each shared-sensor entry carries the live entity's unit_of_measurement (#969).
+
+    Configured scalar entity -> the real unit. Not-configured key -> None.
+    List-valued key (gate/severe sensors) -> None, since there is no single
+    unit to report for a multi-entity key.
+    """
+    cover_options = {
+        CONF_OUTSIDETEMP_ENTITY: "sensor.outside_temp",
+        CONF_DAYTIME_GATE_SENSORS: ["binary_sensor.gate_a", "binary_sensor.gate_b"],
+    }
+    hass = _make_hass(
+        {"sensor.outside_temp": _state_with_unit("21.5", "°C")},
+        [],
+    )
+    ctx = _base_ctx(config_options=cover_options, hass=hass)
+    diag, _ = builder.build(ctx)
+
+    local = _by_key(diag["local_sensors"])
+
+    # Configured scalar entity with a real state -> unit surfaces.
+    assert local[CONF_OUTSIDETEMP_ENTITY]["unit_of_measurement"] == "°C"
+    # Not-configured key -> no unit.
+    assert local[CONF_CLOUD_COVERAGE_ENTITY]["unit_of_measurement"] is None
+    # List-valued key -> no single unit to report.
+    assert local[CONF_DAYTIME_GATE_SENSORS]["unit_of_measurement"] is None
+
+
 def test_linked_override_source(builder: DiagnosticsBuilder):
     """A key the cover overrides reports source='override' with the cover value."""
     from custom_components.adaptive_cover_pro.const import CONF_PROFILE_SENSOR_OVERRIDES
@@ -165,3 +200,35 @@ def test_linked_override_source(builder: DiagnosticsBuilder):
     assert local[CONF_LUX_ENTITY]["source"] == "override"
     assert local[CONF_LUX_ENTITY]["entity_id"] == "sensor.cover_lux"
     assert CONF_LUX_ENTITY not in _by_key(diag["building_profile_sensors"])
+
+
+def test_template_mode_scalar_not_catalogued_as_entity(builder: DiagnosticsBuilder):
+    """A ``*_template_mode`` combine-mode scalar is config, not an entity (#1017).
+
+    ``weather_is_raining_template_mode`` stores a ``TemplateCombineMode`` value
+    like ``"or"``/``"and"`` — not an entity_id. Cataloguing it as a sensor source
+    made the Troubleshoot step misread it as an unavailable entity named "or".
+    No descriptor for the key should be emitted at all; an ordinary entity-valued
+    key on the same options dict must still be catalogued normally.
+    """
+    cover_options = {
+        CONF_WEATHER_IS_RAINING_TEMPLATE_MODE: "or",
+        CONF_WEATHER_IS_WINDY_SENSOR: "binary_sensor.windy",
+    }
+    hass = _make_hass({"binary_sensor.windy": _state("off")}, [])
+    ctx = _base_ctx(config_options=cover_options, hass=hass)
+    diag, _ = builder.build(ctx)
+
+    local = _by_key(diag["local_sensors"])
+
+    # No descriptor at all for the template-mode key.
+    assert CONF_WEATHER_IS_RAINING_TEMPLATE_MODE not in local
+    # In particular, nothing carries the bogus "or" entity_id/unavailable state.
+    assert not any(
+        row.get("entity_id") == "or" or row.get("state") == "unavailable"
+        for row in diag["local_sensors"]
+    )
+    # An ordinary entity-valued key is still catalogued.
+    assert local[CONF_WEATHER_IS_WINDY_SENSOR]["source"] == "local"
+    assert local[CONF_WEATHER_IS_WINDY_SENSOR]["entity_id"] == "binary_sensor.windy"
+    assert local[CONF_WEATHER_IS_WINDY_SENSOR]["state"] == "available"

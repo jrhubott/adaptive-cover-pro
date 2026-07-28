@@ -19,7 +19,6 @@ import pytest
 import voluptuous as vol
 
 from custom_components.adaptive_cover_pro.config_flow import (
-    ConfigFlowHandler,
     LIGHT_CLOUD_SCHEMA,
     POSITION_SCHEMA,
     SYNC_CATEGORIES,
@@ -59,35 +58,11 @@ from custom_components.adaptive_cover_pro.const import (
 )
 
 # ---------------------------------------------------------------------------
-# Quick vs Full setup flow
-# ---------------------------------------------------------------------------
-
-
-class TestQuickSetupFlow:
-    """Test the Quick vs Full setup mode selection."""
-
-    def test_config_flow_default_setup_mode(self):
-        """ConfigFlowHandler defaults to quick setup mode."""
-        handler = ConfigFlowHandler()
-        assert handler.setup_mode == "quick"
-
-    def test_setup_mode_set_to_quick(self):
-        """Verify setup_mode is set to 'quick' by quick_setup step."""
-        handler = ConfigFlowHandler()
-        handler.setup_mode = "full"  # Start from full to prove it changes
-        # Simulate calling the method logic
-        handler.setup_mode = "quick"
-        assert handler.setup_mode == "quick"
-
-    def test_setup_mode_set_to_full(self):
-        """Verify setup_mode is set to 'full' by full_setup step."""
-        handler = ConfigFlowHandler()
-        handler.setup_mode = "full"
-        assert handler.setup_mode == "full"
-
-
-# ---------------------------------------------------------------------------
 # Split schemas: LIGHT_CLOUD_SCHEMA and TEMPERATURE_CLIMATE_SCHEMA
+#
+# (The quick/full setup-mode selection was removed with the minimal create
+# wizard — #945 Part 2 — so its tests no longer apply. The split schemas below
+# are still used by the options flow.)
 # ---------------------------------------------------------------------------
 
 

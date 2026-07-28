@@ -23,10 +23,12 @@ from custom_components.adaptive_cover_pro.const import (
     POSITION_CLOSED,
     POSITION_OPEN,
 )
-from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY, get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     AXIS_NAME_POSITION,
     AXIS_NAME_TILT,
+    CAP_HAS_CLOSE,
+    CAP_HAS_OPEN,
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
@@ -47,6 +49,10 @@ ALL_COVER_TYPES = [
     "cover_tilt",
     "cover_venetian",
     "cover_roof_window",
+    "cover_sliding_curtain",
+    "cover_louvered_roof",
+    "cover_day_night_shade",
+    "cover_dual_panel",
 ]
 
 
@@ -83,6 +89,11 @@ class TestCoverAxis:
             state_attr=POSITION_AXIS.state_attr,
             capability_key=POSITION_AXIS.capability_key,
             open_blocks_sun=False,
+            label_key=POSITION_AXIS.label_key,
+            value_min=POSITION_AXIS.value_min,
+            value_max=POSITION_AXIS.value_max,
+            unit=POSITION_AXIS.unit,
+            drive_fallbacks=POSITION_AXIS.drive_fallbacks,
         )
         assert twin == POSITION_AXIS
 
@@ -112,6 +123,24 @@ class TestAxisSingletons:
         assert TILT_AXIS.open_blocks_sun is False
 
     @pytest.mark.unit
+    def test_position_axis_descriptor_fields(self):
+        # Discovery-surface metadata (issue #725): each axis carries a label
+        # i18n key, a numeric range, and a display unit so the self-discovery
+        # payload can be assembled without re-deriving cover-type knowledge.
+        assert POSITION_AXIS.label_key == "axes.position"
+        assert POSITION_AXIS.value_min == 0
+        assert POSITION_AXIS.value_max == 100
+        assert POSITION_AXIS.unit == "%"
+        assert POSITION_AXIS_OPEN_BLOCKS_SUN.label_key == "axes.position"
+
+    @pytest.mark.unit
+    def test_tilt_axis_descriptor_fields(self):
+        assert TILT_AXIS.label_key == "axes.tilt"
+        assert TILT_AXIS.value_min == 0
+        assert TILT_AXIS.value_max == 100
+        assert TILT_AXIS.unit == "%"
+
+    @pytest.mark.unit
     def test_awning_position_axis_flips_sun_semantic(self):
         # Awning's "open=blocks-sun" semantic lives on the axis instance, so
         # ``position_for_intent`` falls out of the base implementation without
@@ -136,6 +165,9 @@ class TestPolicyAxesDeclarations:
             ("cover_awning", (AXIS_NAME_POSITION,)),
             ("cover_tilt", (AXIS_NAME_TILT,)),
             ("cover_venetian", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
+            ("cover_louvered_roof", (AXIS_NAME_TILT,)),
+            ("cover_day_night_shade", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
+            ("cover_dual_panel", (AXIS_NAME_POSITION,)),
         ],
     )
     def test_axes_declaration(self, cover_type, expected_axis_names):
@@ -144,12 +176,114 @@ class TestPolicyAxesDeclarations:
 
     @pytest.mark.unit
     def test_blind_tilt_venetian_dont_treat_open_as_sun_blocked(self):
-        for cover_type in ("cover_blind", "cover_tilt", "cover_venetian"):
+        for cover_type in (
+            "cover_blind",
+            "cover_tilt",
+            "cover_venetian",
+            "cover_louvered_roof",
+            "cover_day_night_shade",
+            "cover_dual_panel",
+        ):
             assert get_policy(cover_type).axes[0].open_blocks_sun is False
 
     @pytest.mark.unit
     def test_awning_treats_open_as_sun_blocked(self):
         assert get_policy("cover_awning").axes[0].open_blocks_sun is True
+
+
+class TestAxisRequirements:
+    """The serialisable ``axis_requirements()`` projection (issue #972, rule 13).
+
+    Folds each declared axis into a ``{"axis","capability","fallbacks"}`` dict so
+    the HA-free triage engine can flag a cover whose entity lacks a required
+    capability — without the triage module ever seeing a cover-type string or a
+    hardcoded ``has_*`` literal (the capability keys travel as data).
+    """
+
+    @pytest.mark.unit
+    def test_blind_position_requirement_with_open_close_fallback(self):
+        reqs = get_policy("cover_blind").axis_requirements()
+        assert reqs == (
+            {
+                "axis": AXIS_NAME_POSITION,
+                "capability": CAP_HAS_SET_POSITION,
+                "fallbacks": ((CAP_HAS_OPEN, CAP_HAS_CLOSE),),
+            },
+        )
+
+    @pytest.mark.unit
+    def test_tilt_requirement_has_no_fallback(self):
+        reqs = get_policy("cover_tilt").axis_requirements()
+        assert reqs == (
+            {
+                "axis": AXIS_NAME_TILT,
+                "capability": CAP_HAS_SET_TILT_POSITION,
+                "fallbacks": (),
+            },
+        )
+
+    @pytest.mark.unit
+    def test_venetian_serialises_both_axes_in_order(self):
+        reqs = get_policy("cover_venetian").axis_requirements()
+        assert [r["axis"] for r in reqs] == [AXIS_NAME_POSITION, AXIS_NAME_TILT]
+        assert [r["capability"] for r in reqs] == [
+            CAP_HAS_SET_POSITION,
+            CAP_HAS_SET_TILT_POSITION,
+        ]
+
+    @pytest.mark.unit
+    def test_requirements_match_declared_axes(self):
+        for cover_type in (
+            "cover_blind",
+            "cover_awning",
+            "cover_tilt",
+            "cover_venetian",
+            "cover_louvered_roof",
+            "cover_day_night_shade",
+            "cover_dual_panel",
+        ):
+            policy = get_policy(cover_type)
+            reqs = policy.axis_requirements()
+            assert tuple(r["axis"] for r in reqs) == tuple(a.name for a in policy.axes)
+            for req, axis in zip(reqs, policy.axes):
+                assert req["capability"] == axis.capability_key
+                assert req["fallbacks"] == axis.drive_fallbacks
+
+
+class TestForecastSecondaryAxesHook:
+    """The polymorphic forecast secondary-axis hook (issue #724).
+
+    Single-axis covers inherit the base no-op returning ``{}`` — the forecast
+    loop asks the hook rather than branching on the cover-type string.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "cover_type",
+        [
+            "cover_blind",
+            "cover_awning",
+            "cover_tilt",
+            "cover_louvered_roof",
+            "cover_dual_panel",
+        ],
+    )
+    def test_single_axis_policy_returns_no_secondary_axes(self, cover_type):
+        from unittest.mock import MagicMock
+
+        result = get_policy(cover_type).forecast_secondary_axes(
+            position=50,
+            logger=MagicMock(),
+            sol_azi=180.0,
+            sol_elev=30.0,
+            sun_data=MagicMock(),
+            config=MagicMock(),
+            config_service=MagicMock(),
+            options={},
+            minimize_movements=False,
+            max_coverage_steps=1,
+        )
+        assert result == {}
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +303,10 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
+                "cover_sliding_curtain": AXIS_NAME_POSITION,
+                "cover_louvered_roof": AXIS_NAME_TILT,
+                "cover_day_night_shade": AXIS_NAME_POSITION,
+                "cover_dual_panel": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -180,6 +318,13 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,  # cover_tilt always routes tilt
                 "cover_venetian": AXIS_NAME_POSITION,
                 "cover_roof_window": AXIS_NAME_POSITION,
+                "cover_sliding_curtain": AXIS_NAME_POSITION,
+                # louvered roof is a tilt-axis type like cover_tilt.
+                "cover_louvered_roof": AXIS_NAME_TILT,
+                # day/night shade routes its primary (position) axis.
+                "cover_day_night_shade": AXIS_NAME_POSITION,
+                # dual-panel routes its primary (position) axis too.
+                "cover_dual_panel": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -193,6 +338,12 @@ class TestPolicyAxesDeclarations:
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_TILT,
                 "cover_roof_window": AXIS_NAME_TILT,
+                "cover_sliding_curtain": AXIS_NAME_TILT,
+                "cover_louvered_roof": AXIS_NAME_TILT,
+                # Tilt-only fallback routes a dual-axis type to TILT too.
+                "cover_day_night_shade": AXIS_NAME_TILT,
+                # Tilt-only fallback routes the position-axis dual-panel to TILT.
+                "cover_dual_panel": AXIS_NAME_TILT,
             },
         ),
     ],
@@ -200,6 +351,15 @@ class TestPolicyAxesDeclarations:
 )
 def caps_scenario(request):
     return request.param
+
+
+# Cover types whose PRIMARY axis is the tilt axis. Derived from the registry so
+# a new tilt-only cover type is picked up without an edit here.
+_TILT_PRIMARY_COVER_TYPES = sorted(
+    cover_type
+    for cover_type, cls in POLICY_REGISTRY.items()
+    if cls.axes and cls.axes[0].name == AXIS_NAME_TILT
+)
 
 
 class TestSelectDefaultAxis:
@@ -235,6 +395,26 @@ class TestSelectDefaultAxis:
         axis = policy.select_default_axis(None)
         assert axis.name == policy.axes[0].name
 
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", _TILT_PRIMARY_COVER_TYPES)
+    def test_tilt_primary_returns_the_policys_own_axis(self, cover_type):
+        """A tilt-primary policy routes to its OWN axis object, not ``TILT_AXIS``.
+
+        ``cover_tilt`` / ``cover_louvered_roof`` declare ``TILT_AXIS_PRIMARY``,
+        which agrees with the shared ``TILT_AXIS`` on every HA-facing field but
+        differs on config semantics (``inverse_state`` + interpolatable, because
+        tilt is their only axis). Returning the shared singleton would hand
+        callers an axis that disagrees with ``policy.axes[0]`` about how the
+        instance is configured — the exact split ``axis_inverted`` reads.
+        """
+        policy = get_policy(cover_type)
+        for caps in (
+            {"has_set_position": True, "has_set_tilt_position": True},
+            {"has_set_position": False, "has_set_tilt_position": True},
+            None,
+        ):
+            assert policy.select_default_axis(caps) is policy.axes[0]
+
 
 # ---------------------------------------------------------------------------
 # position_for_intent — semantic intent → numeric axis value
@@ -252,6 +432,9 @@ class TestPositionForIntent:
             ("cover_awning", POSITION_CLOSED, POSITION_OPEN),
             ("cover_tilt", POSITION_OPEN, POSITION_CLOSED),
             ("cover_venetian", POSITION_OPEN, POSITION_CLOSED),
+            ("cover_louvered_roof", POSITION_OPEN, POSITION_CLOSED),
+            ("cover_day_night_shade", POSITION_OPEN, POSITION_CLOSED),
+            ("cover_dual_panel", POSITION_OPEN, POSITION_CLOSED),
         ],
     )
     def test_intent_map(self, cover_type, sun_through_value, sun_blocked_value):
@@ -342,6 +525,46 @@ class TestReadAxisValue:
         caps = {"has_set_position": False, "has_set_tilt_position": True}
         result = get_policy("cover_blind").read_axis_value(hass, "cover.blind", caps)
         assert result == 25
+
+    @pytest.mark.unit
+    def test_read_axis_value_assumed_fallback_open_close_only(self):
+        # Issue #888: an open/close-only cover whose live state is unknown falls
+        # back to the assumed display value — but a real open/closed read always
+        # wins over the assumed value.
+        caps = {"has_set_position": False, "has_set_tilt_position": False}
+        policy = get_policy("cover_blind")
+
+        unknown = _hass_with_state({}, state="unknown")
+        assert policy.read_axis_value(unknown, "cover.somfy", caps, assumed=50) == 50
+
+        live_open = _hass_with_state({}, state="open")
+        assert policy.read_axis_value(live_open, "cover.somfy", caps, assumed=50) == 100
+
+    @pytest.mark.unit
+    def test_read_axis_value_assumed_wins_for_assumed_state_open(self):
+        # Issue #888 follow-up: a Somfy-RTS assumed-state cover reports HA state
+        # "open" (the last-command direction), which get_open_close_state maps to
+        # 100 — but that is NOT a real position. A recorded assumed My value (50)
+        # is more specific and must win over the open/close mapping.
+        caps = {"has_set_position": False, "has_set_tilt_position": False}
+        policy = get_policy("cover_blind")
+
+        assumed_open = _hass_with_state({"assumed_state": True}, state="open")
+        assert (
+            policy.read_axis_value(assumed_open, "cover.somfy", caps, assumed=50) == 50
+        )
+
+    @pytest.mark.unit
+    def test_read_axis_value_assumed_ignored_for_position_capable(self):
+        # A position-capable cover never returns the assumed value: its live read
+        # (here None because the attribute is absent) is authoritative and must
+        # not be masked by an assumed fallback.
+        hass = _hass_with_state({}, state="unknown")
+        caps = {"has_set_position": True, "has_set_tilt_position": False}
+        result = get_policy("cover_blind").read_axis_value(
+            hass, "cover.blind", caps, assumed=50
+        )
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +674,9 @@ def test_is_in_tilt_suppression_uniform_signature(cover_type: str) -> None:
         ("cover_awning", True),
         ("cover_tilt", False),
         ("cover_venetian", False),
+        ("cover_louvered_roof", False),
+        ("cover_day_night_shade", False),
+        ("cover_dual_panel", True),
     ],
 )
 def test_supports_return_to_default_switch(cover_type: str, expected: bool) -> None:
@@ -627,6 +853,9 @@ def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_louvered_roof", False),
+        ("cover_day_night_shade", True),
+        ("cover_dual_panel", False),
     ],
 )
 def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
@@ -647,6 +876,9 @@ def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_louvered_roof", False),
+        ("cover_day_night_shade", True),
+        ("cover_dual_panel", False),
     ],
 )
 def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
@@ -667,6 +899,9 @@ def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
         ("cover_awning", "Configuration-Horizontal"),
         ("cover_tilt", "Configuration-Tilt"),
         ("cover_venetian", "Venetian-Blinds"),
+        ("cover_louvered_roof", "Configuration-Louvered-Roof"),
+        ("cover_day_night_shade", "Configuration-Day-Night-Shade"),
+        ("cover_dual_panel", "Configuration-Dual-Panel"),
     ],
 )
 def test_wiki_anchor(cover_type: str, anchor: str) -> None:
@@ -686,6 +921,9 @@ def test_wiki_anchor(cover_type: str, anchor: str) -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_louvered_roof", False),
+        ("cover_day_night_shade", False),
+        ("cover_dual_panel", False),
     ],
 )
 def test_drift_reset_option_is_venetian_only(cover_type: str, expected: bool) -> None:
@@ -742,6 +980,24 @@ class TestLiftTravelMetres:
         svc = self._fake_config_service()
         assert get_policy("cover_tilt").lift_travel_metres(svc, {}) is None
 
+    @pytest.mark.unit
+    def test_louvered_roof_returns_none(self) -> None:
+        # Tilt-axis type — no lift axis, so it inherits the ``None`` default.
+        svc = self._fake_config_service()
+        assert get_policy("cover_louvered_roof").lift_travel_metres(svc, {}) is None
+
+    @pytest.mark.unit
+    def test_day_night_shade_returns_window_height(self) -> None:
+        # Dual-axis type with a real lift (carriage) axis — reads h_win.
+        svc = self._fake_config_service(h_win=1.9)
+        assert get_policy("cover_day_night_shade").lift_travel_metres(svc, {}) == 1.9
+
+    @pytest.mark.unit
+    def test_dual_panel_returns_window_height(self) -> None:
+        # The front sheer panel travels the configured window height.
+        svc = self._fake_config_service(h_win=2.2)
+        assert get_policy("cover_dual_panel").lift_travel_metres(svc, {}) == 2.2
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
@@ -751,6 +1007,9 @@ class TestLiftTravelMetres:
         ("cover_awning", "Horizontal Awning"),
         ("cover_tilt", "Venetian / Tilt Blind"),
         ("cover_venetian", "Venetian Blind (Dual-Axis)"),
+        ("cover_louvered_roof", "Louvered Roof"),
+        ("cover_day_night_shade", "Day/Night Shade"),
+        ("cover_dual_panel", "Dual Panel Shade"),
     ],
 )
 def test_display_label(cover_type: str, label: str) -> None:

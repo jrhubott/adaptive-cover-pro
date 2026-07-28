@@ -6,6 +6,57 @@ import math
 
 import numpy as np
 
+from .const import (
+    VENETIAN_TILT_TRANSFORM_CLAMP,
+    VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+)
+
+
+def inverse_state(state: int) -> int:
+    """Inverse state."""
+    return 100 - state
+
+
+def flip_if(value: int, *, inverted: bool) -> int:
+    """Map a position between the cover frame and the logical frame.
+
+    Single source of truth for the ``inverse_state(v) if inverted else v``
+    conditional (issues #1036 / #1042). The involution ``100 - x`` is its own
+    inverse, so ONE primitive serves both directions:
+
+    * **cover → logical** — a producer that reads a physical position off an
+      entity and hands it to a logical-frame field.
+      ``PipelineResult.position`` is logical for every winner, so a handler
+      holding a raw read (``MotionTimeoutHandler``'s hold,
+      ``GroupLockHandler``'s freeze) must convert first, and the registry must
+      convert before comparing a held position against a user-configured bound.
+    * **logical → cover** — a consumer turning a pipeline value into the number
+      actually dispatched to, or recorded as held on, the entity.
+
+    The name is deliberately direction-free: while this helper carried a
+    directional name, every caller converting the other way hand-rolled the
+    same ternary instead of delegating. Lives beside :func:`inverse_state` in this
+    pure module so the arithmetic is written once and the pipeline layer can
+    reach it without importing a manager. The caller supplies the "is this axis
+    inverted right now?" answer, which is itself sourced from
+    ``cover_types.base.axis_inverted``.
+    """
+    return inverse_state(value) if inverted else value
+
+
+def _proportional_remap(value: int, lo: int, hi: int) -> int:
+    """Linearly remap the full 0–100% demand onto the ``[lo, hi]`` band (#957).
+
+    ``transformed = round(lo + (hi - lo) * (value / 100))`` — monotonic,
+    order-preserving, and the identity when ``[lo, hi] == [0, 100]``. The input
+    is clipped to ``[0, 100]`` first; ``None`` bounds fall back to the full
+    range (0 floor, 100 ceiling), matching the clamp path's semantics.
+    """
+    v = min(100, max(0, value))
+    lo_eff = 0 if lo is None else lo
+    hi_eff = 100 if hi is None else hi
+    return round(lo_eff + (hi_eff - lo_eff) * (v / 100))
+
 
 def interpolate_position(
     state: float,
@@ -178,6 +229,7 @@ class PositionConverter:
         max_tilt_sun_only: bool,
         *,
         sun_valid: bool,
+        transform: str = VENETIAN_TILT_TRANSFORM_CLAMP,
     ) -> int:
         """Clamp a tilt value to the configured ``[min_tilt, max_tilt]`` range.
 
@@ -185,6 +237,15 @@ class PositionConverter:
         sun-derived tilt (``sun_valid=True``) and the DefaultHandler's
         non-sunset default tilt (``sun_valid=False``) both delegate here so the
         clamp policy lives in exactly one place.
+
+        The ``transform`` argument (issue #957) selects how the value is fitted
+        into the band. ``clamp`` (default) preserves every existing caller
+        byte-for-byte via the ``apply_limits`` delegation below. When
+        ``proportional`` is requested *and* the sun is being tracked, the full
+        0–100% demand is linearly remapped onto ``[min_tilt, max_tilt]`` instead
+        of flat-capped — see :func:`_proportional_remap`. The proportional path
+        only applies while ``sun_valid`` (the sun-tracking engine seam); the
+        default-tilt / non-sun path keeps the clamp semantics.
 
         Delegates to :meth:`apply_limits` — ``min_tilt_sun_only`` /
         ``max_tilt_sun_only`` map onto its ``apply_min`` / ``apply_max`` flags
@@ -202,11 +263,30 @@ class PositionConverter:
             max_tilt_sun_only: When True, the cap applies only while
                 ``sun_valid`` is True; when False it always applies.
             sun_valid: Whether the sun is currently tracked (direct sunlight).
+            transform: Output transform (issue #957). ``clamp`` (default)
+                flat-caps at the band edges; ``proportional`` linearly remaps
+                the full 0–100% demand onto ``[min_tilt, max_tilt]`` and only
+                takes effect while ``sun_valid``.
 
         Returns:
             Constrained tilt value (0-100).
 
         """
+        # Degenerate/reversed band guard (issue #957 nit): min_tilt and max_tilt
+        # have independent (0,100) ranges with no cross-field validation, so a
+        # reversed band (min > max) is reachable via misconfiguration. A
+        # proportional ramp over hi <= lo would descend (more sun → less tilt),
+        # diverging from clamp. Fall back to the clamp path so proportional and
+        # clamp behave identically here (predictably pinned to the band). None
+        # bounds map to lo=0/hi=100, so a None max is not degenerate.
+        _lo = 0 if min_tilt is None else min_tilt
+        _hi = 100 if max_tilt is None else max_tilt
+        if (
+            transform == VENETIAN_TILT_TRANSFORM_PROPORTIONAL
+            and sun_valid
+            and _hi > _lo
+        ):
+            return _proportional_remap(value, min_tilt, max_tilt)
         return PositionConverter.apply_limits(
             value,
             min_tilt,

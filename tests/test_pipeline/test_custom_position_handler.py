@@ -7,6 +7,7 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    ReasonCode,
 )
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
@@ -15,6 +16,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
+from custom_components.adaptive_cover_pro.reason_i18n import render_en
 
 from .conftest import make_snapshot
 
@@ -65,6 +67,7 @@ def _make_state(
     use_my: bool,
     *,
     slot: int = 1,
+    custom_name: str | None = None,
 ) -> CustomPositionSensorState:
     """Compact constructor for test sensor states."""
     return CustomPositionSensorState(
@@ -76,6 +79,7 @@ def _make_state(
         use_my=use_my,
         slot=slot,
         active_entity_ids=(entity_id,) if is_on else (),
+        custom_name=custom_name,
     )
 
 
@@ -137,9 +141,15 @@ class TestEvaluateNoMatchingSlot:
 
     def test_describe_skip_mentions_slot(self) -> None:
         snapshot = make_snapshot(custom_position_sensors=[])
-        skip = _handler(slot=2).describe_skip(snapshot)
+        skip = render_en(_handler(slot=2).describe_skip(snapshot))
         assert "#2" in skip
         assert "not active" in skip
+
+    def test_describe_skip_payload_names_slot(self) -> None:
+        snapshot = make_snapshot(custom_position_sensors=[])
+        payload = _handler(slot=2).describe_skip(snapshot)
+        assert payload.code == ReasonCode.SKIP_CUSTOM_NOT_ACTIVE
+        assert payload.params["slot"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +281,118 @@ class TestTriggerReason:
         result = _handler(position=40).evaluate(snapshot)
         assert result is not None
         assert "binary_sensor.wind, template" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# reason_payload — stable code + params (issue #882)
+# ---------------------------------------------------------------------------
+
+
+class TestReasonPayload:
+    """The migrated handler emits a stable Reason payload on every path."""
+
+    def test_slot_head_position_payload(self) -> None:
+        """An unnamed slot on the exact-position path nests a head_slot fragment."""
+        snapshot = _snapshot_with(
+            "binary_sensor.morning", is_on=True, position=70, slot=2
+        )
+        result = _handler(slot=2, position=70).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.CUSTOM_POSITION
+        assert result.reason_payload.params["position"] == 70
+        assert result.reason_payload.params["bypass_note"] == ""
+        head = result.reason_payload.params["head"]
+        assert head.code == ReasonCode.CUSTOM_HEAD_SLOT
+        assert head.params["slot"] == 2
+        # The trigger is a tuple of the active entity ids (scalars).
+        assert list(head.params["trigger"]) == ["binary_sensor.morning"]
+
+    def test_named_head_payload(self) -> None:
+        """A named slot nests a head_named fragment carrying the raw name."""
+        state = _make_state(
+            "binary_sensor.movie",
+            True,
+            40,
+            _DEFAULT_PRIORITY,
+            False,
+            False,
+            slot=3,
+            custom_name="Movie night",
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(slot=3, position=40).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        head = result.reason_payload.params["head"]
+        assert head.code == ReasonCode.CUSTOM_HEAD_NAMED
+        assert head.params["name"] == "Movie night"
+
+    def test_use_my_path_payload(self) -> None:
+        """The use-My path emits a custom.use_my payload."""
+        state = _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, True)
+        snapshot = make_snapshot(custom_position_sensors=[state], my_position_value=30)
+        result = _handler(position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        assert result.reason_payload.code == ReasonCode.CUSTOM_USE_MY
+        assert result.reason_payload.params["position"] == 30
+
+    def test_bypass_note_fragment_on_safety_slot(self) -> None:
+        """A safety-priority slot sets bypass_note to a bypass fragment."""
+        state = _make_state(
+            _ENTITY, True, 50, CUSTOM_POSITION_SAFETY_PRIORITY, False, False
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(
+            position=50, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+        ).evaluate(snapshot)
+        assert result is not None
+        assert result.reason_payload is not None
+        bypass = result.reason_payload.params["bypass_note"]
+        assert bypass.code == ReasonCode.FRAGMENT_BYPASS_NOTE
+
+    def test_trigger_tuple_includes_template_fragment(self) -> None:
+        """A sensor + template trigger nests the entity id and a template fragment."""
+        state = CustomPositionSensorState(
+            entity_ids=("binary_sensor.wind",),
+            is_on=True,
+            position=40,
+            priority=_DEFAULT_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            slot=1,
+            active_entity_ids=("binary_sensor.wind",),
+            template_active=True,
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(position=40).evaluate(snapshot)
+        assert result is not None
+        head = result.reason_payload.params["head"]
+        assert head.code == ReasonCode.CUSTOM_HEAD_SLOT
+        trigger = list(head.params["trigger"])
+        assert trigger[0] == "binary_sensor.wind"
+        assert trigger[1].code == ReasonCode.FRAGMENT_TRIGGER_TEMPLATE
+
+    def test_trigger_fallback_fragment_when_empty(self) -> None:
+        """A slot with no active sensors and no template uses the fallback fragment."""
+        state = CustomPositionSensorState(
+            entity_ids=(),
+            is_on=True,
+            position=40,
+            priority=_DEFAULT_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            slot=1,
+            active_entity_ids=(),
+            template_active=False,
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(position=40).evaluate(snapshot)
+        assert result is not None
+        head = result.reason_payload.params["head"]
+        trigger = head.params["trigger"]
+        assert trigger.code == ReasonCode.FRAGMENT_TRIGGER_FALLBACK
 
 
 # ---------------------------------------------------------------------------
@@ -884,3 +1006,221 @@ class TestCustomPositionActiveSlotName:
             position=50, control_method=ControlMethod.SOLAR, reason="solar"
         )
         assert result.custom_position_active_slot_name is None
+
+
+# ---------------------------------------------------------------------------
+# Per-slot custom name (issue #867) — overrides the label everywhere.
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPositionCustomName:
+    """An optional per-slot ``name`` overrides the reason/label, else falls
+    back to today's exact behavior (byte-identical when unset).
+    """
+
+    def test_reason_uses_custom_name_when_set(self) -> None:
+        """A named slot's reason starts with '<name> active' and still shows the position."""
+        state = _make_state(
+            "binary_sensor.movie",
+            True,
+            40,
+            _DEFAULT_PRIORITY,
+            False,
+            False,
+            slot=3,
+            custom_name="Movie night",
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(slot=3, position=40).evaluate(snapshot)
+        assert result is not None
+        assert result.reason.startswith("Movie night active")
+        assert "40%" in result.reason
+        assert result.custom_position_active_slot_name == "Movie night"
+
+    def test_reason_falls_back_when_name_absent(self) -> None:
+        """An unnamed slot keeps today's '#N (entity) — position X%' reason exactly."""
+        snapshot = _snapshot_with(
+            "binary_sensor.morning", is_on=True, position=70, slot=2
+        )
+        result = _handler(slot=2, position=70).evaluate(snapshot)
+        assert result is not None
+        assert "#2" in result.reason
+        assert "binary_sensor.morning" in result.reason
+        assert "70%" in result.reason
+        assert result.custom_position_active_slot_name is None
+
+    def test_template_only_named_slot_surfaces_name_on_attribute(self) -> None:
+        """A named template-only slot surfaces its name as the active-slot-name
+        attribute — today (unnamed) that attribute would be None.
+        """
+        state = CustomPositionSensorState(
+            entity_ids=(),
+            is_on=True,
+            position=40,
+            priority=_DEFAULT_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            slot=1,
+            active_entity_ids=(),
+            template_active=True,
+            custom_name="Away mode",
+        )
+        snapshot = make_snapshot(custom_position_sensors=[state])
+        result = _handler(position=40).evaluate(snapshot)
+        assert result is not None
+        assert result.custom_position_active_slot_name == "Away mode"
+        assert result.reason.startswith("Away mode active")
+
+    def test_named_use_my_path_uses_name_in_reason(self) -> None:
+        """A named slot on the use-My path also uses '<name> active' in the reason."""
+        state = _make_state(
+            _ENTITY,
+            True,
+            50,
+            _DEFAULT_PRIORITY,
+            False,
+            True,
+            custom_name="Nap time",
+        )
+        snapshot = make_snapshot(
+            custom_position_sensors=[state],
+            my_position_value=30,
+        )
+        result = _handler(position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.reason.startswith("Nap time active")
+        assert result.custom_position_active_slot_name == "Nap time"
+
+
+# ---------------------------------------------------------------------------
+# Axis-constraint deferral — issue #943
+#
+# The deferral generalizes from "min_mode and not use_my" to "position_mode is
+# not FIXED and not use_my". Every pre-#943 config keeps its exact outcome; the
+# new constraint modes defer for the same reason min_mode always has — the
+# registry composes them onto whichever handler actually wins.
+# ---------------------------------------------------------------------------
+
+
+def _constraint_state(
+    *,
+    position: int | None = None,
+    min_mode: bool = False,
+    use_my: bool = False,
+    position_max: int | None = None,
+    tilt_min: int | None = None,
+    tilt_max: int | None = None,
+    tilt: int | None = None,
+    tilt_only: bool = False,
+) -> CustomPositionSensorState:
+    return CustomPositionSensorState(
+        entity_ids=(_ENTITY,),
+        is_on=True,
+        position=position,
+        priority=_DEFAULT_PRIORITY,
+        min_mode=min_mode,
+        use_my=use_my,
+        tilt=tilt,
+        tilt_only=tilt_only,
+        slot=1,
+        active_entity_ids=(_ENTITY,),
+        position_max=position_max,
+        tilt_min=tilt_min,
+        tilt_max=tilt_max,
+    )
+
+
+class TestConstraintModeDeferral:
+    """Non-FIXED position modes defer so the registry can compose them."""
+
+    def test_max_mode_slot_defers(self) -> None:
+        """A position-ceiling slot must not claim an exact position."""
+        snap = make_snapshot(
+            custom_position_sensors=[_constraint_state(position_max=60)]
+        )
+        assert _handler().evaluate(snap) is None
+
+    def test_range_mode_slot_defers(self) -> None:
+        """A floor+ceiling slot defers, exactly as a floor-only slot does."""
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _constraint_state(position=30, min_mode=True, position_max=70)
+            ]
+        )
+        assert _handler().evaluate(snap) is None
+
+    def test_none_mode_slot_defers(self) -> None:
+        """A tilt-bound-only slot makes no position claim at all."""
+        snap = make_snapshot(custom_position_sensors=[_constraint_state(tilt_min=50)])
+        assert _handler().evaluate(snap) is None
+
+    def test_fixed_mode_slot_still_claims(self) -> None:
+        """The exact-position path is unchanged."""
+        snap = make_snapshot(custom_position_sensors=[_constraint_state(position=50)])
+        result = _handler(position=50).evaluate(snap)
+        assert result is not None
+        assert result.position == 50
+
+    def test_min_mode_slot_still_defers(self) -> None:
+        """Parity: today's floor-mode deferral is unchanged."""
+        snap = make_snapshot(
+            custom_position_sensors=[_constraint_state(position=60, min_mode=True)]
+        )
+        assert _handler().evaluate(snap) is None
+
+    def test_use_my_with_min_mode_still_claims(self) -> None:
+        """Parity: the My path ignores floor semantics and claims (unchanged)."""
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _constraint_state(position=60, min_mode=True, use_my=True)
+            ],
+            my_position_value=42,
+        )
+        result = _handler().evaluate(snap)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.position == 42
+
+    def test_tilt_bounds_do_not_stop_a_fixed_position_claim(self) -> None:
+        """A slot may fix a position and bound the tilt at the same time."""
+        snap = make_snapshot(
+            custom_position_sensors=[_constraint_state(position=50, tilt_min=50)]
+        )
+        result = _handler(position=50).evaluate(snap)
+        assert result is not None
+        assert result.position == 50
+
+
+class TestUseMyWithoutAPosition:
+    """``use_my`` bypasses the deferral — it must not claim a phantom 0.
+
+    Audit finding 3: a slot with a trigger, ``use_my`` on, no stored position
+    and a cover with no My value fell through to the handler's position
+    sentinel and silently closed the cover.
+    """
+
+    def _snap(self, *, my_position_value=None, position=None):
+        return make_snapshot(
+            custom_position_sensors=[
+                _constraint_state(position=position, use_my=True, tilt_min=50)
+            ],
+            my_position_value=my_position_value,
+        )
+
+    def test_no_my_value_and_no_position_defers(self) -> None:
+        """Nothing to claim → defer, rather than close the cover."""
+        assert _handler(position=None).evaluate(self._snap()) is None
+
+    def test_no_my_value_falls_back_to_a_stored_position(self) -> None:
+        """Parity: with a position configured the fallback is unchanged."""
+        result = _handler(position=45).evaluate(self._snap(position=45))
+        assert result is not None
+        assert result.position == 45
+
+    def test_my_value_still_claims_without_a_stored_position(self) -> None:
+        """The My path itself is unaffected by the missing position."""
+        result = _handler(position=None).evaluate(self._snap(my_position_value=42))
+        assert result is not None
+        assert result.position == 42
+        assert result.use_my_position is True

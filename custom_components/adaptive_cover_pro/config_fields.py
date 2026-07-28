@@ -31,7 +31,7 @@ or ``cover_types`` — those import *this*.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -50,10 +50,18 @@ from .const import (
     CONF_AWNING_PIVOT_OFFSET,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
+    CONF_CLIMATE_TEMP_HOLD_TIME,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
+    CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+    CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+    CONF_DAY_NIGHT_OPACITY_SHEER,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
@@ -65,6 +73,8 @@ from .const import (
     CONF_DRY_RUN,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
+    GLARE_ZONE_SLOT_NUMBERS,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_ENABLE_MY_POSITION_ENTITIES,
@@ -87,21 +97,25 @@ from .const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
+    CONF_MAX_SLAT_ANGLE,
     CONF_MAX_TILT,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
@@ -117,6 +131,7 @@ from .const import (
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
@@ -135,10 +150,22 @@ from .const import (
     CONF_SUNSET_TIME_ENTITY,
     CONF_ROOF_HEIGHT_ABOVE,
     CONF_ROOF_PITCH,
+    CONF_SLIDING_ENABLE_SHADE_AREA,
+    CONF_SLIDING_POINT1_X,
+    CONF_SLIDING_POINT1_Y,
+    CONF_SLIDING_POINT2_X,
+    CONF_SLIDING_POINT2_Y,
+    CONF_SLIDING_SLIDE_DIRECTION,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
@@ -150,9 +177,10 @@ from .const import (
     CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
-    CONF_VENETIAN_TILT_SAFETY_MARGIN,
+    CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_VENETIAN_TILT_TRANSFORM,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -166,6 +194,8 @@ from .const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE,
     CONF_WEATHER_STATE,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -177,10 +207,13 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     CUSTOM_POSITION_SLOTS,
     DEBUG_CATEGORIES_ALL,
+    DEFAULT_CLIMATE_TEMP_HOLD_TIME,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
+    DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
@@ -194,6 +227,7 @@ from .const import (
     DEFAULT_WINDOW_AZIMUTH,
     MAX_DEBUG_EVENT_BUFFER_SIZE,
     MAX_TRANSIT_TIMEOUT,
+    MANUAL_OVERRIDE_DURATION_MODES,
     MIN_TRANSIT_TIMEOUT,
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
@@ -222,6 +256,10 @@ SECTION_CUSTOM_POSITION = "custom_position"
 SECTION_MOTION_OVERRIDE = "motion_override"
 SECTION_PIPELINE_PRIORITIES = "pipeline_priorities"
 SECTION_DEBUG = "debug"
+# Cover-group-only fields (issue #790). Not in COMMON_SECTION_ORDER, so the
+# section never renders in a cover's options flow — it exists so group
+# numeric fields feed OPTION_RANGES / FIELD_VALIDATORS like every other one.
+SECTION_GROUP = "group"
 
 
 # =============================================================================
@@ -828,6 +866,18 @@ _MANUAL_OVERRIDE_SPECS = _spec(
         make_selector=_const(selector.DurationSelector),
     ),
     FieldSpec(
+        CONF_MANUAL_OVERRIDE_DURATION_MODE,
+        SECTION_MANUAL_OVERRIDE,
+        ValidatorKind.SELECT,
+        default=DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
+        select_options=MANUAL_OVERRIDE_DURATION_MODES,
+        make_selector=_select(
+            *MANUAL_OVERRIDE_DURATION_MODES,
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key=CONF_MANUAL_OVERRIDE_DURATION_MODE,
+        ),
+    ),
+    FieldSpec(
         CONF_MANUAL_OVERRIDE_RESET,
         SECTION_MANUAL_OVERRIDE,
         ValidatorKind.BOOL,
@@ -1006,6 +1056,18 @@ def _custom_position_base_specs() -> list[FieldSpec]:
     """Per-slot base custom-position fields (no tilt)."""
     specs: list[FieldSpec] = []
     for slot in CUSTOM_POSITION_SLOTS.values():
+        # Optional per-slot label (issue #867): overrides the reason string,
+        # decision_trace attribute, and card label everywhere when set.
+        # Free-form text — no numeric range, cleared like `template`.
+        specs.append(
+            FieldSpec(
+                slot["name"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.NONE,
+                clearable=True,
+                make_selector=_const(selector.TextSelector),
+            )
+        )
         # Legacy single-sensor key: still settable (rollback mirror target) but
         # superseded by the `sensors` list in the config-flow schema.
         specs.append(
@@ -1087,6 +1149,18 @@ def _custom_position_base_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
+        # Position ceiling (issue #943) — the mirror of `min_mode`'s floor.
+        # Absent = off, so no DEFAULT_* constant exists for it.
+        specs.append(
+            FieldSpec(
+                slot["position_max"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_CUSTOM_POSITION,
+                clearable=True,
+                make_selector=_const(position_slider),
+            )
+        )
     return specs
 
 
@@ -1113,6 +1187,19 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
+        # Tilt bounds (issue #943). Absent = off. `tilt_only` (a FIXED tilt
+        # claim) wins over these — normalized once in the snapshot builder.
+        for sub in ("tilt_min", "tilt_max"):
+            specs.append(
+                FieldSpec(
+                    slot[sub],
+                    SECTION_CUSTOM_POSITION,
+                    ValidatorKind.RANGE,
+                    rng=const._RANGE_TILT,
+                    clearable=True,
+                    make_selector=_const(position_slider),
+                )
+            )
     specs.append(
         FieldSpec(
             CONF_DEFAULT_TILT,
@@ -1136,6 +1223,49 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
     return specs
 
 
+def _custom_position_slot_fields(
+    keys: Mapping[str, str], *, include_tilt: bool
+) -> dict:
+    """Build one custom-position slot's schema markers, keyed by *keys*.
+
+    ``keys`` maps each sub-key (``name``/``sensors``/…) to the wire key it
+    should render under: a ``CUSTOM_POSITION_SLOTS[n]`` mapping for the
+    slot-interleaved flatten form, or ``CUSTOM_POSITION_FORM_KEYS`` for the
+    generic single-slot page (issue #945). One place builds a slot either way.
+    """
+    schema: dict = {}
+    schema[vol.Optional(keys["name"])] = selector.TextSelector()
+    schema[vol.Optional(keys["sensors"], default=[])] = binary_on_selector(
+        multiple=True
+    )
+    schema[vol.Optional(keys["template"])] = selector.TemplateSelector()
+    schema[
+        vol.Optional(keys["template_mode"], default=DEFAULT_TEMPLATE_COMBINE_MODE)
+    ] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[m.value for m in const.TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        )
+    )
+    schema[vol.Optional(keys["position"])] = position_slider()
+    schema[vol.Optional(keys["priority"])] = priority_slider()
+    schema[vol.Optional(keys["min_mode"], default=False)] = selector.BooleanSelector()
+    schema[vol.Optional(keys["use_my"], default=False)] = selector.BooleanSelector()
+    # Axis constraints (issue #943). The position ceiling always renders; the
+    # tilt bounds ride the same `include_tilt` gate as `tilt` / `tilt_only`,
+    # which the caller derives from the policy — never from a cover-type string.
+    schema[vol.Optional(keys["position_max"])] = position_slider()
+    if include_tilt:
+        schema[vol.Optional(keys["tilt"])] = position_slider()
+        schema[vol.Optional(keys["tilt_only"], default=False)] = (
+            selector.BooleanSelector()
+        )
+        schema[vol.Optional(keys["tilt_min"])] = position_slider()
+        schema[vol.Optional(keys["tilt_max"])] = position_slider()
+    return schema
+
+
 def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     """Build the custom-position section schema (slot-interleaved).
 
@@ -1147,34 +1277,25 @@ def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     """
     schema: dict = {}
     for slot in CUSTOM_POSITION_SLOTS.values():
-        schema[vol.Optional(slot["sensors"], default=[])] = binary_on_selector(
-            multiple=True
-        )
-        schema[vol.Optional(slot["template"])] = selector.TemplateSelector()
-        schema[
-            vol.Optional(slot["template_mode"], default=DEFAULT_TEMPLATE_COMBINE_MODE)
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[m.value for m in const.TemplateCombineMode],
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="template_combine_mode",
-            )
-        )
-        schema[vol.Optional(slot["position"])] = position_slider()
-        schema[vol.Optional(slot["priority"])] = priority_slider()
-        schema[vol.Optional(slot["min_mode"], default=False)] = (
-            selector.BooleanSelector()
-        )
-        schema[vol.Optional(slot["use_my"], default=False)] = selector.BooleanSelector()
-        if include_tilt:
-            schema[vol.Optional(slot["tilt"])] = position_slider()
-            schema[vol.Optional(slot["tilt_only"], default=False)] = (
-                selector.BooleanSelector()
-            )
+        schema.update(_custom_position_slot_fields(slot, include_tilt=include_tilt))
     if include_tilt:
         schema[vol.Optional(CONF_DEFAULT_TILT)] = position_slider()
         schema[vol.Optional(CONF_SUNSET_TILT)] = position_slider()
     return vol.Schema(schema)
+
+
+def custom_position_slot_schema(*, include_tilt: bool = False) -> vol.Schema:
+    """Single-slot custom-position schema for the per-slot options page (#945).
+
+    Renders exactly one slot under the generic ``CUSTOM_POSITION_FORM_KEYS``
+    (so the translation block is authored once). The global default/sunset tilt
+    fields are intentionally absent — they get their own venetian sub-menu entry.
+    """
+    return vol.Schema(
+        _custom_position_slot_fields(
+            const.CUSTOM_POSITION_FORM_KEYS, include_tilt=include_tilt
+        )
+    )
 
 
 # Built-in handler priority overrides. One slider per configurable handler, in
@@ -1307,6 +1428,11 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         SECTION_WEATHER_OVERRIDE,
     ),
+    *_condition_template_specs(
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+        SECTION_WEATHER_OVERRIDE,
+    ),
     FieldSpec(
         CONF_WEATHER_SEVERE_SENSORS,
         SECTION_WEATHER_OVERRIDE,
@@ -1405,6 +1531,35 @@ _LIGHT_CLOUD_SPECS = _spec(
         ValidatorKind.NONE,
         default=DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     ),
+    # Smoothing controls (issue #864). Hold-time is a bounded numeric
+    # (RANGE → auto-registers in OPTION_RANGES + FIELD_VALIDATORS). The three
+    # release thresholds mirror the activate thresholds above: number-or-template
+    # (NONE, template-capable), clearable, blank = hysteresis off.
+    FieldSpec(
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_CLOUD_SUPPRESSION_HOLD_TIME,
+        default=DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+    ),
+    FieldSpec(
+        CONF_LUX_RELEASE_THRESHOLD,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_IRRADIANCE_RELEASE_THRESHOLD,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+        SECTION_LIGHT_CLOUD,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
 )
 
 _TEMPERATURE_CLIMATE_SPECS = _spec(
@@ -1476,6 +1631,61 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
         ValidatorKind.BOOL,
         default=False,
     ),
+    # Extreme-heat threshold (issue #766): templatable, clearable, NO default —
+    # absent = feature off. Reuses the shared temperature range so OPTION_RANGES
+    # auto-derives the (min, max) bound.
+    FieldSpec(
+        CONF_TEMP_EXTREME_HEAT,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TEMPERATURE,
+        clearable=True,
+    ),
+    # Extreme-heat hold position: clearable, NO default — absent falls back to
+    # DEFAULT_EXTREME_HEAT_POSITION at runtime; an explicit 0 is preserved.
+    FieldSpec(
+        CONF_EXTREME_HEAT_POSITION,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_EXTREME_HEAT_POSITION,
+        clearable=True,
+    ),
+    # Temperature smoothing controls (issue #917) — the climate analogue of the
+    # cloud smoothing specs above. Hold-time is a bounded numeric (RANGE →
+    # auto-registers in OPTION_RANGES + FIELD_VALIDATORS). The four release
+    # edges mirror the activate thresholds: number-or-template (NONE,
+    # template-capable), clearable, blank = hysteresis off.
+    FieldSpec(
+        CONF_CLIMATE_TEMP_HOLD_TIME,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_CLIMATE_TEMP_HOLD_TIME,
+        default=DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+    ),
+    FieldSpec(
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+    FieldSpec(
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
 )
 
 
@@ -1493,6 +1703,8 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
 def _blind_spot_specs() -> list[FieldSpec]:
     specs: list[FieldSpec] = []
     for keys in const.BLIND_SPOT_SLOTS.values():
+        # Legacy FOV-relative edges (migration-read-only) — kept in the registry
+        # so OPTION_RANGES/FIELD_VALIDATORS still bound the read-only keys.
         specs.append(
             FieldSpec(
                 keys["left"],
@@ -1507,6 +1719,23 @@ def _blind_spot_specs() -> list[FieldSpec]:
                 SECTION_BLIND_SPOT,
                 ValidatorKind.RANGE,
                 rng=const._RANGE_BLIND_SPOT_RIGHT,
+            )
+        )
+        # Signed-gamma edges (issue #247) — the primary editable keys.
+        specs.append(
+            FieldSpec(
+                keys["left_gamma"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_LEFT_GAMMA,
+            )
+        )
+        specs.append(
+            FieldSpec(
+                keys["right_gamma"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_RIGHT_GAMMA,
             )
         )
         specs.append(
@@ -1616,6 +1845,88 @@ _GEOMETRY_SPECS = _spec(
         ValidatorKind.RANGE,
         rng=const._RANGE_ROOF_HEIGHT_ABOVE,
     ),
+    # Louvered-roof physical max slat angle (#830 follow-up). The dynamic
+    # selector is built by the policy's geometry_schema; this spec single-sources
+    # the bounds / validator entry for OPTION_RANGES + FIELD_VALIDATORS.
+    FieldSpec(
+        CONF_MAX_SLAT_ANGLE,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_MAX_SLAT_ANGLE,
+    ),
+    # Sliding-curtain shade-area geometry (#829, Part 2). Dynamic selectors are
+    # built by the policy's geometry_schema; these specs single-source the
+    # bounds / validator entries for OPTION_RANGES + FIELD_VALIDATORS.
+    FieldSpec(
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        SECTION_GEOMETRY,
+        ValidatorKind.BOOL,
+    ),
+    FieldSpec(
+        CONF_SLIDING_SLIDE_DIRECTION,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.SLIDING_SLIDE_DIRECTIONS,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT1_X,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_X,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT1_Y,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_Y,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT2_X,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_X,
+    ),
+    FieldSpec(
+        CONF_SLIDING_POINT2_Y,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_SLIDING_POINT_Y,
+    ),
+    # Day/Night shade fabric opacity + blackout-engage threshold (#993). Dynamic
+    # sliders are built by the policy's geometry_schema; these specs single-source
+    # the bounds / validator entries for OPTION_RANGES + FIELD_VALIDATORS.
+    FieldSpec(
+        CONF_DAY_NIGHT_OPACITY_SHEER,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_DAY_NIGHT_OPACITY,
+    ),
+    FieldSpec(
+        CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_DAY_NIGHT_OPACITY,
+    ),
+    FieldSpec(
+        CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    ),
+    FieldSpec(
+        CONF_DAY_NIGHT_CONTROL_MODEL,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.DAY_NIGHT_CONTROL_MODELS,
+    ),
+    # Model C middle-rail entity picker (a single cover entity). Rendered by the
+    # day/night geometry schema; single-sources its validator entry here.
+    FieldSpec(
+        CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+        SECTION_GEOMETRY,
+        ValidatorKind.ENTITY,
+        make_selector=_entity("cover"),
+    ),
     FieldSpec(
         CONF_TILT_DEPTH,
         SECTION_GEOMETRY,
@@ -1632,7 +1943,19 @@ _GEOMETRY_SPECS = _spec(
         CONF_TILT_MODE,
         SECTION_GEOMETRY,
         ValidatorKind.SELECT,
-        select_options=("mode1", "mode2"),
+        select_options=("mode1", "mode2", "specify_angles"),
+    ),
+    FieldSpec(
+        CONF_TILT_ANGLE_0,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_ANGLE_0,
+    ),
+    FieldSpec(
+        CONF_TILT_ANGLE_100,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_ANGLE_100,
     ),
     FieldSpec(
         CONF_MAX_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MAX_TILT
@@ -1641,10 +1964,10 @@ _GEOMETRY_SPECS = _spec(
         CONF_MIN_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MIN_TILT
     ),
     FieldSpec(
-        CONF_VENETIAN_TILT_SAFETY_MARGIN,
+        CONF_TILT_SAFETY_MARGIN,
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
-        rng=const._RANGE_VENETIAN_TILT_SAFETY_MARGIN,
+        rng=const._RANGE_TILT_SAFETY_MARGIN,
     ),
     FieldSpec(
         CONF_VENETIAN_POST_SETTLE_HOLD,
@@ -1663,6 +1986,12 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.SELECT,
         select_options=const.VENETIAN_TILT_SKIP_MODES,
+    ),
+    FieldSpec(
+        CONF_VENETIAN_TILT_TRANSFORM,
+        SECTION_GEOMETRY,
+        ValidatorKind.SELECT,
+        select_options=const.VENETIAN_TILT_TRANSFORMS,
     ),
     FieldSpec(
         CONF_VENETIAN_TILT_RESET_THRESHOLD,
@@ -1705,7 +2034,7 @@ _GLARE_ZONE_SPECS = _spec(
             ValidatorKind.RANGE,
             rng=rng,
         )
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis, rng in (
             ("x", const._RANGE_GLARE_ZONE_X),
             ("y", const._RANGE_GLARE_ZONE_Y),
@@ -1719,6 +2048,23 @@ _GLARE_ZONE_SPECS = _spec(
 # =============================================================================
 # Registry assembly
 # =============================================================================
+
+_GROUP_SPECS = _spec(
+    FieldSpec(
+        const.CONF_GROUP_STAGGER_DELAY,
+        SECTION_GROUP,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_GROUP_STAGGER,
+        default=const.DEFAULT_GROUP_STAGGER_DELAY,
+        make_selector=_number(
+            minimum=const._RANGE_GROUP_STAGGER[0],
+            maximum=const._RANGE_GROUP_STAGGER[1],
+            step=0.5,
+            unit="s",
+        ),
+    ),
+)
+
 
 _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _GEOMETRY_SPECS,
@@ -1739,6 +2085,7 @@ _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _MOTION_OVERRIDE_SPECS,
     _PIPELINE_PRIORITY_SPECS,
     _DEBUG_SPECS,
+    _GROUP_SPECS,
 )
 
 
@@ -1771,6 +2118,37 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
 OPTION_RANGES: dict[str, tuple[float, float]] = _build_option_ranges()
 
 
+def _build_time_option_keys() -> frozenset[str]:
+    return frozenset(
+        s.key for s in FIELD_SPECS.values() if s.validator is ValidatorKind.TIME
+    )
+
+
+#: Keys whose stored value is an ``HH:MM:SS`` string (``const.TIME_STRING_RE``).
+#: Derived from the registry, so declaring a ``ValidatorKind.TIME`` field is
+#: enough for ``services.import_service`` to validate it (issue #1049).
+#: ``services.options_service`` does NOT read this — its ``FIELD_VALIDATORS``
+#: map is hand-written, so a new time field must be added there by hand or
+#: ``set_options`` will reject it as an unknown option. The two are kept in step
+#: by ``test_every_time_field_has_a_set_options_validator``, not by derivation.
+TIME_OPTION_KEYS: frozenset[str] = _build_time_option_keys()
+
+
+# Template-support audit (issue #974). The condition-template surface was
+# extended to the severe-weather override and the manual-override input trigger.
+# Deliberately EXCLUDED from template support, and why:
+#   - Position outputs (override/custom/sunset/cloudy positions, tilt targets):
+#     engine outputs, not conditions — no truthy/threshold semantics.
+#   - Timeouts / hold-times / transit / post-settle: durations, not conditions.
+#   - Delta / economy / endpoint gates and structural toggles: control-shape
+#     flags, no condition semantics to template.
+#   - Geometry (azimuth, FOV, distances, slat depth, angles): physical config.
+#   - ``weather_state``: already subsumed by ``is_sunny_template``.
+# DEFERRED to a follow-up issue: min_elevation / max_elevation as a
+# number-or-template (a numeric TEMPLATABLE flavour, not a boolean condition) —
+# it touches sensor/overview/diagnostics/export display surfaces the two #974
+# additions do not, so it is scoped out here.
+#
 #: Threshold fields that accept a Home Assistant Jinja2 template (rendered to a
 #: number once per coordinator cycle) in place of a fixed value (issue #577).
 #: Single source consumed by the config-flow selector builder
@@ -1782,12 +2160,21 @@ TEMPLATABLE_KEYS: frozenset[str] = frozenset(
         CONF_LUX_THRESHOLD,
         CONF_IRRADIANCE_THRESHOLD,
         CONF_CLOUD_COVERAGE_THRESHOLD,
+        CONF_LUX_RELEASE_THRESHOLD,
+        CONF_IRRADIANCE_RELEASE_THRESHOLD,
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
         CONF_TEMP_LOW,
         CONF_TEMP_HIGH,
+        CONF_TEMP_EXTREME_HEAT,
         CONF_OUTSIDE_THRESHOLD,
         CONF_WEATHER_WIND_SPEED_THRESHOLD,
         CONF_WEATHER_RAIN_THRESHOLD,
         CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+        # Climate-mode temperature smoothing release edges (issue #917).
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     }
 )
 

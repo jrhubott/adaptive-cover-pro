@@ -5,164 +5,39 @@ description: Analyze an Adaptive Cover Pro diagnostics JSON file and produce a t
 
 # ACP Diagnose
 
-Analyze a diagnostics JSON file downloaded from Home Assistant (Settings → Devices & Services → Adaptive Cover Pro → ⋮ → Download diagnostics) and produce a structured triage report.
+Analyze a diagnostics JSON file downloaded from Home Assistant (Settings → Devices & Services → Adaptive Cover Pro → ⋮ → Download diagnostics) by running the **same declarative rules engine** that powers the in-product Troubleshoot step, then narrating the findings.
+
+The prose checklist this skill used to carry is gone: the checks now live in the `TRIAGE_RULES` table in `custom_components/adaptive_cover_pro/diagnostics/triage.py`, and `scripts/triage_json.py` runs them offline. **The same table drives the in-product troubleshoot step AND this offline triage** — so a gap in one is a gap in both, and closing it means adding a rule row, not editing this skill.
 
 ## How to Execute
 
-When the user provides a diagnostics JSON file (path, paste, or attachment):
+When the user provides a diagnostics JSON file (path or attachment):
 
-1. Read the file with the Read tool (if a path is given) or parse it from the conversation.
-2. Walk through the checklist below in order.
-3. Produce a report in the Output Format below.
+1. **Run the engine.** From the repo root, with the dev virtualenv (the package import pulls Home Assistant, which is not on the system interpreter):
+
+   ```bash
+   venv/bin/python scripts/triage_json.py <path-to-diagnostics.json>
+   ```
+
+   Add `--latest-version <X.Y.Z>` when you know the newest release — it enables the `STALE_VERSION` check (offline it cannot fetch the latest release itself). Add `--lang de` / `--lang fr` to render findings in German or French.
+
+2. **Narrate each finding.** For every line the engine printed, restate it in plain English for the user and include its wiki deep link (the script prints one per finding). Lead with the criticals (🛑), then warnings (⚠️), then info (ℹ️).
+
+3. **Investigate anything the engine cannot explain.** If the user's symptom is not covered by any finding, read the relevant sections of the diagnostics JSON directly (`decision_trace`, `control_status`, `cover_commands`, `last_skipped_action`, `sun_validity`, `climate_conditions`) and reason about it by hand.
+
+   **An unexplained symptom is a missing rule row.** When you find yourself hand-explaining a class of problem the engine did not flag, that is the signal to add a rule — follow [Developer Triage Rules](https://github.com/jrhubott/adaptive-cover-pro/wiki/Developer-Triage-Rules) (four edits: one rule row, one English template + `en.json` leaf, one JSON leaf per language, one test). Offer to file an issue or open that change.
 
 If no file is provided, ask: "Please share the diagnostics JSON (download from HA: Settings → Devices & Services → Adaptive Cover Pro → ⋮ → Download diagnostics)."
 
----
+## Offline seam — what the engine cannot see in a download
 
-## Analysis Checklist
+The diagnostics download carries neither per-entity **capabilities** nor the policy-derived **axis requirements** (both are built live inside the config flow), so two config rules cannot fire offline:
 
-Work through each section in order. Missing sections = "not reported" (older firmware). Never error on absent keys.
+- `COVER_NOT_READY` (rule 8a) — a cover reporting no capabilities. Its runtime twin `ENTITY_UNAVAILABLE` (8b) _does_ fire offline, reading `covers[*].available`.
+- `COVER_FEATURE_MISMATCH` (rule 13) — a cover missing an axis its type needs.
 
-### 1. Sanity / Version
+And `STALE_VERSION` (rule 24) fires only when you pass `--latest-version`. If a user's problem is a capability mismatch or an out-of-date install, check those by hand — the offline run will not raise them.
 
-Extract from `diagnostics.meta` (may be absent on older builds):
+## Output
 
-- `integration_version` — note it
-- `cover_type` — note it
-- `coordinator_update.last_update_success` — if `false` → **CRITICAL**
-- `coordinator_update.last_exception` — if non-null → **CRITICAL**, include the repr
-- `coordinator_update.update_interval_seconds` — flag if < 30 or > 3600 as **WARNING**
-- `coordinator_update.last_update_success_time` — note it
-
-### 2. Control Status
-
-Extract `diagnostics.control_status` and `diagnostics.control_state_reason`.
-
-| Status                    | Severity | Message                                                                                            |
-| ------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `automatic_control_off`   | INFO     | "Automation is paused (Auto Control switch is off)"                                                |
-| `manual_override`         | INFO     | Cross-reference `manual_override_state.entries` — list which covers, started_at, remaining_seconds |
-| `force_override_active`   | INFO     | "Force override active — check which binary sensor is on: {force_override_sensors}"                |
-| `weather_override_active` | WARNING  | "Weather override active — covers held at safe position"                                           |
-| `motion_timeout`          | INFO     | "Motion timeout active"                                                                            |
-| `sun_not_visible`         | INFO     | Report `sun_validity` details: valid, valid_elevation, in_blind_spot, sunset_window_active         |
-| `outside_time_window`     | INFO     | Report configured start/end vs `last_updated`                                                      |
-| `active`                  | OK       | "Normal solar tracking"                                                                            |
-
-### 3. Decision Trace
-
-Extract `diagnostics.decision_trace` (list of `{handler, matched, reason, position}`).
-
-- Find the first entry where `matched == true` → the **winning handler**
-- For every entry with higher list-index priority that returned `matched == false`, summarize its skip reason in one line
-- Flag **unexpected wins**:
-  - `default` handler wins but `sun_validity.valid == true` and `sun_validity.valid_elevation == true` → likely a config issue (azimuth/FOV mismatch)
-  - `manual_override` wins but user reports they haven't touched the cover → investigate `manual_override_state`
-  - `weather` wins but no weather sensors are configured → stale state
-
-If `decision_trace` is empty or absent → note "Decision trace not available (upgrade to v2.16.0+)".
-
-### 4. Cover Command Health
-
-Extract `diagnostics.cover_commands` (dict of entity_id → snapshot).
-
-For each entity:
-
-- `gave_up == true` → **CRITICAL**: "cover.X stopped accepting commands after repeated retries — check HA logs for service call errors"
-- `retry_count > 2` → **WARNING**: "cover.X has {N} retries outstanding"
-- `wait_for_target == true` and `target_call` set → INFO: "cover.X waiting for position {target_call} to be confirmed"
-- `safety_target != null` → NOTE: "cover.X has a safety override target of {safety_target}%"
-- `in_manual_override_set == true` → NOTE: "cover.X is in the manual override set inside CoverCommandService"
-
-### 5. Position / Skip Analysis
-
-Extract `diagnostics.last_skipped_action`.
-
-- `reason == "delta_too_small"`:
-  - Report `position_delta` vs `delta_position_threshold`
-  - If delta is within 2 of threshold → suggest lowering the delta threshold
-- `reason == "time_delta_too_small"`:
-  - Report `elapsed_minutes` vs `time_threshold_minutes`
-- `reason == "manual_override"` → cross-reference with control status
-- `reason == "integration_disabled"` → integration is disabled, nothing will move
-- `reason == "auto_control_off"` → same as `automatic_control_off` status
-
-Also check `diagnostics.position_delta_from_last_action` and `diagnostics.seconds_since_last_action` for context.
-
-### 6. Configuration Sanity
-
-Extract `diagnostics.configuration` and `config_options`.
-
-Flag these combinations:
-
-- `enable_min_position == false` AND `min_position` is set and > 0 → NOTE: "min_position is configured but enforcement is always-on (not sun-tracking-only). Set enable_min_position=true if you only want it during sun tracking."
-- `inverse_state == true` AND `cover_type == "cover_awning"` → NOTE: unusual combination, confirm intentional
-- `force_override_sensors` is non-empty → verify sensors exist by noting them; flag if `force_override_active` is false in pipeline but the status says active (stale state)
-- `motion_sensors` is non-empty but `motion_detected == false` and `motion_timeout_active == false` → motion configured but currently inactive (normal; just note)
-- `interpolation == true` → note it influences final position vs calculated_position
-
-### 7. Climate (only when `climate_mode == true`)
-
-Extract `diagnostics.climate_control_method`, `active_temperature`, `temperature_details`, `climate_strategy`, `climate_conditions`.
-
-- Report the active strategy and current temperature
-- If `temperature_details.inside_temperature == null` and climate mode is on → WARNING: "Climate mode is on but inside temperature sensor is not returning a value"
-- Report whether is_summer/is_winter/is_presence flags are set as expected
-
----
-
-## Output Format
-
-```markdown
-## Adaptive Cover Pro — Diagnostics Report
-
-**Integration:** {version} · **Cover type:** {cover_type} · **Last update:** {last_update_success_time} ({success/FAILED})
-
-### 🔴 Critical
-
-- [list or "(none)"]
-
-### 🟡 Warnings
-
-- [list or "(none)"]
-
-### ℹ️ Findings
-
-- Control status: {status} — {reason}
-- [manual override details if relevant]
-- [skip analysis if relevant]
-- [config notes if relevant]
-
-### Decision Trace
-
-Winning handler: **{handler}** (position: {position}%, reason: "{reason}")
-
-| Handler         | Matched | Reason                    |
-| --------------- | ------- | ------------------------- |
-| force_override  | ❌      | no sensor active          |
-| manual_override | ✅      | user moved cover at 14:22 |
-
-### Cover Commands
-
-| Entity            | Retries | Gave Up | Waiting | Safety Target |
-| ----------------- | ------- | ------- | ------- | ------------- |
-| cover.living_room | 0       | No      | No      | —             |
-
-### Cover Positions (live)
-
-| Entity            | Position | Available |
-| ----------------- | -------- | --------- |
-| cover.living_room | 42%      | ✅        |
-
-### Manual Override State
-
-| Entity            | Active | Started   | Remaining |
-| ----------------- | ------ | --------- | --------- |
-| cover.living_room | ✅     | 14:22 UTC | ~70 min   |
-
-### Summary
-
-[1-3 sentence plain-English summary of what's going on and what to do next]
-```
-
-Omit sections that have no data or are "not reported". Keep the summary actionable — tell the user the most likely cause and what to check or change.
+Present the engine's findings as a short triage report: a one-line summary of the most likely cause and what to change, then the findings grouped by severity with their wiki links, then any hand-investigated notes for symptoms the engine did not cover. Keep it actionable.

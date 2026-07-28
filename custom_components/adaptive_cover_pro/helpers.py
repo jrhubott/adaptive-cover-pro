@@ -2,27 +2,63 @@
 
 import datetime as dt
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Mapping
+from dataclasses import dataclass
 from datetime import UTC, timedelta
-from typing import TYPE_CHECKING
+from functools import partial
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pandas as pd
 from dateutil import parser
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import (
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BLANK_TIME,
+    CONF_CLIMATE_MODE,
+    CONF_DEFAULT_HEIGHT,
+    CONF_ENABLE_MAX_POSITION,
+    CONF_ENABLE_MIN_POSITION,
+    CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
+    CONF_END_TIME,
+    CONF_ENTITIES,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    CONF_MAX_POSITION,
+    CONF_MIN_POSITION,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
+    CONF_SUNRISE_OFFSET,
+    CONF_SUNRISE_TIME_ENTITY,
+    CONF_SUNSET_OFFSET,
+    CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CUSTOM_POSITION_SLOTS,
+    DEFAULT_CUSTOM_POSITION_TILT_ONLY,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET,
+    MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END,
+    TIME_STRING_RE,
+    TriageCode,
 )
 from .templates import is_template_string
 
 if TYPE_CHECKING:
     from homeassistant.core import State
 
+    # TYPE_CHECKING only: managers.time_window imports from this module at
+    # runtime, so a real import here is a hard circular import.
+    from .managers.time_window import TimeWindowManager
     from .sun import SunData
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +66,65 @@ _LOGGER = logging.getLogger(__name__)
 # Entity states that mean "no usable value" — used by the safe-read helpers
 # below so the same set is checked everywhere instead of inline literals.
 _INVALID_STATES: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE})
+
+
+def usable_coordinator(entry: ConfigEntry) -> Any:
+    """Return an entry's coordinator, or ``None`` when it is not usable yet.
+
+    Single source of truth for "may I write to this entry's coordinator?", used
+    by both ``services.loaded_coordinators`` (walks every ACP entry) and
+    ``GroupCoordinator.resolved_members`` (walks one group's roster).
+
+    Two things have to hold. The entry must have reached ``LOADED``: HA assigns
+    ``runtime_data`` *before* forwarding platform setup, so between those points
+    a reloading entry already exposes a freshly-built coordinator whose switch
+    entities have not been added yet — a toggle written onto it is silently
+    undone moments later when those switches restore their previous state
+    (issue #1063). And ``runtime_data`` must actually hold something: virtual
+    entries (e.g. the Building Profile, ``controls_cover == False``) reach
+    ``LOADED`` without building a coordinator at all. ``getattr`` is robust
+    whether the running HA leaves ``runtime_data`` unset or defaults it to
+    ``None``.
+    """
+    if entry.state is not ConfigEntryState.LOADED:
+        return None
+    return getattr(entry, "runtime_data", None)
+
+
+def restored_bool(last_state: "State | None", default: bool) -> bool:
+    """Read a restored switch state, ignoring anything that is not on/off.
+
+    An entity that was ``unavailable`` or ``unknown`` when HA last snapshotted
+    state carries no information about what the user wanted, so it must not be
+    read as ``off``. Any raise inside a coordinator update flips
+    ``last_update_success``, which renders every ACP entity ``unavailable``
+    (``AdaptiveCoverBaseEntity.available``), and the restore store snapshots on
+    a timer — so an unclean shutdown during that window persists it. Folding
+    that into ``off`` turns a transient error into a silent, sticky "somebody
+    switched this off": the restored ``off`` is what the next shutdown records.
+
+    Shared by the per-cover switches (where the restored value is written
+    straight onto the coordinator, so a wrong read disables the thing) and the
+    group's bulk switches (issue #1063).
+    """
+    if last_state is None or last_state.state not in (STATE_ON, STATE_OFF):
+        return default
+    return last_state.state == STATE_ON
+
+
+def climate_mode_configured(options: Mapping) -> bool:
+    """Whether this entry is set up for climate mode at all.
+
+    Single source of truth for "may climate mode be switched on here?". The
+    pipeline gates on the runtime ``switch_mode`` toggle rather than on this
+    option, so an unconfigured entry really would start acting on climate if
+    something set the toggle — but it exposes no Climate Mode switch to persist
+    that, and its coordinator re-seeds ``switch_mode`` from this option at every
+    startup. Both the switch platform (which decides whether to create the
+    entity) and the group's bulk control (which decides whom to command) read
+    this so the two agree on who can hold the state.
+    """
+    return bool(options.get(CONF_CLIMATE_MODE))
 
 
 def motion_entities(options: Mapping) -> list[str]:
@@ -55,6 +150,86 @@ def manual_override_input_entities(options: Mapping) -> list[str]:
     "configured?" checks stay consistent.
     """
     return list(options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []))
+
+
+def has_configured_window_end(options: Mapping) -> bool:
+    """Return True when a *real* operating-window end is configured.
+
+    Single source of truth for "does this instance have a window end at all?",
+    shared by the ``until_window_end`` manual-override deadline resolver and the
+    configuration summary's ⚠️ warning so the two can never disagree about which
+    configs have no anchor (issue #1044).
+
+    ``BLANK_TIME`` (``"00:00:00"``) is the project's UNSET / all-day sentinel —
+    a cleared TimeSelector writes it, ``adaptive_cover_pro.set_options``
+    tolerates it, and legacy pre-#492 entries carry it. It is *truthy*, so a
+    bare falsiness test reads it as a configured 22:00-style end; it also cannot
+    be told apart from a deliberate midnight end once
+    ``TimeWindowManager.end_time`` has normalised it (that property maps a
+    static midnight onto **tomorrow's** midnight, a value that advances a day at
+    every local midnight). So the sentinel must be recognised here, on the raw
+    option values, exactly as ``config_flow`` and ``diagnostics.triage`` already
+    do.
+    """
+    return any(
+        options.get(key) not in (None, "", BLANK_TIME)
+        for key in (CONF_END_TIME, CONF_END_ENTITY)
+    )
+
+
+def manual_hold_is_unanchored(options: Mapping) -> bool:
+    """Return True when the configured manual-override hold has no boundary.
+
+    Single source of truth for "does this config's hold fall back to the numeric
+    ``manual_override_duration``?", shared by the configuration summary's ⚠️ and
+    the Building Profile overview's comparison table so the two surfaces can
+    never describe the same config differently (issue #1051).
+
+    Today that is exactly ``until_window_end`` with no operating-window end:
+    :func:`resolve_override_deadline` finds no anchor and the caller falls back
+    to the duration. A future mode that also needs an anchor belongs **here**,
+    not in either surface's own render — two hand-rolled copies are how the
+    overview came to print a boundary the hold never reaches.
+    """
+    mode = (
+        options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+        or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+    )
+    return mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END and (
+        not has_configured_window_end(options)
+    )
+
+
+def normalize_time_string(value: Any) -> Any:
+    """Return *value* as a canonical ``HH:MM:SS`` string when it parses as a time.
+
+    HA's ``TimeSelector`` validates a submission via ``dt_util.parse_time`` but
+    stores it **unnormalized**, so a non-frontend flow client (websocket/REST
+    flow API, a custom card) can persist ``"00:00"``, ``"7:30"`` or
+    ``"٠٧:٣٠:٠٠"`` verbatim. None of those equal ``BLANK_TIME``, so every
+    literal sentinel comparison downstream reads them as a configured window
+    end while ``TimeWindowManager`` resolves them to tomorrow's midnight —
+    issue #1049.
+
+    Callers that have no one to send a bad value back to normalize with this
+    and keep going — the options flow (the user picked a real time, just in a
+    shape the picker never emits) and ``import_config`` (an export file predates
+    the validation). ``set_options`` is the exception: it rejects outright,
+    because its caller wrote the patch by hand and can fix it. The full
+    per-path table lives at ``const.TIME_STRING_RE``.
+
+    Values already canonical, and values no parser can rescue, are returned
+    unchanged — inventing a time for the latter would mask the problem. Callers
+    must therefore re-check the result against ``TIME_STRING_RE`` to tell
+    "canonicalised" from "could not be rescued"; what they do with the latter
+    differs (import errors, the migration drops the key).
+    """
+    if not isinstance(value, str) or TIME_STRING_RE.match(value):
+        return value
+    parsed = dt_util.parse_time(value)
+    if parsed is None:
+        return value
+    return parsed.strftime("%H:%M:%S")
 
 
 def custom_position_slot_sensors(
@@ -117,18 +292,137 @@ def mirror_legacy_slot_sensor_keys(options: dict) -> None:
             options[slot_keys["sensor"]] = None
 
 
+def clear_slot(
+    options: dict[str, Any],
+    slot_keys: Mapping[str, str],
+    *,
+    keep: Collection[str] = (),
+) -> None:
+    """Remove the stored option keys owned by one slot (issue #1071).
+
+    Single source of truth for "this slot no longer exists". Drives off the
+    FULL stored key map (``CUSTOM_POSITION_SLOTS[n]`` / ``BLIND_SPOT_SLOTS[n]``
+    / ``GLARE_ZONE_SLOTS[n]``), never the narrower ``*_FORM_KEYS`` subset the
+    save path merges, so non-form keys — custom position's card-controlled
+    ``enabled``, blind spot's legacy FOV-relative ``left``/``right`` — cannot
+    survive into the slot number the next "Add" hands out.
+
+    ``keep`` names SUB-KEYS (this mapping's own keys, e.g. ``"sensors"``) to
+    spare. It exists for the "➕ Add…" reuse path, which lands on a slot that
+    is merely *unconfigured* — possibly holding half-entered data the user
+    still wants. That caller passes the sub-keys its page renders for this
+    instance, so the data comes back as a pre-filled form the user can finish
+    or clear, while everything the page has no field for goes — an unrenderable
+    key would otherwise be stranded, invisible and unresettable. Delete passes
+    nothing and wipes the lot.
+
+    Keys are POPPED, not set to ``None``: ``enabled`` is opt-out, read as
+    ``options.get(key, DEFAULT_CUSTOM_POSITION_ENABLED)``, so a stored ``None``
+    is a present-but-falsy key that would leave the reused slot disabled.
+    """
+    for sub, key in slot_keys.items():
+        if sub in keep:
+            continue
+        options.pop(key, None)
+
+
+def clear_custom_position_slot(
+    options: dict[str, Any], slot: int, *, keep: Collection[str] = ()
+) -> None:
+    """Clear custom-position slot *slot*, legacy sensor mirror included.
+
+    The one entry point for "erase this custom-position slot" — the config
+    flow's delete/reuse paths call it, and a future ``clear_custom_position``
+    service should call exactly this rather than re-deriving the key list.
+    ``keep`` threads straight through to :func:`clear_slot`; the mirror pass
+    then re-derives the legacy single-sensor key from whatever ``sensors``
+    survived, so a spared list never leaves a stale or missing mirror behind.
+    """
+    clear_slot(options, CUSTOM_POSITION_SLOTS[slot], keep=keep)
+    mirror_legacy_slot_sensor_keys(options)
+
+
+# Sub-keys whose presence gives a slot something to contribute on its own,
+# even without a `position` claim (issue #943). A trigger + "minimum tilt 50%"
+# is a complete slot: it constrains the axis and lets the pipeline resolve the
+# rest. Single source of truth for the claim vocabulary.
+CUSTOM_POSITION_CLAIM_KEYS: tuple[str, ...] = (
+    "position",
+    "position_max",
+    "tilt_min",
+    "tilt_max",
+)
+
+
 def custom_position_slot_configured(
     options: Mapping, slot_keys: Mapping[str, str]
 ) -> bool:
     """Return True when a custom-position slot is fully configured.
 
     Single source of truth for the "slot participates" gate: a slot needs a
-    trigger (at least one sensor, or a condition template) and a position.
+    trigger (at least one sensor, or a condition template) and at least one
+    claim on an axis — a `position`, or one of the axis constraints added by
+    issue #943. A trigger alone still contributes nothing.
     """
     has_trigger = bool(
         custom_position_slot_sensors(options, slot_keys)
     ) or is_template_string(options.get(slot_keys["template"]))
-    return has_trigger and options.get(slot_keys["position"]) is not None
+    has_claim = any(
+        options.get(slot_keys[sub]) is not None for sub in CUSTOM_POSITION_CLAIM_KEYS
+    )
+    return has_trigger and has_claim
+
+
+def custom_position_slot_delivers_fixed_position(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> bool:
+    """Return True when a slot would deliver an exact (FIXED) cover-position claim.
+
+    Single source of truth for "does this custom-position slot pin the position
+    axis to a stored value?", shared by the pipeline handler's position-axis
+    determination and the B1 position-envelope health check (issue #975). A slot
+    pins an exact position only when it is neither ``use_my`` (routes to the
+    hardware My preset, ignoring the stored position) nor ``tilt_only`` (fixes the
+    slat angle and lets solar drive the carriage) and its position mode resolves
+    to ``FIXED``. Every other mode — a floor (``min_mode``), a ceiling/range, or
+    no position claim — composes as a constraint that the min/max envelope clamps,
+    so it can never contradict the envelope with an out-of-range exact value.
+
+    Reuses :attr:`CustomPositionSensorState.position_mode` — the same derivation
+    the handler and axis-constraint composer use — so B1 and the pipeline agree.
+    """
+    from .const import AxisConstraintMode
+    from .pipeline.types import CustomPositionSensorState
+
+    if bool(options.get(slot_keys["use_my"], False)):
+        return False
+    raw_pos = options.get(slot_keys["position"])
+    raw_pos_max = options.get(slot_keys["position_max"])
+    state = CustomPositionSensorState(
+        entity_ids=(),
+        is_on=False,
+        position=int(raw_pos) if raw_pos is not None else None,
+        priority=0,
+        min_mode=bool(options.get(slot_keys["min_mode"], False)),
+        use_my=False,
+        tilt_only=bool(
+            options.get(slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY)
+        ),
+        position_max=int(raw_pos_max) if raw_pos_max is not None else None,
+    )
+    return state.position_mode is AxisConstraintMode.FIXED
+
+
+def custom_position_slot_name(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> str | None:
+    """Return a custom-position slot's user-configured label, or None.
+
+    Single source of truth for reading ``custom_position_name_N`` (issue
+    #867): an empty string (a cleared text box) and an absent key both
+    normalize to ``None`` so every consumer treats "unset" the same way.
+    """
+    return options.get(slot_keys["name"]) or None
 
 
 def get_safe_state(hass: HomeAssistant, entity_id: str):
@@ -310,6 +604,119 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
     }
 
 
+def check_cover_capabilities(
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None,
+) -> tuple[dict[str, dict[str, bool] | None], list[str]]:
+    """Inspect bound cover entities and return capabilities + warning lines.
+
+    Returns:
+        cap_map:  entity_id → feature dict (None if entity unavailable)
+        warnings: list of ⚠️ strings — per-entity and cross-entity issues
+
+    Moved here from ``config_flow.py`` (issue #1059) so ``diagnostics/resolve.py``
+    can import it at module level instead of reaching into ``config_flow`` —
+    ``config_flow`` already imports ``diagnostics.triage``, so the old
+    ``diagnostics -> config_flow`` edge made the two modules mutually dependent
+    (working only because both directions deferred the import). The
+    ``cover_types`` import below stays function-local: ``cover_types.base``
+    imports THIS module at module level, so importing ``cover_types`` back from
+    here at module scope would be circular.
+
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return {}, []
+
+    warnings: list[str] = []
+
+    from .cover_types import get_policy
+    from .cover_types.base import CAP_HAS_SET_POSITION, caps_get
+    from .diagnostics.triage import RuleInput, run_triage
+    from .reason_i18n import render
+    from .troubleshoot_i18n import load_troubleshoot_labels
+
+    # The "not ready (unavailable)" line (rule 8a) is rendered from the shared
+    # triage engine so the summary and troubleshoot surfaces share one rule and
+    # one string (issue #970). Build the capability map up front, then index the
+    # COVER_NOT_READY findings by entity so the per-entity warning loop below
+    # keeps its exact ordering (and its interleaving with the open/close-only and
+    # assumed_state lines). Rendered in English to match the legacy raw f-string,
+    # which was hardcoded English regardless of the summary language.
+    cap_map: dict[str, dict[str, bool] | None] = {
+        eid: check_cover_features(hass, eid) for eid in entities
+    }
+    _not_ready = {
+        f.reason.params["eid"]: f
+        for f in run_triage({"capabilities": cap_map}, only=RuleInput.CONFIG)
+        if f.reason.code == TriageCode.COVER_NOT_READY
+    }
+    _triage_labels = load_troubleshoot_labels("en")
+
+    for eid in entities:
+        caps = cap_map[eid]
+        if caps is None:
+            warnings.append(render(_not_ready[eid].reason, _triage_labels))
+        else:
+            if not caps_get(caps, CAP_HAS_SET_POSITION):
+                warnings.append(
+                    f"⚠️ {eid} is open/close-only — will be driven via "
+                    "threshold compare, not set_position."
+                )
+            state = hass.states.get(eid)
+            if state and state.attributes.get("assumed_state"):
+                warnings.append(
+                    f"⚠️ {eid} has assumed_state — real position cannot be "
+                    "read back, which may affect position verification and delta-bypass."
+                )
+
+    known: dict[str, dict[str, bool]] = {
+        eid: caps for eid, caps in cap_map.items() if caps is not None
+    }
+
+    if known:
+        has_pos = {
+            eid for eid, caps in known.items() if caps_get(caps, CAP_HAS_SET_POSITION)
+        }
+        no_pos = {
+            eid
+            for eid, caps in known.items()
+            if not caps_get(caps, CAP_HAS_SET_POSITION)
+        }
+
+        if has_pos and no_pos:
+            warnings.append(
+                "⚠️ Mixed capabilities: some covers support set_position, "
+                "others are open/close-only — they will be driven differently."
+            )
+
+        if sensor_type is not None:
+            warnings.extend(
+                get_policy(sensor_type).capability_warnings_for_options(known, config)
+            )
+
+        min_pos_val = config.get(CONF_MIN_POSITION)
+        max_pos_val = config.get(CONF_MAX_POSITION)
+        enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
+        enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
+        limits_in_use = (
+            (min_pos_val is not None and min_pos_val != 0)
+            or (max_pos_val is not None and max_pos_val != 100)
+            or enable_min_val
+            or enable_max_val
+        )
+        oc_only = [eid for eid in no_pos if eid in known]
+        if limits_in_use and oc_only:
+            oc_str = ", ".join(oc_only)
+            warnings.append(
+                f"⚠️ Position limits are configured but {oc_str} "
+                "is open/close-only — limits will be ignored on that cover."
+            )
+
+    return cap_map, warnings
+
+
 def _eval_time_to_utc_naive(eval_time: dt.datetime) -> dt.datetime:
     """Normalize an evaluation time to naive-UTC for sunset/sunrise comparison.
 
@@ -337,6 +744,310 @@ def _local_naive_to_utc_naive(local_naive: dt.datetime) -> dt.datetime:
     """
     aware_local = local_naive.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
     return dt_util.as_utc(aware_local).replace(tzinfo=None)
+
+
+def _resolve_boundary(
+    local_naive: dt.datetime | None,
+    astral: Callable[[], dt.datetime],
+    offset_minutes: int,
+) -> dt.datetime:
+    """Resolve ONE sunset/sunrise occurrence to a naive-UTC instant.
+
+    The integration's boundary rule in one place: a configured override entity
+    (issues #411/#415) fully replaces astral, then the configured minute offset
+    applies on top either way.
+    """
+    base = (
+        _local_naive_to_utc_naive(local_naive)
+        if local_naive is not None
+        else astral().replace(tzinfo=None)
+    )
+    return base + timedelta(minutes=offset_minutes)
+
+
+@dataclass(frozen=True, slots=True)
+class SunBoundaries:
+    """The integration's resolved sunset/sunrise instants, in naive UTC.
+
+    ``sunset`` / ``sunrise`` are today's occurrences with their configured
+    minute offsets already applied, so callers compare against them directly.
+
+    ``next_sunset`` / ``next_sunrise`` are the following day's occurrences —
+    the roll-forward candidates a deadline anchored after today's event needs
+    (issue #1044). Their *astral* form resolves on first read: the day/night
+    position boundary (:func:`compute_effective_default`) never asks for
+    tomorrow, and it runs once per forecast sample, so eagerly paying two extra
+    astral walks per call would be pure waste in the hot path.
+    """
+
+    sunset: dt.datetime
+    sunrise: dt.datetime
+    _next_sunset: Callable[[], dt.datetime]
+    _next_sunrise: Callable[[], dt.datetime]
+
+    @property
+    def next_sunset(self) -> dt.datetime:
+        """Tomorrow's sunset boundary (naive UTC, offset applied)."""
+        return self._next_sunset()
+
+    @property
+    def next_sunrise(self) -> dt.datetime:
+        """Tomorrow's sunrise boundary (naive UTC, offset applied)."""
+        return self._next_sunrise()
+
+
+def _next_boundary_resolver(
+    local_naive: dt.datetime | None,
+    astral_next: Callable[[], dt.datetime],
+    offset_minutes: int,
+) -> Callable[[], dt.datetime]:
+    """Return a zero-arg resolver for tomorrow's occurrence of one boundary.
+
+    An entity-derived boundary is rolled and resolved immediately: rolling
+    happens in *local* wall-clock space (``+1 day``) with the UTC conversion
+    applied afterwards, so a DST transition between the two days shortens or
+    lengthens the real gap correctly instead of drifting an hour. Resolving it
+    up front is free — it is pure timezone arithmetic — and keeps every field
+    of a :class:`SunBoundaries` consistent with the moment it was built.
+
+    Only the astral branch is deferred; that walk is the expensive part.
+    """
+    if local_naive is not None:
+        resolved = _resolve_boundary(
+            local_naive + timedelta(days=1), astral_next, offset_minutes
+        )
+        return lambda: resolved
+    return partial(_resolve_boundary, None, astral_next, offset_minutes)
+
+
+class SunBoundaryOptions(NamedTuple):
+    """The four HA-side inputs that define what "sunset"/"sunrise" mean here.
+
+    Produced by :func:`_read_sun_boundary_options`
+    and consumed by both the day/night position boundary and the manual-override
+    sun deadline. Field names match :func:`resolve_sun_boundaries`'
+    keyword arguments.
+    """
+
+    sunset_time: dt.datetime | None
+    sunrise_time: dt.datetime | None
+    sunset_off: int
+    sunrise_off: int
+
+
+def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime | None:
+    """Read an entity whose state is an ISO-8601 datetime.
+
+    Returns naive-local datetime on success; None if entity_id is None,
+    the entity is unavailable, or the state cannot be parsed.
+
+    The entity's *time-of-day* is re-anchored onto today's local date and the
+    original date component is discarded. This makes a "next-event" sensor
+    (e.g. ``sensor.sun_next_setting``, which rolls over to *tomorrow's*
+    setting the instant today's sun sets) behave like a fixed daily wall-clock
+    time. ``compute_effective_default`` already compares the boundary against
+    *today's* clock, so a future-dated boundary would otherwise make the
+    ``after_sunset`` comparison structurally unreachable (issue #531 follow-up).
+    """
+    if entity_id is None:
+        return None
+    raw = get_safe_state(hass, entity_id)
+    if raw is None:
+        return None
+    try:
+        parsed = get_datetime_from_str(raw)
+        today_local = dt_util.now().date()
+        return parsed.replace(
+            year=today_local.year,
+            month=today_local.month,
+            day=today_local.day,
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug(
+            "Could not parse time entity %s state %r as datetime",
+            entity_id,
+            raw,
+        )
+        return None
+
+
+def resolve_sunset_offset(options: Mapping) -> int:
+    """Return the configured sunset offset in minutes, 0 when unset.
+
+    A stored ``None`` counts as unset — the key can exist with no value on an
+    entry whose form field was never filled in.
+    """
+    return int(options.get(CONF_SUNSET_OFFSET) or 0)
+
+
+def resolve_sunrise_offset(options: Mapping) -> int:
+    """Return the configured sunrise offset in minutes.
+
+    Falls back to :func:`resolve_sunset_offset` when unset, so an install that
+    only ever set one offset gets a symmetric night window. An explicit ``0`` is
+    a real choice and does *not* fall back; a stored ``None`` does, matching
+    :func:`resolve_sunset_offset`.
+
+    The single source of truth for this rule, which used to be spelled out
+    independently in five places — one of them defaulting to ``0`` instead of to
+    the sunset offset, so the Configuration Summary described a night window the
+    runtime never used (issue #1050, CODING_GUIDELINES.md § no-duplication).
+    """
+    raw = options.get(CONF_SUNRISE_OFFSET)
+    return resolve_sunset_offset(options) if raw is None else int(raw)
+
+
+def _read_sun_boundary_options(
+    hass: HomeAssistant, options: Mapping
+) -> SunBoundaryOptions:
+    """Read the four HA-side inputs that define sunset/sunrise for this instance.
+
+    The single source of truth for the *reads* feeding :func:`resolve_sun_boundaries`'
+    arithmetic. Two direct callers: the day/night position boundary
+    (:func:`_read_current_effective_default`) and the manual-override sun deadline
+    (``_resolve_override_deadline``). Both consumers of the day/night boundary —
+    the coordinator's ``_compute_current_effective_default`` and
+    ``PipelineSnapshotBuilder.build``'s fallback branch — reach here indirectly
+    through that first caller (issue #1055). So a later fifth input lands in one
+    place and no call site can disagree about what "sunset" means
+    (CODING_GUIDELINES.md § no-duplication).
+
+    The offset arithmetic itself lives in :func:`resolve_sunset_offset` /
+    :func:`resolve_sunrise_offset`, which the hass-less consumers
+    (``CoverConfig.from_options``, the export service, the config-flow summary)
+    share — see issue #1050.
+    """
+    return SunBoundaryOptions(
+        sunset_time=_read_time_entity(hass, options.get(CONF_SUNSET_TIME_ENTITY)),
+        sunrise_time=_read_time_entity(hass, options.get(CONF_SUNRISE_TIME_ENTITY)),
+        sunset_off=resolve_sunset_offset(options),
+        sunrise_off=resolve_sunrise_offset(options),
+    )
+
+
+def resolve_sun_boundaries(
+    sun_data: "SunData",
+    *,
+    sunset_time: dt.datetime | None = None,
+    sunrise_time: dt.datetime | None = None,
+    sunset_off: int = 0,
+    sunrise_off: int = 0,
+) -> SunBoundaries:
+    """Return the integration's definition of sunset/sunrise as naive-UTC instants.
+
+    Single source of truth for what "sunset" and "sunrise" *mean* here:
+    configured override entities win over astral, then the configured minute
+    offsets are added. ``compute_effective_default`` (the day/night position
+    boundary) and the manual-override sun deadline resolver both delegate here
+    so the two can never drift apart.
+
+    Args:
+        sun_data: ``SunData`` providing the astral fallbacks.
+        sunset_time: Optional naive-local sunset override (entity-derived).
+        sunrise_time: Optional naive-local sunrise override (entity-derived).
+        sunset_off: Minutes added to the sunset boundary.
+        sunrise_off: Minutes added to the sunrise boundary.
+
+    """
+    return SunBoundaries(
+        sunset=_resolve_boundary(sunset_time, sun_data.sunset, sunset_off),
+        sunrise=_resolve_boundary(sunrise_time, sun_data.sunrise, sunrise_off),
+        _next_sunset=_next_boundary_resolver(
+            sunset_time, sun_data.next_sunset, sunset_off
+        ),
+        _next_sunrise=_next_boundary_resolver(
+            sunrise_time, sun_data.next_sunrise, sunrise_off
+        ),
+    )
+
+
+def _sun_deadline_candidates(
+    mode: str, boundaries: SunBoundaries
+) -> tuple[dt.datetime, ...]:
+    """Return the boundary instants a sun-anchored mode may expire on.
+
+    An empty tuple means the mode is not sun-anchored (``fixed``,
+    ``until_window_end``, or an unrecognised value), so the caller resolves it
+    another way or falls back to the numeric duration.
+    """
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNSET:
+        return (boundaries.sunset, boundaries.next_sunset)
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE:
+        return (boundaries.sunrise, boundaries.next_sunrise)
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_NEXT_SUN_EVENT:
+        return (
+            boundaries.sunset,
+            boundaries.next_sunset,
+            boundaries.sunrise,
+            boundaries.next_sunrise,
+        )
+    return ()
+
+
+# The operating window's end is a local wall-clock time normalized onto today
+# (or tomorrow, for a midnight end), so at most two rolls are ever needed to
+# clear an anchor. Three bounds the loop with room to spare and guarantees it
+# terminates whatever a caller passes in.
+_MAX_WINDOW_END_ROLL_DAYS = 3
+
+
+def _next_window_end_after(
+    anchor: dt.datetime, window_end_local_naive: dt.datetime | None
+) -> dt.datetime | None:
+    """Return the first occurrence of the window end strictly after *anchor*.
+
+    Rolls in *local* wall-clock space so a DST transition between the anchor
+    day and the deadline day changes the real elapsed hours correctly. Returns
+    ``None`` when no window end is configured at all.
+    """
+    if window_end_local_naive is None:
+        return None
+    local = window_end_local_naive
+    for _ in range(_MAX_WINDOW_END_ROLL_DAYS):
+        candidate = _local_naive_to_utc_naive(local)
+        if candidate > anchor:
+            return candidate
+        local += timedelta(days=1)
+    return None
+
+
+def resolve_override_deadline(
+    mode: str,
+    anchor: dt.datetime,
+    *,
+    boundaries: SunBoundaries | None = None,
+    window_end_local_naive: dt.datetime | None = None,
+) -> dt.datetime | None:
+    """Resolve a manual-override deadline for *mode*, anchored on the override start.
+
+    The deadline is the **first occurrence of the mode's event strictly after
+    the anchor**. Strictly, because an anchor landing exactly on the boundary
+    would otherwise produce a zero-length hold that expires on the very cycle
+    that engaged it.
+
+    The anchor is the moment the user touched the cover — never "now". This
+    runs on every coordinator cycle, so anchoring on now would make the
+    deadline recede forever and the override would never expire.
+
+    ``None`` means "this mode has no resolvable deadline here" — ``fixed``, an
+    unrecognised mode, a sun mode with no ``SunData`` yet (before the first
+    coordinator cycle), or ``until_window_end`` with no window configured. Every
+    such case falls back to the numeric ``manual_override_duration``.
+
+    Args:
+        mode: One of ``MANUAL_OVERRIDE_DURATION_MODES``.
+        anchor: The override start, as a naive-UTC datetime.
+        boundaries: Resolved sun boundaries, or ``None`` when unavailable.
+        window_end_local_naive: The operating window's resolved end as a
+            naive-local wall-clock datetime, or ``None`` when unconfigured.
+
+    """
+    if mode == MANUAL_OVERRIDE_DURATION_MODE_UNTIL_WINDOW_END:
+        return _next_window_end_after(anchor, window_end_local_naive)
+    if boundaries is None:
+        return None
+    upcoming = [c for c in _sun_deadline_candidates(mode, boundaries) if c > anchor]
+    return min(upcoming) if upcoming else None
 
 
 def compute_effective_default(
@@ -442,15 +1153,12 @@ def compute_effective_default(
         effective = int(sunset_pos) if is_sunset_active else int(h_def)
         return effective, is_sunset_active
 
-    sunset = (
-        _local_naive_to_utc_naive(sunset_time)
-        if sunset_time is not None
-        else sun_data.sunset().replace(tzinfo=None)
-    )
-    sunrise = (
-        _local_naive_to_utc_naive(sunrise_time)
-        if sunrise_time is not None
-        else sun_data.sunrise().replace(tzinfo=None)
+    boundaries = resolve_sun_boundaries(
+        sun_data,
+        sunset_time=sunset_time,
+        sunrise_time=sunrise_time,
+        sunset_off=sunset_off,
+        sunrise_off=sunrise_off,
     )
     now_naive = (
         _eval_time_to_utc_naive(eval_time)
@@ -458,8 +1166,8 @@ def compute_effective_default(
         else dt.datetime.now(UTC).replace(tzinfo=None)
     )
 
-    after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))
-    before_sunrise = now_naive < (sunrise + timedelta(minutes=sunrise_off))
+    after_sunset = now_naive > boundaries.sunset
+    before_sunrise = now_naive < boundaries.sunrise
 
     # End-of-window phase 1 (issue #625): once the operating window is
     # clock-closed, the end-of-window position holds from window-end UNTIL astral
@@ -480,6 +1188,85 @@ def compute_effective_default(
 
     effective = int(sunset_pos) if is_sunset_active else int(h_def)
     return effective, is_sunset_active
+
+
+def _read_current_effective_default(
+    hass: HomeAssistant,
+    options: Mapping,
+    sun_data: "SunData",
+    time_mgr: "TimeWindowManager | None" = None,
+) -> tuple[int, bool]:
+    """Return ``(effective_pos, is_sunset_active)`` for the current moment.
+
+    The single source of truth for *calling* :func:`compute_effective_default`
+    with live state. Both consumers delegate here: the coordinator's
+    ``_compute_current_effective_default`` (the update cycle and the window
+    transitions) and ``PipelineSnapshotBuilder.build``'s fallback, which
+    ``async_apply_user_position`` reaches when it assembles an ad-hoc snapshot
+    outside the cycle.
+
+    The builder used to re-derive the answer from a narrower input set, so four
+    live window-state inputs — ``window_explicitly_started`` (#438/#492),
+    ``daytime_gate`` (#632), and ``end_of_window_pos`` /
+    ``end_of_window_active`` (#625) — silently took the formula's own defaults
+    there and the two paths could disagree about the very same instant
+    (issue #1055, CODING_GUIDELINES.md § no-duplication).
+
+    Every ``time_mgr`` read below is a pure property read — nothing advances
+    manager state, so the ad-hoc path calls this without perturbing the cycle.
+
+    Args:
+        hass: Used only for the boundary-entity reads in
+            :func:`_read_sun_boundary_options`. An instance with neither time
+            entity configured reads no state at all.
+        options: The config-entry options mapping.
+        sun_data: Already-resolved ``SunData``. Callers own how they get it —
+            the coordinator falls back to ``get_blind_data`` when it has none
+            in hand, which is coordinator business and stays there.
+        time_mgr: The live ``TimeWindowManager``, or ``None``. ``None`` is the
+            contract for a builder constructed without one (tests, legacy call
+            sites): the three manager-derived kwargs degrade to exactly the
+            defaults :func:`compute_effective_default` would have applied
+            anyway. ``end_of_window_pos`` is options-derived, so it is still
+            read — but every end-of-window branch in that function also
+            requires ``end_of_window_active``, which is ``False`` here, so the
+            value is inert rather than defaulted. Production always injects
+            the live manager.
+
+    """
+    h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+    sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+    bounds = _read_sun_boundary_options(hass, options)
+    # A configured daytime gate (issue #632) OWNS the day/night boundary:
+    # ``effective_daytime_gate`` is the single tri-state verdict to forward —
+    # True=daytime→no sunset, False=dark→apply sunset position, None=defer to
+    # the astronomical decision. None covers both an unconfigured gate and the
+    # graceful fallback after every gate source has been indeterminate past the
+    # grace window (issue #742).
+    daytime_gate = time_mgr.effective_daytime_gate if time_mgr is not None else None
+    window_started = (
+        time_mgr.window_explicitly_started if time_mgr is not None else False
+    )
+    # End-of-window position (issue #625): an optional, clearable position
+    # applied once the operating window is clock-closed. ``before_end_time``
+    # is True all morning (end is later today), so the override only fires in
+    # the evening — never before the start time. compute_effective_default
+    # owns the two-phase astral handoff; here we only read the inputs.
+    eow_pos = options.get(CONF_END_OF_WINDOW_POS)
+    window_is_closed = (not time_mgr.before_end_time) if time_mgr is not None else False
+    return compute_effective_default(
+        h_def=h_def,
+        sunset_pos=sunset_pos_cfg,
+        sun_data=sun_data,
+        sunset_off=bounds.sunset_off,
+        sunrise_off=bounds.sunrise_off,
+        sunset_time=bounds.sunset_time,
+        sunrise_time=bounds.sunrise_time,
+        window_explicitly_started=window_started,
+        daytime_gate=daytime_gate,
+        end_of_window_pos=eow_pos,
+        end_of_window_active=window_is_closed,
+    )
 
 
 def should_use_tilt(is_tilt_cover: bool, caps) -> bool:
@@ -541,3 +1328,23 @@ def get_open_close_state(
         return 100
 
     return None
+
+
+def climate_mode_from_diagnostics(diagnostics: dict | None) -> str | None:
+    """Map a coordinator's diagnostics payload to its climate-mode string.
+
+    Single source for the ``summer_mode`` / ``winter_mode`` / ``intermediate``
+    vocabulary — shared by the per-cover Climate Status sensor and the
+    cover-group climate rollup (issue #790, Phase 3). ``None`` when climate
+    mode is off or the diagnostics have not been built yet.
+    """
+    if diagnostics is None:
+        return None
+    data = diagnostics.get("climate_conditions")
+    if data is None:
+        return None
+    if data.get("is_summer"):
+        return "summer_mode"
+    if data.get("is_winter"):
+        return "winter_mode"
+    return "intermediate"

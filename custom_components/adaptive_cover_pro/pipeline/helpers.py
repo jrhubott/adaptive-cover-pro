@@ -4,7 +4,7 @@ These module-level functions eliminate copy-paste of the most repeated
 patterns across pipeline handlers:
 
 - ``apply_snapshot_limits``    — apply position limits using config from the snapshot
-- ``compute_solar_position``   — calculate_percentage() + floor-at-1 + limits
+- ``compute_solar_position``   — calculate_raw_percentage() + floor-at-1 + limits
 - ``compute_default_position`` — default_position + limits (sun not in FOV)
 
 Floor-mode composition (the former ``apply_minimum_mode`` semantic) now
@@ -15,6 +15,7 @@ registry — see issue #463.
 from __future__ import annotations
 
 import dataclasses
+import math
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -133,7 +134,11 @@ def solar_position_from_geometry(
     Snapshot-free single source of truth for the solar branch, shared by the
     live pipeline (:func:`compute_solar_position`) and the forecast:
 
-    1. Calls ``cover.calculate_percentage()`` (pure geometry), rounded.
+    1. Calls ``cover.calculate_raw_percentage()`` (pure geometry, unrounded float).
+       Rounds toward full coverage (issue #978): floor() for blinds/tilt/venetian
+       (0%=closed=full coverage), ceil() for awnings (100%=extended=full coverage).
+       Requires *policy* to determine the coverage direction; falls back to
+       round() when policy is None.
     2. Optionally quantizes into the configured number of discrete coverage
        levels (movement minimization — opt-in, rounds toward coverage).
     3. Floors at ``SOLAR_TRACKING_FLOOR_PCT`` (1 %) so open/close-only covers
@@ -148,12 +153,21 @@ def solar_position_from_geometry(
         Sun-tracked position (0–100; >= 1 only when ``floor_active``), limited.
 
     """
-    state = int(round(cover.calculate_percentage()))
+    pct = cover.calculate_raw_percentage()
+    if policy is not None:
+        # full_coverage_at_zero=True means 0% = closed = full coverage (blind/tilt/venetian)
+        # → round DOWN (floor) toward 0 to keep more coverage.
+        # full_coverage_at_zero=False means 100% = extended = full coverage (awning)
+        # → round UP (ceil) toward 100 to keep more coverage.
+        full_coverage_at_zero = not policy.axes[0].open_blocks_sun
+        state = math.floor(pct) if full_coverage_at_zero else math.ceil(pct)
+    else:
+        state = int(round(pct))
     if minimize_movements and policy is not None:
         state = PositionConverter.quantize_to_coverage_steps(
             state,
             max_coverage_steps,
-            full_coverage_at_zero=not policy.axes[0].open_blocks_sun,
+            full_coverage_at_zero=full_coverage_at_zero,
         )
     state = solar_floor(state, floor_active=floor_active)
     return apply_config_limits(state, config, sun_valid=True)
@@ -182,20 +196,35 @@ def compute_solar_position(snapshot: PipelineSnapshot) -> int:
     )
 
 
-def anticipated_solar_position(snapshot: PipelineSnapshot) -> int:
-    """Most-protective sun-tracked position across the upcoming throttle window.
+def anticipated_solar_position_from_geometry(
+    cover: AdaptiveGeneralCover,
+    config: CoverConfig,
+    *,
+    horizon_minutes: int,
+    minimize_movements: bool,
+    max_coverage_steps: int,
+    policy: CoverTypePolicy | None,
+    floor_active: bool = True,
+) -> int:
+    """Most-protective sun-tracked position across an upcoming look-ahead window.
+
+    Snapshot-free single source of truth for the anticipation algorithm,
+    shared by the live pipeline (:func:`anticipated_solar_position`) and the
+    forecast (:func:`..forecast.build_forecast`) — see issue #1091, the
+    forecast/live drift this extraction closes (the forecast previously called
+    the plain :func:`solar_position_from_geometry` with no look-ahead at all).
 
     The live solar target is computed from the *current* sun position, but the
     "Minimum interval between position changes" (``CONF_DELTA_TIME``, minutes)
     holds any queued move for that long. While it is held the sun keeps moving,
     so a position that just covers "now" can drift out of coverage before the
     next allowed move. This helper looks ahead across
-    ``(now, now + time_threshold_minutes]`` and returns the most-protective
+    ``(now, now + horizon_minutes]`` and returns the most-protective
     sun-tracked position needed anywhere in that window, so coverage is
     guaranteed until the cover is next allowed to move (issue #616).
 
     The look-ahead reuses the forecast's sampling machinery: future sun angles
-    come from ``snapshot.cover.sun_data`` (the per-day 5-minute table) via
+    come from ``cover.sun_data`` (the per-day 5-minute table) via
     ``forecast._nearest_index``, each sample is a ``dataclasses.replace`` of the
     live cover with the projected angles and ``eval_time`` (so the sunset gate
     evaluates at the projected moment), and only samples where the sun is still
@@ -206,27 +235,31 @@ def anticipated_solar_position(snapshot: PipelineSnapshot) -> int:
     "now" target seeds the fold, so the result can only ever *increase*
     protection relative to the current position.
 
-    When the horizon is ``<= 0`` (anticipation disabled / no throttle) this is
-    exactly :func:`compute_solar_position`.
+    When ``horizon_minutes <= 0`` (anticipation disabled / no throttle) or
+    *policy* is ``None``, this is exactly :func:`solar_position_from_geometry`.
 
-    Should only be called when ``snapshot.cover.direct_sun_valid`` is True.
+    Should only be called when ``cover.direct_sun_valid`` is True.
 
     Returns:
         The most-protective sun-tracked position (limited) across the window.
 
     """
-    live = compute_solar_position(snapshot)
+    live = solar_position_from_geometry(
+        cover,
+        config,
+        minimize_movements=minimize_movements,
+        max_coverage_steps=max_coverage_steps,
+        policy=policy,
+        floor_active=floor_active,
+    )
 
-    horizon = getattr(snapshot, "time_threshold_minutes", 0)
-    policy: CoverTypePolicy | None = getattr(snapshot, "policy", None)
-    if horizon <= 0 or policy is None:
+    if horizon_minutes <= 0 or policy is None:
         return live
 
     # Lazy import: ``forecast`` imports from this module, so importing it at
     # module scope would be circular.
     from ..forecast import _nearest_index
 
-    cover = snapshot.cover
     sun_data = cover.sun_data
     times = list(sun_data.times)
     if not times:
@@ -241,7 +274,7 @@ def anticipated_solar_position(snapshot: PipelineSnapshot) -> int:
     seen_indices: set[int] = set()
     for n in range(1, SOLAR_ANTICIPATION_SAMPLES + 1):
         fraction = n / SOLAR_ANTICIPATION_SAMPLES
-        sample_time = now + timedelta(minutes=horizon * fraction)
+        sample_time = now + timedelta(minutes=horizon_minutes * fraction)
         idx = _nearest_index(times, sample_time)
         if idx is None or idx in seen_indices:
             continue
@@ -258,15 +291,38 @@ def anticipated_solar_position(snapshot: PipelineSnapshot) -> int:
 
         candidate = solar_position_from_geometry(
             future,
-            snapshot.config,
-            minimize_movements=getattr(snapshot, "minimize_movements", False),
-            max_coverage_steps=getattr(snapshot, "max_coverage_steps", 1),
+            config,
+            minimize_movements=minimize_movements,
+            max_coverage_steps=max_coverage_steps,
             policy=policy,
-            floor_active=getattr(snapshot, "solar_floor_active", True),
+            floor_active=floor_active,
         )
         best = policy.more_protective_position(best, candidate)
 
     return best
+
+
+def anticipated_solar_position(snapshot: PipelineSnapshot) -> int:
+    """Most-protective sun-tracked position across the upcoming throttle window.
+
+    Thin adapter over :func:`anticipated_solar_position_from_geometry` using
+    the snapshot's cover, config, and horizon (``time_threshold_minutes``).
+
+    Should only be called when ``snapshot.cover.direct_sun_valid`` is True.
+
+    Returns:
+        The most-protective sun-tracked position (limited) across the window.
+
+    """
+    return anticipated_solar_position_from_geometry(
+        snapshot.cover,
+        snapshot.config,
+        horizon_minutes=getattr(snapshot, "time_threshold_minutes", 0),
+        minimize_movements=getattr(snapshot, "minimize_movements", False),
+        max_coverage_steps=getattr(snapshot, "max_coverage_steps", 1),
+        policy=getattr(snapshot, "policy", None),
+        floor_active=getattr(snapshot, "solar_floor_active", True),
+    )
 
 
 def compute_raw_calculated_position(snapshot: PipelineSnapshot) -> int:

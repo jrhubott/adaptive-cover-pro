@@ -39,6 +39,58 @@ def _sanitize(obj):
     return obj
 
 
+async def _group_diagnostics(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> dict | None:
+    """Build the cover-group rollup, or None for non-group entries."""
+    from custom_components.adaptive_cover_pro.const import (  # noqa: PLC0415
+        CONF_GROUP_MEMBER_OPT_OUT,
+        CONF_GROUP_STAGGER_DELAY,
+        CONF_MEMBER_COVERS,
+        CONF_SENSOR_TYPE,
+        DEFAULT_GROUP_STAGGER_DELAY,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import (  # noqa: PLC0415
+        get_policy,
+    )
+
+    try:
+        if not get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
+            return None
+    except ValueError:
+        return None
+    coordinator = getattr(config_entry, "runtime_data", None)
+    if coordinator is None:
+        return {"status": "unavailable", "reason": "group coordinator not loaded"}
+    if coordinator.data is None:
+        # No aggregates yet (fresh load) — a group refresh reads states only,
+        # never commands covers, so this is side-effect free.
+        await coordinator.async_refresh()
+    aggregates = coordinator.data
+    return {
+        "active_scene": coordinator.active_scene,
+        "group_locked": coordinator.group_locked,
+        "aggregates": {
+            "position": aggregates.position if aggregates else None,
+            "state": aggregates.state if aggregates else None,
+            "member_positions": aggregates.member_positions if aggregates else {},
+        },
+        "member_winners": coordinator.member_winners(),
+        "member_climate_modes": coordinator.member_climate_modes(),
+        "rosters": {
+            "member_entries": [
+                {"entry_id": entry.entry_id, "title": entry.title}
+                for entry, _ in coordinator.resolved_members()
+            ],
+            "member_covers": list(config_entry.options.get(CONF_MEMBER_COVERS, [])),
+        },
+        "opt_out": config_entry.options.get(CONF_GROUP_MEMBER_OPT_OUT, {}),
+        "stagger_delay": config_entry.options.get(
+            CONF_GROUP_STAGGER_DELAY, DEFAULT_GROUP_STAGGER_DELAY
+        ),
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: ConfigEntry
 ):
@@ -46,6 +98,26 @@ async def async_get_config_entry_diagnostics(
     from custom_components.adaptive_cover_pro.const import (
         DIAG_CACHE_KEY,
     )  # noqa: PLC0415
+
+    # Cover-group entries carry a GroupCoordinator whose ``data`` is the
+    # aggregates dataclass, not a diagnostics payload — the cover path below
+    # would crash on it. Groups get a rollup of per-member SUMMARIES (winner,
+    # position, climate mode) plus the group's own scene/lock/roster state;
+    # full member traces stay on the member entries (issue #790 §4).
+    group_rollup = await _group_diagnostics(hass, config_entry)
+    if group_rollup is not None:
+        return {
+            "title": "Adaptive Cover Pro Configuration",
+            "type": "config_entry",
+            "identifier": config_entry.entry_id,
+            "config_entry_state": config_entry.state.value,
+            "config_entry_version": config_entry.version,
+            "config_entry_minor_version": config_entry.minor_version,
+            "generated_at": dt.datetime.now(dt.UTC).isoformat(),
+            "config_data": dict(config_entry.data),
+            "config_options": dict(config_entry.options),
+            "group": _sanitize(group_rollup),
+        }
 
     # The coordinator lives on entry.runtime_data (the registry every platform
     # reads). Virtual Building-Profile entries have no coordinator, so this is

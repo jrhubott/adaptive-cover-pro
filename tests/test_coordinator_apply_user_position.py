@@ -14,6 +14,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_INTERP,
+    CONF_INTERP_LIST,
+    CONF_INTERP_LIST_NEW,
+    CONF_INVERSE_STATE,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -29,14 +33,21 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
+from tests.ha_helpers import wire_dispatch_frame
 
 
-def _slot(pos: int, *, is_on: bool, min_mode: bool) -> CustomPositionSensorState:
+def _slot(
+    pos: int,
+    *,
+    is_on: bool,
+    min_mode: bool,
+    priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
+) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_ids=(f"binary_sensor.slot_{pos}",),
         is_on=is_on,
         position=pos,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=priority,
         min_mode=min_mode,
         use_my=False,
     )
@@ -88,6 +99,7 @@ def _make_coord(
     coord.config_entry = MagicMock()
     entry_opts = default_options if default_options is not None else {}
     coord.config_entry.options = entry_opts
+    wire_dispatch_frame(coord, entry_opts)
     # After fix #643, async_apply_user_position falls back to
     # _resolved_options (not config_entry.options).  Initialise it to the
     # same dict so existing tests keep working; specific tests that want to
@@ -111,6 +123,11 @@ def _make_coord(
     coord._cover_data = MagicMock(name="cover_data")
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
+    # Cloud-suppression manager (issue #864): the ad-hoc build reads its
+    # resolved bool as a pure property. Preset so the spec'd mock doesn't raise.
+    coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
     ctx = MagicMock(name="position_context")
     coord._build_position_context.return_value = ctx
     coord._cmd_svc = MagicMock()
@@ -147,7 +164,9 @@ def _make_coord(
 @pytest.mark.asyncio
 async def test_async_apply_user_position_clamps_to_min_mode_floor() -> None:
     """Requested < highest active min-mode floor → clamped up to floor."""
-    coord, ctx = _make_coord([_slot(40, is_on=True, min_mode=True)])
+    # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
+    # to clamp a user move.
+    coord, ctx = _make_coord([_slot(40, is_on=True, min_mode=True, priority=82)])
 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 
@@ -679,4 +698,183 @@ async def test_async_apply_user_tilt_force_true_skips_override_and_threads_force
     coord.manager.mark_user_command.assert_not_called()
     coord.async_apply_user_position.assert_awaited_once_with(
         "cover.blind", 33, trigger="set_tilt", force=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issue #1027: a user-supplied position is logical and must be mapped into the
+# cover's dispatch frame at the same boundary the automatic path uses.
+# ---------------------------------------------------------------------------
+
+_INTERP_OPTIONS = {
+    CONF_INTERP: True,
+    CONF_INTERP_LIST: [0, 25, 58, 100],
+    CONF_INTERP_LIST_NEW: [0, 45, 58, 100],
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("logical", "dispatched"),
+    [(0, 100), (30, 70), (100, 0)],
+)
+async def test_user_position_inverse_state_dispatches_inverted(
+    logical: int, dispatched: int
+) -> None:
+    """``inverse_state`` on → the user's logical value is inverted before dispatch.
+
+    Issue #1027: the automatic path inverts (``coordinator.state``) while the
+    user path dispatched raw, so the same logical number drove the cover in
+    opposite directions depending on which path produced it.
+    """
+    coord, ctx = _make_coord([], default_options={CONF_INVERSE_STATE: True})
+
+    await coord.async_apply_user_position("cover.test", logical, trigger="set_position")
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", dispatched, "set_position", ctx
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("linear", "motor"),
+    [(25, 45), (0, 0), (100, 100)],
+)
+async def test_user_position_interpolation_dispatches_motor_value(
+    linear: int, motor: int
+) -> None:
+    """Interpolation configured → the user's linear value maps onto the motor curve."""
+    coord, ctx = _make_coord([], default_options=dict(_INTERP_OPTIONS))
+
+    await coord.async_apply_user_position("cover.test", linear, trigger="set_position")
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", motor, "set_position", ctx
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_position_inverse_with_interpolation_interpolates_only() -> None:
+    """Both configured → interpolation wins, no inversion, and the info log fires.
+
+    Mutual exclusion mirrors ``coordinator.state`` exactly: the combination is
+    unsupported, logged, and resolves to interpolation alone.
+    """
+    coord, ctx = _make_coord(
+        [], default_options={CONF_INVERSE_STATE: True, **_INTERP_OPTIONS}
+    )
+
+    await coord.async_apply_user_position("cover.test", 25, trigger="set_position")
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 45, "set_position", ctx
+    )
+    logged = [str(c.args[0]) for c in coord.logger.info.call_args_list]
+    assert any(
+        "inverse" in msg.lower() and "interpolation" in msg.lower() for msg in logged
+    ), f"expected the unsupported-combination info log, got {logged}"
+
+
+@pytest.mark.asyncio
+async def test_user_position_floor_clamped_runs_the_frame_transform() -> None:
+    """A floor that raised the request still runs the frame transform (#1036).
+
+    The requirement is the one #469/#1027 actually needed: the same configured
+    floor must dispatch identically on the user and automatic paths. That now
+    holds because BOTH transform, not because both skip. A user-typed floor is a
+    logical value (0 = closed, 100 = open), so on an inverse install the raised
+    request of 25 reaches the cover as wire 75 — under the old carve-out it
+    dispatched 25, driving a "minimum 25% open" floor to 75% open.
+    """
+    coord, ctx = _make_coord(
+        [_slot(25, is_on=True, min_mode=True, priority=82)],
+        default_options={CONF_INVERSE_STATE: True},
+    )
+
+    await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 75, "set_position", ctx
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_position_untransformed_when_neither_configured() -> None:
+    """Neither inverse nor interpolation → the logical value dispatches unchanged."""
+    coord, ctx = _make_coord([], default_options={})
+
+    await coord.async_apply_user_position("cover.test", 30, trigger="set_position")
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 30, "set_position", ctx
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("options", "requested", "dispatched", "expected_inverted", "expected_interp"),
+    [
+        ({CONF_INVERSE_STATE: True}, 30, 70, True, False),
+        (dict(_INTERP_OPTIONS), 25, 45, False, True),
+        ({}, 30, 30, False, False),
+    ],
+)
+async def test_user_position_routes_through_entity_target_with_explicit_frame(
+    options: dict,
+    requested: int,
+    dispatched: int,
+    expected_inverted: bool,
+    expected_interp: bool,
+) -> None:
+    """The per-entity remap runs, and is told the full frame it is handed.
+
+    Issue #993: a seam dispatching off the main pipeline's cycle must name its
+    space explicitly — ``None`` would make a dual-panel / day-night policy
+    resolve against a flag cached for a different value. Issue #1027: naming
+    only the *inversion* is not enough, because "interpolated, not inverted"
+    and "neither" are different frames that both read as ``inverted=False``.
+    """
+    coord, _ctx = _make_coord([], default_options=options)
+    policy = MagicMock()
+    policy.resolve_entity_target = MagicMock(return_value=dispatched)
+    coord._policy = policy
+
+    await coord.async_apply_user_position(
+        "cover.test", requested, trigger="set_position"
+    )
+
+    policy.resolve_entity_target.assert_called_once_with(
+        "cover.test",
+        dispatched,
+        inverted=expected_inverted,
+        interpolated=expected_interp,
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_position_entity_target_frame_names_both_halves_after_a_floor_raise() -> (
+    None
+):
+    """A floor-raised dispatch names both halves of its frame, never ``None``.
+
+    The requirement (#1027) is unchanged: the seam must state the frame the
+    value is actually in, and ``inverted`` alone cannot express "interpolated,
+    not inverted". What changed is the frame itself — a floor raise no longer
+    skips the transform (#1036), so with inverse + interpolation configured
+    (interpolation suppresses inversion) the raised 25 is calibrated to 45 and
+    the seam is told ``inverted=False, interpolated=True``.
+    """
+    coord, _ctx = _make_coord(
+        [_slot(25, is_on=True, min_mode=True, priority=82)],
+        default_options={CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
+    )
+    policy = MagicMock()
+    policy.resolve_entity_target = MagicMock(return_value=45)
+    coord._policy = policy
+
+    await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
+
+    policy.resolve_entity_target.assert_called_once_with(
+        "cover.test", 45, inverted=False, interpolated=True
     )

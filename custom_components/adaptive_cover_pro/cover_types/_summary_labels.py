@@ -31,6 +31,19 @@ these exact keys/values (prefix-stripped). A drift test in
 
 from __future__ import annotations
 
+# --- Axis labels (namespace config_summary.axes.*) --------------------------
+#
+# User-facing names for the controllable axes surfaced by the self-discovery
+# payload (issue #725). Keyed by ``CoverAxis.label_key``. Resolved the same way
+# as the cover-type labels: English base overlaid by whatever translated
+# ``labels`` dict the policy receives. ``summary_i18n/{en,de,fr}.json["axes"]``
+# mirror these keys (prefix-stripped); the drift guard in
+# ``tests/test_policy_summary_i18n.py`` keeps them in lockstep.
+AXIS_LABELS_EN: dict[str, str] = {
+    "axes.position": "Position",
+    "axes.tilt": "Tilt",
+}
+
 # --- Cover-type labels (namespace config_summary.cover_types.*) -------------
 COVER_TYPE_LABELS_EN: dict[str, str] = {
     "cover_types.blind": "Vertical Blind",
@@ -39,6 +52,10 @@ COVER_TYPE_LABELS_EN: dict[str, str] = {
     "cover_types.oscillating_awning": "Oscillating Awning",
     "cover_types.venetian": "Venetian Blind (Dual-Axis)",
     "cover_types.roof_window": "Roof Window",
+    "cover_types.sliding_curtain": "Sliding Curtain",
+    "cover_types.louvered_roof": "Louvered Roof",
+    "cover_types.day_night_shade": "Day/Night Shade",
+    "cover_types.dual_panel": "Dual Panel Shade",
 }
 
 # --- Geometry / physical-dimension templates (namespace config_summary.geometry.*)
@@ -57,11 +74,15 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     # Awning.
     "geometry.awning.length": "{v}m awning",
     "geometry.awning.angle": "angled at {v}°",
+    "geometry.awning.shade_mode_window": "shade window glass",
+    "geometry.awning.shade_mode_area": "shade area in front (patio)",
     "geometry.awning.blocking_wall": "blocking sun {v}m from wall",
     # Slat block (tilt + venetian).
     "geometry.slat.depth": "slat depth {v}cm",
     "geometry.slat.spacing": "spacing {v}cm",
     "geometry.slat.mode": "mode: {v}",
+    "geometry.slat.angle_0": "0% angle {v}°",
+    "geometry.slat.angle_100": "100% angle {v}°",
     # Oscillating awning.
     "geometry.oscillating.arm": "{v}m arm",
     "geometry.oscillating.sweep": "sweep {lo}°–{hi}°",
@@ -70,6 +91,16 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     # Roof / skylight window (#212).
     "geometry.roof.pitch": "roof pitch {v}° from horizontal",
     "geometry.roof.height_above": "{v}m roof above window (ridge gate)",
+    # Louvered roof (#830 follow-up).
+    "geometry.roof.max_slat_angle": "max slat angle {v}°",
+    # Sliding curtain (#829, Part 2).
+    "geometry.sliding.slide": "slide: {v}",
+    "geometry.sliding.dir_left": "single (left)",
+    "geometry.sliding.dir_right": "single (right)",
+    "geometry.sliding.dir_bi_part": "centre-parting",
+    "geometry.sliding.width": "{v}m window width",
+    "geometry.sliding.shade_area": "shade area ({x1}, {y1})–({x2}, {y2}) m",
+    "geometry.sliding.binary": "binary open/close (no shade area)",
     # Venetian-only extras.
     "geometry.venetian.skip_tilt": "skip tilt when position > {skip_above}%",
     "geometry.venetian.skip_tilt_suppress": (
@@ -81,14 +112,25 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.venetian.max_tilt": "max tilt {max_tilt}%",
     "geometry.venetian.min_tilt": "min tilt {min_tilt}%",
     "geometry.venetian.tilt_safety_margin": "tilt safety margin {pct}%",
+    "geometry.venetian.tilt_transform": "proportional tilt remap into min–max band",
     "geometry.venetian.post_settle_hold": "post-settle hold {hold}s",
     "geometry.venetian.backrotate_lag": "back-rotate publish lag {lag}s",
     "geometry.venetian.drift_reset": (
         "drift-reset every {threshold}% accumulated tilt (via {direction})"
     ),
     "geometry.venetian.drift_reset_scope_solar": "sun-tracking commands only",
+    # Day/Night shade control model (#993, Model B). Rendered via the shared
+    # "mode: {v}" slat-mode line with one of these two model names as the value.
+    "geometry.day_night.model_position_tilt": "position and tilt (dual axis)",
+    "geometry.day_night.model_split_range": "split range (single axis)",
+    "geometry.day_night.model_dual_entity": "two rail entities (dual entity)",
+    # Dual-panel shade (#996): the front/sheer designator + the blackout
+    # trigger list rendered on the config summary.
+    "geometry.dual_panel.front_entity": "front (sheer) panel: {v}",
+    "geometry.dual_panel.triggers": "blackout deploys on: {v}",
+    "geometry.dual_panel.none": "no triggers",
     # Computed-FOV read-only line (blind + venetian Measurements mode, #565).
     "geometry.fov.computed": (
-        "Computed FOV ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"
+        "Computed acceptance angle ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"
     ),
 }

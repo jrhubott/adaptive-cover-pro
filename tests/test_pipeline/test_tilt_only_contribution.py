@@ -46,6 +46,7 @@ def _cp_state(
     priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
     slot: int = 1,
     sensor_name: str | None = None,
+    custom_name: str | None = None,
 ) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_ids=(entity_id,),
@@ -59,6 +60,7 @@ def _cp_state(
         sensor_name=sensor_name,
         slot=slot,
         active_entity_ids=(entity_id,) if is_on else (),
+        custom_name=custom_name,
     )
 
 
@@ -83,6 +85,7 @@ def _solar_cover(*, calculate_percentage_return: float = 50.0) -> MagicMock:
         spec=[
             "direct_sun_valid",
             "calculate_percentage",
+            "calculate_raw_percentage",
             "distance",
             "gamma",
             "config",
@@ -97,6 +100,9 @@ def _solar_cover(*, calculate_percentage_return: float = 50.0) -> MagicMock:
     )
     cover.direct_sun_valid = True
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.distance = 3.0
     cover.gamma = 0.0
     config = MagicMock()
@@ -173,6 +179,70 @@ class TestHandlerDefersInTiltOnly:
         assert result is not None
         assert result.position == 80
         assert result.control_method == ControlMethod.CUSTOM_POSITION
+
+
+# ---------------------------------------------------------------------------
+# gather_tilt_only_contributions — the sibling collector helper
+# ---------------------------------------------------------------------------
+
+
+class TestGatherTiltOnlyContributions:
+    """``gather_tilt_only_contributions`` lists every active tilt-only slot."""
+
+    def test_collects_active_tilt_only_slots(self) -> None:
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            gather_tilt_only_contributions,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state("binary_sensor.a", is_on=True, tilt=42, tilt_only=True),
+                _cp_state(
+                    "binary_sensor.b",
+                    is_on=False,
+                    tilt=10,
+                    tilt_only=True,
+                    slot=2,
+                ),
+            ]
+        )
+        contributions = gather_tilt_only_contributions(snap)
+        assert [c.source for c in contributions] == ["custom_position_1"]
+        assert contributions[0].tilt == 42
+
+    def test_label_uses_custom_name_when_set(self) -> None:
+        """A configured custom_name wins over sensor_name (issue #867)."""
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            gather_tilt_only_contributions,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.a",
+                    is_on=True,
+                    tilt=42,
+                    tilt_only=True,
+                    sensor_name="Glare slot",
+                    custom_name="Evening tilt",
+                )
+            ]
+        )
+        (contribution,) = gather_tilt_only_contributions(snap)
+        assert contribution.label == "Evening tilt"
+
+    def test_label_falls_back_to_entity_id_when_unnamed(self) -> None:
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            gather_tilt_only_contributions,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state("binary_sensor.unnamed", is_on=True, tilt=30, tilt_only=True)
+            ]
+        )
+        (contribution,) = gather_tilt_only_contributions(snap)
+        assert contribution.label == "binary_sensor.unnamed"
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +361,29 @@ class TestResolveTiltAxis:
         assert info is not None
         assert info.label == "binary_sensor.unnamed"
 
+    def test_label_uses_custom_name_when_set(self) -> None:
+        """A configured custom_name wins over sensor_name for the tilt-axis label (issue #867)."""
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            resolve_tilt_axis,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.a",
+                    is_on=True,
+                    tilt=42,
+                    tilt_only=True,
+                    slot=2,
+                    sensor_name="Glare slot",
+                    custom_name="Evening tilt",
+                )
+            ]
+        )
+        info = resolve_tilt_axis(snap)
+        assert info is not None
+        assert info.label == "Evening tilt"
+
 
 # ---------------------------------------------------------------------------
 # Step 4 — registry overlays tilt onto the position winner
@@ -359,6 +452,43 @@ class TestRegistryOverlaysTilt:
         assert step.tilt == 25
         assert "not active" not in step.reason
 
+    def test_applied_tilt_step_carries_reason_payload_code(self) -> None:
+        """The applied tilt-only step carries a registry.tilt_applied code +
+        params, while its English reason stays byte-identical.
+        """
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+
+        cover = _solar_cover(calculate_percentage_return=60.0)
+        snap = make_snapshot(
+            cover=cover,
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.t",
+                    is_on=True,
+                    position=80,
+                    tilt=25,
+                    tilt_only=True,
+                    slot=1,
+                    sensor_name="Slot one",
+                )
+            ],
+        )
+        handler = _cp_handler(1, 80, tilt=25)
+        result = _registry([handler]).evaluate(snap)
+        step = next(
+            s for s in result.decision_trace if s.handler == "custom_position_1"
+        )
+        assert step.reason_payload is not None
+        assert step.reason_payload.code == ReasonCode.REGISTRY_TILT_APPLIED
+        assert step.reason_payload.params == {
+            "tilt": 25,
+            "label": "Slot one",
+            "handler": "solar",
+        }
+        assert step.reason == (
+            "tilt-only: slat angle fixed at 25% by Slot one; position driven by solar"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Step 5 — fill-when-unset: winner with explicit tilt is not overwritten
@@ -422,6 +552,58 @@ class TestFillWhenUnset:
         assert deferred[0].matched is False
         # Deferred (not applied) → no slot recorded for the Control Status surface (#667).
         assert result.tilt_only_slot is None
+
+    def test_deferred_tilt_step_carries_reason_payload_code(self) -> None:
+        """The deferred tilt-only step carries a registry.tilt_deferred code +
+        params, while its English reason stays byte-identical.
+        """
+        from custom_components.adaptive_cover_pro.const import ReasonCode
+
+        cover = _solar_cover(calculate_percentage_return=60.0)
+        snap = make_snapshot(
+            cover=cover,
+            custom_position_sensors=[
+                _cp_state(
+                    "binary_sensor.winner",
+                    is_on=True,
+                    position=40,
+                    tilt=70,
+                    tilt_only=False,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY + 10,
+                    slot=1,
+                ),
+                _cp_state(
+                    "binary_sensor.tiltonly",
+                    is_on=True,
+                    position=80,
+                    tilt=25,
+                    tilt_only=True,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                    slot=2,
+                    sensor_name="Tilt-only slot",
+                ),
+            ],
+        )
+        winner_handler = _cp_handler(
+            1, 40, tilt=70, priority=DEFAULT_CUSTOM_POSITION_PRIORITY + 10
+        )
+        tiltonly_handler = _cp_handler(
+            2, 80, tilt=25, priority=DEFAULT_CUSTOM_POSITION_PRIORITY
+        )
+        result = _registry([winner_handler, tiltonly_handler]).evaluate(snap)
+        step = next(
+            s for s in result.decision_trace if s.handler == "custom_position_2"
+        )
+        assert step.reason_payload is not None
+        assert step.reason_payload.code == ReasonCode.REGISTRY_TILT_DEFERRED
+        assert step.reason_payload.params == {
+            "tilt": 25,
+            "handler": "custom_position_1",
+            "winner_tilt": 70,
+        }
+        assert step.reason == (
+            "tilt-only 25% deferred — custom_position_1 already set tilt 70%"
+        )
 
 
 # ---------------------------------------------------------------------------

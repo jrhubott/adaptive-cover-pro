@@ -8,7 +8,6 @@ a full reload so all state-change listeners and pipeline handlers pick up new va
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
@@ -21,23 +20,41 @@ from ..const import (
     BLANK_TIME,
     BLIND_SPOT_ELEVATION_MODES,
     BLIND_SPOT_SLOTS,
+    GLARE_ZONE_SLOT_NUMBERS,
+    blind_spot_legacy_to_gamma,
+    clamp_gamma_pair,
+    resolve_fov_left,
+    resolve_fov_right,
+    AWNING_SHADE_MODE_AREA,
+    AWNING_SHADE_MODE_WINDOW,
     CONF_ARM_LENGTH,
     CONF_AWNING_ANGLE,
     CONF_AWNING_HOUSING_OFFSET,
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
     CONF_AWNING_PIVOT_OFFSET,
+    CONF_AWNING_SHADE_MODE,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
     CONF_CLIMATE_PRIORITY,
+    CONF_CLIMATE_TEMP_HOLD_TIME,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUD_SUPPRESSION_PRIORITY,
+    CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+    CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+    CONF_DAY_NIGHT_OPACITY_SHEER,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
+    CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+    CONF_DUAL_PANEL_FRONT_ENTITY,
     CONF_DEVICE_ID,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
@@ -48,6 +65,7 @@ from ..const import (
     CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_END_ENTITY,
     CONF_END_OF_WINDOW_POS,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
@@ -56,6 +74,7 @@ from ..const import (
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_GLARE_ZONE_PRIORITY,
+    CONF_GROUP_STAGGER_DELAY,
     CONF_HEIGHT_WIN,
     CONF_INTERP,
     CONF_INTERP_END,
@@ -64,22 +83,26 @@ from ..const import (
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_DURATION_MODE,
     CONF_MANUAL_OVERRIDE_PRIORITY,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
+    CONF_MAX_SLAT_ANGLE,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
@@ -94,6 +117,7 @@ from ..const import (
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
@@ -103,6 +127,12 @@ from ..const import (
     CONF_ROOF_HEIGHT_ABOVE,
     CONF_ROOF_PITCH,
     CONF_SILL_HEIGHT,
+    CONF_SLIDING_ENABLE_SHADE_AREA,
+    CONF_SLIDING_POINT1_X,
+    CONF_SLIDING_POINT1_Y,
+    CONF_SLIDING_POINT2_X,
+    CONF_SLIDING_POINT2_Y,
+    CONF_SLIDING_SLIDE_DIRECTION,
     CONF_SOLAR_PRIORITY,
     CONF_START_ENTITY,
     CONF_START_TIME,
@@ -114,12 +144,18 @@ from ..const import (
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_MAX_TILT,
     CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
     CONF_MIN_TILT_SUN_ONLY,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
@@ -128,18 +164,26 @@ from ..const import (
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_POST_SETTLE_MODE,
     CONF_VENETIAN_TILT_RESET_DIRECTION,
+    CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_RESET_SCOPE,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
-    CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_VENETIAN_TILT_TRANSFORM,
+    DAY_NIGHT_CONTROL_MODELS,
+    DUAL_PANEL_BLACKOUT_TRIGGERS,
+    MANUAL_OVERRIDE_DURATION_MODES,
+    SLIDING_SLIDE_DIRECTIONS,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
     VENETIAN_TILT_RESET_DIRECTIONS,
     VENETIAN_TILT_RESET_SCOPES,
     VENETIAN_TILT_SKIP_MODES,
+    VENETIAN_TILT_TRANSFORMS,
     TemplateCombineMode,
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    CONF_TRACKING_SEASONS,
+    TrackingSeason,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
@@ -155,6 +199,8 @@ from ..const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE,
     CONF_WEATHER_STATE,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -169,8 +215,9 @@ from ..const import (
     CUSTOM_POSITION_SLOTS,
     DOMAIN,
     OPTION_RANGES,
+    TIME_STRING_RE,
 )
-from ..helpers import custom_position_slot_sensors
+from ..helpers import CUSTOM_POSITION_CLAIM_KEYS, custom_position_slot_sensors
 from ..templates import is_template_string as _is_template_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -182,8 +229,6 @@ IDENTITY_KEYS: frozenset[str] = frozenset(
 
 # HA service call plumbing keys to strip when building a patch
 _PLUMBING_KEYS: frozenset[str] = frozenset({"entity_id", "device_id", "area_id"})
-
-_TIME_RE = re.compile(r"^\d{2}:\d{2}:\d{2}$")
 
 # ---------------------------------------------------------------------------
 # Per-field validators
@@ -277,6 +322,13 @@ def _entity_v():
     return vol.Any(None, str)
 
 
+# Free-form text field — None or any string, no format constraint. Shares
+# _entity_v's implementation (both are "None or str") but is aliased under
+# its own name so call sites read as "text", not "entity reference" — see
+# custom_position_name_N (issue #867).
+_text_v = _entity_v
+
+
 def _entities_v():
     return vol.Any(None, [str])
 
@@ -287,7 +339,7 @@ def _duration_v():
 
 def _time_v():
     def _check(v):
-        if v is not None and not _TIME_RE.match(str(v)):
+        if v is not None and not TIME_STRING_RE.match(str(v)):
             raise vol.Invalid(f"Time must be HH:MM:SS, got: {v!r}")
         return v
 
@@ -296,6 +348,28 @@ def _time_v():
 
 def _select_v(*options: str):
     return vol.Any(None, vol.In(list(options)))
+
+
+def _list_subset_v(*options: str):
+    """Validate ``None`` or a list whose members are all within *options*.
+
+    Used for multi-select literal sets (e.g. the dual-panel blackout triggers) —
+    an empty list is valid (nothing selected); any member outside the allowed
+    set raises ``vol.Invalid``.
+    """
+    allowed = set(options)
+
+    def _validate(value):
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise vol.Invalid("expected a list")
+        bad = [item for item in value if item not in allowed]
+        if bad:
+            raise vol.Invalid(f"unknown option(s): {', '.join(map(str, bad))}")
+        return value
+
+    return _validate
 
 
 # Maps option key → validator callable. Used by validate_options_patch and set_option.
@@ -311,6 +385,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — awning
     CONF_LENGTH_AWNING: _range(CONF_LENGTH_AWNING),
     CONF_AWNING_ANGLE: _range(CONF_AWNING_ANGLE),
+    CONF_AWNING_SHADE_MODE: _select_v(AWNING_SHADE_MODE_WINDOW, AWNING_SHADE_MODE_AREA),
     # Geometry — oscillating (drop-arm) awning (#412)
     CONF_ARM_LENGTH: _range(CONF_ARM_LENGTH),
     CONF_AWNING_MIN_ANGLE: _range(CONF_AWNING_MIN_ANGLE),
@@ -320,20 +395,42 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — roof / skylight window (#212)
     CONF_ROOF_PITCH: _range(CONF_ROOF_PITCH),
     CONF_ROOF_HEIGHT_ABOVE: _range(CONF_ROOF_HEIGHT_ABOVE),
+    # Geometry — louvered roof (#830 follow-up)
+    CONF_MAX_SLAT_ANGLE: _range(CONF_MAX_SLAT_ANGLE),
+    # Geometry — sliding curtain shade area (#829, Part 2)
+    CONF_SLIDING_ENABLE_SHADE_AREA: _bool_v(),
+    CONF_SLIDING_SLIDE_DIRECTION: _select_v(*SLIDING_SLIDE_DIRECTIONS),
+    CONF_SLIDING_POINT1_X: _range(CONF_SLIDING_POINT1_X),
+    CONF_SLIDING_POINT1_Y: _range(CONF_SLIDING_POINT1_Y),
+    CONF_SLIDING_POINT2_X: _range(CONF_SLIDING_POINT2_X),
+    CONF_SLIDING_POINT2_Y: _range(CONF_SLIDING_POINT2_Y),
+    # Geometry — day/night dual-fabric shade (#993)
+    CONF_DAY_NIGHT_OPACITY_SHEER: _range(CONF_DAY_NIGHT_OPACITY_SHEER),
+    CONF_DAY_NIGHT_OPACITY_BLACKOUT: _range(CONF_DAY_NIGHT_OPACITY_BLACKOUT),
+    CONF_DAY_NIGHT_BLACKOUT_THRESHOLD: _range(CONF_DAY_NIGHT_BLACKOUT_THRESHOLD),
+    CONF_DAY_NIGHT_CONTROL_MODEL: _select_v(*DAY_NIGHT_CONTROL_MODELS),
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _entity_v(),
+    # Geometry — dual-panel shade (#996)
+    CONF_DUAL_PANEL_FRONT_ENTITY: _entity_v(),
+    CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: _list_subset_v(*DUAL_PANEL_BLACKOUT_TRIGGERS),
     # Geometry — tilt/venetian
     CONF_TILT_DEPTH: _range(CONF_TILT_DEPTH),
     CONF_TILT_DISTANCE: _range(CONF_TILT_DISTANCE),
-    CONF_TILT_MODE: _select_v("mode1", "mode2"),
+    CONF_TILT_MODE: _select_v("mode1", "mode2", "specify_angles"),
+    CONF_TILT_ANGLE_0: _range(CONF_TILT_ANGLE_0),
+    CONF_TILT_ANGLE_100: _range(CONF_TILT_ANGLE_100),
     CONF_MAX_TILT: _range(CONF_MAX_TILT),
     CONF_MAX_TILT_SUN_ONLY: _bool_v(),
     CONF_MIN_TILT: _range(CONF_MIN_TILT),
     CONF_MIN_TILT_SUN_ONLY: _bool_v(),
+    # Shared tilt-axis safety margin (neutral key since #964)
+    CONF_TILT_SAFETY_MARGIN: _range(CONF_TILT_SAFETY_MARGIN),
     # Venetian-specific options
-    CONF_VENETIAN_TILT_SAFETY_MARGIN: _range(CONF_VENETIAN_TILT_SAFETY_MARGIN),
     CONF_VENETIAN_POST_SETTLE_HOLD: _range(CONF_VENETIAN_POST_SETTLE_HOLD),
     CONF_VENETIAN_POST_SETTLE_MODE: _select_v(*VENETIAN_POST_SETTLE_MODES),
     CONF_VENETIAN_TILT_SKIP_ABOVE: _range(CONF_VENETIAN_TILT_SKIP_ABOVE),
     CONF_VENETIAN_TILT_SKIP_MODE: _select_v(*VENETIAN_TILT_SKIP_MODES),
+    CONF_VENETIAN_TILT_TRANSFORM: _select_v(*VENETIAN_TILT_TRANSFORMS),
     CONF_VENETIAN_TILT_RESET_THRESHOLD: _range(CONF_VENETIAN_TILT_RESET_THRESHOLD),
     CONF_VENETIAN_TILT_RESET_DIRECTION: _select_v(*VENETIAN_TILT_RESET_DIRECTIONS),
     CONF_VENETIAN_TILT_RESET_SCOPE: _select_v(*VENETIAN_TILT_RESET_SCOPES),
@@ -356,7 +453,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     **{
         keys[sub]: _range(keys[sub])
         for keys in BLIND_SPOT_SLOTS.values()
-        for sub in ("left", "right", "elevation")
+        for sub in ("left", "right", "left_gamma", "right_gamma", "elevation")
     },
     # Per-slot elevation mode is a below/above select, not a numeric range.
     **{
@@ -402,6 +499,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_RETURN_SUNSET: _bool_v(),
     # Manual override
     CONF_MANUAL_OVERRIDE_DURATION: _duration_v(),
+    CONF_MANUAL_OVERRIDE_DURATION_MODE: _select_v(*MANUAL_OVERRIDE_DURATION_MODES),
     CONF_MANUAL_OVERRIDE_RESET: _bool_v(),
     CONF_MANUAL_THRESHOLD: _range(CONF_MANUAL_THRESHOLD),
     CONF_MANUAL_IGNORE_INTERMEDIATE: _bool_v(),
@@ -410,8 +508,9 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_FORCE_OVERRIDE_SENSORS: _entities_v(),
     CONF_FORCE_OVERRIDE_POSITION: _range(CONF_FORCE_OVERRIDE_POSITION),
     CONF_FORCE_OVERRIDE_MIN_MODE: _bool_v(),
-    # Custom positions 1–5 — sensor(s)/template/min_mode/use_my are non-numeric;
-    # position/priority pull their range from OPTION_RANGES.
+    # Custom positions 1–10 — sensor(s)/template/name/min_mode/use_my are
+    # non-numeric; position/priority pull their range from OPTION_RANGES.
+    **{slot_keys["name"]: _text_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     **{
         slot_keys["sensor"]: _entity_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },
@@ -447,12 +546,20 @@ FIELD_VALIDATORS: dict[str, Any] = {
         slot_keys["tilt"]: _range(slot_keys["tilt"])
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },
+    # Axis constraints (issue #943) — all three pull their bounds from
+    # OPTION_RANGES, which the FieldSpec registry derives from the same
+    # _RANGE_CUSTOM_POSITION / _RANGE_TILT the config-flow selectors use.
+    **{
+        slot_keys[sub]: _range(slot_keys[sub])
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+        for sub in ("position_max", "tilt_min", "tilt_max")
+    },
     **{slot_keys["enabled"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     # Glare zones 1–4 — name is free-form text; x/y/radius/z pull ranges from
     # OPTION_RANGES (bounds mirror config_flow._build_glare_zones_schema).
     **{
         f"glare_zone_{i}_{axis}": _range(f"glare_zone_{i}_{axis}")
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis in ("x", "y", "radius", "z")
     },
     # Motion
@@ -471,6 +578,17 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_CLOUD_COVERAGE_ENTITY: _entity_v(),
     CONF_CLOUD_COVERAGE_THRESHOLD: _templatable_num(CONF_CLOUD_COVERAGE_THRESHOLD),
     CONF_CLOUD_SUPPRESSION: _bool_v(),
+    # Smoothing controls (issue #864): symmetric hold-time + per-trigger
+    # hysteresis release edges. Release thresholds are number-or-template like
+    # their activate counterparts above.
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME: _range(CONF_CLOUD_SUPPRESSION_HOLD_TIME),
+    CONF_LUX_RELEASE_THRESHOLD: _templatable_num(CONF_LUX_RELEASE_THRESHOLD),
+    CONF_IRRADIANCE_RELEASE_THRESHOLD: _templatable_num(
+        CONF_IRRADIANCE_RELEASE_THRESHOLD
+    ),
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD: _templatable_num(
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD
+    ),
     CONF_IS_SUNNY_SENSOR: _entity_v(),
     CONF_IS_SUNNY_TEMPLATE: _template_or_none,
     CONF_IS_SUNNY_TEMPLATE_MODE: _select_v(*[m.value for m in TemplateCombineMode]),
@@ -487,6 +605,21 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_TRANSPARENT_BLIND: _bool_v(),
     CONF_WINTER_CLOSE_INSULATION: _bool_v(),
     CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR: _bool_v(),
+    CONF_TEMP_EXTREME_HEAT: _templatable_num(CONF_TEMP_EXTREME_HEAT),
+    CONF_EXTREME_HEAT_POSITION: _range(CONF_EXTREME_HEAT_POSITION),
+    CONF_TRACKING_SEASONS: vol.Any(None, [vol.In([s.value for s in TrackingSeason])]),
+    # Temperature smoothing controls (issue #917): symmetric hold-time +
+    # per-crossing hysteresis release edges. Release thresholds are
+    # number-or-template like their activate counterparts.
+    CONF_CLIMATE_TEMP_HOLD_TIME: _range(CONF_CLIMATE_TEMP_HOLD_TIME),
+    CONF_TEMP_LOW_RELEASE_THRESHOLD: _templatable_num(CONF_TEMP_LOW_RELEASE_THRESHOLD),
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD: _templatable_num(
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD
+    ),
+    CONF_OUTSIDE_THRESHOLD_RELEASE: _templatable_num(CONF_OUTSIDE_THRESHOLD_RELEASE),
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD: _templatable_num(
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD
+    ),
     # Weather safety
     CONF_WEATHER_BYPASS_AUTO_CONTROL: _bool_v(),
     CONF_WEATHER_WIND_SPEED_SENSOR: _entity_v(),
@@ -510,6 +643,10 @@ FIELD_VALIDATORS: dict[str, Any] = {
         *[m.value for m in TemplateCombineMode]
     ),
     CONF_WEATHER_SEVERE_SENSORS: _entities_v(),
+    CONF_WEATHER_SEVERE_TEMPLATE: _template_or_none,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE: _select_v(
+        *[m.value for m in TemplateCombineMode]
+    ),
     CONF_WEATHER_OVERRIDE_POSITION: _range(CONF_WEATHER_OVERRIDE_POSITION),
     CONF_WEATHER_OVERRIDE_MIN_MODE: _bool_v(),
     CONF_WEATHER_TIMEOUT: _range(CONF_WEATHER_TIMEOUT),
@@ -521,6 +658,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_CLIMATE_PRIORITY: _range(CONF_CLIMATE_PRIORITY),
     CONF_GLARE_ZONE_PRIORITY: _range(CONF_GLARE_ZONE_PRIORITY),
     CONF_SOLAR_PRIORITY: _range(CONF_SOLAR_PRIORITY),
+    # Cover group (issue #790, Phase 2)
+    CONF_GROUP_STAGGER_DELAY: _range(CONF_GROUP_STAGGER_DELAY),
 }
 
 # ---------------------------------------------------------------------------
@@ -568,6 +707,7 @@ _SECTION_AUTOMATION_TIMING = frozenset(
 _SECTION_MANUAL_OVERRIDE = frozenset(
     {
         CONF_MANUAL_OVERRIDE_DURATION,
+        CONF_MANUAL_OVERRIDE_DURATION_MODE,
         CONF_MANUAL_OVERRIDE_RESET,
         CONF_MANUAL_THRESHOLD,
         CONF_MANUAL_IGNORE_INTERMEDIATE,
@@ -598,6 +738,10 @@ _SECTION_LIGHT_CLOUD = frozenset(
         CONF_CLOUD_COVERAGE_ENTITY,
         CONF_CLOUD_COVERAGE_THRESHOLD,
         CONF_CLOUD_SUPPRESSION,
+        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+        CONF_LUX_RELEASE_THRESHOLD,
+        CONF_IRRADIANCE_RELEASE_THRESHOLD,
+        CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
         CONF_IS_SUNNY_SENSOR,
         CONF_IS_SUNNY_TEMPLATE,
         CONF_IS_SUNNY_TEMPLATE_MODE,
@@ -618,6 +762,14 @@ _SECTION_CLIMATE = frozenset(
         CONF_TRANSPARENT_BLIND,
         CONF_WINTER_CLOSE_INSULATION,
         CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+        CONF_TEMP_EXTREME_HEAT,
+        CONF_EXTREME_HEAT_POSITION,
+        # Temperature smoothing controls (issue #917).
+        CONF_CLIMATE_TEMP_HOLD_TIME,
+        CONF_TEMP_LOW_RELEASE_THRESHOLD,
+        CONF_TEMP_HIGH_RELEASE_THRESHOLD,
+        CONF_OUTSIDE_THRESHOLD_RELEASE,
+        CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     }
 )
 
@@ -637,6 +789,8 @@ _SECTION_WEATHER_SAFETY = frozenset(
         CONF_WEATHER_IS_WINDY_TEMPLATE,
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         CONF_WEATHER_SEVERE_SENSORS,
+        CONF_WEATHER_SEVERE_TEMPLATE,
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         CONF_WEATHER_OVERRIDE_POSITION,
         CONF_WEATHER_OVERRIDE_MIN_MODE,
         CONF_WEATHER_TIMEOUT,
@@ -662,7 +816,14 @@ _SECTION_BLIND_SPOT = frozenset(
     | {
         keys[sub]
         for keys in BLIND_SPOT_SLOTS.values()
-        for sub in ("left", "right", "elevation", "elevation_mode")
+        for sub in (
+            "left",
+            "right",
+            "left_gamma",
+            "right_gamma",
+            "elevation",
+            "elevation_mode",
+        )
     }
 )
 
@@ -680,10 +841,16 @@ _SECTION_GEOMETRY_VERTICAL = frozenset(
     {CONF_HEIGHT_WIN, CONF_WINDOW_WIDTH, CONF_WINDOW_DEPTH, CONF_SILL_HEIGHT}
 )
 _SECTION_GEOMETRY_AWNING = frozenset(
-    {CONF_LENGTH_AWNING, CONF_AWNING_ANGLE, CONF_HEIGHT_WIN}
+    {CONF_LENGTH_AWNING, CONF_AWNING_ANGLE, CONF_AWNING_SHADE_MODE, CONF_HEIGHT_WIN}
 )
 _SECTION_GEOMETRY_TILT = frozenset(
-    {CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE}
+    {
+        CONF_TILT_DEPTH,
+        CONF_TILT_DISTANCE,
+        CONF_TILT_MODE,
+        CONF_TILT_ANGLE_0,
+        CONF_TILT_ANGLE_100,
+    }
 )
 _SECTION_GEOMETRY_OSCILLATING = frozenset(
     {
@@ -694,13 +861,48 @@ _SECTION_GEOMETRY_OSCILLATING = frozenset(
         CONF_AWNING_PIVOT_OFFSET,
     }
 )
-_SECTION_GEOMETRY_ROOF = frozenset({CONF_ROOF_PITCH, CONF_ROOF_HEIGHT_ABOVE})
+_SECTION_GEOMETRY_ROOF = frozenset(
+    {CONF_ROOF_PITCH, CONF_ROOF_HEIGHT_ABOVE, CONF_MAX_SLAT_ANGLE}
+)
+_SECTION_GEOMETRY_SLIDING = frozenset(
+    {
+        CONF_SLIDING_ENABLE_SHADE_AREA,
+        CONF_SLIDING_SLIDE_DIRECTION,
+        CONF_SLIDING_POINT1_X,
+        CONF_SLIDING_POINT1_Y,
+        CONF_SLIDING_POINT2_X,
+        CONF_SLIDING_POINT2_Y,
+    }
+)
+_SECTION_GEOMETRY_DAY_NIGHT = frozenset(
+    {
+        CONF_DAY_NIGHT_OPACITY_SHEER,
+        CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+        CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+        CONF_DAY_NIGHT_CONTROL_MODEL,
+        # Model C middle-rail entity — has a FIELD_VALIDATORS entry, so it must
+        # be service-settable too (else the validator is dead code) (#993).
+        CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+    }
+)
+_SECTION_GEOMETRY_DUAL_PANEL = frozenset(
+    {
+        # Both have FIELD_VALIDATORS entries, so they must be service-settable
+        # too (else the validators are dead code and the keys silently dropped) —
+        # mirrors the day/night middle-rail wiring (#996 Finding 3).
+        CONF_DUAL_PANEL_FRONT_ENTITY,
+        CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+    }
+)
 _SECTION_GEOMETRY_ALL = (
     _SECTION_GEOMETRY_VERTICAL
     | _SECTION_GEOMETRY_AWNING
     | _SECTION_GEOMETRY_TILT
     | _SECTION_GEOMETRY_OSCILLATING
     | _SECTION_GEOMETRY_ROOF
+    | _SECTION_GEOMETRY_SLIDING
+    | _SECTION_GEOMETRY_DAY_NIGHT
+    | _SECTION_GEOMETRY_DUAL_PANEL
 )
 
 _SECTION_VENETIAN = frozenset(
@@ -759,6 +961,13 @@ _CUSTOM_SLOT_KEYS = CUSTOM_POSITION_SLOTS
 # existing automations keep working (issue #792).
 _SERVICE_FIELD_ALIASES: dict[str, str] = {
     "default_height": CONF_DEFAULT_HEIGHT,
+    # issue #723: set_occupancy is the renamed API for the occupancy-detection
+    # feature. Its occupancy_* wire fields resolve to the frozen CONF_MOTION_*
+    # option keys so the new service shares set_motion's handler with no
+    # duplication; set_motion keeps working via its own field names.
+    "occupancy_sensors": CONF_MOTION_SENSORS,
+    "occupancy_media_players": CONF_MOTION_MEDIA_PLAYERS,
+    "occupancy_timeout": CONF_MOTION_TIMEOUT,
 }
 
 
@@ -809,8 +1018,10 @@ def _cross_field_validate(
     # Remove keys explicitly cleared (value=None) from the merged view
     merged_active = {k: v for k, v in merged.items() if v is not None}
 
-    # Blind spot ordering — one check per slot (issue #701). Slot 1 uses the
-    # legacy unsuffixed keys; slots 2/3 are suffixed.
+    # Blind spot ordering — one check per slot (issue #701/#247). Slot 1 uses
+    # the unsuffixed keys; slots 2/3 are suffixed. Legacy FOV-relative edges use
+    # the ``right > left`` ordering; the primary signed-gamma edges must form a
+    # non-empty wedge (``left_gamma + right_gamma > 0``).
     for keys in BLIND_SPOT_SLOTS.values():
         left_key = keys["left"]
         right_key = keys["right"]
@@ -820,6 +1031,16 @@ def _cross_field_validate(
             if left is not None and right is not None and right <= left:
                 raise ServiceValidationError(
                     f"{right_key} ({right}) must be greater than {left_key} ({left})."
+                )
+        left_g_key = keys["left_gamma"]
+        right_g_key = keys["right_gamma"]
+        if left_g_key in patch or right_g_key in patch:
+            left_g = merged_active.get(left_g_key)
+            right_g = merged_active.get(right_g_key)
+            if left_g is not None and right_g is not None and left_g + right_g <= 0:
+                raise ServiceValidationError(
+                    f"The blind-spot wedge for {left_g_key}/{right_g_key} is empty: "
+                    f"left edge + right edge must be greater than 0."
                 )
 
     # Temperature ordering (skipped when either side is a template — #577)
@@ -831,20 +1052,34 @@ def _cross_field_validate(
                 f"temp_low ({low}) must be less than temp_high ({high})."
             )
 
+    # Specify-angles endpoint ordering.
+    if CONF_TILT_ANGLE_0 in patch or CONF_TILT_ANGLE_100 in patch:
+        angle_0 = _as_number(merged_active.get(CONF_TILT_ANGLE_0))
+        angle_100 = _as_number(merged_active.get(CONF_TILT_ANGLE_100))
+        if angle_0 is not None and angle_100 is not None and angle_0 >= angle_100:
+            raise ServiceValidationError(
+                f"tilt_angle_0 ({angle_0}) must be less than tilt_angle_100 ({angle_100})."
+            )
+
     # Custom position slot completeness: a slot needs a trigger (sensors,
-    # legacy sensor, or template) AND a position — or neither.
+    # legacy sensor, or template) AND a claim on an axis — or neither. The
+    # claim vocabulary is CUSTOM_POSITION_CLAIM_KEYS: a position, or one of the
+    # axis constraints (issue #943), so a trigger → "minimum tilt 50%" slot is
+    # complete without a position.
     for i in CUSTOM_POSITION_SLOT_NUMBERS if check_slot_completeness else ():
         slot = _CUSTOM_SLOT_KEYS[i]
         trigger_keys = (slot["sensor"], slot["sensors"], slot["template"])
-        p_key = slot["position"]
-        if any(k in patch for k in trigger_keys) or p_key in patch:
+        claim_keys = tuple(slot[sub] for sub in CUSTOM_POSITION_CLAIM_KEYS)
+        if any(k in patch for k in trigger_keys + claim_keys):
             has_trigger = bool(
                 custom_position_slot_sensors(merged_active, slot)
             ) or _is_template_str(merged_active.get(slot["template"]))
-            pos_set = merged_active.get(p_key) is not None
-            if has_trigger != pos_set:
+            has_claim = any(merged_active.get(k) is not None for k in claim_keys)
+            if has_trigger != has_claim:
                 missing = (
-                    p_key if has_trigger else f"{slot['sensors']} or {slot['template']}"
+                    f"{slot['position']} (or an axis constraint)"
+                    if has_trigger
+                    else f"{slot['sensors']} or {slot['template']}"
                 )
                 raise ServiceValidationError(
                     f"Custom position slot {i}: incomplete — '{missing}' is missing. "
@@ -1017,6 +1252,10 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         "min_mode": slot_keys["min_mode"],
         "use_my": slot_keys["use_my"],
         "enabled": slot_keys["enabled"],
+        # Axis constraints (issue #943)
+        "position_max": slot_keys["position_max"],
+        "tilt_min": slot_keys["tilt_min"],
+        "tilt_max": slot_keys["tilt_max"],
     }
 
     # Build patch: only include fields that were supplied in the call
@@ -1121,18 +1360,134 @@ async def _handle_set_option(hass: HomeAssistant, call: ServiceCall) -> None:
         )
 
     value = call.data.get("value")
-    patch = {option: value}
 
     targets = _resolve_targets(hass, call)
     for coord in targets:
+        current = dict(coord.config_entry.options)
+        patch = {option: value}
+        # A migration-read-only legacy blind-spot edge would validate and persist
+        # yet do nothing at runtime (the gamma keys shadow it). Project it onto
+        # the gamma keys so the write actually takes effect (issue #247, finding 5).
+        _augment_blind_spot_gamma(patch, current)
         sensor_type = coord.config_entry.data.get("sensor_type")
-        validate_options_patch(patch, dict(coord.config_entry.options), sensor_type)
+        validate_options_patch(patch, current, sensor_type)
         await apply_options_patch(hass, coord, patch)
         _LOGGER.debug(
             "set_option '%s' -> %r for entry %s",
             option,
             value,
             coord.config_entry.entry_id,
+        )
+
+
+def _resolve_legacy_edge(
+    patch: dict,
+    current: dict,
+    legacy_key: str,
+    gamma_key: str,
+    fov_left: int,
+    *,
+    is_left: bool,
+) -> Any:
+    """Resolve one legacy blind-spot edge, completing it from *current* if absent.
+
+    Precedence: an edge supplied in *patch* wins; else the stored signed-gamma
+    key back-converted to the legacy frame (the RUNTIME TRUTH); else the stored
+    legacy key. The back-conversion is the inverse of
+    ``blind_spot_legacy_to_gamma``: ``old_left = fov_left - gamma``,
+    ``old_right = gamma + fov_left``. Returns ``None`` when the edge is
+    unresolvable on every path.
+
+    Gamma is preferred over the stored legacy key because the options flow saves
+    ONLY the gamma keys — the legacy edges freeze at migration and go stale after
+    any UI wedge edit. Completing the missing edge from the stale legacy key would
+    silently revert the user's UI edit (N1). For never-edited entries the stored
+    legacy and the back-converted gamma agree, so this is behaviour-preserving
+    where it matters.
+    """
+    if legacy_key in patch:
+        return patch[legacy_key]
+    g = current.get(gamma_key)
+    if g is not None:
+        return fov_left - int(g) if is_left else int(g) + fov_left
+    return current.get(legacy_key)
+
+
+def _augment_blind_spot_gamma(patch: dict, current: dict) -> None:
+    """Fold a legacy blind-spot edge write into the signed-gamma keys (issue #247).
+
+    The engine reads only the signed-gamma keys; the legacy edges are
+    migration-read-only. So any service write of a legacy edge must be projected
+    onto the gamma keys or it silently no-ops. Per slot, mutating *patch* in
+    place:
+
+    * If an explicit gamma edge is already in *patch*, gamma WINS — the legacy
+      pair is NOT converted for that slot (finding 7).
+    * Otherwise, when either legacy edge is in *patch*, the missing edge is
+      completed from *current* via :func:`_resolve_legacy_edge` (back-converted
+      live gamma preferred, else the stored legacy key) and the pair is converted
+      to gamma via the shared :func:`blind_spot_legacy_to_gamma` (finding 1/5).
+      This mirrors the patch+current merge that cross-field validation uses.
+
+    The converted gamma pair is clamped to the FOV via the shared
+    :func:`clamp_gamma_pair` — the SAME helper the config migration uses — so an
+    extreme legacy input (a harmless never-matching wedge pre-#247) behaves like
+    the migration and never hard-fails the range validator on a key the caller
+    never supplied (N2). The clamp applies ONLY to the legacy→gamma path; a caller
+    supplying a gamma key directly skips this block and is validated normally.
+
+    Shared by ``set_blind_spot`` and the generic ``set_option`` so the two can
+    never diverge.
+    """
+    fov_left = resolve_fov_left(current)
+    fov_right = resolve_fov_right(current)
+    for keys in BLIND_SPOT_SLOTS.values():
+        if keys["left_gamma"] in patch or keys["right_gamma"] in patch:
+            continue  # explicit gamma wins — do not derive from legacy
+        if keys["left"] not in patch and keys["right"] not in patch:
+            continue  # no legacy edge touched for this slot
+        old_left = _resolve_legacy_edge(
+            patch, current, keys["left"], keys["left_gamma"], fov_left, is_left=True
+        )
+        old_right = _resolve_legacy_edge(
+            patch, current, keys["right"], keys["right_gamma"], fov_left, is_left=False
+        )
+        if old_left is None or old_right is None:
+            continue  # cannot form a complete wedge
+        new_left, new_right = blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+        new_left, new_right = clamp_gamma_pair(new_left, new_right, fov_left, fov_right)
+        # Overwrite (not setdefault): a legacy call must update the effective
+        # wedge even when stale gamma keys already exist.
+        patch[keys["left_gamma"]] = new_left
+        patch[keys["right_gamma"]] = new_right
+
+
+async def _handle_set_blind_spot(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle set_blind_spot with legacy→signed-gamma back-compat (issue #247).
+
+    The signed-gamma fields (``blind_spot_*_gamma``) are the primary inputs and,
+    when supplied, win verbatim. For back-compat, a call that supplies the
+    deprecated legacy ``blind_spot_left`` / ``blind_spot_right`` (or the ``_2`` /
+    ``_3`` slots) is converted on write to the signed-gamma keys — completing a
+    half-supplied pair from the stored options — via
+    :func:`_augment_blind_spot_gamma`, so existing automations stay
+    bit-identical while the stored frame is the new one.
+    """
+    from . import _resolve_targets  # noqa: PLC0415
+
+    base_patch = _build_patch(call.data, _SECTION_BLIND_SPOT)
+    targets = _resolve_targets(hass, call)
+    for coord in targets:
+        current = dict(coord.config_entry.options)
+        patch = dict(base_patch)
+        _augment_blind_spot_gamma(patch, current)
+        sensor_type = coord.config_entry.data.get("sensor_type")
+        validate_options_patch(patch, current, sensor_type)
+        await apply_options_patch(hass, coord, patch)
+        _LOGGER.debug(
+            "set_blind_spot updated entry %s: %s",
+            coord.config_entry.entry_id,
+            list(patch),
         )
 
 
@@ -1166,9 +1521,24 @@ def register_options_services(hass: HomeAssistant) -> None:
     # DEPRECATED (issue #563): kept one release so existing automations don't
     # hit service-not-found; routes onto custom-position slot 5.
     hass.services.async_register(DOMAIN, "set_force_override", _force_override_shim)
-    hass.services.async_register(
-        DOMAIN, "set_motion", _section_handler(_SECTION_MOTION)
-    )
+
+    # issue #723: set_occupancy is the current name for the occupancy-detection
+    # service; set_motion is deprecated but kept working. Both delegate to the
+    # SAME section handler — set_occupancy's occupancy_* fields resolve to the
+    # CONF_MOTION_* option keys via _SERVICE_FIELD_ALIASES. set_motion only adds
+    # a deprecation-warning side effect.
+    _motion_handler = _section_handler(_SECTION_MOTION)
+
+    async def _set_motion_deprecated(call: ServiceCall) -> None:
+        _LOGGER.warning(
+            "adaptive_cover_pro.set_motion is deprecated (issue #723); use "
+            "set_occupancy with occupancy_sensors / occupancy_timeout / "
+            "occupancy_media_players instead. set_motion keeps working for now."
+        )
+        await _motion_handler(call)
+
+    hass.services.async_register(DOMAIN, "set_motion", _set_motion_deprecated)
+    hass.services.async_register(DOMAIN, "set_occupancy", _motion_handler)
     hass.services.async_register(
         DOMAIN, "set_light_cloud", _section_handler(_SECTION_LIGHT_CLOUD)
     )
@@ -1181,9 +1551,11 @@ def register_options_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, "set_sun_tracking", _section_handler(_SECTION_SUN_TRACKING)
     )
-    hass.services.async_register(
-        DOMAIN, "set_blind_spot", _section_handler(_SECTION_BLIND_SPOT)
-    )
+
+    async def _blind_spot_handler(call: ServiceCall) -> None:
+        await _handle_set_blind_spot(hass, call)
+
+    hass.services.async_register(DOMAIN, "set_blind_spot", _blind_spot_handler)
     hass.services.async_register(
         DOMAIN, "set_interpolation", _section_handler(_SECTION_INTERPOLATION)
     )
@@ -1214,6 +1586,7 @@ OPTIONS_SERVICE_NAMES: tuple[str, ...] = (
     "set_force_override",
     "set_custom_position",
     "set_motion",
+    "set_occupancy",
     "set_light_cloud",
     "set_climate",
     "set_weather_safety",

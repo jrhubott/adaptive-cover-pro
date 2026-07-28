@@ -575,3 +575,74 @@ class TestPostPipelineResolveTiltSubTrace:
             _make_result(ControlMethod.SOLAR, position=80), **kwargs
         )
         assert "tilt" not in cover._last_calc_details
+
+
+# ---------------------------------------------------------------------------
+# Engine-tilt clamping against carried tilt bounds — issue #943
+#
+# Tilt can resolve AFTER the pipeline: the registry has no tilt to clamp when
+# the venetian engine is the thing that produces it. The registry therefore
+# carries the composed bounds on the result and this policy applies them —
+# through the same shared clamp the registry uses, so the arithmetic stays in
+# one place while the cover-type-specific behavior stays in cover_types/.
+# ---------------------------------------------------------------------------
+
+
+class TestEngineTiltBounds:
+    """post_pipeline_resolve clamps the engine tilt to the carried bounds."""
+
+    @staticmethod
+    def _resolve(monkeypatch, engine_tilt: int, **bounds):
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            **bounds,
+        )
+        monkeypatch.setattr(
+            VenetianPolicy,
+            "_compose_tilt",
+            lambda self, *a, **kw: (engine_tilt, MagicMock()),
+        )
+        monkeypatch.setattr(
+            VenetianPolicy, "_engine_tilt_suppressed", lambda self, r, c: False
+        )
+        return policy, policy.post_pipeline_resolve(result, **_solar_kwargs())
+
+    def test_engine_tilt_raised_to_tilt_low(self, monkeypatch) -> None:
+        """The reporter's case: engine 30 with a minimum of 50 → 50."""
+        _, out = self._resolve(monkeypatch, 30, tilt_low=50)
+        assert out.tilt == 50
+
+    def test_engine_tilt_above_low_unchanged(self, monkeypatch) -> None:
+        """The reporter's acceptance pair: engine 75 with min 50 stays 75."""
+        _, out = self._resolve(monkeypatch, 75, tilt_low=50)
+        assert out.tilt == 75
+
+    def test_engine_tilt_lowered_to_tilt_high(self, monkeypatch) -> None:
+        """The ceiling mirror."""
+        _, out = self._resolve(monkeypatch, 90, tilt_high=60)
+        assert out.tilt == 60
+
+    def test_clamped_tilt_recorded_as_last_tilt(self, monkeypatch) -> None:
+        """Drift tracking must see the value actually sent, not the raw one."""
+        policy, _ = self._resolve(monkeypatch, 30, tilt_low=50)
+        assert policy._last_tilt == 50
+
+    def test_clamp_appends_trace_step(self, monkeypatch) -> None:
+        """The clamp is visible in the decision trace."""
+        _, out = self._resolve(monkeypatch, 30, tilt_low=50)
+        assert any(s.handler == "tilt_clamp" for s in out.decision_trace)
+
+    def test_no_bounds_leaves_engine_tilt_untouched(self, monkeypatch) -> None:
+        """Without bounds the behavior is byte-identical to before #943."""
+        _, out = self._resolve(monkeypatch, 30)
+        assert out.tilt == 30
+        assert not any(s.handler == "tilt_clamp" for s in out.decision_trace)
+
+    def test_range_bounds_clamp_both_ways(self, monkeypatch) -> None:
+        """A carried range bounds the engine tilt on both sides."""
+        _, low = self._resolve(monkeypatch, 10, tilt_low=40, tilt_high=80)
+        _, high = self._resolve(monkeypatch, 95, tilt_low=40, tilt_high=80)
+        assert (low.tilt, high.tilt) == (40, 80)

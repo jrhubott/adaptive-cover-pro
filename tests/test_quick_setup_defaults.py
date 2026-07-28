@@ -425,6 +425,9 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
+        coord._climate_smoothing_mgr = MagicMock()
+        coord._climate_smoothing_mgr.resolved_flags = None
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)
@@ -450,6 +453,9 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
+        coord._climate_smoothing_mgr = MagicMock()
+        coord._climate_smoothing_mgr.resolved_flags = None
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)
@@ -475,6 +481,9 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
+        coord._climate_smoothing_mgr = MagicMock()
+        coord._climate_smoothing_mgr.resolved_flags = None
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)
@@ -497,6 +506,9 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
+        coord._climate_smoothing_mgr = MagicMock()
+        coord._climate_smoothing_mgr.resolved_flags = None
         coord.manager = MagicMock()
 
         coord._update_options({**self._POISONED_OPTIONS, CONF_POSITION_TOLERANCE: 12})
@@ -515,6 +527,9 @@ class TestCoordinatorInitWithNoneOptions:
         coord._time_mgr = MagicMock()
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
+        coord._cloud_mgr = MagicMock()
+        coord._climate_smoothing_mgr = MagicMock()
+        coord._climate_smoothing_mgr.resolved_flags = None
         coord.manager = MagicMock()
 
         coord._update_options(self._POISONED_OPTIONS)

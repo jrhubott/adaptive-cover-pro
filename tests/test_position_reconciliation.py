@@ -814,7 +814,7 @@ async def test_force_without_is_safety_does_not_mark_safety_target(svc, mock_has
 
     force=True only bypasses gate checks (delta, time, manual override).
     Safety target classification is controlled exclusively by is_safety.
-    Callers like _async_send_after_override_clear use force=True to bypass
+    Callers like _async_force_send_pipeline_position use force=True to bypass
     gates but is_safety=False so the target does not persist across window
     boundaries (fix for issue #223).
     """
@@ -1416,10 +1416,7 @@ async def test_sun_just_appeared_no_resend_at_mechanical_stop(svc, mock_hass):
     state = MagicMock()
     state.state = "closed"  # STATE_CLOSED -> _is_at_mechanical_stop True
     mock_hass.states.get.return_value = state
-    # Spy: the same-position skip branch must still service the tilt axis so a
-    # forced handler transition still delivers the tilt (#770).
-    policy = MagicMock()
-    policy.maybe_update_tilt_only = AsyncMock()
+    svc._service_secondary_axis = AsyncMock()  # spy: tilt must still get a turn
     with (
         _patch_caps(),
         patch(
@@ -1435,14 +1432,12 @@ async def test_sun_just_appeared_no_resend_at_mechanical_stop(svc, mock_hass):
                 min_change=1,
                 special_positions=[0, 100, 50],
                 sun_just_appeared=True,
-                policy=policy,
-                tilt=50,
             ),
         )
     assert outcome == "skipped"
     assert reason == "same_position"
     mock_hass.services.async_call.assert_not_called()
-    policy.maybe_update_tilt_only.assert_awaited_once()
+    svc._service_secondary_axis.assert_awaited_once()
 
 
 # ------------------------------------------------------------------ #
@@ -1563,7 +1558,7 @@ async def test_force_true_bypasses_time_delta_and_position_delta(svc, mock_hass)
 async def test_manual_override_expiry_force_true_bypasses_time_delta(svc, mock_hass):
     """Manual override expiry (force=True) also bypasses time delta.
 
-    Manual override expiry already uses force=True (_async_send_after_override_clear).
+    Manual override expiry already uses force=True (_async_force_send_pipeline_position).
     This test confirms the gate behavior is identical to force override release.
     """
     _patch_position(svc, 30)

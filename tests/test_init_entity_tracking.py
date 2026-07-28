@@ -286,3 +286,96 @@ async def test_daytime_gate_template_registered(hass) -> None:
         "CONF_DAYTIME_GATE_TEMPLATE must be registered via async_track_template_result "
         "so the cover reacts the instant the template flips (issue #632)."
     )
+
+
+async def test_weather_severe_template_registered(hass) -> None:
+    """Severe weather template is tracked via async_track_template_result (#974).
+
+    A template-only severe override (no companion binary sensors) must engage
+    and react the instant the template flips — same immediacy as the is-raining
+    and is-windy weather templates.
+    """
+    from unittest.mock import patch as mock_patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_SEVERE_TEMPLATE,
+    )
+
+    severe_template = "{{ is_state('sensor.storm', 'severe') }}"
+    opts = {CONF_WEATHER_SEVERE_TEMPLATE: severe_template}
+
+    template_registered_calls: list[str] = []
+
+    from homeassistant.helpers import event as ha_event
+
+    original_template = ha_event.async_track_template_result
+
+    def _capture_template(hass_, track_templates, callback):
+        for tt in track_templates:
+            template_registered_calls.append(tt.template.template)
+        return original_template(hass_, track_templates, callback)
+
+    with (
+        mock_patch(
+            "custom_components.adaptive_cover_pro.async_track_template_result",
+            side_effect=_capture_template,
+        ),
+        _patch_coordinator_refresh(),
+    ):
+        _, _ = await _setup_entry_capture_tracked(
+            hass,
+            extra_options=opts,
+            entry_id="track_severe_tmpl_01",
+        )
+
+    assert severe_template in template_registered_calls, (
+        "CONF_WEATHER_SEVERE_TEMPLATE must be registered via "
+        "async_track_template_result so a template-only severe override reacts "
+        "the instant the template flips (issue #974)."
+    )
+
+
+async def test_manual_override_input_template_registered(hass) -> None:
+    """Manual-override input template is tracked via async_track_template_result (#974).
+
+    A template flipping truthy must engage manual override the instant it does,
+    with no polling — the same immediacy as the input-sensor edge path.
+    """
+    from unittest.mock import patch as mock_patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+    )
+
+    input_template = "{{ is_state('input_boolean.cover_touch', 'on') }}"
+    opts = {CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: input_template}
+
+    template_registered_calls: list[str] = []
+
+    from homeassistant.helpers import event as ha_event
+
+    original_template = ha_event.async_track_template_result
+
+    def _capture_template(hass_, track_templates, callback):
+        for tt in track_templates:
+            template_registered_calls.append(tt.template.template)
+        return original_template(hass_, track_templates, callback)
+
+    with (
+        mock_patch(
+            "custom_components.adaptive_cover_pro.async_track_template_result",
+            side_effect=_capture_template,
+        ),
+        _patch_coordinator_refresh(),
+    ):
+        _, _ = await _setup_entry_capture_tracked(
+            hass,
+            extra_options=opts,
+            entry_id="track_input_tmpl_01",
+        )
+
+    assert input_template in template_registered_calls, (
+        "CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE must be registered via "
+        "async_track_template_result so the override engages the instant the "
+        "template flips truthy (issue #974)."
+    )

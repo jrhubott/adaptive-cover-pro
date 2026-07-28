@@ -159,16 +159,49 @@ set_tilt:
       selector:
         boolean:
 
+set_axes:
+  name: Set axes
+  description: >-
+    Set one or more control axes (position and/or tilt) on the targeted covers
+    in a single call. Each requested axis is dispatched through the same path as
+    set_position / set_tilt. Requesting an axis the cover does not support raises
+    an error. By default the call engages manual override; set force=true to skip
+    manual-override engagement.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    axes:
+      name: Axes
+      description: >-
+        Map of axis targets — include only the axes you want to move. Keys are
+        "position" and/or "tilt"; each value is 0–100%. For example, set position
+        to 60 and tilt to 30.
+      required: true
+      example: '{"position": 60, "tilt": 30}'
+      selector:
+        object:
+    force:
+      name: Force
+      description: >-
+        When true, skip manual-override engagement. Default false — service calls
+        engage manual override like a dashboard slider.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 engage_manual_override:
   name: Engage manual override
   description: >-
     Engages (or extends) manual override on the targeted covers WITHOUT moving
     them — no cover command is sent. Use it to pause automatic control and hold
     the cover where it is. With no end time and no duration, the override lasts
-    the configured manual-override duration starting now. Provide end_time for
-    an absolute end, or duration to extend an active override by that amount
+    the configured manual-override duration mode starting now. Provide end_time
+    for an absolute end, or duration to extend an active override by that amount
     (or engage fresh for that long if none is active). If both are given,
-    end_time wins.
+    end_time wins. Either one pins an absolute end that outranks the configured
+    manual_override_duration_mode.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -393,6 +426,22 @@ set_manual_override:
       description: "How long a manual override lasts before automatic control resumes."
       selector:
         duration:
+    manual_override_duration_mode:
+      name: Override duration mode
+      description: >-
+        What the hold is measured against. "fixed" uses the duration above.
+        The other modes hold until the next sunset, sunrise, sun event, or
+        operating-window end after the moment you moved the cover, and fall
+        back to the duration above when that boundary cannot be resolved.
+      selector:
+        select:
+          translation_key: manual_override_duration_mode
+          options:
+            - fixed
+            - until_sunset
+            - until_sunrise
+            - until_next_sun_event
+            - until_window_end
     manual_override_reset:
       name: Reset override on time window start
       description: "If true, clear any active manual override when the time window starts."
@@ -456,9 +505,13 @@ set_custom_position:
   name: Set custom position slot
   description: >-
     Update one custom position slot (1–10). A slot is active when it has a
-    trigger (sensors and/or template) and a position. Pass an empty list and
-    null position to clear the slot. Priority 100 gives the slot safety
-    semantics: it acts outside the time window and bypasses delta gates.
+    trigger (sensors and/or template) and a claim on an axis — a position, or
+    one of the position_max / tilt_min / tilt_max constraints. Only the fields
+    you pass are changed. To retire a slot completely, clear its trigger **and**
+    every axis claim (position, position_max, tilt_min, tilt_max) — or use
+    🗑️ Delete on the Custom Positions options page, which erases the whole slot
+    in one action. Priority 100 gives the slot safety semantics: it acts outside
+    the time window and bypasses delta gates.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -528,17 +581,50 @@ set_custom_position:
       description: "If true, use my_position_value instead of position when the trigger is active."
       selector:
         boolean:
+    position_max:
+      name: Maximum position
+      description: "Clamp the resolved position down to at most this (0–100%) while the trigger is active. Null = no maximum."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    tilt_min:
+      name: Minimum tilt
+      description: "Clamp the resolved tilt up to at least this (0–100%) while the trigger is active. Null = no minimum."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    tilt_max:
+      name: Maximum tilt
+      description: "Clamp the resolved tilt down to at most this (0–100%) while the trigger is active. Null = no maximum."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
 
 set_motion:
-  name: Set motion settings
-  description: Update motion sensors and no-motion timeout. Pass an empty list to disable motion control.
+  name: Set occupancy settings (deprecated)
+  description: >-
+    Deprecated — use set_occupancy instead. Update occupancy sensors and
+    occupancy timeout. Pass an empty list to disable occupancy detection. This
+    service keeps working but will be removed in a future major release.
   target:
     entity:
       integration: adaptive_cover_pro
   fields:
     motion_sensors:
-      name: Motion sensors
-      description: "Binary sensors (motion/occupancy/presence) that indicate occupancy. Empty list = disable."
+      name: Occupancy sensors
+      description: "Binary sensors (motion/occupancy/presence device classes) that indicate occupancy. Empty list = disable."
       selector:
         entity:
           domain: binary_sensor
@@ -548,8 +634,47 @@ set_motion:
             - presence
           multiple: true
     motion_timeout:
-      name: No-motion timeout
-      description: "Seconds to wait after last motion before applying the motion-timeout position (30–3600)."
+      name: Occupancy timeout
+      description: "Seconds to wait after occupancy clears before applying the occupancy-timeout position (30–3600)."
+      selector:
+        number:
+          min: 30
+          max: 3600
+          step: 30
+          mode: slider
+          unit_of_measurement: seconds
+
+set_occupancy:
+  name: Set occupancy settings
+  description: >-
+    Update the occupancy sensors, media players, and timeout that drive
+    occupancy detection. Pass an empty list to disable a source. Replaces the
+    deprecated set_motion service.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    occupancy_sensors:
+      name: Occupancy sensors
+      description: "Binary sensors (motion/occupancy/presence device classes) that indicate occupancy. Empty list = disable."
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class:
+            - motion
+            - occupancy
+            - presence
+          multiple: true
+    occupancy_media_players:
+      name: Occupancy media players
+      description: "Media players treated as occupancy — any player that is not off counts as occupied. Empty list = disable."
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    occupancy_timeout:
+      name: Occupancy timeout
+      description: "Seconds to wait after occupancy clears before applying the occupancy-timeout position (30–3600)."
       selector:
         number:
           min: 30
@@ -728,9 +853,35 @@ set_climate:
         boolean:
     summer_close_bypass_sun_floor:
       name: Full close in summer heat
-      description: "If true, summer climate-close ignores the sun-in-FOV minimum floor and reaches the global minimum position."
+      description: "If true, summer climate-close ignores the sun-in-acceptance-angle minimum floor and reaches the global minimum position."
       selector:
         boolean:
+    temp_extreme_heat:
+      name: Extreme heat threshold (outside)
+      description: "Outdoor temperature (°) above which the cover holds a fixed position all day, pre-empting every season strategy. Accepts a number or a Jinja2 template. Omit to leave unchanged."
+      selector:
+        template:
+    extreme_heat_position:
+      name: Extreme heat hold position
+      description: "Position (0–100 %) held during extreme heat. 0 = fully closed/retracted. On tilt covers this is the slat angle."
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    tracking_seasons:
+      name: Glare tracking seasons
+      description: "Seasons in which glare-control tracking is allowed to run. In any deselected season the cover returns to its default position instead of tracking the sun. Winter/summer climate actions (heating, insulation, cooling) are unaffected. Defaults to all seasons."
+      selector:
+        select:
+          multiple: true
+          translation_key: tracking_seasons
+          options:
+            - winter
+            - intermediate
+            - summer
 
 set_weather_safety:
   name: Set weather safety settings
@@ -839,7 +990,7 @@ set_weather_safety:
 
 set_sun_tracking:
   name: Set sun tracking settings
-  description: Update azimuth, field-of-view, elevation limits, and sun-tracking toggle.
+  description: Update azimuth, sun acceptance angle, elevation limits, and sun-tracking toggle.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -873,7 +1024,7 @@ set_sun_tracking:
           mode: slider
           unit_of_measurement: "°"
     fov_left:
-      name: Field of view left
+      name: Sun acceptance angle — left
       description: "Degrees to the left of the azimuth within which the sun affects this cover (0–180°)."
       selector:
         number:
@@ -883,7 +1034,7 @@ set_sun_tracking:
           mode: slider
           unit_of_measurement: "°"
     fov_right:
-      name: Field of view right
+      name: Sun acceptance angle — right
       description: "Degrees to the right of the azimuth within which the sun affects this cover (0–180°)."
       selector:
         number:
@@ -926,9 +1077,12 @@ set_sun_tracking:
 set_blind_spot:
   name: Set blind spot
   description: >-
-    Update blind spot zone angles. Angles are measured inward from your FOV
-    left boundary (not from window azimuth). blind_spot_right must be greater
-    than blind_spot_left. Enforced at validation time.
+    Update blind spot zone angles. Angles are signed gamma measured from the
+    window normal (0 = straight ahead, positive toward the left acceptance
+    edge) — the same frame as the sun-acceptance angle. The wedge is
+    -blind_spot_right_gamma ≤ gamma ≤ blind_spot_left_gamma, so
+    blind_spot_left_gamma + blind_spot_right_gamma must be greater than 0.
+    Enforced at validation time.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -938,9 +1092,27 @@ set_blind_spot:
       description: "If true, the blind spot zone is active."
       selector:
         boolean:
+    blind_spot_left_gamma:
+      name: Blind spot left edge (from window normal)
+      description: "Upper (left) edge of the blind spot wedge as signed gamma from the window normal, degrees. Positive = toward the left acceptance edge. Within [-fov_right, fov_left]."
+      selector:
+        number:
+          min: -180
+          max: 180
+          mode: slider
+          unit_of_measurement: "°"
+    blind_spot_right_gamma:
+      name: Blind spot right edge (from window normal)
+      description: "Negated lower (right) edge of the blind spot wedge as signed gamma from the window normal, degrees. The lower gamma edge is -blind_spot_right_gamma. blind_spot_left_gamma + blind_spot_right_gamma must be greater than 0. Within [-fov_left, fov_right]."
+      selector:
+        number:
+          min: -180
+          max: 180
+          mode: slider
+          unit_of_measurement: "°"
     blind_spot_left:
-      name: Blind spot left edge
-      description: "Left edge of the blind spot zone in degrees inward from your FOV left boundary (0 = at the FOV left edge, range 0–359°)."
+      name: Blind spot left edge (deprecated)
+      description: "DEPRECATED (issue #247): legacy left edge measured inward from the left acceptance edge (0–359°). Accepted for back-compat and converted to signed gamma on write. Use blind_spot_left_gamma instead."
       selector:
         number:
           min: 0
@@ -948,8 +1120,8 @@ set_blind_spot:
           mode: slider
           unit_of_measurement: "°"
     blind_spot_right:
-      name: Blind spot right edge
-      description: "Right edge of the blind spot zone in degrees inward from your FOV left boundary. Must be greater than left edge (range 1–360°)."
+      name: Blind spot right edge (deprecated)
+      description: "DEPRECATED (issue #247): legacy right edge measured inward from the left acceptance edge, must be greater than left edge (1–360°). Accepted for back-compat and converted to signed gamma on write. Use blind_spot_right_gamma instead."
       selector:
         number:
           min: 0
@@ -1113,12 +1285,33 @@ set_geometry:
           unit_of_measurement: cm
     tilt_mode:
       name: Tilt mode
-      description: "Slat angle calculation mode (mode1 or mode2). Tilt only."
+      description: "Slat angle calculation mode. Tilt only."
       selector:
         select:
           options:
             - mode1
             - mode2
+            - specify_angles
+    tilt_angle_0:
+      name: Tilt angle at 0%
+      description: "Raw slat angle when the cover reports 0% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 1
+          mode: box
+          unit_of_measurement: "°"
+    tilt_angle_100:
+      name: Tilt angle at 100%
+      description: "Raw slat angle when the cover reports 100% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
+      selector:
+        number:
+          min: 0
+          max: 360
+          step: 1
+          mode: box
+          unit_of_measurement: "°"
 
 set_venetian:
   name: Set venetian options
@@ -1201,3 +1394,132 @@ get_diagnostics:
       selector:
         config_entry:
           integration: adaptive_cover_pro
+
+get_troubleshooting:
+  name: Get troubleshooting
+  description: >-
+    Returns the Troubleshoot step's triage findings for the targeted Adaptive
+    Cover Pro instances as structured data, plus the rendered report text.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    config_entry_id:
+      name: Config entry
+      description: >-
+        Explicit config entry id(s) to query. When omitted, standard target
+        (entity / device / area) selection applies. No target at all returns
+        all ACP instances.
+      selector:
+        config_entry:
+          integration: adaptive_cover_pro
+
+group_activate_scene:
+  name: "Group: activate scene"
+  description: >-
+    Activates a scene on the targeted cover groups. Scenes ride each member's
+    pipeline (weather safety and member safety still win). Pass "auto" to
+    release the group's scene claim so members return to their own automation.
+    With no target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    scene:
+      name: Scene
+      description: The scene to activate, or "auto" to release the claim.
+      required: true
+      selector:
+        select:
+          options:
+            - "auto"
+            - "all_open"
+            - "all_closed"
+            - "privacy"
+
+group_set_position:
+  name: "Group: set position"
+  description: >-
+    Moves every member of the targeted cover groups to the given position as a
+    user command (member manual-override engagement and floor clamps apply,
+    like dragging the group cover). With no target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    position:
+      name: Position
+      description: >-
+        Position (0-100%) to move member covers to. 0% = closed (blinds
+        lowered / awning retracted), 100% = open (blinds raised / awning
+        extended).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    tilt:
+      name: Tilt
+      description: Optional slat tilt (0-100%) fanned out on the tilt axis.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+group_lock:
+  name: "Group: lock"
+  description: >-
+    Freezes every member of the targeted cover groups in place at safety
+    priority. A member's own safety trigger still wins ties. With no target,
+    locks all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
+group_unlock:
+  name: "Group: unlock"
+  description: >-
+    Releases the group lock on the targeted cover groups. An active scene is
+    re-applied; otherwise members return to their own automation. With no
+    target, unlocks all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
+group_clear_overrides:
+  name: "Group: clear member overrides"
+  description: >-
+    Clears manual overrides on every ACP member of the targeted cover groups
+    and resends each member's pipeline position. With no target, acts on all
+    cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
+group_stop:
+  name: "Group: stop"
+  description: >-
+    Stops every member cover of the targeted cover groups mid-travel. With no
+    target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
+group_set_automation:
+  name: "Group: set automation"
+  description: >-
+    Bulk-enables or disables sun-tracking automation on every ACP member of
+    the targeted cover groups. With no target, acts on all cover groups.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    enabled:
+      name: Enabled
+      description: True to enable member automation, false to disable it.
+      required: true
+      selector:
+        boolean:

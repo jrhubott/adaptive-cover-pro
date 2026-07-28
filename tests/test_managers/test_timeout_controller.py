@@ -179,3 +179,53 @@ class TestCallbackMayRestart:
         assert second_fired.is_set()
         # Final state must be idle, not stuck with the first task's handle.
         assert ctrl.is_running is False
+
+
+class TestHassTrackedSpawn:
+    """When a hass is provided, the timer is an HA-tracked background task.
+
+    Regression guard for the #975 lingering-task failure: the health-check
+    debounce spawned a bare ``asyncio.create_task`` that Home Assistant did not
+    track, so a pending 900s timer leaked as a lingering task whenever the
+    owning entry was never explicitly shut down (surfaced under xdist). Passing
+    ``hass`` routes the task through ``hass.async_create_background_task`` so HA
+    cancels it on stop.
+    """
+
+    async def test_uses_background_task_when_hass_given(self, logger) -> None:
+        from unittest.mock import MagicMock
+
+        calls: list[str] = []
+
+        def _bg(coro, name=None, eager_start=True):
+            calls.append(name)
+            return asyncio.create_task(coro)
+
+        hass = MagicMock()
+        hass.async_create_background_task = _bg
+        ctrl = TimeoutController(logger, label="hc timer", hass=hass)
+
+        async def _noop() -> None:
+            await asyncio.sleep(0)
+
+        ctrl.start(seconds=100, on_expire=_noop)
+        # The spawn went through HA's tracked helper (not bare create_task).
+        assert calls == ["hc timer"]
+        assert ctrl.is_running is True
+        ctrl.cancel()
+
+    async def test_bare_create_task_when_no_hass(self, logger) -> None:
+        # Default (no hass) keeps the original event-driven-manager behaviour.
+        ctrl = TimeoutController(logger, label="motion timeout")
+        fired = asyncio.Event()
+
+        async def _fire() -> None:
+            fired.set()
+
+        ctrl.start(seconds=0, on_expire=_fire)
+        for _ in range(4):
+            if fired.is_set():
+                break
+            await asyncio.sleep(0)
+        assert fired.is_set()
+        assert ctrl.is_running is False

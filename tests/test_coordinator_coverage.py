@@ -541,10 +541,17 @@ async def test_window_close_sends_reposition_when_auto_control_on():
     coord._window_tracker = tracker
 
     with patch(
-        "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
         return_value=(0, False),
     ):
         time_mgr = MagicMock()
+
+        # The real coordinator always carries a policy (set in __init__); the
+        # per-entity dispatch seam (_entity_target) delegates to it. A blind
+        # policy remaps nothing (identity) so the end-time default is unchanged.
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        coord._policy = get_policy("cover_blind")
 
         async def _invoke_happy(track_end_time, refresh_callback, on_window_open=None):
             await refresh_callback()
@@ -627,7 +634,7 @@ async def test_window_close_skips_reposition_when_custom_position_active():
     coord._window_tracker = tracker
 
     with patch(
-        "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
         return_value=(0, False),
     ):
         time_mgr = MagicMock()
@@ -800,7 +807,7 @@ def test_read_custom_position_sensor_states_tilt_none_when_absent():
 @pytest.mark.unit
 def test_read_time_entity_returns_none_for_none_entity_id():
     """_read_time_entity returns None immediately when entity_id is None."""
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     mock_hass = MagicMock()
     result = _read_time_entity(mock_hass, None)
@@ -811,7 +818,7 @@ def test_read_time_entity_returns_none_for_none_entity_id():
 @pytest.mark.unit
 def test_read_time_entity_returns_none_for_unavailable():
     """_read_time_entity returns None when entity state is unavailable."""
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     mock_state = MagicMock()
     mock_state.state = "unavailable"
@@ -831,7 +838,7 @@ def test_read_time_entity_parses_iso_datetime():
     """
     import datetime as dt
 
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     # Use a tz-naive ISO string so get_datetime_from_str returns it unchanged
     mock_state = MagicMock()
@@ -866,7 +873,7 @@ def test_read_time_entity_reanchors_future_next_setting_to_today():
     import datetime as dt
     from zoneinfo import ZoneInfo
 
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     paris = ZoneInfo("Europe/Paris")
     mock_state = MagicMock()
@@ -897,7 +904,7 @@ def test_read_time_entity_reanchors_future_next_rising_to_today():
     import datetime as dt
     from zoneinfo import ZoneInfo
 
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     paris = ZoneInfo("Europe/Paris")
     mock_state = MagicMock()
@@ -928,7 +935,7 @@ def test_read_time_entity_today_dated_entity_unchanged_time_of_day():
     import datetime as dt
     from zoneinfo import ZoneInfo
 
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     paris = ZoneInfo("Europe/Paris")
     mock_state = MagicMock()
@@ -963,7 +970,7 @@ def test_read_time_entity_dst_spring_forward_boundary():
     import datetime as dt
     from zoneinfo import ZoneInfo
 
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
     from custom_components.adaptive_cover_pro.helpers import _local_naive_to_utc_naive
 
     paris = ZoneInfo("Europe/Paris")
@@ -998,7 +1005,7 @@ def test_read_time_entity_near_midnight_sunset_projects_to_today():
     import datetime as dt
     from zoneinfo import ZoneInfo
 
-    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _read_time_entity
 
     paris = ZoneInfo("Europe/Paris")
     mock_state = MagicMock()
@@ -1061,11 +1068,11 @@ def test_compute_current_effective_default_passes_sunset_entity_time():
 
     with (
         patch(
-            "custom_components.adaptive_cover_pro.coordinator._read_time_entity",
+            "custom_components.adaptive_cover_pro.helpers._read_time_entity",
             return_value=fake_sunset_dt,
         ) as mock_read,
         patch(
-            "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+            "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
             return_value=(80, True),
         ) as mock_ced,
     ):
@@ -1110,11 +1117,11 @@ def test_compute_current_effective_default_passes_sunrise_entity_time():
 
     with (
         patch(
-            "custom_components.adaptive_cover_pro.coordinator._read_time_entity",
+            "custom_components.adaptive_cover_pro.helpers._read_time_entity",
             return_value=fake_sunrise_dt,
         ) as mock_read,
         patch(
-            "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+            "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
             return_value=(0, False),
         ) as mock_ced,
     ):
@@ -1125,3 +1132,36 @@ def test_compute_current_effective_default_passes_sunrise_entity_time():
     # compute_effective_default received the override datetime
     call_kwargs = mock_ced.call_args.kwargs
     assert call_kwargs["sunrise_time"] == fake_sunrise_dt
+
+
+@pytest.mark.unit
+def test_compute_current_effective_default_forwards_window_explicitly_started():
+    """The live start-time signal reaches the formula (#438/#492, gap from #1055).
+
+    Every other coordinator-wiring test hardcodes this False, so nothing pinned
+    that an explicitly-started window actually reaches ``compute_effective_default``
+    and suppresses the overnight position.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_SUNSET_POS,
+    )
+
+    coord = _make_coordinator()
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord.hass = MagicMock()
+    coord._time_mgr = MagicMock()
+    coord._time_mgr.window_explicitly_started = True
+
+    options = {CONF_DEFAULT_HEIGHT: 0, CONF_SUNSET_POS: 80}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.compute_effective_default",
+        return_value=(0, False),
+    ) as m:
+        coord._compute_current_effective_default(options)
+
+    m.assert_called_once()
+    assert m.call_args.kwargs["window_explicitly_started"] is True

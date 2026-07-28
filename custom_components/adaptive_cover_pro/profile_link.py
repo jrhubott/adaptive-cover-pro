@@ -1,9 +1,10 @@
 """Shared Building Profile link helpers.
 
 A neutral home for the profile/cover linkage helpers so both ``config_flow``
-(link/unlink UI) and ``__init__`` (live propagation + deletion cleanup) can
-reuse a single source. It must not live in ``helpers.py`` — that module is
-imported by ``cover_types.base``, and these helpers need ``get_policy`` from
+(link/unlink UI, plus the clear propagation a profile save drives) and
+``__init__`` (live propagation + deletion cleanup) can reuse a single source.
+It must not live in ``helpers.py`` — that module is imported by
+``cover_types.base``, and these helpers need ``get_policy`` from
 ``cover_types``, which would create an import cycle.
 """
 
@@ -84,11 +85,19 @@ def _building_profile_entries(hass: HomeAssistant) -> list[ConfigEntry]:
 
 
 def _cover_entries(hass: HomeAssistant) -> list[ConfigEntry]:
-    """Return all physical cover config entries (controls_cover == True)."""
+    """Return all physical cover config entries.
+
+    Filters on capability, never a cover-type string: virtual entry types are
+    excluded — the Building Profile (``controls_cover == False``) and the
+    cover group (``is_orchestrator == True``), which controls covers but is
+    not itself a physical cover. Consumers (duplicate sources, profile link
+    lists, group membership pickers) all want real covers only.
+    """
     return [
         e
         for e in hass.config_entries.async_entries(DOMAIN)
         if get_policy(e.data.get(CONF_SENSOR_TYPE)).controls_cover
+        and not get_policy(e.data.get(CONF_SENSOR_TYPE)).is_orchestrator
     ]
 
 
@@ -130,6 +139,12 @@ def merge_profile_into_config(
     (existing entry, may have overrides). Does NOT stamp
     ``CONF_BUILDING_PROFILE_ID`` — callers handle that so each context can
     write it in the right place.
+
+    Copy-only, never remove: a blank profile key means "the profile does not
+    define this", which is indistinguishable from "the user never filled it
+    in" once stored, so it must leave the cover's own value alone. Removing
+    the key a profile save actually emptied is a separate, save-time job —
+    ``propagate_profile_clears`` (issue #1085).
     """
     subset = {
         k: v
@@ -137,6 +152,60 @@ def merge_profile_into_config(
         if k in BUILDING_PROFILE_SENSOR_KEYS and _is_set(v) and k not in overridden
     }
     config_dict.update(subset)
+
+
+def cleared_profile_keys(previous_options: dict, new_options: dict) -> frozenset[str]:
+    """Shared-sensor keys a profile save emptied: set before, blank after.
+
+    A stored option cannot say whether a blank field was cleared or simply
+    never filled in — the profile form writes ``None`` for both (issue #1085).
+    The transition can, so the profile's stored options are diffed against the
+    ones the options dialog is about to write. Blank in either shape counts
+    (``None``, ``""``, ``[]`` — the multi-selects clear to the last), and a key
+    that was already blank, or that the dialog re-filled before saving, is not
+    a clear.
+    """
+    return frozenset(
+        key
+        for key in BUILDING_PROFILE_SENSOR_KEYS
+        if _is_set((previous_options or {}).get(key))
+        and not _is_set((new_options or {}).get(key))
+    )
+
+
+def propagate_profile_clears(
+    hass: HomeAssistant, profile_entry: ConfigEntry, cleared: frozenset[str]
+) -> None:
+    """Drop the keys a profile save emptied from the covers inheriting them.
+
+    The counterpart to ``_copy_profile_to_cover``: that copier only ever
+    applies the profile's non-empty keys, so on its own a cleared field would
+    leave the last-copied sensor sitting on every linked cover. Only keys in
+    ``cleared`` are touched, and only where the cover was inheriting — a key in
+    the cover's ``CONF_PROFILE_SENSOR_OVERRIDES`` is that cover's own
+    deliberate choice and stays. Removing rather than blanking keeps a dropped
+    key indistinguishable from one never configured, which is what the
+    diagnostics and overview classification already expects.
+
+    Driven from the options flow's save, not from the propagation listener:
+    the listener sees only the profile's new options, where a cleared field is
+    indistinguishable from an unfilled one. Scoped by ``_covers_linked_to``, so
+    calling it for a non-profile entry is a no-op — only a Building Profile's
+    ``entry_id`` ever appears in a cover's ``CONF_BUILDING_PROFILE_ID``. Writes
+    nothing when nothing was cleared, which is the overwhelmingly common save.
+    """
+    if not cleared:
+        return
+    for cover in _covers_linked_to(hass, profile_entry):
+        drop = {
+            key
+            for key in cleared - effective_profile_overrides(cover.options)
+            if key in cover.options
+        }
+        if not drop:
+            continue
+        options = {k: v for k, v in cover.options.items() if k not in drop}
+        hass.config_entries.async_update_entry(cover, options=options)
 
 
 def _copy_profile_to_cover(

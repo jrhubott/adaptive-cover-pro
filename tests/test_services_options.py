@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,7 +24,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
+    CONF_BLIND_SPOT_LEFT_GAMMA,
     CONF_BLIND_SPOT_RIGHT,
+    CONF_BLIND_SPOT_RIGHT_GAMMA,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
@@ -45,6 +48,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MAX_POSITION,
     CONF_MIN_POSITION,
+    CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_DISTANCE,
     CONF_HEIGHT_WIN,
@@ -83,6 +87,7 @@ from custom_components.adaptive_cover_pro.services.options_service import (
     IDENTITY_KEYS,
     OPTIONS_SERVICE_NAMES,
     _SECTION_CLIMATE,
+    _SECTION_MOTION,
     _SECTION_POSITION_LIMITS,
     _SECTION_SUNSET_SUNRISE,
     _SERVICE_FIELD_ALIASES,
@@ -269,14 +274,83 @@ class TestFieldValidators:
         with pytest.raises(Exception):
             FIELD_VALIDATORS[CONF_START_TIME]("8:00")
 
+    def test_cloud_suppression_hold_time_in_option_ranges(self):
+        """Issue #864: hold-time range is single-sourced (0, 3600)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            OPTION_RANGES,
+        )
+
+        assert OPTION_RANGES[CONF_CLOUD_SUPPRESSION_HOLD_TIME] == (0, 3600)
+
+    def test_cloud_suppression_hold_time_validator(self):
+        """Issue #864: hold-time accepts 0/3600/None, rejects out-of-range."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+        )
+
+        FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](None)
+        FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](0)
+        FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](3600)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](-5)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_CLOUD_SUPPRESSION_HOLD_TIME](9999)
+
+    def test_cloud_release_thresholds_accept_number_or_template(self):
+        """Issue #864: release thresholds are number-or-template (no range)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+            CONF_IRRADIANCE_RELEASE_THRESHOLD,
+            CONF_LUX_RELEASE_THRESHOLD,
+            OPTION_RANGES,
+        )
+
+        for key in (
+            CONF_LUX_RELEASE_THRESHOLD,
+            CONF_IRRADIANCE_RELEASE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
+        ):
+            # Template fields are NOT range-bounded.
+            assert key not in OPTION_RANGES
+            # None (cleared), a plain number, and a Jinja template all pass.
+            FIELD_VALIDATORS[key](None)
+            FIELD_VALIDATORS[key](5000)
+            FIELD_VALIDATORS[key]("{{ states('sensor.x') | float }}")
+
     def test_tilt_mode_select(self):
         FIELD_VALIDATORS["tilt_mode"]("mode1")
         FIELD_VALIDATORS["tilt_mode"]("mode2")
+        FIELD_VALIDATORS["tilt_mode"]("specify_angles")
         FIELD_VALIDATORS["tilt_mode"](None)
 
     def test_tilt_mode_rejects_invalid(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_mode"]("mode3")
+
+    def test_tilt_endpoint_angles_validate_range(self):
+        FIELD_VALIDATORS["tilt_angle_0"](-180)
+        FIELD_VALIDATORS["tilt_angle_100"](0)
+        FIELD_VALIDATORS["tilt_angle_100"](140)
+        FIELD_VALIDATORS["tilt_angle_100"](360)
+        FIELD_VALIDATORS["tilt_angle_0"](None)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_angle_100"](-1)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_angle_100"](361)
+
+    def test_tilt_endpoint_angles_require_ordering(self):
+        validate_options_patch(
+            {"tilt_angle_0": 20, "tilt_angle_100": 140},
+            {},
+        )
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch(
+                {"tilt_angle_0": 180, "tilt_angle_100": 180},
+                {},
+            )
 
     def test_blind_spot_elevation_mode_select(self):
         """Every slot's elevation-mode validator accepts below/above/None (#702)."""
@@ -408,6 +482,24 @@ class TestFieldValidators:
         v = FIELD_VALIDATORS[CONF_VENETIAN_TILT_SKIP_MODE]
         v(VENETIAN_TILT_SKIP_NEUTRAL)
         v(VENETIAN_TILT_SKIP_SUPPRESS)
+        v(None)  # optional clear
+
+        with pytest.raises(vol.Invalid):
+            v("bogus")
+
+    def test_field_validators_venetian_tilt_transform(self):
+        """venetian_tilt_transform accepts clamp/proportional; rejects out-of-set."""
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_VENETIAN_TILT_TRANSFORM,
+            VENETIAN_TILT_TRANSFORM_CLAMP,
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        v = FIELD_VALIDATORS[CONF_VENETIAN_TILT_TRANSFORM]
+        v(VENETIAN_TILT_TRANSFORM_CLAMP)
+        v(VENETIAN_TILT_TRANSFORM_PROPORTIONAL)
         v(None)  # optional clear
 
         with pytest.raises(vol.Invalid):
@@ -634,6 +726,7 @@ class TestServiceRegistration:
             "set_force_override",
             "set_custom_position",
             "set_motion",
+            "set_occupancy",
             "set_light_cloud",
             "set_climate",
             "set_weather_safety",
@@ -672,6 +765,31 @@ class TestBuildPatchAliasing:
 
     def test_default_height_alias_is_registered(self):
         assert _SERVICE_FIELD_ALIASES["default_height"] == CONF_DEFAULT_HEIGHT
+
+    def test_occupancy_timeout_alias_resolves(self):
+        # issue #723: set_occupancy's occupancy_timeout maps to CONF_MOTION_TIMEOUT.
+        patch_ = _build_patch({"occupancy_timeout": 600}, _SECTION_MOTION)
+        assert patch_ == {CONF_MOTION_TIMEOUT: 600}
+
+    def test_occupancy_sensors_alias_resolves(self):
+        patch_ = _build_patch(
+            {"occupancy_sensors": ["binary_sensor.a"]}, _SECTION_MOTION
+        )
+        assert patch_ == {CONF_MOTION_SENSORS: ["binary_sensor.a"]}
+
+    def test_occupancy_media_players_alias_resolves(self):
+        patch_ = _build_patch(
+            {"occupancy_media_players": ["media_player.tv"]}, _SECTION_MOTION
+        )
+        assert patch_ == {CONF_MOTION_MEDIA_PLAYERS: ["media_player.tv"]}
+
+    def test_occupancy_aliases_are_registered(self):
+        assert _SERVICE_FIELD_ALIASES["occupancy_sensors"] == CONF_MOTION_SENSORS
+        assert _SERVICE_FIELD_ALIASES["occupancy_timeout"] == CONF_MOTION_TIMEOUT
+        assert (
+            _SERVICE_FIELD_ALIASES["occupancy_media_players"]
+            == CONF_MOTION_MEDIA_PLAYERS
+        )
 
 
 class TestSetPositionLimits:
@@ -992,6 +1110,57 @@ class TestSetCustomPosition:
         assert new_opts["custom_position_sensor_1"] == "binary_sensor.high_sun"
         assert new_opts["custom_position_1"] == 80
 
+    async def test_axis_constraints_routing(self, hass: HomeAssistant):
+        """position_max / tilt_min / tilt_max route to the slot's wire keys."""
+        await _setup(hass, entry_id="cp_axis")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_custom_position",
+                {
+                    "slot": 1,
+                    "sensor": "binary_sensor.door",
+                    "position": 80,
+                    "position_max": 60,
+                    "tilt_min": 50,
+                    "tilt_max": 90,
+                },
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts["custom_position_position_max_1"] == 60
+        assert new_opts["custom_position_tilt_min_1"] == 50
+        assert new_opts["custom_position_tilt_max_1"] == 90
+
+    async def test_constraint_only_slot_is_complete(self, hass: HomeAssistant):
+        """A trigger + tilt_min slot needs no position (issue #943)."""
+        await _setup(hass, entry_id="cp_conly")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_custom_position",
+                {"slot": 3, "sensor": "binary_sensor.door", "tilt_min": 50},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts["custom_position_tilt_min_3"] == 50
+
+    async def test_trigger_without_any_claim_still_rejected(self, hass: HomeAssistant):
+        """A bare trigger claims nothing — the completeness gate still fires."""
+        await _setup(hass, entry_id="cp_bare")
+        with pytest.raises(Exception, match="incomplete"):
+            await _call(
+                hass,
+                "set_custom_position",
+                {"slot": 4, "sensor": "binary_sensor.door"},
+            )
+
     async def test_slot_2_routing(self, hass: HomeAssistant):
         await _setup(hass, entry_id="cp_02")
         with (
@@ -1135,6 +1304,97 @@ class TestSetMotion:
         await _setup(hass, entry_id="mot_err_01")
         with pytest.raises((ServiceValidationError, Exception)):
             await _call(hass, "set_motion", {CONF_MOTION_TIMEOUT: 10})  # below 30
+
+    async def test_emits_deprecation_warning(
+        self, hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+    ):
+        # issue #723: set_motion still works but logs a deprecation warning
+        # steering users to set_occupancy.
+        await _setup(hass, entry_id="mot_dep_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry"),
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+            caplog.at_level(logging.WARNING),
+        ):
+            await _call(hass, "set_motion", {CONF_MOTION_TIMEOUT: 600})
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any(
+            "set_motion is deprecated" in r.message and "set_occupancy" in r.message
+            for r in warnings
+        ), f"expected set_motion deprecation warning, got: {[r.message for r in warnings]}"
+
+
+class TestSetOccupancy:
+    """Integration tests for the set_occupancy service (issue #723).
+
+    set_occupancy is the renamed API for the occupancy-detection feature; it
+    delegates to the same section handler as set_motion via field-name aliases,
+    writing the same CONF_MOTION_* option keys.
+    """
+
+    async def test_updates_timeout(self, hass: HomeAssistant):
+        await _setup(hass, entry_id="occ_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_occupancy", {"occupancy_timeout": 600})
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_MOTION_TIMEOUT] == 600
+
+    async def test_sensors_replace_semantics(self, hass: HomeAssistant):
+        opts = {**VERTICAL_OPTIONS, CONF_MOTION_SENSORS: ["binary_sensor.a"]}
+        await _setup(hass, entry_id="occ_list_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_occupancy",
+                {"occupancy_sensors": ["binary_sensor.b", "binary_sensor.c"]},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_MOTION_SENSORS] == ["binary_sensor.b", "binary_sensor.c"]
+
+    async def test_updates_media_players(self, hass: HomeAssistant):
+        await _setup(hass, entry_id="occ_mp_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_occupancy",
+                {"occupancy_media_players": ["media_player.tv"]},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_MOTION_MEDIA_PLAYERS] == ["media_player.tv"]
+
+    async def test_invalid_timeout_rejected(self, hass: HomeAssistant):
+        await _setup(hass, entry_id="occ_err_01")
+        with pytest.raises((ServiceValidationError, Exception)):
+            await _call(hass, "set_occupancy", {"occupancy_timeout": 10})  # below 30
+
+    async def test_no_deprecation_warning(
+        self, hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+    ):
+        # set_occupancy is the current API — it must NOT log a deprecation warning.
+        await _setup(hass, entry_id="occ_nodep_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry"),
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+            caplog.at_level(logging.WARNING),
+        ):
+            await _call(hass, "set_occupancy", {"occupancy_timeout": 600})
+
+        assert not any(
+            "deprecated" in r.message for r in caplog.records
+        ), "set_occupancy must not emit a deprecation warning"
 
 
 class TestSetLightCloud:
@@ -1292,6 +1552,64 @@ class TestSetWeatherSafety:
             "binary_sensor.new2",
         ]
 
+    def test_severe_template_validator_and_section(self):
+        """The severe template pair validates and lives in the weather section (#974)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+            TemplateCombineMode,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_WEATHER_SAFETY,
+        )
+
+        # Both keys have validators, matching the raining/windy template pair.
+        assert CONF_WEATHER_SEVERE_TEMPLATE in FIELD_VALIDATORS
+        assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in FIELD_VALIDATORS
+        # template_or_none: None (clear) and a Jinja template both pass.
+        FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE](None)
+        FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE]("{{ is_state('x', 'on') }}")
+        # mode: every combine-mode value and None pass; junk is rejected.
+        for mode in TemplateCombineMode:
+            FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE_MODE](mode.value)
+        FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE_MODE](None)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_WEATHER_SEVERE_TEMPLATE_MODE]("xor")
+        # Section membership so set_cover_options / set_weather_safety accept them.
+        assert CONF_WEATHER_SEVERE_TEMPLATE in _SECTION_WEATHER_SAFETY
+        assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in _SECTION_WEATHER_SAFETY
+
+    async def test_updates_severe_template(self, hass: HomeAssistant):
+        """set_weather_safety persists the severe template pair (#974)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
+            TemplateCombineMode,
+        )
+
+        await _setup(hass, entry_id="ws_sev_tpl_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_weather_safety",
+                {
+                    CONF_WEATHER_SEVERE_TEMPLATE: "{{ is_state('binary_sensor.s', 'on') }}",
+                    CONF_WEATHER_SEVERE_TEMPLATE_MODE: TemplateCombineMode.OR.value,
+                },
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert (
+            new_opts[CONF_WEATHER_SEVERE_TEMPLATE]
+            == "{{ is_state('binary_sensor.s', 'on') }}"
+        )
+        assert (
+            new_opts[CONF_WEATHER_SEVERE_TEMPLATE_MODE] == TemplateCombineMode.OR.value
+        )
+
 
 class TestSetSunTracking:
     """Integration tests for set_sun_tracking service."""
@@ -1336,31 +1654,155 @@ class TestSetSunTracking:
 
 
 class TestSetBlindSpot:
-    """Integration tests for set_blind_spot service."""
+    """Integration tests for set_blind_spot service (VERTICAL_OPTIONS: fov_left=45)."""
 
-    async def test_updates_blind_spot_angles(self, hass: HomeAssistant):
-        await _setup(hass, entry_id="bs_01")
+    async def _run(self, hass: HomeAssistant, entry_id: str, data: dict) -> dict:
+        await _setup(hass, entry_id=entry_id)
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
             patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
         ):
-            await _call(
-                hass,
-                "set_blind_spot",
-                {CONF_BLIND_SPOT_LEFT: 10, CONF_BLIND_SPOT_RIGHT: 40},
-            )
+            await _call(hass, "set_blind_spot", data)
+        return mock_update.call_args[1]["options"]
 
-        new_opts = mock_update.call_args[1]["options"]
-        assert new_opts[CONF_BLIND_SPOT_LEFT] == 10
+    async def test_legacy_only_call_writes_correct_gamma(self, hass: HomeAssistant):
+        """A legacy-only call must write the CORRECT signed-gamma keys (finding 1).
+
+        fov_left=45: legacy left=10/right=40 → gamma left=45-10=35,
+        right=40-45=-5. The wedge the engine reads is the gamma pair, so the
+        conversion must land there.
+        """
+        new_opts = await self._run(
+            hass, "bs_legacy_01", {CONF_BLIND_SPOT_LEFT: 10, CONF_BLIND_SPOT_RIGHT: 40}
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT] == 10  # legacy retained
         assert new_opts[CONF_BLIND_SPOT_RIGHT] == 40
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 35
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5
 
-    async def test_right_must_exceed_left(self, hass: HomeAssistant):
+    async def test_single_legacy_edge_updates_wedge(self, hass: HomeAssistant):
+        """One legacy edge, pair completed from stored options (finding 1/7).
+
+        The entry already stores a legacy pair (left=10, right=40). Sending ONLY
+        a new legacy left=20 must complete the right from stored options, so gamma
+        becomes left=45-20=25, right stays 40-45=-5. A single-edge call that left
+        the pair incomplete would silently no-op the wedge.
+        """
+        opts = {
+            **VERTICAL_OPTIONS,
+            CONF_BLIND_SPOT_LEFT: 10,
+            CONF_BLIND_SPOT_RIGHT: 40,
+        }
+        await _setup(hass, entry_id="bs_single_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_blind_spot", {CONF_BLIND_SPOT_LEFT: 20})
+            new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 25  # 45 - 20
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5  # right completed (40 - 45)
+
+    async def test_gamma_call_writes_gamma_directly(self, hass: HomeAssistant):
+        """A gamma-only call stores the gamma keys verbatim (finding 7)."""
+        new_opts = await self._run(
+            hass,
+            "bs_gamma_01",
+            {CONF_BLIND_SPOT_LEFT_GAMMA: 30, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 30
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == 10
+
+    async def test_gamma_wins_over_legacy_in_same_call(self, hass: HomeAssistant):
+        """When gamma AND legacy are supplied for one slot, gamma wins (finding 7).
+
+        Explicit gamma (30/10) must not be clobbered by the legacy pair's
+        conversion (which would yield 35/-5).
+        """
+        new_opts = await self._run(
+            hass,
+            "bs_conflict_01",
+            {
+                CONF_BLIND_SPOT_LEFT_GAMMA: 30,
+                CONF_BLIND_SPOT_RIGHT_GAMMA: 10,
+                CONF_BLIND_SPOT_LEFT: 10,
+                CONF_BLIND_SPOT_RIGHT: 40,
+            },
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 30  # gamma preserved
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == 10
+
+    async def test_empty_gamma_wedge_rejected(self, hass: HomeAssistant):
         await _setup(hass, entry_id="bs_err_01")
         with pytest.raises((ServiceValidationError, Exception)):
             await _call(
                 hass,
                 "set_blind_spot",
-                {CONF_BLIND_SPOT_LEFT: 50, CONF_BLIND_SPOT_RIGHT: 30},
+                {CONF_BLIND_SPOT_LEFT_GAMMA: -50, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
+            )
+
+    async def test_single_legacy_edge_prefers_live_gamma_over_stale_legacy(
+        self, hass: HomeAssistant
+    ):
+        """Completing a half-supplied legacy pair must use the LIVE gamma keys, not
+        the stale stored legacy edge (N1).
+
+        The options flow saves only the signed-gamma keys, so the legacy edges
+        freeze at migration and go stale after any UI wedge edit. A migrated entry
+        seeds gamma 35/-15 (legacy 10/30 @ fov_left=45); a later UI edit moved the
+        stored gamma right to -5 while the legacy keys stayed at 10/30. Sending
+        only legacy blind_spot_left=20 must back-convert the missing right edge
+        from the LIVE gamma (-5 → old_right=40), yielding gamma right=-5 — NOT the
+        stale legacy 30 which would revert it to -15 and silently discard the
+        user's edit.
+        """
+        opts = {
+            **VERTICAL_OPTIONS,
+            CONF_BLIND_SPOT_LEFT: 10,  # stale legacy, frozen at migration
+            CONF_BLIND_SPOT_RIGHT: 30,  # stale legacy
+            CONF_BLIND_SPOT_LEFT_GAMMA: 35,
+            CONF_BLIND_SPOT_RIGHT_GAMMA: -5,  # live: UI moved this from -15 to -5
+        }
+        await _setup(hass, entry_id="bs_stale_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_blind_spot", {CONF_BLIND_SPOT_LEFT: 20})
+            new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 25  # 45 - 20
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5  # live gamma preserved
+
+    async def test_extreme_legacy_input_clamped_like_migration(
+        self, hass: HomeAssistant
+    ):
+        """Extreme legacy edges must clamp (like the migration), not hard-fail (N2).
+
+        Pre-#247 legacy 300/340 @ fov_left=45 was a harmless never-matching wedge.
+        It now converts to out-of-range gamma (-255/295); the migration clamps it
+        via the shared clamp_gamma_pair helper and never errors. A legacy-field
+        service call must behave the same — clamp, don't reject a key the caller
+        never supplied. Expected clamped gamma matches
+        ``_seed_signed_gamma_blind_spots`` for the same legacy input @ fov 45/45.
+        """
+        new_opts = await self._run(
+            hass,
+            "bs_extreme_01",
+            {CONF_BLIND_SPOT_LEFT: 300, CONF_BLIND_SPOT_RIGHT: 340},
+        )
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == -44
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == 45
+
+    async def test_direct_out_of_range_gamma_still_rejected(self, hass: HomeAssistant):
+        """The N2 clamp is back-compat leniency for the LEGACY path only. A caller
+        supplying a gamma key DIRECTLY must still be range-validated (N2 guard).
+        """
+        await _setup(hass, entry_id="bs_gamma_oor_01")
+        with pytest.raises((ServiceValidationError, Exception)):
+            await _call(
+                hass,
+                "set_blind_spot",
+                {CONF_BLIND_SPOT_LEFT_GAMMA: 200, CONF_BLIND_SPOT_RIGHT_GAMMA: 10},
             )
 
 
@@ -1415,6 +1857,95 @@ class TestSetGeometry:
 
         new_opts = mock_update.call_args[1]["options"]
         assert new_opts["length_awning"] == 3.5
+
+    def test_set_geometry_accepts_day_night_middle_rail(self):
+        # The middle-rail entity has a FIELD_VALIDATORS entry; the set_geometry
+        # section list must include it too, or the validator is dead code and
+        # the key is silently dropped (issue #993 deep-audit LOW).
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+            _build_patch,
+        )
+
+        patch_out = _build_patch(
+            {CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail"},
+            _SECTION_GEOMETRY_ALL,
+        )
+        assert patch_out == {CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail"}
+
+    def test_set_geometry_accepts_dual_panel_front_entity(self):
+        # The dual-panel front-entity designator has a FIELD_VALIDATORS entry, so
+        # the set_geometry section list must include it too (#996 Finding 3).
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_FRONT_ENTITY,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+            _build_patch,
+        )
+
+        patch_out = _build_patch(
+            {CONF_DUAL_PANEL_FRONT_ENTITY: "cover.front_sheer"},
+            _SECTION_GEOMETRY_ALL,
+        )
+        assert patch_out == {CONF_DUAL_PANEL_FRONT_ENTITY: "cover.front_sheer"}
+
+    def test_set_geometry_accepts_dual_panel_blackout_triggers(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+            _build_patch,
+        )
+
+        patch_out = _build_patch(
+            {CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["heat", "night"]},
+            _SECTION_GEOMETRY_ALL,
+        )
+        assert patch_out == {CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["heat", "night"]}
+
+    def test_dual_panel_front_entity_validator_accepts_string_and_none(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_FRONT_ENTITY,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_DUAL_PANEL_FRONT_ENTITY]
+        assert v("cover.front") == "cover.front"
+        assert v(None) is None
+
+    def test_dual_panel_triggers_validator_accepts_subset(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_DUAL_PANEL_BLACKOUT_TRIGGERS]
+        assert v(["heat", "privacy", "night"]) == ["heat", "privacy", "night"]
+        assert v([]) == []
+        assert v(None) is None
+
+    def test_dual_panel_triggers_validator_rejects_unknown_member(self):
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        v = FIELD_VALIDATORS[CONF_DUAL_PANEL_BLACKOUT_TRIGGERS]
+        with pytest.raises(vol.Invalid):
+            v(["heat", "bogus"])
 
 
 class TestSetOption:
@@ -1479,6 +2010,30 @@ class TestSetOption:
             assert (
                 key in FIELD_VALIDATORS
             ), f"'{key}' is in ALL_SETTABLE_KEYS but missing from FIELD_VALIDATORS"
+
+    async def test_legacy_blind_spot_key_converts_to_gamma(self, hass: HomeAssistant):
+        """Writing a migration-read-only legacy blind-spot edge via set_option must
+        take runtime effect by converting to the signed-gamma keys (finding 5).
+
+        The gamma keys shadow the legacy edges at runtime, so a bare legacy write
+        would validate and persist yet do nothing. With fov_left=45, an entry that
+        already stores blind_spot_left=10 plus a set_option write of
+        blind_spot_right=40 must complete the pair to gamma 35/-5.
+        """
+        opts = {**VERTICAL_OPTIONS, CONF_BLIND_SPOT_LEFT: 10}
+        await _setup(hass, entry_id="so_bs_01", options=opts)
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_option",
+                {"option": CONF_BLIND_SPOT_RIGHT, "value": 40},
+            )
+            new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_BLIND_SPOT_LEFT_GAMMA] == 35
+        assert new_opts[CONF_BLIND_SPOT_RIGHT_GAMMA] == -5
 
 
 class TestReloadPropagation:

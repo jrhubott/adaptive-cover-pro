@@ -196,6 +196,94 @@ def _patch_coordinator_refresh():
 
 
 # ---------------------------------------------------------------------------
+# Coordinator-shaped mock wiring
+# ---------------------------------------------------------------------------
+
+
+def wire_dispatch_frame(
+    coord: Any, options: dict[str, Any], *, cover_type: str = CoverType.BLIND
+) -> Any:
+    """Give a coordinator-shaped mock the inputs the dispatch boundary reads.
+
+    ``async_apply_user_position`` maps its logical input into the cover's
+    dispatch frame before handing it to ``CoverCommandService`` (#1027), which
+    means every fixture that binds the real method also needs the frame inputs
+    the coordinator's own ``__init__`` / ``_update_options`` would have set.
+    Everything here is derived from *options* exactly the way the coordinator
+    derives it, and ``position_axis_inverted`` is evaluated through the real
+    property, so no fixture ever hand-rolls the inversion formula it is meant
+    to be exercising.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord._policy = get_policy(cover_type)
+    coord._inverse_state = bool(options.get(CONF_INVERSE_STATE, False))
+    coord._use_interpolation = bool(options.get(CONF_INTERP, False))
+    coord.start_value = options.get(CONF_INTERP_START)
+    coord.end_value = options.get(CONF_INTERP_END)
+    coord.normal_list = options.get(CONF_INTERP_LIST)
+    coord.new_list = options.get(CONF_INTERP_LIST_NEW)
+    coord.logger = MagicMock()
+    coord.position_axis_inverted = (
+        AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coord)
+    )
+    coord._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(coord)
+    coord._entity_target = AdaptiveDataUpdateCoordinator._entity_target.__get__(coord)
+    return coord
+
+
+def _bare_coordinator(**overrides: Any) -> Any:
+    """Build an ``object.__new__`` coordinator stub wired for ``async_shutdown``.
+
+    ``async_shutdown`` touches a fixed set of collaborators regardless of
+    which handle a given test cares about: ``_grace_mgr.cancel_all()``,
+    ``_cancel_motion_timeout()``, ``_cancel_weather_timeout()``,
+    ``_sensor_health.shutdown()``, ``_repair.shutdown()``, ``_cmd_svc.stop()``,
+    and five ``if self._X_unsub is not None: ...`` cancel blocks
+    (``_forecast_unsub``, ``_forecast_max_unsub``, ``_gate_fallback_unsub``,
+    ``_refresh_after_unsub``, ``_custom_position_hold_unsub``). Every test
+    that exercises ``async_shutdown`` against a from-scratch stub needs all of
+    these stubbed or it raises ``AttributeError`` — this was hand-mirrored
+    across ``tests/test_issue_632_daytime_gate.py`` and
+    ``tests/test_coordinator_healthchecks.py`` and broke both files the last
+    time ``async_shutdown`` gained a new handle (issue #1012's per-input hold
+    wake). Pass keyword overrides (e.g. ``gate_fallback_unsub=my_cancel_spy``)
+    to replace any default before returning; unprefixed attribute names are
+    used (``gate_fallback_unsub``, not ``_gate_fallback_unsub``).
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._grace_mgr = MagicMock()
+    coord._cancel_motion_timeout = MagicMock()
+    coord._cancel_weather_timeout = MagicMock()
+    coord._sensor_health = MagicMock()
+    coord._repair = MagicMock()
+    coord._cmd_svc = MagicMock()
+    coord._forecast_unsub = None
+    coord._forecast_max_unsub = None
+    coord._gate_fallback_unsub = None
+    coord._refresh_after_unsub = None
+    coord._custom_position_hold_unsub = None
+    for name, value in overrides.items():
+        setattr(coord, f"_{name}", value)
+    return coord
+
+
+# ---------------------------------------------------------------------------
 # Convenience assertions
 # ---------------------------------------------------------------------------
 

@@ -408,6 +408,12 @@ class TestEndTimeDefaultSentEvent:
             return_value=(effective_pos, is_sunset)
         )
 
+        # The real coordinator always carries a policy (set in __init__); the
+        # per-entity dispatch seam delegates to it. A blind policy is identity.
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        coord._policy = get_policy("cover_blind")
+
         config_entry = MagicMock()
         config_entry.options = {}
         coord.config_entry = config_entry
@@ -497,6 +503,11 @@ class TestSunsetWindowOpenedEvent:
         coord.automatic_control = True
         coord._track_end_time = True
         coord._inverse_state = False
+        # Dispatch routes each target through the polymorphic ``_entity_target``
+        # → ``policy.resolve_entity_target`` (identity for non-dual-entity types).
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        coord._policy = get_policy("cover_blind")
 
         entities = [MagicMock()]
         coord.entities = entities

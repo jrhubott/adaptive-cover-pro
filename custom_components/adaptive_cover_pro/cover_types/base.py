@@ -13,19 +13,32 @@ overrides everything.
 
 from __future__ import annotations
 
+import dataclasses
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import voluptuous as vol
 from homeassistant.const import (
+    ATTR_ASSUMED_STATE,
     SERVICE_SET_COVER_POSITION,
     SERVICE_SET_COVER_TILT_POSITION,
 )
 from homeassistant.helpers import selector
 
-from ..const import ATTR_POSITION, ATTR_TILT_POSITION, POSITION_CLOSED, POSITION_OPEN
+from ..const import (
+    ATTR_POSITION,
+    ATTR_TILT_POSITION,
+    CONF_INTERP,
+    CONF_INVERSE_STATE,
+    CONF_INVERSE_TILT,
+    POSITION_CLOSED,
+    POSITION_OPEN,
+    GroupScene,
+)
 from ..helpers import get_open_close_state, should_use_tilt, state_attr
+from ._summary_labels import AXIS_LABELS_EN
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
@@ -68,6 +81,13 @@ CAP_HAS_STOP = "has_stop"
 AXIS_NAME_POSITION = "position"
 AXIS_NAME_TILT = "tilt"
 
+# Numeric range + unit every controllable axis exposes today. HA cover
+# position/tilt are 0–100 %. Named here so the discovery surface (#725) and the
+# ``CoverAxis`` field defaults reference one constant instead of a bare literal.
+AXIS_VALUE_MIN = 0
+AXIS_VALUE_MAX = 100
+AXIS_VALUE_UNIT = "%"
+
 
 @dataclass(frozen=True, slots=True)
 class CoverAxis:
@@ -80,6 +100,29 @@ class CoverAxis:
     and the cover-type semantic of "what does fully-open mean". Passing a
     ``CoverAxis`` around eliminates ``cover_type == "cover_tilt"`` checks at
     call sites.
+
+    The trailing fields are self-discovery metadata (#725): ``label_key`` is
+    the i18n key for the axis's user-facing name, and ``value_min`` /
+    ``value_max`` / ``unit`` describe its numeric range. All four carry safe
+    defaults so existing ``CoverAxis`` construction sites (and Liskov-conformant
+    fifth-cover-type policies) keep working unchanged.
+
+    ``drive_fallbacks`` records the alternative capability sets that let the
+    integration drive this axis even when the native ``capability_key`` is
+    absent. It is an OR-of-ANDs: the axis is drivable if *any* inner group has
+    *all* its capability flags set. The position axis declares
+    ``((CAP_HAS_OPEN, CAP_HAS_CLOSE),)`` because a cover with no
+    ``set_cover_position`` is still moved to its endpoints via
+    ``open_cover`` / ``close_cover`` (see ``routing.route_service_call``); the
+    tilt axis has no fallback, so it stays drivable only with native tilt. This
+    keeps the axis model — not a cover-type string check — the single source of
+    truth for "can this axis be driven" (#886).
+
+    ``inversion_option_key`` and ``interpolatable`` encode which config option
+    reverses this axis and whether interpolation suppresses that reversal —
+    the two inputs ``axis_inverted`` needs (#1028). Both carry safe defaults so
+    existing construction sites and Liskov-conformant stub policies are
+    unaffected.
     """
 
     name: str
@@ -88,6 +131,29 @@ class CoverAxis:
     state_attr: str
     capability_key: str
     open_blocks_sun: bool
+    label_key: str = ""
+    value_min: int = AXIS_VALUE_MIN
+    value_max: int = AXIS_VALUE_MAX
+    unit: str = AXIS_VALUE_UNIT
+    drive_fallbacks: tuple[tuple[str, ...], ...] = ()
+    inversion_option_key: str = CONF_INVERSE_STATE
+    interpolatable: bool = True
+
+    def is_drivable(self, caps: Any) -> bool:
+        """Whether the integration can drive this axis on an entity with *caps*.
+
+        True when the native capability flag is set, or when any
+        ``drive_fallbacks`` group is fully satisfied (e.g. position via
+        ``open_cover`` / ``close_cover`` on a cover lacking
+        ``set_cover_position``). Mirrors ``routing.route_service_call``'s reach,
+        so the ``set_axes`` service and the discovery ``supported`` flag agree
+        with what actually dispatches.
+        """
+        if caps_get(caps, self.capability_key):
+            return True
+        return any(
+            all(caps_get(caps, cap) for cap in group) for group in self.drive_fallbacks
+        )
 
 
 # Module-level singletons. Each policy declares ``axes`` referencing these so
@@ -103,6 +169,8 @@ POSITION_AXIS = CoverAxis(
     state_attr=STATE_ATTR_POSITION,
     capability_key=CAP_HAS_SET_POSITION,
     open_blocks_sun=False,
+    label_key="axes.position",
+    drive_fallbacks=((CAP_HAS_OPEN, CAP_HAS_CLOSE),),
 )
 
 POSITION_AXIS_OPEN_BLOCKS_SUN = CoverAxis(
@@ -112,6 +180,8 @@ POSITION_AXIS_OPEN_BLOCKS_SUN = CoverAxis(
     state_attr=STATE_ATTR_POSITION,
     capability_key=CAP_HAS_SET_POSITION,
     open_blocks_sun=True,
+    label_key="axes.position",
+    drive_fallbacks=((CAP_HAS_OPEN, CAP_HAS_CLOSE),),
 )
 
 TILT_AXIS = CoverAxis(
@@ -121,7 +191,97 @@ TILT_AXIS = CoverAxis(
     state_attr=STATE_ATTR_TILT_POSITION,
     capability_key=CAP_HAS_SET_TILT_POSITION,
     open_blocks_sun=False,
+    label_key="axes.tilt",
+    inversion_option_key=CONF_INVERSE_TILT,
+    interpolatable=False,
 )
+
+# The tilt axis as a cover's PRIMARY (and only) axis — tilt-only types such as
+# ``cover_tilt`` and ``cover_louvered_roof``. Identical to ``TILT_AXIS`` in
+# every HA-facing respect (same service, same attributes, same capability), and
+# differs only in the two config-semantics fields:
+#
+#   * ``inversion_option_key`` — ``inverse_tilt`` is offered by the venetian
+#     geometry schema alone, so a tilt-only instance can never set it. What it
+#     IS configured with is ``inverse_state``, the shared position-schema option
+#     every cover type gets. ``TILT_AXIS``'s ``inverse_tilt`` is correct only
+#     for the SECOND axis of a venetian / day-night shade, where the option is
+#     real and separately configured.
+#   * ``interpolatable`` — a single-axis cover runs its one axis through the
+#     calibration curve like any other, and ``coordinator._to_cover_frame``
+#     treats interpolation and inverse-state as mutually exclusive there.
+#     Interpolation suppresses inversion on the second axis of a venetian only
+#     because the sequencer's ``_to_wire`` reads ``inverse_tilt`` raw.
+#
+# Derived with ``dataclasses.replace`` so the shared ``TILT_AXIS`` singleton
+# stays the single definition of the tilt axis's HA contract.
+TILT_AXIS_PRIMARY = dataclasses.replace(
+    TILT_AXIS,
+    inversion_option_key=CONF_INVERSE_STATE,
+    interpolatable=True,
+)
+
+
+def axis_inverted(axis: CoverAxis, options: Mapping[str, Any] | None) -> bool:
+    """Whether *axis* is effectively reversed for the install described by *options*.
+
+    Single source of truth for the "is this axis inverted right now" question
+    (#1028). Derived at read time from ``config_entry.options`` — never cached
+    on an instance — so it cannot drift from the config the way the three
+    hand-written copies of this formula did.
+
+    An axis is inverted when its ``inversion_option_key`` is set AND the
+    inversion is not suppressed by interpolation. Position inversion IS
+    suppressed (``coordinator.state`` logs the combination as unsupported and
+    skips it); tilt inversion is not, because the venetian sequencer's
+    ``_to_wire`` reads ``inverse_tilt`` directly and never consults the
+    calibration curve. ``interpolatable`` on the axis carries that asymmetry
+    so no caller has to know which axis it is holding.
+    """
+    if not options:
+        return False
+    if not options.get(axis.inversion_option_key):
+        return False
+    return not (axis.interpolatable and bool(options.get(CONF_INTERP)))
+
+
+@dataclass(frozen=True, slots=True)
+class AxisDescriptor:
+    """Self-discovery view of one axis on a specific install (issue #725).
+
+    A flattened, serialisable projection of a ``CoverAxis`` — everything a
+    consumer (the ``cover_discovery`` sensor attribute, the ``set_axes``
+    service, the companion Lovelace card) needs to render and drive an axis
+    without knowing the cover type — plus ``supported``, the per-install
+    rollup of whether the bound cover(s) actually expose the axis.
+
+    ``inverted`` (#1028) states whether this install reverses the axis, so a
+    consumer reading a raw cover attribute knows which frame it is in without
+    guessing from the config. Defaults to ``False`` so a caller that describes
+    an axis without options is unaffected.
+    """
+
+    id: str
+    label: str
+    label_key: str
+    min: int
+    max: int
+    unit: str
+    capability_key: str
+    state_attr: str
+    service_attr: str
+    open_blocks_sun: bool
+    supported: bool
+    inverted: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CoverDescriptor:
+    """Self-discovery view of a cover type + its axes (issue #725)."""
+
+    cover_type: str
+    cover_label: str
+    axes: tuple[AxisDescriptor, ...]
 
 
 def caps_get(caps: Any, key: str, default: bool = False) -> bool:
@@ -163,6 +323,14 @@ class CoverTypePolicy(ABC):
     # cover-only menus, and the setup path can filter them out by capability
     # rather than by branching on the cover-type string.
     controls_cover: ClassVar[bool] = True
+
+    # Whether this policy orchestrates *other* covers instead of driving a
+    # geometry pipeline of its own. Only the cover group sets this ``True``:
+    # it controls covers (``controls_cover = True``) but setup must build a
+    # ``GroupCoordinator`` rather than the sun/geometry coordinator. A second
+    # capability flag keeps that branch off the cover-type string, same as
+    # ``controls_cover`` (issue #790).
+    is_orchestrator: ClassVar[bool] = False
 
     def __init_subclass__(cls, *, register: bool = False, **kwargs: Any) -> None:
         """Auto-register a concrete policy by its ``cover_type``.
@@ -280,9 +448,57 @@ class CoverTypePolicy(ABC):
         """Enrich the pipeline result. Default: identity."""
         return result
 
-    def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
-        """Extra kwargs for ``PositionContext``. Default: empty."""
+    def forecast_secondary_axes(
+        self,
+        *,
+        position: int,  # noqa: ARG002
+        logger,  # noqa: ARG002
+        sol_azi: float,  # noqa: ARG002
+        sol_elev: float,  # noqa: ARG002
+        sun_data,  # noqa: ARG002
+        config,  # noqa: ARG002
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,  # noqa: ARG002
+        minimize_movements: bool,  # noqa: ARG002
+        max_coverage_steps: int,  # noqa: ARG002
+    ) -> dict[str, int]:
+        """Project this cover's non-primary axes at one forecast step (#724).
+
+        The forecast loop calls this alongside the primary ``position`` on each
+        *solar* sample and carries the result in ``ForecastSample.axes`` (keyed
+        by ``CoverAxis.name``). Single-axis covers have no secondary axis to
+        project, so the Liskov-safe default returns an empty map — the forecast
+        asks this polymorphic hook rather than branching on the cover type.
+        Multi-axis policies (venetian) override it, reusing the same tilt math
+        the live path runs so the projected track matches runtime.
+        """
         return {}
+
+    def targets_full_mechanical_endpoint(self, result: PipelineResult) -> bool:
+        """Whether this update drives the position axis to a full mechanical stop.
+
+        Single source of truth for the ``full_endpoint_target`` flag (issue #897,
+        generalizing #755). When True and ``endpoint_use_open_close`` is on, the
+        command manager forces close_cover/open_cover instead of dropping the
+        final approach to 0/100 as ``same_position`` — so a cover that settles a
+        step short of its true stop still seats there. The base default covers
+        every single-axis position cover (blind, awning, sliding_curtain, …):
+        the target is a full endpoint iff it is 0 or 100. VenetianPolicy narrows
+        this to the paired dual-axis endpoint; TiltPolicy (no position axis)
+        widens it to never.
+        """
+        if result is None or result.position is None:
+            return False
+        return result.position in (POSITION_CLOSED, POSITION_OPEN)
+
+    def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
+        """Extra kwargs for ``PositionContext``.
+
+        Carries the cover-type-agnostic ``full_endpoint_target`` flag derived
+        from :meth:`targets_full_mechanical_endpoint` so the command manager can
+        force open_cover/close_cover at the mechanical stops (issue #897).
+        """
+        return {"full_endpoint_target": self.targets_full_mechanical_endpoint(result)}
 
     def secondary_axis_check(
         self, result: PipelineResult, cmd_svc, entity_id: str | None = None
@@ -296,6 +512,68 @@ class CoverTypePolicy(ABC):
         default so single-axis policies and legacy 2-arg callers are unaffected.
         """
         return None
+
+    def resolve_entity_target(
+        self,
+        entity_id: str,  # noqa: ARG002
+        position: int,
+        *,
+        inverted: bool | None = None,  # noqa: ARG002
+        interpolated: bool = False,  # noqa: ARG002
+    ) -> int:
+        """Adjust the dispatched position for one specific entity.
+
+        The coordinator resolves a single ``position`` per update cycle, then
+        sends it to every bound entity. A cover type that drives *several*
+        physical entities to *different* positions from that one resolved value
+        overrides this hook (the Model C day/night shade remaps its middle-rail
+        entity while the bottom rail passes through unchanged). The Liskov-safe
+        default is identity, so the coordinator dispatch seam asks this
+        polymorphic hook rather than branching on the cover type — every other
+        cover type keeps sending the resolved position verbatim.
+
+        ``inverted`` and ``interpolated`` together name the DISPATCH FRAME of
+        the supplied ``position`` — which of the two mutually exclusive
+        logical→wire transforms the caller already applied — so a remapping
+        policy can reproduce or undo it.
+
+        **Transform vs. substitute — the rule that decides whether to consult
+        them at all.** A policy that *transforms* the supplied ``position``
+        into its entity's target (the Model C day/night middle rail, derived
+        from the bottom rail's dispatched value) MUST consult the frame, or it
+        will undo a transform that was never applied. A policy that *replaces*
+        it with an absolute target (the dual panel's blackout, a pure
+        open/closed decision independent of the front) MUST ignore the frame
+        and derive its own wire space from ``options`` — the caller's frame
+        describes a value that policy never consumes, and honouring it
+        dispatches into the wrong space whenever the two diverge (#1035).
+        ``options`` does not reach this hook: a substituting policy caches its
+        wire space in ``post_pipeline_resolve``, which is where ``options``
+        arrives, and reads that cache here (see ``DualPanelPolicy``).
+
+        * ``inverted=None`` (the default, and the only value the identity
+          implementation ever needs) means "use the policy's own cached
+          per-cycle decision": the main pipeline dispatch path, whose frame the
+          policy already recorded in ``post_pipeline_resolve``. ``interpolated``
+          is not consulted in this mode.
+        * An explicit ``inverted=True``/``False`` names the frame outright, and
+          ``interpolated`` completes it. The broadcast seams (sunset-window
+          transition, end-time-default, auto-control-off return) dispatch an
+          absolute default that is inverted-or-not but never interpolated, so
+          they leave ``interpolated`` at its default. A user command
+          (``async_apply_user_position``) rides the SAME transform as the main
+          pipeline but off-cycle, so it names both dimensions rather than
+          trusting a cache built for a different value (#993 / #1027). What a
+          *substituting* policy does with that frame is governed by the rule
+          above: nothing.
+
+        ``interpolated`` exists because ``inverted`` alone cannot describe an
+        interpolating install: "interpolated, not inverted" and "neither" both
+        collapsed to ``inverted=False``, which silently dropped a calibrated
+        cover type's curve. Backward-compatible: every non-remapping policy
+        ignores both.
+        """
+        return position
 
     def attach(self, **kwargs: Any) -> None:
         """Bind late-resolved dependencies (cmd_svc, grace_mgr, …).
@@ -442,6 +720,26 @@ class CoverTypePolicy(ABC):
 
     # ---- Axis routing -------------------------------------------------- #
 
+    def axis_requirements(self) -> tuple[dict[str, Any], ...]:
+        """Serialise each declared axis as a capability requirement (issue #972).
+
+        One ``{"axis", "capability", "fallbacks"}`` dict per axis, projected off
+        the existing ``axes`` / ``CoverAxis`` data. The diagnostics-triage engine
+        (which is Home-Assistant-free and must never branch on the cover-type
+        string) reads this to flag a cover whose entity lacks a required
+        capability: the capability key and its OR-of-ANDs ``fallbacks`` travel as
+        plain data, so no ``has_*`` literal or cover-type comparison leaks into
+        ``diagnostics/triage.py``. A fifth cover type is covered automatically.
+        """
+        return tuple(
+            {
+                "axis": axis.name,
+                "capability": axis.capability_key,
+                "fallbacks": axis.drive_fallbacks,
+            }
+            for axis in self.axes
+        )
+
     def select_default_axis(self, caps: Any) -> CoverAxis:
         """Pick the axis ``CoverCommandService`` should target for this entity.
 
@@ -457,8 +755,100 @@ class CoverTypePolicy(ABC):
         primary = self.axes[0]
         is_tilt_default = primary.name == AXIS_NAME_TILT
         if should_use_tilt(is_tilt_default, caps if caps is not None else {}):
-            return TILT_AXIS
+            # A tilt-primary policy returns its OWN axis object: it declares
+            # ``TILT_AXIS_PRIMARY``, which matches the shared singleton on every
+            # HA-facing field but carries primary-axis config semantics. Handing
+            # back ``TILT_AXIS`` would give callers an axis that disagrees with
+            # ``self.axes[0]`` about which option inverts it.
+            return primary if is_tilt_default else TILT_AXIS
         return primary
+
+    def tilt_capability_contradiction(self, caps: Any) -> bool:
+        """Whether this cover type drives a tilt axis the device can't (#991, A3).
+
+        True when the policy declares a tilt axis (``capability_key ==
+        CAP_HAS_SET_TILT_POSITION``) that ``caps`` cannot drive. The tilt axis
+        has no ``drive_fallbacks``, so ``is_drivable`` reduces to "native tilt
+        present" — a tilt-declaring type (tilt / louvered_roof / venetian) bound
+        to a cover lacking ``set_tilt_position`` returns ``True``; a
+        position-only cover reached via ``open_cover`` / ``close_cover`` never
+        declares a tilt axis, so it stays ``False`` (issue #991's out-of-scope
+        carve-out). Single source of truth behind the cover-type boundary for
+        the runtime A3 Repair, so the coordinator never branches on cover type
+        or a hardcoded capability literal. Liskov-safe base default — no
+        subclass override needed.
+        """
+        return any(
+            a.capability_key == CAP_HAS_SET_TILT_POSITION and not a.is_drivable(caps)
+            for a in self.axes
+        )
+
+    def supported_axes(self, caps: Any) -> tuple[CoverAxis, ...]:
+        """Return the declared axes this entity's capabilities actually expose.
+
+        Single source of truth (issue #725) for both the ``set_axes`` service's
+        unsupported-axis rejection and the discovery descriptor's ``supported``
+        flag. Filters ``self.axes`` by each axis's ``is_drivable`` check, which
+        honours the open/close fallback so a position-only cover reached via
+        ``open_cover`` / ``close_cover`` is not falsely rejected (#886) — no
+        hardcoded ``caps.get("has_X")`` literal leaks out.
+        """
+        return tuple(a for a in self.axes if a.is_drivable(caps))
+
+    def describe_axis(
+        self,
+        axis: CoverAxis,
+        caps: Any = None,
+        labels: dict[str, str] | None = None,
+        *,
+        options: Mapping[str, Any] | None = None,
+    ) -> AxisDescriptor:
+        """Project one ``CoverAxis`` to a serialisable ``AxisDescriptor``.
+
+        ``labels`` overlays translated ``axes.*`` strings on the English base;
+        ``None`` keeps English (back-compat). ``supported`` reflects whether
+        *caps* expose the axis. ``options`` are this entry's config options —
+        the only thing that can answer ``inverted`` — and default to ``None``
+        so the Liskov contract for a partial fifth-cover-type policy holds.
+        """
+        label = {**AXIS_LABELS_EN, **(labels or {})}.get(axis.label_key, axis.label_key)
+        return AxisDescriptor(
+            id=axis.name,
+            label=label,
+            label_key=axis.label_key,
+            min=axis.value_min,
+            max=axis.value_max,
+            unit=axis.unit,
+            capability_key=axis.capability_key,
+            state_attr=axis.state_attr,
+            service_attr=axis.service_attr,
+            open_blocks_sun=axis.open_blocks_sun,
+            supported=axis.is_drivable(caps),
+            inverted=axis_inverted(axis, options),
+        )
+
+    def describe(
+        self,
+        caps: Any = None,
+        labels: dict[str, str] | None = None,
+        *,
+        options: Mapping[str, Any] | None = None,
+    ) -> CoverDescriptor:
+        """Assemble the self-discovery descriptor for this cover type (#725).
+
+        Cover-type id + localized label + one ``AxisDescriptor`` per declared
+        axis. Every axis appears (so a consumer sees the full axis set); the
+        per-axis ``supported`` flag carries whether *caps* expose it. A ninth
+        cover type inherits this unchanged — the discovery builder never
+        branches on the cover-type string.
+        """
+        return CoverDescriptor(
+            cover_type=self.cover_type,
+            cover_label=self.display_label(labels),
+            axes=tuple(
+                self.describe_axis(a, caps, labels, options=options) for a in self.axes
+            ),
+        )
 
     def position_axis_supported(self, caps: Any) -> bool:
         """Whether *this entity* exposes the policy's primary (position) axis.
@@ -491,6 +881,26 @@ class CoverTypePolicy(ABC):
             return POSITION_CLOSED if primary.open_blocks_sun else POSITION_OPEN
         return POSITION_OPEN if primary.open_blocks_sun else POSITION_CLOSED
 
+    def position_for_scene(self, scene: GroupScene) -> int:
+        """Map a cover-group scene to this cover type's primary-axis position.
+
+        Scenes are semantic intents resolved per member (issue #790):
+
+          - ``ALL_OPEN`` / ``ALL_CLOSED`` follow HA cover semantics — 100 =
+            open (blinds raised / awning extended), 0 = closed.
+          - ``PRIVACY`` means maximum coverage, delegated to the existing
+            ``position_for_intent(sun_through=False)`` polymorphism so the
+            awning's open-blocks-sun axis flips the answer.
+
+        Never called on axis-less virtual policies (group, building profile)
+        — the group resolves scenes through each *member's* policy.
+        """
+        if scene is GroupScene.ALL_OPEN:
+            return POSITION_OPEN
+        if scene is GroupScene.ALL_CLOSED:
+            return POSITION_CLOSED
+        return self.position_for_intent(sun_through=False)
+
     def more_protective_position(self, a: int, b: int) -> int:
         """Return whichever of two primary-axis positions blocks more sun.
 
@@ -516,6 +926,7 @@ class CoverTypePolicy(ABC):
         caps: Any,
         *,
         state_obj: State | None = None,
+        assumed: int | None = None,
     ) -> int | None:
         """Read the current value on the axis this policy targets by default.
 
@@ -524,13 +935,35 @@ class CoverTypePolicy(ABC):
         ``CoverCommandService._read_position_with_capabilities``,
         ``CoverProvider.read_positions``, manual_override state-change
         handling, and the position-capability check inside ``_prepare_service_call``.
+
+        ``assumed`` (issue #888) is a display-only fallback surfaced ONLY on the
+        open/close-only branch. It wins in two cases: after the live open/close
+        read yields ``None``, and — for an ``assumed_state`` cover (issue #888
+        follow-up) — over the open/close mapping itself, because for such covers
+        ``open``/``closed`` is the last-command direction, not a real position.
+        On a non-assumed open/close cover a real open/closed read still wins and
+        is never masked; a position-capable cover never reaches the fallback.
+        Callers on the command-dispatch read path leave ``assumed=None`` so the
+        gates stay raw (§3b) — only the reported-position surfaces pass it.
         """
         axis = self.select_default_axis(caps)
         if _caps_get(caps, axis.capability_key, default=True):
             if state_obj is not None:
                 return state_obj.attributes.get(axis.state_attr)
             return state_attr(hass, entity, axis.state_attr)
-        return get_open_close_state(hass, entity, state_obj=state_obj)
+        live = get_open_close_state(hass, entity, state_obj=state_obj)
+        if assumed is not None:
+            st = state_obj if state_obj is not None else hass.states.get(entity)
+            if st is not None and st.attributes.get(ATTR_ASSUMED_STATE):
+                # Issue #888 follow-up: for an assumed-state cover, open/closed is
+                # the last-command direction, not a real position. A recorded
+                # high-confidence assumed value (a My arrival) is more specific, so
+                # surface it over the open/close mapping. Invalidation (manual-override
+                # transition + per-command refresh) keeps it from going stale.
+                return assumed
+        if live is None and assumed is not None:
+            return assumed
+        return live
 
     # ---- Declarative section configuration ----------------------------- #
 
@@ -587,7 +1020,11 @@ class CoverTypePolicy(ABC):
             # button is NOT added here — it is a transient toggle layered on in
             # ``config_flow._get_geometry_schema`` only, never a persisted key.
             base = self.geometry_schema(hass, opts)
-            base = base.extend(cd.window_facing_schema(hass).schema)
+            base = base.extend(
+                cd.window_facing_schema(
+                    hass, include_distance=self.includes_shaded_distance()
+                ).schema
+            )
         elif name == cf.SECTION_SUN_TRACKING:
             base = cd.sun_tracking_schema(hass)
         elif name == cf.SECTION_BLIND_SPOT:
@@ -650,10 +1087,25 @@ class CoverTypePolicy(ABC):
         """Return user-facing warnings about the bound covers' capabilities.
 
         Default: no warnings — vertical / awning / tilt logic still lives in
-        ``config_flow._check_cover_capabilities``. ``VenetianPolicy``
+        ``helpers.check_cover_capabilities``. ``VenetianPolicy``
         overrides to express its dual-axis capability requirement.
         """
         return []
+
+    def capability_warnings_for_options(
+        self, known: dict[str, dict], options: dict
+    ) -> list[str]:  # noqa: ARG002
+        """Options-aware capability warnings for the bound covers.
+
+        Additive extension of :meth:`cover_capability_warnings` for cover types
+        whose capability requirement depends on a per-instance option (e.g. a
+        day/night shade's control model relaxes the tilt requirement in its
+        single-axis split-range mode). The Liskov-safe default delegates to
+        :meth:`cover_capability_warnings`, so every other policy is unchanged —
+        the single ``helpers.check_cover_capabilities`` call site can move
+        to this hook without touching any existing behaviour.
+        """
+        return self.cover_capability_warnings(known)
 
     def glare_zones_config(self, config_service, options: dict) -> Any | None:
         """Return a ``GlareZonesConfig`` for this cover, or ``None``.
@@ -719,6 +1171,18 @@ class CoverTypePolicy(ABC):
         ignores both — passing them is backward-compatible.
         """
         return vol.Schema({})
+
+    def includes_shaded_distance(self) -> bool:
+        """Whether the shared ``CONF_DISTANCE`` (shaded distance) field applies.
+
+        The per-window shaded-distance field composes onto every geometry
+        schema through ``window_facing_schema``. Cover types whose engine
+        never reads it (the tilt-only louvered roof) override this to
+        ``False`` so the inert marker is omitted from the form and from
+        ``live_option_keys`` / the geometry unit-key set. Default ``True`` —
+        every other type keeps the field.
+        """
+        return True
 
     def geometry_length_keys(self) -> tuple[str, ...]:
         """Return option keys stored as canonical metres.

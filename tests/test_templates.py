@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IRRADIANCE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MOTION_TEMPLATE,
+    CONF_TEMP_EXTREME_HEAT,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
@@ -135,6 +136,12 @@ class TestTemplateResolver:
         )
         assert out[CONF_LUX_THRESHOLD] == 100.0
         assert out["name"] == "{{ not_resolved }}"
+
+    async def test_extreme_heat_threshold_template_rendered(self, hass: HomeAssistant):
+        """A templated ``temp_extreme_heat`` renders to a number, mirroring temp_high (#766)."""
+        resolver = TemplateResolver(hass)
+        out = resolver.resolve({CONF_TEMP_EXTREME_HEAT: "{{ 30 }}"})
+        assert out[CONF_TEMP_EXTREME_HEAT] == 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +282,20 @@ class TestTemplatableValidators:
             {CONF_TEMP_LOW: 30, CONF_TEMP_HIGH: "{{ 25 }}"}, {}
         )
         assert result[CONF_TEMP_LOW] == 30
+
+    def test_extreme_heat_threshold_number_accepted(self):
+        """A plain number is accepted and coerced (issue #766)."""
+        result = validate_options_patch({CONF_TEMP_EXTREME_HEAT: 35}, {})
+        assert result[CONF_TEMP_EXTREME_HEAT] == 35.0
+
+    def test_extreme_heat_threshold_template_accepted(self):
+        """A Jinja template is accepted by the templatable-num validator."""
+        result = validate_options_patch({CONF_TEMP_EXTREME_HEAT: "{{ 30 }}"}, {})
+        assert result[CONF_TEMP_EXTREME_HEAT] == "{{ 30 }}"
+
+    def test_extreme_heat_threshold_out_of_range_rejected(self):
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch({CONF_TEMP_EXTREME_HEAT: 999}, {})
 
     def test_condition_template_accepted(self):
         tmpl = "{{ is_state('input_boolean.guest', 'on') }}"

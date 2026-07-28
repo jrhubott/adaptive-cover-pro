@@ -44,7 +44,8 @@ def _make_cover(*, direct_sun_valid=True, calc_pct=50.0):
     cover = SimpleNamespace(
         direct_sun_valid=direct_sun_valid,
     )
-    cover.calculate_percentage = lambda: calc_pct
+    cover.calculate_percentage = lambda: int(round(calc_pct))
+    cover.calculate_raw_percentage = lambda: calc_pct
     return cover
 
 
