@@ -25,26 +25,19 @@ tests drive the grace window deterministically. Evaluation is stateless re-eval:
 per indeterminate run and never advanced by repeat calls at the same clock
 value. Managers compose this; they do not inherit from it.
 
-**Anchor point** (issue #1012 audit): the grace window can be measured from
-either of two moments, and the default preserves the daytime gate's original,
-test-locked behaviour:
-
-* ``anchor_at_last_known=False`` (default) — anchor at the *first
-  indeterminate sighting*. This is what :class:`~managers.time_window.
-  TimeWindowManager` has always used for the daytime gate (issue #742) —
-  changing it would change production fallback timing for an existing,
-  shipped consumer, so it stays the default. ``tests/test_graceful_source.py``
-  and ``tests/test_time_window_manager.py`` (``test_seconds_until_gate_fallback_
-  phases``, which asserts a *full* grace window remains at the first
-  indeterminate reading) lock this in.
-* ``anchor_at_last_known=True`` — anchor at the source's *last known-good
-  observation*. The custom-position per-input hold (issue #1012) needs this:
-  its regression suite was written and locked against "the window is measured
-  from when we last knew the truth", not "from when we noticed we didn't".
-  Both anchors keep the same ``>=`` boundary convention (expiry lands exactly
-  *at* ``grace_seconds`` elapsed, not after) — no existing test in either
-  consumer's suite asserts the single-instant tie-breaker, so one boundary
-  rule serves both without special-casing.
+**Anchor point**: the grace window is always measured from the *first
+indeterminate sighting* — never from the source's last known-good
+observation. This is cadence-independent by construction: a caller with a
+sparse or irregular observation cadence (no fixed ``update_interval``) can go
+an arbitrarily long time between "last known good" and "first observed bad"
+without that gap eating into the grace window at all — only how long the
+source has been continuously indeterminate *since first noticed* counts.
+:class:`~managers.time_window.TimeWindowManager` (the daytime gate, issue
+#742) and the custom-position per-input hold (issue #1012) both rely on this
+same anchor. ``tests/test_graceful_source.py`` and
+``tests/test_time_window_manager.py`` (``test_seconds_until_gate_fallback_
+phases``, which asserts a *full* grace window remains at the first
+indeterminate reading) lock it in.
 """
 
 from __future__ import annotations
@@ -90,30 +83,20 @@ class GracefulSource[T]:
         grace_seconds: float,
         *,
         clock: Callable[[], float] = time.monotonic,
-        anchor_at_last_known: bool = False,
     ) -> None:
         """Initialize with the grace window length and an injectable clock.
 
         Args:
             grace_seconds: How long to hold the last-known verdict before
-                reporting FELL_BACK — measured from whichever moment
-                ``anchor_at_last_known`` selects.
+                reporting FELL_BACK — measured from the first indeterminate
+                sighting (see the module docstring's "Anchor point" section).
             clock: Monotonic time source returning seconds. Injected so tests
                 can advance time deterministically.
-            anchor_at_last_known: When ``False`` (default), the grace window
-                is measured from the first indeterminate sighting — the
-                daytime gate's original, test-locked behaviour (issue #742).
-                When ``True``, it is measured from the last known-good
-                observation instead — what the custom-position per-input hold
-                needs (issue #1012). See the module docstring's "Anchor
-                point" section for why both exist rather than picking one.
 
         """
         self._grace_seconds = grace_seconds
         self._clock = clock
-        self._anchor_at_last_known = anchor_at_last_known
         self._last_known: T | None = None
-        self._last_known_at: float | None = None
         self._indeterminate_since: float | None = None
 
     def observe(self, verdict: T | None, *, now: float | None = None) -> Resolution[T]:
@@ -130,18 +113,17 @@ class GracefulSource[T]:
                 on "now" to the same instant.
 
         Returns:
-            A :class:`Resolution`. A real verdict records last-known (and when
-            it was observed), clears the indeterminate anchor, and returns
-            DETERMINATE. ``None`` with no last-known ever returns FELL_BACK
-            without arming the timer. ``None`` with a last-known fixes the
-            grace anchor (per ``anchor_at_last_known``) on first sight and
-            returns HOLDING until ``grace_seconds`` elapse, then FELL_BACK.
+            A :class:`Resolution`. A real verdict records last-known and
+            clears the indeterminate anchor, returning DETERMINATE. ``None``
+            with no last-known ever returns FELL_BACK without arming the
+            timer. ``None`` with a last-known fixes the grace anchor at the
+            first indeterminate sighting and returns HOLDING until
+            ``grace_seconds`` elapse (measured from that anchor), then
+            FELL_BACK.
 
         """
         if verdict is not None:
-            current = self._clock() if now is None else now
             self._last_known = verdict
-            self._last_known_at = current
             self._indeterminate_since = None
             return Resolution(SourceResolution.DETERMINATE, verdict)
 
@@ -155,12 +137,7 @@ class GracefulSource[T]:
         if self._indeterminate_since is None:
             # Fix the anchor on first sight; idempotent for repeats this cycle.
             self._indeterminate_since = current
-        anchor = (
-            self._last_known_at
-            if self._anchor_at_last_known
-            else self._indeterminate_since
-        )
-        if current - anchor >= self._grace_seconds:
+        if current - self._indeterminate_since >= self._grace_seconds:
             return Resolution(SourceResolution.FELL_BACK, None)
         return Resolution(SourceResolution.HOLDING, self._last_known)
 
@@ -174,12 +151,7 @@ class GracefulSource[T]:
         if self._indeterminate_since is None or self._last_known is None:
             return None
         current = self._clock() if now is None else now
-        anchor = (
-            self._last_known_at
-            if self._anchor_at_last_known
-            else self._indeterminate_since
-        )
-        remaining = self._grace_seconds - (current - anchor)
+        remaining = self._grace_seconds - (current - self._indeterminate_since)
         return remaining if remaining > 0 else None
 
     @property
@@ -190,5 +162,4 @@ class GracefulSource[T]:
     def reset(self) -> None:
         """Forget the last-known verdict and any in-flight grace window."""
         self._last_known = None
-        self._last_known_at = None
         self._indeterminate_since = None

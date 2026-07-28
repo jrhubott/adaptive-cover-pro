@@ -1116,10 +1116,16 @@ DEFAULT_CUSTOM_POSITION_TILT_ONLY = False
 # template fold (issue #1012). When a slot binds both a sensor and a
 # condition template, one input can go transiently invalid while the other
 # still opines; the fold holds that input's own last-valid contribution
-# rather than letting its fresh, coerced-to-False value silently win. This
-# window bounds the hold: past it, the held input falls through to its fresh
-# value, so a permanently-dead input (e.g. a sensor whose battery died)
-# cannot mask a healthy peer indefinitely. Fixed, not user-configurable.
+# rather than letting its fresh, coerced-to-False value silently win. The
+# window is measured from that input's own FIRST INVALID SIGHTING, not from
+# its last-valid reading (see GracefulSource's module docstring's "Anchor
+# point" section) — so it is cadence-independent: an arbitrarily long gap
+# between "last known good" and "first observed bad" (ACP has no
+# update_interval; sun.sun's own update cadence can be 20 minutes at night)
+# does not itself eat into the 300s window. Past the window, the held input
+# falls through to its fresh value, so a permanently-dead input (e.g. a
+# sensor whose battery died) cannot mask a healthy peer indefinitely. Fixed,
+# not user-configurable.
 CUSTOM_POSITION_INPUT_HOLD_SECONDS = 300.0
 
 # Configurable priorities for the built-in pipeline handlers. Each key holds an

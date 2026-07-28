@@ -145,9 +145,10 @@ class CustomPositionSensorState:
     # stays True (the other input is still speaking), but it also runs when
     # both inputs are invalid, in which case the whole-slot hold then
     # overwrites whatever it produced. The per-input window is measured from
-    # that input's own last VALID reading (not from when it went invalid —
-    # one cycle earlier), for up to CUSTOM_POSITION_INPUT_HOLD_SECONDS past
-    # that reading.
+    # that input's own FIRST INVALID SIGHTING (cadence-independent — a gap of
+    # any length between the input's last-valid reading and when it was first
+    # observed bad does not itself eat into the window), for up to
+    # CUSTOM_POSITION_INPUT_HOLD_SECONDS past that first invalid sighting.
     is_on: bool
     # The slot's position claim, in pre-inversion canonical space. ``None`` =
     # the slot makes no position claim — a constraint-only slot (e.g. trigger →

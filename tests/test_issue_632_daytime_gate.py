@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
 from custom_components.adaptive_cover_pro.managers.time_window import TimeWindowManager
+from tests.ha_helpers import _bare_coordinator
 
 
 class _FakeState:
@@ -368,20 +369,8 @@ async def test_gate_fallback_due_callback_requests_refresh():
 
 async def test_async_shutdown_cancels_gate_fallback_handle():
     """async_shutdown cancels and clears the gate-fallback wake handle."""
-    coord = object.__new__(AdaptiveDataUpdateCoordinator)
-    coord.logger = MagicMock()
-    coord._grace_mgr = MagicMock()
-    coord._cancel_motion_timeout = MagicMock()
-    coord._cancel_weather_timeout = MagicMock()
-    coord._sensor_health = MagicMock()
-    coord._repair = MagicMock()
-    coord._cmd_svc = MagicMock()
-    coord._forecast_unsub = None
-    coord._forecast_max_unsub = None
-    coord._refresh_after_unsub = None
-    coord._custom_position_hold_unsub = None
     cancel = MagicMock()
-    coord._gate_fallback_unsub = cancel
+    coord = _bare_coordinator(gate_fallback_unsub=cancel)
     await coord.async_shutdown()
     cancel.assert_called_once()
     assert coord._gate_fallback_unsub is None
