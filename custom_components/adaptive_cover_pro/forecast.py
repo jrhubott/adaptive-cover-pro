@@ -144,7 +144,9 @@ def build_forecast(
     ``default_position_with_limits`` in :mod:`pipeline.helpers`), so the
     forecast strip matches what the cover is actually commanded to — including
     min/max position limits, the 1 % floor, movement minimization, the
-    look-ahead anticipation horizon, and the sunset-aware effective default.
+    look-ahead anticipation horizon (a grid-resolution approximation, not an
+    exact match — see :func:`_build_samples`), and the sunset-aware effective
+    default.
     *config* and *policy* supply everything those primitives need;
     *time_threshold_minutes* supplies the anticipation look-ahead horizon
     (mirrors the live path's ``PipelineSnapshot.time_threshold_minutes``,

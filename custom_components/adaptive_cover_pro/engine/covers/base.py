@@ -67,7 +67,7 @@ class AdaptiveGeneralCover(ABC):
         so its time-dependent gates are evaluated at the projected time. The
         live anticipation look-ahead
         (:func:`pipeline.helpers.anticipated_solar_position_from_geometry`,
-        since #617) sets it the same way on the ``dataclasses.replace`` copies
+        since PR #617) sets it the same way on the ``dataclasses.replace`` copies
         it probes; the *current* cover instance is never given an
         ``eval_time`` of its own, so its gates still evaluate at wall-clock
         now.
