@@ -27,6 +27,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_PROFILE_SENSOR_OVERRIDES,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     DOMAIN,
     CoverType,
@@ -373,6 +375,40 @@ async def test_building_profile_options_flow_saves_sensors(
     result2 = await flow.async_step_done()
     assert result2["type"] == "create_entry"
     assert result2["data"][CONF_LUX_ENTITY] == "sensor.new_lux"
+
+
+@pytest.mark.integration
+async def test_building_profile_sensors_step_clears_previously_set_field(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing a previously-set sensor/template field must not survive a
+    submit with the key simply absent from user_input — HA's frontend omits
+    a cleared no-default vol.Optional key rather than sending "" (issue #1085).
+    """
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={
+            CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+            CONF_WEATHER_IS_RAINING_TEMPLATE: "{{ 'off' }}",
+        },
+        entry_id="profile_1",
+        title="Main Building",
+    )
+    profile.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(profile)
+    flow.hass = hass
+
+    # Empty dict mirrors the frontend submission when every field is cleared —
+    # none of these keys carry a schema default, so HA never sends them back.
+    await flow.async_step_profile_sensors({})
+    assert flow.options.get(CONF_WEATHER_RAIN_SENSOR) is None
+    assert flow.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE) is None
+
+    result2 = await flow.async_step_done()
+    assert result2["data"].get(CONF_WEATHER_RAIN_SENSOR) is None
+    assert result2["data"].get(CONF_WEATHER_IS_RAINING_TEMPLATE) is None
 
 
 # ---------------------------------------------------------------------------

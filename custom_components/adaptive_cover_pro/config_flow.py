@@ -33,6 +33,7 @@ from .const import (
     resolve_fov_left,
     DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+    BUILDING_PROFILE_SENSOR_KEYS,
     LIGHT_CLOUD_SENSOR_KEYS,
     WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
@@ -5425,6 +5426,7 @@ class OptionsFlowHandler(OptionsFlow):
         actually saves and closes the dialog.
         """
         if user_input is not None:
+            self.optional_entities(list(BUILDING_PROFILE_SENSOR_KEYS), user_input)
             self.options.update(user_input)
             return await self.async_step_init()
 
