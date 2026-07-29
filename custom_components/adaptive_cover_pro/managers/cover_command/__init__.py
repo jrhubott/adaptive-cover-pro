@@ -1131,8 +1131,10 @@ class CoverCommandService:
         entity_id: str,
         position: int,
         context: PositionContext,
+        *,
+        plan: ServiceCallPlan | None = None,
     ) -> bool:
-        """Same-position gate fallback for a target-vs-routing comparison (issues #779, #1095).
+        """Same-position gate fallback for a target-vs-routing comparison (issue #779).
 
         Somfy RTS (and any open/close-only cover without genuine position
         feedback) reports HA state ``unknown``/``unavailable`` forever, so
@@ -1141,16 +1143,6 @@ class CoverCommandService:
         reading to compare against — the exact same command gets resent on
         every update cycle even though the cover was already commanded to
         (and mechanically at) that state (issue #779).
-
-        A threshold-routed cover (``supports_position: False``) whose
-        ``_current`` genuinely resolves hits the same problem in a different
-        shape (issue #1095): every calculated position on one side of
-        ``open_close_threshold`` collapses to the same routed decision, but a
-        raw numeric comparison against ``_current`` never sees that — it only
-        sees the pre-routing ``position`` drifting inside the sub-threshold
-        band. The caller compares ``_current`` against the routed target
-        directly in that case; this fallback additionally covers the case
-        where ``_current`` never resolved at all.
 
         Falls back to the last *commanded* target (``get_target``) compared
         against this cycle's *routed decision* rather than the raw
@@ -1162,40 +1154,52 @@ class CoverCommandService:
         (issue #779 follow-up regression from PR #781, which hand-rolled a
         partial copy of this math and ignored ``use_my_position``).
 
-        Consulted only when ``_current is None``. The caller in
-        ``apply_position`` also widens *entry* into this whole branch to
-        ``_current is None or not plan.supports_position`` — "not
-        position-capable" covers more than a threshold-routed cover, e.g. a
-        position-capable cover routed to ``open_cover``/``close_cover`` at a
-        mechanical endpoint under ``endpoint_use_open_close`` (the default),
-        the My-preset ``stop_cover`` route, and the no-capable-service case
-        — but once inside that branch, a *resolved* ``_current`` is compared
-        directly against ``plan.routed_target`` by the caller, never through
-        this fallback. A resolved live reading that contradicts the stored
-        target (e.g. the cover reports mechanically closed while the last
-        commanded target was "open") must be free to fall through and
+        Consulted only when ``_current is None`` — a *resolved* ``_current``
+        is compared directly against ``plan.routed_target`` by the caller
+        instead (issue #1095; see the same-position gate's comment in
+        ``apply_position`` for the "not position-capable" routing-algebra
+        explanation of which routes ``routed_target`` can actually diverge
+        from ``position`` on). A resolved live reading that contradicts the
+        stored target (e.g. the cover reports mechanically closed while the
+        last commanded target was "open") must be free to fall through and
         dispatch; routing it through the last-*commanded*-target comparison
-        would let a stale stored target mask a genuine state change (issue
-        #1095 audit finding). This fallback exists solely for the case where
-        there is no live reading to compare at all. The delta/time gates and
-        reconciliation intentionally keep reading the real current position
-        and are untouched by this fallback.
+        here would let a stale stored target mask a genuine state change.
+        This fallback exists solely for the case where there is no live
+        reading to compare at all. The delta/time gates and reconciliation
+        intentionally keep reading the real current position and are
+        untouched by this fallback.
+
+        Args:
+            entity_id: Cover entity ID.
+            position: This cycle's pre-routing calculated target.
+            context: Current coordinator state (``use_my_position`` feeds
+                routing when ``plan`` is not supplied).
+            plan: Pre-computed routing plan for this ``(entity_id,
+                position)`` pair — e.g. ``apply_position``'s gate-level
+                ``_plan``. Reused as-is when given, instead of calling
+                ``route_service_call`` again, so the gate's plan and this
+                fallback's plan are provably the same object rather than two
+                independent computations that happen to agree (issue #1095
+                audit finding 5). Recomputed internally when omitted,
+                preserving the original call contract for any other caller.
+
         """
         last_target = self.get_target(entity_id)
         if last_target is None:
             return False
 
-        caps = self.get_cover_capabilities(entity_id)
-        axis = self._policy.select_default_axis(caps)
-        plan = route_service_call(
-            entity_id,
-            position,
-            caps,
-            axis=axis,
-            use_my_position=context.use_my_position,
-            open_close_threshold=self._open_close_threshold,
-            endpoint_use_open_close=self._endpoint_use_open_close,
-        )
+        if plan is None:
+            caps = self.get_cover_capabilities(entity_id)
+            axis = self._policy.select_default_axis(caps)
+            plan = route_service_call(
+                entity_id,
+                position,
+                caps,
+                axis=axis,
+                use_my_position=context.use_my_position,
+                open_close_threshold=self._open_close_threshold,
+                endpoint_use_open_close=self._endpoint_use_open_close,
+            )
         return last_target == plan.routed_target
 
     async def _service_secondary_axis(
@@ -1304,32 +1308,6 @@ class CoverCommandService:
 
         _current = self._get_current_position(entity_id)
 
-        # Routed decision for this cycle's target (issue #1095). Computed once
-        # here, right after _current, so the same-position gate below can
-        # compare against the *routed* target instead of the raw pre-routing
-        # `position` whenever the routing is not position-capable. "Not
-        # position-capable" covers four routes (open/close endpoint under
-        # endpoint_use_open_close, the My-preset stop_cover route, the
-        # no-capable-service case, and the open/close threshold route), but
-        # route_service_call sets routed_target == position on the first
-        # three by construction (routing.py) — only the threshold route
-        # collapses a range of positions onto one 0/100 routed_target, so
-        # that's the only route where comparing against routed_target differs
-        # from the plain `_current == position` check. route_service_call is
-        # pure/no-side-effects (see routing.py's module docstring) — it gets
-        # recomputed again by _prepare_service_call at actual dispatch time,
-        # same as today.
-        _caps_for_plan = self.get_cover_capabilities(entity_id)
-        _plan = route_service_call(
-            entity_id,
-            position,
-            _caps_for_plan,
-            axis=self._policy.select_default_axis(_caps_for_plan),
-            use_my_position=context.use_my_position,
-            open_close_threshold=self._open_close_threshold,
-            endpoint_use_open_close=self._endpoint_use_open_close,
-        )
-
         # Full mechanical endpoint forcing (issue #755, generalized to any
         # position-capable cover by #897). When the owning cover-type policy
         # flagged this update as a full endpoint (single-axis 0/100, or a
@@ -1417,36 +1395,46 @@ class CoverCommandService:
         # mechanical state), not by tolerance, so the gap can't be reintroduced
         # here nor can it relay-click every cycle.
         #
-        # _current is None OR the routed plan is not position-capable widens
-        # ENTRY into this exception (issue #779, broadened by #1095). Somfy
-        # RTS covers (and any open/close-only cover without genuine position
-        # feedback) sit at HA state unknown/unavailable forever, so _current
-        # never resolves and the numeric comparison above would never fire —
+        # `_plan` (computed directly below, right before this gate) drives a
+        # second arm that widens ENTRY into this exception beyond the numeric
+        # `_current == position` check (issue #779, broadened by #1095).
+        # Somfy RTS covers (and any open/close-only cover without genuine
+        # position feedback) sit at HA state unknown/unavailable forever, so
+        # `_current` never resolves and the numeric arm above never fires —
         # the same command gets resent every cycle (#779). "not
-        # supports_position" is broader than just "threshold-routed": entry
-        # also comes from a position-capable cover routed to
+        # `_plan.supports_position`" is broader than just "threshold-routed":
+        # it also covers a position-capable cover routed to
         # open_cover/close_cover at a mechanical endpoint under
         # endpoint_use_open_close (the default), the My-preset stop_cover
         # route, and the no-capable-service (service=None) case. But
         # route_service_call sets routed_target == position on those three
-        # routes by construction (routing.py), so once _current resolves,
-        # comparing it against _plan.routed_target there is identical to the
-        # `_current == position` check already done above — behaviorally
-        # inert, not a broadening. The open/close-threshold route is the only
-        # one where routed_target genuinely diverges from position (every
-        # state on one side of open_close_threshold collapses to the same
-        # 0/100 routed_target); it's the only route where this arm changes
-        # behavior — it fires when a resolved _current already sits at the
-        # routed 0/100 target even though the raw calculated position drifted
-        # within the sub-threshold band. A resolved reading that CONTRADICTS
-        # the routed target must still fall through to dispatch, never be
-        # masked by a stale commanded target (issue #1095 audit finding 1),
-        # so _same_position_via_target_fallback (which compares the last
-        # *commanded* target against this cycle's *routed* decision via
-        # route_service_call, see its docstring) is consulted only when
-        # _current is still None. Delta/time gates and reconciliation
-        # deliberately keep reading the real _current — this broadened
-        # comparison is scoped to the same-position gate only.
+        # routes by construction (routing.py), so once `_current` resolves,
+        # comparing it against `_plan.routed_target` is identical to the
+        # `_current == position` check above — behaviorally inert, not a
+        # broadening. The open/close-threshold route is the only one where
+        # routed_target genuinely diverges from position: every state on ONE
+        # SIDE of open_close_threshold — above OR below, symmetrically —
+        # collapses onto the same 0/100 routed_target, so the second arm
+        # fires whenever a resolved `_current` already sits at that
+        # collapsed target even though the raw calculated `position` drifted
+        # elsewhere on the same side (issue #1095). A resolved reading that
+        # CONTRADICTS the routed target must still fall through to dispatch,
+        # never be masked by a stale commanded target, so the second arm
+        # below only ever compares a *resolved* `_current` directly against
+        # `_plan.routed_target` — it never calls
+        # _same_position_via_target_fallback. That fallback (see its
+        # docstring) is reserved for the third arm, `_current is None`,
+        # where there is no live reading to compare at all. Delta/time gates
+        # and reconciliation deliberately keep reading the real `_current` —
+        # this routed comparison is scoped to the same-position gate only.
+        #
+        # The second arm keeps `not _plan.supports_position` even though it
+        # is currently provably redundant there (a position-capable route's
+        # `_current == routed_target` always agrees with the first arm's
+        # `_current == position`, by the invariant above) — kept as one
+        # cheap, explicit boolean check that states the case up front and
+        # defends against a future route_service_call change breaking that
+        # invariant on a position-capable route.
         # An explicit user command (context.user_command) must ALWAYS dispatch —
         # a user pressing Open/Close/Set from the card is never "already there"
         # as far as ACP is entitled to decide, especially on a no-feedback cover
@@ -1476,6 +1464,27 @@ class CoverCommandService:
             position in (POSITION_CLOSED, POSITION_OPEN)
             and self._is_at_mechanical_stop(state_obj, position)
         )
+
+        # Routed decision for this cycle's target (issue #1095), consumed by
+        # the gate's second arm just below. Computed here — after the
+        # kill-switch and auto_control short-circuits above, but still ahead
+        # of every use — so a disabled/auto-control-off cover skips the
+        # check_cover_features + route_service_call work entirely for a
+        # value it would never read (issue #1095 audit finding 4).
+        # route_service_call is pure/side-effect-free (routing.py's module
+        # docstring); no `await` occurs between this line and either of its
+        # uses (this gate, and the dispatch call further down that reuses
+        # this same `_plan`/`_caps_for_plan`), so both stay valid for both.
+        _caps_for_plan = self.get_cover_capabilities(entity_id)
+        _plan = route_service_call(
+            entity_id,
+            position,
+            _caps_for_plan,
+            axis=self._policy.select_default_axis(_caps_for_plan),
+            use_my_position=context.use_my_position,
+            open_close_threshold=self._open_close_threshold,
+            endpoint_use_open_close=self._endpoint_use_open_close,
+        )
         if (
             not sun_reconfirm
             and not force_endpoint
@@ -1491,15 +1500,14 @@ class CoverCommandService:
                     )
                 )
                 or (
-                    (_current is None or not _plan.supports_position)
-                    and (
-                        (_current is not None and _current == _plan.routed_target)
-                        or (
-                            _current is None
-                            and self._same_position_via_target_fallback(
-                                entity_id, position, context
-                            )
-                        )
+                    _current is not None
+                    and not _plan.supports_position
+                    and _current == _plan.routed_target
+                )
+                or (
+                    _current is None
+                    and self._same_position_via_target_fallback(
+                        entity_id, position, context, plan=_plan
                     )
                 )
             )
@@ -1601,10 +1609,17 @@ class CoverCommandService:
                 )
 
         # ----- send command -----
+        # Reuses _caps_for_plan/_plan from the gate above (issue #1095 audit
+        # finding 5) instead of a fresh get_cover_capabilities +
+        # route_service_call — safe because nothing between that computation
+        # and this call awaits (confirmed above and in apply_position's
+        # docstring-adjacent comment on `_plan`).
         service, service_data, supports_position = self._prepare_service_call(
             entity_id,
             position,
             context.inverse_state,
+            caps=_caps_for_plan,
+            plan=_plan,
             is_safety=context.is_safety,
             use_my_position=context.use_my_position,
         )
@@ -2209,6 +2224,7 @@ class CoverCommandService:
         reset_retries: bool = True,
         is_safety: bool = False,
         use_my_position: bool = False,  # noqa: FBT001
+        plan: ServiceCallPlan | None = None,
     ) -> tuple[str | None, dict | None, bool]:
         """Build the HA service call for this cover/state.
 
@@ -2232,6 +2248,16 @@ class CoverCommandService:
             use_my_position: If True and the cover lacks set_cover_position,
                 send cover.stop_cover to trigger the hardware My preset instead
                 of falling back to open/close threshold routing.
+            plan: Pre-computed routing plan for this ``(entity, state, caps,
+                use_my_position)`` combination — e.g. ``apply_position``'s
+                gate-level ``_plan``. Reused as-is when given instead of
+                calling ``route_service_call`` again (issue #1095 audit
+                finding 5). Caller must guarantee no HA state change (no
+                ``await``) occurred between building `plan` and this call,
+                or the reused plan may not reflect current capabilities.
+                Recomputed internally when omitted, preserving the original
+                call contract for every other caller (e.g.
+                ``_execute_command``).
 
         Returns:
             (service_name, service_data, supports_position).
@@ -2241,21 +2267,22 @@ class CoverCommandService:
         if caps is None:
             caps = self.get_cover_capabilities(entity)
 
-        # Pick the axis the policy targets by default for this entity. Single-axis
-        # policies (blind/awning/tilt) always return the same axis; venetian
-        # returns its position axis here — its tilt axis is dispatched separately
-        # through ``after_position_command`` and the DualAxisSequencer.
-        axis = self._policy.select_default_axis(caps)
-
-        plan = route_service_call(
-            entity,
-            state,
-            caps,
-            axis=axis,
-            use_my_position=use_my_position,
-            open_close_threshold=self._open_close_threshold,
-            endpoint_use_open_close=self._endpoint_use_open_close,
-        )
+        if plan is None:
+            # Pick the axis the policy targets by default for this entity.
+            # Single-axis policies (blind/awning/tilt) always return the
+            # same axis; venetian returns its position axis here — its tilt
+            # axis is dispatched separately through ``after_position_command``
+            # and the DualAxisSequencer.
+            axis = self._policy.select_default_axis(caps)
+            plan = route_service_call(
+                entity,
+                state,
+                caps,
+                axis=axis,
+                use_my_position=use_my_position,
+                open_close_threshold=self._open_close_threshold,
+                endpoint_use_open_close=self._endpoint_use_open_close,
+            )
 
         self._logger.debug(
             "Prepare service call: %s supports_position=%s caps=%s",

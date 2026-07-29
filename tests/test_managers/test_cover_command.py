@@ -1494,7 +1494,13 @@ async def test_force_endpoint_within_tolerance_skips_command_gate(
 
 
 def _endpoint_service(
-    entity_id, position, inverse_state=False, is_safety=False, use_my_position=False
+    entity_id,
+    position,
+    inverse_state=False,
+    caps=None,
+    is_safety=False,
+    use_my_position=False,
+    plan=None,
 ):
     """_prepare_service_call side_effect: route 0→close, 100→open, else set_position."""
     if position == 0:
