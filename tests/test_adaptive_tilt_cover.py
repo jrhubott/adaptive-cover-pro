@@ -425,7 +425,7 @@ class TestVenetianTiltSafetyMargin:
     def test_safety_margin_is_inert_when_the_solve_parks_fully_closed(
         self, sol_azi, sol_elev, mode
     ):
-        """KNOWN LIMIT (#1089): the third freeze — slats spaced at least their depth.
+        """KNOWN LIMIT (#1089): the third freeze — slats spaced wider than their depth.
 
         With ``slat_distance > depth`` the cut-off discriminant
         ``tan²β − r² + 1`` goes negative across much of the envelope: there is no
