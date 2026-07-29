@@ -140,6 +140,11 @@ class TestVenetianTiltSafetyMargin:
     # (0, 90), and geo_margin well above 1.0 so the margin transform is visible.
     _EXTREME = {"sol_azi": 255, "sol_elev": 8, "slat_distance": 0.02, "depth": 0.03}
 
+    # Inside the inert envelope (|gamma| <= 45, 10 <= elev <= 75) so
+    # geo_margin == 1.0 exactly. mode2 keeps the result off both the 0° and
+    # 180° rails, so the margin transform is visible rather than clamped.
+    _BENIGN = {"sol_azi": 180, "sol_elev": 45, "slat_distance": 0.02, "depth": 0.03}
+
     @pytest.mark.unit
     def test_safety_margin_default_is_identity(self):
         """safety_margin=0.0 must be a byte-for-byte no-op on the grazing angle."""
@@ -172,16 +177,39 @@ class TestVenetianTiltSafetyMargin:
         assert 90 < a1 <= 180
 
     @pytest.mark.unit
-    def test_safety_margin_benign_angle_is_noop(self):
-        """Where geo_margin == 1.0 (midday), strength 1.0 == strength 0.0."""
-        params = {"sol_azi": 180, "sol_elev": 45, "slat_distance": 0.02, "depth": 0.03}
-        a0 = _tilt_at(mode="mode2", safety_margin=0.0, **params).calculate_position()
-        a1 = _tilt_at(mode="mode2", safety_margin=1.0, **params).calculate_position()
-        assert a1 == a0
+    def test_safety_margin_bites_at_benign_angle(self):
+        """Issue #1089: the slider must do real work where geo_margin == 1.0."""
+        from custom_components.adaptive_cover_pro.const import (
+            SAFETY_MARGIN_USER_SLACK_MAX,
+            TILT_HORIZONTAL_DEG,
+        )
+        from custom_components.adaptive_cover_pro.geometry import (
+            SafetyMarginCalculator,
+        )
+
+        c0 = _tilt_at(mode="mode2", safety_margin=0.0, **self._BENIGN)
+        a0 = c0.calculate_position()
+        assert (
+            SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        ), "test setup: this geometry must sit inside the inert envelope"
+
+        a1 = _tilt_at(
+            mode="mode2", safety_margin=1.0, **self._BENIGN
+        ).calculate_position()
+        # mode2 upper branch: closing drives the slat toward 180°.
+        expected = TILT_HORIZONTAL_DEG + (a0 - TILT_HORIZONTAL_DEG) * (
+            1.0 + SAFETY_MARGIN_USER_SLACK_MAX
+        )
+        assert a1 == pytest.approx(expected)
+        assert a1 - a0 > 1.0, "the slider must move the slat, not float-noise it"
+        assert TILT_HORIZONTAL_DEG < a1 <= 180
 
     @pytest.mark.unit
     def test_build_trace_includes_safety_margin(self):
         """_build_trace records the effective margin (diagnostics parity, #682)."""
+        from custom_components.adaptive_cover_pro.const import (
+            SAFETY_MARGIN_USER_SLACK_MAX,
+        )
         from custom_components.adaptive_cover_pro.geometry import (
             SafetyMarginCalculator,
         )
@@ -191,8 +219,13 @@ class TestVenetianTiltSafetyMargin:
         trace = c._last_calc_details
         assert "safety_margin" in trace
         geo_margin = SafetyMarginCalculator.calculate(c.gamma, c.sol_elev)
-        assert trace["safety_margin"] == pytest.approx(geo_margin)
-        assert trace["safety_margin"] > 1.0
+        assert geo_margin > 1.0, "test setup: _EXTREME is outside the benign envelope"
+        # #1089: at full strength the effective margin is the geometry's own
+        # excess PLUS the flat user-slack budget — strictly more than geo_margin.
+        assert trace["safety_margin"] == pytest.approx(
+            geo_margin + SAFETY_MARGIN_USER_SLACK_MAX
+        )
+        assert trace["safety_margin"] > geo_margin
 
     @pytest.mark.unit
     def test_build_trace_safety_margin_identity_default(self):
@@ -200,6 +233,56 @@ class TestVenetianTiltSafetyMargin:
         c = _tilt_at(mode="mode1", safety_margin=0.0, **self._EXTREME)
         c.calculate_position()
         assert c._last_calc_details["safety_margin"] == 1.0
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("sol_azi", [165, 180, 195])
+    @pytest.mark.parametrize("sol_elev", [15, 45, 60, 70])
+    def test_safety_margin_never_inert_inside_normal_envelope(self, sol_azi, sol_elev):
+        """#1089 net: no geometry inside the envelope may freeze the slider."""
+        from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG
+        from custom_components.adaptive_cover_pro.geometry import (
+            SafetyMarginCalculator,
+        )
+
+        params = {
+            "sol_azi": sol_azi,
+            "sol_elev": sol_elev,
+            "slat_distance": 0.02,
+            "depth": 0.03,
+        }
+        c0 = _tilt_at(mode="mode2", safety_margin=0.0, **params)
+        a0 = c0.calculate_position()
+        assert SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        raw = c0._last_calc_details["slat_angle_raw_deg"]
+        assert raw != pytest.approx(
+            TILT_HORIZONTAL_DEG
+        ), "test setup: a slat exactly at horizontal is a fixed point of the transform"
+
+        a1 = _tilt_at(mode="mode2", safety_margin=1.0, **params).calculate_position()
+        assert a1 != pytest.approx(a0, abs=1e-6)
+        assert 0.0 <= a1 <= 180.0
+
+    @pytest.mark.unit
+    def test_safety_margin_monotonic_in_strength_at_benign_angle(self):
+        """Raising the slider always closes further, even inside the envelope."""
+        angles = [
+            _tilt_at(mode="mode2", safety_margin=s, **self._BENIGN).calculate_position()
+            for s in (0.0, 0.25, 0.5, 0.75, 1.0)
+        ]
+        assert all(b > a for a, b in zip(angles, angles[1:], strict=False))
+
+    @pytest.mark.unit
+    def test_build_trace_safety_margin_at_benign_angle(self):
+        """#1089: the trace reports the user slack even where geo_margin == 1.0."""
+        from custom_components.adaptive_cover_pro.const import (
+            SAFETY_MARGIN_USER_SLACK_MAX,
+        )
+
+        c = _tilt_at(mode="mode2", safety_margin=1.0, **self._BENIGN)
+        c.calculate_position()
+        assert c._last_calc_details["safety_margin"] == pytest.approx(
+            1.0 + SAFETY_MARGIN_USER_SLACK_MAX
+        )
 
 
 @pytest.mark.unit

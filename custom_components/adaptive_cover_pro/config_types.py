@@ -564,9 +564,10 @@ class TiltConfig:
     min_tilt_sun_only: bool = False
     max_tilt_sun_only: bool = False
     # Configurable tilt safety margin (issue #783, shared by every tilt-axis
-    # cover in #964): 0.0 (default) is a provable no-op; 1.0 applies the full
-    # angle-dependent geometry margin in the slat-closing direction. Scales the
-    # automatic ``SafetyMarginCalculator`` factor — see ``engine/covers/tilt.py``.
+    # cover in #964): 0.0 (default) is a provable no-op; 1.0 applies the
+    # automatic angle-dependent geometry margin PLUS SAFETY_MARGIN_USER_SLACK_MAX
+    # of flat slack, in the slat-closing direction — so the slider bites at
+    # benign sun angles too (#1089) — see ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
     # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
     # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact
