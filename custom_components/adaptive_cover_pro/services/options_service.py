@@ -173,6 +173,7 @@ from ..const import (
     DAY_NIGHT_CONTROL_MODELS,
     DUAL_PANEL_BLACKOUT_TRIGGERS,
     MANUAL_OVERRIDE_DURATION_MODES,
+    MIN_USABLE_SLAT_ANGLE_DEG,
     SLIDING_SLIDE_DIRECTIONS,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
@@ -347,19 +348,22 @@ def _time_v():
 
 
 def _max_slat_angle_v():
-    """Validate ``CONF_MAX_SLAT_ANGLE``: ``None``/``0`` sentinel, else ``[1, hi]``.
+    """Validate ``CONF_MAX_SLAT_ANGLE``: ``None``/``0`` sentinel, else ``[MIN, hi]``.
 
     A bespoke validator rather than the generic ``_range()`` helper (issue
     #1105): ``0`` means "use the tilt mode's 90°/180°" and must stay legal, but
     a plain ``vol.Range(min=0, max=hi)`` also admits the open interval ``(0,
-    1)`` — a value that is neither the sentinel nor a usable physical angle
-    (the engine's own ``_effective_max_degrees()`` no longer truncates it, but
-    it is still a misconfiguration worth rejecting at the boundary where it was
-    made). Reads ``hi`` from ``OPTION_RANGES`` rather than a new literal, per
-    the single-source-of-truth rule.
+    MIN_USABLE_SLAT_ANGLE_DEG)`` — a value that is neither the sentinel nor a
+    usable physical angle (the engine's own ``_effective_max_degrees()`` no
+    longer truncates it, but it is still a misconfiguration worth rejecting at
+    the boundary where it was made). ``hi`` comes from ``OPTION_RANGES`` and the
+    lower bound from ``const.MIN_USABLE_SLAT_ANGLE_DEG`` — both single-sourced
+    rather than repeated here.
     """
     _, hi = OPTION_RANGES[CONF_MAX_SLAT_ANGLE]
-    ranged = vol.All(vol.Coerce(float), vol.Range(min=1, max=hi))
+    ranged = vol.All(
+        vol.Coerce(float), vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG, max=hi)
+    )
 
     def _validate(value):
         if value is None:
@@ -367,9 +371,14 @@ def _max_slat_angle_v():
         coerced = vol.Coerce(float)(value)
         if coerced == 0:
             return value
-        if 0 < coerced < 1:
+        # Redundant with ``vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG)`` below —
+        # any value here already falls through to it and fails with the same
+        # verdict. Kept only so the sub-degree dead zone gets a message that
+        # names the sentinel, rather than a generic "must be at least 1".
+        if 0 < coerced < MIN_USABLE_SLAT_ANGLE_DEG:
             raise vol.Invalid(
-                f"max_slat_angle must be 0 (use tilt mode) or >= 1, got: {value!r}"
+                f"max_slat_angle must be 0 (use tilt mode) or "
+                f">= {MIN_USABLE_SLAT_ANGLE_DEG}, got: {value!r}"
             )
         return ranged(value)
 

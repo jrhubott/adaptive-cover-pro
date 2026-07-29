@@ -167,10 +167,11 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
 
         ``0`` (the sentinel default) falls back to the mode's 90°/180°; a nonzero
         value becomes BOTH the clamp ceiling and the tilt%→angle denominator.
-        No truncation: the base hook is typed ``-> float`` and every call site
-        immediately re-wraps the result in ``float(...)``, so an ``int()`` cast
-        here bought nothing except silently collapsing a fractional value in
-        ``(0, 1)`` onto the ``0`` sentinel's literal denominator (issue #1105).
+        No truncation: the base hook ``_max_degrees()`` is typed ``-> float``,
+        the denominator wants the precision, and an ``int()`` cast here bought
+        nothing except disagreeing with the ``0`` sentinel — truncating a
+        fractional value in ``(0, 1)`` collapsed it onto the sentinel's own
+        literal denominator (issue #1105).
         """
         m = self.roof_config.max_slat_angle
         return m if m else self._max_degrees()

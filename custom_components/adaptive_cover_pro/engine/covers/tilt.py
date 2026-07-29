@@ -413,21 +413,18 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         position = self.calculate_position()
         pct = self._percentage_from_angle(position)
         if pct is None:
-            # A zero-width scale has no percentage to report. A *negative*
-            # denominator is unreachable from config: both tilt-mode maxima are
-            # nonzero and ``max_slat_angle`` is bounded to [0, 180]. A *zero*
-            # one is reachable via the explicit ``0`` sentinel (or a mocked
-            # ``_effective_max_degrees`` override in tests) — that case already
-            # raises inside ``calculate_position`` above while it builds its
-            # trace, so this is the same failure surfaced at a second seam
-            # rather than a new one. (Issue #1105: a fractional
-            # ``max_slat_angle`` in ``(0, 1)`` used to collapse onto this same
-            # zero denominator via an ``int()`` truncation in
-            # ``AdaptiveLouveredRoofCover._effective_max_degrees`` — that cast
-            # is gone, so only the sentinel/mock paths reach here now.) Raising
-            # keeps the contract ``VenetianCoverCalculation._compute_tilt``
-            # relies on: a tilt geometry that does not resolve falls back to
-            # the default position.
+            # A zero-width scale has no percentage to report. Post-#1105, a
+            # zero (or negative) denominator is unreachable from config at
+            # all: both tilt-mode maxima are nonzero, ``max_slat_angle`` is
+            # bounded to [0, 180], and the ``0`` sentinel routes to the mode
+            # max rather than to a literal zero. (The fractional-truncation
+            # path that used to collapse onto this branch via an ``int()``
+            # cast is gone — see #1105.) This branch is now reachable only
+            # through a mocked ``_effective_max_degrees`` in tests, or a
+            # hand-corrupted stored value. Raising keeps the contract
+            # ``VenetianCoverCalculation._compute_tilt`` relies on: a tilt
+            # geometry that does not resolve falls back to the default
+            # position.
             raise ZeroDivisionError("tilt percentage scale has zero width")
         return self._apply_tilt_axis_limits(pct)
 
