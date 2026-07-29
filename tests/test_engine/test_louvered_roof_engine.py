@@ -21,7 +21,6 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from custom_components.adaptive_cover_pro.config_types import LouveredRoofConfig
 from custom_components.adaptive_cover_pro.const import (
     SAFETY_MARGIN_USER_SLACK_MAX,
     TILT_HORIZONTAL_DEG,
@@ -38,7 +37,11 @@ from custom_components.adaptive_cover_pro.engine.covers.tilt import (
 )
 from custom_components.adaptive_cover_pro.geometry import SafetyMarginCalculator
 
-from tests.cover_helpers import make_cover_config, make_tilt_config
+from tests.cover_helpers import (
+    build_louvered_roof_cover,
+    make_cover_config,
+    make_tilt_config,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -47,40 +50,10 @@ pytestmark = pytest.mark.unit
 # Builders
 # ---------------------------------------------------------------------------
 
-
-def _louvered(
-    *,
-    sol_azi: float,
-    sol_elev: float,
-    roof_pitch: float,
-    slat_distance: float = 0.02,
-    depth: float = 0.03,
-    mode: str = "mode2",
-    win_azi: float = 180.0,
-    fov_left: float = 90.0,
-    fov_right: float = 90.0,
-    max_slat_angle: float = 0.0,
-    safety_margin: float = 0.0,
-) -> AdaptiveLouveredRoofCover:
-    """Build a louvered-roof engine at an explicit sun/slat geometry."""
-    return AdaptiveLouveredRoofCover(
-        logger=MagicMock(),
-        sol_azi=sol_azi,
-        sol_elev=sol_elev,
-        sun_data=MagicMock(),
-        config=make_cover_config(
-            win_azi=win_azi, fov_left=fov_left, fov_right=fov_right
-        ),
-        tilt_config=make_tilt_config(
-            slat_distance=slat_distance,
-            depth=depth,
-            mode=mode,
-            safety_margin=safety_margin,
-        ),
-        roof_config=LouveredRoofConfig(
-            roof_pitch=roof_pitch, max_slat_angle=max_slat_angle
-        ),
-    )
+# Shared with tests/test_pipeline/test_pipeline_helpers.py — the
+# AdaptiveLouveredRoofCover construction lives once in tests/cover_helpers.py
+# (#1105 audit) rather than being reimplemented per test file.
+_louvered = build_louvered_roof_cover
 
 
 def _tilt(
@@ -432,12 +405,29 @@ class TestMaxSlatAngle:
         )
         result = cover.calculate_position()
         assert isinstance(result, float)
+        # Pin the effective ceiling itself, not just "didn't raise" — every
+        # non-raising return path of calculate_position() is a float, so the
+        # isinstance check alone proves nothing about the denominator actually
+        # landing on 0.4 rather than being silently truncated to 0 elsewhere.
+        assert cover._last_calc_details["max_degrees"] == pytest.approx(0.4)
 
     def test_fractional_denominator_is_not_truncated(self) -> None:
         cover = _louvered(
             sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=137.5
         )
         assert cover._effective_max_degrees() == pytest.approx(137.5)
+
+    def test_int_max_slat_angle_returns_float(self) -> None:
+        # ``_effective_max_degrees`` is typed ``-> float``; a plain int
+        # ``max_slat_angle`` (as several tests in this class pass, e.g. 160
+        # above) must actually come back as a float, not just an int that
+        # happens to compare equal to one (issue #1105 audit).
+        cover = _louvered(
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=160
+        )
+        result = cover._effective_max_degrees()
+        assert result == 160
+        assert isinstance(result, float)
 
 
 class TestMaxOpeningObjective:

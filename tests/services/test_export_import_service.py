@@ -390,6 +390,68 @@ class TestImportConfig:
         # entry options must not have been modified
         assert entry.options["set_azimuth"] == 90
 
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_dead_zone_recorded_as_error(self, tmp_path):
+        """Issue #1105: import_config rejects the same dead zone set_option does.
+
+        ``max_slat_angle`` is neither the "0 = use tilt mode" sentinel nor a
+        usable physical angle in the open interval (0, 1) — a plain
+        ``OPTION_RANGES`` lo/hi check (0, 180) would accept it, since it is
+        within bounds. This closes the gap: the two config boundaries
+        (``set_option`` via ``FIELD_VALIDATORS`` and ``import_config``) must
+        agree, both rejecting it.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 0})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 0.5}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"].startswith("error:")
+        assert "max_slat_angle" in result["id-1"]
+        # entry options must not have been modified
+        assert entry.options["max_slat_angle"] == 0
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_sentinel_and_usable_values_import_cleanly(
+        self, tmp_path
+    ):
+        """Issue #1105: the ``0`` sentinel and a usable angle still import fine."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 0}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options["max_slat_angle"] == 0
+
     @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
     @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)
     @pytest.mark.asyncio

@@ -47,6 +47,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MAX_POSITION,
+    CONF_MAX_SLAT_ANGLE,
     CONF_MIN_POSITION,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
@@ -78,6 +79,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     DOMAIN,
+    MIN_USABLE_SLAT_ANGLE_DEG,
     CoverType,
     VENETIAN_MODE_POSITION_AND_TILT,
 )
@@ -93,6 +95,7 @@ from custom_components.adaptive_cover_pro.services.options_service import (
     _SERVICE_FIELD_ALIASES,
     _build_patch,
     _cross_field_validate,
+    _validate_fields,
     apply_options_patch,
     validate_options_patch,
 )
@@ -317,6 +320,72 @@ class TestFieldValidators:
             FIELD_VALIDATORS[key](None)
             FIELD_VALIDATORS[key](5000)
             FIELD_VALIDATORS[key]("{{ states('sensor.x') | float }}")
+
+    def test_max_slat_angle_in_option_ranges(self):
+        """Issue #1105: max_slat_angle range is single-sourced (0, 180)."""
+        from custom_components.adaptive_cover_pro.const import OPTION_RANGES
+
+        assert OPTION_RANGES[CONF_MAX_SLAT_ANGLE] == (0, 180)
+
+    def test_max_slat_angle_accepts_none_and_zero_sentinel(self):
+        """Issue #1105: None (cleared) and the ``0`` sentinel both pass.
+
+        ``0`` means "use the tilt mode's 90°/180°" and must stay legal in every
+        numeric form it can arrive in — int, float, and negative-zero.
+        """
+        assert FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](None) is None
+        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](0)
+        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](0.0)
+        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](-0.0)
+
+    def test_max_slat_angle_accepts_usable_range(self):
+        """Issue #1105: the smallest usable angle through the declared max pass."""
+        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](1)
+        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](180)
+        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](True)  # bool coerces to 1.0
+
+    def test_max_slat_angle_rejects_sub_one_nonzero(self):
+        """Issue #1105: the dead zone between the sentinel and a usable angle.
+
+        ``0`` is the documented sentinel meaning "use the tilt mode's
+        90°/180°"; a value in the open interval ``(0, 1)`` is neither the
+        sentinel nor a usable physical angle (it would truncate to a literal
+        ``0`` denominator in the engine before this fix), so the config
+        boundary must reject it outright.
+        """
+        for value in (0.5, 0.99, "0.5"):
+            with pytest.raises(Exception):
+                FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](value)
+
+    def test_max_slat_angle_rejects_below_min_and_above_max(self):
+        """Issue #1105: the OLD ``_range()`` boundaries still hold post-swap.
+
+        Distinct from ``test_max_slat_angle_rejects_sub_one_nonzero`` above:
+        these values are rejected by the generic below-min/above-max path, NOT
+        the bespoke dead-zone branch (``-0.1`` is below the dead zone's own
+        floor of 0, so it never enters the ``0 < coerced < MIN`` check).
+        """
+        for value in (-5, -0.1, 181, 180.5):
+            with pytest.raises(Exception):
+                FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](value)
+
+    def test_max_slat_angle_dead_zone_message_names_the_sentinel(self):
+        """Issue #1105: the bespoke dead-zone message must survive a refactor.
+
+        Deleting the ``0 < coerced < MIN_USABLE_SLAT_ANGLE_DEG`` branch
+        entirely and falling back to the generic ``vol.Range`` rejection would
+        leave the whole suite green were it not for this test — the generic
+        path rejects the same value but never mentions the ``0`` sentinel, so
+        this pins the one thing the bespoke branch exists to say.
+        """
+        with pytest.raises(ServiceValidationError) as exc_info:
+            _validate_fields({CONF_MAX_SLAT_ANGLE: 0.5})
+
+        message = str(exc_info.value)
+        assert message == (
+            "Invalid value for 'max_slat_angle': must be 0 (use tilt mode) or "
+            f">= {MIN_USABLE_SLAT_ANGLE_DEG} (got 0.5)"
+        )
 
     def test_tilt_mode_select(self):
         FIELD_VALIDATORS["tilt_mode"]("mode1")

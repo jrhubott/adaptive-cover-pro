@@ -361,24 +361,22 @@ def _max_slat_angle_v():
     rather than repeated here.
     """
     _, hi = OPTION_RANGES[CONF_MAX_SLAT_ANGLE]
-    ranged = vol.All(
-        vol.Coerce(float), vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG, max=hi)
-    )
+    ranged = _num(MIN_USABLE_SLAT_ANGLE_DEG, hi)
 
     def _validate(value):
         if value is None:
             return None
         coerced = vol.Coerce(float)(value)
         if coerced == 0:
-            return value
-        # Redundant with ``vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG)`` below —
-        # any value here already falls through to it and fails with the same
-        # verdict. Kept only so the sub-degree dead zone gets a message that
-        # names the sentinel, rather than a generic "must be at least 1".
+            return coerced
+        # Redundant with ``vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG)`` inside
+        # ``ranged`` below — any value here already falls through to it and
+        # fails with the same verdict. Kept only so the sub-degree dead zone
+        # gets a message that names the sentinel, rather than the generic
+        # minimum-bound message ``vol.Range`` would produce on its own.
         if 0 < coerced < MIN_USABLE_SLAT_ANGLE_DEG:
             raise vol.Invalid(
-                f"max_slat_angle must be 0 (use tilt mode) or "
-                f">= {MIN_USABLE_SLAT_ANGLE_DEG}, got: {value!r}"
+                f"must be 0 (use tilt mode) or >= {MIN_USABLE_SLAT_ANGLE_DEG}"
             )
         return ranged(value)
 
@@ -435,8 +433,9 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_ROOF_PITCH: _range(CONF_ROOF_PITCH),
     CONF_ROOF_HEIGHT_ABOVE: _range(CONF_ROOF_HEIGHT_ABOVE),
     # Geometry — louvered roof (#830 follow-up). Bespoke validator (#1105): the
-    # generic _range() also admits the (0, 1) dead zone between the "0 = use
-    # tilt mode" sentinel and the smallest usable physical angle.
+    # generic _range() also admits the (0, MIN_USABLE_SLAT_ANGLE_DEG) dead zone
+    # between the "0 = use tilt mode" sentinel and the smallest usable
+    # physical angle.
     CONF_MAX_SLAT_ANGLE: _max_slat_angle_v(),
     # Geometry — sliding curtain shade area (#829, Part 2)
     CONF_SLIDING_ENABLE_SHADE_AREA: _bool_v(),

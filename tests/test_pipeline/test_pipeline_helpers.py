@@ -7,13 +7,7 @@ and compute_raw_calculated_position.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
-
-from custom_components.adaptive_cover_pro.config_types import LouveredRoofConfig
-from custom_components.adaptive_cover_pro.engine.covers.louvered_roof import (
-    AdaptiveLouveredRoofCover,
-)
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     SOLAR_TRACKING_FLOOR_PCT,
     apply_snapshot_limits,
@@ -23,7 +17,7 @@ from custom_components.adaptive_cover_pro.pipeline.helpers import (
     solar_floor,
     solar_position_from_geometry,
 )
-from tests.cover_helpers import make_cover_config, make_tilt_config
+from tests.cover_helpers import build_louvered_roof_cover
 
 # ---------------------------------------------------------------------------
 # Minimal snapshot / cover helpers
@@ -232,17 +226,14 @@ class TestComputeSolarPosition:
         ``solar_position_from_geometry`` directly against a real
         ``AdaptiveLouveredRoofCover`` configured with ``max_slat_angle=0.4`` — a
         value the old ``int()`` truncation in ``_effective_max_degrees()``
-        collapsed onto the ``0`` sentinel's literal denominator, raising
-        ``ZeroDivisionError`` uncaught on the tilt-only solar branch.
+        collapsed onto a literal ``0`` denominator, raising
+        ``ZeroDivisionError`` uncaught on the tilt-only solar branch. At this
+        geometry the raw angle (180°) saturates against the 0.4° ceiling, so
+        the concrete answer is pinned at 100 rather than merely "some int in
+        range" — verified empirically, not assumed.
         """
-        cover = AdaptiveLouveredRoofCover(
-            logger=MagicMock(),
-            sol_azi=180,
-            sol_elev=65,
-            sun_data=MagicMock(),
-            config=make_cover_config(win_azi=180, fov_left=90, fov_right=90),
-            tilt_config=make_tilt_config(slat_distance=0.02, depth=0.03, mode="mode2"),
-            roof_config=LouveredRoofConfig(roof_pitch=0.0, max_slat_angle=0.4),
+        cover = build_louvered_roof_cover(
+            sol_azi=180, sol_elev=65, roof_pitch=0.0, max_slat_angle=0.4
         )
         policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
 
@@ -255,8 +246,7 @@ class TestComputeSolarPosition:
             floor_active=False,
         )
 
-        assert isinstance(result, int)
-        assert 0 <= result <= 100
+        assert result == 100
 
 
 # ---------------------------------------------------------------------------
