@@ -351,3 +351,66 @@ class AdaptiveGeneralCover(ABC):
         this with an angle-aware direction.
         """
         return floor(pct) if full_coverage_at_zero else ceil(pct)
+
+    def coverage_pivot_percentage(self) -> float | None:
+        """Percentage at which this axis blocks the LEAST sun, or ``None`` (#1104).
+
+        The companion of :meth:`round_toward_coverage`, and polymorphic for the
+        same reason: rounding needs to know which arithmetic direction adds
+        coverage, and every *other* consumer of "how much coverage does this
+        percentage carry" needs to know where coverage starts from.
+
+        ``None`` — the base answer — means coverage is MONOTONIC in the
+        percentage, so the caller's ``full_coverage_at_zero`` axis semantic is
+        already the whole story: coverage runs from one end of the travel to the
+        other and the open end is 0 % or 100 %. A float means the axis is
+        bi-directional: coverage bottoms out at that percentage and grows as the
+        position leaves it in EITHER direction, so a distance-from-the-pivot
+        measure replaces "distance from the open end".
+
+        The float is a point on this axis's SCALE, and it is NOT promised to lie
+        on the 0–100 travel: it is the maximum-openness angle pushed through the
+        engine's own angle→percentage map, and a scale calibrated entirely to one
+        side of that angle images it outside the range (a louvered roof with
+        ``max_slat_angle`` under 90°, or a one-sided ``specify_angles`` pair).
+        That is still the right answer for consumers that only ORDER by it —
+        the map is affine, so distance from the pivot stays proportional to
+        distance from maximum openness wherever the pivot sits, which is what
+        :meth:`round_toward_coverage` and
+        ``CoverTypePolicy.more_protective_position`` need. It is also the answer
+        that tells them which END of an off-travel scale covers, which the
+        axis's static ``open_blocks_sun`` flag gets backwards on an inverted
+        calibration. A consumer that ANCHORS arithmetic on the pivot must pull
+        it onto the reachable travel first; the one that does,
+        ``PositionConverter.quantize_to_coverage_steps``, carries the clamp and
+        its rationale.
+
+        Only :class:`~.tilt.AdaptiveTiltCover` overrides it, because only the
+        engine knows the tilt scale — which keeps the cover-type branch out of
+        the pipeline and ``position_utils`` layers that consume the answer.
+        """
+        return None
+
+    def coverage_travel_bounds(self) -> tuple[float, float]:
+        """Lowest and highest percentage this axis can be COMMANDED to (#1104).
+
+        The companion of :meth:`coverage_pivot_percentage` for the one consumer
+        that anchors arithmetic on the pivot rather than merely ordering by it:
+        ``PositionConverter.quantize_to_coverage_steps`` spans its coverage
+        levels from the pivot outward, so BOTH ends of that span have to be
+        positions the axis can actually reach — the far one because it is where
+        the top level lands, the near one because an anchor the axis cannot
+        reach reads a zero-coverage demand as a covered one.
+
+        The base answer is the whole travel, which makes the bound a no-op —
+        correct for every engine whose own configuration cannot narrow the
+        percentage range it emits. :class:`~.tilt.AdaptiveTiltCover` overrides
+        it, because ``[min_tilt, max_tilt]`` narrows exactly that, and the
+        quantiser runs after the last seam that applies the band.
+
+        Note this is deliberately NOT the position axis's ``min_pos``/``max_pos``:
+        those are applied by ``pipeline.helpers.apply_config_limits`` AFTER the
+        quantiser, so that band clamps the command itself and needs no help from
+        the level arithmetic to hold.
+        """
+        return (0.0, 100.0)

@@ -46,6 +46,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.config_types import LouveredRoofConfig
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.const import (
     TILT_HORIZONTAL_DEG,
     VENETIAN_TILT_TRANSFORM_CLAMP,
@@ -350,7 +351,11 @@ def _tilt_cover(*, sol_elev: float, **tilt_overrides) -> AdaptiveTiltCover:
 
 
 def _louvered_cover(
-    *, sol_elev: float, sol_azi: float = 180.0, max_slat_angle: float = 0.0
+    *,
+    sol_elev: float,
+    sol_azi: float = 180.0,
+    max_slat_angle: float = 0.0,
+    **tilt_overrides,
 ) -> AdaptiveLouveredRoofCover:
     """Build a flat-roof ``AdaptiveLouveredRoofCover`` at the given sun position.
 
@@ -370,7 +375,9 @@ def _louvered_cover(
         sol_elev=sol_elev,
         sun_data=MagicMock(),
         config=make_cover_config(win_azi=180, fov_left=90, fov_right=90),
-        tilt_config=make_tilt_config(slat_distance=0.02, depth=0.03, mode="mode2"),
+        tilt_config=make_tilt_config(
+            slat_distance=0.02, depth=0.03, mode="mode2", **tilt_overrides
+        ),
         roof_config=LouveredRoofConfig(roof_pitch=0.0, max_slat_angle=max_slat_angle),
     )
 
@@ -385,6 +392,22 @@ def _tilt_solar_position(cover) -> int:
         # TILT_AXIS_PRIMARY (cover_tilt / cover_louvered_roof) declares
         # open_blocks_sun=False, so the axis-level rule is "0 % is full
         # coverage" — exactly the input that used to force a blanket floor().
+        policy=_policy(open_blocks_sun=False),
+        floor_active=False,
+    )
+
+
+def _tilt_solar_position_minimized(cover, n_steps: int) -> int:
+    """Run the same branch as :func:`_tilt_solar_position`, minimisation on.
+
+    The only difference is the opt-in coverage-step quantiser that runs
+    immediately after the away-from-horizontal rounding (issue #1104).
+    """
+    return solar_position_from_geometry(
+        cover,
+        _config(),
+        minimize_movements=True,
+        max_coverage_steps=n_steps,
         policy=_policy(open_blocks_sun=False),
         floor_active=False,
     )
@@ -522,6 +545,70 @@ class TestTiltMode2DirectionalRounding:
 
         assert cover.calculate_raw_percentage() == pytest.approx(raw, abs=1e-5)
         assert _tilt_solar_position(cover) == expected
+
+
+class TestTiltMode2MinimizeMovements:
+    """The coverage-step quantiser respects the horizontal pivot (issue #1104).
+
+    ``minimize_movements`` snaps the commanded position onto one of N coverage
+    levels, rounding toward MORE coverage. That quantiser used to divide the
+    whole 0–100 range around a single coverage-zero end (0 % or 100 %), which is
+    only the truth on a monotonic axis. On MODE2 the coverage-zero point is the
+    horizontal slat mid-travel, so the old scale snapped every above-pivot solve
+    back TOWARD horizontal — undoing, one step later, exactly what
+    ``round_toward_coverage`` had just done (issue #1090).
+    """
+
+    def test_quantize_does_not_snap_back_toward_horizontal(self):
+        """60 % is 10 points of coverage past the pivot, not 40 points short of it.
+
+        At 45° elevation the solve is 106.87° → 59.3747 %, which the
+        away-from-horizontal rule ceils to 60 %. With two levels per side the
+        demand (10/50 = 0.2 of the upper side) rounds up to the half-step, i.e.
+        50 % + 0.5 × 50 = 75 %. Measuring the same demand against a 100 %
+        coverage-zero end instead gives 0.4 → the half-step at 50 %, which is the
+        exactly-horizontal slat.
+        """
+        cover = _tilt_cover(sol_elev=45.0)
+        assert _tilt_solar_position(cover) == 60
+        assert _tilt_solar_position_minimized(cover, 2) == 75
+
+    def test_quantize_never_crosses_the_pivot(self):
+        """One level per side means "fully closed on THIS side", not on either.
+
+        Crossing the pivot passes a pure distance-from-horizontal check — 0 % is
+        90° from horizontal, more than the 16.87° the solve asks for — while
+        still being wrong: it sweeps the slats through fully-open horizontal to
+        get there, the wasted movement ``minimize_movements`` exists to avoid.
+        """
+        cover = _tilt_cover(sol_elev=45.0)
+        assert _tilt_solar_position_minimized(cover, 1) == 100
+
+    @pytest.mark.parametrize("n_steps", [2, 3])
+    @pytest.mark.parametrize(
+        "sol_elev", [5.0, 12.5, 21.0, 29.0, 34.4, 37.5, 44.0, 52.0, 68.0, 79.0, 88.0]
+    )
+    def test_commanded_angle_never_closer_to_horizontal_with_minimize(
+        self, sol_elev, n_steps
+    ):
+        """The #1090 invariant, now with the quantiser in the path.
+
+        Same statement as
+        ``test_commanded_angle_is_never_closer_to_horizontal_than_the_solve``:
+        the commanded slat must sit at least as far from horizontal as the
+        grazing solve. Movement minimisation is allowed to command MORE closure
+        than asked for; it is never allowed to command less.
+        """
+        cover = _tilt_cover(sol_elev=sol_elev)
+        exact_angle = cover.calculate_position()
+        max_degrees = float(TiltMode.MODE2.max_degrees)
+        commanded_angle = (
+            _tilt_solar_position_minimized(cover, n_steps) / 100.0 * max_degrees
+        )
+
+        assert abs(commanded_angle - TILT_HORIZONTAL_DEG) >= abs(
+            exact_angle - TILT_HORIZONTAL_DEG
+        )
 
 
 class TestLouveredRoofPivotFollowsMaxSlatAngle:
@@ -669,6 +756,282 @@ class TestTiltSpecifyAnglesDirectionalRounding:
         assert _tilt_solar_position(cover) == 0
 
 
+class TestOffTravelPivotIsAMonotonicAxis:
+    """A scale that never reaches horizontal is monotonic after all (#1104).
+
+    ``_horizontal_percentage`` is ``TILT_HORIZONTAL_DEG`` pushed through the
+    engine's angle→percentage map, and NOTHING constrains that map's image to
+    0–100. Two shipped configurations put the pivot off the travel:
+
+    * a louvered roof whose ``max_slat_angle`` is below 90° — the field is a
+      plain 0–180 number box, so 45° gives a 200 % pivot and 60° gives 150 %;
+    * a ``specify_angles`` calibration with both endpoints on ONE side of
+      horizontal — the config flow only enforces ``angle_0 < angle_100``.
+
+    Such a slat never passes through maximum openness anywhere in its travel,
+    so coverage IS monotonic over it — but WHICH end covers is decided by the
+    SIDE the pivot fell off, not by ``axes[0].open_blocks_sun``. Above the
+    travel (``max_slat_angle`` under 90°, a 0°/45° pair) 100 % is the most-open
+    slat and 0 % covers, which is what the tilt axis flag says anyway. Below it
+    (a 120°/180° pair) the calibration is INVERTED: 0 % is the 120° slat, the
+    most open this drive has, and 100 % is the covering end — the exact
+    opposite of the flag.
+
+    So the pivot is not discarded here, it is only moved onto the travel:
+    anchored on the nearest reachable point, the ladder answers a zero-coverage
+    demand with no movement and an inverted calibration with the right end.
+    Anchored on the unreachable pivot itself, a zero-coverage demand instead
+    reads as a half-covered one and the single-level quantiser answers "fully
+    closed" — which is why the anchor is clamped into the reachable travel
+    rather than the pivot being suppressed on the engine hook that the
+    comparator shares (distance-from-a-point is affine-invariant, so the
+    comparator ranks correctly wherever the point sits — see
+    ``test_protective.py``).
+    """
+
+    @pytest.mark.parametrize(
+        ("max_slat_angle", "pivot"),
+        [
+            (45.0, 200.0),
+            (60.0, 150.0),
+        ],
+    )
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    def test_louvered_roof_topping_out_below_horizontal(
+        self, max_slat_angle, pivot, n_steps
+    ):
+        """The drive stops short of horizontal, so 100 % is the most-open slat.
+
+        The solve saturates at the configured ceiling, so the raw percentage is
+        100 — a demand for NO coverage. Movement minimisation must leave it
+        there; measuring it as distance from an unreachable pivot instead makes
+        it half-covered (100 is 100 of the 200 points below a 200 % pivot) and
+        commands 0 — the fully-closed slat.
+        """
+        cover = _louvered_cover(sol_elev=45.0, max_slat_angle=max_slat_angle)
+        assert cover._horizontal_percentage() == pytest.approx(pivot)
+        assert cover.calculate_raw_percentage() == 100.0
+        assert _tilt_solar_position(cover) == 100
+        assert _tilt_solar_position_minimized(cover, n_steps) == 100
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    def test_specify_angles_calibrated_entirely_below_horizontal(self, n_steps):
+        """0° → 0 %, 45° → 100 %: horizontal would be 200 %."""
+        cover = _tilt_cover(
+            sol_elev=45.0, mode="specify_angles", angle_0=0.0, angle_100=45.0
+        )
+        assert cover._horizontal_percentage() == pytest.approx(200.0)
+        assert cover.calculate_raw_percentage() == 100.0
+        assert _tilt_solar_position(cover) == 100
+        assert _tilt_solar_position_minimized(cover, n_steps) == 100
+
+    @pytest.mark.parametrize(
+        ("sol_elev", "commanded", "expected"),
+        [
+            # 55° solves 122.52° → 4.20 % raw, ceil'd to 5 % (122.99°, 33.0° off
+            # horizontal). One level → the covering end; two → its half-step.
+            (55.0, 5, {1: 100, 2: 50, 3: 33}),
+            # 60° solves 130.53° → 18 % (130.8°, 40.8° off horizontal).
+            (60.0, 18, {1: 100, 2: 50, 3: 33}),
+            # 85° solves 171.67° → 87 % (172.2°, 82.2° off) — nearly shut
+            # already, so every step count rounds it the rest of the way.
+            (85.0, 87, {1: 100, 2: 100, 3: 100}),
+        ],
+    )
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    def test_specify_angles_calibrated_entirely_above_horizontal(
+        self, sol_elev, commanded, expected, n_steps
+    ):
+        """120° → 0 %, 180° → 100 %: horizontal would be −50 %.
+
+        The inverted mirror: 0 % is the 120° slat (30° off horizontal, the most
+        OPEN this drive reaches) and 100 % is the 180° shut one. Reading the
+        static axis flag instead of the pivot's side pinned every one of these
+        demands to 0 % — the most open position the cover has, commanded while
+        direct sun was being tracked, and the farther above horizontal the sun
+        drove the slats the bigger the wrong-way move got.
+
+        Each geometry is run at a NON-ZERO coverage demand deliberately: at the
+        45° elevation the solve lands below 120° and clamps to 0 %, where both
+        the right rule and the wrong one answer 0 and nothing is being tested.
+        """
+        cover = _tilt_cover(
+            sol_elev=sol_elev, mode="specify_angles", angle_0=120.0, angle_100=180.0
+        )
+        assert cover._horizontal_percentage() == pytest.approx(-50.0)
+        assert _tilt_solar_position(cover) == commanded
+        result = _tilt_solar_position_minimized(cover, n_steps)
+        assert result == expected[n_steps]
+        # 100 % is the covering end on this calibration, so quantising can only
+        # move the slat UP the scale, never back toward the open 120°.
+        assert result >= commanded
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize(
+        ("max_slat_angle", "min_tilt", "max_tilt"),
+        [(45.0, 30, 90), (60.0, 30, 90), (80.0, 30, 90)],
+    )
+    def test_a_band_still_binds_above_the_travel(
+        self, max_slat_angle, min_tilt, max_tilt, n_steps
+    ):
+        """A louvered roof has BOTH an off-travel pivot and a ``min_tilt``.
+
+        The quantiser is the last thing on the tilt axis — ``apply_config_limits``
+        after it carries ``min_pos``/``max_pos``, not the tilt band — so a ladder
+        laid over the whole 0–100 scale hands the entity a command the band
+        already rejected. The saturated 100 % solve is banded to the 90 % cap,
+        a demand for no coverage, and the single level used to answer 0: thirty
+        points below the floor the user set, at every elevation.
+        """
+        cover = _louvered_cover(
+            sol_elev=45.0,
+            max_slat_angle=max_slat_angle,
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+        )
+        assert cover.coverage_travel_bounds() == (float(min_tilt), float(max_tilt))
+        assert _tilt_solar_position(cover) == max_tilt
+        assert _tilt_solar_position_minimized(cover, n_steps) == max_tilt
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize(("min_tilt", "max_tilt"), [(45, 100), (60, 100)])
+    @pytest.mark.parametrize("sol_elev", [55.0, 60.0, 70.0, 85.0])
+    def test_a_band_still_binds_below_the_travel(
+        self, sol_elev, min_tilt, max_tilt, n_steps
+    ):
+        """Inverted calibration plus a floor: the ladder starts at ``min_tilt``.
+
+        The band's OPEN end is ``min_tilt`` here, because 0 % is the open end of
+        an inverted calibration, and that is where the ladder has to be anchored
+        — a demand sitting on the floor is a demand for the least coverage this
+        cover can deliver and must not move.
+        """
+        cover = _tilt_cover(
+            sol_elev=sol_elev,
+            mode="specify_angles",
+            angle_0=120.0,
+            angle_100=180.0,
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+        )
+        commanded = _tilt_solar_position(cover)
+        result = _tilt_solar_position_minimized(cover, n_steps)
+        assert min_tilt <= result <= max_tilt
+        assert result >= commanded
+
+    def test_the_quantiser_and_the_comparator_agree_on_the_covering_end(self):
+        """The two pivot consumers must not rank an inverted axis oppositely.
+
+        ``more_protective_position`` ranks by distance from the raw −50 % pivot
+        and calls 40 % more protective than 20 %. The quantiser reads the same
+        pivot, so whichever way it moves a demand has to be the way the
+        comparator calls protective — one engine cannot have two covering ends.
+        """
+        policy = get_policy("cover_tilt")
+        cover = _tilt_cover(
+            sol_elev=60.0, mode="specify_angles", angle_0=120.0, angle_100=180.0
+        )
+        assert policy.more_protective_position(20, 40, cover=cover) == 40
+        commanded = _tilt_solar_position(cover)
+        quantised = _tilt_solar_position_minimized(cover, 2)
+        assert (
+            policy.more_protective_position(commanded, quantised, cover=cover)
+            == quantised
+        )
+
+
+class TestProportionalBandKeepsTheCommandSpacePivot:
+    """The ``[min_tilt, max_tilt]`` transform does not move horizontal (#1104).
+
+    ``tilt_transform=proportional`` (#957) linearly remaps the full 0–100 %
+    solar DEMAND onto the configured band. What comes out is the tilt
+    percentage handed to the cover entity, and the entity's scale is whatever
+    the tilt mode declares — on MODE2, 0–100 % is 0–180°, so the horizontal
+    slat sits at 50 % of the COMMAND no matter which band the demand was
+    squeezed into. That 50 % is exactly what ``_horizontal_percentage``
+    reports, so the pivot and every value measured against it already share one
+    space: ``round_toward_coverage``'s comparison, the coverage-step quantiser
+    and the anticipation comparator all read post-transform commands, and none
+    of them wants a second remap applied to the pivot.
+
+    Remapping the pivot into the band instead (50 → 25 for ``[0, 50]``) would
+    put the pivot at 45° — a slat 45° AWAY from horizontal — and then round the
+    30 % command "away" from it to 62 %, which is both less protective than the
+    command it replaced (21.6° off horizontal versus 36.0°) and outside the
+    user's own ``max_tilt``.
+    """
+
+    def _banded(self, *, sol_elev=45.0, min_tilt=0, max_tilt=50):
+        return _tilt_cover(
+            sol_elev=sol_elev,
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+            tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+    def test_pivot_is_reported_in_the_command_space_the_band_produces(self):
+        """The 59.37 % demand becomes a 30 % command; horizontal is still 50 %."""
+        cover = self._banded()
+        assert cover._percentage_from_angle(
+            cover.calculate_position()
+        ) == pytest.approx(59.374719, abs=1e-5)
+        assert cover.calculate_raw_percentage() == 30.0
+        assert cover.coverage_pivot_percentage() == 50.0
+        assert _tilt_solar_position(cover) == 30
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [
+            # 30 % is 20 of the 50 points below the pivot → 0.4 of the lower
+            # side. One level → the bottom of it; two → the half-step at 25 %;
+            # three → ceil(1.2)/3 = 2/3 → 17 %.
+            (1, 0),
+            (2, 25),
+            (3, 17),
+        ],
+    )
+    def test_quantising_a_banded_command_increases_its_coverage(
+        self, n_steps, expected
+    ):
+        cover = self._banded()
+        commanded = _tilt_solar_position_minimized(cover, n_steps)
+        assert commanded == expected
+        # Every answer is a slat FARTHER from the horizontal 50 % than the
+        # unquantised 30 % command it replaced — never nearer.
+        assert abs(commanded - 50) >= abs(30 - 50)
+
+    def test_upper_band_mirrors_the_lower_one(self):
+        """``[50, 100]`` puts the same demand at 80 %, above the pivot."""
+        cover = self._banded(min_tilt=50, max_tilt=100)
+        assert cover.calculate_raw_percentage() == 80.0
+        assert _tilt_solar_position(cover) == 80
+        assert _tilt_solar_position_minimized(cover, 2) == 100
+        assert _tilt_solar_position_minimized(cover, 3) == 83
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize(
+        ("min_tilt", "max_tilt"), [(0, 50), (50, 100), (25, 75), (20, 60), (0, 100)]
+    )
+    @pytest.mark.parametrize(
+        "sol_elev", [5.0, 12.5, 21.0, 29.0, 34.4, 37.5, 44.0, 52.0, 68.0, 79.0, 88.0]
+    )
+    def test_minimisation_never_reduces_coverage_under_a_band(
+        self, sol_elev, min_tilt, max_tilt, n_steps
+    ):
+        """Swept: no band, elevation or step count lets the quantiser open up."""
+        cover = self._banded(sol_elev=sol_elev, min_tilt=min_tilt, max_tilt=max_tilt)
+        state = _tilt_solar_position(cover)
+        commanded = _tilt_solar_position_minimized(cover, n_steps)
+        pivot = cover.coverage_pivot_percentage()
+        assert abs(commanded - pivot) >= abs(state - pivot)
+        # Gaining coverage is not a licence to leave the band. Distance from the
+        # pivot alone cannot see that: the far end of the travel is always
+        # farther than the band edge, so "more protective" and "past max_tilt"
+        # are the same move whenever the levels are scaled to the whole scale
+        # instead of to what the user actually allows.
+        assert min_tilt <= commanded <= max_tilt
+
+
 class TestTiltOnlyBandSurvivesTheQuantisation:
     """The quantised tilt stays inside ``[min_tilt, max_tilt]`` (issue #1090).
 
@@ -684,6 +1047,12 @@ class TestTiltOnlyBandSurvivesTheQuantisation:
     Venetian never had either problem — its ``_clamp_tilt`` runs after the
     rounding — so the guard belongs on the integer this engine hands out rather
     than mirrored at each call site.
+
+    The opt-in coverage-step quantiser runs after BOTH of those band owners and
+    is the last thing on the axis, so the same invariant has to survive it (the
+    #1104 audit). It does not get there by being clamped a third time: it takes
+    the reachable travel and lays its levels inside it, so an in-band demand
+    cannot produce an out-of-band command in the first place.
     """
 
     def test_raw_percentage_can_sit_just_past_the_cap(self):
@@ -756,6 +1125,76 @@ class TestTiltOnlyBandSurvivesTheQuantisation:
             tilt_transform=transform,
         )
         assert min_tilt <= _tilt_solar_position(cover) <= max_tilt
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize(
+        "transform",
+        [VENETIAN_TILT_TRANSFORM_CLAMP, VENETIAN_TILT_TRANSFORM_PROPORTIONAL],
+    )
+    @pytest.mark.parametrize(
+        ("min_tilt", "max_tilt"), [(0, 100), (0, 55), (0, 60), (45, 100), (45, 55)]
+    )
+    @pytest.mark.parametrize(
+        "sol_elev", [5.0, 21.0, 27.0, 34.4, 39.81, 45.0, 68.0, 88.0]
+    )
+    def test_minimised_tilt_also_lands_inside_the_band(
+        self, sol_elev, min_tilt, max_tilt, transform, n_steps
+    ):
+        """The same invariant one step later, with ``minimize_movements`` on.
+
+        The coverage-step quantiser is the LAST thing to touch the tilt axis —
+        ``apply_config_limits`` after it carries ``min_pos``/``max_pos``, not the
+        tilt band — so whatever it hands back is what the slats are commanded
+        to. Its levels therefore have to be measured against the travel the user
+        actually allows; scaled to the full 0–100 scale instead, the top level
+        IS the far end of the scale and every above-pivot demand leaves the band.
+        """
+        cover = _tilt_cover(
+            sol_elev=sol_elev,
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+            tilt_transform=transform,
+        )
+        assert min_tilt <= _tilt_solar_position_minimized(cover, n_steps) <= max_tilt
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [
+            # 51 % is 1 of the 10 points between the pivot and ``max_tilt`` —
+            # a tenth of the coverage this cover can reach on that side. One
+            # level rounds it to the cap; two put it on the half-step at 55 %;
+            # three on the first third at 53 %.
+            (1, 60),
+            (2, 55),
+            (3, 53),
+        ],
+    )
+    def test_minimisation_levels_spread_across_the_band(self, n_steps, expected):
+        """Movement minimisation keeps N distinct levels inside a capped band.
+
+        This is what a band-aware quantiser buys over clamping its output back
+        onto ``max_tilt`` afterwards: a post-hoc clamp answers 60 for all three
+        step counts, because 100 / 75 / 67 all sit above the cap. The levels a
+        user asked for would exist only on paper.
+        """
+        cover = _tilt_cover(sol_elev=34.4, max_tilt=60)
+        assert _tilt_solar_position(cover) == 51
+        assert _tilt_solar_position_minimized(cover, n_steps) == expected
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [(1, 0), (2, 25), (3, 33)],
+    )
+    def test_a_band_edge_on_the_travel_end_is_the_travel(self, n_steps, expected):
+        """Below the pivot the same band's edge IS 0 %, so nothing moves.
+
+        The 44 % command sits 6 of the 50 points below horizontal, and
+        ``min_tilt`` is 0, so the lower side spans the full half-scale exactly as
+        it did before the band entered the arithmetic.
+        """
+        cover = _tilt_cover(sol_elev=27.0, max_tilt=60)
+        assert _tilt_solar_position(cover) == 44
+        assert _tilt_solar_position_minimized(cover, n_steps) == expected
 
     def test_default_band_is_untouched(self):
         """0/100 is a no-op — the guard must not perturb the shipped default."""

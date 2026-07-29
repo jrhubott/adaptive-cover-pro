@@ -176,10 +176,27 @@ def solar_position_from_geometry(
     else:
         state = int(round(pct))
     if minimize_movements and policy is not None:
+        # Same division of labour as step 1, one step later: the axis states
+        # which end blocks the sun, and the engine says whether that is the
+        # whole story. A bi-directional slat hands back its horizontal pivot,
+        # and the quantiser then measures the coverage demand from THERE — so
+        # the movement-minimisation levels sit on the side the solve is already
+        # on instead of being scaled against the far end of the travel, which
+        # would snap the slats back toward horizontal and undo the away-from-
+        # horizontal rounding above (issues #1090, #1104).
+        #
+        # The engine also says how far that side actually goes. This quantiser
+        # is the LAST thing to touch a tilt axis — ``apply_config_limits`` below
+        # carries ``min_pos``/``max_pos``, not ``[min_tilt, max_tilt]`` — so
+        # levels scaled to the end of the SCALE rather than to the end of the
+        # BAND would command straight past the user's own cap, one step after
+        # ``round_toward_coverage`` re-banded to stay inside it.
         state = PositionConverter.quantize_to_coverage_steps(
             state,
             max_coverage_steps,
             full_coverage_at_zero=full_coverage_at_zero,
+            pivot=cover.coverage_pivot_percentage(),
+            bounds=cover.coverage_travel_bounds(),
         )
     state = solar_floor(state, floor_active=floor_active)
     return apply_config_limits(state, config, sun_valid=True)
@@ -247,6 +264,13 @@ def anticipated_solar_position_from_geometry(
     "now" target seeds the fold, so the result can only ever *increase*
     protection relative to the current position.
 
+    The cover goes to the comparator alongside the two positions, because
+    "which of these blocks more sun" is only a ``min``/``max`` on the percentage
+    while coverage is MONOTONIC in it. On a bi-directional slat the fold would
+    otherwise discard the more-protective of two above-horizontal samples and
+    quietly WEAKEN the anticipation guarantee it exists to strengthen — see
+    issue #1104.
+
     When ``horizon_minutes <= 0`` (anticipation disabled / no throttle) or
     *policy* is ``None``, this is exactly :func:`solar_position_from_geometry`.
 
@@ -309,7 +333,11 @@ def anticipated_solar_position_from_geometry(
             policy=policy,
             floor_active=floor_active,
         )
-        best = policy.more_protective_position(best, candidate)
+        # The LIVE cover is the right engine handle even though *candidate* came
+        # from a projected one: the comparator only asks where this axis's
+        # coverage bottoms out, which is a property of the tilt scale, and
+        # ``dataclasses.replace`` above changes only the sun angles.
+        best = policy.more_protective_position(best, candidate, cover=cover)
 
     return best
 
