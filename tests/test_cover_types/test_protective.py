@@ -25,7 +25,7 @@ from tests.cover_helpers import make_cover_config, make_tilt_config
 _LOWER_IS_PROTECTIVE = ["cover_blind", "cover_tilt", "cover_venetian"]
 
 
-def _mode2_tilt_cover() -> AdaptiveTiltCover:
+def _mode2_tilt_cover(**tilt_overrides) -> AdaptiveTiltCover:
     """Build a MODE2 slat engine — pivot at the horizontal 50 % (issue #1104)."""
     return AdaptiveTiltCover(
         logger=MagicMock(),
@@ -33,7 +33,11 @@ def _mode2_tilt_cover() -> AdaptiveTiltCover:
         sol_elev=45.0,
         sun_data=MagicMock(),
         config=make_cover_config(win_azi=180, fov_left=90, fov_right=90),
-        tilt_config=make_tilt_config(slat_distance=0.02, depth=0.03, mode="mode2"),
+        tilt_config=make_tilt_config(
+            slat_distance=0.02,
+            depth=0.03,
+            **{"mode": "mode2", **tilt_overrides},
+        ),
     )
 
 
@@ -116,3 +120,56 @@ def test_pivotless_engine_falls_back() -> None:
         get_policy("cover_awning").more_protective_position(55, 60, cover=pivotless)
         == 60
     )
+
+
+@pytest.mark.unit
+def test_proportional_band_is_ranked_in_command_space() -> None:
+    """The #957 band transform does not move the pivot (#1104 audit).
+
+    ``tilt_transform=proportional`` remaps the solar DEMAND into
+    ``[min_tilt, max_tilt]``; what comes out is the percentage handed to the
+    cover entity, whose own scale is unchanged. So on MODE2 the horizontal slat
+    is still at 50 % of the COMMAND, and the two candidates here are 27 % = 48.6°
+    (41.4° off horizontal) and 30 % = 54° (36.0° off) — 27 is the more closed
+    slat, and the comparator must not be handed a band-remapped pivot that would
+    reverse that.
+    """
+    policy = get_policy("cover_tilt")
+    cover = _mode2_tilt_cover(min_tilt=0, max_tilt=50, tilt_transform="proportional")
+    assert cover.coverage_pivot_percentage() == 50.0
+    assert policy.more_protective_position(27, 30, cover=cover) == 27
+    assert policy.more_protective_position(30, 27, cover=cover) == 27
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("angle_0", "angle_100", "pivot", "a", "b", "expected"),
+    [
+        # 0° → 0 %, 45° → 100 %: horizontal is an unreachable 200 %. Every
+        # sample is below it, so distance-from-pivot and the axis ``min`` agree
+        # — 60 % is 27° (63° off horizontal), 80 % is 36° (54° off).
+        (0.0, 45.0, 200.0, 60, 80, 60),
+        # 120° → 0 %, 180° → 100 %: horizontal is an unreachable −50 %, and now
+        # the two rules DISAGREE. 20 % is 132° (42° off), 40 % is 144° (54° off),
+        # so the axis ``min`` would command the more open slat.
+        (120.0, 180.0, -50.0, 20, 40, 40),
+    ],
+)
+def test_off_travel_pivot_still_orders_the_comparator(
+    angle_0, angle_100, pivot, a, b, expected
+) -> None:
+    """An unreachable pivot is still a valid ordering reference (#1104 audit).
+
+    The percentage↔angle map is affine, so ``|pct − pivot|`` is proportional to
+    ``|angle − 90°|`` whether or not the pivot itself lies on the travel. Only
+    the coverage-step quantiser — which anchors levels ON the pivot and spans
+    them to the end of the travel — needs the pivot to be reachable, which is
+    why the range guard lives there and not on the shared engine hook.
+    """
+    policy = get_policy("cover_tilt")
+    cover = _mode2_tilt_cover(
+        mode="specify_angles", angle_0=angle_0, angle_100=angle_100
+    )
+    assert cover.coverage_pivot_percentage() == pytest.approx(pivot)
+    assert policy.more_protective_position(a, b, cover=cover) == expected
+    assert policy.more_protective_position(b, a, cover=cover) == expected

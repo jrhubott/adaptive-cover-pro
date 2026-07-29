@@ -133,17 +133,35 @@ class PositionConverter:
         * ``pivot is None`` — coverage is monotonic in the percentage, so the
           axis has exactly one coverage-zero end and ``full_coverage_at_zero``
           names it. The whole 0–100 range is one scale.
-        * ``pivot`` given — the axis is bi-directional (a MODE2 slat: 0° closed
-          downward, 90° horizontal, 180° closed upward), so coverage bottoms out
-          mid-travel and grows toward BOTH ends. Each side of the pivot gets its
-          own ``n_steps`` levels, spanning that side only, and the result stays
-          on the input's side. Two sides of a slat are physically distinct
-          orientations, not a coarser version of one shared scale — collapsing
-          them would command a sweep through the fully-open horizontal to reach
-          "more coverage", the wasted movement this feature exists to avoid.
+        * ``pivot`` on the travel — the axis is bi-directional (a MODE2 slat: 0°
+          closed downward, 90° horizontal, 180° closed upward), so coverage
+          bottoms out mid-travel and grows toward BOTH ends. Each side of the
+          pivot gets its own ``n_steps`` levels, spanning that side only, and the
+          result stays on the input's side. Two sides of a slat are physically
+          distinct orientations, not a coarser version of one shared scale —
+          collapsing them would command a sweep through the fully-open
+          horizontal to reach "more coverage", the wasted movement this feature
+          exists to avoid.
+        * ``pivot`` OFF the travel — outside 0–100, so the axis never reaches
+          maximum openness anywhere it can go and coverage is monotonic over its
+          whole range after all. Falls through to the ``None`` branch.
 
         A pivot of 100.0 (with ``full_coverage_at_zero``) or 0.0 (without) is the
         monotonic case restated, and reduces to the ``None`` branch exactly.
+
+        The off-travel guard is here rather than on the engine hook that
+        supplies the pivot, because this is the only consumer that needs the
+        pivot to be REACHABLE. ``round_toward_coverage`` and
+        ``CoverTypePolicy.more_protective_position`` use it purely as an ordering
+        reference, and since the percentage↔angle map is affine, ``|pct − pivot|``
+        stays proportional to ``|angle − 90°|`` wherever the pivot sits — those
+        two keep answering correctly for a scale calibrated entirely to one side
+        of horizontal, which the axis flag alone gets backwards. This function
+        instead ANCHORS its levels on the pivot and spans them to the near end of
+        the travel, so an unreachable anchor reads a zero-coverage demand as a
+        half-covered one: a louvered roof with ``max_slat_angle=45`` (pivot
+        200 %) or a ``specify_angles`` calibration of 0°→0 % / 45°→100 % would
+        take the fully-open 100 % slat and command 0 — fully closed.
 
         Args:
             percentage: Engine-orientation position (0–100) from
@@ -152,8 +170,8 @@ class PositionConverter:
             full_coverage_at_zero: True when 0% means maximum sun blocking
                 (vertical blind, tilt, venetian); False when 100% means maximum
                 blocking (awning — open/extended blocks the sun). Derived from the
-                policy's primary ``CoverAxis.open_blocks_sun`` flag. Ignored when
-                *pivot* is given, which states the same thing more precisely.
+                policy's primary ``CoverAxis.open_blocks_sun`` flag. Used whenever
+                *pivot* is absent or off the travel.
             pivot: Percentage carrying zero coverage, from the engine's
                 ``coverage_pivot_percentage()`` hook. ``None`` (the default) for
                 every monotonic axis, which is every caller that does not hold a
@@ -165,7 +183,7 @@ class PositionConverter:
         """
         if n_steps < 1:
             return percentage
-        if pivot is None:
+        if pivot is None or not 0.0 <= pivot <= 100.0:
             # Coverage fraction: 1.0 = full coverage, 0.0 = fully open.
             coverage = (
                 (100 - percentage) / 100 if full_coverage_at_zero else percentage / 100

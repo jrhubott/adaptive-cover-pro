@@ -368,6 +368,20 @@ class AdaptiveGeneralCover(ABC):
         position leaves it in EITHER direction, so a distance-from-the-pivot
         measure replaces "distance from the open end".
 
+        The float is a point on this axis's SCALE, and it is NOT promised to lie
+        on the 0–100 travel: it is the maximum-openness angle pushed through the
+        engine's own angle→percentage map, and a scale calibrated entirely to one
+        side of that angle images it outside the range (a louvered roof with
+        ``max_slat_angle`` under 90°, or a one-sided ``specify_angles`` pair).
+        That is still the right answer for consumers that only ORDER by it —
+        the map is affine, so distance from the pivot stays proportional to
+        distance from maximum openness wherever the pivot sits, which is what
+        :meth:`round_toward_coverage` and
+        ``CoverTypePolicy.more_protective_position`` need. A consumer that
+        ANCHORS arithmetic on the pivot must range-check it first; the one that
+        does, ``PositionConverter.quantize_to_coverage_steps``, carries the guard
+        and its rationale.
+
         Only :class:`~.tilt.AdaptiveTiltCover` overrides it, because only the
         engine knows the tilt scale — which keeps the cover-type branch out of
         the pipeline and ``position_utils`` layers that consume the answer.

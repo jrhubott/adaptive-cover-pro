@@ -932,6 +932,12 @@ class CoverTypePolicy(ABC):
         louvered roof's ``max_slat_angle``, and the affine ``specify_angles``
         calibration), so ``|pct − pivot_pct|`` is proportional to
         ``|angle − 90°|`` on both sides at once — no per-side scaling needed.
+        Linearity is also why this comparator needs no range check on the pivot:
+        proportionality does not care whether the pivot is reachable, so a scale
+        calibrated entirely to one side of horizontal (``max_slat_angle`` under
+        90°, a one-sided ``specify_angles`` pair) is still ranked correctly — and
+        an INVERTED such calibration, where ``axes[0]``'s static flag has the
+        covering end backwards, is ranked correctly only this way.
 
         *cover* is keyword-only and defaults to ``None`` so callers with no
         engine in scope, and every monotonic axis, keep the exact behaviour they

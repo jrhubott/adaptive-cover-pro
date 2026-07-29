@@ -466,6 +466,24 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         Inherited unchanged by :class:`~.louvered_roof.AdaptiveLouveredRoofCover`.
         ``None`` on a degenerate zero-width scale, matching the base contract.
+
+        The answer can fall OUTSIDE 0–100, and deliberately is not clamped or
+        suppressed here. ``max_slat_angle = 45`` puts horizontal at 200 %, and a
+        ``specify_angles`` pair of 0°/45° or 120°/180° does the same (200 % and
+        −50 %) — the config flow only orders the endpoints. Such a slat never
+        passes through maximum openness, so the axis really is monotonic over its
+        travel; but the pivot is still the correct ORDERING reference, and the
+        one it corrects is the inverted calibration the axis flag gets backwards
+        (0 % is the OPEN end at 120°/180°, not the covering one). Reporting
+        ``None`` for it would hand those consumers back the wrong rule to fix a
+        problem only ``quantize_to_coverage_steps`` has — see the guard there.
+
+        Percentages are reported here in the same command space the engine's
+        percentage output lives in. ``[min_tilt, max_tilt]`` and
+        ``tilt_transform`` (#957) reshape the DEMAND on its way into that space;
+        they do not rescale the space itself, so horizontal stays where this map
+        puts it and the pivot needs no second transform to be compared against a
+        banded command.
         """
         return self._horizontal_percentage()
 

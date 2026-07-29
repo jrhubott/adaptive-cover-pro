@@ -1397,6 +1397,83 @@ class TestVenetianForecastSecondaryAxes:
         result = policy.forecast_secondary_axes(**kw)
         assert result["tilt"] == 75
 
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize(
+        ("angle_0", "angle_100", "expected"),
+        [
+            # 0° → 0 %, 45° → 100 %: the slats stop short of horizontal, so
+            # 100 % is the most-open orientation this calibration can reach and
+            # the solve saturates there — a demand for NO coverage.
+            (0.0, 45.0, 100),
+            # 120° → 0 %, 180° → 100 %: the mirror, most open at 0 %.
+            (120.0, 180.0, 0),
+        ],
+    )
+    def test_forecast_tilt_quantize_ignores_an_off_travel_pivot(
+        self, angle_0, angle_100, expected, n_steps
+    ):
+        """Second call site, second half of the pivot contract (#1104 audit).
+
+        A ``specify_angles`` calibration whose endpoints sit on one side of
+        horizontal never reaches maximum openness, so the pivot lands off the
+        0–100 travel (200 % here, −50 % for the inverted pair) and the axis is
+        monotonic after all. Anchoring the coverage levels on the unreachable
+        point turned a zero-coverage demand into a full-scale move — at
+        ``n_steps=1`` the slats were commanded to the far end of their travel.
+        """
+        from tests.cover_helpers import make_tilt_config
+
+        policy = VenetianPolicy()
+        tilt_config = make_tilt_config(
+            slat_distance=0.02,
+            depth=0.03,
+            mode="specify_angles",
+            angle_0=angle_0,
+            angle_100=angle_100,
+        )
+        unquantised = self._kwargs()
+        unquantised["config_service"].get_tilt_data.return_value = tilt_config
+        assert policy.forecast_secondary_axes(**unquantised)["tilt"] == expected
+
+        kw = self._kwargs(minimize_movements=True, max_coverage_steps=n_steps)
+        kw["config_service"].get_tilt_data.return_value = tilt_config
+        assert policy.forecast_secondary_axes(**kw)["tilt"] == expected
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [(1, 0), (2, 25), (3, 17)],
+    )
+    def test_forecast_tilt_quantize_keeps_the_command_space_pivot(
+        self, n_steps, expected
+    ):
+        """A proportional band does not move horizontal (#1104 audit).
+
+        ``tilt_transform=proportional`` squeezes the 59.37 % demand into
+        ``[0, 50]`` and commands 30 %. That 30 % is still read on the entity's
+        own MODE2 scale (54°), so horizontal is still the 50 % the tilt engine
+        reports — and quantising away from it lands on 0 / 25 / 17 %, every one
+        of them a slat FARTHER from horizontal than the 30 % it replaced.
+        """
+        from tests.cover_helpers import make_tilt_config
+
+        policy = VenetianPolicy()
+        tilt_config = make_tilt_config(
+            slat_distance=0.02,
+            depth=0.03,
+            mode="mode2",
+            min_tilt=0,
+            max_tilt=50,
+            tilt_transform="proportional",
+        )
+        unquantised = self._kwargs()
+        unquantised["config_service"].get_tilt_data.return_value = tilt_config
+        assert policy.forecast_secondary_axes(**unquantised)["tilt"] == 30
+
+        kw = self._kwargs(minimize_movements=True, max_coverage_steps=n_steps)
+        kw["config_service"].get_tilt_data.return_value = tilt_config
+        assert policy.forecast_secondary_axes(**kw)["tilt"] == expected
+        assert abs(expected - 50) >= abs(30 - 50)
+
     def test_compose_tilt_matches_post_pipeline_resolve(self):
         """The forecast tilt equals what post_pipeline_resolve puts on result.tilt.
 

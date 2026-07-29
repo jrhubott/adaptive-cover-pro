@@ -198,6 +198,55 @@ def test_monotonic_pivot_reduces_to_the_boolean_path(percentage, n):
 
 
 # ---------------------------------------------------------------------------
+# Off-travel pivot (issue #1104 audit) — horizontal is not always reachable
+# ---------------------------------------------------------------------------
+# The pivot is ``TILT_HORIZONTAL_DEG``'s image under the engine's own
+# angle→percentage map, and nothing constrains that map's range to 0–100. Two
+# shipped configurations put horizontal off the travel entirely:
+#
+# * a louvered roof with ``max_slat_angle`` below 90° — the field is a plain
+#   0–180 number box, so 45° gives 90/45 → 200 % and 60° gives 150 %;
+# * a ``specify_angles`` calibration whose endpoints both sit on ONE side of
+#   horizontal — the config flow only enforces ``angle_0 < angle_100``, so
+#   0°→0 % / 45°→100 % gives 200 % and 120°/180° gives −50 %.
+#
+# A slat that never passes through horizontal is monotonic over its whole
+# travel, which is exactly what ``pivot is None`` means — anchoring the level
+# arithmetic on an unreachable point instead turns a zero-coverage demand into
+# a full-scale move.
+_OFF_TRAVEL_PIVOTS = [200.0, 150.0, 100.5, -0.5, -50.0]
+
+
+@pytest.mark.parametrize("pivot", _OFF_TRAVEL_PIVOTS)
+@pytest.mark.parametrize("percentage", range(0, 101, 5))
+@pytest.mark.parametrize("n", range(1, 11))
+@pytest.mark.parametrize("full_coverage_at_zero", [True, False])
+def test_off_travel_pivot_reduces_to_the_boolean_path(
+    pivot, percentage, n, full_coverage_at_zero
+):
+    """A pivot off the travel is the monotonic case, restated less precisely."""
+    assert quantize(percentage, n, full_coverage_at_zero, pivot=pivot) == quantize(
+        percentage, n, full_coverage_at_zero
+    )
+
+
+def test_off_travel_pivot_leaves_a_zero_coverage_demand_alone():
+    """The headline case: 100 % is the most-open slat a 0–45° scale can reach.
+
+    With horizontal at an unreachable 200 %, measuring the demand as distance
+    from it makes the fully-open slat read as HALF the extended span — one
+    level of coverage — and the single-level quantiser answers "fully closed".
+    A demand that asks for no coverage must be left where it is.
+    """
+    assert quantize(100, 1, full_coverage_at_zero=True, pivot=200.0) == 100
+
+
+def test_negative_pivot_does_not_invert_the_single_level():
+    """Mirror image below the travel: 0 % must not be read as half-covered."""
+    assert quantize(0, 1, full_coverage_at_zero=True, pivot=-50.0) == 0
+
+
+# ---------------------------------------------------------------------------
 # Live path — compute_solar_position applies quantization on the solar branch
 # ---------------------------------------------------------------------------
 
