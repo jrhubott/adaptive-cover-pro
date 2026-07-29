@@ -164,7 +164,10 @@ def test_off_travel_pivot_still_orders_the_comparator(
     ``|angle − 90°|`` whether or not the pivot itself lies on the travel. Only
     the coverage-step quantiser — which anchors levels ON the pivot and spans
     them to the end of the travel — needs the pivot to be reachable, which is
-    why the range guard lives there and not on the shared engine hook.
+    why it pulls the anchor onto the travel itself instead of the shared engine
+    hook doing it for everyone. Both consumers still name the same covering end:
+    see ``test_conservative_rounding.py`` ::
+    ``test_the_quantiser_and_the_comparator_agree_on_the_covering_end``.
     """
     policy = get_policy("cover_tilt")
     cover = _mode2_tilt_cover(

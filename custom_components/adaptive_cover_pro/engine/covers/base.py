@@ -377,10 +377,13 @@ class AdaptiveGeneralCover(ABC):
         the map is affine, so distance from the pivot stays proportional to
         distance from maximum openness wherever the pivot sits, which is what
         :meth:`round_toward_coverage` and
-        ``CoverTypePolicy.more_protective_position`` need. A consumer that
-        ANCHORS arithmetic on the pivot must range-check it first; the one that
-        does, ``PositionConverter.quantize_to_coverage_steps``, carries the guard
-        and its rationale.
+        ``CoverTypePolicy.more_protective_position`` need. It is also the answer
+        that tells them which END of an off-travel scale covers, which the
+        axis's static ``open_blocks_sun`` flag gets backwards on an inverted
+        calibration. A consumer that ANCHORS arithmetic on the pivot must pull
+        it onto the reachable travel first; the one that does,
+        ``PositionConverter.quantize_to_coverage_steps``, carries the clamp and
+        its rationale.
 
         Only :class:`~.tilt.AdaptiveTiltCover` overrides it, because only the
         engine knows the tilt scale — which keeps the cover-type branch out of
@@ -394,8 +397,10 @@ class AdaptiveGeneralCover(ABC):
         The companion of :meth:`coverage_pivot_percentage` for the one consumer
         that anchors arithmetic on the pivot rather than merely ordering by it:
         ``PositionConverter.quantize_to_coverage_steps`` spans its coverage
-        levels from the pivot outward, and the far end of that span has to be
-        the most-covering position the axis can actually reach.
+        levels from the pivot outward, so BOTH ends of that span have to be
+        positions the axis can actually reach — the far one because it is where
+        the top level lands, the near one because an anchor the axis cannot
+        reach reads a zero-coverage demand as a covered one.
 
         The base answer is the whole travel, which makes the bound a no-op —
         correct for every engine whose own configuration cannot narrow the

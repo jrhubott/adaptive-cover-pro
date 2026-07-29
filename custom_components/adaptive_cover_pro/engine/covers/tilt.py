@@ -475,8 +475,9 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         travel; but the pivot is still the correct ORDERING reference, and the
         one it corrects is the inverted calibration the axis flag gets backwards
         (0 % is the OPEN end at 120°/180°, not the covering one). Reporting
-        ``None`` for it would hand those consumers back the wrong rule to fix a
-        problem only ``quantize_to_coverage_steps`` has — see the guard there.
+        ``None`` for it would hand every consumer back exactly that wrong rule.
+        The one consumer that anchors on the pivot pulls it onto the reachable
+        travel itself — see ``quantize_to_coverage_steps``.
 
         Percentages are reported here in the same command space the engine's
         percentage output lives in. ``[min_tilt, max_tilt]`` and

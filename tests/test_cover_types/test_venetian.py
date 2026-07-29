@@ -1397,29 +1397,40 @@ class TestVenetianForecastSecondaryAxes:
         result = policy.forecast_secondary_axes(**kw)
         assert result["tilt"] == 75
 
-    @pytest.mark.parametrize("n_steps", [1, 2, 3])
     @pytest.mark.parametrize(
-        ("angle_0", "angle_100", "expected"),
+        ("angle_0", "angle_100", "sol_elev", "commanded", "expected"),
         [
             # 0° → 0 %, 45° → 100 %: the slats stop short of horizontal, so
             # 100 % is the most-open orientation this calibration can reach and
-            # the solve saturates there — a demand for NO coverage.
-            (0.0, 45.0, 100),
-            # 120° → 0 %, 180° → 100 %: the mirror, most open at 0 %.
-            (120.0, 180.0, 0),
+            # the solve saturates there — a demand for NO coverage, which no
+            # step count may turn into a movement.
+            (0.0, 45.0, 45.0, 100, {1: 100, 2: 100, 3: 100}),
+            # 120° → 0 %, 180° → 100 %: the INVERTED mirror. 0 % is the 120°
+            # slat — the most open this drive reaches — and 100 % is the shut
+            # 180° one, the opposite of what the tilt axis flag declares. At 60°
+            # elevation the solve is 130.53°, an 18 % command carrying real
+            # coverage: quantising it must climb toward 100 %, and used to pin
+            # it at 0 % instead.
+            (120.0, 180.0, 60.0, 18, {1: 100, 2: 50, 3: 33}),
+            # The same calibration nearly shut already (171.67° → 87 %).
+            (120.0, 180.0, 85.0, 87, {1: 100, 2: 100, 3: 100}),
         ],
     )
-    def test_forecast_tilt_quantize_ignores_an_off_travel_pivot(
-        self, angle_0, angle_100, expected, n_steps
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    def test_forecast_tilt_quantize_follows_an_off_travel_pivots_side(
+        self, angle_0, angle_100, sol_elev, commanded, expected, n_steps
     ):
         """Second call site, second half of the pivot contract (#1104 audit).
 
         A ``specify_angles`` calibration whose endpoints sit on one side of
         horizontal never reaches maximum openness, so the pivot lands off the
         0–100 travel (200 % here, −50 % for the inverted pair) and the axis is
-        monotonic after all. Anchoring the coverage levels on the unreachable
-        point turned a zero-coverage demand into a full-scale move — at
-        ``n_steps=1`` the slats were commanded to the far end of their travel.
+        monotonic over its travel after all. Which END covers is then the
+        pivot's SIDE, not ``axes[1].open_blocks_sun``: above the travel 0 %
+        covers (the flag agrees), below it 100 % does (the flag is backwards).
+
+        Both halves matter and both are exercised at a NON-ZERO demand, because
+        a demand of 0 or 100 answers itself under either rule.
         """
         from tests.cover_helpers import make_tilt_config
 
@@ -1431,13 +1442,15 @@ class TestVenetianForecastSecondaryAxes:
             angle_0=angle_0,
             angle_100=angle_100,
         )
-        unquantised = self._kwargs()
+        unquantised = self._kwargs(sol_elev=sol_elev)
         unquantised["config_service"].get_tilt_data.return_value = tilt_config
-        assert policy.forecast_secondary_axes(**unquantised)["tilt"] == expected
+        assert policy.forecast_secondary_axes(**unquantised)["tilt"] == commanded
 
-        kw = self._kwargs(minimize_movements=True, max_coverage_steps=n_steps)
+        kw = self._kwargs(
+            sol_elev=sol_elev, minimize_movements=True, max_coverage_steps=n_steps
+        )
         kw["config_service"].get_tilt_data.return_value = tilt_config
-        assert policy.forecast_secondary_axes(**kw)["tilt"] == expected
+        assert policy.forecast_secondary_axes(**kw)["tilt"] == expected[n_steps]
 
     @pytest.mark.parametrize(
         ("n_steps", "expected"),

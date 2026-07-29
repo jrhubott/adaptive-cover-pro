@@ -937,7 +937,11 @@ class CoverTypePolicy(ABC):
         calibrated entirely to one side of horizontal (``max_slat_angle`` under
         90°, a one-sided ``specify_angles`` pair) is still ranked correctly — and
         an INVERTED such calibration, where ``axes[0]``'s static flag has the
-        covering end backwards, is ranked correctly only this way.
+        covering end backwards, is ranked correctly only this way. The
+        coverage-step quantiser reaches the same conclusion from the same pivot
+        by a different route (it clamps the pivot onto the reachable travel,
+        because it anchors arithmetic on it rather than ordering by it), and the
+        two must not disagree about which end of one engine covers.
 
         *cover* is keyword-only and defaults to ``None`` so callers with no
         engine in scope, and every monotonic axis, keep the exact behaviour they

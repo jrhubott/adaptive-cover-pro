@@ -133,57 +133,63 @@ class PositionConverter:
 
         * ``pivot is None`` — coverage is monotonic in the percentage, so the
           axis has exactly one coverage-zero end and ``full_coverage_at_zero``
-          names it. The whole 0–100 range is one scale.
-        * ``pivot`` on the travel — the axis is bi-directional (a MODE2 slat: 0°
-          closed downward, 90° horizontal, 180° closed upward), so coverage
-          bottoms out mid-travel and grows toward BOTH ends. Each side of the
-          pivot gets its own ``n_steps`` levels, spanning that side only, and the
+          names it. The whole 0–100 range is one scale, and this is the only
+          branch that reads the flag at all.
+        * a ``pivot`` — the axis is bi-directional (a MODE2 slat: 0° closed
+          downward, 90° horizontal, 180° closed upward), so coverage bottoms out
+          at that percentage and grows toward BOTH ends. Each side of the pivot
+          gets its own ``n_steps`` levels, spanning that side only, and the
           result stays on the input's side. Two sides of a slat are physically
           distinct orientations, not a coarser version of one shared scale —
           collapsing them would command a sweep through the fully-open
           horizontal to reach "more coverage", the wasted movement this feature
           exists to avoid.
-        * ``pivot`` OFF the travel — outside 0–100, so the axis never reaches
-          maximum openness anywhere it can go and coverage is monotonic over its
-          whole range after all. Falls through to the ``None`` branch.
 
         A pivot of 100.0 (with ``full_coverage_at_zero``) or 0.0 (without) is the
         monotonic case restated, and reduces to the ``None`` branch exactly.
 
-        *bounds* is how far the axis can actually be driven. The levels are
-        ANCHORED on the pivot, so what they are spanned TO decides where the
-        top one lands — and that has to be the most-covering position the axis
-        can reach, not the end of the percentage scale. A tilt axis carries its
-        own ``[min_tilt, max_tilt]`` band, applied by the engine BEFORE this
-        function and by nothing after it, so levels spanned to 100 % put the top
-        one past the user's own cap: a ``max_tilt`` of 60 with the shipped
-        single step commanded 100 % for every above-pivot solve. Spanning them to
-        the band edge instead makes an out-of-band command unreachable by
-        construction — the result never passes the far edge, and never falls back
-        past the input — while keeping ``n_steps`` distinct levels inside the
-        band. Clamping this function's output afterwards would also stop the
-        escape, but it collapses 100 / 75 / 67 onto a single 60 and quietly
-        empties out the setting the user changed.
+        *bounds* is how far the axis can actually be driven, and the levels are
+        laid out ENTIRELY inside it — anchored on the least-covering position the
+        axis can reach and spanned to the most-covering one, per side. A tilt
+        axis carries its own ``[min_tilt, max_tilt]`` band, applied by the engine
+        BEFORE this function and by nothing after it, so a ladder spanned to the
+        end of the percentage SCALE puts its top level past the user's own cap:
+        a ``max_tilt`` of 60 with the shipped single step commanded 100 % for
+        every above-pivot solve. Spanning to the band edge instead makes an
+        out-of-band command unreachable by construction — the result never
+        passes the far edge, and never falls back past the input — while keeping
+        ``n_steps`` distinct levels inside the band. Clamping this function's
+        output afterwards would also stop the escape, but it collapses
+        100 / 75 / 67 onto a single 60 and quietly empties out the setting the
+        user changed.
 
-        The bound only bites on the pivot branch, because only that branch
-        anchors on a point and spans outward. The monotonic branch already
-        spans END to END, so the covering end is its own limit and the axis flag
-        is the whole story — leaving the ``pivot is None`` and off-travel paths
-        bit-identical, band or no band.
+        The pivot itself is clamped into *bounds* for the same reason, and that
+        is what lets the two ends of the band be the whole story here. The pivot
+        is ``TILT_HORIZONTAL_DEG``'s image under the engine's angle→percentage
+        map and NOTHING constrains that image to 0–100: a louvered roof with
+        ``max_slat_angle=45`` puts it at 200 %, a ``specify_angles`` pair of
+        0°/45° likewise, and an INVERTED 120°/180° pair at −50 %. Such a slat
+        never passes through maximum openness, so it is monotonic over its
+        travel — but WHICH end covers is then the side the pivot fell off, not
+        ``full_coverage_at_zero``: on the 120°/180° calibration 0 % is the most
+        OPEN slat the drive reaches and 100 % is the shut one, the exact
+        opposite of what every tilt axis's static flag declares. Clamping the
+        anchor answers both at once. It lands on the near band edge, so a
+        zero-coverage demand does not move (an unclamped anchor reads the
+        fully-open 100 % slat of a 200 % pivot as half-covered and commands 0),
+        and the single remaining side runs toward the covering end the pivot
+        names (an unclamped −50 % anchor still measures from below, so the flag
+        decides and gets it backwards).
 
-        The off-travel guard is here rather than on the engine hook that
-        supplies the pivot, because this is the only consumer that needs the
-        pivot to be REACHABLE. ``round_toward_coverage`` and
-        ``CoverTypePolicy.more_protective_position`` use it purely as an ordering
-        reference, and since the percentage↔angle map is affine, ``|pct − pivot|``
-        stays proportional to ``|angle − 90°|`` wherever the pivot sits — those
-        two keep answering correctly for a scale calibrated entirely to one side
-        of horizontal, which the axis flag alone gets backwards. This function
-        instead ANCHORS its levels on the pivot and spans them to the near end of
-        the travel, so an unreachable anchor reads a zero-coverage demand as a
-        half-covered one: a louvered roof with ``max_slat_angle=45`` (pivot
-        200 %) or a ``specify_angles`` calibration of 0°→0 % / 45°→100 % would
-        take the fully-open 100 % slat and command 0 — fully closed.
+        Only this consumer needs the pivot to be reachable, which is why the
+        clamp lives here rather than on the engine hook.
+        ``round_toward_coverage`` and ``CoverTypePolicy.more_protective_position``
+        use the pivot purely as an ordering reference, and since the
+        percentage↔angle map is affine, ``|pct − pivot|`` stays proportional to
+        ``|angle − 90°|`` wherever the pivot sits — clamping it would corrupt
+        that ranking. The two consumers still agree on which end covers,
+        because a clamped anchor is on the same side of every reachable
+        percentage as the pivot it came from.
 
         Args:
             percentage: Engine-orientation position (0–100) from
@@ -192,16 +198,17 @@ class PositionConverter:
             full_coverage_at_zero: True when 0% means maximum sun blocking
                 (vertical blind, tilt, venetian); False when 100% means maximum
                 blocking (awning — open/extended blocks the sun). Derived from the
-                policy's primary ``CoverAxis.open_blocks_sun`` flag. Used whenever
-                *pivot* is absent or off the travel.
+                policy's primary ``CoverAxis.open_blocks_sun`` flag. Read only
+                when *pivot* is absent — a stated pivot is the more specific
+                answer and outranks it.
             pivot: Percentage carrying zero coverage, from the engine's
                 ``coverage_pivot_percentage()`` hook. ``None`` (the default) for
                 every monotonic axis, which is every caller that does not hold a
-                bi-directional engine.
+                bi-directional engine. Not required to lie on the travel.
             bounds: ``(lowest, highest)`` percentage the axis can be commanded
                 to, from the engine's ``coverage_travel_bounds()`` hook. Defaults
-                to the full travel, which is a no-op. Ignored unless the pivot is
-                anchorable.
+                to the full travel, which is a no-op. Ignored without a pivot,
+                since there is then no anchor for it to constrain.
 
         Returns:
             The quantized position (0–100) in the same engine orientation.
@@ -209,7 +216,7 @@ class PositionConverter:
         """
         if n_steps < 1:
             return percentage
-        if pivot is None or not 0.0 <= pivot <= 100.0:
+        if pivot is None:
             # Coverage fraction: 1.0 = full coverage, 0.0 = fully open.
             coverage = (
                 (100 - percentage) / 100 if full_coverage_at_zero else percentage / 100
@@ -222,33 +229,42 @@ class PositionConverter:
             return round(coverage_pct)
         # Bi-directional axis: measure the demand as a fraction of the side the
         # input sits on, and give it back on that same side. The side runs from
-        # the pivot to the far end of the reachable travel — the most-covering
-        # position this axis has on that side, which the band may have moved in
-        # from the end of the scale.
+        # the anchor — the least-covering REACHABLE position, i.e. the pivot
+        # pulled onto the band — to the far end of that band.
         # The ``max``/``min`` widen the side back out for an input that already
         # sits past the far edge. Neither call site can produce one (both band
         # before they quantize), but "never reduce coverage" is this function's
         # contract and must not become conditional on the caller having banded
         # first.
         low, high = bounds
-        if percentage > pivot:
+        anchor = min(max(pivot, low), high)
+        if percentage > anchor:
             far = max(high, float(percentage))
             side_sign = 1.0
         else:
             far = min(low, float(percentage))
             side_sign = -1.0
-        span = abs(far - pivot)
+        span = abs(far - anchor)
         if span <= 0:
-            # The input sits on a boundary pivot, or on a band pinned to a single
-            # point, so its side has no width to quantize into — there is exactly
-            # one reachable position on it.
+            # The input sits on a boundary anchor, or on a band pinned to a
+            # single point, so its side has no width to quantize into — there is
+            # exactly one reachable position on it.
             return percentage
-        coverage = abs(percentage - pivot) / span
+        coverage = abs(percentage - anchor) / span
         level = min(math.ceil(coverage * n_steps) / n_steps, 1.0)
-        # ``level * span >= |percentage - pivot|`` by construction and
+        # ``level * span >= |percentage - anchor|`` by construction and
         # ``level <= 1``, so the answer sits between the input and the far edge:
         # never less covering than the demand, never outside the band.
-        return round(pivot + side_sign * level * span)
+        commanded = round(anchor + side_sign * level * span)
+        # Rounding the top level can add up to half a point, which escapes the
+        # band only where its edge is FRACTIONAL. No engine reports one today
+        # (``coverage_travel_bounds`` yields whole percentages), but "never
+        # passes the far edge" is stated without conditions, so hold it without
+        # conditions. The demand is an integer no farther from the anchor than
+        # ``far`` is, so this can never pull the answer back short of it.
+        if side_sign > 0:
+            return min(commanded, math.floor(far))
+        return max(commanded, math.ceil(far))
 
     @staticmethod
     def apply_limits(

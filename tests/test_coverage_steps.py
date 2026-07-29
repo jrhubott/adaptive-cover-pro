@@ -183,9 +183,7 @@ def test_degenerate_boundary_pivot_has_no_side_to_quantize_into():
 
 
 # ``max_coverage_steps`` is bounded to 1–10 by ``const.OPTION_RANGES``.
-@pytest.mark.parametrize("percentage", range(0, 101))
-@pytest.mark.parametrize("n", range(1, 11))
-def test_monotonic_pivot_reduces_to_the_boolean_path(percentage, n):
+def test_monotonic_pivot_reduces_to_the_boolean_path():
     """The generalization subsumes the monotonic axes rather than replacing them.
 
     A monotonic axis is a bi-directional one whose pivot sits on a boundary, so
@@ -193,8 +191,14 @@ def test_monotonic_pivot_reduces_to_the_boolean_path(percentage, n):
     that equality is what keeps every blind / awning / MODE1-tilt caller byte-
     identical across this change (issue #978's guarantee).
     """
-    assert quantize(percentage, n, True, pivot=100.0) == quantize(percentage, n, True)
-    assert quantize(percentage, n, False, pivot=0.0) == quantize(percentage, n, False)
+    for percentage in range(0, 101):
+        for n in range(1, 11):
+            assert quantize(percentage, n, True, pivot=100.0) == quantize(
+                percentage, n, True
+            )
+            assert quantize(percentage, n, False, pivot=0.0) == quantize(
+                percentage, n, False
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -210,24 +214,47 @@ def test_monotonic_pivot_reduces_to_the_boolean_path(percentage, n):
 #   horizontal — the config flow only enforces ``angle_0 < angle_100``, so
 #   0°→0 % / 45°→100 % gives 200 % and 120°/180° gives −50 %.
 #
-# A slat that never passes through horizontal is monotonic over its whole
-# travel, which is exactly what ``pivot is None`` means — anchoring the level
-# arithmetic on an unreachable point instead turns a zero-coverage demand into
-# a full-scale move.
-_OFF_TRAVEL_PIVOTS = [200.0, 150.0, 100.5, -0.5, -50.0]
+# A slat that never passes through horizontal is monotonic over its travel —
+# but WHICH end covers is then decided by the SIDE the pivot fell off, not by
+# the axis flag. Above the travel the near end is 100 % (the most open the slat
+# gets) and 0 % covers; below it the calibration is inverted and 100 % covers.
+# The static ``full_coverage_at_zero`` flag says "0 % covers" for every tilt
+# axis, so on the inverted calibration it is exactly backwards.
+_PIVOTS_ABOVE_THE_TRAVEL = [200.0, 150.0, 100.5]
+_PIVOTS_BELOW_THE_TRAVEL = [-0.5, -50.0]
+_OFF_TRAVEL_PIVOTS = [*_PIVOTS_ABOVE_THE_TRAVEL, *_PIVOTS_BELOW_THE_TRAVEL]
 
 
-@pytest.mark.parametrize("pivot", _OFF_TRAVEL_PIVOTS)
-@pytest.mark.parametrize("percentage", range(0, 101, 5))
-@pytest.mark.parametrize("n", range(1, 11))
+@pytest.mark.parametrize("pivot", _PIVOTS_ABOVE_THE_TRAVEL)
 @pytest.mark.parametrize("full_coverage_at_zero", [True, False])
-def test_off_travel_pivot_reduces_to_the_boolean_path(
-    pivot, percentage, n, full_coverage_at_zero
-):
-    """A pivot off the travel is the monotonic case, restated less precisely."""
-    assert quantize(percentage, n, full_coverage_at_zero, pivot=pivot) == quantize(
-        percentage, n, full_coverage_at_zero
-    )
+def test_a_pivot_above_the_travel_closes_toward_zero(pivot, full_coverage_at_zero):
+    """100 % is the open end, so the ladder is the ``full_coverage_at_zero`` one.
+
+    Whatever flag the caller passed: the pivot's side is the more specific
+    answer and outranks it. For a tilt axis the flag happens to agree here, so
+    this half is the regression guard rather than the fix.
+    """
+    for percentage in range(0, 101):
+        for n in range(1, 11):
+            assert quantize(
+                percentage, n, full_coverage_at_zero, pivot=pivot
+            ) == quantize(percentage, n, True)
+
+
+@pytest.mark.parametrize("pivot", _PIVOTS_BELOW_THE_TRAVEL)
+@pytest.mark.parametrize("full_coverage_at_zero", [True, False])
+def test_a_pivot_below_the_travel_closes_toward_100(pivot, full_coverage_at_zero):
+    """0 % is the open end here, so the ladder is the mirrored one.
+
+    This is the half the axis flag gets backwards: a tilt axis always declares
+    ``full_coverage_at_zero``, and on a 120°→0 % / 180°→100 % calibration 0 % is
+    the most OPEN slat the drive reaches.
+    """
+    for percentage in range(0, 101):
+        for n in range(1, 11):
+            assert quantize(
+                percentage, n, full_coverage_at_zero, pivot=pivot
+            ) == quantize(percentage, n, False)
 
 
 def test_off_travel_pivot_leaves_a_zero_coverage_demand_alone():
@@ -244,6 +271,21 @@ def test_off_travel_pivot_leaves_a_zero_coverage_demand_alone():
 def test_negative_pivot_does_not_invert_the_single_level():
     """Mirror image below the travel: 0 % must not be read as half-covered."""
     assert quantize(0, 1, full_coverage_at_zero=True, pivot=-50.0) == 0
+
+
+def test_an_inverted_calibration_closes_toward_the_far_end():
+    """A −50 % pivot puts full coverage at 100 %, not at 0 % (#1104 audit).
+
+    The demands are the two the ``specify_angles`` 120°/180° cover really
+    produces: 18 % is 130.8° (40.8° off horizontal) and 87 % is 172.2° (82.2°
+    off). Reading the axis flag instead of the pivot's side commanded 0 % for
+    both — the 120° slat, the most OPEN this drive has, while direct sun was
+    being tracked.
+    """
+    assert quantize(18, 1, full_coverage_at_zero=True, pivot=-50.0) == 100
+    assert quantize(18, 2, full_coverage_at_zero=True, pivot=-50.0) == 50
+    assert quantize(18, 3, full_coverage_at_zero=True, pivot=-50.0) == 33
+    assert quantize(87, 3, full_coverage_at_zero=True, pivot=-50.0) == 100
 
 
 # ---------------------------------------------------------------------------
@@ -314,22 +356,53 @@ def test_the_whole_travel_is_the_default_bound(full_coverage_at_zero):
             ) == quantize(percentage, n, full_coverage_at_zero, pivot=50.0)
 
 
-@pytest.mark.parametrize("pivot", [None, *_OFF_TRAVEL_PIVOTS])
 @pytest.mark.parametrize("full_coverage_at_zero", [True, False])
-def test_bounds_are_ignored_without_an_anchorable_pivot(pivot, full_coverage_at_zero):
+def test_bounds_are_ignored_without_a_pivot(full_coverage_at_zero):
     """No pivot, no ladder to constrain — the monotonic path is bit-identical.
 
-    The band matters here only because the levels are ANCHORED on the pivot.
-    Where they are not — a monotonic axis, or one whose pivot the travel never
-    reaches — the boolean path answers, exactly as it did before bounds existed.
-    Swept past both ends of the travel and past both ends of the step range so
-    the ``n_steps < 1`` short-circuit is included.
+    The band matters only because the levels are ANCHORED on the pivot; with no
+    pivot at all there is nothing to anchor, so the boolean path answers exactly
+    as it did before bounds existed. Swept past both ends of the travel and past
+    both ends of the step range so the ``n_steps < 1`` short-circuit is included.
     """
     for percentage in range(-5, 106):
         for n in range(0, 12):
             assert quantize(
-                percentage, n, full_coverage_at_zero, pivot=pivot, bounds=(45.0, 55.0)
+                percentage, n, full_coverage_at_zero, pivot=None, bounds=(45.0, 55.0)
             ) == quantize(percentage, n, full_coverage_at_zero)
+
+
+@pytest.mark.parametrize("pivot", _OFF_TRAVEL_PIVOTS)
+@pytest.mark.parametrize("n", range(1, 11))
+def test_an_off_travel_pivot_still_obeys_the_band(pivot, n):
+    """The band binds wherever the ladder is anchored, reachable pivot or not.
+
+    A louvered roof topping out below horizontal is exactly the config that has
+    BOTH — an off-travel pivot and a real ``[min_tilt, max_tilt]``. The quantiser
+    is the last thing on the tilt axis, so a ladder laid over the whole 0–100
+    scale hands the entity a command the band already rejected: at
+    ``min_tilt=30`` the single level commanded 0.
+    """
+    for percentage in range(30, 91):
+        result = quantize(
+            percentage, n, full_coverage_at_zero=True, pivot=pivot, bounds=(30.0, 90.0)
+        )
+        assert 30 <= result <= 90
+
+
+def test_an_off_travel_pivot_anchors_on_the_reachable_end():
+    """Both band edges, both sides: a zero-coverage demand still does not move."""
+    # 90 % is the most-open slat a [30, 90] band reaches when horizontal is above
+    # the travel — the anchor moves in from 100 to the cap.
+    assert (
+        quantize(90, 1, full_coverage_at_zero=True, pivot=200.0, bounds=(30.0, 90.0))
+        == 90
+    )
+    # Mirror: with horizontal below the travel the open end is the floor.
+    assert (
+        quantize(45, 1, full_coverage_at_zero=True, pivot=-50.0, bounds=(45.0, 100.0))
+        == 45
+    )
 
 
 def test_a_band_pinned_to_one_point_has_nothing_to_quantize_into():
@@ -337,6 +410,48 @@ def test_a_band_pinned_to_one_point_has_nothing_to_quantize_into():
     assert (
         quantize(70, 3, full_coverage_at_zero=True, pivot=50.0, bounds=(70.0, 70.0))
         == 70
+    )
+
+
+@pytest.mark.parametrize(
+    ("bounds", "open_end"),
+    [
+        # ``[min_tilt, max_tilt] = [60, 100]`` restricts a MODE2 slat to the
+        # upward-closing half: 60 % (108°) is the most OPEN orientation it can
+        # be driven to, even though the pivot at 50 % is more open still.
+        ((60.0, 100.0), 60),
+        # The mirror half, where the band's open end is its top edge.
+        ((0.0, 40.0), 40),
+    ],
+)
+def test_a_band_that_excludes_the_pivot_anchors_on_its_open_end(bounds, open_end):
+    """The anchor is the least-covering REACHABLE position, not the pivot.
+
+    The same rule the off-travel cases need, reached from the other direction —
+    here the pivot is on the travel and the BAND is what puts it out of reach.
+    Measured from the unreachable 50 %, the band's own open end carries a fifth
+    of a side's coverage and one step commanded the far edge: a full-travel
+    sweep in answer to a demand for the least coverage this cover can deliver.
+    """
+    for n in range(1, 11):
+        assert (
+            quantize(open_end, n, full_coverage_at_zero=True, bounds=bounds, pivot=50.0)
+            == open_end
+        )
+
+
+def test_a_fractional_band_edge_is_not_rounded_past():
+    """Rounding the top level can add half a point; the edge has to win.
+
+    ``coverage_travel_bounds`` reports whole percentages today, so this is a
+    contract test rather than a live path — but "the result never passes the far
+    edge" is stated unconditionally, and a fractional edge is the one input that
+    could make it false. The top level here sits at 7.5 and rounds to 8.
+    """
+    assert quantize(7, 1, full_coverage_at_zero=True, pivot=0.5, bounds=(0.0, 7.5)) == 7
+    # Mirror below the pivot: the top level sits at 0.5 and rounds to 0.
+    assert (
+        quantize(1, 1, full_coverage_at_zero=True, pivot=7.5, bounds=(0.5, 10.0)) == 1
     )
 
 
