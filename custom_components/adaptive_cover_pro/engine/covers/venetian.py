@@ -120,12 +120,12 @@ class VenetianCoverCalculation:
 
     def _compute_tilt(self) -> int:
         try:
-            raw_tilt = self._tilt.calculate_percentage()
+            raw_tilt = self._tilt.calculate_raw_percentage()
         except (ValueError, ZeroDivisionError):
             return self._tilt.config.h_def
         if math.isnan(raw_tilt):
             return self._clamp_tilt(0)
-        return self._clamp_tilt(round(raw_tilt))
+        return self._clamp_tilt(math.floor(raw_tilt))
 
     @property
     def direct_sun_valid(self) -> bool:

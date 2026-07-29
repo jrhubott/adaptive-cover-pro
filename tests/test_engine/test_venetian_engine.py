@@ -137,7 +137,7 @@ class TestVenetianCoverCalculation:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_delegates_to_tilt(self, mock_datetime):
-        """Tilt matches what AdaptiveTiltCover.calculate_percentage() returns (when valid)."""
+        """Tilt matches floor(AdaptiveTiltCover.calculate_raw_percentage()) (issue #1090)."""
         from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
 
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -175,15 +175,37 @@ class TestVenetianCoverCalculation:
 
         # Tilt percentage may be NaN (invalid geometry) — check both paths
         try:
-            raw_tilt = standalone.calculate_percentage()
+            raw_tilt = standalone.calculate_raw_percentage()
             if math.isnan(raw_tilt):
                 expected_tilt = 0
             else:
-                expected_tilt = round(raw_tilt)
+                expected_tilt = math.floor(raw_tilt)
         except (ValueError, ZeroDivisionError):
             expected_tilt = config.h_def
 
         assert result.tilt == expected_tilt
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_compute_tilt_floors_fractional_raw_percentage(self, mock_datetime):
+        """A fractional raw tilt rounds DOWN, not to nearest (issue #1090).
+
+        Mirrors ``TestTiltRawPercentage``'s mode1 fixture in
+        ``test_conservative_rounding.py`` (41° in a 0-90° range -> 45.5556%):
+        ``round()`` would give 46, but ``TILT_AXIS.open_blocks_sun=False``
+        means 0% is full coverage, so the conservative/safe direction is to
+        round down. Before the #1090 fix, ``_compute_tilt`` called
+        ``calculate_percentage()`` + ``round()`` and returned 46 here; the
+        fix calls ``calculate_raw_percentage()`` + ``math.floor()`` and must
+        return 45.
+        """
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = _make_venetian(sol_azi=180.0, sol_elev=45.0)
+        calc._tilt.calculate_raw_percentage = Mock(return_value=45.5556)
+
+        result = calc.calculate_dual()
+
+        assert result.tilt == 45
+        assert result.tilt != 46
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun_valid_delegation(self, mock_datetime):
@@ -301,7 +323,9 @@ class TestVenetianTiltSafetyMargin:
             config=config,
             tilt_config=tilt_config,
         )
-        assert calc.calculate_dual().tilt == round(standalone.calculate_percentage())
+        assert calc.calculate_dual().tilt == math.floor(
+            standalone.calculate_raw_percentage()
+        )
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_safety_margin_respects_max_tilt_clamp(self, mock_datetime):
@@ -570,7 +594,7 @@ class TestMinTiltFloor:
             sol_elev=45.0,
             logger=_make_logger(),
         )
-        calc._tilt.calculate_percentage = Mock(return_value=math.nan)
+        calc._tilt.calculate_raw_percentage = Mock(return_value=math.nan)
         assert calc.calculate_dual().tilt == floor
 
 
@@ -595,7 +619,7 @@ class TestClampTiltDelegation:
             sol_elev=80.0,
             logger=_make_logger(),
         )
-        calc._tilt.calculate_percentage = Mock(return_value=80.0)
+        calc._tilt.calculate_raw_percentage = Mock(return_value=80.0)
         assert calc.calculate_dual().tilt == 60
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
@@ -611,7 +635,7 @@ class TestClampTiltDelegation:
             sol_elev=45.0,
             logger=_make_logger(),
         )
-        calc._tilt.calculate_percentage = Mock(return_value=math.nan)
+        calc._tilt.calculate_raw_percentage = Mock(return_value=math.nan)
         assert calc.calculate_dual().tilt == 20
 
 
@@ -653,8 +677,8 @@ class TestProportionalTiltTransform:
             sol_elev=45.0,
             logger=_make_logger(),
         )
-        proportional._tilt.calculate_percentage = Mock(return_value=50.0)
-        clamp._tilt.calculate_percentage = Mock(return_value=50.0)
+        proportional._tilt.calculate_raw_percentage = Mock(return_value=50.0)
+        clamp._tilt.calculate_raw_percentage = Mock(return_value=50.0)
         assert proportional.calculate_dual().tilt == 20
         assert clamp.calculate_dual().tilt == 40
 
@@ -678,7 +702,7 @@ class TestProportionalTiltTransform:
                 sol_elev=45.0,
                 logger=_make_logger(),
             )
-            proportional._tilt.calculate_percentage = Mock(return_value=raw)
+            proportional._tilt.calculate_raw_percentage = Mock(return_value=raw)
             assert proportional.calculate_dual().tilt == round(raw)
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
@@ -702,7 +726,7 @@ class TestProportionalTiltTransform:
                 sol_elev=45.0,
                 logger=_make_logger(),
             )
-            calc._tilt.calculate_percentage = Mock(return_value=float(raw))
+            calc._tilt.calculate_raw_percentage = Mock(return_value=float(raw))
             results.append(calc.calculate_dual().tilt)
         assert all(b >= a for a, b in zip(results, results[1:]))
         assert results[0] == 0
@@ -729,7 +753,7 @@ class TestProportionalTiltTransform:
             sol_elev=45.0,
             logger=_make_logger(),
         )
-        calc._tilt.calculate_percentage = Mock(return_value=math.nan)
+        calc._tilt.calculate_raw_percentage = Mock(return_value=math.nan)
         assert calc.calculate_dual().tilt == 10
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
@@ -751,5 +775,5 @@ class TestProportionalTiltTransform:
             sol_elev=45.0,
             logger=_make_logger(),
         )
-        calc._tilt.calculate_percentage = Mock(return_value=80.0)
+        calc._tilt.calculate_raw_percentage = Mock(return_value=80.0)
         assert calc.calculate_dual().tilt == 40
