@@ -1,10 +1,16 @@
 """Tests for AdaptiveTiltCover calculations and tilt configuration service."""
 
+import math
+
 import pytest
 import numpy as np
 from unittest.mock import MagicMock
 
 from tests.cover_helpers import build_tilt_cover
+
+# Window azimuth every ``_tilt_at`` cover faces, so a test can place the sun by
+# surface-solar azimuth (``gamma``) rather than restating the facade orientation.
+_WIN_AZI = 180
 
 
 def _tilt_at(*, sol_azi, sol_elev, slat_distance, depth, mode, safety_margin=0.0):
@@ -24,7 +30,7 @@ def _tilt_at(*, sol_azi, sol_elev, slat_distance, depth, mode, safety_margin=0.0
         sun_data=MagicMock(),
         fov_left=90,
         fov_right=90,
-        win_azi=180,
+        win_azi=_WIN_AZI,
         h_def=50,
         max_pos=100,
         min_pos=0,
@@ -145,6 +151,11 @@ class TestVenetianTiltSafetyMargin:
     # 180° rails, so the margin transform is visible rather than clamped.
     _BENIGN = {"sol_azi": 180, "sol_elev": 45, "slat_distance": 0.02, "depth": 0.03}
 
+    # Slats spaced at least as far apart as they are deep: the cut-off
+    # discriminant goes negative across much of the envelope, so the solve parks
+    # them fully closed and returns before the margin block runs at all.
+    _WIDE_SPACED = {"slat_distance": 0.05, "depth": 0.03}
+
     @pytest.mark.unit
     def test_safety_margin_default_is_identity(self):
         """safety_margin=0.0 must be a byte-for-byte no-op on the grazing angle."""
@@ -237,15 +248,25 @@ class TestVenetianTiltSafetyMargin:
     @pytest.mark.unit
     @pytest.mark.parametrize("sol_azi", [165, 180, 195])
     @pytest.mark.parametrize("sol_elev", [15, 45, 60, 70])
-    def test_safety_margin_never_inert_inside_normal_envelope_mode2(
+    def test_safety_margin_bites_wherever_mode2_is_off_its_travel_limits(
         self, sol_azi, sol_elev
     ):
-        """#1089: in mode2 no geometry inside the envelope freezes the slider.
+        """#1089: in mode2 the slider moves any slat that is off its travel limits.
 
-        Scoped to mode2 deliberately. Mode2's 180° ceiling leaves the resolved
-        angle off both rails everywhere in the envelope, so the closing transform
-        is always visible. Mode1 caps at 90° and DOES freeze above that rail —
-        see ``test_safety_margin_is_inert_above_the_mode1_open_rail``.
+        NOT a claim that mode2 never freezes inside the envelope — it does, in
+        two ways, each pinned by its own companion test. ``TILT_HORIZONTAL_DEG``
+        is the fixed point the closing transform pivots around, and mode2 lands
+        exactly there whenever the profile angle matches the slat aspect ratio
+        (``test_safety_margin_is_inert_at_the_mode2_horizontal_fixed_point``);
+        slats spaced at or wider than their depth make the cut-off discriminant
+        negative and park the solve fully closed before the margin block runs at
+        all (``test_safety_margin_is_inert_when_the_solve_parks_fully_closed``).
+        Mode1 additionally freezes above its 90° ceiling
+        (``test_safety_margin_is_inert_above_the_mode1_open_rail``).
+
+        The setup guard below is what scopes this test: it asserts the sampled
+        geometry is off the horizontal fixed point, and what is then verified is
+        that the transform is visible everywhere the slat has closure left.
         """
         from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG
         from custom_components.adaptive_cover_pro.geometry import (
@@ -344,6 +365,78 @@ class TestVenetianTiltSafetyMargin:
         a1 = _tilt_at(mode="mode1", safety_margin=1.0, **params).calculate_position()
         assert a0 == TILT_HORIZONTAL_DEG
         assert a1 == a0
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("gamma", [-45, -30, -15, 0, 15, 30, 45])
+    def test_safety_margin_is_inert_at_the_mode2_horizontal_fixed_point(self, gamma):
+        """KNOWN LIMIT (#1089): mode2 freezes too, wherever the slat resolves flat.
+
+        The cut-off solve ``2·atan((tan β + √(tan²β − r² + 1)) / (1 + r))``
+        collapses to exactly ``TILT_HORIZONTAL_DEG`` when ``tan β`` equals the
+        slat aspect ratio ``r = slat_distance / depth``: the discriminant is 1
+        and the arctan argument is 1. Horizontal is the pivot the closing
+        transform scales away from, so it is a fixed point — the slats are
+        already fully open and there is no closure left to scale, exactly as at
+        the mode1 ceiling. With ``β = atan(tan(elev) / cos γ)`` the freeze sits
+        at ``elev = atan(r · cos γ)``, which lands inside the normal envelope for
+        every ``γ`` the envelope covers, so mode2's 180° ceiling is NOT what
+        keeps the slider alive. This is why the user-facing copy states the
+        travel-limit rule generally instead of promising any cover type a
+        sun-angle range.
+        """
+        from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG
+        from custom_components.adaptive_cover_pro.geometry import (
+            SafetyMarginCalculator,
+        )
+
+        ratio = self._BENIGN["slat_distance"] / self._BENIGN["depth"]
+        params = {
+            **self._BENIGN,
+            "sol_azi": _WIN_AZI - gamma,
+            "sol_elev": math.degrees(math.atan(ratio * math.cos(math.radians(gamma)))),
+        }
+        c0 = _tilt_at(mode="mode2", safety_margin=0.0, **params)
+        a0 = c0.calculate_position()
+        assert c0.gamma == pytest.approx(gamma)
+        assert SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        raw = c0._last_calc_details["slat_angle_raw_deg"]
+        assert raw == pytest.approx(TILT_HORIZONTAL_DEG)
+
+        a1 = _tilt_at(mode="mode2", safety_margin=1.0, **params).calculate_position()
+        assert a1 == a0, "horizontal is the fixed point — no closure left to scale"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("mode", ["mode1", "mode2"])
+    @pytest.mark.parametrize(
+        ("sol_azi", "sol_elev"), [(180, 20), (180, 45), (165, 30), (195, 50), (150, 40)]
+    )
+    def test_safety_margin_is_inert_when_the_solve_parks_fully_closed(
+        self, sol_azi, sol_elev, mode
+    ):
+        """KNOWN LIMIT (#1089): the third freeze — slats spaced at least their depth.
+
+        With ``slat_distance >= depth`` the cut-off discriminant
+        ``tan²β − r² + 1`` goes negative across much of the envelope: there is no
+        real root, the solve parks the slats fully closed, and it returns BEFORE
+        the margin block runs at all. Same user-visible outcome as the two rail
+        cases — the slats are already at a travel limit — reached by a third
+        mechanism, and it is mode-independent.
+        """
+        from custom_components.adaptive_cover_pro.geometry import (
+            SafetyMarginCalculator,
+        )
+
+        params = {**self._WIDE_SPACED, "sol_azi": sol_azi, "sol_elev": sol_elev}
+        c0 = _tilt_at(mode=mode, safety_margin=0.0, **params)
+        a0 = c0.calculate_position()
+        assert SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        trace = c0._last_calc_details
+        assert trace["negative_discriminant"] is True
+        assert trace["discriminant"] < 0
+        assert a0 == 0.0
+
+        a1 = _tilt_at(mode=mode, safety_margin=1.0, **params).calculate_position()
+        assert a1 == a0, "fully closed is a travel limit — nothing left to close"
 
     @pytest.mark.unit
     def test_safety_margin_monotonic_in_strength_at_benign_angle(self):
