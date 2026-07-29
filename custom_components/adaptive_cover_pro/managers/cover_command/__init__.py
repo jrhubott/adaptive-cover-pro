@@ -1307,13 +1307,18 @@ class CoverCommandService:
         # Routed decision for this cycle's target (issue #1095). Computed once
         # here, right after _current, so the same-position gate below can
         # compare against the *routed* target instead of the raw pre-routing
-        # `position` whenever the routing is not position-capable — not just
-        # threshold-routed open/close-only covers, but also a position-capable
-        # cover routed to open_cover/close_cover at a mechanical endpoint
-        # (endpoint_use_open_close), the My-preset stop_cover route, and the
-        # no-capable-service case. route_service_call is pure/no-side-effects
-        # (see routing.py's module docstring) — it gets recomputed again by
-        # _prepare_service_call at actual dispatch time, same as today.
+        # `position` whenever the routing is not position-capable. "Not
+        # position-capable" covers four routes (open/close endpoint under
+        # endpoint_use_open_close, the My-preset stop_cover route, the
+        # no-capable-service case, and the open/close threshold route), but
+        # route_service_call sets routed_target == position on the first
+        # three by construction (routing.py) — only the threshold route
+        # collapses a range of positions onto one 0/100 routed_target, so
+        # that's the only route where comparing against routed_target differs
+        # from the plain `_current == position` check. route_service_call is
+        # pure/no-side-effects (see routing.py's module docstring) — it gets
+        # recomputed again by _prepare_service_call at actual dispatch time,
+        # same as today.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
         _plan = route_service_call(
             entity_id,
@@ -1418,27 +1423,28 @@ class CoverCommandService:
         # feedback) sit at HA state unknown/unavailable forever, so _current
         # never resolves and the numeric comparison above would never fire —
         # the same command gets resent every cycle (#779). "not
-        # supports_position" is broader than just "threshold-routed": it also
-        # covers a position-capable cover routed to open_cover/close_cover at
-        # a mechanical endpoint under endpoint_use_open_close (the default),
-        # the My-preset stop_cover route, and the no-capable-service
-        # (service=None) case. Any of those whose _current DOES resolve has
-        # the #779 problem in a different shape (#1095): every calculated
-        # position on one side of the routing decision collapses to the same
-        # routed_target, but the numeric comparison above compares _current
-        # against the raw pre-routing `position`, which drifts even though
-        # the routed decision hasn't changed. _plan.routed_target (computed
-        # once above, right after _current) is compared against _current
-        # directly when it resolved — a resolved reading that CONTRADICTS the
-        # stored target must fall through to dispatch, never be masked by a
-        # stale commanded target (issue #1095 audit finding 1), so
-        # _same_position_via_target_fallback (which compares the last
+        # supports_position" is broader than just "threshold-routed": entry
+        # also comes from a position-capable cover routed to
+        # open_cover/close_cover at a mechanical endpoint under
+        # endpoint_use_open_close (the default), the My-preset stop_cover
+        # route, and the no-capable-service (service=None) case. But
+        # route_service_call sets routed_target == position on those three
+        # routes by construction (routing.py), so once _current resolves,
+        # comparing it against _plan.routed_target there is identical to the
+        # `_current == position` check already done above — behaviorally
+        # inert, not a broadening. The open/close-threshold route is the only
+        # one where routed_target genuinely diverges from position (every
+        # state on one side of open_close_threshold collapses to the same
+        # 0/100 routed_target); it's the only route where this arm changes
+        # behavior — it fires when a resolved _current already sits at the
+        # routed 0/100 target even though the raw calculated position drifted
+        # within the sub-threshold band. A resolved reading that CONTRADICTS
+        # the routed target must still fall through to dispatch, never be
+        # masked by a stale commanded target (issue #1095 audit finding 1),
+        # so _same_position_via_target_fallback (which compares the last
         # *commanded* target against this cycle's *routed* decision via
         # route_service_call, see its docstring) is consulted only when
-        # _current is still None — position-capable, My-preset stop_cover,
-        # and open/close endpoint covers are all handled by the one routing
-        # source of truth, but only the unresolved-reading case is allowed to
-        # fall back to the stored target. Delta/time gates and reconciliation
+        # _current is still None. Delta/time gates and reconciliation
         # deliberately keep reading the real _current — this broadened
         # comparison is scoped to the same-position gate only.
         # An explicit user command (context.user_command) must ALWAYS dispatch —
