@@ -61,6 +61,23 @@ def tilt_cmd_svc(mock_hass, logger, grace_mgr):
     )
 
 
+@pytest.fixture
+def threshold_cmd_svc(mock_hass, logger, grace_mgr):
+    """CoverCommandService for a vertical blind with a high open/close threshold.
+
+    Mirrors ``cmd_svc`` but with ``open_close_threshold=99`` (issue #1095) so
+    a wide sub-threshold band (any calculated position below 99) collapses to
+    the same ``close_cover``/``routed_target=0`` decision.
+    """
+    return CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        open_close_threshold=99,
+    )
+
+
 # --- Initial state ---
 
 
@@ -2173,6 +2190,165 @@ async def test_apply_position_repeated_my_preset_suppressed_when_current_unknown
 
     assert (outcome2, reason2) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
+
+
+# --- same-position gate: threshold-routed cover with a resolved current
+# position (issue #1095) ---
+#
+# The #779 fallback above is reachable only when `_current is None`. A
+# threshold-routed cover (supports_position=False) whose HA state genuinely
+# resolves to closed/open (_current = 0/100, not None) never takes that
+# branch, so the gate falls back to comparing the raw pre-routing `position`
+# against `_current` -- two numbers that are never comparable once the
+# calculated position drifts inside the sub-threshold band, since every
+# state below the threshold collapses to the same routed_target=0. The fix
+# broadens the fallback trigger to `_current is None OR not
+# plan.supports_position` so the routed decision is consulted whenever the
+# routing is not position-capable, not just when the reading is unresolved.
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_resend_suppressed_when_current_resolves(
+    threshold_cmd_svc, mock_hass
+):
+    """Issue #1095: a threshold-routed cover with a resolved _current must not
+    be commanded every cycle just because the calculated position drifts
+    inside the sub-threshold band while the cover is already mechanically at
+    the routed decision.
+
+    open_close_threshold=99 collapses every calculated position below 99
+    into the same close_cover/routed_target=0 decision. With _current
+    resolved to 0 (mechanically closed, state-derived -- not None) and no
+    prior ACP-commanded target, successive solar cycles walking the
+    calculated position through the sub-threshold band (93 -> 88 -> 67) must
+    all be recognised as already matching the routed decision and suppressed
+    as same_position -- not dispatched as a redundant close_cover every
+    cycle (the reported relay-click bug).
+    """
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        for target_position in (93, 88, 67):
+            outcome, reason = await threshold_cmd_svc.apply_position(
+                "cover.thresh", target_position, "solar", _ctx_with_special()
+            )
+            assert (outcome, reason) == ("skipped", "same_position")
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_crossing_dispatches(
+    threshold_cmd_svc, mock_hass
+):
+    """Issue #1095: the broadened gate is not a one-way latch -- once the
+    calculated position genuinely crosses back over open_close_threshold,
+    the routed decision changes and the gate must let the command through.
+
+    The cover starts mechanically closed (_current=0, resolved). Calculated
+    positions in the sub-threshold band (67 -> 88) route to the same
+    close_cover/routed_target=0 decision the cover already occupies, so both
+    are correctly suppressed as same_position (see the resend-suppressed
+    test above). Once the calculated position crosses the threshold to 100,
+    the routed decision flips to open_cover/routed_target=100 -- a real
+    state change the gate must let through.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.thresh_cross", 67, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("skipped", "same_position")
+
+        outcome2, reason2 = await threshold_cmd_svc.apply_position(
+            "cover.thresh_cross", 88, "solar", _ctx_with_special()
+        )
+        assert (outcome2, reason2) == ("skipped", "same_position")
+        mock_hass.services.async_call.assert_not_called()
+
+        outcome3, reason3 = await threshold_cmd_svc.apply_position(
+            "cover.thresh_cross", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome3, reason3) == ("sent", "open_cover")
+
+
+@pytest.mark.asyncio
+async def test_apply_position_position_capable_still_dispatches_on_change(
+    cmd_svc, mock_hass
+):
+    """Issue #1095 regression guard: broadening the fallback trigger to
+    `_current is None or not plan.supports_position` must not over-suppress
+    a position-capable cover.
+
+    supports_position=True keeps the broadened OR arm unreachable, so exact
+    equality against the raw position stays the only comparison for a
+    position-capable axis -- a resolved _current that differs from the new
+    target must still dispatch every cycle, exactly as before this change.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"current_position": 50, "supported_features": 15}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    current_state = {"value": 10}
+
+    with (
+        patch.object(cmd_svc, "_get_current_position") as mock_current,
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        mock_current.side_effect = lambda entity: current_state["value"]
+
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.pos_capable", 93, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("sent", "set_cover_position")
+
+        mock_hass.services.async_call.reset_mock()
+        current_state["value"] = 40
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.pos_capable", 78, "solar", _ctx_with_special()
+        )
+
+    assert (outcome2, reason2) == ("sent", "set_cover_position")
 
 
 # --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---

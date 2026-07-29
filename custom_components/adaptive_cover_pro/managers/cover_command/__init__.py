@@ -1132,7 +1132,7 @@ class CoverCommandService:
         position: int,
         context: PositionContext,
     ) -> bool:
-        """Same-position gate fallback for an unresolved current position (issue #779).
+        """Same-position gate fallback for a target-vs-routing comparison (issues #779, #1095).
 
         Somfy RTS (and any open/close-only cover without genuine position
         feedback) reports HA state ``unknown``/``unavailable`` forever, so
@@ -1140,7 +1140,17 @@ class CoverCommandService:
         same-position gate in ``apply_position`` never sees a genuine
         reading to compare against — the exact same command gets resent on
         every update cycle even though the cover was already commanded to
-        (and mechanically at) that state.
+        (and mechanically at) that state (issue #779).
+
+        A threshold-routed cover (``supports_position: False``) whose
+        ``_current`` genuinely resolves hits the same problem in a different
+        shape (issue #1095): every calculated position on one side of
+        ``open_close_threshold`` collapses to the same routed decision, but a
+        raw numeric comparison against ``_current`` never sees that — it only
+        sees the pre-routing ``position`` drifting inside the sub-threshold
+        band. The caller compares ``_current`` against the routed target
+        directly in that case; this fallback additionally covers the case
+        where ``_current`` never resolved at all.
 
         Falls back to the last *commanded* target (``get_target``) compared
         against this cycle's *routed decision* rather than the raw
@@ -1152,9 +1162,11 @@ class CoverCommandService:
         (issue #779 follow-up regression from PR #781, which hand-rolled a
         partial copy of this math and ignored ``use_my_position``).
 
-        Only consulted when ``_current is None``; the delta/time gates and
-        reconciliation intentionally keep reading the real (unknown) current
-        position and are untouched by this fallback.
+        Consulted when ``_current is None`` OR the routed plan is not
+        position-capable (``not plan.supports_position``) — see the caller in
+        ``apply_position``. The delta/time gates and reconciliation
+        intentionally keep reading the real current position and are
+        untouched by this fallback.
         """
         last_target = self.get_target(entity_id)
         if last_target is None:
@@ -1279,6 +1291,24 @@ class CoverCommandService:
 
         _current = self._get_current_position(entity_id)
 
+        # Routed decision for this cycle's target (issue #1095). Computed once
+        # here, right after _current, so the same-position gate below can
+        # compare against the *routed* target instead of the raw pre-routing
+        # `position` for threshold-routed (supports_position=False) covers.
+        # route_service_call is pure/no-side-effects (see routing.py's module
+        # docstring) — it gets recomputed again by _prepare_service_call at
+        # actual dispatch time, same as today.
+        _caps_for_plan = self.get_cover_capabilities(entity_id)
+        _plan = route_service_call(
+            entity_id,
+            position,
+            _caps_for_plan,
+            axis=self._policy.select_default_axis(_caps_for_plan),
+            use_my_position=context.use_my_position,
+            open_close_threshold=self._open_close_threshold,
+            endpoint_use_open_close=self._endpoint_use_open_close,
+        )
+
         # Full mechanical endpoint forcing (issue #755, generalized to any
         # position-capable cover by #897). When the owning cover-type policy
         # flagged this update as a full endpoint (single-axis 0/100, or a
@@ -1366,17 +1396,27 @@ class CoverCommandService:
         # mechanical state), not by tolerance, so the gap can't be reintroduced
         # here nor can it relay-click every cycle.
         #
-        # _current is None is its own exception (issue #779): Somfy RTS covers
-        # (and any open/close-only cover without genuine position feedback) sit
-        # at HA state unknown/unavailable forever, so _current never resolves
-        # and this gate would never fire — the same command gets resent every
-        # cycle. _same_position_via_target_fallback compares the last
-        # *commanded* target against this cycle's *routed* decision (via
-        # route_service_call, see its docstring) instead of a live reading, so
+        # _current is None OR the routed plan is not position-capable is its
+        # own exception (issue #779, broadened by #1095). Somfy RTS covers
+        # (and any open/close-only cover without genuine position feedback)
+        # sit at HA state unknown/unavailable forever, so _current never
+        # resolves and the numeric comparison above would never fire — the
+        # same command gets resent every cycle (#779). A threshold-routed
+        # cover (supports_position=False) whose _current DOES resolve has the
+        # same problem in a different shape (#1095): every calculated
+        # position on one side of open_close_threshold collapses to the same
+        # routed_target, but the numeric comparison above compares _current
+        # against the raw pre-routing `position`, which drifts inside the
+        # sub-threshold band even though the routed decision hasn't changed.
+        # _plan.routed_target (computed once above, right after _current) is
+        # compared against _current directly when it resolved, and
+        # _same_position_via_target_fallback compares the last *commanded*
+        # target against this cycle's *routed* decision (via
+        # route_service_call, see its docstring) when it hasn't — so
         # position-capable, My-preset stop_cover, and open/close endpoint
         # covers are all handled by the one routing source of truth. Delta/time
-        # gates and reconciliation deliberately keep reading the real (unknown)
-        # _current — this fallback is scoped to the same-position gate only.
+        # gates and reconciliation deliberately keep reading the real _current
+        # — this broadened comparison is scoped to the same-position gate only.
         # An explicit user command (context.user_command) must ALWAYS dispatch —
         # a user pressing Open/Close/Set from the card is never "already there"
         # as far as ACP is entitled to decide, especially on a no-feedback cover
@@ -1421,9 +1461,12 @@ class CoverCommandService:
                     )
                 )
                 or (
-                    _current is None
-                    and self._same_position_via_target_fallback(
-                        entity_id, position, context
+                    (_current is None or not _plan.supports_position)
+                    and (
+                        (_current is not None and _current == _plan.routed_target)
+                        or self._same_position_via_target_fallback(
+                            entity_id, position, context
+                        )
                     )
                 )
             )

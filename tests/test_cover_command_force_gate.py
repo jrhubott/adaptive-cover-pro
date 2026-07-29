@@ -246,3 +246,27 @@ class TestUserCommandBypassesSamePosition:
         assert outcome == "skipped"
         assert detail == "same_position"
         hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_user_command_threshold_routed_already_at_target_still_sent(
+        self, svc, hass
+    ):
+        """Issue #1095 regression guard: broadening the same-position gate to
+        consult the routed-target comparison for threshold-routed covers must
+        not let a cover already at its routed target block an explicit user
+        command. The top-level ``not context.user_command`` guard must still
+        short-circuit ahead of both same-position arms (#900).
+        """
+        with (
+            _patch_caps(has_set_position=False),
+            patch.object(svc, "_get_current_position", return_value=0),
+        ):
+            outcome, _detail = await svc.apply_position(
+                "cover.test",
+                20,
+                "set_axes",
+                _ctx(force=True, user_command=True, auto_control=True),
+            )
+
+        assert outcome == "sent"
+        hass.services.async_call.assert_awaited_once()
