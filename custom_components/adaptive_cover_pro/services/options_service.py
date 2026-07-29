@@ -173,6 +173,7 @@ from ..const import (
     DAY_NIGHT_CONTROL_MODELS,
     DUAL_PANEL_BLACKOUT_TRIGGERS,
     MANUAL_OVERRIDE_DURATION_MODES,
+    MIN_USABLE_SLAT_ANGLE_DEG,
     SLIDING_SLIDE_DIRECTIONS,
     VENETIAN_MODES,
     VENETIAN_POST_SETTLE_MODES,
@@ -346,6 +347,47 @@ def _time_v():
     return vol.Any(None, _check)
 
 
+def _max_slat_angle_v():
+    """Validate ``CONF_MAX_SLAT_ANGLE``: ``None``/``0`` sentinel, else ``[MIN, hi]``.
+
+    A bespoke validator rather than the generic ``_range()`` helper (issue
+    #1105): ``0`` means "use the tilt mode's 90°/180°" and must stay legal, but
+    a plain ``vol.Range(min=0, max=hi)`` also admits the open interval ``(0,
+    MIN_USABLE_SLAT_ANGLE_DEG)`` — a value that is neither the sentinel nor a
+    usable physical angle (the engine's own ``_effective_max_degrees()`` no
+    longer truncates it, but it is still a misconfiguration worth rejecting at
+    the boundary where it was made). ``hi`` comes from ``OPTION_RANGES`` and the
+    lower bound from ``const.MIN_USABLE_SLAT_ANGLE_DEG`` — both single-sourced
+    rather than repeated here.
+    """
+    _, hi = OPTION_RANGES[CONF_MAX_SLAT_ANGLE]
+    ranged = _num(MIN_USABLE_SLAT_ANGLE_DEG, hi)
+
+    def _validate(value):
+        if value is None:
+            return None
+        coerced = vol.Coerce(float)(value)
+        if coerced == 0:
+            return coerced
+        # Redundant with ``vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG)`` inside
+        # ``ranged`` below — any value here already falls through to it and
+        # fails with the same verdict. Kept only so the sub-degree dead zone
+        # gets a message that names the sentinel: ``ranged`` wraps its
+        # ``vol.Range`` in ``_num()``'s ``vol.Any(None, ...)``, and
+        # voluptuous's ``Any`` keeps the "None"-literal alternative's generic
+        # fallback (``MultipleInvalid: "not a valid value"``) over the real
+        # ``vol.Range`` message on a failure — so without this branch, a
+        # value like 0.5 would report no bound at all, let alone the
+        # sentinel (verified empirically, not assumed).
+        if 0 < coerced < MIN_USABLE_SLAT_ANGLE_DEG:
+            raise vol.Invalid(
+                f"must be 0 (use tilt mode) or >= {MIN_USABLE_SLAT_ANGLE_DEG}"
+            )
+        return ranged(value)
+
+    return _validate
+
+
 def _select_v(*options: str):
     return vol.Any(None, vol.In(list(options)))
 
@@ -395,8 +437,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — roof / skylight window (#212)
     CONF_ROOF_PITCH: _range(CONF_ROOF_PITCH),
     CONF_ROOF_HEIGHT_ABOVE: _range(CONF_ROOF_HEIGHT_ABOVE),
-    # Geometry — louvered roof (#830 follow-up)
-    CONF_MAX_SLAT_ANGLE: _range(CONF_MAX_SLAT_ANGLE),
+    # Geometry — louvered roof (#830 follow-up). Bespoke validator (#1105): the
+    # generic _range() also admits the (0, MIN_USABLE_SLAT_ANGLE_DEG) dead zone
+    # between the "0 = use tilt mode" sentinel and the smallest usable
+    # physical angle.
+    CONF_MAX_SLAT_ANGLE: _max_slat_angle_v(),
     # Geometry — sliding curtain shade area (#829, Part 2)
     CONF_SLIDING_ENABLE_SHADE_AREA: _bool_v(),
     CONF_SLIDING_SLIDE_DIRECTION: _select_v(*SLIDING_SLIDE_DIRECTIONS),

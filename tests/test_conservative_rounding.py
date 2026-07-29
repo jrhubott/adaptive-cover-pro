@@ -479,12 +479,14 @@ class TestTiltMode2DirectionalRounding:
     def test_degenerate_scale_falls_back_to_the_axis_rule(self):
         """A zero-width legacy scale has no pivot; the base floor/ceil stands.
 
-        Unreachable from config — the tilt modes are 90°/180° and the louvered
-        roof's ``max_slat_angle`` override is bounded away from zero — but
-        ``_horizontal_percentage`` is the one place that division happens, so the
-        guard is exercised head-on instead of left as an untested branch. It is
-        the legacy/custom-max twin of the ``angle_0 == angle_100`` guard covered
-        by ``TestTiltSpecifyAnglesDirectionalRounding``.
+        Unreachable from config — since #1105, both tilt-mode maxima are
+        nonzero and the louvered roof's ``max_slat_angle`` override is bounded
+        away from zero (there is no truncation left to collapse a fractional
+        value onto it) — but ``_horizontal_percentage`` is the one place that
+        division happens, so the guard is exercised here via a mocked
+        ``_effective_max_degrees`` instead of left as an untested branch. It
+        is the legacy/custom-max twin of the ``angle_0 == angle_100`` guard
+        covered by ``TestTiltSpecifyAnglesDirectionalRounding``.
         """
         cover = _tilt_cover(sol_elev=45.0)
         cover._effective_max_degrees = MagicMock(return_value=0.0)

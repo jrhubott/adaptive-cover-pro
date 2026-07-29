@@ -11,11 +11,15 @@ from unittest.mock import MagicMock
 from custom_components.adaptive_cover_pro.config_types import (
     CoverConfig,
     HorizontalConfig,
+    LouveredRoofConfig,
     TiltConfig,
     VerticalConfig,
 )
 from custom_components.adaptive_cover_pro.engine.covers.base import (
     AdaptiveGeneralCover,
+)
+from custom_components.adaptive_cover_pro.engine.covers.louvered_roof import (
+    AdaptiveLouveredRoofCover,
 )
 
 _COVERAGE_HOOKS = (
@@ -261,4 +265,45 @@ def build_tilt_cover(**kwargs):
         config=make_cover_config(**cover_kwargs),
         tilt_config=make_tilt_config(**tilt_kwargs),
         **direct_kwargs,
+    )
+
+
+def build_louvered_roof_cover(
+    *,
+    sol_azi: float,
+    sol_elev: float,
+    roof_pitch: float,
+    slat_distance: float = 0.02,
+    depth: float = 0.03,
+    mode: str = "mode2",
+    win_azi: float = 180.0,
+    fov_left: float = 90.0,
+    fov_right: float = 90.0,
+    max_slat_angle: float = 0.0,
+    safety_margin: float = 0.0,
+):
+    """Build an AdaptiveLouveredRoofCover at an explicit sun/slat geometry.
+
+    Shared by the engine and pipeline-helpers suites (#1105 audit) so the
+    louvered-roof construction isn't reimplemented at each call site — a
+    change to ``AdaptiveLouveredRoofCover``'s constructor only needs updating
+    here.
+    """
+    return AdaptiveLouveredRoofCover(
+        logger=MagicMock(),
+        sol_azi=sol_azi,
+        sol_elev=sol_elev,
+        sun_data=MagicMock(),
+        config=make_cover_config(
+            win_azi=win_azi, fov_left=fov_left, fov_right=fov_right
+        ),
+        tilt_config=make_tilt_config(
+            slat_distance=slat_distance,
+            depth=depth,
+            mode=mode,
+            safety_margin=safety_margin,
+        ),
+        roof_config=LouveredRoofConfig(
+            roof_pitch=roof_pitch, max_slat_angle=max_slat_angle
+        ),
     )

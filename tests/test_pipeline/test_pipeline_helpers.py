@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     SOLAR_TRACKING_FLOOR_PCT,
     apply_snapshot_limits,
@@ -16,7 +15,9 @@ from custom_components.adaptive_cover_pro.pipeline.helpers import (
     compute_raw_calculated_position,
     compute_solar_position,
     solar_floor,
+    solar_position_from_geometry,
 )
+from tests.cover_helpers import build_louvered_roof_cover
 
 # ---------------------------------------------------------------------------
 # Minimal snapshot / cover helpers
@@ -214,6 +215,38 @@ class TestComputeSolarPosition:
         """A sub-1% geometry rounds to 0 and is NOT floored when positionable (#569)."""
         snap = _make_snapshot(calc_pct=0.4, solar_floor_active=False)
         assert compute_solar_position(snap) == 0
+
+    def test_solar_position_from_geometry_survives_fractional_louvered_denominator(
+        self,
+    ):
+        """A sub-1° ``max_slat_angle`` must not crash the pipeline seam (#1105).
+
+        Locks the observable behavior at the exact "propagates uncaught out of
+        pipeline/helpers.py" path the issue describes: this calls
+        ``solar_position_from_geometry`` directly against a real
+        ``AdaptiveLouveredRoofCover`` configured with ``max_slat_angle=0.4`` — a
+        value the old ``int()`` truncation in ``_effective_max_degrees()``
+        collapsed onto a literal ``0`` denominator, raising
+        ``ZeroDivisionError`` uncaught on the tilt-only solar branch. At this
+        geometry the raw angle (180°) saturates against the 0.4° ceiling, so
+        the concrete answer is pinned at 100 rather than merely "some int in
+        range" — verified empirically, not assumed.
+        """
+        cover = build_louvered_roof_cover(
+            sol_azi=180, sol_elev=65, roof_pitch=0.0, max_slat_angle=0.4
+        )
+        policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=False)])
+
+        result = solar_position_from_geometry(
+            cover,
+            _make_config(),
+            minimize_movements=False,
+            max_coverage_steps=1,
+            policy=policy,
+            floor_active=False,
+        )
+
+        assert result == 100
 
 
 # ---------------------------------------------------------------------------

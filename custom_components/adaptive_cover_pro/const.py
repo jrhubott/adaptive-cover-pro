@@ -2072,6 +2072,12 @@ _RANGE_ROOF_PITCH = (0, 90)  # CONF_ROOF_PITCH, degrees (0=flat, 90=vertical)
 _RANGE_ROOF_HEIGHT_ABOVE = (0.0, 10.0)  # CONF_ROOF_HEIGHT_ABOVE, metres
 # Geometry — louvered roof (#830 follow-up).
 _RANGE_MAX_SLAT_ANGLE = (0, 180)  # CONF_MAX_SLAT_ANGLE, degrees (0 = use tilt mode)
+# Smallest nonzero ``max_slat_angle`` treated as a usable physical angle rather
+# than a stray value in the sub-degree dead zone between "unset" and "real"
+# (issue #1105). Single source of truth for the bespoke bound enforced by
+# ``services.options_service._max_slat_angle_v`` — keep it here, not repeated
+# at the call site.
+MIN_USABLE_SLAT_ANGLE_DEG = 1
 
 # Geometry — tilt / venetian slats.
 _RANGE_TILT_DEPTH = (0.1, 30.0)  # CONF_TILT_DEPTH, cm (raised to 300 mm for #830)
