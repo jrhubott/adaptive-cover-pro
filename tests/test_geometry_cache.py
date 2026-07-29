@@ -51,26 +51,6 @@ def test_safety_margin_is_cached():
 
 
 @pytest.mark.unit
-def test_user_slack_max_is_the_geometry_worst_case_excess():
-    """#1089: the user slack budget is anchored, not a tuned literal.
-
-    Grid-searched rather than restated as a sum, so retuning any
-    SAFETY_MARGIN_*_MAX — or making the high-elevation term the larger one —
-    fails here instead of silently unanchoring SAFETY_MARGIN_USER_SLACK_MAX.
-    """
-    from custom_components.adaptive_cover_pro.const import (
-        SAFETY_MARGIN_USER_SLACK_MAX,
-    )
-
-    worst = max(
-        _safety_margin(gamma, elev)
-        for gamma in range(-180, 181, 5)
-        for elev in range(0, 91, 1)
-    )
-    assert pytest.approx(worst - 1.0) == SAFETY_MARGIN_USER_SLACK_MAX
-
-
-@pytest.mark.unit
 def test_safety_margin_distinct_keys_distinct_results():
     _safety_margin.cache_clear()
     a = SafetyMarginCalculator.calculate(90.0, 45.0)

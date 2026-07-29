@@ -285,8 +285,12 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # is exactly 1.0 and the original ``(geo_margin - 1) * s`` form multiplied
         # a zero excess — the slider was inert for most of the day (#1089).
         # ``safety_margin = 0.0`` is still a byte-for-byte no-op at EVERY geometry
-        # (the whole bracket is gated by the user's value), so the guard below is
-        # now exactly "the user opted in". Because the transform is relative to
+        # (the whole bracket is gated by the user's value), so the guard below
+        # tests that value directly: ``_safety_margin`` only ever ADDS
+        # non-negative terms to 1.0, so ``geo_margin >= 1.0`` and the bracket is
+        # never below ``SAFETY_MARGIN_USER_SLACK_MAX`` — "the user opted in" and
+        # "``eff_margin`` left 1.0" are the same question, minus a float-equality
+        # test on a derived quantity. Because the transform is relative to
         # ``TILT_HORIZONTAL_DEG``, a slat resolved to exactly horizontal is a
         # fixed point, and a MODE1 raw angle at or above the 90° ceiling stays
         # clamped fully open — the margin cannot close what is already at the rail.
@@ -294,7 +298,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         eff_margin = 1.0 + self.tilt_config.safety_margin * (
             (geo_margin - 1.0) + SAFETY_MARGIN_USER_SLACK_MAX
         )
-        if eff_margin != 1.0:
+        if self.tilt_config.safety_margin != 0.0:
             result = TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - result) * eff_margin
 
         result = max(0.0, min(float(max_degrees), float(result)))

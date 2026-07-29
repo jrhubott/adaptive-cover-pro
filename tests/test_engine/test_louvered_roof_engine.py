@@ -736,7 +736,11 @@ class TestSafetyMarginOnLouveredRoof:
 
         A near-side roof inclines PAST vertical, so a single-direction drive
         clamps to 90° whether or not the margin ran. The slider is invisible on
-        such a roof — the geometry that would show it lives above the ceiling.
+        that FACE — the geometry that would show it lives above the ceiling.
+        Not on mode1 roofs generally: the far-side face resolves to ``90° − i``,
+        which sits below the ceiling and does respond. Sweeping a flat mode1 roof
+        over the whole sky, the margin moves 0 of the near-side sun positions and
+        roughly half of the far-side ones.
         """
         c0 = _louvered(**self._MOVING, mode="mode1", safety_margin=0.0)
         a0 = c0.calculate_position()

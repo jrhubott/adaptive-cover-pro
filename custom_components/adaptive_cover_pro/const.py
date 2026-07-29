@@ -2081,7 +2081,7 @@ _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
 _RANGE_TILT_SAFETY_MARGIN = (
     MIN_TILT_SAFETY_MARGIN,
     MAX_TILT_SAFETY_MARGIN,
-)  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
+)  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 fraction of the slat-closing slack budget
 # Legacy alias (#964) so any name-based lookup of the old range still resolves.
 _RANGE_VENETIAN_TILT_SAFETY_MARGIN = _RANGE_TILT_SAFETY_MARGIN
 

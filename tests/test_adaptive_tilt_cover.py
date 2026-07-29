@@ -151,9 +151,11 @@ class TestVenetianTiltSafetyMargin:
     # 180° rails, so the margin transform is visible rather than clamped.
     _BENIGN = {"sol_azi": 180, "sol_elev": 45, "slat_distance": 0.02, "depth": 0.03}
 
-    # Slats spaced at least as far apart as they are deep: the cut-off
+    # Slats spaced strictly farther apart than they are deep: the cut-off
     # discriminant goes negative across much of the envelope, so the solve parks
-    # them fully closed and returns before the margin block runs at all.
+    # them fully closed and returns before the margin block runs at all. The
+    # inequality is strict — at ``slat_distance == depth`` the discriminant
+    # reduces to ``tan²β``, which is never negative.
     _WIDE_SPACED = {"slat_distance": 0.05, "depth": 0.03}
 
     @pytest.mark.unit
@@ -341,10 +343,16 @@ class TestVenetianTiltSafetyMargin:
     def test_safety_margin_is_inert_above_the_mode1_open_rail(self, sol_azi, sol_elev):
         """KNOWN LIMIT (#1089): a slat already pinned fully open cannot close more.
 
-        In mode1 the raw cut-off runs past the 90° ceiling from roughly 26°
-        elevation upward with shipped slat proportions, so the output clamp pins
-        the result at ``TILT_HORIZONTAL_DEG`` both before and after the margin
-        transform. That is the physics — a slat at its fully-open travel limit
+        In mode1 the raw cut-off runs past the 90° ceiling once the elevation
+        clears ``atan(r · cos γ)`` — the same condition that freezes mode2 at
+        horizontal — so the output clamp pins the result at
+        ``TILT_HORIZONTAL_DEG`` both before and after the margin transform. That
+        crossover is not one number: it moves with gamma, and with the shipped
+        2 cm / 3 cm slats it runs from 25.2° at the ``γ = ±45°`` envelope edge up
+        to 33.7° at ``γ = 0`` — so 26° is the WORST case, not a general
+        threshold, and at ``γ = 0`` the slider is still live right through it.
+        Every case below therefore sits above its own crossover, not above 26°.
+        That is the physics — a slat at its fully-open travel limit
         has no closure left for a multiplier to scale — not a defect, and it is
         why the user-facing copy scopes the claim instead of promising every sun
         angle. This test fails loudly if the clamp is ever changed.
@@ -419,7 +427,7 @@ class TestVenetianTiltSafetyMargin:
     ):
         """KNOWN LIMIT (#1089): the third freeze — slats spaced at least their depth.
 
-        With ``slat_distance >= depth`` the cut-off discriminant
+        With ``slat_distance > depth`` the cut-off discriminant
         ``tan²β − r² + 1`` goes negative across much of the envelope: there is no
         real root, the solve parks the slats fully closed, and it returns BEFORE
         the margin block runs at all. Same user-visible outcome as the two rail
