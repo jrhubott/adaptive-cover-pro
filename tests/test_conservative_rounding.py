@@ -1,12 +1,33 @@
-"""Tests for directional (conservative) position rounding (issue #978).
+"""Tests for directional (conservative) position rounding (issues #978, #1090).
 
 Conservative rounding biases the solar position toward full coverage instead of
-nearest integer:
-  - Blind / tilt / venetian  (0% = closed = full coverage): floor()
-  - Awning                   (100% = extended = full coverage): ceil()
+the nearest integer. Always-on, no opt-in flag, and decided in two layers:
 
-This is now always-on behavior (no opt-in flag) keyed off the policy's
-``open_blocks_sun`` axis attribute.
+1. **The policy states the axis-level direction.** ``CoverAxis.open_blocks_sun``
+   says which END of the 0–100 % travel blocks the sun, and
+   ``solar_position_from_geometry`` turns that into ``full_coverage_at_zero``:
+   True for a blind / tilt / venetian axis (0 % is the covering end), False for
+   an awning (100 % is). That answer is complete only where coverage is
+   MONOTONIC in the percentage.
+2. **The engine refines it where coverage is not monotonic.** The percentage is
+   handed to ``AdaptiveGeneralCover.round_toward_coverage``, whose base
+   implementation is exactly the monotonic rule — ``floor()`` when
+   ``full_coverage_at_zero``, ``ceil()`` otherwise. ``AdaptiveTiltCover``
+   overrides it, because a bi-directional slat is not monotonic: on MODE2 (the
+   shipped tilt/venetian default) 0° is closed downward, 90° is horizontal and
+   180° is closed upward, so openness PEAKS mid-travel. That axis rounds away
+   from the percentage representing horizontal — up above the pivot, down below
+   it — which subsumes the monotonic rule rather than special-casing it, since
+   MODE1's pivot is 100 % and everything below it still floors.
+
+So the direction is never a cover-type string test, and never a blanket
+``floor()`` for "blind / tilt / venetian". The pipeline layer supplies the axis
+semantic; only the engine knows the tilt scale, so only the engine can say which
+arithmetic direction is conservative on it.
+
+``AdaptiveTiltCover`` additionally re-bands the quantised integer, because the
+tilt-only path applies ``[min_tilt, max_tilt]`` to the float BEFORE this rounding
+runs — see ``TestTiltOnlyBandSurvivesTheQuantisation``.
 """
 
 from __future__ import annotations
@@ -17,7 +38,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG, TiltMode
+from custom_components.adaptive_cover_pro.const import (
+    TILT_HORIZONTAL_DEG,
+    VENETIAN_TILT_TRANSFORM_CLAMP,
+    VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+    TiltMode,
+)
 from custom_components.adaptive_cover_pro.engine.covers import AdaptiveTiltCover
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     compute_solar_position,
@@ -390,6 +416,25 @@ class TestTiltMode2DirectionalRounding:
             exact_angle - TILT_HORIZONTAL_DEG
         )
 
+    def test_degenerate_scale_falls_back_to_the_axis_rule(self):
+        """A zero-width legacy scale has no pivot; the base floor/ceil stands.
+
+        Unreachable from config — the tilt modes are 90°/180° and the louvered
+        roof's ``max_slat_angle`` override is bounded away from zero — but
+        ``_horizontal_percentage`` is the one place that division happens, so the
+        guard is exercised head-on instead of left as an untested branch. It is
+        the legacy/custom-max twin of the ``angle_0 == angle_100`` guard covered
+        by ``TestTiltSpecifyAnglesDirectionalRounding``.
+        """
+        cover = _tilt_cover(sol_elev=45.0)
+        cover._effective_max_degrees = MagicMock(return_value=0.0)
+
+        assert cover._horizontal_percentage() is None
+        # With no pivot the caller's axis-level answer is all there is, so the
+        # two directions must now actually differ.
+        assert cover.round_toward_coverage(45.6, full_coverage_at_zero=True) == 45
+        assert cover.round_toward_coverage(45.6, full_coverage_at_zero=False) == 46
+
     def test_mode1_still_floors_everywhere(self):
         """#978 regression guard: MODE1 spans 0–90°, so horizontal is 100 %.
 
@@ -464,3 +509,109 @@ class TestTiltSpecifyAnglesDirectionalRounding:
         )
         assert cover.calculate_raw_percentage() == 0.0
         assert _tilt_solar_position(cover) == 0
+
+
+class TestTiltOnlyBandSurvivesTheQuantisation:
+    """The quantised tilt stays inside ``[min_tilt, max_tilt]`` (issue #1090).
+
+    The tilt-only / louvered-roof path applies the band INSIDE
+    ``calculate_raw_percentage`` — before the solar branch quantises — and
+    ``_apply_tilt_axis_limits`` deliberately hands back the exact float whenever
+    ``round()`` of it is still in band, to preserve precision. That prediction
+    stopped matching the quantiser once the tilt axis started rounding away from
+    horizontal: a raw percentage inside ``(max_tilt, max_tilt + 0.5)`` passes the
+    band check and is then pushed one point past the cap by ``ceil``. The mirror
+    window ``(min_tilt - 0.5, min_tilt)`` escapes downward under ``floor``.
+
+    Venetian never had either problem — its ``_clamp_tilt`` runs after the
+    rounding — so the guard belongs on the integer this engine hands out rather
+    than mirrored at each call site.
+    """
+
+    def test_raw_percentage_can_sit_just_past_the_cap(self):
+        """Pre-condition: the pre-quantisation band check cannot see 55.003 %.
+
+        At 39.81° the MODE2 solve is 99.005°, i.e. 55.0029 % — above ``max_tilt``
+        but under ``max_tilt + 0.5``, so ``int(round(pct))`` is exactly the cap
+        and the band leaves the float untouched.
+        """
+        cover = _tilt_cover(sol_elev=39.81, max_tilt=55)
+        raw = cover.calculate_raw_percentage()
+        assert raw == pytest.approx(55.002900, abs=1e-5)
+        assert 55 < raw < 55.5
+        assert int(round(raw)) == 55
+
+    @pytest.mark.parametrize(
+        ("transform", "expected"),
+        [
+            # clamp: ceil(55.0029) = 56 must be pulled back onto the cap.
+            (VENETIAN_TILT_TRANSFORM_CLAMP, 55),
+            # proportional: the remap already lands the demand inside [0, 55]
+            # (round(55 × 0.55) = 30) and re-banding an in-band value is a no-op,
+            # so this path is unchanged by the guard.
+            (VENETIAN_TILT_TRANSFORM_PROPORTIONAL, 30),
+        ],
+    )
+    def test_ceil_cannot_command_past_max_tilt(self, transform, expected):
+        cover = _tilt_cover(sol_elev=39.81, max_tilt=55, tilt_transform=transform)
+        assert _tilt_solar_position(cover) == expected
+
+    def test_raw_percentage_can_sit_just_under_the_floor(self):
+        """Pre-condition mirror: 44.7546 % rounds to the ``min_tilt`` of 45."""
+        cover = _tilt_cover(sol_elev=27.0, min_tilt=45)
+        raw = cover.calculate_raw_percentage()
+        assert raw == pytest.approx(44.754618, abs=1e-5)
+        assert 44.5 < raw < 45
+        assert int(round(raw)) == 45
+
+    @pytest.mark.parametrize(
+        ("transform", "expected"),
+        [
+            # clamp: floor(44.7546) = 44 must be lifted back onto the floor.
+            (VENETIAN_TILT_TRANSFORM_CLAMP, 45),
+            # proportional: round(45 + 55 × 0.45) = 70, already inside [45, 100].
+            (VENETIAN_TILT_TRANSFORM_PROPORTIONAL, 70),
+        ],
+    )
+    def test_floor_cannot_command_below_min_tilt(self, transform, expected):
+        cover = _tilt_cover(sol_elev=27.0, min_tilt=45, tilt_transform=transform)
+        assert _tilt_solar_position(cover) == expected
+
+    @pytest.mark.parametrize(
+        "transform",
+        [VENETIAN_TILT_TRANSFORM_CLAMP, VENETIAN_TILT_TRANSFORM_PROPORTIONAL],
+    )
+    @pytest.mark.parametrize(
+        ("min_tilt", "max_tilt"), [(0, 100), (0, 55), (45, 100), (45, 55)]
+    )
+    @pytest.mark.parametrize(
+        "sol_elev", [5.0, 21.0, 27.0, 34.4, 39.81, 45.0, 68.0, 88.0]
+    )
+    def test_commanded_tilt_always_lands_inside_the_band(
+        self, sol_elev, min_tilt, max_tilt, transform
+    ):
+        """Swept invariant: no band, elevation, or transform escapes by a point."""
+        cover = _tilt_cover(
+            sol_elev=sol_elev,
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+            tilt_transform=transform,
+        )
+        assert min_tilt <= _tilt_solar_position(cover) <= max_tilt
+
+    def test_default_band_is_untouched(self):
+        """0/100 is a no-op — the guard must not perturb the shipped default."""
+        for sol_elev, expected in ((27.0, 44), (34.4, 51), (39.81, 56), (45.0, 60)):
+            assert _tilt_solar_position(_tilt_cover(sol_elev=sol_elev)) == expected
+
+    def test_venetian_ownership_flag_still_suppresses_the_band(self):
+        """Venetian's sub-engine owns no band — ``_clamp_tilt`` applies it after.
+
+        The composed engine is built with ``apply_tilt_axis_limits=False``, which
+        must keep the post-quantisation guard out of the way exactly as it keeps
+        the pre-quantisation transform out of the way; otherwise the band (and,
+        on the proportional transform, the remap) would be applied twice.
+        """
+        cover = _tilt_cover(sol_elev=39.81, max_tilt=55)
+        cover.apply_tilt_axis_limits = False
+        assert cover.round_toward_coverage(55.0029, full_coverage_at_zero=True) == 56

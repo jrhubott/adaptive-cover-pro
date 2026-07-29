@@ -131,8 +131,15 @@ class VenetianCoverCalculation:
         # is the venetian TILT_AXIS semantic (``open_blocks_sun=False``); the
         # tilt engine refines it into an angle-aware direction, because on the
         # shipped MODE2 scale coverage is not monotonic in the percentage.
-        # ``_clamp_tilt`` runs after, on the already-integer value, so the band
-        # and the proportional remap see exactly what they always did.
+        # ``_clamp_tilt`` still runs after, and still on an integer — but not
+        # necessarily the SAME integer: above horizontal it now receives the
+        # ceil where it used to receive the floor, one point higher, which is
+        # precisely the difference this fix exists to make. Both the flat clamp
+        # and the proportional remap are monotonic, so a one-point-more-covering
+        # input yields a no-less-covering output. The sub-engine is built with
+        # ``apply_tilt_axis_limits=False``, so ``round_toward_coverage`` does not
+        # re-band on its way out either — ``_clamp_tilt`` stays the single band
+        # owner on this path.
         return self._clamp_tilt(
             self._tilt.round_toward_coverage(raw_tilt, full_coverage_at_zero=True)
         )

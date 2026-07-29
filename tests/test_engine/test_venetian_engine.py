@@ -463,9 +463,14 @@ class TestVenetianMode2DirectionalRounding:
         The 45° solve raw is 59.3747 %, so the conservative direction now hands
         ``_clamp_tilt`` a 60 where it used to get a 59. Both the flat clamp and
         the proportional remap are monotonic, so the band edge is the ceiling
-        either way — the up-rounding cannot escape ``max_tilt`` and cannot skip
-        past ``min_tilt``. ``max_tilt=60`` is the interesting case: the ceil
-        result sits exactly ON the cap.
+        either way — on THIS path the up-rounding cannot escape ``max_tilt`` and
+        cannot skip past ``min_tilt``. ``max_tilt=60`` is the interesting case:
+        the ceil result sits exactly ON the cap.
+
+        The guarantee is the ordering, not the rounding: the tilt-only path
+        bands the float BEFORE quantising and had to grow its own
+        post-quantisation guard to get here — see
+        ``tests/test_conservative_rounding.py::TestTiltOnlyBandSurvivesTheQuantisation``.
         """
         from custom_components.adaptive_cover_pro.const import (
             VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
@@ -731,6 +736,35 @@ class TestMinTiltFloor:
             logger=_make_logger(),
         )
         calc._tilt.calculate_raw_percentage = Mock(return_value=math.nan)
+        assert calc.calculate_dual().tilt == floor
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_nan_survives_the_real_raw_percentage_seam(self, mock_datetime):
+        """The composed sub-engine's float seam stays NaN-transparent (#1090).
+
+        Every sibling guard mocks ``calculate_raw_percentage`` itself, so nothing
+        pinned the seam UNDERNEATH it. ``_apply_tilt_axis_limits`` rounds the
+        float to predict the banded integer, and ``round()`` raises on NaN — so
+        if that round ran before the ``apply_tilt_axis_limits=False``
+        pass-through, a NaN would surface as a ValueError and ``_compute_tilt``
+        would fall to ``h_def`` instead of the clamped 0 its ``isnan`` branch
+        promises. ``h_def`` is set well away from the floor here so the two
+        outcomes cannot be confused.
+        """
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        floor = 15
+        calc = VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180, h_def=90),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(min_tilt=floor),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            logger=_make_logger(),
+        )
+        calc._tilt.calculate_position = Mock(return_value=math.nan)
+
+        assert math.isnan(calc._tilt.calculate_raw_percentage())
         assert calc.calculate_dual().tilt == floor
 
 

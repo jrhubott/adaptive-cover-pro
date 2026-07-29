@@ -14,6 +14,7 @@ from ...const import (
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
+    VENETIAN_TILT_TRANSFORM_CLAMP,
     TiltMode,
 )
 from ...geometry import SafetyMarginCalculator
@@ -423,15 +424,65 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         consistency with the position axis. In practice the tie is invisible on
         the shipped modes: MODE1 pivots at 100 % and MODE2 at 50 %, both whole
         percentages, where ``floor`` and ``ceil`` already agree.
+
+        The quantised integer is then re-banded, because on this path the
+        ``[min_tilt, max_tilt]`` band was applied to the FLOAT back in
+        :meth:`calculate_raw_percentage` and that pass predicts the final
+        integer with ``int(round(pct))`` — a prediction the away-from-horizontal
+        rule invalidates. A raw percentage inside ``(max_tilt, max_tilt + 0.5)``
+        survives the band check and would leave here one point past the cap
+        (mirror-image below ``min_tilt`` under ``floor``). Re-banding is a clamp
+        only, so it is idempotent: the proportional remap has already landed
+        inside the band and is not re-applied, and the shipped ``0``/``100``
+        default is a provable no-op. Venetian clears
+        ``apply_tilt_axis_limits``, so its sub-engine skips this and
+        ``VenetianCoverCalculation._clamp_tilt`` stays the single band owner
+        there.
         """
         horizontal_pct = self._horizontal_percentage()
         if horizontal_pct is None:
-            return super().round_toward_coverage(
+            quantised = super().round_toward_coverage(
                 pct, full_coverage_at_zero=full_coverage_at_zero
             )
-        if pct > horizontal_pct:
-            return ceil(pct)
-        return floor(pct)
+        elif pct > horizontal_pct:
+            quantised = ceil(pct)
+        else:
+            quantised = floor(pct)
+        if not self.apply_tilt_axis_limits:
+            return quantised
+        return self._limit_tilt(quantised, transform=VENETIAN_TILT_TRANSFORM_CLAMP)
+
+    def _limit_tilt(self, value: int, *, transform: str) -> int:
+        """Fit an integer tilt % to this engine's ``[min_tilt, max_tilt]`` band.
+
+        Sole owner of the band argument bundle, shared by the pre-quantisation
+        transform seam (:meth:`_apply_tilt_axis_limits`) and the
+        post-quantisation band guard (:meth:`round_toward_coverage`). The two
+        differ only in *transform*: the former honours the user's
+        ``tilt_transform``, the latter always clamps because the transform has
+        already run and remapping twice would compress the band twice — the same
+        double-application venetian avoids by clearing
+        ``apply_tilt_axis_limits``.
+
+        That flag is checked by the callers rather than here, because "not my
+        band" means handing back a different thing in each: the float seam owes
+        its caller the untouched ``pct`` (including a NaN it must stay
+        transparent to), the integer seam owes it the untouched quantised value.
+
+        The engine path is always sun-tracking, so ``sun_valid=True`` and the
+        ``*_sun_only`` toggles are unconditional; they are passed through anyway
+        so the shared primitive keeps deciding that, not this call site.
+        """
+        cfg = self.tilt_config
+        return PositionConverter.apply_tilt_limits(
+            value,
+            cfg.min_tilt,
+            cfg.max_tilt,
+            cfg.min_tilt_sun_only,
+            cfg.max_tilt_sun_only,
+            sun_valid=True,
+            transform=transform,
+        )
 
     def _apply_tilt_axis_limits(self, pct: float) -> float:
         """Clamp the sun-derived tilt % to the configured tilt-axis band.
@@ -448,26 +499,27 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         tilt engine's trace untouched.
 
         Venetian's composed sub-engine sets ``apply_tilt_axis_limits=False`` and
-        applies the identical limits itself, so this is skipped there.
+        applies the identical limits itself, so this is skipped there — before
+        ``round()`` is reached, keeping the seam transparent to the NaN
+        ``VenetianCoverCalculation._compute_tilt`` explicitly tests for.
         """
         if not self.apply_tilt_axis_limits:
             return pct
-        cfg = self.tilt_config
-        limited = PositionConverter.apply_tilt_limits(
-            int(round(pct)),
-            cfg.min_tilt,
-            cfg.max_tilt,
-            cfg.min_tilt_sun_only,
-            cfg.max_tilt_sun_only,
-            sun_valid=True,
-            transform=cfg.tilt_transform,
-        )
+        rounded = int(round(pct))
+        limited = self._limit_tilt(rounded, transform=self.tilt_config.tilt_transform)
         # The shared primitive is int-valued, but ``calculate_percentage`` has
         # always returned a float — specify-angles yields a fractional percent
         # the pipeline rounds downstream. When the band leaves the rounded value
         # untouched (a no-op / within-band clamp), keep the exact float so that
         # precision is preserved byte-for-byte; only substitute the primitive's
         # value when it actually moved the tilt (a cap, floor, or transform bit).
-        if limited == int(round(pct)):
+        #
+        # ``rounded`` is only a PREDICTION of the integer this float becomes, and
+        # the away-from-horizontal rule can beat it by one at a band edge — which
+        # is why :meth:`round_toward_coverage` re-bands the real integer (#1090)
+        # rather than this prediction being sharpened here: sharpening it would
+        # feed a different value into the proportional remap and move
+        # in-band results that have nothing to do with the escape.
+        if limited == rounded:
             return pct
         return float(limited)
