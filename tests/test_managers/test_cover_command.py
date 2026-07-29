@@ -2308,12 +2308,20 @@ async def test_apply_position_position_capable_still_dispatches_on_change(
 ):
     """Issue #1095 regression guard: broadening the fallback trigger to
     `_current is None or not plan.supports_position` must not over-suppress
-    a position-capable cover.
+    a position-capable cover -- for NON-endpoint targets.
 
-    supports_position=True keeps the broadened OR arm unreachable, so exact
-    equality against the raw position stays the only comparison for a
-    position-capable axis -- a resolved _current that differs from the new
-    target must still dispatch every cycle, exactly as before this change.
+    93 and 78 are mid-range, so routing stays supports_position=True and the
+    broadened OR arm is unreachable here: exact equality against the raw
+    position stays the only comparison, and a resolved _current that differs
+    from the new target must still dispatch every cycle, exactly as before
+    this change.
+
+    This does NOT cover a position-capable cover commanded to a mechanical
+    ENDPOINT (0/100) under endpoint_use_open_close -- that routes through
+    open_cover/close_cover, which is `supports_position=False` just like a
+    threshold-routed cover, and DOES reach the broadened arm. See
+    test_apply_position_endpoint_contradicted_by_current_dispatches_after_latch
+    (audit finding-1 scenario B) for that case.
     """
     mock_hass.states.get.return_value = MagicMock(
         state="open", attributes={"current_position": 50, "supported_features": 15}
@@ -2349,6 +2357,152 @@ async def test_apply_position_position_capable_still_dispatches_on_change(
         )
 
     assert (outcome2, reason2) == ("sent", "set_cover_position")
+    mock_hass.services.async_call.assert_called_once()
+
+
+# --- same-position gate: broadened-arm reachable but must still dispatch
+# when the live reading CONTRADICTS the routed/stored target (issue #1095
+# audit findings 1-3) ---
+#
+# The tests above (`test_apply_position_threshold_routed_resend_suppressed_
+# when_current_resolves`, `..._crossing_dispatches`) only ever suppress via
+# `_current == _plan.routed_target` -- the live reading always AGREES with
+# the routed decision. None of them exercise the case where a resolved
+# `_current` genuinely contradicts a *stored* target that still matches the
+# newly routed decision: before the finding-1 fix, that fell through to
+# `_same_position_via_target_fallback`, which compares only the last
+# *commanded* target against the routed decision and never looks at
+# `_current` at all -- so a stale stored target could mask a live state
+# change and swallow a command that must dispatch.
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_current_contradicts_stored_target_dispatches(
+    threshold_cmd_svc, mock_hass
+):
+    """Audit finding-1 scenario A: current reading contradicts a matching
+    stored target -- must dispatch, not suppress.
+
+    The cover reports mechanically `closed` (_current=0) but the last
+    *commanded* target was already 100 (e.g. a prior open command that
+    hasn't mechanically landed, or a stale target from before an option
+    change). ACP now calculates 100 again, which routes to
+    open_cover/routed_target=100 -- the SAME routed decision as the stored
+    target, so the pre-fix code's `last_target == plan.routed_target`
+    fallback said "same_position" and swallowed the command. But the live
+    reading directly contradicts that: the cover is NOT open. The fix
+    requires `_current is None` to consult that fallback at all, so a
+    resolved, contradicting `_current` falls through to dispatch.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    threshold_cmd_svc.set_target("cover.thresh_contradict", 100)
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.thresh_contradict", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "open_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_current_contradicts_stored_close_dispatches(
+    threshold_cmd_svc, mock_hass
+):
+    """Audit finding-1 scenario E: same contradiction, mirrored at the close
+    side, with the calculated position mid-band rather than a literal
+    endpoint.
+
+    The cover reports mechanically `open` (_current=100) but the last
+    *commanded* target was already 0. ACP now calculates 67, which -- with
+    `open_close_threshold=99` -- routes to close_cover/routed_target=0, the
+    SAME routed decision as the stored target. The live reading contradicts
+    it (the cover is not closed), so this must dispatch close_cover, not be
+    suppressed as same_position.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="open", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    threshold_cmd_svc.set_target("cover.thresh_contradict_close", 0)
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=100),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.thresh_contradict_close", 67, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "close_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_endpoint_contradicted_by_current_dispatches_after_latch(
+    mock_hass, logger, grace_mgr
+):
+    """Audit finding-1 scenario B: a position-capable cover routed to an
+    endpoint (supports_position=False, same routing shape as a
+    threshold-routed cover) must not be over-suppressed once the anti-relay
+    latch (#897) has already armed -- the largest blast-radius regression,
+    since endpoint_use_open_close defaults ON and this is not a
+    threshold-routed cover at all.
+
+    Setup: endpoint_use_open_close ON (default), target=0, _current=45 (well
+    outside `_position_tolerance`), stored target already 0, and the
+    `forced_endpoint` latch already armed at 0. Because the latch already
+    equals the target, `force_endpoint` computes False on this cycle (the
+    `!= position` check fails) -- the force_endpoint bypass does NOT fire,
+    so the same-position band is the only thing standing between "must
+    dispatch" (the cover is nowhere near closed) and "must skip". Before the
+    finding-1 fix, `not _plan.supports_position` let a resolved,
+    contradicting `_current` fall through to
+    `_same_position_via_target_fallback`, which only compares the *stored*
+    target (0) against the routed decision (0) and ignores `_current`
+    entirely -- so it wrongly reported same_position. This also serves as
+    the endpoint counterpart to
+    `test_apply_position_position_capable_still_dispatches_on_change`,
+    which only covers non-endpoint targets.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=45, state="open")
+    svc.set_target("cover.endpoint_pos", 0)
+    svc.state("cover.endpoint_pos").forced_endpoint = 0
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=45),
+        patch.object(svc, "_check_time_delta", return_value=True),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.endpoint_pos", 0, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "close_cover")
+    mock_hass.services.async_call.assert_called_once()
 
 
 # --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---

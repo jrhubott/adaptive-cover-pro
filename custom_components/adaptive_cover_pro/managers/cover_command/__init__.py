@@ -1162,11 +1162,24 @@ class CoverCommandService:
         (issue #779 follow-up regression from PR #781, which hand-rolled a
         partial copy of this math and ignored ``use_my_position``).
 
-        Consulted when ``_current is None`` OR the routed plan is not
-        position-capable (``not plan.supports_position``) — see the caller in
-        ``apply_position``. The delta/time gates and reconciliation
-        intentionally keep reading the real current position and are
-        untouched by this fallback.
+        Consulted only when ``_current is None``. The caller in
+        ``apply_position`` also widens *entry* into this whole branch to
+        ``_current is None or not plan.supports_position`` — "not
+        position-capable" covers more than a threshold-routed cover, e.g. a
+        position-capable cover routed to ``open_cover``/``close_cover`` at a
+        mechanical endpoint under ``endpoint_use_open_close`` (the default),
+        the My-preset ``stop_cover`` route, and the no-capable-service case
+        — but once inside that branch, a *resolved* ``_current`` is compared
+        directly against ``plan.routed_target`` by the caller, never through
+        this fallback. A resolved live reading that contradicts the stored
+        target (e.g. the cover reports mechanically closed while the last
+        commanded target was "open") must be free to fall through and
+        dispatch; routing it through the last-*commanded*-target comparison
+        would let a stale stored target mask a genuine state change (issue
+        #1095 audit finding). This fallback exists solely for the case where
+        there is no live reading to compare at all. The delta/time gates and
+        reconciliation intentionally keep reading the real current position
+        and are untouched by this fallback.
         """
         last_target = self.get_target(entity_id)
         if last_target is None:
@@ -1294,10 +1307,13 @@ class CoverCommandService:
         # Routed decision for this cycle's target (issue #1095). Computed once
         # here, right after _current, so the same-position gate below can
         # compare against the *routed* target instead of the raw pre-routing
-        # `position` for threshold-routed (supports_position=False) covers.
-        # route_service_call is pure/no-side-effects (see routing.py's module
-        # docstring) — it gets recomputed again by _prepare_service_call at
-        # actual dispatch time, same as today.
+        # `position` whenever the routing is not position-capable — not just
+        # threshold-routed open/close-only covers, but also a position-capable
+        # cover routed to open_cover/close_cover at a mechanical endpoint
+        # (endpoint_use_open_close), the My-preset stop_cover route, and the
+        # no-capable-service case. route_service_call is pure/no-side-effects
+        # (see routing.py's module docstring) — it gets recomputed again by
+        # _prepare_service_call at actual dispatch time, same as today.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
         _plan = route_service_call(
             entity_id,
@@ -1396,27 +1412,35 @@ class CoverCommandService:
         # mechanical state), not by tolerance, so the gap can't be reintroduced
         # here nor can it relay-click every cycle.
         #
-        # _current is None OR the routed plan is not position-capable is its
-        # own exception (issue #779, broadened by #1095). Somfy RTS covers
-        # (and any open/close-only cover without genuine position feedback)
-        # sit at HA state unknown/unavailable forever, so _current never
-        # resolves and the numeric comparison above would never fire — the
-        # same command gets resent every cycle (#779). A threshold-routed
-        # cover (supports_position=False) whose _current DOES resolve has the
-        # same problem in a different shape (#1095): every calculated
-        # position on one side of open_close_threshold collapses to the same
+        # _current is None OR the routed plan is not position-capable widens
+        # ENTRY into this exception (issue #779, broadened by #1095). Somfy
+        # RTS covers (and any open/close-only cover without genuine position
+        # feedback) sit at HA state unknown/unavailable forever, so _current
+        # never resolves and the numeric comparison above would never fire —
+        # the same command gets resent every cycle (#779). "not
+        # supports_position" is broader than just "threshold-routed": it also
+        # covers a position-capable cover routed to open_cover/close_cover at
+        # a mechanical endpoint under endpoint_use_open_close (the default),
+        # the My-preset stop_cover route, and the no-capable-service
+        # (service=None) case. Any of those whose _current DOES resolve has
+        # the #779 problem in a different shape (#1095): every calculated
+        # position on one side of the routing decision collapses to the same
         # routed_target, but the numeric comparison above compares _current
-        # against the raw pre-routing `position`, which drifts inside the
-        # sub-threshold band even though the routed decision hasn't changed.
-        # _plan.routed_target (computed once above, right after _current) is
-        # compared against _current directly when it resolved, and
-        # _same_position_via_target_fallback compares the last *commanded*
-        # target against this cycle's *routed* decision (via
-        # route_service_call, see its docstring) when it hasn't — so
-        # position-capable, My-preset stop_cover, and open/close endpoint
-        # covers are all handled by the one routing source of truth. Delta/time
-        # gates and reconciliation deliberately keep reading the real _current
-        # — this broadened comparison is scoped to the same-position gate only.
+        # against the raw pre-routing `position`, which drifts even though
+        # the routed decision hasn't changed. _plan.routed_target (computed
+        # once above, right after _current) is compared against _current
+        # directly when it resolved — a resolved reading that CONTRADICTS the
+        # stored target must fall through to dispatch, never be masked by a
+        # stale commanded target (issue #1095 audit finding 1), so
+        # _same_position_via_target_fallback (which compares the last
+        # *commanded* target against this cycle's *routed* decision via
+        # route_service_call, see its docstring) is consulted only when
+        # _current is still None — position-capable, My-preset stop_cover,
+        # and open/close endpoint covers are all handled by the one routing
+        # source of truth, but only the unresolved-reading case is allowed to
+        # fall back to the stored target. Delta/time gates and reconciliation
+        # deliberately keep reading the real _current — this broadened
+        # comparison is scoped to the same-position gate only.
         # An explicit user command (context.user_command) must ALWAYS dispatch —
         # a user pressing Open/Close/Set from the card is never "already there"
         # as far as ACP is entitled to decide, especially on a no-feedback cover
@@ -1464,8 +1488,11 @@ class CoverCommandService:
                     (_current is None or not _plan.supports_position)
                     and (
                         (_current is not None and _current == _plan.routed_target)
-                        or self._same_position_via_target_fallback(
-                            entity_id, position, context
+                        or (
+                            _current is None
+                            and self._same_position_via_target_fallback(
+                                entity_id, position, context
+                            )
                         )
                     )
                 )
