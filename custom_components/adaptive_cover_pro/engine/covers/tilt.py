@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil, floor
 
 import numpy as np
 from numpy import tan
@@ -366,6 +367,71 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         position = self.calculate_position()
         pct = (float(position) / self._effective_max_degrees()) * 100.0
         return self._apply_tilt_axis_limits(pct)
+
+    def _horizontal_percentage(self) -> float | None:
+        """Tilt percentage that maps to the horizontal slat, or ``None``.
+
+        ``TILT_HORIZONTAL_DEG`` is the maximum-openness angle on every tilt
+        scale this engine drives — it is the pivot the safety margin already
+        scales the closure away from in :meth:`calculate_position`, and the
+        angle the louvered-roof override drives *toward* when it wants the
+        slats as open as possible. Expressing it as a percentage lets
+        :meth:`round_toward_coverage` decide direction without reconstructing
+        the angle or branching on the tilt mode.
+
+        Both percentage maps are affine, so this is just the pivot's image:
+
+        * legacy / custom-max: ``pct = angle / max_degrees × 100``.
+        * ``specify_angles``: ``pct = (angle − angle_0) / travel × 100``, which
+          may run BACKWARDS (``travel < 0``, an inverted calibration where 0 %
+          is the upward-closed slat). That is fine — the pivot's image moves
+          with the map, so "away from horizontal" stays "away from the pivot"
+          in percentage space either way and the sign never has to be tested.
+
+        ``None`` means the pivot is undefined (a degenerate zero-width scale),
+        and callers fall back to the monotonic axis rule.
+        """
+        if self._is_specify_angles():
+            travel = self.angle_100 - self.angle_0
+            if travel == 0:
+                return None
+            return ((TILT_HORIZONTAL_DEG - self.angle_0) / travel) * 100.0
+        max_degrees = float(self._effective_max_degrees())
+        if max_degrees <= 0:
+            return None
+        return (TILT_HORIZONTAL_DEG / max_degrees) * 100.0
+
+    def round_toward_coverage(self, pct: float, *, full_coverage_at_zero: bool) -> int:
+        """Quantise the slat percentage AWAY from horizontal (issue #1090).
+
+        Coverage on a slat axis is NOT monotonic in the percentage, which is the
+        assumption the base implementation encodes. On MODE2 — the shipped
+        default for tilt-only and venetian covers — 0° is closed downward, 90°
+        is horizontal, and 180° is closed upward, so 50 % is the single most
+        sun-permissive position and coverage grows as the angle leaves it in
+        EITHER direction. :meth:`calculate_position` returns the exact grazing
+        angle (the most-open slat that still blocks the beam), so any
+        quantisation toward horizontal leaks direct sun.
+
+        Rounding away from :meth:`_horizontal_percentage` is therefore the
+        conservative direction, and it subsumes the monotonic case rather than
+        special-casing it: MODE1 spans 0–90°, so its pivot is 100 % and every
+        reachable percentage rounds down exactly as before.
+
+        Exactly ON the pivot, both directions increase coverage equally, so
+        there is no conservative answer to pick — ``floor`` wins the tie for
+        consistency with the position axis. In practice the tie is invisible on
+        the shipped modes: MODE1 pivots at 100 % and MODE2 at 50 %, both whole
+        percentages, where ``floor`` and ``ceil`` already agree.
+        """
+        horizontal_pct = self._horizontal_percentage()
+        if horizontal_pct is None:
+            return super().round_toward_coverage(
+                pct, full_coverage_at_zero=full_coverage_at_zero
+            )
+        if pct > horizontal_pct:
+            return ceil(pct)
+        return floor(pct)
 
     def _apply_tilt_axis_limits(self, pct: float) -> float:
         """Clamp the sun-derived tilt % to the configured tilt-axis band.

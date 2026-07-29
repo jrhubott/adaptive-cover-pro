@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from math import cos, radians
+from math import ceil, cos, floor, radians
 
 from ...config_context_adapter import ConfigContextAdapter
 from ...config_types import CoverConfig
@@ -332,3 +332,22 @@ class AdaptiveGeneralCover(ABC):
         direction signal.
         """
         return float(self.calculate_percentage())
+
+    def round_toward_coverage(self, pct: float, *, full_coverage_at_zero: bool) -> int:
+        """Quantise a raw geometry percentage toward MORE sun coverage (#978).
+
+        Polymorphic hook — the single definition of "which way do we round" for
+        both the solar branch (:func:`pipeline.helpers.solar_position_from_geometry`)
+        and venetian's dual-axis tilt sub-path
+        (``VenetianCoverCalculation._compute_tilt``), so the two can never drift
+        apart again (issue #1090).
+
+        *full_coverage_at_zero* is the axis-level semantic the caller reads off
+        ``CoverTypePolicy.axes[n].open_blocks_sun``: ``True`` means 0 % is the
+        fully-covering end (blind / tilt / venetian) so we round down, ``False``
+        means 100 % is (awning) so we round up. That holds for every axis whose
+        coverage is MONOTONIC in the percentage — which is every axis except a
+        bi-directional slat, where :class:`~.tilt.AdaptiveTiltCover` overrides
+        this with an angle-aware direction.
+        """
+        return floor(pct) if full_coverage_at_zero else ceil(pct)

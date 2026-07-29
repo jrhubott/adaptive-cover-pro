@@ -125,7 +125,17 @@ class VenetianCoverCalculation:
             return self._tilt.config.h_def
         if math.isnan(raw_tilt):
             return self._clamp_tilt(0)
-        return self._clamp_tilt(math.floor(raw_tilt))
+        # Same seam the tilt-only solar branch uses
+        # (``pipeline.helpers.solar_position_from_geometry``), so this sub-path
+        # can never drift from it again (issue #1090). ``full_coverage_at_zero``
+        # is the venetian TILT_AXIS semantic (``open_blocks_sun=False``); the
+        # tilt engine refines it into an angle-aware direction, because on the
+        # shipped MODE2 scale coverage is not monotonic in the percentage.
+        # ``_clamp_tilt`` runs after, on the already-integer value, so the band
+        # and the proportional remap see exactly what they always did.
+        return self._clamp_tilt(
+            self._tilt.round_toward_coverage(raw_tilt, full_coverage_at_zero=True)
+        )
 
     @property
     def direct_sun_valid(self) -> bool:

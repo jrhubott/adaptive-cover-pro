@@ -137,16 +137,25 @@ class TestVenetianCoverCalculation:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_delegates_to_tilt(self, mock_datetime):
-        """Tilt matches floor(AdaptiveTiltCover.calculate_raw_percentage()) (issue #1090)."""
+        """Dual-path tilt equals the standalone tilt engine's quantised angle.
+
+        The fixture deliberately uses the shipped venetian slat geometry (2 cm
+        spacing over a 3 cm chord) in the shipped MODE2, at an elevation whose
+        cut-off solve is genuinely fractional (106.87° → 59.3747 %). The old
+        fixture used ``make_tilt_config()``'s 3 cm/2 cm MODE1 defaults, whose
+        discriminant is negative at every elevation here, so the engine short-
+        circuited to 0.0 and the assertion read ``0 == 0`` — it would have
+        passed against a ``_compute_tilt`` that returned a hardcoded zero.
+        """
         from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
 
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         logger = _make_logger()
         sun_data = _make_sun_data()
-        config = make_cover_config()
+        config = make_cover_config(win_azi=180)
         vert_config = make_vertical_config()
-        tilt_config = make_tilt_config()
+        tilt_config = make_tilt_config(slat_distance=0.02, depth=0.03, mode="mode2")
 
         sol_azi = 180.0
         sol_elev = 45.0
@@ -171,32 +180,31 @@ class TestVenetianCoverCalculation:
             tilt_config=tilt_config,
         )
 
+        raw_tilt = standalone.calculate_raw_percentage()
+        # Guard the fixture itself: a whole number (or the negative-discriminant
+        # 0.0) would make every rounding direction agree and the test inert.
+        assert raw_tilt == pytest.approx(59.374719, abs=1e-5)
+        assert raw_tilt % 1 != 0
+
         result = calc.calculate_dual()
 
-        # Tilt percentage may be NaN (invalid geometry) — check both paths
-        try:
-            raw_tilt = standalone.calculate_raw_percentage()
-            if math.isnan(raw_tilt):
-                expected_tilt = 0
-            else:
-                expected_tilt = math.floor(raw_tilt)
-        except (ValueError, ZeroDivisionError):
-            expected_tilt = config.h_def
-
-        assert result.tilt == expected_tilt
+        # 59.3747 % of 180° is 106.87°, ABOVE horizontal, so the conservative
+        # direction is up: floor() would walk the slats back toward 90° (open).
+        assert result.tilt == math.ceil(raw_tilt) == 60
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_compute_tilt_floors_fractional_raw_percentage(self, mock_datetime):
-        """A fractional raw tilt rounds DOWN, not to nearest (issue #1090).
+        """A fractional below-horizontal raw tilt rounds DOWN (issue #1090).
 
         Mirrors ``TestTiltRawPercentage``'s mode1 fixture in
         ``test_conservative_rounding.py`` (41° in a 0-90° range -> 45.5556%):
-        ``round()`` would give 46, but ``TILT_AXIS.open_blocks_sun=False``
-        means 0% is full coverage, so the conservative/safe direction is to
-        round down. Before the #1090 fix, ``_compute_tilt`` called
-        ``calculate_percentage()`` + ``round()`` and returned 46 here; the
-        fix calls ``calculate_raw_percentage()`` + ``math.floor()`` and must
-        return 45.
+        ``round()`` would give 46, but the slat angle is below horizontal, so
+        the conservative/safe direction is to round down toward closed.
+
+        Before the #1090 fix, ``_compute_tilt`` called ``calculate_percentage()``
+        + ``round()`` — it never consulted ``calculate_raw_percentage`` at all,
+        so this mock was inert and the real MODE1 geometry (a negative
+        discriminant here) returned 0.
         """
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         calc = _make_venetian(sol_azi=180.0, sol_elev=45.0)
@@ -205,7 +213,6 @@ class TestVenetianCoverCalculation:
         result = calc.calculate_dual()
 
         assert result.tilt == 45
-        assert result.tilt != 46
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun_valid_delegation(self, mock_datetime):
@@ -292,7 +299,14 @@ class TestVenetianTiltSafetyMargin:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_safety_margin_delegates_to_tilt_engine(self, mock_datetime):
-        """Dual-path tilt equals the standalone tilt engine with the same margin."""
+        """Dual-path tilt equals the standalone tilt engine with the same margin.
+
+        Runs in the shipped MODE2 so the margin-adjusted raw (45.5458 %) has a
+        fraction above a half: ``round()`` would give 46 and only ``floor()``
+        gives 45. Under the old MODE1 fixture the raw was 91.0916 %, where
+        floor, round and the pre-#978 behaviour all agreed on 91 — the
+        assertion could not see a rounding direction at all.
+        """
         from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
 
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -302,7 +316,7 @@ class TestVenetianTiltSafetyMargin:
         vert_config = make_vertical_config()
         # Extreme geometry (low elev, high gamma) so the margin actually bites.
         tilt_config = make_tilt_config(
-            slat_distance=0.02, depth=0.03, mode="mode1", safety_margin=0.5
+            slat_distance=0.02, depth=0.03, mode="mode2", safety_margin=0.5
         )
         sol_azi, sol_elev = 255.0, 8.0
 
@@ -323,9 +337,11 @@ class TestVenetianTiltSafetyMargin:
             config=config,
             tilt_config=tilt_config,
         )
-        assert calc.calculate_dual().tilt == math.floor(
-            standalone.calculate_raw_percentage()
-        )
+        raw = standalone.calculate_raw_percentage()
+        # 81.98° is below horizontal, so the conservative direction is down.
+        assert raw == pytest.approx(45.545797, abs=1e-5)
+        assert round(raw) == 46, "fixture must distinguish floor() from round()"
+        assert calc.calculate_dual().tilt == math.floor(raw) == 45
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_safety_margin_respects_max_tilt_clamp(self, mock_datetime):
@@ -364,6 +380,126 @@ class TestVenetianTiltSafetyMargin:
             uncapped_tilt > cap
         ), f"test setup: margin-adjusted tilt {uncapped_tilt} must exceed cap {cap}"
         assert capped.calculate_dual().tilt == cap
+
+
+class TestVenetianMode2DirectionalRounding:
+    """MODE2 dual-axis tilt quantises away from horizontal (issue #1090).
+
+    MODE2 is the shipped venetian default (``CONF_TILT_MODE`` default
+    ``"mode2"``, reached through ``geometry_venetian_schema`` →
+    ``geometry_tilt_schema``). On that scale 50 % is the horizontal slat —
+    maximum openness — so a blanket ``floor()`` walks any above-horizontal
+    solve back toward open and leaks the sliver of direct sun the conservative
+    rounding exists to block.
+
+    Uses the shipped slat geometry (2 cm spacing over a 3 cm chord) and a real
+    solve, not a mocked scalar, so the fixture pins the direction against the
+    actual engine output rather than an assumed one.
+    """
+
+    def _mode2(self, sol_elev: float) -> VenetianCoverCalculation:
+        return VenetianCoverCalculation(
+            config=make_cover_config(win_azi=180),
+            vert_config=make_vertical_config(),
+            tilt_config=make_tilt_config(slat_distance=0.02, depth=0.03, mode="mode2"),
+            sun_data=_make_sun_data(),
+            sol_azi=180.0,
+            sol_elev=sol_elev,
+            logger=_make_logger(),
+        )
+
+    @pytest.mark.parametrize(
+        ("sol_elev", "raw", "expected"),
+        [
+            # below horizontal — closing means a smaller angle → floor
+            (10.0, 32.757550, 32),  # 58.96°
+            (30.0, 47.075339, 47),  # 84.74°
+            # above horizontal — closing means a larger angle → ceil
+            (35.0, 51.055578, 52),  # 91.90°
+            (45.0, 59.374719, 60),  # 106.87°
+            (85.0, 95.371678, 96),  # 171.67°
+        ],
+    )
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_quantises_away_from_horizontal(
+        self, mock_datetime, sol_elev, raw, expected
+    ):
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = self._mode2(sol_elev)
+        assert calc._tilt.calculate_raw_percentage() == pytest.approx(raw, abs=1e-5)
+        assert calc.calculate_dual().tilt == expected
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_floor_at_the_boundary_would_command_exactly_horizontal(
+        self, mock_datetime
+    ):
+        """At 34.4° elevation floor(50.57 %) is 50 % — precisely 90.00°.
+
+        Above roughly this elevation the solve stays past horizontal for the
+        rest of the tracking day, so ``floor()`` is the leaking direction for
+        every remaining update, starting from the worst possible case: the
+        maximum-openness slat commanded as the "conservative" choice.
+        """
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = self._mode2(34.4)
+
+        raw = calc._tilt.calculate_raw_percentage()
+        assert raw == pytest.approx(50.570998, abs=1e-5)
+        assert math.floor(raw) / 100.0 * 180.0 == pytest.approx(90.0)
+
+        assert calc.calculate_dual().tilt == 51
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_tilt_for_position_shares_the_direction(self, mock_datetime):
+        """``tilt_for_position`` routes through the same ``_compute_tilt`` seam."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        calc = self._mode2(45.0)
+        assert calc.tilt_for_position(50) == calc.calculate_dual().tilt == 60
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_rounding_up_still_lands_inside_the_tilt_band(self, mock_datetime):
+        """``_clamp_tilt`` runs after the rounding, so the band still governs.
+
+        The 45° solve raw is 59.3747 %, so the conservative direction now hands
+        ``_clamp_tilt`` a 60 where it used to get a 59. Both the flat clamp and
+        the proportional remap are monotonic, so the band edge is the ceiling
+        either way — the up-rounding cannot escape ``max_tilt`` and cannot skip
+        past ``min_tilt``. ``max_tilt=60`` is the interesting case: the ceil
+        result sits exactly ON the cap.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_TILT_TRANSFORM_PROPORTIONAL,
+        )
+
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+
+        def _banded(**tilt_overrides):
+            return VenetianCoverCalculation(
+                config=make_cover_config(win_azi=180),
+                vert_config=make_vertical_config(),
+                tilt_config=make_tilt_config(
+                    slat_distance=0.02, depth=0.03, mode="mode2", **tilt_overrides
+                ),
+                sun_data=_make_sun_data(),
+                sol_azi=180.0,
+                sol_elev=45.0,
+                logger=_make_logger(),
+            )
+
+        # Exactly on the cap — the ceil lands on the band edge, not past it.
+        assert _banded(max_tilt=60).calculate_dual().tilt == 60
+        # Below the cap — the clamp still bites (floor would have given 55 too).
+        assert _banded(max_tilt=55).calculate_dual().tilt == 55
+        # Above the floor — min_tilt still lifts it.
+        assert _banded(min_tilt=70).calculate_dual().tilt == 70
+        # Proportional remap of the ceil'd 60 onto [0,40] → 24 (floor'd 59 → 24
+        # as well; the transform absorbs the one-percent difference here).
+        assert (
+            _banded(max_tilt=40, tilt_transform=VENETIAN_TILT_TRANSFORM_PROPORTIONAL)
+            .calculate_dual()
+            .tilt
+            == 24
+        )
 
 
 class TestMaxTiltCap:
