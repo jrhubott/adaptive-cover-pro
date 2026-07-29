@@ -1474,6 +1474,68 @@ class TestVenetianForecastSecondaryAxes:
         assert policy.forecast_secondary_axes(**kw)["tilt"] == expected
         assert abs(expected - 50) >= abs(30 - 50)
 
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize("transform", ["clamp", "proportional"])
+    @pytest.mark.parametrize(
+        ("min_tilt", "max_tilt"), [(0, 100), (0, 55), (0, 60), (45, 100), (25, 75)]
+    )
+    @pytest.mark.parametrize("sol_elev", [21.0, 27.0, 34.4, 45.0, 68.0, 88.0])
+    def test_forecast_tilt_quantize_stays_inside_the_band(
+        self, sol_elev, min_tilt, max_tilt, transform, n_steps
+    ):
+        """The second quantiser call site keeps ``[min_tilt, max_tilt]`` (#1104).
+
+        ``VenetianCoverCalculation._clamp_tilt`` bands the engine tilt, and then
+        ``_compose_tilt`` quantises it — with nothing after. Levels measured
+        against the whole 0–100 scale put the top one at the far end of the
+        scale, so every above-pivot demand was commanded past the user's cap on
+        this path exactly as it was on the tilt-only one.
+        """
+        from tests.cover_helpers import make_tilt_config
+
+        policy = VenetianPolicy()
+        tilt_config = make_tilt_config(
+            slat_distance=0.02,
+            depth=0.03,
+            mode="mode2",
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+            tilt_transform=transform,
+        )
+        kw = self._kwargs(
+            sol_elev=sol_elev, minimize_movements=True, max_coverage_steps=n_steps
+        )
+        kw["config_service"].get_tilt_data.return_value = tilt_config
+        tilt = policy.forecast_secondary_axes(**kw)[policy.axes[1].name]
+        assert min_tilt <= tilt <= max_tilt
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [(1, 60), (2, 55), (3, 53)],
+    )
+    def test_forecast_tilt_levels_spread_across_the_band(self, n_steps, expected):
+        """Same ladder as the tilt-only path, through the venetian seam.
+
+        Both call sites ask their engine for the reachable travel and hand it to
+        the one quantiser, so a ``max_tilt`` of 60 gives the same three levels
+        here that ``TestTiltOnlyBandSurvivesTheQuantisation`` pins.
+        """
+        from tests.cover_helpers import make_tilt_config
+
+        policy = VenetianPolicy()
+        tilt_config = make_tilt_config(
+            slat_distance=0.02, depth=0.03, mode="mode2", min_tilt=0, max_tilt=60
+        )
+        unquantised = self._kwargs(sol_elev=34.4)
+        unquantised["config_service"].get_tilt_data.return_value = tilt_config
+        assert policy.forecast_secondary_axes(**unquantised)["tilt"] == 51
+
+        kw = self._kwargs(
+            sol_elev=34.4, minimize_movements=True, max_coverage_steps=n_steps
+        )
+        kw["config_service"].get_tilt_data.return_value = tilt_config
+        assert policy.forecast_secondary_axes(**kw)["tilt"] == expected
+
     def test_compose_tilt_matches_post_pipeline_resolve(self):
         """The forecast tilt equals what post_pipeline_resolve puts on result.tilt.
 

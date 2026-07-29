@@ -184,11 +184,19 @@ def solar_position_from_geometry(
         # on instead of being scaled against the far end of the travel, which
         # would snap the slats back toward horizontal and undo the away-from-
         # horizontal rounding above (issues #1090, #1104).
+        #
+        # The engine also says how far that side actually goes. This quantiser
+        # is the LAST thing to touch a tilt axis — ``apply_config_limits`` below
+        # carries ``min_pos``/``max_pos``, not ``[min_tilt, max_tilt]`` — so
+        # levels scaled to the end of the SCALE rather than to the end of the
+        # BAND would command straight past the user's own cap, one step after
+        # ``round_toward_coverage`` re-banded to stay inside it.
         state = PositionConverter.quantize_to_coverage_steps(
             state,
             max_coverage_steps,
             full_coverage_at_zero=full_coverage_at_zero,
             pivot=cover.coverage_pivot_percentage(),
+            bounds=cover.coverage_travel_bounds(),
         )
     state = solar_floor(state, floor_active=floor_active)
     return apply_config_limits(state, config, sun_valid=True)

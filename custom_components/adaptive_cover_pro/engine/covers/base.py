@@ -387,3 +387,25 @@ class AdaptiveGeneralCover(ABC):
         the pipeline and ``position_utils`` layers that consume the answer.
         """
         return None
+
+    def coverage_travel_bounds(self) -> tuple[float, float]:
+        """Lowest and highest percentage this axis can be COMMANDED to (#1104).
+
+        The companion of :meth:`coverage_pivot_percentage` for the one consumer
+        that anchors arithmetic on the pivot rather than merely ordering by it:
+        ``PositionConverter.quantize_to_coverage_steps`` spans its coverage
+        levels from the pivot outward, and the far end of that span has to be
+        the most-covering position the axis can actually reach.
+
+        The base answer is the whole travel, which makes the bound a no-op —
+        correct for every engine whose own configuration cannot narrow the
+        percentage range it emits. :class:`~.tilt.AdaptiveTiltCover` overrides
+        it, because ``[min_tilt, max_tilt]`` narrows exactly that, and the
+        quantiser runs after the last seam that applies the band.
+
+        Note this is deliberately NOT the position axis's ``min_pos``/``max_pos``:
+        those are applied by ``pipeline.helpers.apply_config_limits`` AFTER the
+        quantiser, so that band clamps the command itself and needs no help from
+        the level arithmetic to hold.
+        """
+        return (0.0, 100.0)

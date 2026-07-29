@@ -913,6 +913,12 @@ class TestProportionalBandKeepsTheCommandSpacePivot:
         commanded = _tilt_solar_position_minimized(cover, n_steps)
         pivot = cover.coverage_pivot_percentage()
         assert abs(commanded - pivot) >= abs(state - pivot)
+        # Gaining coverage is not a licence to leave the band. Distance from the
+        # pivot alone cannot see that: the far end of the travel is always
+        # farther than the band edge, so "more protective" and "past max_tilt"
+        # are the same move whenever the levels are scaled to the whole scale
+        # instead of to what the user actually allows.
+        assert min_tilt <= commanded <= max_tilt
 
 
 class TestTiltOnlyBandSurvivesTheQuantisation:
@@ -930,6 +936,12 @@ class TestTiltOnlyBandSurvivesTheQuantisation:
     Venetian never had either problem — its ``_clamp_tilt`` runs after the
     rounding — so the guard belongs on the integer this engine hands out rather
     than mirrored at each call site.
+
+    The opt-in coverage-step quantiser runs after BOTH of those band owners and
+    is the last thing on the axis, so the same invariant has to survive it (the
+    #1104 audit). It does not get there by being clamped a third time: it takes
+    the reachable travel and lays its levels inside it, so an in-band demand
+    cannot produce an out-of-band command in the first place.
     """
 
     def test_raw_percentage_can_sit_just_past_the_cap(self):
@@ -1002,6 +1014,76 @@ class TestTiltOnlyBandSurvivesTheQuantisation:
             tilt_transform=transform,
         )
         assert min_tilt <= _tilt_solar_position(cover) <= max_tilt
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 3])
+    @pytest.mark.parametrize(
+        "transform",
+        [VENETIAN_TILT_TRANSFORM_CLAMP, VENETIAN_TILT_TRANSFORM_PROPORTIONAL],
+    )
+    @pytest.mark.parametrize(
+        ("min_tilt", "max_tilt"), [(0, 100), (0, 55), (0, 60), (45, 100), (45, 55)]
+    )
+    @pytest.mark.parametrize(
+        "sol_elev", [5.0, 21.0, 27.0, 34.4, 39.81, 45.0, 68.0, 88.0]
+    )
+    def test_minimised_tilt_also_lands_inside_the_band(
+        self, sol_elev, min_tilt, max_tilt, transform, n_steps
+    ):
+        """The same invariant one step later, with ``minimize_movements`` on.
+
+        The coverage-step quantiser is the LAST thing to touch the tilt axis —
+        ``apply_config_limits`` after it carries ``min_pos``/``max_pos``, not the
+        tilt band — so whatever it hands back is what the slats are commanded
+        to. Its levels therefore have to be measured against the travel the user
+        actually allows; scaled to the full 0–100 scale instead, the top level
+        IS the far end of the scale and every above-pivot demand leaves the band.
+        """
+        cover = _tilt_cover(
+            sol_elev=sol_elev,
+            min_tilt=min_tilt,
+            max_tilt=max_tilt,
+            tilt_transform=transform,
+        )
+        assert min_tilt <= _tilt_solar_position_minimized(cover, n_steps) <= max_tilt
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [
+            # 51 % is 1 of the 10 points between the pivot and ``max_tilt`` —
+            # a tenth of the coverage this cover can reach on that side. One
+            # level rounds it to the cap; two put it on the half-step at 55 %;
+            # three on the first third at 53 %.
+            (1, 60),
+            (2, 55),
+            (3, 53),
+        ],
+    )
+    def test_minimisation_levels_spread_across_the_band(self, n_steps, expected):
+        """Movement minimisation keeps N distinct levels inside a capped band.
+
+        This is what a band-aware quantiser buys over clamping its output back
+        onto ``max_tilt`` afterwards: a post-hoc clamp answers 60 for all three
+        step counts, because 100 / 75 / 67 all sit above the cap. The levels a
+        user asked for would exist only on paper.
+        """
+        cover = _tilt_cover(sol_elev=34.4, max_tilt=60)
+        assert _tilt_solar_position(cover) == 51
+        assert _tilt_solar_position_minimized(cover, n_steps) == expected
+
+    @pytest.mark.parametrize(
+        ("n_steps", "expected"),
+        [(1, 0), (2, 25), (3, 33)],
+    )
+    def test_a_band_edge_on_the_travel_end_is_the_travel(self, n_steps, expected):
+        """Below the pivot the same band's edge IS 0 %, so nothing moves.
+
+        The 44 % command sits 6 of the 50 points below horizontal, and
+        ``min_tilt`` is 0, so the lower side spans the full half-scale exactly as
+        it did before the band entered the arithmetic.
+        """
+        cover = _tilt_cover(sol_elev=27.0, max_tilt=60)
+        assert _tilt_solar_position(cover) == 44
+        assert _tilt_solar_position_minimized(cover, n_steps) == expected
 
     def test_default_band_is_untouched(self):
         """0/100 is a no-op — the guard must not perturb the shipped default."""

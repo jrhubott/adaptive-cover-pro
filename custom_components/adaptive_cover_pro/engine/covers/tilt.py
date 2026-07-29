@@ -487,6 +487,38 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         return self._horizontal_percentage()
 
+    def coverage_travel_bounds(self) -> tuple[float, float]:
+        """Report ``[min_tilt, max_tilt]`` as the reachable travel (#1104).
+
+        Derived by asking :meth:`_limit_tilt` — the sole owner of the band
+        argument bundle — what it does to the two ends of the scale, rather than
+        by reading ``tilt_config.min_tilt``/``max_tilt`` a second time here. The
+        band is not just those two numbers: the ``*_sun_only`` toggles and the
+        degenerate/reversed-band fallback are part of it, and a reversed band
+        pins BOTH ends to ``min_tilt``, which this probe reports as a zero-width
+        travel — exactly what the axis does there. A hand-rolled tuple would be
+        a band that only happens to match, and would drift the first time that
+        seam learns a new rule.
+
+        The probe is transform-independent by construction: the proportional
+        remap sends 0 → ``min_tilt`` and 100 → ``max_tilt``, the same two values
+        the flat clamp does, so this asks for the clamp and gets the band edges
+        under either setting.
+
+        Deliberately NOT gated on ``apply_tilt_axis_limits``. That flag answers
+        "does this engine apply the band itself?", and both answers still end in
+        a banded tilt: the tilt-only path bands it in
+        :meth:`round_toward_coverage`, and venetian — which clears the flag —
+        bands it in ``VenetianCoverCalculation._clamp_tilt``. The coverage-step
+        quantiser runs after both, so both need the same travel.
+
+        Inherited unchanged by :class:`~.louvered_roof.AdaptiveLouveredRoofCover`.
+        """
+        return (
+            float(self._limit_tilt(0, transform=VENETIAN_TILT_TRANSFORM_CLAMP)),
+            float(self._limit_tilt(100, transform=VENETIAN_TILT_TRANSFORM_CLAMP)),
+        )
+
     def round_toward_coverage(self, pct: float, *, full_coverage_at_zero: bool) -> int:
         """Quantise the slat percentage AWAY from horizontal (issue #1090).
 

@@ -247,6 +247,114 @@ def test_negative_pivot_does_not_invert_the_single_level():
 
 
 # ---------------------------------------------------------------------------
+# Reachable travel (issue #1104 audit) — the ladder spans the band, not the scale
+# ---------------------------------------------------------------------------
+# A tilt axis carries its own ``[min_tilt, max_tilt]`` band, applied BEFORE this
+# quantiser and by nothing after it. Anchoring the levels on the pivot and
+# spanning them to the far end of the 0–100 scale therefore makes the top level
+# unreachable-by-configuration: on a ``max_tilt`` of 60 the single level above a
+# 50 % pivot is 100 %, forty points past the cap the user set.
+
+_BANDED_LADDER = [
+    # 51 % is 1 of the 10 points between the pivot and a 60 % cap: a tenth of
+    # the coverage available on that side, not a fiftieth of the scale.
+    (51, 1, 60),
+    (51, 2, 55),
+    (51, 3, 53),
+    # A demand already at the cap is the top level at every step count.
+    (60, 1, 60),
+    (60, 3, 60),
+    # Below the pivot this band's edge IS the end of the travel, so the lower
+    # side is unchanged by the bounds.
+    (40, 1, 0),
+    (40, 2, 25),
+]
+
+
+@pytest.mark.parametrize(("percentage", "n", "expected"), _BANDED_LADDER)
+def test_bounded_levels_span_the_band(percentage, n, expected):
+    assert (
+        quantize(
+            percentage, n, full_coverage_at_zero=True, pivot=50.0, bounds=(0.0, 60.0)
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("lo", "hi"), [(0, 100), (0, 60), (0, 55), (45, 100), (45, 55), (20, 60), (25, 75)]
+)
+@pytest.mark.parametrize("n", range(1, 11))
+def test_bounded_result_never_leaves_the_band(lo, hi, n):
+    """An in-band demand can only become an in-band command, and never opens up."""
+    for percentage in range(lo, hi + 1):
+        result = quantize(
+            percentage,
+            n,
+            full_coverage_at_zero=True,
+            pivot=50.0,
+            bounds=(float(lo), float(hi)),
+        )
+        assert lo <= result <= hi
+        assert abs(result - 50.0) >= abs(percentage - 50.0)
+
+
+@pytest.mark.parametrize("full_coverage_at_zero", [True, False])
+def test_the_whole_travel_is_the_default_bound(full_coverage_at_zero):
+    """Stating the full travel explicitly must be indistinguishable from silence.
+
+    Every caller without a band — and every axis whose band is the default
+    0/100 — has to keep the behaviour issue #1104 shipped, so the bounds are an
+    added constraint on the ladder, never a reshaping of it.
+    """
+    for percentage in range(0, 101):
+        for n in range(1, 11):
+            assert quantize(
+                percentage, n, full_coverage_at_zero, pivot=50.0, bounds=(0.0, 100.0)
+            ) == quantize(percentage, n, full_coverage_at_zero, pivot=50.0)
+
+
+@pytest.mark.parametrize("pivot", [None, *_OFF_TRAVEL_PIVOTS])
+@pytest.mark.parametrize("full_coverage_at_zero", [True, False])
+def test_bounds_are_ignored_without_an_anchorable_pivot(pivot, full_coverage_at_zero):
+    """No pivot, no ladder to constrain — the monotonic path is bit-identical.
+
+    The band matters here only because the levels are ANCHORED on the pivot.
+    Where they are not — a monotonic axis, or one whose pivot the travel never
+    reaches — the boolean path answers, exactly as it did before bounds existed.
+    Swept past both ends of the travel and past both ends of the step range so
+    the ``n_steps < 1`` short-circuit is included.
+    """
+    for percentage in range(-5, 106):
+        for n in range(0, 12):
+            assert quantize(
+                percentage, n, full_coverage_at_zero, pivot=pivot, bounds=(45.0, 55.0)
+            ) == quantize(percentage, n, full_coverage_at_zero)
+
+
+def test_a_band_pinned_to_one_point_has_nothing_to_quantize_into():
+    """``min_tilt == max_tilt`` leaves the side zero-width; the demand stands."""
+    assert (
+        quantize(70, 3, full_coverage_at_zero=True, pivot=50.0, bounds=(70.0, 70.0))
+        == 70
+    )
+
+
+def test_a_demand_already_past_the_band_is_not_opened_up():
+    """Defensive: the quantiser adds coverage or nothing, never subtracts it.
+
+    Both call sites band the value before handing it over, so this is not a
+    reachable state — but "never reduce coverage" is the quantiser's whole
+    contract, and it must not become conditional on the caller getting the
+    ordering right.
+    """
+    assert (
+        quantize(80, 1, full_coverage_at_zero=True, pivot=50.0, bounds=(0.0, 60.0))
+        == 80
+    )
+
+
+# ---------------------------------------------------------------------------
 # Live path — compute_solar_position applies quantization on the solar branch
 # ---------------------------------------------------------------------------
 

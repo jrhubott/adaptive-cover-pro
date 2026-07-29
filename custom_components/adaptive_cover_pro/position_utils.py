@@ -119,6 +119,7 @@ class PositionConverter:
         full_coverage_at_zero: bool,
         *,
         pivot: float | None = None,
+        bounds: tuple[float, float] = (0.0, 100.0),
     ) -> int:
         """Snap an engine-orientation percentage to one of N coverage levels.
 
@@ -149,6 +150,27 @@ class PositionConverter:
         A pivot of 100.0 (with ``full_coverage_at_zero``) or 0.0 (without) is the
         monotonic case restated, and reduces to the ``None`` branch exactly.
 
+        *bounds* is how far the axis can actually be driven. The levels are
+        ANCHORED on the pivot, so what they are spanned TO decides where the
+        top one lands — and that has to be the most-covering position the axis
+        can reach, not the end of the percentage scale. A tilt axis carries its
+        own ``[min_tilt, max_tilt]`` band, applied by the engine BEFORE this
+        function and by nothing after it, so levels spanned to 100 % put the top
+        one past the user's own cap: a ``max_tilt`` of 60 with the shipped
+        single step commanded 100 % for every above-pivot solve. Spanning them to
+        the band edge instead makes an out-of-band command unreachable by
+        construction — the result never passes the far edge, and never falls back
+        past the input — while keeping ``n_steps`` distinct levels inside the
+        band. Clamping this function's output afterwards would also stop the
+        escape, but it collapses 100 / 75 / 67 onto a single 60 and quietly
+        empties out the setting the user changed.
+
+        The bound only bites on the pivot branch, because only that branch
+        anchors on a point and spans outward. The monotonic branch already
+        spans END to END, so the covering end is its own limit and the axis flag
+        is the whole story — leaving the ``pivot is None`` and off-travel paths
+        bit-identical, band or no band.
+
         The off-travel guard is here rather than on the engine hook that
         supplies the pivot, because this is the only consumer that needs the
         pivot to be REACHABLE. ``round_toward_coverage`` and
@@ -176,6 +198,10 @@ class PositionConverter:
                 ``coverage_pivot_percentage()`` hook. ``None`` (the default) for
                 every monotonic axis, which is every caller that does not hold a
                 bi-directional engine.
+            bounds: ``(lowest, highest)`` percentage the axis can be commanded
+                to, from the engine's ``coverage_travel_bounds()`` hook. Defaults
+                to the full travel, which is a no-op. Ignored unless the pivot is
+                anchorable.
 
         Returns:
             The quantized position (0–100) in the same engine orientation.
@@ -195,19 +221,33 @@ class PositionConverter:
                 return round(100 - coverage_pct)
             return round(coverage_pct)
         # Bi-directional axis: measure the demand as a fraction of the side the
-        # input sits on, and give it back on that same side.
+        # input sits on, and give it back on that same side. The side runs from
+        # the pivot to the far end of the reachable travel — the most-covering
+        # position this axis has on that side, which the band may have moved in
+        # from the end of the scale.
+        # The ``max``/``min`` widen the side back out for an input that already
+        # sits past the far edge. Neither call site can produce one (both band
+        # before they quantize), but "never reduce coverage" is this function's
+        # contract and must not become conditional on the caller having banded
+        # first.
+        low, high = bounds
         if percentage > pivot:
-            span = 100.0 - pivot
+            far = max(high, float(percentage))
             side_sign = 1.0
         else:
-            span = float(pivot)
+            far = min(low, float(percentage))
             side_sign = -1.0
+        span = abs(far - pivot)
         if span <= 0:
-            # The input sits on a boundary pivot, so its side has no width to
-            # quantize into — there is exactly one reachable position on it.
+            # The input sits on a boundary pivot, or on a band pinned to a single
+            # point, so its side has no width to quantize into — there is exactly
+            # one reachable position on it.
             return percentage
         coverage = abs(percentage - pivot) / span
         level = min(math.ceil(coverage * n_steps) / n_steps, 1.0)
+        # ``level * span >= |percentage - pivot|`` by construction and
+        # ``level <= 1``, so the answer sits between the input and the far edge:
+        # never less covering than the demand, never outside the band.
         return round(pivot + side_sign * level * span)
 
     @staticmethod
