@@ -1371,6 +1371,32 @@ class TestVenetianForecastSecondaryAxes:
         # N=1 with full-coverage-at-zero → slats fully closed (tilt 0).
         assert result["tilt"] == 0
 
+    def test_forecast_tilt_quantize_respects_mode2_pivot(self, monkeypatch):
+        """The venetian quantise call site honours the bi-directional pivot (#1104).
+
+        Same defect, same fix, second call site: on MODE2 the tilt axis has its
+        coverage-zero point at the horizontal slat (50 %), so a 70 % demand is
+        20 points of coverage above the pivot. Two levels per side round that up
+        to 50 % + 0.5 × 50 = 75 %. Scaling it against a 100 % coverage-zero end
+        instead lands on 50 % — the fully-open slat.
+        """
+        from tests.cover_helpers import make_tilt_config
+
+        from custom_components.adaptive_cover_pro.engine.covers import (
+            VenetianCoverCalculation,
+        )
+
+        monkeypatch.setattr(
+            VenetianCoverCalculation,
+            "tilt_for_position",
+            lambda self, position: 70,
+        )
+        policy = VenetianPolicy()
+        kw = self._kwargs(minimize_movements=True, max_coverage_steps=2)
+        kw["config_service"].get_tilt_data.return_value = make_tilt_config(mode="mode2")
+        result = policy.forecast_secondary_axes(**kw)
+        assert result["tilt"] == 75
+
     def test_compose_tilt_matches_post_pipeline_resolve(self):
         """The forecast tilt equals what post_pipeline_resolve puts on result.tilt.
 

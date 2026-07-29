@@ -901,7 +901,9 @@ class CoverTypePolicy(ABC):
             return POSITION_CLOSED
         return self.position_for_intent(sun_through=False)
 
-    def more_protective_position(self, a: int, b: int) -> int:
+    def more_protective_position(
+        self, a: int, b: int, *, cover: AdaptiveGeneralCover | None = None
+    ) -> int:
         """Return whichever of two primary-axis positions blocks more sun.
 
         Polymorphic over cover type via ``axes[0].open_blocks_sun``:
@@ -914,7 +916,35 @@ class CoverTypePolicy(ABC):
         every valid future-window sample through this comparator so the
         commanded position protects against the most-shaded moment in the
         upcoming throttle interval.
+
+        That axis-level answer is the whole story only where coverage is
+        MONOTONIC in the percentage — the same assumption
+        ``round_toward_coverage`` had to give up (issue #1090). A bi-directional
+        slat closes at BOTH ends and is most open mid-travel, so ``min`` picks
+        the LESS protective of two positions above the pivot: on MODE2, 55 % is
+        99° (9° off horizontal) and 60 % is 108° (18° off) — ``min`` commands the
+        one that lets more sun through. Passing *cover* lets the comparator ask
+        the engine where coverage bottoms out and rank by DISTANCE from it
+        instead (issue #1104).
+
+        Percentage distance is the right metric because the percentage↔angle map
+        is globally linear on every scale this hook sees (MODE1, MODE2, the
+        louvered roof's ``max_slat_angle``, and the affine ``specify_angles``
+        calibration), so ``|pct − pivot_pct|`` is proportional to
+        ``|angle − 90°|`` on both sides at once — no per-side scaling needed.
+
+        *cover* is keyword-only and defaults to ``None`` so callers with no
+        engine in scope, and every monotonic axis, keep the exact behaviour they
+        had. Equal distances fall through to the axis rule rather than being
+        decided here, which keeps the symmetric straddle (``30``/``70`` on MODE2,
+        both 36° off horizontal) answering ``30`` as it always has.
         """
+        if cover is not None:
+            pivot = cover.coverage_pivot_percentage()
+            if pivot is not None:
+                distance_a, distance_b = abs(a - pivot), abs(b - pivot)
+                if distance_a != distance_b:
+                    return a if distance_a > distance_b else b
         if self.axes[0].open_blocks_sun:
             return max(a, b)
         return min(a, b)

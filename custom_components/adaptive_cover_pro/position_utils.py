@@ -117,23 +117,47 @@ class PositionConverter:
         percentage: int,
         n_steps: int,
         full_coverage_at_zero: bool,
+        *,
+        pivot: float | None = None,
     ) -> int:
         """Snap an engine-orientation percentage to one of N coverage levels.
 
         Rounds **toward full coverage** so sun protection is never reduced by the
-        quantization. The 0–100 range is divided into ``n_steps`` evenly-spaced
+        quantization. The travel is divided into ``n_steps`` evenly-spaced
         coverage levels; the calculated coverage is rounded *up* to the next
         level. With ``n_steps == 1`` any non-zero coverage demand snaps straight
         to full coverage, which is what the "minimize movements" feature wants.
 
+        Where the coverage is measured FROM depends on the axis (issue #1104):
+
+        * ``pivot is None`` — coverage is monotonic in the percentage, so the
+          axis has exactly one coverage-zero end and ``full_coverage_at_zero``
+          names it. The whole 0–100 range is one scale.
+        * ``pivot`` given — the axis is bi-directional (a MODE2 slat: 0° closed
+          downward, 90° horizontal, 180° closed upward), so coverage bottoms out
+          mid-travel and grows toward BOTH ends. Each side of the pivot gets its
+          own ``n_steps`` levels, spanning that side only, and the result stays
+          on the input's side. Two sides of a slat are physically distinct
+          orientations, not a coarser version of one shared scale — collapsing
+          them would command a sweep through the fully-open horizontal to reach
+          "more coverage", the wasted movement this feature exists to avoid.
+
+        A pivot of 100.0 (with ``full_coverage_at_zero``) or 0.0 (without) is the
+        monotonic case restated, and reduces to the ``None`` branch exactly.
+
         Args:
             percentage: Engine-orientation position (0–100) from
                 ``calculate_percentage()``.
-            n_steps: Number of discrete coverage levels (>= 1).
+            n_steps: Number of discrete coverage levels per side (>= 1).
             full_coverage_at_zero: True when 0% means maximum sun blocking
                 (vertical blind, tilt, venetian); False when 100% means maximum
                 blocking (awning — open/extended blocks the sun). Derived from the
-                policy's primary ``CoverAxis.open_blocks_sun`` flag.
+                policy's primary ``CoverAxis.open_blocks_sun`` flag. Ignored when
+                *pivot* is given, which states the same thing more precisely.
+            pivot: Percentage carrying zero coverage, from the engine's
+                ``coverage_pivot_percentage()`` hook. ``None`` (the default) for
+                every monotonic axis, which is every caller that does not hold a
+                bi-directional engine.
 
         Returns:
             The quantized position (0–100) in the same engine orientation.
@@ -141,16 +165,32 @@ class PositionConverter:
         """
         if n_steps < 1:
             return percentage
-        # Coverage fraction: 1.0 = full coverage, 0.0 = fully open / no blocking.
-        coverage = (
-            (100 - percentage) / 100 if full_coverage_at_zero else percentage / 100
-        )
-        # ceil → round toward more coverage; clamp guards float drift past 1.0.
+        if pivot is None:
+            # Coverage fraction: 1.0 = full coverage, 0.0 = fully open.
+            coverage = (
+                (100 - percentage) / 100 if full_coverage_at_zero else percentage / 100
+            )
+            # ceil → round toward more coverage; clamp guards float drift past 1.0.
+            level = min(math.ceil(coverage * n_steps) / n_steps, 1.0)
+            coverage_pct = level * 100
+            if full_coverage_at_zero:
+                return round(100 - coverage_pct)
+            return round(coverage_pct)
+        # Bi-directional axis: measure the demand as a fraction of the side the
+        # input sits on, and give it back on that same side.
+        if percentage > pivot:
+            span = 100.0 - pivot
+            side_sign = 1.0
+        else:
+            span = float(pivot)
+            side_sign = -1.0
+        if span <= 0:
+            # The input sits on a boundary pivot, so its side has no width to
+            # quantize into — there is exactly one reachable position on it.
+            return percentage
+        coverage = abs(percentage - pivot) / span
         level = min(math.ceil(coverage * n_steps) / n_steps, 1.0)
-        coverage_pct = level * 100
-        if full_coverage_at_zero:
-            return round(100 - coverage_pct)
-        return round(coverage_pct)
+        return round(pivot + side_sign * level * span)
 
     @staticmethod
     def apply_limits(

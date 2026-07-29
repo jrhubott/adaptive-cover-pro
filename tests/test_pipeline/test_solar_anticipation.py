@@ -22,6 +22,7 @@ from custom_components.adaptive_cover_pro.const import (
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     anticipated_solar_position,
+    anticipated_solar_position_from_geometry,
     compute_solar_position,
 )
 from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
@@ -30,7 +31,11 @@ from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
 from custom_components.adaptive_cover_pro.state.climate_provider import (
     ClimateProvider,
 )
-from tests.cover_helpers import build_horizontal_cover, build_vertical_cover
+from tests.cover_helpers import (
+    build_horizontal_cover,
+    build_tilt_cover,
+    build_vertical_cover,
+)
 
 # A fixed reference day so all timestamps are deterministic.
 _DAY = datetime(2024, 6, 21, tzinfo=UTC)
@@ -119,6 +124,41 @@ def _horizontal_cover(sun_data: _FakeSunData, *, sol_azi: float, sol_elev: float
     )
     cover.eval_time = sun_data.times[0]
     return cover
+
+
+def _tilt_cover(sun_data: _FakeSunData, *, sol_azi: float, sol_elev: float):
+    """Build a MODE2 slat cover — the axis whose coverage peaks mid-travel (#1104).
+
+    Same 2 cm / 3 cm slat geometry the pinned solve table in
+    ``tests/test_conservative_rounding.py`` was computed against, so the
+    percentages the fold compares here are the documented ones.
+    """
+    cover = build_tilt_cover(
+        logger=MagicMock(),
+        sol_azi=sol_azi,
+        sol_elev=sol_elev,
+        sun_data=sun_data,
+        win_azi=180,
+        fov_left=90,
+        fov_right=90,
+        slat_distance=0.02,
+        depth=0.03,
+        mode="mode2",
+    )
+    cover.eval_time = sun_data.times[0]
+    return cover
+
+
+def _anticipated_tilt(cover, *, horizon_minutes: int) -> int:
+    return anticipated_solar_position_from_geometry(
+        cover,
+        cover.config,
+        horizon_minutes=horizon_minutes,
+        minimize_movements=False,
+        max_coverage_steps=1,
+        policy=get_policy("cover_tilt"),
+        floor_active=False,
+    )
 
 
 def _snapshot(cover, *, cover_type: str, time_threshold_minutes: int):
@@ -243,6 +283,38 @@ def test_awning_anticipates_higher_future_sample():
     live = compute_solar_position(snap)
     anticipated = anticipated_solar_position(snap)
     assert anticipated > live
+
+
+@pytest.mark.unit
+def test_tilt_anticipates_farther_above_horizontal_future_sample():
+    """The fold must not throw away the more-protective slat (#1104).
+
+    Every sample here sits ABOVE the MODE2 pivot, where a bigger percentage is a
+    bigger angle and therefore a slat FARTHER from horizontal — more coverage,
+    not less. The rising sun drives the solve from 106.87° (60 %) at the live
+    moment out to 130.53° (73 %) at the end of the window, so the window's
+    most-protective demand is 73.
+    """
+    sun_data = _FakeSunData([180.0] * 6, [45.0, 48.0, 51.0, 54.0, 57.0, 60.0])
+    cover = _tilt_cover(sun_data, sol_azi=180.0, sol_elev=45.0)
+
+    assert _anticipated_tilt(cover, horizon_minutes=0) == 60
+    assert _anticipated_tilt(cover, horizon_minutes=25) == 73
+
+
+@pytest.mark.unit
+def test_tilt_anticipates_farther_below_horizontal_future_sample():
+    """Guard: the already-correct side of the pivot must not move.
+
+    Below horizontal a smaller percentage IS a slat farther from horizontal, so
+    the monotonic ``min`` and the distance-from-pivot rule agree. The falling
+    sun drives the solve from 84.74° (47 %) down to 71.21° (39 %).
+    """
+    sun_data = _FakeSunData([180.0] * 6, [30.0, 28.0, 26.0, 24.0, 22.0, 20.0])
+    cover = _tilt_cover(sun_data, sol_azi=180.0, sol_elev=30.0)
+
+    assert _anticipated_tilt(cover, horizon_minutes=0) == 47
+    assert _anticipated_tilt(cover, horizon_minutes=25) == 39
 
 
 @pytest.mark.unit

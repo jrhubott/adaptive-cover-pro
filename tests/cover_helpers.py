@@ -18,22 +18,25 @@ from custom_components.adaptive_cover_pro.engine.covers.base import (
     AdaptiveGeneralCover,
 )
 
+_COVERAGE_HOOKS = ("round_toward_coverage", "coverage_pivot_percentage")
+
 
 def attach_coverage_rounding(cover):
-    """Give a cover *double* the real base ``round_toward_coverage`` (#1090).
+    """Give a cover *double* the real base coverage hooks (#1090, #1104).
 
-    The solar branch asks the cover which way to quantise its raw percentage,
-    because only the engine knows whether coverage is monotonic in the
-    percentage (it is not on a bi-directional slat axis). Doubles standing in
-    for an ``AdaptiveGeneralCover`` therefore have to answer that call.
+    The solar branch asks the cover which way to quantise its raw percentage and
+    where its coverage bottoms out, because only the engine knows whether
+    coverage is monotonic in the percentage (it is not on a bi-directional slat
+    axis). Doubles standing in for an ``AdaptiveGeneralCover`` therefore have to
+    answer both calls — a ``MagicMock`` would otherwise hand back a mock where a
+    ``float | None`` is expected.
 
-    Binds the production implementation to the double rather than
+    Binds the production implementations to the double rather than
     reimplementing floor/ceil in test-land, so a double can never quietly
-    disagree with the rule it is standing in for. Returns *cover* for chaining.
+    disagree with the rules it is standing in for. Returns *cover* for chaining.
     """
-    cover.round_toward_coverage = AdaptiveGeneralCover.round_toward_coverage.__get__(
-        cover
-    )
+    for name in _COVERAGE_HOOKS:
+        setattr(cover, name, getattr(AdaptiveGeneralCover, name).__get__(cover))
     return cover
 
 

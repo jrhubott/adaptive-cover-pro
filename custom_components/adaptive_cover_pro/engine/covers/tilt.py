@@ -451,6 +451,24 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         return self._percentage_from_angle(TILT_HORIZONTAL_DEG)
 
+    def coverage_pivot_percentage(self) -> float | None:
+        """Report horizontal as the pivot — the slat axis is bi-directional (#1104).
+
+        Publishes the very pivot :meth:`round_toward_coverage` already rounds
+        away from, so every consumer of "how much coverage does this percentage
+        carry" measures against the same point the rounding does. Deliberately
+        the same call, not a second derivation: routing through
+        :meth:`_horizontal_percentage` means an ``_effective_max_degrees``
+        override (the louvered roof's ``max_slat_angle``, which puts the pivot at
+        a fractional 64.2857 % for a 140° drive) moves the pivot everywhere at
+        once, and MODE1's 100 % pivot keeps the monotonic behaviour it always
+        had rather than needing a special case.
+
+        Inherited unchanged by :class:`~.louvered_roof.AdaptiveLouveredRoofCover`.
+        ``None`` on a degenerate zero-width scale, matching the base contract.
+        """
+        return self._horizontal_percentage()
+
     def round_toward_coverage(self, pct: float, *, full_coverage_at_zero: bool) -> int:
         """Quantise the slat percentage AWAY from horizontal (issue #1090).
 

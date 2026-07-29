@@ -568,8 +568,14 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         """Single source of truth for the engine slat angle + minimize quantize.
 
         Builds the tilt engine, computes the slat angle for ``position``, and
-        applies the movement-minimization quantize (the tilt axis closes at 0%,
-        so full coverage is at zero). Returns ``(tilt, venetian_calc)`` so the
+        applies the movement-minimization quantize. The tilt axis declares
+        ``open_blocks_sun=False`` — 0 % is a covering end — but that is only the
+        whole story where coverage is MONOTONIC in the percentage, which a
+        bi-directional slat is not: on MODE2 the axis closes at BOTH ends and is
+        most open at the horizontal 50 %. So the engine's coverage pivot goes
+        along with the axis semantic and the quantiser measures the demand from
+        whichever of the two the axis actually has (issue #1104). Returns
+        ``(tilt, venetian_calc)`` so the
         live ``post_pipeline_resolve`` can still merge the tilt engine's raw
         trace (#682) and the forecast hook can take just the scalar. BOTH the
         live path and the projected forecast flow through this one method, so
@@ -591,6 +597,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 tilt,
                 max_coverage_steps,
                 full_coverage_at_zero=not self.axes[1].open_blocks_sun,
+                pivot=venetian_calc.tilt_coverage_pivot_percentage(),
             )
         return tilt, venetian_calc
 

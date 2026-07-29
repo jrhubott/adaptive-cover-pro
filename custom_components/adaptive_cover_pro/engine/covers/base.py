@@ -351,3 +351,25 @@ class AdaptiveGeneralCover(ABC):
         this with an angle-aware direction.
         """
         return floor(pct) if full_coverage_at_zero else ceil(pct)
+
+    def coverage_pivot_percentage(self) -> float | None:
+        """Percentage at which this axis blocks the LEAST sun, or ``None`` (#1104).
+
+        The companion of :meth:`round_toward_coverage`, and polymorphic for the
+        same reason: rounding needs to know which arithmetic direction adds
+        coverage, and every *other* consumer of "how much coverage does this
+        percentage carry" needs to know where coverage starts from.
+
+        ``None`` — the base answer — means coverage is MONOTONIC in the
+        percentage, so the caller's ``full_coverage_at_zero`` axis semantic is
+        already the whole story: coverage runs from one end of the travel to the
+        other and the open end is 0 % or 100 %. A float means the axis is
+        bi-directional: coverage bottoms out at that percentage and grows as the
+        position leaves it in EITHER direction, so a distance-from-the-pivot
+        measure replaces "distance from the open end".
+
+        Only :class:`~.tilt.AdaptiveTiltCover` overrides it, because only the
+        engine knows the tilt scale — which keeps the cover-type branch out of
+        the pipeline and ``position_utils`` layers that consume the answer.
+        """
+        return None

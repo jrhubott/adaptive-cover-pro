@@ -88,6 +88,18 @@ class VenetianCoverCalculation:
         """
         return self._compute_tilt()
 
+    def tilt_coverage_pivot_percentage(self) -> float | None:
+        """Coverage pivot of the composed tilt axis, or ``None`` (#1104).
+
+        The public seam ``VenetianPolicy._compose_tilt`` asks before it quantises
+        into coverage levels, so the dual-axis path measures coverage from the
+        same point the tilt sub-engine rounds away from. Exposed here rather than
+        letting the policy reach into ``_tilt``: the sub-engine is this class's
+        private composition detail, and this keeps the pivot a single delegated
+        answer instead of a second reference to the same object.
+        """
+        return self._tilt.coverage_pivot_percentage()
+
     def _clamp_tilt(self, value: int) -> int:
         """Clamp a tilt value to the configured ``[min_tilt, max_tilt]`` range.
 

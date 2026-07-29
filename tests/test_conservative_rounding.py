@@ -390,6 +390,22 @@ def _tilt_solar_position(cover) -> int:
     )
 
 
+def _tilt_solar_position_minimized(cover, n_steps: int) -> int:
+    """Run the same branch as :func:`_tilt_solar_position`, minimisation on.
+
+    The only difference is the opt-in coverage-step quantiser that runs
+    immediately after the away-from-horizontal rounding (issue #1104).
+    """
+    return solar_position_from_geometry(
+        cover,
+        _config(),
+        minimize_movements=True,
+        max_coverage_steps=n_steps,
+        policy=_policy(open_blocks_sun=False),
+        floor_active=False,
+    )
+
+
 class TestTiltMode2DirectionalRounding:
     """MODE2 tilt quantises AWAY from horizontal, not always downward."""
 
@@ -522,6 +538,72 @@ class TestTiltMode2DirectionalRounding:
 
         assert cover.calculate_raw_percentage() == pytest.approx(raw, abs=1e-5)
         assert _tilt_solar_position(cover) == expected
+
+
+class TestTiltMode2MinimizeMovements:
+    """The coverage-step quantiser respects the horizontal pivot (issue #1104).
+
+    ``minimize_movements`` snaps the commanded position onto one of N coverage
+    levels, rounding toward MORE coverage. That quantiser used to divide the
+    whole 0–100 range around a single coverage-zero end (0 % or 100 %), which is
+    only the truth on a monotonic axis. On MODE2 the coverage-zero point is the
+    horizontal slat mid-travel, so the old scale snapped every above-pivot solve
+    back TOWARD horizontal — undoing, one step later, exactly what
+    ``round_toward_coverage`` had just done (issue #1090).
+    """
+
+    def test_quantize_does_not_snap_back_toward_horizontal(self):
+        """60 % is 10 points of coverage past the pivot, not 40 points short of it.
+
+        At 45° elevation the solve is 106.87° → 59.3747 %, which the
+        away-from-horizontal rule ceils to 60 %. With two levels per side the
+        demand (10/50 = 0.2 of the upper side) rounds up to the half-step, i.e.
+        50 % + 0.5 × 50 = 75 %. Measuring the same demand against a 100 %
+        coverage-zero end instead gives 0.4 → the half-step at 50 %, which is the
+        exactly-horizontal slat.
+        """
+        cover = _tilt_cover(sol_elev=45.0)
+        assert _tilt_solar_position(cover) == 60
+        assert _tilt_solar_position_minimized(cover, 2) == 75
+
+    def test_quantize_never_crosses_the_pivot(self):
+        """One level per side means "fully closed on THIS side", not on either.
+
+        Crossing the pivot passes a pure distance-from-horizontal check — 0 % is
+        90° from horizontal, more than the 16.87° the solve asks for — while
+        still being wrong: it sweeps the slats through fully-open horizontal to
+        get there, the wasted movement ``minimize_movements`` exists to avoid.
+        """
+        cover = _tilt_cover(sol_elev=45.0)
+        result = _tilt_solar_position_minimized(cover, 1)
+        assert result == 100
+        assert result >= 50
+
+    @pytest.mark.parametrize("n_steps", [2, 3])
+    @pytest.mark.parametrize(
+        "sol_elev", [5.0, 12.5, 21.0, 29.0, 34.4, 37.5, 44.0, 52.0, 68.0, 79.0, 88.0]
+    )
+    def test_commanded_angle_never_closer_to_horizontal_with_minimize(
+        self, sol_elev, n_steps
+    ):
+        """The #1090 invariant, now with the quantiser in the path.
+
+        Same statement as
+        ``test_commanded_angle_is_never_closer_to_horizontal_than_the_solve``:
+        the commanded slat must sit at least as far from horizontal as the
+        grazing solve. Movement minimisation is allowed to command MORE closure
+        than asked for; it is never allowed to command less.
+        """
+        cover = _tilt_cover(sol_elev=sol_elev)
+        exact_angle = cover.calculate_position()
+        max_degrees = float(TiltMode.MODE2.max_degrees)
+        commanded_angle = (
+            _tilt_solar_position_minimized(cover, n_steps) / 100.0 * max_degrees
+        )
+
+        assert abs(commanded_angle - TILT_HORIZONTAL_DEG) >= abs(
+            exact_angle - TILT_HORIZONTAL_DEG
+        )
 
 
 class TestLouveredRoofPivotFollowsMaxSlatAngle:

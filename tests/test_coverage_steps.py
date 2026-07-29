@@ -101,6 +101,103 @@ def test_zero_steps_is_noop():
 
 
 # ---------------------------------------------------------------------------
+# Bi-directional axis (issue #1104) — coverage is measured from a mid-scale
+# pivot, one set of levels per side, and quantization never crosses the pivot.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("percentage", "n", "expected"),
+    [
+        # 60 % is 10 of the 50 points above the pivot → 0.2 coverage → the
+        # half-step at 75 %. The old whole-range scale said 50 % — horizontal.
+        (60, 2, 75),
+        # One level per side is "fully closed on THIS side", not on either.
+        (60, 1, 100),
+        (51, 1, 100),
+        # Below the pivot the sides mirror: 40 % is 10 of 50 → half-step at 25 %.
+        (40, 2, 25),
+        (49, 1, 0),
+    ],
+)
+def test_mode2_pivot_quantizes_per_side(percentage, n, expected):
+    assert quantize(percentage, n, full_coverage_at_zero=True, pivot=50.0) == expected
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 10])
+def test_on_the_pivot_stays_on_the_pivot(n):
+    """Zero coverage demand on either side rounds up to the zero-th level."""
+    assert quantize(50, n, full_coverage_at_zero=True, pivot=50.0) == 50
+
+
+@pytest.mark.parametrize("percentage", range(0, 101))
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 10])
+def test_quantization_never_crosses_the_pivot(percentage, n):
+    """The commanded slat stays on the side of horizontal the demand is on."""
+    result = quantize(percentage, n, full_coverage_at_zero=True, pivot=50.0)
+    if percentage > 50:
+        assert result >= 50
+    else:
+        assert result <= 50
+
+
+@pytest.mark.parametrize("percentage", range(0, 101))
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 10])
+def test_quantization_never_reduces_coverage(percentage, n):
+    """Distance from the pivot — the coverage measure — never shrinks."""
+    result = quantize(percentage, n, full_coverage_at_zero=True, pivot=50.0)
+    assert abs(result - 50) >= abs(percentage - 50)
+
+
+# A louvered roof with ``max_slat_angle=140`` puts horizontal at 90/140 → the
+# pivot is fractional and off-centre, which is why it is an engine-supplied
+# value rather than a constant.
+_FRACTIONAL_PIVOT = 90.0 / 140.0 * 100.0  # 64.2857…
+
+
+def test_fractional_pivot_upper_side_closes_upward():
+    # 65 % is just above the pivot → one level → the top of the upper side.
+    assert quantize(65, 1, full_coverage_at_zero=True, pivot=_FRACTIONAL_PIVOT) == 100
+
+
+def test_fractional_pivot_lower_side_closes_downward():
+    # 60 % is below the pivot → one level → the bottom of the lower side.
+    assert quantize(60, 1, full_coverage_at_zero=True, pivot=_FRACTIONAL_PIVOT) == 0
+
+
+@pytest.mark.parametrize("percentage", [0, 30, 60, 64, 65, 70, 90, 100])
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 10])
+def test_fractional_pivot_stays_on_its_side(percentage, n):
+    result = quantize(
+        percentage, n, full_coverage_at_zero=True, pivot=_FRACTIONAL_PIVOT
+    )
+    if percentage > _FRACTIONAL_PIVOT:
+        assert result >= _FRACTIONAL_PIVOT
+    else:
+        assert result <= _FRACTIONAL_PIVOT
+
+
+def test_degenerate_boundary_pivot_has_no_side_to_quantize_into():
+    """A 0.0 pivot leaves the "below" side zero-width; 0 % is its only position."""
+    assert quantize(0, 2, full_coverage_at_zero=False, pivot=0.0) == 0
+
+
+# ``max_coverage_steps`` is bounded to 1–10 by ``const.OPTION_RANGES``.
+@pytest.mark.parametrize("percentage", range(0, 101))
+@pytest.mark.parametrize("n", range(1, 11))
+def test_monotonic_pivot_reduces_to_the_boolean_path(percentage, n):
+    """The generalization subsumes the monotonic axes rather than replacing them.
+
+    A monotonic axis is a bi-directional one whose pivot sits on a boundary, so
+    stating the pivot explicitly must be indistinguishable from not stating it —
+    that equality is what keeps every blind / awning / MODE1-tilt caller byte-
+    identical across this change (issue #978's guarantee).
+    """
+    assert quantize(percentage, n, True, pivot=100.0) == quantize(percentage, n, True)
+    assert quantize(percentage, n, False, pivot=0.0) == quantize(percentage, n, False)
+
+
+# ---------------------------------------------------------------------------
 # Live path — compute_solar_position applies quantization on the solar branch
 # ---------------------------------------------------------------------------
 
