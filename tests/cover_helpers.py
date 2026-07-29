@@ -11,11 +11,15 @@ from unittest.mock import MagicMock
 from custom_components.adaptive_cover_pro.config_types import (
     CoverConfig,
     HorizontalConfig,
+    LouveredRoofConfig,
     TiltConfig,
     VerticalConfig,
 )
 from custom_components.adaptive_cover_pro.engine.covers.base import (
     AdaptiveGeneralCover,
+)
+from custom_components.adaptive_cover_pro.engine.covers.louvered_roof import (
+    AdaptiveLouveredRoofCover,
 )
 
 
@@ -277,11 +281,6 @@ def build_louvered_roof_cover(
     change to ``AdaptiveLouveredRoofCover``'s constructor only needs updating
     here.
     """
-    from custom_components.adaptive_cover_pro.config_types import LouveredRoofConfig
-    from custom_components.adaptive_cover_pro.engine.covers.louvered_roof import (
-        AdaptiveLouveredRoofCover,
-    )
-
     return AdaptiveLouveredRoofCover(
         logger=MagicMock(),
         sol_azi=sol_azi,

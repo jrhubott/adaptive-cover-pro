@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -464,10 +465,79 @@ class TestImportConfig:
         assert entry.options["max_slat_angle"] == 160
 
     @pytest.mark.asyncio
-    async def test_max_slat_angle_sentinel_and_usable_values_import_cleanly(
+    async def test_max_slat_angle_and_sibling_out_of_range_messages_share_shape(
         self, tmp_path
     ):
-        """Issue #1105: the ``0`` sentinel and a usable angle still import fine."""
+        """Issue #1105 audit: pin the *parity*, not just one key's literal string.
+
+        fc868075 built ``max_slat_angle``'s out-of-range message by hand-copying
+        the generic ``OPTION_RANGES`` branch's f-string thirteen lines below it
+        in the same function.
+        ``test_max_slat_angle_out_of_range_error_names_the_bounds`` above only
+        pins that one copy — a reword of the generic branch's message would
+        silently make ``max_slat_angle`` the odd one out again while that test
+        stayed green, since it never compares the two. Both branches now
+        delegate to a shared ``_out_of_range_error`` helper; this test proves
+        it structurally by asserting ``max_slat_angle`` and a sibling
+        ``OPTION_RANGES`` key (``roof_pitch``) both match the exact same
+        "key=value out of range [lo, hi]" regex shape, with only the
+        key/value/bounds substituted — not by re-pinning two literals that
+        could drift together for the wrong reason.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry_slat = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass_slat = _make_hass([entry_slat], config_dir=str(tmp_path))
+        slat_path = tmp_path / "import_slat.json"
+        self._write_export(
+            slat_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 181}}],
+        )
+        call_slat = MagicMock()
+        call_slat.hass = hass_slat
+        call_slat.data = {"filename": str(slat_path)}
+        slat_msg = (await async_handle_import_config(call_slat))["id-1"]
+
+        entry_pitch = _make_entry("id-2", "Roof B", {"roof_pitch": 45})
+        hass_pitch = _make_hass([entry_pitch], config_dir=str(tmp_path))
+        pitch_path = tmp_path / "import_pitch.json"
+        self._write_export(
+            pitch_path,
+            [{"entry_id": "id-2", "options": {"roof_pitch": 999}}],
+        )
+        call_pitch = MagicMock()
+        call_pitch.hass = hass_pitch
+        call_pitch.data = {"filename": str(pitch_path)}
+        pitch_msg = (await async_handle_import_config(call_pitch))["id-2"]
+
+        shape = re.compile(
+            r"^error: import_config: invalid values for entry '[\w-]+': "
+            r"(?P<key>[a-z_]+)=(?P<value>-?\d+(?:\.\d+)?) "
+            r"out of range \[(?P<lo>-?\d+(?:\.\d+)?), (?P<hi>-?\d+(?:\.\d+)?)\]$"
+        )
+        slat_match = shape.match(slat_msg)
+        pitch_match = shape.match(pitch_msg)
+
+        assert slat_match is not None, slat_msg
+        assert pitch_match is not None, pitch_msg
+        assert slat_match.group("key") == "max_slat_angle"
+        assert pitch_match.group("key") == "roof_pitch"
+        assert (
+            slat_match.group("value"),
+            slat_match.group("lo"),
+            slat_match.group("hi"),
+        ) == ("181", "0", "180")
+        assert (
+            pitch_match.group("value"),
+            pitch_match.group("lo"),
+            pitch_match.group("hi"),
+        ) == ("999", "0", "90")
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_sentinel_value_imports_cleanly(self, tmp_path):
+        """Issue #1105: the ``0`` sentinel imports cleanly (does not error)."""
         from custom_components.adaptive_cover_pro.services.import_service import (
             async_handle_import_config,
         )
@@ -489,6 +559,39 @@ class TestImportConfig:
 
         assert result["id-1"] == "updated"
         assert entry.options["max_slat_angle"] == 0
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_usable_value_imports_cleanly(self, tmp_path):
+        """Issue #1105 audit: a nonzero in-range angle also imports cleanly.
+
+        The prior test's name and docstring claimed to cover this ("the ``0``
+        sentinel and a usable angle") but only ever imported ``0`` — ``0``
+        returns from ``_max_slat_angle_v``'s sentinel branch before
+        ``ranged(...)`` is ever reached, so the nonzero in-range path through
+        the new ``import_config`` branch had no assertion anywhere. This
+        closes that gap.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 45}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options["max_slat_angle"] == 45
 
     @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
     @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)

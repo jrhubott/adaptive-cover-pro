@@ -34,6 +34,17 @@ IMPORT_CONFIG_SCHEMA = vol.Schema(
 )
 
 
+def _out_of_range_error(key: str, value: object) -> str:
+    """Format the shared "out of range" message for an ``OPTION_RANGES`` key.
+
+    Both the ``CONF_MAX_SLAT_ANGLE`` bespoke-validator branch and the generic
+    ``OPTION_RANGES`` branch below need this exact wording — extracted so the
+    two can never drift apart (issue #1105).
+    """
+    lo, hi = OPTION_RANGES[key]
+    return f"{key}={value} out of range [{lo}, {hi}]"
+
+
 async def async_handle_import_config(call: ServiceCall) -> dict:
     """Handle the import_config service call.
 
@@ -173,10 +184,7 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                         # names its bounds on an out-of-range value, so
                         # reconstruct the same wording here rather than
                         # surfacing the uninformative fallback to the user.
-                        lo, hi = OPTION_RANGES[key]
-                        validation_errors.append(
-                            f"{key}={value} out of range [{lo}, {hi}]"
-                        )
+                        validation_errors.append(_out_of_range_error(key, value))
                     except vol.Invalid as exc:
                         # The dead-zone branch (naming the ``0`` sentinel) and
                         # a bad type (via ``vol.Coerce``) both raise directly
@@ -187,9 +195,7 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                     try:
                         num = float(value)
                         if not (lo <= num <= hi):
-                            validation_errors.append(
-                                f"{key}={value} out of range [{lo}, {hi}]"
-                            )
+                            validation_errors.append(_out_of_range_error(key, value))
                     except (TypeError, ValueError):
                         validation_errors.append(
                             f"{key}={value!r} is not a valid number"
