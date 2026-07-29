@@ -567,7 +567,9 @@ class TiltConfig:
     # cover in #964): 0.0 (default) is a provable no-op; 1.0 applies the
     # automatic angle-dependent geometry margin PLUS SAFETY_MARGIN_USER_SLACK_MAX
     # of flat slack, in the slat-closing direction — so the slider bites at
-    # benign sun angles too (#1089) — see ``engine/covers/tilt.py``.
+    # benign sun angles too (#1089), except where the solve has already parked
+    # the slat on a travel limit and there is no closure left to scale — see
+    # ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
     # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
     # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact

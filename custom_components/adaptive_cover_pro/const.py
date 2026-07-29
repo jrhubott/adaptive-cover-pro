@@ -405,10 +405,13 @@ TILT_HORIZONTAL_DEG = 90
 
 # Configurable tilt safety margin (issue #783, generalized to every tilt-axis
 # cover in #964): 0.0 = no-op = today's exact grazing angle; higher values add
-# slat-closing slack on top of the automatic angle-dependent geometry margin, at
-# every sun angle (issue #1089 — the original form scaled the geometry margin's
-# excess, which is zero across the normal envelope, so the slider was inert most
-# of the day). Shared by tilt-only, louvered-roof, and venetian
+# slat-closing slack on top of the automatic angle-dependent geometry margin,
+# including at everyday sun angles (issue #1089 — the original form scaled the
+# geometry margin's excess, which is zero across the normal envelope, so the
+# slider was inert most of the day). It still cannot move a slat the solve has
+# already parked on a travel limit: TILT_HORIZONTAL_DEG is a fixed point of the
+# transform, and an angle past 0°/max_degrees is re-pinned by the output clamp
+# either way. Shared by tilt-only, louvered-roof, and venetian
 # covers, so the key is neutral rather than venetian-prefixed.
 CONF_TILT_SAFETY_MARGIN = "tilt_safety_margin"
 DEFAULT_TILT_SAFETY_MARGIN = 0.0

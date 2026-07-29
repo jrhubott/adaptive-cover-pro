@@ -237,8 +237,16 @@ class TestVenetianTiltSafetyMargin:
     @pytest.mark.unit
     @pytest.mark.parametrize("sol_azi", [165, 180, 195])
     @pytest.mark.parametrize("sol_elev", [15, 45, 60, 70])
-    def test_safety_margin_never_inert_inside_normal_envelope(self, sol_azi, sol_elev):
-        """#1089 net: no geometry inside the envelope may freeze the slider."""
+    def test_safety_margin_never_inert_inside_normal_envelope_mode2(
+        self, sol_azi, sol_elev
+    ):
+        """#1089: in mode2 no geometry inside the envelope freezes the slider.
+
+        Scoped to mode2 deliberately. Mode2's 180° ceiling leaves the resolved
+        angle off both rails everywhere in the envelope, so the closing transform
+        is always visible. Mode1 caps at 90° and DOES freeze above that rail —
+        see ``test_safety_margin_is_inert_above_the_mode1_open_rail``.
+        """
         from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG
         from custom_components.adaptive_cover_pro.geometry import (
             SafetyMarginCalculator,
@@ -261,6 +269,81 @@ class TestVenetianTiltSafetyMargin:
         a1 = _tilt_at(mode="mode2", safety_margin=1.0, **params).calculate_position()
         assert a1 != pytest.approx(a0, abs=1e-6)
         assert 0.0 <= a1 <= 180.0
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("sol_azi", "sol_elev"), [(180, 12), (180, 20), (165, 15), (195, 25)]
+    )
+    def test_safety_margin_bites_below_the_mode1_open_rail(self, sol_azi, sol_elev):
+        """#1089 in mode1 too — wherever the raw cut-off is under the 90° ceiling.
+
+        Mode1 is only inert where the clamp pins it (the companion test); below
+        the rail the slider closes the slats by exactly the flat user-slack
+        budget, since ``geo_margin`` is 1.0 across this envelope.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            SAFETY_MARGIN_USER_SLACK_MAX,
+            TILT_HORIZONTAL_DEG,
+        )
+        from custom_components.adaptive_cover_pro.geometry import (
+            SafetyMarginCalculator,
+        )
+
+        params = {
+            "sol_azi": sol_azi,
+            "sol_elev": sol_elev,
+            "slat_distance": 0.02,
+            "depth": 0.03,
+        }
+        c0 = _tilt_at(mode="mode1", safety_margin=0.0, **params)
+        a0 = c0.calculate_position()
+        assert SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        raw = c0._last_calc_details["slat_angle_raw_deg"]
+        assert raw < TILT_HORIZONTAL_DEG, "test setup: must sit below the mode1 rail"
+
+        a1 = _tilt_at(mode="mode1", safety_margin=1.0, **params).calculate_position()
+        expected = TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - raw) * (
+            1.0 + SAFETY_MARGIN_USER_SLACK_MAX
+        )
+        assert a1 == pytest.approx(expected)
+        assert a0 - a1 > 1.0, "the slider must move the slat, not float-noise it"
+        assert 0.0 <= a1 <= TILT_HORIZONTAL_DEG
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("sol_azi", "sol_elev"), [(180, 40), (180, 55), (180, 70), (150, 45), (210, 60)]
+    )
+    def test_safety_margin_is_inert_above_the_mode1_open_rail(self, sol_azi, sol_elev):
+        """KNOWN LIMIT (#1089): a slat already pinned fully open cannot close more.
+
+        In mode1 the raw cut-off runs past the 90° ceiling from roughly 26°
+        elevation upward with shipped slat proportions, so the output clamp pins
+        the result at ``TILT_HORIZONTAL_DEG`` both before and after the margin
+        transform. That is the physics — a slat at its fully-open travel limit
+        has no closure left for a multiplier to scale — not a defect, and it is
+        why the user-facing copy scopes the claim instead of promising every sun
+        angle. This test fails loudly if the clamp is ever changed.
+        """
+        from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG
+        from custom_components.adaptive_cover_pro.geometry import (
+            SafetyMarginCalculator,
+        )
+
+        params = {
+            "sol_azi": sol_azi,
+            "sol_elev": sol_elev,
+            "slat_distance": 0.02,
+            "depth": 0.03,
+        }
+        c0 = _tilt_at(mode="mode1", safety_margin=0.0, **params)
+        a0 = c0.calculate_position()
+        assert SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        raw = c0._last_calc_details["slat_angle_raw_deg"]
+        assert raw > TILT_HORIZONTAL_DEG, "test setup: must sit above the mode1 rail"
+
+        a1 = _tilt_at(mode="mode1", safety_margin=1.0, **params).calculate_position()
+        assert a0 == TILT_HORIZONTAL_DEG
+        assert a1 == a0
 
     @pytest.mark.unit
     def test_safety_margin_monotonic_in_strength_at_benign_angle(self):
