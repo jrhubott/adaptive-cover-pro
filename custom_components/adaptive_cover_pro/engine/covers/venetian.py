@@ -6,7 +6,6 @@ import math
 from dataclasses import dataclass
 
 from ...config_types import CoverConfig, TiltConfig, VerticalConfig
-from ...position_utils import PositionConverter
 from ...sun import SunData
 from .tilt import AdaptiveTiltCover
 from .vertical import AdaptiveVerticalCover
@@ -95,28 +94,26 @@ class VenetianCoverCalculation:
         Applied to every engine-derived tilt — including the NaN fallback — so
         ``min_tilt`` is a true floor, not just "applied when geometry resolves".
 
-        Delegates to the shared :meth:`PositionConverter.apply_tilt_limits`
-        primitive with ``sun_valid=True`` (this is the sun-tracking engine
-        path), so the clamp policy lives in exactly one place shared with the
-        DefaultHandler default-tilt clamp (#503). With ``sun_valid=True`` the
-        limits always apply regardless of the ``*_sun_only`` toggles, preserving
-        the original unconditional ``max(min, min(v, max))`` behavior.
+        Delegates to the tilt engine's own :meth:`AdaptiveTiltCover._limit_tilt`
+        band seam rather than rebuilding the argument bundle here. That seam
+        owns the bounds, the two ``*_sun_only`` toggles and ``sun_valid=True``
+        (the engine path is always sun-tracking, so the limits apply
+        unconditionally — the original ``max(min, min(v, max))`` behavior), and
+        routes them to the shared :meth:`PositionConverter.apply_tilt_limits`
+        primitive the DefaultHandler default-tilt clamp also uses (#503). A
+        hand-rolled copy here is a band that only *happens* to match.
 
         ``cfg.tilt_transform`` selects clamp (default, unchanged) vs the
         proportional remap into ``[min_tilt, max_tilt]`` (#957). This is the only
         seam that opts into the proportional transform; the default-tilt path
         stays on clamp.
+
+        The sub-engine's ``apply_tilt_axis_limits=False`` does not suppress
+        this, and must not: that flag answers "does the engine own the band?",
+        and clearing it is precisely how this method claims ownership.
         """
         cfg = self._tilt.tilt_config
-        return PositionConverter.apply_tilt_limits(
-            value,
-            cfg.min_tilt,
-            cfg.max_tilt,
-            cfg.min_tilt_sun_only,
-            cfg.max_tilt_sun_only,
-            sun_valid=True,
-            transform=cfg.tilt_transform,
-        )
+        return self._tilt._limit_tilt(value, transform=cfg.tilt_transform)
 
     def _compute_tilt(self) -> int:
         try:

@@ -126,18 +126,43 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """Return the useful raw target angle for explicit endpoint calibration."""
         return max(0.0, min(180.0, float(raw_angle)))
 
-    def _percentage_from_specified_angles(self, raw_angle: float) -> float:
-        """Map a target raw slat angle to the configured tilt percentage.
+    def _percentage_from_angle(self, angle: float) -> float | None:
+        """Map a raw slat angle onto this engine's tilt percentage scale.
+
+        Sole owner of the angle→percentage map. Three callers need it and they
+        MUST agree: the solved position (:meth:`calculate_raw_percentage`), the
+        calibrated endpoint mapping (:meth:`calculate_percentage`), and the
+        horizontal pivot (:meth:`_horizontal_percentage`). The pivot is what
+        makes sharing load-bearing rather than merely tidy — it points at
+        maximum openness only while it is divided by the SAME denominator the
+        position is, and :meth:`_effective_max_degrees` lets the louvered roof
+        move that denominator to a configurable ``max_slat_angle``. Re-deriving
+        either map at a second site is exactly how the pivot drifts off the
+        scale it is supposed to sit on.
 
         The solver and the configured endpoints both use ACP's raw/card angle
-        convention: 0° closed downward, 90° horizontal, 180° closed upward.
-        """
-        travel = self.angle_100 - self.angle_0
-        if travel == 0:
-            return 0.0
+        convention: 0° closed downward, 90° horizontal, 180° closed upward. Two
+        affine maps, selected by the configured mode:
 
-        target_angle = self._specified_target_angle(raw_angle)
-        return ((target_angle - self.angle_0) / travel) * 100.0
+        * legacy / custom-max — ``pct = angle / max_degrees × 100``.
+        * ``specify_angles`` — ``pct = (angle − angle_0) / travel × 100``, which
+          may run BACKWARDS (``travel < 0``, an inverted calibration where 0 %
+          is the upward-closed slat). Affine either way, so the pivot's image
+          moves with the map and the sign never has to be tested.
+
+        ``None`` means the scale is degenerate — zero width — so no percentage
+        exists at all. Each caller decides what to do about that.
+        """
+        if self._is_specify_angles():
+            travel = self.angle_100 - self.angle_0
+            if travel == 0:
+                return None
+            target_angle = self._specified_target_angle(angle)
+            return ((target_angle - self.angle_0) / travel) * 100.0
+        max_degrees = float(self._effective_max_degrees())
+        if max_degrees <= 0:
+            return None
+        return (float(angle) / max_degrees) * 100.0
 
     def _effective_max_degrees(self) -> float:
         """Ceiling + percentage denominator for the slat angle.
@@ -332,7 +357,12 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         # below cannot express. Handle it here, before the polymorphic base
         # path, and correct the trace's position percentage in place.
         if self._is_specify_angles():
-            percentage = self._percentage_from_specified_angles(position)
+            percentage = self._percentage_from_angle(position)
+            if percentage is None:
+                # Degenerate calibration (``angle_0 == angle_100``): no width to
+                # interpolate into, and 0 % is what this path has always
+                # answered for it.
+                percentage = 0.0
             if hasattr(self, "_last_calc_details"):
                 self._last_calc_details[TRACE_KEY_POSITION_PCT] = float(percentage)
                 self._last_calc_details["target_angle_deg"] = (
@@ -366,7 +396,16 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         if self._is_specify_angles():
             return self.calculate_percentage()
         position = self.calculate_position()
-        pct = (float(position) / self._effective_max_degrees()) * 100.0
+        pct = self._percentage_from_angle(position)
+        if pct is None:
+            # A zero-width scale has no percentage to report. Unreachable from
+            # config — both tilt-mode maxima are nonzero and ``max_slat_angle``
+            # is bounded to [0, 180] with 0 meaning "use the mode max" — and a
+            # zero denominator already raises inside ``calculate_position``
+            # above while it builds its trace. Raising keeps the contract
+            # ``VenetianCoverCalculation._compute_tilt`` relies on: a tilt
+            # geometry that does not resolve falls back to the default position.
+            raise ZeroDivisionError("tilt percentage scale has zero width")
         return self._apply_tilt_axis_limits(pct)
 
     def _horizontal_percentage(self) -> float | None:
@@ -380,27 +419,17 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         :meth:`round_toward_coverage` decide direction without reconstructing
         the angle or branching on the tilt mode.
 
-        Both percentage maps are affine, so this is just the pivot's image:
-
-        * legacy / custom-max: ``pct = angle / max_degrees × 100``.
-        * ``specify_angles``: ``pct = (angle − angle_0) / travel × 100``, which
-          may run BACKWARDS (``travel < 0``, an inverted calibration where 0 %
-          is the upward-closed slat). That is fine — the pivot's image moves
-          with the map, so "away from horizontal" stays "away from the pivot"
-          in percentage space either way and the sign never has to be tested.
+        Nothing here but the pivot's image under :meth:`_percentage_from_angle`
+        — the very map the solved position goes through — and deliberately so:
+        "away from horizontal" is only "away from this percentage" while the
+        two share a scale. A second copy of either map would let a new mode, or
+        an ``_effective_max_degrees`` override, move the position without moving
+        the pivot, and the rounding would quietly start closing the wrong way.
 
         ``None`` means the pivot is undefined (a degenerate zero-width scale),
         and callers fall back to the monotonic axis rule.
         """
-        if self._is_specify_angles():
-            travel = self.angle_100 - self.angle_0
-            if travel == 0:
-                return None
-            return ((TILT_HORIZONTAL_DEG - self.angle_0) / travel) * 100.0
-        max_degrees = float(self._effective_max_degrees())
-        if max_degrees <= 0:
-            return None
-        return (TILT_HORIZONTAL_DEG / max_degrees) * 100.0
+        return self._percentage_from_angle(TILT_HORIZONTAL_DEG)
 
     def round_toward_coverage(self, pct: float, *, full_coverage_at_zero: bool) -> int:
         """Quantise the slat percentage AWAY from horizontal (issue #1090).
@@ -421,9 +450,16 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         Exactly ON the pivot, both directions increase coverage equally, so
         there is no conservative answer to pick — ``floor`` wins the tie for
-        consistency with the position axis. In practice the tie is invisible on
-        the shipped modes: MODE1 pivots at 100 % and MODE2 at 50 %, both whole
-        percentages, where ``floor`` and ``ceil`` already agree.
+        consistency with the position axis. That tie is genuinely reachable, not
+        a theoretical edge: a louvered roof with a configured ``max_slat_angle``
+        has a FRACTIONAL pivot (140° → 64.2857 %), and its ``_resolve_slat_angle``
+        returns exactly ``TILT_HORIZONTAL_DEG`` whenever the slats self-block,
+        so the raw percentage lands bit-exactly on the pivot rather than near
+        it. Nothing rides on which side wins there — at 140° the neighbours are
+        89.6° and 91.0°, both farther from horizontal than the 90.0° solve — but
+        the choice is pinned by test so the boundary cannot drift unnoticed. On
+        the two whole-percentage pivots (MODE1's 100 %, MODE2's 50 %) ``floor``
+        and ``ceil`` agree anyway.
 
         The quantised integer is then re-banded, because on this path the
         ``[min_tilt, max_tilt]`` band was applied to the FLOAT back in
@@ -437,7 +473,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         default is a provable no-op. Venetian clears
         ``apply_tilt_axis_limits``, so its sub-engine skips this and
         ``VenetianCoverCalculation._clamp_tilt`` stays the single band owner
-        there.
+        there — applying the band through the same :meth:`_limit_tilt` seam.
         """
         horizontal_pct = self._horizontal_percentage()
         if horizontal_pct is None:
@@ -455,19 +491,24 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
     def _limit_tilt(self, value: int, *, transform: str) -> int:
         """Fit an integer tilt % to this engine's ``[min_tilt, max_tilt]`` band.
 
-        Sole owner of the band argument bundle, shared by the pre-quantisation
-        transform seam (:meth:`_apply_tilt_axis_limits`) and the
-        post-quantisation band guard (:meth:`round_toward_coverage`). The two
-        differ only in *transform*: the former honours the user's
-        ``tilt_transform``, the latter always clamps because the transform has
-        already run and remapping twice would compress the band twice — the same
+        Sole owner of the band argument bundle — genuinely sole, across all
+        three seams that apply it: the pre-quantisation transform
+        (:meth:`_apply_tilt_axis_limits`), the post-quantisation band guard
+        (:meth:`round_toward_coverage`), and venetian's dual-axis band
+        (``VenetianCoverCalculation._clamp_tilt``, which reaches in here rather
+        than rebuilding the same call). They differ only in *transform*: the
+        first and last honour the user's ``tilt_transform``, the band guard
+        always clamps because the transform has already run by then and
+        remapping twice would compress the band twice — the same
         double-application venetian avoids by clearing
         ``apply_tilt_axis_limits``.
 
         That flag is checked by the callers rather than here, because "not my
         band" means handing back a different thing in each: the float seam owes
         its caller the untouched ``pct`` (including a NaN it must stay
-        transparent to), the integer seam owes it the untouched quantised value.
+        transparent to), the integer seam owes it the untouched quantised value
+        — and venetian never asks the question at all, because clearing the flag
+        on its sub-engine is exactly how it claims the band for itself.
 
         The engine path is always sun-tracking, so ``sun_valid=True`` and the
         ``*_sun_only`` toggles are unconditional; they are passed through anyway
