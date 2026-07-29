@@ -301,11 +301,19 @@ class TestVenetianTiltSafetyMargin:
     def test_safety_margin_delegates_to_tilt_engine(self, mock_datetime):
         """Dual-path tilt equals the standalone tilt engine with the same margin.
 
-        Runs in the shipped MODE2 so the margin-adjusted raw (45.5458 %) has a
-        fraction above a half: ``round()`` would give 46 and only ``floor()``
-        gives 45. Under the old MODE1 fixture the raw was 91.0916 %, where
+        Runs in the shipped MODE2 so the margin-adjusted raw (44.8301 %) has a
+        fraction above a half: ``round()`` would give 45 and only ``floor()``
+        gives 44. Under the old MODE1 fixture the raw was 91.0916 %, where
         floor, round and the pre-#978 behaviour all agreed on 91 — the
         assertion could not see a rounding direction at all.
+
+        The expected raw moved from 45.5458 to 44.8301 when #1089 and #1090
+        met on develop. #1090 pinned the value from a branch cut before
+        #1089 landed, and #1089 added the flat ``SAFETY_MARGIN_USER_SLACK_MAX``
+        term, which closes the slat further for the same ``safety_margin``.
+        Both were green alone and red together. At this geometry the margin
+        is monotonic: 0.0 leaves the raw at 45.9101 and 0.5 now pulls it to
+        44.8301, i.e. further from horizontal, which is what #1089 intends.
         """
         from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
 
@@ -339,9 +347,9 @@ class TestVenetianTiltSafetyMargin:
         )
         raw = standalone.calculate_raw_percentage()
         # 81.98° is below horizontal, so the conservative direction is down.
-        assert raw == pytest.approx(45.545797, abs=1e-5)
-        assert round(raw) == 46, "fixture must distinguish floor() from round()"
-        assert calc.calculate_dual().tilt == math.floor(raw) == 45
+        assert raw == pytest.approx(44.830065, abs=1e-5)
+        assert round(raw) == 45, "fixture must distinguish floor() from round()"
+        assert calc.calculate_dual().tilt == math.floor(raw) == 44
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_safety_margin_respects_max_tilt_clamp(self, mock_datetime):
