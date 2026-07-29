@@ -398,13 +398,18 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         position = self.calculate_position()
         pct = self._percentage_from_angle(position)
         if pct is None:
-            # A zero-width scale has no percentage to report. Unreachable from
-            # config — both tilt-mode maxima are nonzero and ``max_slat_angle``
-            # is bounded to [0, 180] with 0 meaning "use the mode max" — and a
-            # zero denominator already raises inside ``calculate_position``
-            # above while it builds its trace. Raising keeps the contract
-            # ``VenetianCoverCalculation._compute_tilt`` relies on: a tilt
-            # geometry that does not resolve falls back to the default position.
+            # A zero-width scale has no percentage to report. A *negative*
+            # denominator is unreachable from config: both tilt-mode maxima are
+            # nonzero and ``max_slat_angle`` is bounded to [0, 180]. A *zero*
+            # one is reachable, though — ``AdaptiveLouveredRoofCover``
+            # truncates ``max_slat_angle`` with ``int()``, so a fractional
+            # value in (0, 1) lands on 0 rather than on the "use the mode max"
+            # sentinel. That case already raises inside ``calculate_position``
+            # above while it builds its trace, so this is the same failure
+            # surfaced at a second seam rather than a new one. Raising keeps
+            # the contract ``VenetianCoverCalculation._compute_tilt`` relies
+            # on: a tilt geometry that does not resolve falls back to the
+            # default position.
             raise ZeroDivisionError("tilt percentage scale has zero width")
         return self._apply_tilt_axis_limits(pct)
 
