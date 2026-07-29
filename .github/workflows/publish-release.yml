@@ -31,10 +31,11 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
 
-          # Pre-release tags carry a hyphenated identifier (-beta.N) OR a PEP440
-          # dev suffix (.dev<date>, the develop builds). The dev suffix has NO
-          # hyphen, so it must be matched explicitly or dev builds would publish
-          # as stable releases and leak to stable-channel users.
+          # Pre-release tags carry a hyphenated identifier: -beta.N (hand-cut betas)
+          # or -alpha.<date> (the develop builds). The legacy PEP440 .dev<date>
+          # grammar has NO hyphen, so it stays matched explicitly until the last of
+          # those tags ages out — without it a dev build would publish as a stable
+          # release and leak to stable-channel users.
           EXTRA=""
           NOTES="Release $TAG - See full changelog below"
           NOTES_START=""
@@ -42,7 +43,7 @@ jobs:
             *-* | *.dev*) EXTRA="--prerelease --latest=false" ;;
           esac
           case "$TAG" in
-            *.dev*)
+            *-alpha.* | *.dev*)
               NOTES=$(printf '%s\n' \
                 '> 🛠️ **Develop build from `develop` — unstable, for testing.**' \
                 '> Auto-generated from the latest development code. Expect rough edges — not for production use.' \
@@ -86,3 +87,54 @@ jobs:
         run: |
           gh release upload "${{ steps.tag.outputs.tag }}" \
             "${{ github.workspace }}/custom_components/adaptive_cover_pro/adaptive_cover_pro.zip"
+
+      # Runs last, after the release exists and the ZIP is attached, so a failure
+      # here can never cost us the release itself.
+      - name: "Prune betas superseded by this stable"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # A stable just shipped, so every beta cut FOR THAT SAME VERSION is now
+          # a rehearsal for something users can install directly — v2026.8.0-beta.1
+          # through -beta.N are dead weight next to v2026.8.0. Delete them so the
+          # Releases page tracks shipped versions instead of accumulating every
+          # intermediate cut. Betas of versions that have NOT shipped are left
+          # alone: they're still the newest thing on their line.
+          #
+          # Guard 1: bail unless $TAG is a bare stable. A hyphen means this run is
+          # itself a pre-release (-beta./-alpha.), and `.dev` catches the legacy
+          # develop-build grammar.
+          case "$TAG" in
+            *-* | *.dev*)
+              echo "$TAG is a pre-release; nothing to prune."
+              exit 0
+              ;;
+          esac
+
+          # Guard 2: literal prefix match, not a regex. $TAG is full of dots that
+          # would otherwise match any character, so this compares "${TAG}-beta."
+          # as text. A v2026.8.0 release therefore cannot reach v2026.8.1's betas,
+          # another stable, or a develop build.
+          BETAS=()
+          while read -r r; do
+            [ -z "$r" ] && continue
+            case "$r" in
+              "${TAG}-beta."*) BETAS+=("$r") ;;
+            esac
+          done < <(gh api --paginate "repos/${REPO}/releases" --jq '.[].tag_name')
+
+          if [ ${#BETAS[@]} -eq 0 ]; then
+            echo "No superseded betas found for ${TAG}."
+            exit 0
+          fi
+
+          for b in "${BETAS[@]}"; do
+            echo "Deleting superseded beta ${b} (${TAG} has now shipped)"
+            # --cleanup-tag removes the git tag too, so no orphan tags are left.
+            gh release delete "${b}" --cleanup-tag --yes
+          done
+          echo "Pruned ${#BETAS[@]} beta(s) superseded by ${TAG}."
