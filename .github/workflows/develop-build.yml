@@ -1,13 +1,13 @@
-# Develop build — a `.dev` pre-release built from the tip of `develop` whenever
-# develop changes (every push), gated on the test suite.
+# Develop build — an `-alpha.<date>` pre-release built from the tip of `develop`
+# whenever develop changes (every push), gated on the test suite.
 #
 # This workflow is push-triggered, so GitHub runs the copy of this file that
 # lives on `develop` — push events use the workflow from the pushed branch, so
 # there's no dependence on the default branch the way `on: schedule` has.
 #
-# Flow: compute a `.dev<date>` (PEP440) version → run the test suite as a gate →
-# make an ephemeral manifest-bump commit, tag it, and push ONLY the tag. The
-# existing `publish-release.yml` then builds + publishes the pre-release.
+# Flow: compute an `-alpha.<date>` (SemVer pre-release) version → run the test
+# suite as a gate → make an ephemeral manifest-bump commit, tag it, and push ONLY
+# the tag. The existing `publish-release.yml` then builds + publishes it.
 #
 # Retention: keep the 7 most recent develop builds; older ones are pruned.
 #
@@ -46,28 +46,41 @@ jobs:
         run: |
           set -euo pipefail
 
-          # PEP440 dev release of the in-progress target. A `.dev<date>` suffix
-          # sorts BELOW the current beta and the eventual stable in AwesomeVersion
-          # (the library HACS uses), so dev builds never appear as the newest
-          # version to stable/beta users. Two traps this avoids: `nightly` is NOT
-          # an AwesomeVersion modifier (sorts alphabetically high), and bumping the
-          # patch makes the base outrank everything before the modifier is checked.
+          # SemVer pre-release of the in-progress target. An `-alpha.<date>` suffix
+          # sorts BELOW the current beta and the eventual stable, so develop builds
+          # never appear as the newest version to stable/beta users. It holds that
+          # ordering under BOTH sorters that matter, which is why it's `-alpha` and
+          # not something else:
+          #   - AwesomeVersion (the library HACS uses) ranks the `alpha.N` modifier
+          #     below `beta.N`, and both below the bare base version.
+          #   - Generic version sorts — GitHub's /tags page, `git --sort=version:refname`
+          #     — compare the identifier alphabetically, and `alpha` < `beta`. The
+          #     leading hyphen also keeps it below the bare `X.Y.Z` base.
+          #
+          # Three traps this avoids, all previously hit:
+          #   - `nightly` is NOT an AwesomeVersion modifier (sorts alphabetically high).
+          #   - A PEP440 `.dev<date>` suffix sorts correctly in AwesomeVersion but WRONG
+          #     everywhere else: `dev` > `beta` alphabetically and the dot-separated
+          #     segment isn't a pre-release at all to a generic sorter, so a freshly cut
+          #     beta sank below develop builds made hours earlier on GitHub's /tags page.
+          #   - Bumping the patch makes the base outrank everything before the modifier
+          #     is even compared.
           BASE=$(jq -r '.version' custom_components/adaptive_cover_pro/manifest.json)
           CORE=${BASE%%-*}   # strip any -beta.N suffix
           TS=$(date -u +%Y%m%d%H%M)
 
-          # Decide the dev base by asking the real question the suffix used to
+          # Decide the alpha base by asking the real question the suffix used to
           # proxy: has CORE already SHIPPED as a stable (non-prerelease) release?
-          #   - shipped   → dev of the NEXT patch, so it outsorts that stable.
-          #   - unshipped → dev of CORE itself (mid-cycle beta OR bare target).
+          #   - shipped   → alpha of the NEXT patch, so it outsorts that stable.
+          #   - unshipped → alpha of CORE itself (mid-cycle beta OR bare target).
           # This is robust to a bare, not-yet-shipped target version on develop
           # (e.g. the CalVer month rollover sets `YYYY.M.0` with no -beta suffix),
-          # which the old string test mislabeled as `YYYY.M.1.dev`.
+          # which the old string test mislabeled as `YYYY.M.1`.
           if gh release view "v${CORE}" --json isPrerelease --jq '.isPrerelease==false' 2>/dev/null | grep -q true; then
             IFS=. read -r MAJ MIN PAT <<< "$CORE"
-            VERSION="${MAJ}.${MIN}.$((PAT + 1)).dev${TS}"
+            VERSION="${MAJ}.${MIN}.$((PAT + 1))-alpha.${TS}"
           else
-            VERSION="${CORE}.dev${TS}"
+            VERSION="${CORE}-alpha.${TS}"
           fi
           TAG="v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -116,22 +129,39 @@ jobs:
           git push origin "refs/tags/${TAG}"
           echo "Pushed ${TAG}; publish-release.yml will build the pre-release."
 
-      - name: Prune old develop builds (keep newest 7)
+      - name: Prune old develop builds
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          # Keep the 7 most recent develop builds; delete the rest (and any legacy
-          # -nightly. stragglers). gh release list returns newest-first, so we keep
-          # the first 7 and delete from there. --cleanup-tag removes the git tag
-          # along with the release, so no orphan tags are left behind.
+          KEEP=7
+
+          # Retain the newest KEEP develop builds, counting the one this run just
+          # made. That build's RELEASE is created asynchronously by
+          # publish-release.yml, which this step races and reliably LOSES — the tag
+          # push and this prune are seconds apart, so `gh release list` here almost
+          # never sees it yet. Counting on it being present kept KEEP *previous*
+          # builds and then let the new one land on top, so the population sat at
+          # KEEP+1 and wobbled with whoever won the race.
+          #
+          # So: drop $TAG from the list if it happens to be there, keep KEEP-1 of
+          # the remainder, and let the new build be the KEEPth. Same outcome either
+          # way the race falls.
+          #
+          # The selector matches develop builds only — `-alpha.` plus stragglers
+          # from the two earlier grammars (`.dev<date>`, `-nightly.N`). It must
+          # never match `-beta.`: those are real releases.
           mapfile -t TAGS < <(gh release list --limit 100 --json tagName \
-            --jq '.[].tagName | select(test("\\.dev|-nightly\\."))')
+            --jq '.[].tagName | select(test("-alpha\\.|\\.dev|-nightly\\."))' \
+            | grep -vxF "$TAG" || true)
+
           i=0
           for t in "${TAGS[@]:-}"; do
             [ -z "$t" ] && continue
             i=$((i + 1))
-            [ "$i" -le 7 ] && continue
-            echo "Deleting old develop build ${t} (beyond newest 7)"
+            [ "$i" -lt "$KEEP" ] && continue
+            echo "Deleting old develop build ${t} (beyond newest ${KEEP})"
+            # --cleanup-tag removes the git tag too, so no orphan tags are left.
             gh release delete "${t}" --cleanup-tag --yes
           done

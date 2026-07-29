@@ -31,10 +31,11 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
 
-          # Pre-release tags carry a hyphenated identifier (-beta.N) OR a PEP440
-          # dev suffix (.dev<date>, the develop builds). The dev suffix has NO
-          # hyphen, so it must be matched explicitly or dev builds would publish
-          # as stable releases and leak to stable-channel users.
+          # Pre-release tags carry a hyphenated identifier: -beta.N (hand-cut betas)
+          # or -alpha.<date> (the develop builds). The legacy PEP440 .dev<date>
+          # grammar has NO hyphen, so it stays matched explicitly until the last of
+          # those tags ages out — without it a dev build would publish as a stable
+          # release and leak to stable-channel users.
           EXTRA=""
           NOTES="Release $TAG - See full changelog below"
           NOTES_START=""
@@ -42,7 +43,7 @@ jobs:
             *-* | *.dev*) EXTRA="--prerelease --latest=false" ;;
           esac
           case "$TAG" in
-            *.dev*)
+            *-alpha.* | *.dev*)
               NOTES=$(printf '%s\n' \
                 '> 🛠️ **Develop build from `develop` — unstable, for testing.**' \
                 '> Auto-generated from the latest development code. Expect rough edges — not for production use.' \
