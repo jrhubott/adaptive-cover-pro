@@ -14,6 +14,27 @@ from custom_components.adaptive_cover_pro.config_types import (
     TiltConfig,
     VerticalConfig,
 )
+from custom_components.adaptive_cover_pro.engine.covers.base import (
+    AdaptiveGeneralCover,
+)
+
+
+def attach_coverage_rounding(cover):
+    """Give a cover *double* the real base ``round_toward_coverage`` (#1090).
+
+    The solar branch asks the cover which way to quantise its raw percentage,
+    because only the engine knows whether coverage is monotonic in the
+    percentage (it is not on a bi-directional slat axis). Doubles standing in
+    for an ``AdaptiveGeneralCover`` therefore have to answer that call.
+
+    Binds the production implementation to the double rather than
+    reimplementing floor/ceil in test-land, so a double can never quietly
+    disagree with the rule it is standing in for. Returns *cover* for chaining.
+    """
+    cover.round_toward_coverage = AdaptiveGeneralCover.round_toward_coverage.__get__(
+        cover
+    )
+    return cover
 
 
 def make_daytime_sun_data() -> MagicMock:

@@ -109,6 +109,7 @@ from types import SimpleNamespace  # noqa: E402
 from custom_components.adaptive_cover_pro.pipeline.helpers import (  # noqa: E402
     compute_solar_position,
 )
+from tests.cover_helpers import attach_coverage_rounding  # noqa: E402
 
 
 def _snapshot(*, calc_pct, minimize, steps, open_blocks_sun=False):
@@ -121,10 +122,12 @@ def _snapshot(*, calc_pct, minimize, steps, open_blocks_sun=False):
     )
     policy = SimpleNamespace(axes=[SimpleNamespace(open_blocks_sun=open_blocks_sun)])
     return SimpleNamespace(
-        cover=SimpleNamespace(
-            direct_sun_valid=True,
-            calculate_percentage=lambda: int(round(calc_pct)),
-            calculate_raw_percentage=lambda: calc_pct,
+        cover=attach_coverage_rounding(
+            SimpleNamespace(
+                direct_sun_valid=True,
+                calculate_percentage=lambda: int(round(calc_pct)),
+                calculate_raw_percentage=lambda: calc_pct,
+            )
         ),
         config=config,
         policy=policy,

@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.forecast import (
     ForecastSample,
     build_forecast,
 )
+from tests.cover_helpers import attach_coverage_rounding
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -72,7 +73,7 @@ def _make_cover_factory(*, solar_valid: bool, percentage: int = 40):
     """
 
     def factory(azi: float, ele: float):  # noqa: ARG001
-        cover = MagicMock()
+        cover = attach_coverage_rounding(MagicMock())
         cover.direct_sun_valid = solar_valid
         cover.calculate_percentage = MagicMock(return_value=percentage)
         cover.calculate_raw_percentage = MagicMock(return_value=float(percentage))
@@ -336,7 +337,7 @@ class TestBuildForecastEvents:
         valid_window_end = _NOW + timedelta(minutes=90)
 
         def factory(_azi, _ele):
-            cover = MagicMock()
+            cover = attach_coverage_rounding(MagicMock())
             cover.calculate_percentage = MagicMock(return_value=50)
             # Mutated per call via closure to time-of-call check is awkward; the
             # forecast walker passes (azi, ele) at *target* time, so we need a
@@ -351,7 +352,7 @@ class TestBuildForecastEvents:
         def toggling_factory(_azi, _ele):
             idx = call_state["calls"]
             call_state["calls"] += 1
-            cover = MagicMock()
+            cover = attach_coverage_rounding(MagicMock())
             cover.direct_sun_valid = toggle_points[0] <= idx < toggle_points[1]
             cover.calculate_percentage = MagicMock(return_value=50)
             cover.calculate_raw_percentage = MagicMock(return_value=50.0)
@@ -396,7 +397,7 @@ class TestBuildForecastEvents:
         crossing_time = _DAY_START + timedelta(minutes=crossing_idx * 5)
 
         def factory(azi, _ele):
-            cover = MagicMock()
+            cover = attach_coverage_rounding(MagicMock())
             cover.direct_sun_valid = azi >= crossing_idx
             cover.calculate_percentage = MagicMock(return_value=50)
             cover.calculate_raw_percentage = MagicMock(return_value=50.0)
@@ -568,7 +569,7 @@ def _solar_cover_factory(percentage):
     """Cover factory: direct sun valid, calculate_percentage() → *percentage*."""
 
     def factory(_azi, _ele):
-        cover = MagicMock()
+        cover = attach_coverage_rounding(MagicMock())
         cover.direct_sun_valid = True
         cover.calculate_percentage = MagicMock(return_value=percentage)
         cover.calculate_raw_percentage = MagicMock(return_value=float(percentage))

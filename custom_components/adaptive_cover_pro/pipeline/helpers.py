@@ -15,7 +15,6 @@ registry — see issue #463.
 from __future__ import annotations
 
 import dataclasses
-import math
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -134,11 +133,14 @@ def solar_position_from_geometry(
     Snapshot-free single source of truth for the solar branch, shared by the
     live pipeline (:func:`compute_solar_position`) and the forecast:
 
-    1. Calls ``cover.calculate_raw_percentage()`` (pure geometry, unrounded float).
-       Rounds toward full coverage (issue #978): floor() for blinds/tilt/venetian
-       (0%=closed=full coverage), ceil() for awnings (100%=extended=full coverage).
-       Requires *policy* to determine the coverage direction; falls back to
-       round() when policy is None.
+    1. Calls ``cover.calculate_raw_percentage()`` (pure geometry, unrounded float),
+       then quantizes toward full coverage (issue #978) via the engine's
+       ``round_toward_coverage`` hook. *policy* supplies the axis-level direction
+       — floor() when 0% is full coverage (blind/tilt/venetian), ceil() when 100%
+       is (awning) — and the engine refines it where coverage is not monotonic in
+       the percentage: a bi-directional slat axis rounds away from horizontal in
+       whichever arithmetic direction that is (issue #1090). Falls back to round()
+       when policy is None.
     2. Optionally quantizes into the configured number of discrete coverage
        levels (movement minimization — opt-in, rounds toward coverage).
     3. Floors at ``SOLAR_TRACKING_FLOOR_PCT`` (1 %) so open/close-only covers
@@ -159,8 +161,18 @@ def solar_position_from_geometry(
         # → round DOWN (floor) toward 0 to keep more coverage.
         # full_coverage_at_zero=False means 100% = extended = full coverage (awning)
         # → round UP (ceil) toward 100 to keep more coverage.
+        #
+        # That axis-level answer is only the whole story when coverage is
+        # MONOTONIC in the percentage. A bi-directional slat axis (MODE2 tilt,
+        # the shipped default) peaks in openness at horizontal and closes again
+        # past it, so the engine gets the final say via the polymorphic
+        # ``round_toward_coverage`` hook — see issue #1090. The engine, not this
+        # module, is the only object that knows the tilt scale, which keeps the
+        # cover-type branch out of the pipeline layer.
         full_coverage_at_zero = not policy.axes[0].open_blocks_sun
-        state = math.floor(pct) if full_coverage_at_zero else math.ceil(pct)
+        state = cover.round_toward_coverage(
+            pct, full_coverage_at_zero=full_coverage_at_zero
+        )
     else:
         state = int(round(pct))
     if minimize_movements and policy is not None:
