@@ -154,6 +154,36 @@ def test_tilt_safety_margin_constants_exist() -> None:
     assert MAX_VENETIAN_TILT_SAFETY_MARGIN == 1.0
 
 
+def test_user_slack_max_is_the_geometry_worst_case_excess() -> None:
+    """#1089: the user slack budget is derived from the geometry, not tuned.
+
+    SAFETY_MARGIN_USER_SLACK_MAX must equal the largest excess ``_safety_margin``
+    can actually produce. Grid-searched rather than restated as a sum, so the
+    geometry defines the target and the constant has to follow it.
+
+    Catches: a new additive term appearing in ``_safety_margin``; the low/high
+    elevation branches ceasing to be mutually exclusive so both can stack; or
+    the constant being frozen into a literal and then drifting when a
+    SAFETY_MARGIN_*_MAX is retuned.
+
+    Deliberately does NOT catch retuning a SAFETY_MARGIN_*_MAX on its own — the
+    constant is an expression over those same values, so both sides of the
+    assertion move together. That includes making the high-elevation term the
+    larger one, which the ``max()`` tracks by design.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        SAFETY_MARGIN_USER_SLACK_MAX,
+    )
+    from custom_components.adaptive_cover_pro.geometry import _safety_margin
+
+    worst = max(
+        _safety_margin(gamma, elev)
+        for gamma in range(-180, 181, 5)
+        for elev in range(0, 91, 1)
+    )
+    assert pytest.approx(worst - 1.0) == SAFETY_MARGIN_USER_SLACK_MAX
+
+
 def test_geometry_schema_accepts_tilt_safety_margin() -> None:
     """GEOMETRY_VENETIAN_SCHEMA validates the tilt safety margin: 0.0–1.0, default 0.0.
 

@@ -404,10 +404,17 @@ DEFAULT_MAX_TILT_SUN_ONLY = False
 TILT_HORIZONTAL_DEG = 90
 
 # Configurable tilt safety margin (issue #783, generalized to every tilt-axis
-# cover in #964): scales the automatic angle-dependent geometry margin
-# (0.0 = no-op = today's exact grazing angle, 1.0 = full geometry margin applied
-# in the closing direction). Shared by tilt-only, louvered-roof, and venetian
-# covers, so the key is neutral rather than venetian-prefixed.
+# cover in #964): 0.0 = no-op = today's exact grazing angle; higher values add
+# slat-closing slack on top of the automatic angle-dependent geometry margin,
+# including at everyday sun angles (issue #1089 — the original form scaled the
+# geometry margin's excess, which is zero across the normal envelope, so the
+# slider was inert most of the day). It still cannot move a slat the solve has
+# already parked on a travel limit: TILT_HORIZONTAL_DEG is a fixed point of the
+# transform, and an angle past 0°/max_degrees is re-pinned by the output clamp
+# either way. A narrowed [min_tilt, max_tilt] band swallows it the same way one
+# step downstream: the reported tilt lands on the band edge at any strength.
+# Shared by tilt-only, louvered-roof, and venetian covers, so the key is neutral
+# rather than venetian-prefixed.
 CONF_TILT_SAFETY_MARGIN = "tilt_safety_margin"
 DEFAULT_TILT_SAFETY_MARGIN = 0.0
 MIN_TILT_SAFETY_MARGIN = 0.0
@@ -1968,6 +1975,17 @@ SAFETY_MARGIN_LOW_ELEV_MAX = 0.15  # +15% at low sun elevation (<10°)
 SAFETY_MARGIN_HIGH_ELEV_THRESHOLD = 75  # deg — high-angle margin threshold
 SAFETY_MARGIN_HIGH_ELEV_MAX = 0.1  # +10% at high sun elevation (>75°)
 
+# Flat slack budget the USER's tilt safety-margin slider commands on top of the
+# geometry's own margin (issue #1089). Anchored to the largest excess the
+# geometry itself can ever demand — the gamma term plus whichever elevation term
+# is larger, since the low/high elevation branches in ``_safety_margin`` are
+# mutually exclusive — so a maxed slider always grants at least as much slack as
+# the most extreme sun angle would produce unaided, including at geometries
+# where the geometry demands none. Derived, never a fresh literal.
+SAFETY_MARGIN_USER_SLACK_MAX = SAFETY_MARGIN_GAMMA_MAX + max(
+    SAFETY_MARGIN_LOW_ELEV_MAX, SAFETY_MARGIN_HIGH_ELEV_MAX
+)  # 0.35
+
 # Window depth calculation threshold.
 WINDOW_DEPTH_GAMMA_THRESHOLD = 10  # deg — min gamma for depth contribution
 
@@ -2063,7 +2081,7 @@ _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
 _RANGE_TILT_SAFETY_MARGIN = (
     MIN_TILT_SAFETY_MARGIN,
     MAX_TILT_SAFETY_MARGIN,
-)  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 scale factor
+)  # CONF_TILT_SAFETY_MARGIN, 0.0-1.0 fraction of the slat-closing slack budget
 # Legacy alias (#964) so any name-based lookup of the old range still resolves.
 _RANGE_VENETIAN_TILT_SAFETY_MARGIN = _RANGE_TILT_SAFETY_MARGIN
 

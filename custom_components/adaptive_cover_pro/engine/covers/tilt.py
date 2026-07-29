@@ -9,6 +9,7 @@ from numpy import tan
 
 from ...config_types import TiltConfig
 from ...const import (
+    SAFETY_MARGIN_USER_SLACK_MAX,
     TILT_HORIZONTAL_DEG,
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
@@ -273,17 +274,31 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         result = self._resolve_slat_angle(result)
         slat_angle_raw_deg = float(result)
 
-        # Configurable safety margin (issue #783): reuse the vertical axis'
-        # angle-dependent geometry margin (>=1.0), scaled by the user's
-        # ``safety_margin`` (0.0-1.0), applied in the slat-CLOSING direction.
-        # Vertical multiplies a drop by the margin; tilt must instead close the
-        # slats further, so we scale the closure away from horizontal. At
-        # ``safety_margin=0.0`` (or a benign geometry where the geometry margin
-        # is 1.0) ``eff_margin`` is exactly 1.0 and the block is skipped — a
-        # provable byte-for-byte no-op that preserves the exact grazing angle.
+        # Configurable safety margin (issue #783; corrected in #1089). The user's
+        # ``safety_margin`` (0.0-1.0) scales a slack budget made of the vertical
+        # axis' angle-dependent geometry margin PLUS a flat
+        # ``SAFETY_MARGIN_USER_SLACK_MAX`` term, applied in the slat-CLOSING
+        # direction. Vertical multiplies a drop by the margin; tilt must instead
+        # close the slats further, so we scale the closure away from horizontal.
+        # The flat term is what makes the slider mean anything inside the normal
+        # envelope (|gamma| <= 45°, 10° <= elev <= 75°), where the geometry margin
+        # is exactly 1.0 and the original ``(geo_margin - 1) * s`` form multiplied
+        # a zero excess — the slider was inert for most of the day (#1089).
+        # ``safety_margin = 0.0`` is still a byte-for-byte no-op at EVERY geometry
+        # (the whole bracket is gated by the user's value), so the guard below
+        # tests that value directly: ``_safety_margin`` only ever ADDS
+        # non-negative terms to 1.0, so ``geo_margin >= 1.0`` and the bracket is
+        # never below ``SAFETY_MARGIN_USER_SLACK_MAX`` — "the user opted in" and
+        # "``eff_margin`` left 1.0" are the same question, minus a float-equality
+        # test on a derived quantity. Because the transform is relative to
+        # ``TILT_HORIZONTAL_DEG``, a slat resolved to exactly horizontal is a
+        # fixed point, and a MODE1 raw angle at or above the 90° ceiling stays
+        # clamped fully open — the margin cannot close what is already at the rail.
         geo_margin = SafetyMarginCalculator.calculate(self.gamma, self.sol_elev)
-        eff_margin = 1.0 + (geo_margin - 1.0) * self.tilt_config.safety_margin
-        if eff_margin != 1.0:
+        eff_margin = 1.0 + self.tilt_config.safety_margin * (
+            (geo_margin - 1.0) + SAFETY_MARGIN_USER_SLACK_MAX
+        )
+        if self.tilt_config.safety_margin != 0.0:
             result = TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - result) * eff_margin
 
         result = max(0.0, min(float(max_degrees), float(result)))

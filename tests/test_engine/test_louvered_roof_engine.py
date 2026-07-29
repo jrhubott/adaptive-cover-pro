@@ -22,6 +22,10 @@ import numpy as np
 import pytest
 
 from custom_components.adaptive_cover_pro.config_types import LouveredRoofConfig
+from custom_components.adaptive_cover_pro.const import (
+    SAFETY_MARGIN_USER_SLACK_MAX,
+    TILT_HORIZONTAL_DEG,
+)
 from custom_components.adaptive_cover_pro.engine.covers.louvered_roof import (
     AdaptiveLouveredRoofCover,
 )
@@ -32,6 +36,7 @@ from custom_components.adaptive_cover_pro.engine.covers.tilt import (
     AdaptiveTiltCover,
     slat_cutoff_angle,
 )
+from custom_components.adaptive_cover_pro.geometry import SafetyMarginCalculator
 
 from tests.cover_helpers import make_cover_config, make_tilt_config
 
@@ -55,6 +60,7 @@ def _louvered(
     fov_left: float = 90.0,
     fov_right: float = 90.0,
     max_slat_angle: float = 0.0,
+    safety_margin: float = 0.0,
 ) -> AdaptiveLouveredRoofCover:
     """Build a louvered-roof engine at an explicit sun/slat geometry."""
     return AdaptiveLouveredRoofCover(
@@ -66,7 +72,10 @@ def _louvered(
             win_azi=win_azi, fov_left=fov_left, fov_right=fov_right
         ),
         tilt_config=make_tilt_config(
-            slat_distance=slat_distance, depth=depth, mode=mode
+            slat_distance=slat_distance,
+            depth=depth,
+            mode=mode,
+            safety_margin=safety_margin,
         ),
         roof_config=LouveredRoofConfig(
             roof_pitch=roof_pitch, max_slat_angle=max_slat_angle
@@ -82,6 +91,7 @@ def _tilt(
     depth: float = 0.03,
     mode: str = "mode2",
     win_azi: float = 180.0,
+    safety_margin: float = 0.0,
 ) -> AdaptiveTiltCover:
     """Build a plain venetian/tilt engine (the pitch=90 reduction target)."""
     return AdaptiveTiltCover(
@@ -91,7 +101,10 @@ def _tilt(
         sun_data=MagicMock(),
         config=make_cover_config(win_azi=win_azi, fov_left=90, fov_right=90),
         tilt_config=make_tilt_config(
-            slat_distance=slat_distance, depth=depth, mode=mode
+            slat_distance=slat_distance,
+            depth=depth,
+            mode=mode,
+            safety_margin=safety_margin,
         ),
     )
 
@@ -584,3 +597,165 @@ class TestFovAngle:
         assert cover.fov_angle == pytest.approx(expected)
         # Below vertical the in-plane azimuth widens away from the raw gamma.
         assert cover.fov_angle != pytest.approx(cover.gamma)
+
+
+# ---------------------------------------------------------------------------
+# Tilt safety margin — inherited from AdaptiveTiltCover (#783/#964), reshaped
+# by #1089
+# ---------------------------------------------------------------------------
+
+
+def _margin_applied(
+    cover: AdaptiveLouveredRoofCover, resolved: float, s: float
+) -> float:
+    """Re-derive the margin transform outside the engine.
+
+    Mirrors ``engine/covers/tilt.py``: the user's strength ``s`` scales the
+    geometry margin's own excess PLUS the flat ``SAFETY_MARGIN_USER_SLACK_MAX``
+    budget, and the closure is measured away from horizontal — which for a
+    louvered roof is the fully-OPEN (vertical-slat) angle, so the transform
+    pushes the slats shut in whichever direction they were already inclined.
+    """
+    geo = SafetyMarginCalculator.calculate(cover.gamma, cover.sol_elev)
+    eff = 1.0 + s * ((geo - 1.0) + SAFETY_MARGIN_USER_SLACK_MAX)
+    return TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - resolved) * eff
+
+
+def _flat_roof_cutoff(cover: AdaptiveLouveredRoofCover, sol_elev: float) -> float:
+    """Hand path to the raw cut-off on a flat roof with aligned sun (gamma=0)."""
+    beta = math.radians(90.0 - sol_elev)  # flat-roof complement
+    cutoff, _, _ = slat_cutoff_angle(
+        beta, cover.slat_distance, 2 * cover.depth - cover.slat_distance
+    )
+    return float(cutoff)
+
+
+class TestSafetyMarginOnLouveredRoof:
+    """The roof inherits the tilt safety-margin slider, so #1089 moves it too.
+
+    ``AdaptiveLouveredRoofCover`` does not override ``calculate_position`` — it
+    delegates to ``AdaptiveTiltCover`` and only decorates the trace — and its
+    geometry schema copies the tilt schema, carrying ``CONF_TILT_SAFETY_MARGIN``.
+    The reformulated ``eff_margin`` therefore changes roof behaviour, and these
+    are its regression guards.
+    """
+
+    # Flat roof, high near-side sun: the raw cut-off is UNDER 90°, so the roof
+    # inclines the slats past vertical and the margin has somewhere to close to.
+    # Low sun does the opposite — see the self-blocking known-limit test below.
+    _MOVING = {"sol_azi": 180.0, "sol_elev": 75.0, "roof_pitch": 0.0}
+
+    def test_zero_strength_is_byte_identical(self) -> None:
+        """The default 0.0 leaves the max-opening angle untouched, bit for bit."""
+        cover = _louvered(**self._MOVING, mode="mode2", safety_margin=0.0)
+        result = cover.calculate_position()
+        # The transform never ran: the output IS the resolved slat angle.
+        assert result == cover._last_calc_details["slat_angle_raw_deg"]
+        assert cover._last_calc_details["safety_margin"] == 1.0
+        # Independent hand path — max opening is 180 − cut-off on the near side.
+        cutoff = _flat_roof_cutoff(cover, self._MOVING["sol_elev"])
+        assert cutoff < TILT_HORIZONTAL_DEG
+        assert result == pytest.approx(180.0 - cutoff)
+
+    def test_strength_closes_the_slats_further_near_side(self) -> None:
+        """#1089: the slider bites on a roof whose slats are off the open rail."""
+        c0 = _louvered(**self._MOVING, mode="mode2", safety_margin=0.0)
+        a0 = c0.calculate_position()
+        assert (
+            SafetyMarginCalculator.calculate(c0.gamma, c0.sol_elev) == 1.0
+        ), "test setup: inside the envelope, so only the flat user slack applies"
+        assert a0 > TILT_HORIZONTAL_DEG, "test setup: inclined past vertical"
+
+        a1 = _louvered(
+            **self._MOVING, mode="mode2", safety_margin=1.0
+        ).calculate_position()
+        assert a1 == pytest.approx(_margin_applied(c0, a0, 1.0))
+        assert a1 - a0 > 1.0, "the slider must move the slat, not float-noise it"
+        assert TILT_HORIZONTAL_DEG < a1 <= 180.0
+
+    def test_strength_closes_the_slats_further_far_side(self) -> None:
+        """The far-side face closes toward 0°, the mirror of the near side."""
+        far = {"sol_azi": 0.0, "sol_elev": 70.0, "roof_pitch": 0.0}
+        c0 = _louvered(**far, mode="mode2", safety_margin=0.0)
+        a0 = c0.calculate_position()
+        assert c0._is_far_side() is True
+        assert a0 < TILT_HORIZONTAL_DEG, "test setup: inclined short of vertical"
+
+        a1 = _louvered(**far, mode="mode2", safety_margin=1.0).calculate_position()
+        assert a1 == pytest.approx(_margin_applied(c0, a0, 1.0))
+        assert a1 < a0
+        assert 0.0 <= a1 < TILT_HORIZONTAL_DEG
+
+    def test_strength_is_monotonic(self) -> None:
+        """Raising the slider always closes further — no plateau in between."""
+        angles = [
+            _louvered(
+                **self._MOVING, mode="mode2", safety_margin=s
+            ).calculate_position()
+            for s in (0.0, 0.25, 0.5, 0.75, 1.0)
+        ]
+        assert all(b > a for a, b in zip(angles, angles[1:], strict=False))
+
+    def test_trace_reports_the_effective_margin(self) -> None:
+        """Diagnostics parity (#682): the roof trace carries eff_margin and its own keys."""
+        cover = _louvered(**self._MOVING, mode="mode2", safety_margin=1.0)
+        cover.calculate_position()
+        trace = cover._last_calc_details
+        geo = SafetyMarginCalculator.calculate(cover.gamma, cover.sol_elev)
+        assert trace["safety_margin"] == pytest.approx(
+            geo + SAFETY_MARGIN_USER_SLACK_MAX
+        )
+        # The roof decoration still lands on top of the marginated tilt trace.
+        assert trace["roof_pitch_deg"] == pytest.approx(0.0)
+        assert trace["louvered_far_side_branch"] is False
+
+    @pytest.mark.parametrize("sol_elev", [20.0, 30.0, 45.0])
+    def test_known_limit_self_blocking_roof_is_a_fixed_point(
+        self, sol_elev: float
+    ) -> None:
+        """KNOWN LIMIT (#1089): a roof already fully open cannot be closed further.
+
+        Once the raw cut-off reaches 90° the slats self-block, so
+        ``_resolve_slat_angle`` returns exactly ``TILT_HORIZONTAL_DEG`` — a fixed
+        point of the closing transform (``90 − (90 − 90)·m == 90``). With shipped
+        slat proportions that covers most of the day on a flat roof, which is why
+        the user-facing copy scopes the claim rather than promising every sun
+        angle. This fails loudly if ``_resolve_slat_angle`` or the clamp changes.
+        """
+        params = {"sol_azi": 180.0, "sol_elev": sol_elev, "roof_pitch": 0.0}
+        c0 = _louvered(**params, mode="mode2", safety_margin=0.0)
+        a0 = c0.calculate_position()
+        assert _flat_roof_cutoff(c0, sol_elev) >= TILT_HORIZONTAL_DEG
+        assert a0 == float(TILT_HORIZONTAL_DEG)
+
+        a1 = _louvered(**params, mode="mode2", safety_margin=1.0).calculate_position()
+        assert a1 == a0
+
+    def test_known_limit_mode1_roof_clamps_the_closure_away(self) -> None:
+        """KNOWN LIMIT (#1089): mode1's 90° ceiling IS the roof's fully-open angle.
+
+        A near-side roof inclines PAST vertical, so a single-direction drive
+        clamps to 90° whether or not the margin ran. The slider is invisible on
+        that FACE — the geometry that would show it lives above the ceiling.
+        Not on mode1 roofs generally: the far-side face resolves to ``90° − i``,
+        which sits below the ceiling and does respond. Sweeping a flat mode1 roof
+        over the whole sky, the margin moves 0 of the near-side sun positions and
+        roughly half of the far-side ones.
+        """
+        c0 = _louvered(**self._MOVING, mode="mode1", safety_margin=0.0)
+        a0 = c0.calculate_position()
+        assert c0._last_calc_details["slat_angle_raw_deg"] > TILT_HORIZONTAL_DEG
+        assert a0 == float(TILT_HORIZONTAL_DEG)
+
+        a1 = _louvered(
+            **self._MOVING, mode="mode1", safety_margin=1.0
+        ).calculate_position()
+        assert a1 == a0
+
+    def test_pitch_90_still_matches_the_tilt_engine_with_the_margin_on(self) -> None:
+        """The vertical reduction stays byte-for-byte once the slider is raised."""
+        louvered = _louvered(
+            sol_azi=205, sol_elev=35, roof_pitch=90, mode="mode2", safety_margin=1.0
+        )
+        tilt = _tilt(sol_azi=205, sol_elev=35, mode="mode2", safety_margin=1.0)
+        assert louvered.calculate_position() == tilt.calculate_position()
