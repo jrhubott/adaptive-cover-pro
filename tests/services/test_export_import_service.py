@@ -426,6 +426,44 @@ class TestImportConfig:
         assert entry.options["max_slat_angle"] == 0
 
     @pytest.mark.asyncio
+    async def test_max_slat_angle_out_of_range_error_names_the_bounds(self, tmp_path):
+        """Issue #1105 audit: an out-of-range import error must still name [0, 180].
+
+        Routing ``max_slat_angle`` through ``FIELD_VALIDATORS`` (for the dead
+        zone above) means an out-of-range value now fails through
+        ``_num()``'s ``vol.Any(None, ...)`` composition, whose ``exc.msg`` is
+        voluptuous's generic "not a valid value" fallback rather than the
+        real ``vol.Range`` message. Every sibling ``OPTION_RANGES`` key on
+        this same loop still reports ``"out of range [lo, hi]"`` for a
+        bounds violation, and an import validation error aborts the entire
+        entry — so a degraded message here is the only string a user has to
+        debug from. This pins that the bounds survive.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 181}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"].startswith("error:")
+        assert "max_slat_angle=181 out of range [0, 180]" in result["id-1"]
+        # entry options must not have been modified
+        assert entry.options["max_slat_angle"] == 160
+
+    @pytest.mark.asyncio
     async def test_max_slat_angle_sentinel_and_usable_values_import_cleanly(
         self, tmp_path
     ):

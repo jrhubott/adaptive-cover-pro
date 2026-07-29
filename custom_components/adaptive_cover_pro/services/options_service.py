@@ -372,8 +372,13 @@ def _max_slat_angle_v():
         # Redundant with ``vol.Range(min=MIN_USABLE_SLAT_ANGLE_DEG)`` inside
         # ``ranged`` below — any value here already falls through to it and
         # fails with the same verdict. Kept only so the sub-degree dead zone
-        # gets a message that names the sentinel, rather than the generic
-        # minimum-bound message ``vol.Range`` would produce on its own.
+        # gets a message that names the sentinel: ``ranged`` wraps its
+        # ``vol.Range`` in ``_num()``'s ``vol.Any(None, ...)``, and
+        # voluptuous's ``Any`` keeps the "None"-literal alternative's generic
+        # fallback (``MultipleInvalid: "not a valid value"``) over the real
+        # ``vol.Range`` message on a failure — so without this branch, a
+        # value like 0.5 would report no bound at all, let alone the
+        # sentinel (verified empirically, not assumed).
         if 0 < coerced < MIN_USABLE_SLAT_ANGLE_DEG:
             raise vol.Invalid(
                 f"must be 0 (use tilt mode) or >= {MIN_USABLE_SLAT_ANGLE_DEG}"

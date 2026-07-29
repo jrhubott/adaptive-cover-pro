@@ -160,7 +160,27 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                     # outright to silently passing.
                     try:
                         FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](value)
+                    except vol.MultipleInvalid:
+                        # Outside the dead zone, ``_max_slat_angle_v`` falls
+                        # through to ``_num()``'s ``vol.Any(None, ...)``
+                        # composition, and voluptuous's ``Any`` keeps the
+                        # "None"-literal alternative's generic fallback
+                        # message ("not a valid value") instead of the real
+                        # ``vol.Range`` one — that's what distinguishes this
+                        # from the branch below (``vol.Any`` failing raises
+                        # ``MultipleInvalid``, a subclass of ``vol.Invalid``).
+                        # Every sibling OPTION_RANGES key on this loop still
+                        # names its bounds on an out-of-range value, so
+                        # reconstruct the same wording here rather than
+                        # surfacing the uninformative fallback to the user.
+                        lo, hi = OPTION_RANGES[key]
+                        validation_errors.append(
+                            f"{key}={value} out of range [{lo}, {hi}]"
+                        )
                     except vol.Invalid as exc:
+                        # The dead-zone branch (naming the ``0`` sentinel) and
+                        # a bad type (via ``vol.Coerce``) both raise directly
+                        # with an already-informative message — keep it as-is.
                         validation_errors.append(f"{key}={value!r}: {exc.msg}")
                 elif key in OPTION_RANGES:
                     lo, hi = OPTION_RANGES[key]
