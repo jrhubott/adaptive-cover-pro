@@ -298,9 +298,13 @@ class TestVenetianTiltSafetyMargin:
     def test_safety_margin_bites_below_the_mode1_open_rail(self, sol_azi, sol_elev):
         """#1089 in mode1 too — wherever the raw cut-off is under the 90° ceiling.
 
-        Mode1 is only inert where the clamp pins it (the companion test); below
-        the rail the slider closes the slats by exactly the flat user-slack
-        budget, since ``geo_margin`` is 1.0 across this envelope.
+        Below the rail the slider closes the slats by exactly the flat user-slack
+        budget, since ``geo_margin`` is 1.0 across this envelope. NOT a claim
+        that the 90° clamp is mode1's only freeze — the negative-discriminant
+        park is mode-independent and pins mode1 too
+        (``test_safety_margin_is_inert_when_the_solve_parks_fully_closed`` is
+        parametrized over both modes). The setup guard below is what scopes this
+        test to geometries that still have closure left.
         """
         from custom_components.adaptive_cover_pro.const import (
             SAFETY_MARGIN_USER_SLACK_MAX,

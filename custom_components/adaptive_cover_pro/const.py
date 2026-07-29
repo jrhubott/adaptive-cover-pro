@@ -411,8 +411,10 @@ TILT_HORIZONTAL_DEG = 90
 # slider was inert most of the day). It still cannot move a slat the solve has
 # already parked on a travel limit: TILT_HORIZONTAL_DEG is a fixed point of the
 # transform, and an angle past 0°/max_degrees is re-pinned by the output clamp
-# either way. Shared by tilt-only, louvered-roof, and venetian
-# covers, so the key is neutral rather than venetian-prefixed.
+# either way. A narrowed [min_tilt, max_tilt] band swallows it the same way one
+# step downstream: the reported tilt lands on the band edge at any strength.
+# Shared by tilt-only, louvered-roof, and venetian covers, so the key is neutral
+# rather than venetian-prefixed.
 CONF_TILT_SAFETY_MARGIN = "tilt_safety_margin"
 DEFAULT_TILT_SAFETY_MARGIN = 0.0
 MIN_TILT_SAFETY_MARGIN = 0.0
