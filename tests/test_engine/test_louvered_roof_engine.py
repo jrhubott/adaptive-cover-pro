@@ -423,6 +423,22 @@ class TestMaxSlatAngle:
         cover.calculate_position()
         assert cover._last_calc_details["max_degrees"] == 160
 
+    def test_fractional_sub_one_does_not_raise_zero_division(self) -> None:
+        # A fractional max_slat_angle in the open interval (0, 1) is truthy, so
+        # it must NOT be routed to the ``0`` sentinel branch — but it also must
+        # not truncate to a literal ``0`` denominator (issue #1105).
+        cover = _louvered(
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=0.4
+        )
+        result = cover.calculate_position()
+        assert isinstance(result, float)
+
+    def test_fractional_denominator_is_not_truncated(self) -> None:
+        cover = _louvered(
+            sol_azi=180, sol_elev=65, roof_pitch=0, mode="mode2", max_slat_angle=137.5
+        )
+        assert cover._effective_max_degrees() == pytest.approx(137.5)
+
 
 class TestMaxOpeningObjective:
     """The louvered slat objective is MAX OPENING (closest to vertical/90°).

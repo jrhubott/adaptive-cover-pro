@@ -46,6 +46,46 @@ class TestLouveredRoofConfig:
         assert cfg.max_slat_angle == 160.0
 
 
+class TestMaxSlatAngleValidator:
+    """``FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE]`` rejects the sub-1° dead zone (#1105).
+
+    ``0`` is the documented sentinel meaning "use the tilt mode's 90°/180°"; a
+    value in the open interval ``(0, 1)`` is neither the sentinel nor a usable
+    physical angle (it would truncate to the sentinel's own literal denominator
+    in the engine before this fix), so the config boundary must reject it
+    outright rather than silently accepting a value that can never resolve to
+    anything but the sentinel's behavior under a naive ``int()`` cast.
+    """
+
+    def test_validator_rejects_sub_one_nonzero(self) -> None:
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        validator = FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE]
+        for value in (0.5, 0.99, -0.1):
+            with pytest.raises(vol.Invalid):
+                validator(value)
+
+    def test_validator_accepts_zero_sentinel_and_none(self) -> None:
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        validator = FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE]
+        validator(0)
+        assert validator(None) is None
+
+    def test_validator_accepts_one_through_max(self) -> None:
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        validator = FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE]
+        validator(1)
+        validator(180)
+
+
 def _schema_keys(schema: vol.Schema) -> set[str]:
     return {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
 

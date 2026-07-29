@@ -346,6 +346,36 @@ def _time_v():
     return vol.Any(None, _check)
 
 
+def _max_slat_angle_v():
+    """Validate ``CONF_MAX_SLAT_ANGLE``: ``None``/``0`` sentinel, else ``[1, hi]``.
+
+    A bespoke validator rather than the generic ``_range()`` helper (issue
+    #1105): ``0`` means "use the tilt mode's 90°/180°" and must stay legal, but
+    a plain ``vol.Range(min=0, max=hi)`` also admits the open interval ``(0,
+    1)`` — a value that is neither the sentinel nor a usable physical angle
+    (the engine's own ``_effective_max_degrees()`` no longer truncates it, but
+    it is still a misconfiguration worth rejecting at the boundary where it was
+    made). Reads ``hi`` from ``OPTION_RANGES`` rather than a new literal, per
+    the single-source-of-truth rule.
+    """
+    _, hi = OPTION_RANGES[CONF_MAX_SLAT_ANGLE]
+    ranged = vol.All(vol.Coerce(float), vol.Range(min=1, max=hi))
+
+    def _validate(value):
+        if value is None:
+            return None
+        coerced = vol.Coerce(float)(value)
+        if coerced == 0:
+            return value
+        if 0 < coerced < 1:
+            raise vol.Invalid(
+                f"max_slat_angle must be 0 (use tilt mode) or >= 1, got: {value!r}"
+            )
+        return ranged(value)
+
+    return _validate
+
+
 def _select_v(*options: str):
     return vol.Any(None, vol.In(list(options)))
 
@@ -395,8 +425,10 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — roof / skylight window (#212)
     CONF_ROOF_PITCH: _range(CONF_ROOF_PITCH),
     CONF_ROOF_HEIGHT_ABOVE: _range(CONF_ROOF_HEIGHT_ABOVE),
-    # Geometry — louvered roof (#830 follow-up)
-    CONF_MAX_SLAT_ANGLE: _range(CONF_MAX_SLAT_ANGLE),
+    # Geometry — louvered roof (#830 follow-up). Bespoke validator (#1105): the
+    # generic _range() also admits the (0, 1) dead zone between the "0 = use
+    # tilt mode" sentinel and the smallest usable physical angle.
+    CONF_MAX_SLAT_ANGLE: _max_slat_angle_v(),
     # Geometry — sliding curtain shade area (#829, Part 2)
     CONF_SLIDING_ENABLE_SHADE_AREA: _bool_v(),
     CONF_SLIDING_SLIDE_DIRECTION: _select_v(*SLIDING_SLIDE_DIRECTIONS),

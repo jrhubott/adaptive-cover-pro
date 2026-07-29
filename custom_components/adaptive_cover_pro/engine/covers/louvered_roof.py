@@ -162,14 +162,18 @@ class AdaptiveLouveredRoofCover(AdaptiveTiltCover):
             return self.depth
         return self.depth + max(0.0, self.depth - self.slat_distance)
 
-    def _effective_max_degrees(self) -> int:
+    def _effective_max_degrees(self) -> float:
         """Honour a configured physical ``max_slat_angle`` over the tilt-mode max.
 
         ``0`` (the sentinel default) falls back to the mode's 90°/180°; a nonzero
         value becomes BOTH the clamp ceiling and the tilt%→angle denominator.
+        No truncation: the base hook is typed ``-> float`` and every call site
+        immediately re-wraps the result in ``float(...)``, so an ``int()`` cast
+        here bought nothing except silently collapsing a fractional value in
+        ``(0, 1)`` onto the ``0`` sentinel's literal denominator (issue #1105).
         """
         m = self.roof_config.max_slat_angle
-        return int(m) if m else self._max_degrees()
+        return m if m else self._max_degrees()
 
     @property
     def fov_angle(self) -> float:
