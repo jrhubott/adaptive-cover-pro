@@ -328,7 +328,6 @@ CONFIG_SCHEMA = vol.Schema(
 from .cover_types import (  # noqa: E402
     POLICY_REGISTRY,
     BlindPolicy,
-    CoverTypePolicy,
     TiltPolicy,
     get_policy,
 )
@@ -3886,7 +3885,7 @@ def _area_menu(area: str) -> str:
     return "glare_zones" if area == "glare_zone" else area
 
 
-def _apply_create_defaults(options: dict, policy: CoverTypePolicy) -> None:
+def _apply_create_defaults(options: dict, sensor_type: str | None) -> None:
     """Seed the create wizard's constant-backed defaults (issue #133 / #1126).
 
     Quick setup skips some steps (e.g. automation, position) leaving critical
@@ -3897,9 +3896,18 @@ def _apply_create_defaults(options: dict, policy: CoverTypePolicy) -> None:
     extended = maximum shading) still yields the "leave it alone" value (0,
     not 100).
 
-    Virtual entry types are skipped by the caller's ``controls_cover and not
-    is_orchestrator`` gate: a Building Profile builds no coordinator, and a
-    cover group builds a ``GroupCoordinator`` that reads none of these keys.
+    Resolves the policy itself and early-returns on
+    ``not (controls_cover and not is_orchestrator)`` — mirrors the gate
+    ``__init__.py:_seed_default_position`` applies for the same reason: a
+    Building Profile builds no coordinator, and a cover group builds a
+    ``GroupCoordinator`` that reads none of these keys, so neither wants any
+    of the seven defaults below. Unlike that migration-side helper, this one
+    does not catch ``ValueError`` from ``get_policy`` — every call site here
+    is a live wizard step where ``sensor_type`` is always a just-selected or
+    already-loaded-and-valid cover type, and the surrounding config-flow code
+    already calls ``get_policy`` unguarded on the same value, so letting an
+    unknown type raise here matches the pre-refactor failure mode instead of
+    silently skipping the defaults.
 
     Shared by all three sites that can mint a fresh entry's options —
     ``async_step_update`` (the entry the normal create wizard actually
@@ -3910,6 +3918,9 @@ def _apply_create_defaults(options: dict, policy: CoverTypePolicy) -> None:
     disabled source entry is never migrated, so an old, still-broken copy
     would otherwise propagate the missing key forever).
     """
+    policy = get_policy(sensor_type)
+    if not (policy.controls_cover and not policy.is_orchestrator):
+        return
     options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
     options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
     options.setdefault(CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION)
@@ -4199,9 +4210,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         # never disagree about the default position — otherwise the summary
         # would still render "Default → 0 %" for a quick-setup cover that is
         # actually about to be created at its per-type no-coverage endpoint.
-        _summary_policy = get_policy(self.type_blind)
-        if _summary_policy.controls_cover and not _summary_policy.is_orchestrator:
-            _apply_create_defaults(self.config, _summary_policy)
+        _apply_create_defaults(self.config, self.type_blind)
 
         sun_times = await _compute_todays_sun_times(self.hass, self.config)
         _language = _resolve_summary_language(self.hass, self.context)
@@ -4269,9 +4278,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         # group builds a GroupCoordinator that reads none of the
         # cover-automation options — both keep only what their create step
         # collected.
-        _finalize_policy = get_policy(self.type_blind)
-        if _finalize_policy.controls_cover and not _finalize_policy.is_orchestrator:
-            _apply_create_defaults(options, _finalize_policy)
+        _apply_create_defaults(options, self.type_blind)
 
         # If the user linked a Building Profile during creation, merge its
         # non-empty shared-sensor keys into options now — after all form steps
@@ -4354,9 +4361,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             # _extract_shared_options can copy nothing for the key. Route
             # through the same seed helper the other two create sites use
             # instead of relying on that accident (#1126).
-            _dup_policy = get_policy(sensor_type)
-            if _dup_policy.controls_cover and not _dup_policy.is_orchestrator:
-                _apply_create_defaults(new_options, _dup_policy)
+            _apply_create_defaults(new_options, sensor_type)
 
             return self.async_create_entry(  # type: ignore[return-value]
                 title=f"{_cover_type_label(sensor_type)} {new_name}",

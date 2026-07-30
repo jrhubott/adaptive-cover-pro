@@ -243,16 +243,15 @@ def test_create_summary_shows_seeded_default_position():
     from custom_components.adaptive_cover_pro.config_flow import (
         _apply_create_defaults,
     )
-    from custom_components.adaptive_cover_pro.cover_types import get_policy
 
     blind_cfg: dict = {}
-    _apply_create_defaults(blind_cfg, get_policy(CoverType.BLIND))
+    _apply_create_defaults(blind_cfg, CoverType.BLIND)
     blind_summary = _build_config_summary(blind_cfg, CoverType.BLIND)
     assert "🌙 Default (no rule matches) → 100%" in blind_summary
     assert "🌙 Default (no rule matches) → 0%" not in blind_summary
 
     awning_cfg: dict = {}
-    _apply_create_defaults(awning_cfg, get_policy(CoverType.AWNING))
+    _apply_create_defaults(awning_cfg, CoverType.AWNING)
     awning_summary = _build_config_summary(awning_cfg, CoverType.AWNING)
     assert "🌙 Default (no rule matches) → 0%" in awning_summary
 
