@@ -332,9 +332,26 @@ class CoverCommandService:
         s = self._state.get(entity_id)
         return None if s is None else s.target
 
-    def set_target(self, entity_id: str, position: int | None) -> None:
-        """Set the commanded target position. ``None`` clears the target."""
-        self.state(entity_id).target = position
+    def set_target(
+        self,
+        entity_id: str,
+        position: int | None,
+        *,
+        dispatch_token: Any = None,
+    ) -> None:
+        """Set the commanded target position. ``None`` clears the target.
+
+        The ONE writer of the ``(target, dispatch_token)`` pair (issue #1115).
+        ``dispatch_token`` is the cover-type policy's opaque stamp for the
+        dispatch that produced ``position`` — see ``PerEntityState`` — and it is
+        written here, beside the target, precisely so no code path can record
+        one without the other. Callers with no dispatch behind the write (a
+        rehydrated target, an externally-observed My move, a clear) leave it at
+        ``None``: no provenance is the honest answer there.
+        """
+        s = self.state(entity_id)
+        s.target = position
+        s.dispatch_token = dispatch_token
 
     def restore_target(self, entity_id: str, target: int | None) -> bool:
         """Rehydrate a persisted command target after an ACP reload (issue #1022).
@@ -720,8 +737,8 @@ class CoverCommandService:
             if s.target is not None and not s.is_safety
         ]
         for eid in stale:
+            self.set_target(eid, None)
             s = self._state[eid]
-            s.target = None
             self._clear_waiting(s)
             s.retry_count = 0
             s.gave_up = False
@@ -967,7 +984,13 @@ class CoverCommandService:
         # toward My during the transit window.
         prior_position = self._get_current_position(entity_id)
         s = self.state(entity_id)
-        s.target = target
+        # A real outbound command, so it books real dispatch provenance — same
+        # rule as ``_prepare_service_call`` (issue #1115).
+        self.set_target(
+            entity_id,
+            target,
+            dispatch_token=self._policy.capture_dispatch_token(entity_id),
+        )
         s.waiting = True
         s.sent_at = now
         s.last_progress_at = None
@@ -1652,11 +1675,28 @@ class CoverCommandService:
         # Skipped entirely in a dry run: the answer is a wall-clock wait on a
         # physical rail, and a simulated command moves nothing for it to wait on
         # — the dry-run gate below owns that path.
+        #
+        # The policy's provenance stamp for THIS dispatch is taken first, ONCE,
+        # and used for both the gate and the booking below (issue #1115). Taken
+        # before the gate rather than at the booking because the gate may await
+        # a physical rail for its whole budget, and a policy's per-cycle view can
+        # be restated by another cycle across that await — reading it twice would
+        # stamp the booked target with a dispatch that did not produce it, which
+        # is the exact provenance bug this stamp exists to close. Opaque here:
+        # this service stores and replays it, never interprets it.
+        dispatch_token = (
+            None
+            if context.policy is None
+            else context.policy.capture_dispatch_token(entity_id)
+        )
         if (
             not self._dry_run
             and context.policy is not None
             and not await context.policy.await_dispatch_clearance(
-                entity_id, position=position, reason=reason
+                entity_id,
+                position=position,
+                reason=reason,
+                dispatch_token=dispatch_token,
             )
         ):
             return self._skip(
@@ -1682,6 +1722,7 @@ class CoverCommandService:
             plan=_plan,
             is_safety=context.is_safety,
             use_my_position=context.use_my_position,
+            dispatch_token=dispatch_token,
         )
         if service is None:
             return self._skip(
@@ -2133,8 +2174,21 @@ class CoverCommandService:
             # running when the next one starts, and the two mutate the same
             # per-entity state (issue #1115). One reading, withhold, re-ask in a
             # minute: identical eventual behaviour, no overlap.
+            #
+            # ``dispatch_token``: a resend re-states the number the ORIGINAL
+            # dispatch put on the wire, so the policy is handed back that
+            # dispatch's own stamp rather than being left to infer one from a
+            # per-cycle view a later resolve may have restated. Without it a
+            # single resolve-then-skip cycle — routine under the default 2 %/2 min
+            # delta gates — flips the verdict either way: withholding a rail
+            # nothing will ever re-target, or resending into a rail that is
+            # physically blocked (issue #1115).
             if not await self._policy.await_dispatch_clearance(
-                entity_id, position=target, reason="reconcile", wait=False
+                entity_id,
+                position=target,
+                reason="reconcile",
+                wait=False,
+                dispatch_token=s.dispatch_token,
             ):
                 self._logger.debug(
                     "Reconcile: %s withheld by the cover-type policy — a coupled "
@@ -2328,6 +2382,7 @@ class CoverCommandService:
         is_safety: bool = False,
         use_my_position: bool = False,  # noqa: FBT001
         plan: ServiceCallPlan | None = None,
+        dispatch_token: Any = None,
     ) -> tuple[str | None, dict | None, bool]:
         """Build the HA service call for this cover/state.
 
@@ -2361,6 +2416,14 @@ class CoverCommandService:
                 Recomputed internally when omitted, preserving the original
                 call contract for every other caller (e.g.
                 ``_execute_command``).
+            dispatch_token: Opaque cover-type-policy stamp describing the
+                dispatch that produced ``state``, recorded alongside the booked
+                target so a later resend can hand it back to the policy that
+                minted it (issue #1115). ``apply_position`` passes the stamp it
+                took for THIS dispatch; ``_execute_command`` passes the stored
+                one forward, because a resend puts the same number back on the
+                wire and therefore speaks the same dispatch. Never interpreted
+                here.
 
         Returns:
             (service_name, service_data, supports_position).
@@ -2422,7 +2485,10 @@ class CoverCommandService:
         # comparison stays in the raw display frame.
         prior_position = self._read_position_with_capabilities(entity, caps)
         s = self.state(entity)
-        s.target = plan.routed_target
+        # The booking chokepoint: the target and the dispatch provenance that
+        # explains it are recorded by the same call, so a resend can never be
+        # gated against a dispatch that did not produce it (issue #1115).
+        self.set_target(entity, plan.routed_target, dispatch_token=dispatch_token)
         self._set_transit_direction_if_blind(
             entity, plan.routed_target, prior_position, caps
         )
@@ -2462,7 +2528,13 @@ class CoverCommandService:
         ``apply_position`` (issue #342), so no duplicate gate is needed here.
         """
         service, service_data, _ = self._prepare_service_call(
-            entity_id, target, reset_retries=False
+            entity_id,
+            target,
+            reset_retries=False,
+            # A resend re-books the SAME number, so it carries the original
+            # dispatch's provenance forward rather than re-stamping it with
+            # whatever the policy's per-cycle view says now (issue #1115).
+            dispatch_token=self._get(entity_id).dispatch_token,
         )
         if service is None:
             return

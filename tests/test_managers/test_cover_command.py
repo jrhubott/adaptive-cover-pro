@@ -1501,6 +1501,7 @@ def _endpoint_service(
     is_safety=False,
     use_my_position=False,
     plan=None,
+    dispatch_token=None,
 ):
     """_prepare_service_call side_effect: route 0→close, 100→open, else set_position."""
     if position == 0:

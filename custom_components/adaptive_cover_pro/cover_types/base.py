@@ -760,6 +760,33 @@ class CoverTypePolicy(ABC):
         """
         return
 
+    def capture_dispatch_token(
+        self,
+        entity_id: str,  # noqa: ARG002
+    ) -> Any:
+        """Return an opaque stamp describing HOW this dispatch expressed its value.
+
+        The provenance half of :meth:`await_dispatch_clearance`. A policy that
+        has to un-transform a dispatched number later — the Model C day/night
+        middle rail, whose clearance test compares its target against a live rail
+        reading in open-percent space — cannot re-derive the transform after the
+        fact: its own per-cycle cache describes the last RESOLUTION, and
+        ``resolve_entity_target`` runs as an ARGUMENT to
+        ``CoverCommandService.apply_position``, so a cycle that resolves and then
+        skips on a delta gate restates that cache for a command which never went
+        out (issue #1115, the #993 inversion class).
+
+        So the transform travels WITH the value instead. ``CoverCommandService``
+        asks for this stamp once per dispatch, stores it beside the target it
+        books, and hands it back verbatim to :meth:`await_dispatch_clearance`
+        when the reconciliation timer re-sends that target. The manager never
+        interprets it — it is this policy's own datum, round-tripped.
+
+        Liskov-safe default: ``None``, i.e. "no provenance needed", which is
+        every cover type whose dispatched values need no later un-transforming.
+        """
+        return None
+
     async def await_dispatch_clearance(
         self,
         entity_id: str,  # noqa: ARG002
@@ -767,6 +794,7 @@ class CoverTypePolicy(ABC):
         position: int,  # noqa: ARG002
         reason: str,  # noqa: ARG002
         wait: bool = True,  # noqa: ARG002
+        dispatch_token: Any = None,  # noqa: ARG002
     ) -> bool:
         """Whether this entity may be driven to ``position`` right now.
 
@@ -786,6 +814,15 @@ class CoverTypePolicy(ABC):
         pass whose budget matches the timer interval overlap the next one, with
         two live passes mutating the same per-entity state (issue #1115). Same
         eventual behaviour either way; the next tick re-asks.
+
+        ``dispatch_token`` replays the stamp :meth:`capture_dispatch_token`
+        minted for the dispatch that BOOKED ``position`` — the resend path hands
+        back what it stored, so the answer is computed against the dispatch the
+        number actually came from rather than against whatever a later resolve
+        left in the policy's per-cycle cache (issue #1115). ``None`` means the
+        caller has no stamp to offer: the dispatch path, which is asking about a
+        value it resolved a moment ago, and any target seeded from outside a
+        dispatch.
 
         Returns ``False`` to withhold, ``True`` to proceed. Withholding is
         expected to latch (:meth:`has_pending_secondary_axis`) so a later pass

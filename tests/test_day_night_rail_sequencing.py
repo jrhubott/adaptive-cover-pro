@@ -1392,3 +1392,232 @@ async def test_gate_reads_the_seam_frame_even_when_no_blend_resolved(
 
     assert outcome[0] == "sent", outcome
     assert f"send:{_MIDDLE}" in events, events
+
+
+# ---------------------------------------------------------------------------
+# Provenance: the frame belongs to the BOOKED target, not to the last resolve
+# ---------------------------------------------------------------------------
+# ``resolve_entity_target`` runs as an ARGUMENT to ``apply_position``, so a cycle
+# that resolves and then skips on a delta gate still re-states the policy's
+# per-cycle dispatch frame — while the recorded target reconciliation resends was
+# booked by an older dispatch, in an older frame. Reading the frame off the policy
+# at resend time therefore un-transforms the number against a dispatch that never
+# happened. The frame has to travel WITH the booked target (issue #1115).
+
+
+async def _dispatch_middle_rail(
+    cmd_svc,
+    policy,
+    *,
+    position: int,
+    inverted: bool,
+    context_inverse: bool,
+) -> int:
+    """Dispatch the middle rail through the real seam and book its target.
+
+    ``resolve_entity_target`` → ``apply_position`` is exactly the production
+    chain: the remap names the seam's frame, the command service gates on it and
+    then books the resulting wire value. Clears ``waiting`` afterwards so the
+    reconciliation pass under test is not skipped as "still in transit".
+    """
+    wire = policy.resolve_entity_target(_MIDDLE, position, inverted=inverted)
+    ctx = _rail_context(policy, inverse=context_inverse)
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, wire, "end_time", ctx)
+    assert outcome[0] == "sent", outcome
+    cmd_svc.state(_MIDDLE).waiting = False
+    return wire
+
+
+def _arm_reconciliation(cmd_svc) -> None:
+    """Open the reconciliation pass's own gates (matching ``_reconcile_harness``)."""
+    cmd_svc._enable_position_matching = True
+    cmd_svc._auto_control_enabled = True
+    cmd_svc._in_time_window = True
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_never_resends_against_a_frame_the_target_never_used(
+    monkeypatch,
+) -> None:
+    """The dangerous direction: a resolve-then-skip must not unlock a blocked rail.
+
+    Inverse-state install. The auto-control-off return loop dispatches the raw
+    default UN-INVERTED and books wire 80 for the middle rail. The bottom rail
+    then drifts back up to 95 — stacked well above that target. Automatic control
+    comes back on inside the delta window: the main pipeline resolves the middle
+    rail in the install's own (inverted) frame and ``apply_position`` skips, so
+    nothing goes out but the policy's per-cycle frame is now ``True``.
+
+    Read in that frame the recorded 80 looks like open 20 and the bottom rail's
+    95 looks like open 5, so the gate calls a physically blocked rail clear and
+    resends into it — the exact mechanical block #1115 exists to prevent, on the
+    path added to prevent it. Read in the frame the number was actually
+    dispatched in, open 95 is stacked above open 80 and the command is withheld.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, rails, events = _rail_harness(
+        script={_BOTTOM: [30], _MIDDLE: [90]},
+        position=60,
+        blend=50,
+        inverse=True,
+    )
+    assert policy._dual_entity_inverse is True
+
+    # 1. The auto-control-off return loop: un-inverted, bottom rail still low.
+    wire = await _dispatch_middle_rail(
+        cmd_svc, policy, position=60, inverted=False, context_inverse=True
+    )
+    assert wire == 80
+    assert cmd_svc.get_target(_MIDDLE) == 80
+
+    # 2. The bottom rail drifts back up and stacks above that target.
+    rails.park(_BOTTOM, 95)
+
+    # 3. Automatic control returns; the cycle resolves the rail and then skips.
+    _dual_policy(position=20, blend=50, inverse=True, policy=policy)
+    events.clear()
+    policy.resolve_entity_target(_MIDDLE, 20)
+    assert events == [], events
+
+    # 4. Reconciliation resends the number the FIRST seam put on the wire.
+    _arm_reconciliation(cmd_svc)
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" not in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is True
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_resends_when_a_later_resolve_flips_the_cached_frame(
+    monkeypatch,
+) -> None:
+    """The regression direction: an unrelated resolve must not strand the rail.
+
+    Same shape as ``test_reconciliation_gate_keeps_the_frame_of_the_seam_it_resends``
+    — a seam dispatched the middle rail naming ``inverted=True`` while the cycle's
+    cached decision is ``False`` — but with one main-pipeline resolve added that
+    never dispatches. Reading the frame off the policy at resend time now flips
+    the verdict to "withhold", and since only that seam ever refreshes this
+    target, the rail is never reconciled again. Before the gate existed the
+    resend simply went out, so withholding here is a NEW regression, not merely
+    unfired protection.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # Wire 80 == open 20 in the seam's frame: the bottom rail is low, well
+        # clear of a middle rail whose wire-20 target is open 80.
+        script={_BOTTOM: [80], _MIDDLE: [90]},
+        position=20,
+        blend=100,  # all sheer → the middle rail's remap is identity
+    )
+    assert policy._dual_entity_inverse is False
+
+    wire = await _dispatch_middle_rail(
+        cmd_svc, policy, position=20, inverted=True, context_inverse=False
+    )
+    assert wire == 20
+    assert cmd_svc.get_target(_MIDDLE) == 20
+
+    # A later cycle resolves the rail in the cached frame and dispatches nothing.
+    _dual_policy(position=20, blend=100, policy=policy)
+    events.clear()
+    policy.resolve_entity_target(_MIDDLE, 20)
+    assert events == [], events
+
+    _arm_reconciliation(cmd_svc)
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_dispatch_provenance_is_written_and_cleared_with_the_target() -> None:
+    """The stamp lives and dies with the target it explains.
+
+    Every path that records a target records its provenance in the SAME call,
+    and every path that clears one clears the stamp with it. Split those apart
+    and a target booked by a path with no dispatch behind it — a rehydrated
+    target, an externally-observed My move, a window-close clear — inherits the
+    stamp of an older command, and the resend gate un-transforms it against a
+    frame it was never expressed in. That is the whole defect (issue #1115),
+    just relocated.
+    """
+    cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [80], _MIDDLE: [90]},
+        position=20,
+        blend=100,
+    )
+
+    # A real dispatch stamps the frame the seam resolved the value in.
+    await _dispatch_middle_rail(
+        cmd_svc, policy, position=20, inverted=True, context_inverse=False
+    )
+    assert cmd_svc.state(_MIDDLE).dispatch_token is True
+
+    # A target recorded with no dispatch behind it carries no stamp — it must
+    # not inherit the previous command's.
+    cmd_svc.set_target(_MIDDLE, 40)
+    assert cmd_svc.state(_MIDDLE).dispatch_token is None
+
+    # A My move IS a real outbound command, so it books a real stamp.
+    policy.resolve_entity_target(_MIDDLE, 20, inverted=False)
+    with _patch_caps():
+        assert await cmd_svc.send_my_position(_MIDDLE, 55) is True
+    assert cmd_svc.state(_MIDDLE).dispatch_token is False
+
+    # Clearing the target clears the stamp with it.
+    cmd_svc.state(_MIDDLE).is_safety = False
+    cmd_svc.clear_non_safety_targets()
+    assert cmd_svc.get_target(_MIDDLE) is None
+    assert cmd_svc.state(_MIDDLE).dispatch_token is None
+
+    # ...and discarding the record takes both away outright.
+    cmd_svc.set_target(_MIDDLE, 40, dispatch_token=True)
+    cmd_svc.discard_target(_MIDDLE)
+    assert cmd_svc.state(_MIDDLE).dispatch_token is None
+
+
+@pytest.mark.asyncio
+async def test_a_resend_carries_the_original_dispatch_frame_forward(
+    monkeypatch,
+) -> None:
+    """Re-booking the same number must not re-stamp it with a newer frame.
+
+    A resend routes back through the same booking chokepoint the first dispatch
+    used, so it rewrites the recorded target — and would rewrite its provenance
+    too if the pass did not carry the original forward. Since the number going
+    back on the wire is the one the FIRST dispatch produced, its frame is still
+    that dispatch's; re-stamping it with the policy's current per-cycle view
+    would simply defer the same mismatch by one pass, and the rail would strand
+    on the tick after the one that reconciled it.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [80], _MIDDLE: [90]},
+        position=20,
+        blend=100,
+    )
+    await _dispatch_middle_rail(
+        cmd_svc, policy, position=20, inverted=True, context_inverse=False
+    )
+    _dual_policy(position=20, blend=100, policy=policy)
+    policy.resolve_entity_target(_MIDDLE, 20)
+    _arm_reconciliation(cmd_svc)
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+        # The rail never reaches the target (the script pins it at 90), so the
+        # next tick asks again — against a target the resend just re-booked.
+        cmd_svc.state(_MIDDLE).waiting = False
+        events.clear()
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False

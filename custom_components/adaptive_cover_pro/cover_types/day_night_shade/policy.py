@@ -705,13 +705,21 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
         # NB: ``_dual_entity_dispatch_inverse`` is deliberately NOT reset here.
-        # It belongs to the last middle-rail DISPATCH, not to a resolve cycle,
-        # and the one caller that reads it without a fresh dispatch of its own —
-        # reconciliation — re-sends the number that dispatch put on the wire. Its
-        # frame is therefore the only one that number is expressed in; clearing
-        # it would hand the gate this cycle's cached decision for a dispatch that
-        # never happened (issue #1115). The dispatch path re-states it every time
-        # through ``resolve_entity_target``, so it can never be stale there.
+        # It records the frame of the last middle-rail RESOLUTION — which is
+        # exactly right for its one reader, the DISPATCH path: ``apply_position``
+        # asks the travel gate immediately after ``resolve_entity_target``
+        # restated it for the very value being dispatched, with nothing in
+        # between. Clearing it here would hand that gate a cached per-cycle
+        # decision instead of the seam's own answer (issue #1115).
+        #
+        # It is emphatically NOT the frame a RESEND speaks. ``resolve_entity_target``
+        # is evaluated as an argument to ``apply_position``, so a cycle that
+        # resolves and then skips on a delta gate restates this field for a
+        # command that never went out, while the recorded target reconciliation
+        # replays still belongs to an older dispatch in an older frame. That
+        # provenance travels with the target instead: ``capture_dispatch_token``
+        # stamps the frame onto the command as it is BOOKED, and the gate
+        # un-transforms the number it is really resending against that stamp.
 
     def _is_dual_entity_middle_rail(self, entity_id: str) -> bool:
         """Whether ``entity_id`` is THIS cycle's Model C middle rail.
@@ -757,6 +765,27 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         flight is in (the #993 bug class; issue #1115).
         """
         return self._dual_entity_inverse if inverted is None else inverted
+
+    def capture_dispatch_token(self, entity_id: str) -> bool | None:
+        """Stamp the middle rail's dispatch frame onto the command being booked.
+
+        Resolves the frame through the SAME :meth:`_dispatch_frame` rule the
+        gate and ``resolve_entity_target`` use, so the stamp is literally the
+        answer the dispatch-path gate computed for this command — no second
+        inversion path (the #993 bug class; issue #1115).
+
+        ``CoverCommandService`` stores the returned bool beside the target it
+        books and hands it back when the reconciliation timer re-sends that
+        target, which is the only way the gate can un-transform a number
+        dispatched by an earlier seam: this policy's own per-cycle cache has by
+        then been restated by every intervening resolve, dispatched or skipped.
+
+        ``None`` for the bottom rail and for every non-Model-C instance — no
+        rail there needs its dispatched value un-transformed later.
+        """
+        if not self._is_dual_entity_middle_rail(entity_id):
+            return None
+        return self._dispatch_frame(self._dual_entity_dispatch_inverse)
 
     def resolve_entity_target(
         self,
@@ -1176,6 +1205,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         reason: str,
         *,
         wait: bool,
+        dispatch_token: bool | None,
     ) -> bool:
         """Hold the middle rail until the bottom rail has cleared its target.
 
@@ -1197,12 +1227,23 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         calibration (issue #1115).
 
         The comparison is in OPEN-PERCENT space on both sides, via ``flip_if``
-        against the DISPATCH FRAME — whatever ``resolve_entity_target`` resolved
-        for this very command, replayed through the one shared
-        :meth:`_dispatch_frame` rule. ``M >= P`` in open-percent is ``M <= P``
-        on the wire, so a raw comparison inverts the verdict for every
-        inverse-state install (the #993 bug class), and a second, divergent
-        inversion path is exactly what must not be introduced.
+        against the DISPATCH FRAME — the frame of the dispatch that produced
+        THIS number, replayed through the one shared :meth:`_dispatch_frame`
+        rule. ``M >= P`` in open-percent is ``M <= P`` on the wire, so a raw
+        comparison inverts the verdict for every inverse-state install (the #993
+        bug class), and a second, divergent inversion path is exactly what must
+        not be introduced.
+
+        Which dispatch that is depends on the caller, so the caller says.
+        ``dispatch_token`` is the stamp :meth:`capture_dispatch_token` minted
+        when the command was BOOKED — what the resend path replays, because the
+        number it is putting back on the wire is the one that dispatch produced.
+        ``None`` means the caller is the dispatch path itself, asking about a
+        value ``resolve_entity_target`` resolved a moment ago, so the live
+        per-cycle record answers. Reading that record on a resend instead is the
+        provenance bug this parameter exists to close: it belongs to the last
+        RESOLUTION, and one resolve-then-skip cycle is enough to flip the
+        verdict on a target no resolve has touched (issue #1115).
 
         It is emphatically NOT ``context.inverse_state``. That names the
         install's configured flag, and the broadcast seams dispatch in a
@@ -1237,7 +1278,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             )
             return True
 
-        inverse = self._dispatch_frame(self._dual_entity_dispatch_inverse)
+        inverse = self._dispatch_frame(
+            self._dual_entity_dispatch_inverse
+            if dispatch_token is None
+            else dispatch_token
+        )
         middle_open = flip_if(position, inverted=inverse)
         tolerance = self._position_tolerance
 
@@ -1267,6 +1312,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         position: int,
         reason: str,
         wait: bool = True,
+        dispatch_token: bool | None = None,
     ) -> bool:
         """Hold a Model C middle-rail command until the bottom rail has cleared.
 
@@ -1280,11 +1326,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         interval and a blocked rail would otherwise keep a pass alive into the
         next one. The bottom rail is not going anywhere in the meantime: the
         withhold latches and the next tick re-asks.
+
+        ``dispatch_token`` names WHICH dispatch ``position`` came from — the
+        resend path replays the stamp :meth:`capture_dispatch_token` minted when
+        that command was booked, so the gate un-transforms the number against
+        the frame it is actually expressed in rather than against a per-cycle
+        record a later resolve may have restated (issue #1115).
         """
         if not self._is_dual_entity_middle_rail(entity_id):
             return True
         return await self._gate_middle_rail_clearance(
-            entity_id, position, reason, wait=wait
+            entity_id, position, reason, wait=wait, dispatch_token=dispatch_token
         )
 
     def _debug(self, msg: str, *args) -> None:
