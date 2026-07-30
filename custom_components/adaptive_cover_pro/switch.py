@@ -23,6 +23,7 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
+    DEFAULT_POSITION_SELECTOR_FALLBACK,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
@@ -384,7 +385,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                 and self.coordinator.return_to_default_toggle
             ):
                 default_position = self.coordinator.config_entry.options.get(
-                    CONF_DEFAULT_HEIGHT, 60
+                    CONF_DEFAULT_HEIGHT, DEFAULT_POSITION_SELECTOR_FALLBACK
                 )
                 self.coordinator.logger.debug(
                     "Returning covers to default position: %s", default_position

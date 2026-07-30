@@ -228,6 +228,61 @@ async def test_minimal_create_wizard_geometry_only(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("cover_type", "geometry_input", "expected_default_height"),
+    [
+        (CoverType.BLIND, _VERTICAL_GEOMETRY, 100),
+        (CoverType.AWNING, {"length_awning": 2.1, "angle": 0}, 0),
+    ],
+)
+async def test_create_seeds_default_position_per_cover_type(
+    hass: HomeAssistant,
+    cover_type: str,
+    geometry_input: dict,
+    expected_default_height: int,
+) -> None:
+    """A newly created cover starts at its per-type no-coverage endpoint (#1126).
+
+    The minimal create wizard has no position step, so ``CONF_DEFAULT_HEIGHT``
+    must be seeded by the finalizer — like a blind's fully-open 100, not a
+    literal 60 and not an absent key (which every runtime read falls back to
+    0 for, driving the cover fully closed until Options -> Position is opened
+    and saved). Awning's position axis is polarity-flipped (100 % = fully
+    extended = maximum shading), so its no-coverage endpoint is 0, not 100.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    assert result["step_id"] == "create_new"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Cover", CONF_MODE: cover_type}
+    )
+    assert result["step_id"] == "cover_entities"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    assert result["step_id"] == "geometry"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], geometry_input
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "summary"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+    entry = result["result"]
+    assert entry.data[CONF_SENSOR_TYPE] == cover_type
+    assert entry.options.get(CONF_DEFAULT_HEIGHT) == expected_default_height
+
+
+@pytest.mark.integration
 async def test_quick_setup_horizontal_creates_entry(hass: HomeAssistant) -> None:
     """Quick-setup path for a horizontal awning creates a config entry."""
     result = await hass.config_entries.flow.async_init(

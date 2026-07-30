@@ -225,6 +225,7 @@ from .const import (
     DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TIMEOUT,
+    DEFAULT_POSITION_SELECTOR_FALLBACK,
     GLARE_ZONE_FORM_KEYS,
     GLARE_ZONE_SLOT_NUMBERS,
     GLARE_ZONE_SLOTS,
@@ -327,6 +328,7 @@ CONFIG_SCHEMA = vol.Schema(
 from .cover_types import (  # noqa: E402
     POLICY_REGISTRY,
     BlindPolicy,
+    CoverTypePolicy,
     TiltPolicy,
     get_policy,
 )
@@ -597,7 +599,9 @@ def _template_combine_mode_selector() -> selector.SelectSelector:
 # the behavior step reference these positions; they never redefine one.
 POSITION_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_DEFAULT_HEIGHT, default=60): selector.NumberSelector(
+        vol.Required(
+            CONF_DEFAULT_HEIGHT, default=DEFAULT_POSITION_SELECTOR_FALLBACK
+        ): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=100,
@@ -3882,6 +3886,36 @@ def _area_menu(area: str) -> str:
     return "glare_zones" if area == "glare_zone" else area
 
 
+def _apply_create_defaults(options: dict, policy: CoverTypePolicy) -> None:
+    """Seed the create wizard's constant-backed defaults (issue #133 / #1126).
+
+    Quick setup skips some steps (e.g. automation, position) leaving critical
+    keys absent from the accumulated config. ``setdefault`` so an already
+    collected value always wins. ``CONF_DEFAULT_HEIGHT`` seeds the policy's
+    no-coverage endpoint — ``position_for_intent(sun_through=True)`` — rather
+    than a literal, so awning's polarity-flipped position axis (100 % = fully
+    extended = maximum shading) still yields the "leave it alone" value (0,
+    not 100).
+
+    Virtual entry types are skipped by the caller's ``controls_cover and not
+    is_orchestrator`` gate: a Building Profile builds no coordinator, and a
+    cover group builds a ``GroupCoordinator`` that reads none of these keys.
+
+    Shared by ``async_step_update`` (the entry actually created) and
+    ``async_step_summary`` (the pre-create preview), so the two can never
+    disagree about the seeded default position.
+    """
+    options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
+    options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
+    options.setdefault(CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION)
+    options.setdefault(CONF_MOTION_SENSORS, [])
+    options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
+    options.setdefault(CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING)
+    options.setdefault(
+        CONF_DEFAULT_HEIGHT, policy.position_for_intent(sun_through=True)
+    )
+
+
 # Wiki link surfaced as the ``{learn_more}`` placeholder on each slot sub-menu.
 _SLOT_AREA_WIKI: dict[str, str] = {
     "custom_position": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
@@ -3927,7 +3961,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # Rollback-safe: every other migration block is additive (existing keys
     # retained), and the v3.12 rewrite only ever moves a value into the format
     # older builds already expect.
-    MINOR_VERSION = 12
+    # 3.13 (issue #1126): the minimal create wizard (#945 Part 2) has no
+    # position step, so an entry created since then never got
+    # default_percentage written and every runtime read fell back to a
+    # hard-coded 0 (fully closed). The v3.12→v3.13 block setdefault-seeds the
+    # policy's no-coverage endpoint (position_for_intent(sun_through=True));
+    # an older build already understands default_percentage.
+    MINOR_VERSION = 13
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -4149,6 +4189,15 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_update()
         from .troubleshoot_i18n import load_troubleshoot_labels
 
+        # Seed the same constant-backed defaults async_step_update applies
+        # (issue #1126) so the pre-create preview and the created entry can
+        # never disagree about the default position — otherwise the summary
+        # would still render "Default → 0 %" for a quick-setup cover that is
+        # actually about to be created at its per-type no-coverage endpoint.
+        _summary_policy = get_policy(self.type_blind)
+        if _summary_policy.controls_cover and not _summary_policy.is_orchestrator:
+            _apply_create_defaults(self.config, _summary_policy)
+
         sun_times = await _compute_todays_sun_times(self.hass, self.config)
         _language = _resolve_summary_language(self.hass, self.context)
         labels = await _load_summary_labels(self.hass, _language)
@@ -4206,25 +4255,18 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         # entry.options["mode"] must carry the strategy mode ("basic" / "advanced").
         options[CONF_MODE] = self.mode
 
-        # Quick setup skips some steps (e.g. automation) leaving critical keys
-        # absent from self.config.  Apply constant-backed defaults so the
-        # coordinator never receives None for gating values (issue #133).
-        # Virtual entry types skip this: a Building Profile builds no
-        # coordinator, and a cover group builds a GroupCoordinator that reads
-        # none of the cover-automation options — both keep only what their
-        # create step collected.
+        # Quick setup skips some steps (e.g. automation, position) leaving
+        # critical keys absent from self.config.  Apply constant-backed
+        # defaults so the coordinator never receives None for gating values,
+        # and so a newly created cover starts at its per-type no-coverage
+        # position instead of 0 % (issues #133 / #1126). Virtual entry types
+        # skip this: a Building Profile builds no coordinator, and a cover
+        # group builds a GroupCoordinator that reads none of the
+        # cover-automation options — both keep only what their create step
+        # collected.
         _finalize_policy = get_policy(self.type_blind)
         if _finalize_policy.controls_cover and not _finalize_policy.is_orchestrator:
-            options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
-            options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
-            options.setdefault(
-                CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION
-            )
-            options.setdefault(CONF_MOTION_SENSORS, [])
-            options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
-            options.setdefault(
-                CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
-            )
+            _apply_create_defaults(options, _finalize_policy)
 
         # If the user linked a Building Profile during creation, merge its
         # non-empty shared-sensor keys into options now — after all form steps

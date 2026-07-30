@@ -25,6 +25,7 @@ from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DEFAULT_HEIGHT,
     CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENABLE_POSITION_MATCHING,
@@ -603,6 +604,29 @@ def _repair_malformed_times(options: dict) -> list[str]:
     return changes
 
 
+def _seed_default_position(sensor_type: str | None, options: dict) -> bool:
+    """Seed default_percentage from the policy's no-coverage endpoint (issue #1126).
+
+    The minimal create wizard (#945 Part 2) has no position step, so an entry
+    created since then never got ``default_percentage`` written — every
+    runtime read then falls back to a hard-coded 0, driving the cover fully
+    closed until a user opens Options -> Position and saves. Gated on
+    ``controls_cover and not is_orchestrator`` — the same gate the create
+    finalizer uses — because a Building Profile or Group policy has no axes
+    and ``position_for_intent`` would raise ``IndexError``.
+
+    ``setdefault``-shaped: a no-op when the key is already present. Returns
+    whether the key was seeded, for the migration log.
+    """
+    if CONF_DEFAULT_HEIGHT in options:
+        return False
+    policy = get_policy(sensor_type)
+    if not (policy.controls_cover and not policy.is_orchestrator):
+        return False
+    options[CONF_DEFAULT_HEIGHT] = policy.position_for_intent(sun_through=True)
+    return True
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
@@ -766,6 +790,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 ", ".join(repaired),
             )
         new_minor = 12
+
+    # v3.12 → v3.13: seed default_percentage for entries the minimal create
+    # wizard left key-less (issue #1126). Backfill the policy's no-coverage
+    # endpoint (100 for most cover types, 0 for the polarity-flipped awning
+    # types) so an already-bitten entry is repaired on upgrade instead of
+    # staying fully closed forever. See ``_seed_default_position`` for the
+    # additive/setdefault-shaped, gated details.
+    if new_version == 3 and new_minor < 13:
+        _seed_default_position(entry.data.get(CONF_SENSOR_TYPE), new_options)
+        new_minor = 13
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
