@@ -94,9 +94,12 @@ async def async_handle_set_axes(call: ServiceCall) -> None:
         # requested; otherwise the tilt value, which on a single-carriage type
         # falls back to the position path and lands on the carriage anyway
         # (#684). A type with a real tilt axis ignores the pair entirely.
+        # ``user_dispatch_position`` is the shared derivation the dispatch loop
+        # below runs, floor clamp included — naming the raw request instead lets
+        # a floor flip the direction between the ordering view and the gate.
         for entity_id in policy.order_for_dispatch(
             entity_ids,
-            position=coord._to_cover_frame(  # noqa: SLF001
+            position=coord.user_dispatch_position(
                 axes.get(AXIS_NAME_POSITION, axes.get(AXIS_NAME_TILT))
             ),
             inverted=coord.position_axis_inverted,

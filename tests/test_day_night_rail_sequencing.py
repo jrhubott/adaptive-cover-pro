@@ -1201,7 +1201,24 @@ async def test_bottom_rail_proceeds_immediately_when_the_middle_is_already_clear
 # lead instead, and the whole failure disappears.
 
 
-def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch):
+def _min_mode_floor(position: int, priority: int):
+    """One active min-mode floor, shaped exactly as the pipeline hands it over.
+
+    ``priority`` above :class:`ManualOverrideHandler`'s 80 is what makes the
+    floor clamp a user command at all (#472). A weather override with min-mode
+    (90) or any custom-position slot configured above 80 produces this.
+    """
+    from custom_components.adaptive_cover_pro.pipeline.floors import FloorClampInfo
+
+    return FloorClampInfo(
+        source="weather_override_min_mode",
+        label="Weather override",
+        position=position,
+        priority=priority,
+    )
+
+
+def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=()):
     """Build a coordinator over the REAL ``async_apply_user_position`` tail.
 
     Everything a user command actually crosses on its way to the wire is
@@ -1209,6 +1226,14 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch):
     remap, the command service and the policy's travel gate. Only the
     snapshot / pipeline / manager collaborators around the floor clamp are
     stubbed, because none of them has anything to say about the rails.
+
+    ``floors`` declares what the min-mode gatherer finds. The gatherer itself
+    has to be stubbed either way — the snapshot here is a ``MagicMock`` and the
+    real one would walk it — but everything downstream of it stays production
+    code: ``effective_floor``'s max-of-floors composition, the
+    outranks-manual-override predicate and the ``max()`` clamp. That arithmetic
+    is precisely what the ordering view has to agree with, so it must not be
+    stubbed alongside the walk.
     """
     from custom_components.adaptive_cover_pro import coordinator as coordinator_module
 
@@ -1228,15 +1253,22 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch):
     coord._build_position_context = lambda _entity, _options, **_kw: _rail_context(
         policy
     )  # noqa: ARG005
-    for name in ("_entity_target", "_to_cover_frame", "async_apply_user_position"):
+    for name in (
+        "_entity_target",
+        "_to_cover_frame",
+        "_build_user_command_snapshot",
+        "_clamp_to_active_floor",
+        "user_dispatch_position",
+        "async_apply_user_position",
+    ):
         setattr(
             coord,
             name,
             types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
         )
-    # No min-mode floor is configured here, and the real gatherer would otherwise
-    # walk the stubbed snapshot.
-    monkeypatch.setattr(coordinator_module, "gather_active_floors", lambda _s: [])
+    monkeypatch.setattr(
+        coordinator_module, "gather_active_floors", lambda _s: list(floors)
+    )
     return coord
 
 
@@ -1300,6 +1332,170 @@ async def test_my_position_button_raise_sends_both_rails_without_stalling(
     # Nothing was withheld, so nothing is left latched waiting for a retry that
     # manual override has already blocked.
     assert policy.has_pending_secondary_axis(_BOTTOM) is False
+    assert elapsed < 10, elapsed
+
+
+# ---------------------------------------------------------------------------
+# The ordering view and the gate must be asked about the SAME number
+# ---------------------------------------------------------------------------
+# A user command's dispatched value is not the value the user asked for: an
+# active min-mode floor that outranks manual override raises it before dispatch
+# (#472), and the interpolation curve reshapes it again (#1027). The travel gate
+# is asked about the number that actually goes on the wire, so if the ordering
+# view is handed the raw request instead, the two can disagree about which way
+# the shade is travelling — in EITHER direction:
+#
+#   * a floor turning a lower into a raise: ordering sees a lower and leads with
+#     the bottom rail, whose gate then finds the real (clamped) target above the
+#     middle rail and withholds it;
+#   * a DESCENDING interpolation curve (np.interp puts no monotonicity on
+#     new_range): the floor raises the logical number while the curve lowers the
+#     dispatched one, so ordering INVENTS a raise, leads with the middle rail,
+#     and stalls the middle rail's unconditional gate instead.
+#
+# Both are the same bug — two derivations of one number — so both are fixed by
+# naming it once. Both cost a full settle budget and then drop the withheld
+# rail's command, which at a user seam nothing re-sends.
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_raise_under_a_floor_sends_both_rails(
+    monkeypatch,
+) -> None:
+    """A floor that turns the user's lower into a raise must reorder the rails.
+
+    The My preset is 20 — below the bottom rail's live 10 is a raise of 10
+    points, and below the middle rail's live 20 it would need no reordering at
+    all. Then a min-mode floor at 80 (priority 90, so it outranks manual
+    override and clamps) turns the dispatch into a raise to 80, well past the
+    middle rail. The gate sees 80 and withholds the bottom rail; the ordering
+    view must see 80 too, or it leads with exactly the rail the gate is about
+    to block.
+
+    The settle budget is left at its real value on purpose — entering it at all
+    is half the failure, and the withheld command is the other half: a
+    ``policy_deferred`` skip books no target, so reconciliation has nothing to
+    re-send and the manual override this very press engaged stops the pipeline
+    driving it either.
+    """
+    from custom_components.adaptive_cover_pro.button import (
+        AdaptiveCoverMyPositionButton,
+    )
+
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20]},
+        position=20,
+        blend=50,
+    )
+
+    # A rail only moves once it has been commanded.
+    scripted_read = rails.read
+
+    def _read(entity_id: str) -> int | None:
+        if entity_id == _MIDDLE and f"send:{_MIDDLE}" in events:
+            return 90
+        return scripted_read(entity_id)
+
+    rails.read = _read
+
+    coord = _user_seam_coordinator(
+        cmd_svc,
+        policy,
+        entities=[_MIDDLE, _BOTTOM],
+        monkeypatch=monkeypatch,
+        floors=[_min_mode_floor(80, priority=90)],
+    )
+    button = MagicMock()
+    button._entities = [_MIDDLE, _BOTTOM]
+    button.config_entry.options = {CONF_MY_POSITION_VALUE: 20}
+    button.coordinator = coord
+
+    started = dt.datetime.now(dt.UTC)
+    with _patch_caps():
+        await AdaptiveCoverMyPositionButton.async_press(button)
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert f"send:{_BOTTOM}" in events, events
+    assert events.index(f"send:{_MIDDLE}") < events.index(f"send:{_BOTTOM}")
+    # The floor really did clamp — without this the test could pass by the
+    # request and the dispatch happening to agree.
+    assert cmd_svc.get_target(_BOTTOM) == 80
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+    assert elapsed < 10, elapsed
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_lower_under_a_descending_curve_leads_bottom(
+    monkeypatch,
+) -> None:
+    """A descending interpolation curve must not let the floor invent a raise.
+
+    The mirror of the case above, and the reason the fix is "name one number"
+    rather than "apply the clamp at the seam too". Interpolation is the user's
+    own calibration table and ``np.interp`` imposes no monotonicity on it, so a
+    curve mapping 0→100 and 100→0 is legal. Under it the floor raises the
+    LOGICAL request (0 → 80) while the curve lowers the DISPATCHED value
+    (100 → 20), and the two derivations point opposite ways.
+
+    Handed the raw request, the ordering view reads 100 — above the middle
+    rail's live 95 — and leads with the middle rail on what is really a
+    lowering. The middle rail's gate is unconditional (#1115): it waits for the
+    bottom rail to descend past its own target, the bottom rail has not been
+    commanded yet, and the whole settle budget burns before the middle rail's
+    command is dropped.
+    """
+    from custom_components.adaptive_cover_pro.button import (
+        AdaptiveCoverMyPositionButton,
+    )
+
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, rails, events = _rail_harness(
+        script={_BOTTOM: [90], _MIDDLE: [95]},
+        position=0,
+        blend=50,
+    )
+
+    scripted_read = rails.read
+
+    def _read(entity_id: str) -> int | None:
+        if entity_id == _BOTTOM and f"send:{_BOTTOM}" in events:
+            return 20
+        return scripted_read(entity_id)
+
+    rails.read = _read
+
+    coord = _user_seam_coordinator(
+        cmd_svc,
+        policy,
+        entities=[_MIDDLE, _BOTTOM],
+        monkeypatch=monkeypatch,
+        floors=[_min_mode_floor(80, priority=90)],
+    )
+    # A descending calibration curve: f(0) = 100, f(80) = 20.
+    coord._use_interpolation = True
+    coord.start_value = None
+    coord.end_value = None
+    coord.normal_list = [0, 100]
+    coord.new_list = [100, 0]
+
+    button = MagicMock()
+    button._entities = [_MIDDLE, _BOTTOM]
+    button.config_entry.options = {CONF_MY_POSITION_VALUE: 0}
+    button.coordinator = coord
+
+    started = dt.datetime.now(dt.UTC)
+    with _patch_caps():
+        await AdaptiveCoverMyPositionButton.async_press(button)
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert f"send:{_BOTTOM}" in events, events
+    assert f"send:{_MIDDLE}" in events, events
+    assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}")
+    # Curve applied to the CLAMPED request, not the raw one (f(80) = 20).
+    assert cmd_svc.get_target(_BOTTOM) == 20
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
     assert elapsed < 10, elapsed
 
 
@@ -1966,6 +2162,92 @@ def test_pipeline_dispatch_seams_name_their_fanned_out_target() -> None:
         "Dispatch seams that order without naming the number they are fanning "
         "out (issue #1118) — pass position=<the value _entity_target gets>, or "
         "add the seam to _UNNAMED_TARGET_SEAMS with its reason:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Structural guard — a USER-command seam must name its CLAMPED target
+# ---------------------------------------------------------------------------
+# The scan above proves every seam that can name a number does. This one proves
+# the number is the right one. A user command's dispatched value is not the
+# value the user asked for: ``async_apply_user_position`` raises it to any
+# min-mode floor outranking manual override (#472) before mapping it into the
+# cover's frame. The gate is asked about the result; an ordering view handed the
+# raw request can therefore read the direction backwards — a floor turns a lower
+# into a raise, and a descending interpolation curve turns the clamp itself into
+# an invented raise. Both strand a rail for a settle budget and then drop its
+# command, which at a user seam nothing re-sends.
+#
+# ``Coordinator.user_dispatch_position`` is the shared derivation. Only the My
+# button is covered end to end (both directions, above); the other five sites
+# would regress in silence.
+_USER_COMMAND_ENTRY_POINTS = frozenset(
+    {"async_apply_user_position", "async_apply_user_tilt", "async_apply_user_axis"}
+)
+_USER_DISPATCH_ACCESSOR = "user_dispatch_position"
+
+# (module path relative to the production root, innermost enclosing function).
+_USER_COMMAND_SEAMS = frozenset(
+    {
+        ("button.py", "async_press"),
+        ("services/set_position_service.py", "async_handle_set_position"),
+        ("services/set_tilt_service.py", "async_handle_set_tilt"),
+        ("services/set_axes_service.py", "async_handle_set_axes"),
+        ("group_coordinator.py", "_member"),
+    }
+)
+
+
+@pytest.mark.unit
+def test_user_command_seams_name_the_number_they_will_actually_dispatch() -> None:
+    """Fail if a user-command seam orders on the request instead of the dispatch.
+
+    A seam whose fan-out ends in ``async_apply_user_position`` / ``_tilt`` /
+    ``_axis`` must derive its ``position=`` through
+    ``Coordinator.user_dispatch_position`` — the same clamp and the same frame
+    mapping that tail runs. Calling ``_to_cover_frame`` directly reproduces the
+    frame half and drops the floor clamp, which is exactly enough to make the
+    ordering view and the travel gate disagree about the direction of travel.
+
+    On a group seam the accessor has to be the MEMBER coordinator's: the floors
+    and the frame both belong to the instance being commanded, not to the group.
+    That is not checkable structurally, which is why it is stated here.
+    """
+    offenders: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    for path in sorted(_PRODUCTION_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        module = path.relative_to(_PRODUCTION_ROOT).as_posix()
+        for call, enclosing in _order_view_calls(tree):
+            if enclosing is None or not (
+                _called_names(enclosing) & _USER_COMMAND_ENTRY_POINTS
+            ):
+                continue
+            fn_name = enclosing.name
+            seen.add((module, fn_name))
+            named = next(
+                (kw.value for kw in call.keywords if kw.arg == "position"), None
+            )
+            if named is None or _USER_DISPATCH_ACCESSOR not in _called_names(named):
+                offenders.append(
+                    f"{path.relative_to(_REPO_ROOT)}:{call.lineno} ({fn_name})"
+                )
+
+    missing = _USER_COMMAND_SEAMS - seen
+    assert not missing, (
+        "The user-command seam scan found no ordered fan-out in: "
+        f"{sorted(missing)}. Either the seam moved (update _USER_COMMAND_SEAMS) "
+        "or it stopped dispatching through a user-command entry point (update "
+        "_USER_COMMAND_ENTRY_POINTS) — until then this guard is watching "
+        "nothing."
+    )
+    assert not offenders, (
+        "User-command seams ordering on the requested number rather than the "
+        "dispatched one (issue #1118) — pass "
+        f"position=<coord>.{_USER_DISPATCH_ACCESSOR}(<request>) so the ordering "
+        "view and the travel gate are asked about the same value:\n  "
         + "\n  ".join(offenders)
     )
 

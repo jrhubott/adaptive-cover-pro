@@ -379,11 +379,13 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             # a Model C day/night member inside a group sequences its rails
             # exactly as it does standalone, and names the number and frame this
             # loop fans out so the ordering view can tell a raise from a lower
-            # (issue #1118). Same pair ``async_apply_user_position`` hands
-            # ``_entity_target`` below, resolved against the MEMBER's own frame.
+            # (issue #1118). ``user_dispatch_position`` is the MEMBER's own
+            # shared derivation — its floors, its frame — which is the same one
+            # ``async_apply_user_position`` runs below; the group's would answer
+            # for the wrong instance.
             ordered = coordinator._policy.order_for_dispatch(  # noqa: SLF001
                 entry.options.get(CONF_ENTITIES, []),
-                position=coordinator._to_cover_frame(position),  # noqa: SLF001
+                position=coordinator.user_dispatch_position(position),
                 inverted=coordinator.position_axis_inverted,
             )
             for entity_id in ordered:
@@ -410,11 +412,13 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
             # Same per-member ordered view as the position slider (issue #1115),
             # naming the tilt value for the direction check (issue #1118): on a
             # single-carriage type the tilt axis falls back to the position path
-            # (#684), so that IS the number reaching ``_entity_target``; a type
-            # with a real tilt axis ignores the pair entirely.
+            # (#684), so that IS the number reaching ``_entity_target`` — via
+            # the same ``async_apply_user_position`` tail, hence the same
+            # ``user_dispatch_position`` derivation, floor clamp included. A
+            # type with a real tilt axis ignores the pair entirely.
             ordered = coordinator._policy.order_for_dispatch(  # noqa: SLF001
                 entry.options.get(CONF_ENTITIES, []),
-                position=coordinator._to_cover_frame(tilt),  # noqa: SLF001
+                position=coordinator.user_dispatch_position(tilt),
                 inverted=coordinator.position_axis_inverted,
             )
             for entity_id in ordered:

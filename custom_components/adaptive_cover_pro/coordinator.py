@@ -143,7 +143,7 @@ from .pipeline.handlers import (
 from .pipeline.floors import effective_floor, gather_active_floors
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
-from .pipeline.types import CustomPositionSensorState, GroupIntent
+from .pipeline.types import CustomPositionSensorState, GroupIntent, PipelineSnapshot
 from .templates import TemplateResolver, render_condition_or_none
 from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
@@ -3367,6 +3367,127 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state_attr(self.hass, "sun.sun", "elevation"),
         ]
 
+    def _build_user_command_snapshot(self, opts: dict) -> PipelineSnapshot:
+        """Assemble the off-cycle snapshot a user command is judged against.
+
+        One build serves the whole command: the min-mode floor gather and the
+        pipeline-preemption check both read it, and so does
+        :meth:`user_dispatch_position` when a fan-out seam asks what it is about
+        to dispatch. The instance's floors and their priorities are the same for
+        every cover the seam is about to command, so the answer is too.
+        """
+        return self._snapshot_builder.build(
+            opts,
+            cover_data=self._cover_data,
+            cover_type=self._cover_type,
+            climate_readings=self._weather_readings,
+            manual_override_active=False,
+            motion_timeout_active=self.is_motion_timeout_active,
+            weather_override_active=self.is_weather_override_active,
+            # Pure property read — the ad-hoc/preemption build must NOT
+            # re-evaluate the managers (that would advance latches off-cycle).
+            # One latch it does advance: the custom-position per-input hold
+            # (#1012) arms on any read, so an ad-hoc build can anchor the hold
+            # window at the tap rather than at the next regular cycle. That is
+            # the documented contract — the window starts at the first
+            # indeterminate sighting, and the tap is one — but it also means no
+            # hold wake is scheduled here.
+            cloud_suppression_active=self._cloud_mgr.is_suppression_active,
+            climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
+            in_time_window=self.check_adaptive_time,
+            current_cover_position=self._compute_mean_cover_position(),
+            is_glare_zone_enabled=self._is_glare_zone_enabled,
+            cover_capabilities=getattr(
+                getattr(self, "_snapshot", None), "cover_capabilities", None
+            ),
+            group_intent=self.effective_group_intent,
+        )
+
+    def _clamp_to_active_floor(
+        self,
+        requested: int,
+        snapshot: PipelineSnapshot,
+        *,
+        trigger: str | None = None,
+    ) -> int:
+        """Raise a user request to the highest floor that outranks manual override.
+
+        Priority-aware user-move clamp (issue #472): a floor only clamps a
+        manual/user command when it strictly outranks manual override — the same
+        predicate the preemption check in :meth:`async_apply_user_position` uses.
+        A default-priority (77) floor yields to the manual move; a floor above 80
+        clamps it up *before* dispatch. The pipeline-winner clamp
+        (``registry.py``) stays unconditional so auto-rule composition is
+        unaffected (issue #463).
+
+        ``trigger`` names the command for the log line. Callers that are only
+        ASKING what a command would dispatch (:meth:`user_dispatch_position`)
+        omit it: same arithmetic, but one press should not log its clamp twice.
+        """
+        effective_floor_pos, floor_info = effective_floor(
+            gather_active_floors(snapshot)
+        )
+        floor_applies = (
+            floor_info is not None
+            and floor_info.priority > ManualOverrideHandler.priority
+        )
+        clamped = (
+            max(int(requested), effective_floor_pos)
+            if floor_applies
+            else int(requested)
+        )
+        if trigger is None:
+            return clamped
+        if clamped != requested:
+            _LOGGER.info(
+                "%s: requested %d clamped to %d (active min-mode floor)",
+                trigger,
+                requested,
+                clamped,
+            )
+        else:
+            _LOGGER.debug(
+                "%s: requested %d, floor %d — no clamping needed",
+                trigger,
+                requested,
+                effective_floor_pos,
+            )
+        return clamped
+
+    def user_dispatch_position(
+        self, requested: int, *, options: dict | None = None
+    ) -> int:
+        """Return the cover-frame number a user command for ``requested`` will send.
+
+        Every seam that fans a user command out over several covers — the My
+        button, ``set_position`` / ``set_tilt`` / ``set_axes``, both group
+        sliders — has to hand the policy's dispatch-ordering view the number the
+        travel gate will later be asked about, because for a physically coupled
+        cover type that number is what tells a raise from a lower (issue #1118).
+
+        It is not ``requested``. An active min-mode floor that outranks manual
+        override raises it first (#472), and the calibration curve reshapes it
+        after (#1027) — and either transform can flip the direction:
+
+        * a floor above the current position turns a lower into a raise;
+        * a DESCENDING interpolation curve (``np.interp`` imposes no
+          monotonicity on the user's table) lowers the dispatched value as the
+          floor raises the logical one, inventing a raise out of a lowering.
+
+        So this and :meth:`async_apply_user_position` reach that number through
+        the SAME clamp and the SAME frame mapping. Ordering and gating cannot
+        disagree about the direction of travel because there is only one
+        derivation for them to disagree over. The clamp is a property of the
+        INSTANCE — the composed floors and their priorities — not of any one
+        cover, so a single answer serves the whole fan-out.
+        """
+        opts = options if options is not None else self._resolved_options
+        return self._to_cover_frame(
+            self._clamp_to_active_floor(
+                int(requested), self._build_user_command_snapshot(opts)
+            )
+        )
+
     async def async_apply_user_position(
         self,
         entity_id: str,
@@ -3381,9 +3502,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Single delegation point for any user-facing command (the
         ``set_position`` service, the opt-in proxy cover entity, the My
-        Position button, future external triggers). Owns the min-mode floor
+        Position button, future external triggers). Runs the min-mode floor
         clamp, the pipeline preemption check, manual-override engagement, and
         dispatch to ``CoverCommandService.apply_position``.
+
+        The clamp and the frame mapping are shared with
+        :meth:`user_dispatch_position`, so a fan-out seam can name the number
+        this method will really dispatch rather than the one it was handed
+        (issue #1118) — the two cannot diverge because there is one derivation.
 
         ``requested`` is a LOGICAL position — HA's convention, 0 = closed /
         100 = open — like every other user-facing number in this integration.
@@ -3412,63 +3538,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         opt in.
         """
         opts = options if options is not None else self._resolved_options
-        snapshot = self._snapshot_builder.build(
-            opts,
-            cover_data=self._cover_data,
-            cover_type=self._cover_type,
-            climate_readings=self._weather_readings,
-            manual_override_active=False,
-            motion_timeout_active=self.is_motion_timeout_active,
-            weather_override_active=self.is_weather_override_active,
-            # Pure property read — the ad-hoc/preemption build must NOT
-            # re-evaluate the managers (that would advance latches off-cycle).
-            # One latch it does advance: the custom-position per-input hold
-            # (#1012) arms on any read, so an ad-hoc build can anchor the hold
-            # window at the tap rather than at the next regular cycle. That is
-            # the documented contract — the window starts at the first
-            # indeterminate sighting, and the tap is one — but it also means no
-            # hold wake is scheduled here.
-            cloud_suppression_active=self._cloud_mgr.is_suppression_active,
-            climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
-            in_time_window=self.check_adaptive_time,
-            current_cover_position=self._compute_mean_cover_position(),
-            is_glare_zone_enabled=self._is_glare_zone_enabled,
-            cover_capabilities=getattr(
-                getattr(self, "_snapshot", None), "cover_capabilities", None
-            ),
-            group_intent=self.effective_group_intent,
-        )
-        floors = gather_active_floors(snapshot)
-        effective_floor_pos, floor_info = effective_floor(floors)
-        # Priority-aware user-move clamp (issue #472): a floor only clamps a
-        # manual/user command when it strictly outranks manual override — the
-        # same predicate the preemption check below uses. A default-priority
-        # (77) floor yields to the manual move; a floor above 80 clamps it up
-        # *before* dispatch. The pipeline-winner clamp (registry.py) stays
-        # unconditional so auto-rule composition is unaffected (issue #463).
-        floor_applies = (
-            floor_info is not None
-            and floor_info.priority > ManualOverrideHandler.priority
-        )
-        clamped = (
-            max(int(requested), effective_floor_pos)
-            if floor_applies
-            else int(requested)
-        )
-        if clamped != requested:
-            _LOGGER.info(
-                "%s: requested %d clamped to %d (active min-mode floor)",
-                trigger,
-                requested,
-                clamped,
-            )
-        else:
-            _LOGGER.debug(
-                "%s: requested %d, floor %d — no clamping needed",
-                trigger,
-                requested,
-                effective_floor_pos,
-            )
+        snapshot = self._build_user_command_snapshot(opts)
+        # Shared with ``user_dispatch_position``, which is how the fan-out seams
+        # name the number this dispatch will really use rather than the one the
+        # user asked for (issue #1118).
+        clamped = self._clamp_to_active_floor(int(requested), snapshot, trigger=trigger)
 
         if not force:
             result = self._pipeline.evaluate(snapshot)

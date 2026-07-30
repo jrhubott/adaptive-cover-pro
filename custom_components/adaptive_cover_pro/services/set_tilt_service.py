@@ -65,11 +65,13 @@ async def async_handle_set_tilt(call: ServiceCall) -> None:
         #
         # That fallback is also why the tilt value is the number named for the
         # direction check (issue #1118): on a single-carriage type it IS what
-        # reaches ``_entity_target``, and a type with a real tilt axis ignores
-        # the pair entirely.
+        # reaches ``_entity_target``, through the very same
+        # ``async_apply_user_position`` tail — so it is derived here by the same
+        # ``user_dispatch_position``, floor clamp included. A type with a real
+        # tilt axis ignores the pair entirely.
         ordered = coord._policy.order_for_dispatch(  # noqa: SLF001
             entity_ids,
-            position=coord._to_cover_frame(requested),  # noqa: SLF001
+            position=coord.user_dispatch_position(requested),
             inverted=coord.position_axis_inverted,
         )
         for entity_id in ordered:

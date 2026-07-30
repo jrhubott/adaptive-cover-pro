@@ -64,11 +64,13 @@ async def async_handle_set_position(call: ServiceCall) -> None:
         # type whose entities are physically independent.
         #
         # Name the number and frame this loop fans out so the ordering view can
-        # tell a raise from a lower (issue #1118) — the same pair
-        # ``async_apply_user_position`` hands ``_entity_target`` downstream.
+        # tell a raise from a lower (issue #1118). ``user_dispatch_position`` is
+        # the shared derivation ``async_apply_user_position`` runs downstream,
+        # floor clamp included — naming the raw request instead lets a floor
+        # flip the direction between the ordering view and the gate.
         ordered = coord._policy.order_for_dispatch(  # noqa: SLF001
             entity_ids,
-            position=coord._to_cover_frame(requested),  # noqa: SLF001
+            position=coord.user_dispatch_position(requested),
             inverted=coord.position_axis_inverted,
         )
         for entity_id in ordered:

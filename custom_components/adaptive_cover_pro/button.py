@@ -126,13 +126,13 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
         # Identity for every cover type whose entities are independent.
         #
         # Name the number and frame this loop fans out so the ordering view can
-        # tell a raise from a lower (issue #1118) — the same pair
-        # ``async_apply_user_position`` hands ``_entity_target`` below.
+        # tell a raise from a lower (issue #1118). ``user_dispatch_position`` is
+        # the shared derivation ``async_apply_user_position`` runs below, floor
+        # clamp included — naming the raw preset instead lets a floor flip the
+        # direction between the ordering view and the gate.
         ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
             self._entities,
-            position=self.coordinator._to_cover_frame(  # noqa: SLF001
-                int(my_position_value)
-            ),
+            position=self.coordinator.user_dispatch_position(int(my_position_value)),
             inverted=self.coordinator.position_axis_inverted,
         )
         for entity_id in ordered:
