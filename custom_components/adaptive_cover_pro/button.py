@@ -121,11 +121,19 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
             )
             return
         # Policy-mandated dispatch order, shared with every other dispatch seam
-        # (issue #1115): a Model C day/night shade's bottom rail must be
-        # commanded before its middle rail, which cannot physically travel past
-        # it. Identity for every cover type whose entities are independent.
+        # (issue #1115): a Model C day/night shade commands the rail DOWNSTREAM
+        # of the move first, because neither rail can travel past the other.
+        # Identity for every cover type whose entities are independent.
+        #
+        # Name the number and frame this loop fans out so the ordering view can
+        # tell a raise from a lower (issue #1118). ``user_dispatch_position`` is
+        # the shared derivation ``async_apply_user_position`` runs below, floor
+        # clamp included — naming the raw preset instead lets a floor flip the
+        # direction between the ordering view and the gate.
         ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
-            self._entities
+            self._entities,
+            position=self.coordinator.user_dispatch_position(int(my_position_value)),
+            inverted=self.coordinator.position_axis_inverted,
         )
         for entity_id in ordered:
             await self.coordinator.async_apply_user_position(

@@ -52,9 +52,12 @@ def _make_coord_with_stale_default():
     coord._policy.resolve_entity_target = (
         lambda entity_id, position, *, inverted=None, interpolated=False: position
     )
-    # The dispatch loop asks the policy for the entity order (#1115); a blind's
-    # answer is identity, so mirror that on the stub.
-    coord._policy.order_for_dispatch = lambda entities: list(entities)
+    # The dispatch loop asks the policy for the entity order (#1115), naming the
+    # number it is fanning out (#1118); a blind's answer is identity and ignores
+    # both keywords, so mirror that on the stub.
+    coord._policy.order_for_dispatch = (
+        lambda entities, *, position=None, inverted=None: list(entities)  # noqa: ARG005
+    )
     coord._inverse_state = False
     coord._use_interpolation = False  # ``coord.state`` post-processing
     coord._pending_cover_events = []

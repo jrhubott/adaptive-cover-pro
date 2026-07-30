@@ -88,7 +88,22 @@ async def async_handle_set_axes(call: ServiceCall) -> None:
         # (issue #1115). Applied here rather than at the dispatch loop below so
         # ``resolved`` — which the loop iterates — carries the order through
         # validation. Identity for every cover type with independent entities.
-        for entity_id in policy.order_for_dispatch(entity_ids):
+        #
+        # Name the number this call fans out so the ordering view can tell a
+        # raise from a lower (issue #1118). The position axis when it is
+        # requested; otherwise the tilt value, which on a single-carriage type
+        # falls back to the position path and lands on the carriage anyway
+        # (#684). A type with a real tilt axis ignores the pair entirely.
+        # ``user_dispatch_position`` is the shared derivation the dispatch loop
+        # below runs, floor clamp included — naming the raw request instead lets
+        # a floor flip the direction between the ordering view and the gate.
+        for entity_id in policy.order_for_dispatch(
+            entity_ids,
+            position=coord.user_dispatch_position(
+                axes.get(AXIS_NAME_POSITION, axes.get(AXIS_NAME_TILT))
+            ),
+            inverted=coord.position_axis_inverted,
+        ):
             caps = coord._cover_provider.read_single_capabilities(  # noqa: SLF001
                 entity_id
             )

@@ -51,9 +51,12 @@ def _make_dispatch_coordinator(
     coordinator._async_force_send_pipeline_position = AsyncMock()
     coordinator._policy = MagicMock()
     coordinator._policy.has_pending_secondary_axis = MagicMock(return_value=has_pending)
-    # The dispatch loops ask the policy for the entity order (#1115); a blind's
-    # answer is identity, so mirror that on the stub.
-    coordinator._policy.order_for_dispatch = lambda entities: list(entities)
+    # The dispatch loops ask the policy for the entity order (#1115), naming the
+    # number they are fanning out (#1118); a blind's answer is identity and
+    # ignores both keywords, so mirror that on the stub.
+    coordinator._policy.order_for_dispatch = (
+        lambda entities, *, position=None, inverted=None: list(entities)  # noqa: ARG005
+    )
     return coordinator
 
 
@@ -257,9 +260,12 @@ def _make_state_change_coordinator(*, pipeline_result: PipelineResult):
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._dispatch_to_cover = AsyncMock()
-    # The dispatch loop asks the policy for the entity order (#1115); a blind's
-    # answer is identity, so mirror that on the stub.
-    coordinator._policy.order_for_dispatch = lambda entities: list(entities)
+    # The dispatch loop asks the policy for the entity order (#1115), naming the
+    # number it is fanning out (#1118); a blind's answer is identity and ignores
+    # both keywords, so mirror that on the stub.
+    coordinator._policy.order_for_dispatch = (
+        lambda entities, *, position=None, inverted=None: list(entities)  # noqa: ARG005
+    )
     return coordinator
 
 

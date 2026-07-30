@@ -213,6 +213,13 @@ def wire_dispatch_frame(
     derives it, and ``position_axis_inverted`` is evaluated through the real
     property, so no fixture ever hand-rolls the inversion formula it is meant
     to be exercising.
+
+    The min-mode floor clamp is bound for the same reason (#1118). It runs
+    before the frame mapping on every user command and is shared with
+    ``user_dispatch_position``, the accessor the fan-out seams name their
+    dispatched target through — so a mock that binds the real
+    ``async_apply_user_position`` but leaves the clamp mocked dispatches
+    ``int(MagicMock())`` instead of a position.
     """
     from custom_components.adaptive_cover_pro.const import (
         CONF_INTERP,
@@ -239,6 +246,14 @@ def wire_dispatch_frame(
     )
     coord._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(coord)
     coord._entity_target = AdaptiveDataUpdateCoordinator._entity_target.__get__(coord)
+    for name in (
+        "_build_user_command_snapshot",
+        "_clamp_to_active_floor",
+        "user_dispatch_position",
+    ):
+        setattr(
+            coord, name, getattr(AdaptiveDataUpdateCoordinator, name).__get__(coord)
+        )
     return coord
 
 

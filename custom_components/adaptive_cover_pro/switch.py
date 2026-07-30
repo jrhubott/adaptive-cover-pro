@@ -395,8 +395,13 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                 # bottom rail must be commanded before its middle rail, which
                 # cannot physically travel past it. Identity for every cover
                 # type whose entities are independent.
+                # Name the number and frame this loop fans out so the ordering
+                # view can tell a raise from a lower (issue #1118) — the same
+                # pair ``_entity_target`` gets below.
                 ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
-                    self.coordinator.entities
+                    self.coordinator.entities,
+                    position=default_position,
+                    inverted=False,
                 )
                 for entity in ordered:
                     # Sanctioned one-shot transition: auto_control was just

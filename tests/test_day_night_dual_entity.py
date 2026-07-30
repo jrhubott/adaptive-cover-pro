@@ -595,7 +595,7 @@ async def test_pending_middle_rail_withholds_dispatched_target_signature() -> No
     mode, reached here through the #1115 travel gate).
     """
     policy = _dual_policy(position=40, blend=50)
-    policy._pending_middle_rail.add(_MIDDLE)
+    policy._pending_rail_command.add(_MIDDLE)
     coord = _latch_coordinator(policy)
 
     await AdaptiveDataUpdateCoordinator._dispatch_for_cycle(
@@ -610,7 +610,7 @@ async def test_pending_middle_rail_withholds_dispatched_target_signature() -> No
     assert coord._last_dispatched_target_sig is None
 
     # Once the gate clears the latch, the signature is recorded as normal.
-    policy._pending_middle_rail.clear()
+    policy._pending_rail_command.clear()
     await AdaptiveDataUpdateCoordinator._dispatch_for_cycle(
         coord,
         40,
