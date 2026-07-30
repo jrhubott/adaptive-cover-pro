@@ -58,7 +58,12 @@ async def async_handle_set_position(call: ServiceCall) -> None:
         entity_ids: list[str] = (
             list(entity_filter) if entity_filter is not None else list(coord.entities)
         )
-        for entity_id in entity_ids:
+        # Policy-mandated dispatch order, shared with every other dispatch seam
+        # (issue #1115) — applied to an explicit entity filter too, since a
+        # Model C target block can name both rails. Identity for every cover
+        # type whose entities are physically independent.
+        ordered = coord._policy.order_for_dispatch(entity_ids)  # noqa: SLF001
+        for entity_id in ordered:
             await coord.async_apply_user_axis(
                 entity_id,
                 AXIS_NAME_POSITION,

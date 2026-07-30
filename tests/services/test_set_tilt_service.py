@@ -22,12 +22,17 @@ from custom_components.adaptive_cover_pro.const import (
 
 
 def _make_coord(*, entities: list[str] | None = None):
+    from custom_components.adaptive_cover_pro.const import CoverType
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
 
     coord = MagicMock()
     coord.entities = entities or ["cover.venetian"]
+    # The service reads the policy's ordered dispatch view (#1115); a MagicMock
+    # policy would hand back a MagicMock that iterates as empty.
+    coord._policy = get_policy(CoverType.VENETIAN)
     coord.async_apply_user_tilt = AsyncMock(return_value=("sent", ""))
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
     # set_tilt now routes through the axis collapse point (issue #725); bind the

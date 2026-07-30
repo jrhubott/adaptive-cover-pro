@@ -120,7 +120,14 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
                 "My Position button pressed but my_position_value is not configured"
             )
             return
-        for entity_id in self._entities:
+        # Policy-mandated dispatch order, shared with every other dispatch seam
+        # (issue #1115): a Model C day/night shade's bottom rail must be
+        # commanded before its middle rail, which cannot physically travel past
+        # it. Identity for every cover type whose entities are independent.
+        ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
+            self._entities
+        )
+        for entity_id in ordered:
             await self.coordinator.async_apply_user_position(
                 entity_id,
                 int(my_position_value),

@@ -23,6 +23,8 @@ Two independent mechanisms fix that, and this module covers both:
 
 from __future__ import annotations
 
+import ast
+import pathlib
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +33,9 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+    CONF_ENTITIES,
     CONF_INVERSE_STATE,
+    CONF_MY_POSITION_VALUE,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
     ControlMethod,
 )
@@ -208,6 +212,165 @@ async def test_force_send_commands_bottom_rail_before_middle() -> None:
 
     assert sent == {_BOTTOM, _MIDDLE}
     assert [eid for eid, _pos in coordinator._cmd_svc.calls] == [_BOTTOM, _MIDDLE]
+
+
+# ---------------------------------------------------------------------------
+# Ordering — the user-command fan-out seams
+# ---------------------------------------------------------------------------
+# A user command is the worst place to lose the rail order, because the same
+# press engages manual override: the middle rail's command gets dropped by the
+# clearance gate (it polls a bottom rail that has not been commanded yet and
+# times out), and the override then blocks the pending-latch retry on every
+# later cycle. The shade stays in a wrong split until the user intervenes again.
+
+
+def _record_user_commands(coordinator, method_name: str) -> list[str]:
+    """Replace one user-command entry point with an order-recording stub."""
+    sent: list[str] = []
+
+    async def _record(entity_id, *_args, **_kwargs):
+        sent.append(entity_id)
+
+    setattr(coordinator, method_name, AsyncMock(side_effect=_record))
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_commands_bottom_rail_before_middle() -> None:
+    """The My Position button fans its preset out in policy-mandated rail order."""
+    from custom_components.adaptive_cover_pro.button import (
+        AdaptiveCoverMyPositionButton,
+    )
+
+    button = MagicMock()
+    button._entities = [_MIDDLE, _BOTTOM]
+    button.config_entry.options = {CONF_MY_POSITION_VALUE: 60}
+    button.coordinator._policy = _dual_policy(position=40, blend=50)
+    sent = _record_user_commands(button.coordinator, "async_apply_user_position")
+
+    await AdaptiveCoverMyPositionButton.async_press(button)
+
+    assert sent == [_BOTTOM, _MIDDLE]
+
+
+@pytest.mark.asyncio
+async def test_set_position_service_commands_bottom_rail_before_middle(
+    monkeypatch,
+) -> None:
+    """``adaptive_cover_pro.set_position`` over a whole instance orders its fan-out."""
+    from custom_components.adaptive_cover_pro.services import set_position_service
+
+    coord = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = _dual_policy(position=40, blend=50)
+    sent = _record_user_commands(coord, "async_apply_user_axis")
+    monkeypatch.setattr(
+        set_position_service, "_resolve_targets", lambda _hass, _call: {coord: None}
+    )
+    call = MagicMock()
+    call.data = {"position": 40, "force": False}
+
+    await set_position_service.async_handle_set_position(call)
+
+    assert sent == [_BOTTOM, _MIDDLE]
+
+
+@pytest.mark.asyncio
+async def test_set_tilt_service_commands_bottom_rail_before_middle(
+    monkeypatch,
+) -> None:
+    """``set_tilt`` shares the collapse point, so it shares the ordering too.
+
+    The tilt axis falls back to the position axis on an entity without slat
+    support (#684), which puts a real position on the wire — the same seam
+    shape, and the same reason to order it.
+    """
+    from custom_components.adaptive_cover_pro.services import set_tilt_service
+
+    coord = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = _dual_policy(position=40, blend=50)
+    sent = _record_user_commands(coord, "async_apply_user_axis")
+    monkeypatch.setattr(
+        set_tilt_service, "_resolve_targets", lambda _hass, _call: {coord: None}
+    )
+    call = MagicMock()
+    call.data = {"tilt": 30, "force": False}
+
+    await set_tilt_service.async_handle_set_tilt(call)
+
+    assert sent == [_BOTTOM, _MIDDLE]
+
+
+@pytest.mark.asyncio
+async def test_set_axes_service_commands_bottom_rail_before_middle(
+    monkeypatch,
+) -> None:
+    """``set_axes`` validates up front, then dispatches in rail order."""
+    from custom_components.adaptive_cover_pro.services import set_axes_service
+
+    coord = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = _dual_policy(position=40, blend=50)
+    coord._cover_provider.read_single_capabilities = MagicMock(
+        return_value={"has_set_position": True, "has_set_tilt_position": True}
+    )
+    sent = _record_user_commands(coord, "async_apply_user_axis")
+    monkeypatch.setattr(
+        set_axes_service, "_resolve_targets", lambda _hass, _call: {coord: None}
+    )
+    call = MagicMock()
+    call.data = {"axes": {"position": 40}, "force": False}
+
+    await set_axes_service.async_handle_set_axes(call)
+
+    assert sent == [_BOTTOM, _MIDDLE]
+
+
+def _group_fan_out_to_one_member(member_coord) -> MagicMock:
+    """Build a GroupCoordinator-shaped stub that fans out to one ACP member."""
+    member_entry = MagicMock()
+    member_entry.options = {CONF_ENTITIES: [_MIDDLE, _BOTTOM]}
+
+    async def _fan_out(member, _generic, **_kwargs):
+        await member(member_entry, member_coord)
+
+    group = MagicMock()
+    group._fan_out_commands = AsyncMock(side_effect=_fan_out)
+    group.async_refresh = AsyncMock()
+    return group
+
+
+@pytest.mark.asyncio
+async def test_group_cover_slider_commands_bottom_rail_before_middle() -> None:
+    """A cover group dragging its slider orders each member's own rails."""
+    from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
+
+    member_coord = MagicMock()
+    member_coord._policy = _dual_policy(position=40, blend=50)
+    sent = _record_user_commands(member_coord, "async_apply_user_position")
+
+    await GroupCoordinator.async_set_position(
+        _group_fan_out_to_one_member(member_coord), 40
+    )
+
+    assert sent == [_BOTTOM, _MIDDLE]
+
+
+@pytest.mark.asyncio
+async def test_group_cover_tilt_commands_bottom_rail_before_middle() -> None:
+    """The group tilt slider rides the same per-member ordered view."""
+    from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
+
+    member_coord = MagicMock()
+    member_coord._policy = _dual_policy(position=40, blend=50)
+    sent = _record_user_commands(member_coord, "async_apply_user_tilt")
+
+    await GroupCoordinator.async_set_tilt(
+        _group_fan_out_to_one_member(member_coord), 30
+    )
+
+    assert sent == [_BOTTOM, _MIDDLE]
 
 
 # ---------------------------------------------------------------------------
@@ -609,3 +772,166 @@ async def test_model_a_before_position_command_still_pre_sends_blend() -> None:
 
     assert result is not False  # never withholds
     seq._send_tilt_command.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Structural guard — every position fan-out seam consumes order_for_dispatch
+# ---------------------------------------------------------------------------
+# Converting the seams one at a time is an enumeration, and an enumeration is
+# only ever as complete as the last person who read the codebase: three
+# user-command seams (My Position, set_position, set_axes) were missed on the
+# first pass at issue #1115. This scan closes the CLASS of mistake — a new
+# dispatch seam that iterates the raw config pick order fails here rather than
+# shipping and stalling somebody's shade.
+#
+# Same shape as the source-scan guards in ``tests/test_cover_types/test_axes.py``
+# (hardcoded ``caps.get("has_*")``, cover-type literals, tilt-mode strings):
+# walk the production tree, collect offenders, assert the list is empty with a
+# message that says what to do instead.
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_PRODUCTION_ROOT = _REPO_ROOT / "custom_components" / "adaptive_cover_pro"
+
+# Calls that put a position on the wire for ONE cover. A ``for`` loop whose body
+# reaches any of these is fanning a position out over a collection of the
+# instance's covers, which is exactly where the rail order has to be decided.
+#
+# ``async_apply_user_tilt`` is in the set because the tilt axis falls back to the
+# position axis on an entity without slat support (#684). Stop dispatch
+# (``async_apply_user_stop``, ``stop_all``) is deliberately absent: a stop has no
+# travel target, so there is no clearance to sequence against.
+_POSITION_DISPATCH_CALLS = frozenset(
+    {
+        "apply_position",  # CoverCommandService — the real chokepoint
+        "_dispatch_to_cover",  # coordinator's per-cover dispatch helper
+        "async_apply_user_position",  # user-command entry point
+        "async_apply_user_axis",  # axis-generic user-command entry point
+        "async_apply_user_tilt",  # falls back to the position axis (#684)
+    }
+)
+_ORDER_VIEW = "order_for_dispatch"
+
+# Raw entity-collection expressions. A matched loop iterating one of these is
+# unordered by construction, whatever else its enclosing function does — this
+# catches a half-converted function that still has one raw loop in it.
+_RAW_ENTITY_ATTRS = frozenset({"entities", "_entities"})
+
+# Modules expected to contain at least one seam. A rename that makes the scan
+# stop matching (say ``apply_position`` gets renamed) would otherwise leave this
+# guard silently green over zero call sites.
+_SEAM_MODULES = frozenset(
+    {
+        "button.py",
+        "coordinator.py",
+        "group_coordinator.py",
+        "switch.py",
+        "services/set_position_service.py",
+        "services/set_tilt_service.py",
+        "services/set_axes_service.py",
+        "state/window_transition_tracker.py",
+    }
+)
+
+# (module path relative to the production root, innermost enclosing function) →
+# why that seam legitimately does not call ``order_for_dispatch`` itself.
+_ORDERING_EXEMPT = {
+    ("state/window_transition_tracker.py", "check_sunset_window"): (
+        "Receives an already-ordered entity list. The tracker is HA-boundary "
+        "code with no policy handle, so the coordinator applies "
+        "order_for_dispatch at the call site "
+        "(_check_sunset_window_transition, entities=...)."
+    ),
+}
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    """Every callee name reachable from ``node`` (attribute or bare name)."""
+    names: set[str] = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call):
+            func = sub.func
+            if isinstance(func, ast.Attribute):
+                names.add(func.attr)
+            elif isinstance(func, ast.Name):
+                names.add(func.id)
+    return names
+
+
+def _is_raw_entity_collection(node: ast.expr) -> bool:
+    """Whether this ``for`` iterable is a raw, unordered entity collection."""
+    # self.entities / coord.entities / self.coordinator.entities / self._entities
+    if isinstance(node, ast.Attribute) and node.attr in _RAW_ENTITY_ATTRS:
+        return True
+    # entry.options.get(CONF_ENTITIES, [])
+    return bool(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "CONF_ENTITIES"
+    )
+
+
+def _dispatch_loops(tree: ast.AST) -> list[tuple[ast.stmt, ast.AST | None]]:
+    """Every position fan-out loop, paired with its innermost enclosing function."""
+    found: list[tuple[ast.stmt, ast.AST | None]] = []
+
+    def walk(node: ast.AST, enclosing: ast.AST | None) -> None:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            enclosing = node
+        if isinstance(node, ast.For | ast.AsyncFor) and (
+            _called_names(node) & _POSITION_DISPATCH_CALLS
+        ):
+            found.append((node, enclosing))
+        for child in ast.iter_child_nodes(node):
+            walk(child, enclosing)
+
+    walk(tree, None)
+    return found
+
+
+@pytest.mark.unit
+def test_every_position_fan_out_seam_consumes_order_for_dispatch() -> None:
+    """Fail if a loop fans a position out over covers without the ordered view.
+
+    Wrap the iteration in ``self._policy.order_for_dispatch(...)`` — the single
+    shared view that expresses ``dispatch_order_key`` once (CODING_GUIDELINES.md
+    "No Code Duplication", issue #1115). It is a stable sort with a constant
+    default key, so it is an exact no-op for every cover type whose entities are
+    physically independent. If a seam genuinely receives an already-ordered list
+    from its caller, add it to ``_ORDERING_EXEMPT`` with the reason.
+    """
+    offenders: list[str] = []
+    seen_modules: set[str] = set()
+
+    for path in sorted(_PRODUCTION_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        module = path.relative_to(_PRODUCTION_ROOT).as_posix()
+        for loop, enclosing in _dispatch_loops(tree):
+            seen_modules.add(module)
+            fn_name = getattr(enclosing, "name", "<module>")
+            where = f"{path.relative_to(_REPO_ROOT)}:{loop.lineno} ({fn_name})"
+            if _is_raw_entity_collection(loop.iter):
+                offenders.append(
+                    f"{where}: iterates the raw collection "
+                    f"{ast.unparse(loop.iter)!r}"
+                )
+                continue
+            if (module, fn_name) in _ORDERING_EXEMPT:
+                continue
+            if enclosing is None or _ORDER_VIEW not in _called_names(enclosing):
+                offenders.append(f"{where}: never calls {_ORDER_VIEW}")
+
+    missing = _SEAM_MODULES - seen_modules
+    assert not missing, (
+        "The dispatch-seam scan found no position fan-out in: "
+        f"{sorted(missing)}. Either the seam moved (update _SEAM_MODULES) or a "
+        f"dispatch entry point was renamed (update _POSITION_DISPATCH_CALLS) — "
+        "until then this guard is watching nothing."
+    )
+    assert not offenders, (
+        "Position fan-out seams that skip the policy's dispatch order "
+        "(issue #1115) — wrap the iteration in "
+        "self._policy.order_for_dispatch(...):\n  " + "\n  ".join(offenders)
+    )

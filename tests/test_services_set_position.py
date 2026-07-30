@@ -181,9 +181,14 @@ async def test_set_position_routes_through_axis_dispatch() -> None:
         async_handle_set_position,
     )
 
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
     coord = MagicMock()
     coord.entities = ["cover.blind_a"]
     coord.async_apply_user_axis = AsyncMock(return_value=("sent", "position"))
+    # The service reads the policy's ordered dispatch view (#1115); a MagicMock
+    # policy would hand back a MagicMock that iterates as empty.
+    coord._policy = get_policy(CoverType.BLIND)
     call = MagicMock()
     call.data = {"position": 55}
 

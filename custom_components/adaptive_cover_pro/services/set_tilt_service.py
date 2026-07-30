@@ -59,7 +59,11 @@ async def async_handle_set_tilt(call: ServiceCall) -> None:
         entity_ids: list[str] = (
             list(entity_filter) if entity_filter is not None else list(coord.entities)
         )
-        for entity_id in entity_ids:
+        # Same policy-mandated dispatch order as ``set_position`` (issue #1115):
+        # the tilt axis falls back to the position axis on an entity without
+        # slat support, so this seam can put a real position on the wire too.
+        ordered = coord._policy.order_for_dispatch(entity_ids)  # noqa: SLF001
+        for entity_id in ordered:
             await coord.async_apply_user_axis(
                 entity_id, AXIS_NAME_TILT, requested, trigger="set_tilt", force=force
             )
