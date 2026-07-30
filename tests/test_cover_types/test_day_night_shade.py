@@ -43,12 +43,10 @@ from custom_components.adaptive_cover_pro.cover_types.base import (
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
     TILT_AXIS,
+    TILT_CAPABLE_ENTITY_FILTER,
 )
 from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
-)
-from custom_components.adaptive_cover_pro.cover_types.tilt import (
-    TILT_CAPABLE_ENTITY_FILTER,
 )
 from custom_components.adaptive_cover_pro.engine.covers import (
     DayNightShadeCalculation,
@@ -916,29 +914,44 @@ class TestTiltCapabilityContradiction:
     @pytest.mark.parametrize(
         "model", [DAY_NIGHT_MODEL_SPLIT_RANGE, DAY_NIGHT_MODEL_DUAL_ENTITY]
     )
-    def test_build_calc_engine_sets_model_before_first_health_check(
+    def test_sync_runtime_options_sets_model_before_first_health_check(
         self, model: str
     ) -> None:
         """#1114 audit MUST-FIX 1 (coordinator's cycle-1 false Repair).
 
-        The coordinator calls ``build_calc_engine`` (via ``get_blind_data``)
-        BEFORE ``_evaluate_health_checks`` on every cycle, including the very
-        first one of the coordinator's lifetime — which is also before
+        The coordinator calls the generic ``sync_runtime_options`` hook (from
+        ``_update_options``) BEFORE ``_evaluate_health_checks`` on every cycle,
+        including the very first one of its lifetime — which is also before
         ``post_pipeline_resolve`` has ever run. A Model B/C policy whose
         ``_control_model`` is still the ``__init__`` Model A default at that
         point would make ``_drives_dual_axis()`` return True and
         ``tilt_capability_contradiction`` falsely report a contradiction for
         a position-only cover, raising a ``cover_tilt_unsupported`` Repair
-        that never clears. ``build_calc_engine`` must resolve the model from
-        ``options`` itself so cycle 1 already knows it's Model B/C.
+        that never clears. The hook must resolve the model from ``options`` so
+        cycle 1 already knows it's Model B/C.
         """
         policy = DayNightShadePolicy()
-        kw = _resolve_kwargs(options={CONF_DAY_NIGHT_CONTROL_MODEL: model})
-        policy.build_calc_engine(**kw)
+        policy.sync_runtime_options({CONF_DAY_NIGHT_CONTROL_MODEL: model})
         # No post_pipeline_resolve call yet — this simulates the coordinator's
-        # first update cycle, where the health check runs right after
-        # build_calc_engine and before post_pipeline_resolve ever executes.
+        # first update cycle, where the health check runs after the hook and
+        # before post_pipeline_resolve ever executes.
         assert policy.tilt_capability_contradiction(self._NO_TILT) is False
+
+    def test_build_calc_engine_does_not_mutate_control_model(self) -> None:
+        """``build_calc_engine`` is a pure builder — no policy-state writes.
+
+        ``forecast.build_forecast_for_coord`` calls it ~289× per strip from an
+        executor thread, so caching the control model there would write live
+        dispatch state off the event loop. Pinned by observing that a Model B
+        ``options`` dict passed to the builder leaves ``_control_model``
+        untouched; only ``sync_runtime_options`` moves it.
+        """
+        policy = DayNightShadePolicy()
+        kw = _resolve_kwargs(
+            options={CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+        )
+        policy.build_calc_engine(**kw)
+        assert policy._control_model == DAY_NIGHT_MODEL_POSITION_TILT
 
 
 # ---------------------------------------------------------------------------

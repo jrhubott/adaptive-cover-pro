@@ -11,6 +11,11 @@ The tests drive ``_evaluate_health_checks`` directly against a minimal
 coordinator stub (built without ``__init__``) wired with real
 ``SensorHealthManager`` / ``RepairManager`` instances (debounce 0 so a raise
 lands after one event-loop drain), patching the issue registry.
+
+Because these stubs set ``policy._control_model`` by hand, they cannot observe
+the *coordinator ordering* the A3 model-aware relaxation depends on. That guard
+is an integration test and lives in
+``tests/test_issue_1114_control_model_ordering.py``.
 """
 
 from __future__ import annotations

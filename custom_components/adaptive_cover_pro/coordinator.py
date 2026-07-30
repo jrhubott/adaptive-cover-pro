@@ -3197,6 +3197,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if event_buffer is not None and rc.event_buffer_size != event_buffer.maxlen:
             event_buffer.resize(rc.event_buffer_size)
 
+        # Let the active policy refresh whatever option-derived state it caches
+        # for hooks that receive no ``options`` (issue #1114). Deliberately
+        # generic: the coordinator hands over the whole dict and knows nothing
+        # about which cover types cache what. Runs here, at the coordinator's
+        # per-cycle options seam, so the value is resolved on the event loop and
+        # before both the pipeline and ``_evaluate_health_checks`` — including on
+        # the very first cycle of this coordinator's lifetime. Base
+        # implementation is a no-op, so most policies pay nothing.
+        self._policy.sync_runtime_options(options)
+
     def _update_manager_and_covers(self):
         """Update manager with cover entities.
 

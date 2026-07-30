@@ -95,12 +95,13 @@ from ..base import (
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
     TILT_AXIS,
+    TILT_CAPABLE_ENTITY_FILTER,
     CoverAxis,
     CoverTypePolicy,
     caps_get,
 )
 from ..blind import geometry_vertical_schema
-from ..tilt import TILT_CAPABLE_ENTITY_FILTER, geometry_tilt_schema
+from ..tilt import geometry_tilt_schema
 from .sequencer import DualAxisSequencer
 
 if TYPE_CHECKING:

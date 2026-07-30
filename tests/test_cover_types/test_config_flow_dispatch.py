@@ -19,12 +19,14 @@ from custom_components.adaptive_cover_pro.cover_types import (
 from custom_components.adaptive_cover_pro.cover_types.awning import (
     GEOMETRY_HORIZONTAL_SCHEMA,
 )
+from custom_components.adaptive_cover_pro.cover_types.base import (
+    TILT_CAPABLE_ENTITY_FILTER,
+)
 from custom_components.adaptive_cover_pro.cover_types.blind import (
     GEOMETRY_VERTICAL_SCHEMA,
 )
 from custom_components.adaptive_cover_pro.cover_types.tilt import (
     GEOMETRY_TILT_SCHEMA,
-    TILT_CAPABLE_ENTITY_FILTER,
 )
 from custom_components.adaptive_cover_pro.cover_types.venetian import (
     GEOMETRY_VENETIAN_SCHEMA,

@@ -38,17 +38,13 @@ from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
     TILT_AXIS_PRIMARY,
+    TILT_CAPABLE_ENTITY_FILTER,
     CoverAxis,
     CoverTypePolicy,
     caps_get,
 )
 from .roof_window import _roof_pitch_selector
-from .tilt import (
-    TILT_CAPABLE_ENTITY_FILTER,
-    TILT_SLAT_KEYS,
-    TiltPolicy,
-    geometry_tilt_schema,
-)
+from .tilt import TILT_SLAT_KEYS, TiltPolicy, geometry_tilt_schema
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
