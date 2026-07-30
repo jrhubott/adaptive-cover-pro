@@ -1201,21 +1201,32 @@ async def test_migrate_v3_12_to_v3_13_seeds_default_position_for_awning(
     assert entry.options[CONF_DEFAULT_HEIGHT] == 0
 
 
+@pytest.mark.parametrize("stored_default", [0, 42, 100])
 async def test_migrate_v3_13_does_not_overwrite_existing_default_position(
-    hass: HomeAssistant,
+    hass: HomeAssistant, stored_default: int
 ) -> None:
-    """An entry that already has a configured default position keeps it (setdefault)."""
+    """An entry that already has a configured default position keeps it (setdefault).
+
+    Parametrized over 0, 42, and 100 rather than a single value: 0 is the
+    value most at risk of a regression here. ``_seed_default_position`` gates
+    on ``CONF_DEFAULT_HEIGHT in options`` — a true membership check — but if
+    that ever degraded into a truthiness check
+    (``if not options.get(CONF_DEFAULT_HEIGHT)``), a stored 0 would read as
+    falsy and get silently reseeded to the blind's no-coverage endpoint
+    (100), overwriting a user's deliberately configured fully-closed default.
+    42 and 100 keep the ordinary and boundary-open cases covered alongside it.
+    """
     from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
 
     entry = _make_entry(
         hass,
-        {CONF_DEFAULT_HEIGHT: 42},
+        {CONF_DEFAULT_HEIGHT: stored_default},
         version=3,
         minor_version=12,
         sensor_type=CoverType.BLIND,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.options[CONF_DEFAULT_HEIGHT] == 42
+    assert entry.options[CONF_DEFAULT_HEIGHT] == stored_default
 
 
 async def test_migrate_v3_13_skips_virtual_entry_types(hass: HomeAssistant) -> None:
@@ -1326,12 +1337,59 @@ async def test_migrate_v3_13_logs_seeded_default_position(
     matching = [
         r.message
         for r in caplog.records
-        if "Migration Test" in r.message and "100" in r.message
+        if "Migration Test" in r.message
+        and "100" in r.message
+        and "was silently kept fully closed until this migration ran" in r.message
     ]
     assert matching, (
-        "Expected a log line naming the entry and the seeded value, got: "
+        "Expected a log line naming the entry, the seeded value, and the"
+        " fact that this repair genuinely moved the cover, got: "
         f"{[r.message for r in caplog.records]}"
     )
+
+
+async def test_migrate_v3_13_logs_no_movement_for_open_blocks_sun_seed(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An awning's 0% seed is logged as a no-op, not a "was closed" repair (#1126).
+
+    Awning and oscillating-awning have ``open_blocks_sun=True``, so their
+    no-coverage endpoint is 0 — identical to the pre-fix runtime fallback of
+    a hard-coded 0. The migration still writes the key (so future reads no
+    longer depend on the fallback), but the cover itself never moves, so the
+    log line must say so rather than reusing the "was silently kept fully
+    closed" wording that is only true for the 100%-seeded types. A maintainer
+    reading this log for an awning-only bug report must not be misdirected
+    toward a repair that moved nothing.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"length_awning": 3.0},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.AWNING,
+    )
+    with caplog.at_level(logging.INFO):
+        assert await async_migrate_entry(hass, entry) is True
+
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 0
+    matching = [
+        r.message
+        for r in caplog.records
+        if "Migration Test" in r.message
+        and "matches the pre-fix runtime fallback, so this cover did not move"
+        in r.message
+    ]
+    assert matching, (
+        "Expected a log line naming the entry and stating the cover did not"
+        f" move, got: {[r.message for r in caplog.records]}"
+    )
+    assert not any(
+        "was silently kept fully closed until this migration ran" in r.message
+        for r in caplog.records
+    ), "The awning seed did not move the cover — the log must not claim it did"
 
 
 async def test_migrate_v3_13_does_not_log_when_key_already_present(

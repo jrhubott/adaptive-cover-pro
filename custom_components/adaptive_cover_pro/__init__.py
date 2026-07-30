@@ -65,6 +65,7 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DIAG_CACHE_KEY,
     DOMAIN,
+    POSITION_CLOSED,
     TIME_STRING_RE,
     _LOGGER,
     blind_spot_legacy_to_gamma,
@@ -644,20 +645,36 @@ def _seed_default_position_and_log(entry: ConfigEntry, options: dict) -> None:
     Wraps ``_seed_default_position`` so the v3.12 → v3.13 block in
     ``async_migrate_entry`` stays a single call — matching every sibling
     repair's shape — instead of adding its own conditional to an already-long
-    linear migration cascade. This is the riskiest repair in that cascade (it
-    deliberately moves an already-bitten cover from an effective 0 % to its
-    per-type default), so unlike a silent ``setdefault``, it must leave a log
-    line pointing at the entry, its cover type, and the value seeded — the
-    same pattern every other gated repair in the cascade already follows.
+    linear migration cascade. Unlike a silent ``setdefault``, it must leave a
+    log line pointing at the entry, its cover type, and the value seeded —
+    the same pattern every other gated repair in the cascade already follows.
+
+    The pre-fix runtime fallback for a key-less entry was a hard-coded
+    literal 0 (``POSITION_CLOSED``). For most types (blind/tilt/venetian,
+    ``open_blocks_sun=False``) the seeded no-coverage endpoint is 100, so this
+    genuinely is the riskiest repair in the cascade — it moves an
+    already-bitten cover from effectively fully closed to fully open. For the
+    ``open_blocks_sun=True`` types (awning, oscillating awning) the
+    no-coverage endpoint IS 0 — identical to the pre-fix fallback — so the
+    key gets written but nothing actually moves. The message distinguishes
+    the two rather than asserting "was silently fully closed" for a cover
+    that never moved.
     """
-    if _seed_default_position(entry.data.get(CONF_SENSOR_TYPE), options):
-        _LOGGER.info(
-            "Seeded default position of %s (%s) to %s%% — was silently"
-            " fully closed until now",
-            entry.data.get("name", entry.entry_id),
-            entry.data.get(CONF_SENSOR_TYPE),
-            options.get(CONF_DEFAULT_HEIGHT),
-        )
+    if not _seed_default_position(entry.data.get(CONF_SENSOR_TYPE), options):
+        return
+    seeded = options.get(CONF_DEFAULT_HEIGHT)
+    outcome = (
+        "was silently kept fully closed until this migration ran"
+        if seeded != POSITION_CLOSED
+        else "matches the pre-fix runtime fallback, so this cover did not move"
+    )
+    _LOGGER.info(
+        "Seeded default position of %s (%s) to %s%% — %s",
+        entry.data.get("name", entry.entry_id),
+        entry.data.get(CONF_SENSOR_TYPE),
+        seeded,
+        outcome,
+    )
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

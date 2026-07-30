@@ -252,6 +252,11 @@ def test_create_summary_shows_seeded_default_position():
 
     awning_cfg: dict = {}
     _apply_create_defaults(awning_cfg, CoverType.AWNING)
+    # The summary text alone can't distinguish "seeded 0" from "never seeded"
+    # — _build_config_summary falls back to config.get(CONF_DEFAULT_HEIGHT, 0)
+    # for an absent key too. Assert the seeded key directly so this test
+    # fails if the awning seed stops happening, not just if it seeds wrong.
+    assert awning_cfg[CONF_DEFAULT_HEIGHT] == 0
     awning_summary = _build_config_summary(awning_cfg, CoverType.AWNING)
     assert "🌙 Default (no rule matches) → 0%" in awning_summary
 
