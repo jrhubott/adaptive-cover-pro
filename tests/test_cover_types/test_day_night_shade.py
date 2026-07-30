@@ -573,12 +573,26 @@ class TestSchemas:
             == DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD
         )
 
-    def test_entity_selector_filter_requires_tilt(self) -> None:
+    def test_entity_selector_filter_requires_position(self) -> None:
         flt = DayNightShadePolicy().entity_selector_filter()
         assert flt.get("domain") == "cover"
-        assert "cover.CoverEntityFeature.SET_TILT_POSITION" in flt.get(
+        assert "cover.CoverEntityFeature.SET_POSITION" in flt.get(
             "supported_features", []
         )
+        assert "cover.CoverEntityFeature.SET_TILT_POSITION" not in flt.get(
+            "supported_features", []
+        )
+
+    def test_entity_selector_filter_admits_position_only_cover(self) -> None:
+        """A supported_features=15 cover (open+close+set_position+stop, no
+        tilt) is exactly the Model B/C hardware #1114 reports as locked out
+        of the picker. The filter's declared ``supported_features`` list must
+        not require the tilt bit, so this shape is admitted.
+        """
+        flt = DayNightShadePolicy().entity_selector_filter()
+        declared = flt.get("supported_features", [])
+        assert "cover.CoverEntityFeature.SET_POSITION" in declared
+        assert "cover.CoverEntityFeature.SET_TILT_POSITION" not in declared
 
     def test_capability_warnings_flag_missing_axes(self) -> None:
         policy = DayNightShadePolicy()

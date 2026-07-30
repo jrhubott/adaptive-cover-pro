@@ -78,6 +78,17 @@ CAP_HAS_OPEN = "has_open"
 CAP_HAS_CLOSE = "has_close"
 CAP_HAS_STOP = "has_stop"
 
+# Filter for cover types whose control models all need only ``set_position``
+# (e.g. Day/Night Models B/C, #1114). Cover types that drive tilt
+# unconditionally use the stricter ``TILT_CAPABLE_ENTITY_FILTER``
+# (``cover_types/tilt.py``) instead — this one intentionally admits
+# position-only hardware (``supported_features`` with no tilt bit) that the
+# stricter filter would exclude.
+POSITION_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
+    domain="cover",
+    supported_features=["cover.CoverEntityFeature.SET_POSITION"],
+)
+
 AXIS_NAME_POSITION = "position"
 AXIS_NAME_TILT = "tilt"
 

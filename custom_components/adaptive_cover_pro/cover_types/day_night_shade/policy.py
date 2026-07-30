@@ -67,6 +67,7 @@ from ..base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
+    POSITION_CAPABLE_ENTITY_FILTER,
     TILT_AXIS,
     CoverAxis,
     CoverTypePolicy,
@@ -74,7 +75,6 @@ from ..base import (
     caps_get,
 )
 from ..blind import VERTICAL_LENGTH_KEYS, geometry_vertical_schema
-from ..tilt import TILT_CAPABLE_ENTITY_FILTER
 from ..venetian import DualAxisSequencer
 
 if TYPE_CHECKING:
@@ -258,8 +258,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         return VERTICAL_LENGTH_KEYS
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
-        """Require entities that advertise ``set_tilt_position`` (both axes needed)."""
-        return TILT_CAPABLE_ENTITY_FILTER
+        """Require ``set_position`` — every control model needs it.
+
+        Only Model A (``position_tilt``) additionally needs
+        ``set_tilt_position``; that case is surfaced by
+        ``capability_warnings_for_options`` and the A3 Repair, so the
+        single-carriage models are not locked out of the picker.
+        """
+        return POSITION_CAPABLE_ENTITY_FILTER
 
     def summary_geometry_lines(
         self, config: dict[str, Any], labels: dict[str, str] | None = None
