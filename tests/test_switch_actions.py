@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     DOMAIN,
     CoverType,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.switch import (
     AdaptiveCoverSwitch,
     _has_irradiance_feature,
@@ -45,6 +46,9 @@ def _make_coordinator(mock_hass=None):
     # Return-to-default routes each target through the polymorphic
     # ``_entity_target`` (identity for every non-dual-entity cover type).
     coord._entity_target = lambda _entity, position, *, inverted=None: position
+    # Real policy: the return-to-default loop asks it for the entity order
+    # (issue #1115). Tests that spy on a sequencer replace this themselves.
+    coord._policy = get_policy("cover_blind")
     coord.manager = MagicMock()
     coord.manager.is_cover_manual = MagicMock(return_value=False)
     coord.manager.manual_controlled = []

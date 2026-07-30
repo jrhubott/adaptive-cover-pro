@@ -84,7 +84,11 @@ async def async_handle_set_axes(call: ServiceCall) -> None:
             list(entity_filter) if entity_filter is not None else list(coord.entities)
         )
         policy = coord._policy  # noqa: SLF001
-        for entity_id in entity_ids:
+        # Policy-mandated dispatch order, shared with every other dispatch seam
+        # (issue #1115). Applied here rather than at the dispatch loop below so
+        # ``resolved`` — which the loop iterates — carries the order through
+        # validation. Identity for every cover type with independent entities.
+        for entity_id in policy.order_for_dispatch(entity_ids):
             caps = coord._cover_provider.read_single_capabilities(  # noqa: SLF001
                 entity_id
             )

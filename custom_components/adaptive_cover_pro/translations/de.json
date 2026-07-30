@@ -28,6 +28,10 @@
     "cover_tilt_unsupported": {
       "title": "Neigung wird nicht unterstützt",
       "description": "**{name}** ist als neigungsfähiger Beschattungstyp konfiguriert, aber die Beschattung `{entity_id}` bietet keine Neigungssteuerung an (set_tilt_position). Neigungspositionen können nicht angewendet werden. Wählen Sie eine Beschattungsentität, die Neigung unterstützt, oder ändern Sie den Beschattungstyp in einen ohne Neigung."
+    },
+    "day_night_middle_rail_unset": {
+      "title": "Tag/Nacht-Mittelschiene nicht ausgewählt",
+      "description": "**{name}** ist als zweigeteiltes Tag/Nacht-Rollo konfiguriert, aber seine Mittelschienen-Beschattung ist nicht ausgewählt – oder verweist auf eine Beschattung, die nicht in der Beschattungsliste dieser Instanz enthalten ist. Beide Schienen erhalten dieselbe Position, daher verhält sich das Rollo wie eine normale Jalousie und die Mischung aus transparent und Verdunkelung wird nie angewendet. Wählen Sie die Mittelschienen-Beschattung in den Optionen der Beschattung aus, und stellen Sie sicher, dass sie auch als eine der gesteuerten Beschattungen aufgeführt ist."
     }
   },
   "config": {

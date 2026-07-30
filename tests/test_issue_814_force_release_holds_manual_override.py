@@ -35,6 +35,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.handlers import ManualOverrideHandler
 
 from tests.test_pipeline.conftest import make_snapshot
@@ -60,6 +61,8 @@ def _make_release_coordinator(pipeline_result):
     coord.logger = MagicMock()
     coord._inverse_state = False
     coord.entities = ["cover.bedroom"]
+    # Real policy: the dispatch loop asks it for the entity order (#1115).
+    coord._policy = get_policy("cover_blind")
     coord.state_change = True
     coord._last_state_change_entity = None
     coord._custom_position_template_trigger = False

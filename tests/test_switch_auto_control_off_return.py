@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
@@ -48,6 +49,8 @@ def _make_coord_with_real_cmd_svc(hass):
     # The return-to-default loop routes each target through the polymorphic
     # ``_entity_target`` (identity for every non-dual-entity cover type).
     coord._entity_target = lambda _entity, position, *, inverted=None: position
+    # Real policy: the return-to-default loop asks it for the entity order (#1115).
+    coord._policy = get_policy("cover_blind")
 
     cmd_svc = CoverCommandService(
         hass=hass,

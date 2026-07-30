@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -624,6 +624,59 @@ class CoverTypePolicy(ABC):
         """
         return position
 
+    def dispatch_order_key(
+        self,
+        entity_id: str,  # noqa: ARG002
+    ) -> int:
+        """Sort key ordering this cover type's entities within one dispatch cycle.
+
+        The coordinator resolves one position per cycle and fans it out to every
+        bound entity. A cover type whose entities are PHYSICALLY coupled — the
+        Model C day/night shade's stacked rails, where the middle rail cannot
+        travel past the bottom rail — needs its blocking entity commanded first,
+        because the per-entity command hooks cannot reach back and reorder the
+        caller's loop. Overriding this hook expresses that constraint once; every
+        dispatch seam consumes the same ordered view (issue #1115).
+
+        The Liskov-safe default is a constant, which makes ``sorted(...)`` a
+        stable-sort no-op: the user's config-flow pick order survives verbatim
+        for every cover type with independent entities.
+        """
+        return 0
+
+    def order_for_dispatch(self, entities: Iterable[str]) -> list[str]:
+        """Return ``entities`` in this cover type's mandated dispatch order.
+
+        The single shared ordering mechanism every dispatch seam consumes — the
+        main state-change loop, the startup loop, the force-send path, the
+        end-time-default and sunset-window broadcasts, and the auto-control-off
+        return loop. One view, six consumers: the ordering rule is stated once
+        as :meth:`dispatch_order_key` rather than mirrored per seam
+        (CODING_GUIDELINES.md "No Code Duplication", issue #1115).
+
+        ``sorted`` is stable, so a policy that leaves ``dispatch_order_key`` at
+        its constant default gets the input order back unchanged.
+        """
+        return sorted(entities, key=self.dispatch_order_key)
+
+    def required_role_entity_missing(
+        self,
+        options: Mapping[str, Any],  # noqa: ARG002
+        entities: Iterable[str],  # noqa: ARG002
+    ) -> bool:
+        """Whether an entity this cover type binds to a named role is unfilled (B3).
+
+        A cover type may bind a SECOND entity to a specific physical role — the
+        Model C day/night shade's middle rail. With that pick unset, or naming a
+        cover outside the instance's own list, the cover type cannot do its job
+        and degrades silently into a lesser one. This predicate is the single
+        source of truth behind the cover-type boundary for the B3 runtime Repair,
+        so the coordinator never branches on cover type (mirrors A3's
+        ``tilt_capability_contradiction``). Liskov-safe default: cover types that
+        bind no role entity have nothing to report (issue #1115).
+        """
+        return False
+
     def attach(self, **kwargs: Any) -> None:
         """Bind late-resolved dependencies (cmd_svc, grace_mgr, …).
 
@@ -741,13 +794,103 @@ class CoverTypePolicy(ABC):
         context,  # noqa: ARG002
         reason: str,  # noqa: ARG002
     ) -> None:
-        """Run any pre-command work before the position service fires.
+        """Run any pre-command SIDE EFFECTS before the position service fires.
 
-        Default: no-op. ``VenetianPolicy`` overrides this to send tilt-first
-        on opening transitions (issue #33) so the actuator's slats reach the
-        target angle before the carriage starts moving.
+        Effects only — whether the command may go out at all is
+        :meth:`await_dispatch_clearance`'s question, asked earlier and against a
+        command that has not been booked yet. Keeping the two apart is what lets
+        this hook run after the dry-run gate (a simulated command must not
+        pre-send anything) while the decision runs before the outbound command
+        is recorded.
+
+        Default: no-op. ``VenetianPolicy`` overrides this to send tilt-first on
+        opening transitions (issue #33) so the actuator's slats reach the target
+        angle before the carriage starts moving.
         """
         return
+
+    def capture_dispatch_token(
+        self,
+        entity_id: str,  # noqa: ARG002
+    ) -> Any:
+        """Return an opaque stamp describing HOW this dispatch expressed its value.
+
+        The provenance half of :meth:`await_dispatch_clearance`. A policy that
+        has to un-transform a dispatched number later — the Model C day/night
+        middle rail, whose clearance test compares its target against a live rail
+        reading in open-percent space — cannot re-derive the transform after the
+        fact: its own per-cycle cache describes the last RESOLUTION, and
+        ``resolve_entity_target`` runs as an ARGUMENT to
+        ``CoverCommandService.apply_position``, so a cycle that resolves and then
+        skips on a delta gate restates that cache for a command which never went
+        out (issue #1115, the #993 inversion class).
+
+        So the transform travels WITH the value instead. ``CoverCommandService``
+        asks for this stamp ONCE per dispatch, and asks for it BEFORE it puts
+        :meth:`await_dispatch_clearance`'s question: one stamp both answers that
+        dispatch's own clearance question and is stored beside the target it
+        books, so the number is gated and recorded against a single frame rather
+        than two reads of a moving one. The reconciliation timer then hands the
+        stored stamp back verbatim when it re-sends that target. The manager
+        never interprets it — it is this policy's own datum, round-tripped.
+
+        Liskov-safe default: ``None``, i.e. "no provenance needed", which is
+        every cover type whose dispatched values need no later un-transforming.
+        """
+        return None
+
+    async def await_dispatch_clearance(
+        self,
+        entity_id: str,  # noqa: ARG002
+        *,
+        position: int,  # noqa: ARG002
+        reason: str,  # noqa: ARG002
+        wait: bool = True,  # noqa: ARG002
+        dispatch_token: Any = None,  # noqa: ARG002
+    ) -> bool:
+        """Whether this entity may be driven to ``position`` right now.
+
+        The physical-coupling question on its own, separated from
+        :meth:`before_position_command` because that hook carries pre-send SIDE
+        EFFECTS (the venetian tilt-first command) a caller asking only for the
+        go/no-go must not trigger. Both position paths —
+        ``CoverCommandService.apply_position`` and its reconciliation resend —
+        funnel into ONE implementation per policy; the rule is never written
+        twice (issue #1115).
+
+        ``wait`` says whether the caller can afford to BLOCK until the coupled
+        entity clears. The dispatch path can and must: it has just issued the
+        blocking entity's command and nothing else will re-drive this one this
+        cycle. A caller that is itself a periodic retry loop passes ``False``
+        for a single-shot "is it clear right now?" — blocking there would let a
+        pass whose budget matches the timer interval overlap the next one, with
+        two live passes mutating the same per-entity state (issue #1115). Same
+        eventual behaviour either way; the next tick re-asks.
+
+        ``dispatch_token`` names the dispatch that produced ``position`` — the
+        stamp :meth:`capture_dispatch_token` minted for it. BOTH position paths
+        supply one: ``apply_position`` captures the stamp just before asking
+        this question and books that same stamp with the target, and the resend
+        hands the stored stamp straight back. So the answer is computed against
+        the dispatch the number actually came from rather than against whatever
+        a later resolve left in the policy's per-cycle cache (issue #1115).
+
+        ``None`` therefore does NOT mean "the dispatch path". It means the
+        number has no dispatch behind it to describe: a target booked from
+        outside one — ``CoverCommandService.restore_target`` rehydrating a
+        persisted target after a reload, the coordinator recording an
+        externally-observed My move, ``send_my_position`` booking the user's
+        configured My percent. Those are raw cover-frame numbers, so a policy
+        that needs provenance answers them from what it knows about the INSTALL
+        rather than from any one dispatch — nothing expressed them in a
+        dispatch's frame for a stamp to name.
+
+        Returns ``False`` to withhold, ``True`` to proceed. Withholding is
+        expected to latch (:meth:`has_pending_secondary_axis`) so a later pass
+        re-attempts the command. Liskov-safe default: a cover type whose
+        entities are physically independent is always clear.
+        """
+        return True
 
     async def after_position_command(
         self,

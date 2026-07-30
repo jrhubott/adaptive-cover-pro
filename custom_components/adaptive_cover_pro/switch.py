@@ -390,7 +390,15 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     "Returning covers to default position: %s", default_position
                 )
                 options = self.coordinator.config_entry.options
-                for entity in self.coordinator.entities:
+                # Policy-mandated dispatch order, shared with every other
+                # dispatch seam (issue #1115): a Model C day/night shade's
+                # bottom rail must be commanded before its middle rail, which
+                # cannot physically travel past it. Identity for every cover
+                # type whose entities are independent.
+                ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
+                    self.coordinator.entities
+                )
+                for entity in ordered:
                     # Sanctioned one-shot transition: auto_control was just
                     # toggled OFF; honor the user's "return to default" choice
                     # by bypassing the auto_control gate exactly once.  Without

@@ -564,3 +564,60 @@ async def test_auto_control_off_seam_never_inverts_middle_rail() -> None:
     assert cmd_svc.get_target(_BOTTOM) == 60
     assert cmd_svc.get_target(_MIDDLE) == 80  # open-space, never inverted
     assert cmd_svc.get_target(_MIDDLE) >= cmd_svc.get_target(_BOTTOM)
+
+
+# ---------------------------------------------------------------------------
+# A withheld middle-rail command keeps the cycle's target signature unrecorded
+# so the next cycle re-attempts it (issue #1115, reusing #756's latch)
+# ---------------------------------------------------------------------------
+
+
+def _latch_coordinator(policy: DayNightShadePolicy) -> MagicMock:
+    coord = MagicMock()
+    coord.entities = [_BOTTOM, _MIDDLE]
+    coord._policy = policy
+    coord.state_change = False
+    coord._last_dispatched_target_sig = None
+    coord._resolved_target_signature = MagicMock(return_value=("solar", 40))
+    coord.async_handle_state_change = AsyncMock()
+    coord._async_force_send_pipeline_position = AsyncMock()
+    return coord
+
+
+@pytest.mark.asyncio
+async def test_pending_middle_rail_withholds_dispatched_target_signature() -> None:
+    """A deferred middle-rail command must not look "already dispatched".
+
+    ``_dispatch_for_cycle`` records this cycle's resolved-target signature only
+    when no cover still has a pending secondary-axis/rail command. Recording it
+    while the middle rail's command is withheld would make the next cycle see an
+    unchanged target and never retry, stranding the middle rail (the #756 failure
+    mode, reached here through the #1115 travel gate).
+    """
+    policy = _dual_policy(position=40, blend=50)
+    policy._pending_middle_rail.add(_MIDDLE)
+    coord = _latch_coordinator(policy)
+
+    await AdaptiveDataUpdateCoordinator._dispatch_for_cycle(
+        coord,
+        40,
+        {},
+        auto_expired=False,
+        custom_position_released_entities=set(),
+        safety_release=False,
+        template_release=False,
+    )
+    assert coord._last_dispatched_target_sig is None
+
+    # Once the gate clears the latch, the signature is recorded as normal.
+    policy._pending_middle_rail.clear()
+    await AdaptiveDataUpdateCoordinator._dispatch_for_cycle(
+        coord,
+        40,
+        {},
+        auto_expired=False,
+        custom_position_released_entities=set(),
+        safety_release=False,
+        template_release=False,
+    )
+    assert coord._last_dispatched_target_sig == ("solar", 40)

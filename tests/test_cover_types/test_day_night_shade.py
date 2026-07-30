@@ -1271,6 +1271,91 @@ class TestDualEntityCapabilityWarnings:
         )
         assert warn == []
 
+    def test_warns_when_middle_rail_unset(self) -> None:
+        """An ABSENT middle rail must warn too (issue #1115).
+
+        ``if middle and middle not in known`` short-circuits on the unset value,
+        so a Model C instance with no middle rail configured used to pass config
+        validation silently and then behave like a plain vertical blind at
+        runtime — both rails driven to the bottom rail's position.
+        """
+        policy = DayNightShadePolicy()
+        opts = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY}
+        warn = policy.capability_warnings_for_options(
+            {
+                _BOTTOM: {"has_set_position": True, "has_set_tilt_position": True},
+                _MIDDLE: {"has_set_position": True, "has_set_tilt_position": True},
+            },
+            opts,
+        )
+        assert any("middle-rail" in w for w in warn)
+
+    def test_no_unset_warning_for_other_models(self) -> None:
+        """Models A and B bind no middle rail — an absent value is not a problem."""
+        policy = DayNightShadePolicy()
+        known = {
+            _BOTTOM: {"has_set_position": True, "has_set_tilt_position": True},
+            _MIDDLE: {"has_set_position": True, "has_set_tilt_position": True},
+        }
+        for model in (DAY_NIGHT_MODEL_POSITION_TILT, DAY_NIGHT_MODEL_SPLIT_RANGE):
+            warn = policy.capability_warnings_for_options(
+                known, {CONF_DAY_NIGHT_CONTROL_MODEL: model}
+            )
+            assert warn == []
+
+
+class TestDualEntityRequiredRoleEntity:
+    """``required_role_entity_missing`` drives the B3 runtime Repair (issue #1115)."""
+
+    def test_true_when_middle_rail_unset(self) -> None:
+        policy = DayNightShadePolicy()
+        assert (
+            policy.required_role_entity_missing(
+                {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY},
+                [_BOTTOM, _MIDDLE],
+            )
+            is True
+        )
+
+    def test_true_when_middle_rail_not_among_covers(self) -> None:
+        policy = DayNightShadePolicy()
+        assert (
+            policy.required_role_entity_missing(
+                {
+                    CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+                    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.not_configured",
+                },
+                [_BOTTOM, _MIDDLE],
+            )
+            is True
+        )
+
+    def test_false_when_coherent(self) -> None:
+        policy = DayNightShadePolicy()
+        assert (
+            policy.required_role_entity_missing(
+                {
+                    CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+                    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _MIDDLE,
+                },
+                [_BOTTOM, _MIDDLE],
+            )
+            is False
+        )
+
+    @pytest.mark.parametrize(
+        "model", [DAY_NIGHT_MODEL_POSITION_TILT, DAY_NIGHT_MODEL_SPLIT_RANGE]
+    )
+    def test_false_for_models_a_and_b(self, model: str) -> None:
+        """Only Model C binds a second rail entity — A/B never report a gap."""
+        policy = DayNightShadePolicy()
+        assert (
+            policy.required_role_entity_missing(
+                {CONF_DAY_NIGHT_CONTROL_MODEL: model}, [_BOTTOM]
+            )
+            is False
+        )
+
 
 def test_geometry_schema_has_middle_rail_picker() -> None:
     import voluptuous as vol

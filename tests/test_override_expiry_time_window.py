@@ -22,6 +22,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from freezegun import freeze_time
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
+
 UTC = dt.UTC
 
 
@@ -51,6 +53,8 @@ def _make_coordinator(
     coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coordinator._policy = get_policy("cover_blind")
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
@@ -397,6 +401,8 @@ def _make_state_change_coordinator(
     )
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coordinator._policy = get_policy("cover_blind")
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())

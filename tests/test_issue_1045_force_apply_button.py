@@ -32,6 +32,7 @@ from custom_components.adaptive_cover_pro import const
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
@@ -75,6 +76,8 @@ def _make_coordinator(
     )
     # The per-entity dispatch seam is identity for a blind (no rail remap).
     coordinator._entity_target = lambda cover, state: state
+    # Real policy: the dispatch loops ask it for the entity order (issue #1115).
+    coordinator._policy = get_policy("cover_blind")
     # No hold in play by default; bind the real hold-aware dispatch seam so
     # honor_holds=True runs the production code rather than a bare MagicMock.
     coordinator._pipeline_result = None

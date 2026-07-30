@@ -375,7 +375,13 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """
 
         async def _member(entry, coordinator) -> None:
-            for entity_id in entry.options.get(CONF_ENTITIES, []):
+            # Each member's OWN policy decides its rail order (issue #1115) —
+            # a Model C day/night member inside a group needs its bottom rail
+            # commanded first exactly as it does standalone.
+            ordered = coordinator._policy.order_for_dispatch(  # noqa: SLF001
+                entry.options.get(CONF_ENTITIES, [])
+            )
+            for entity_id in ordered:
                 await coordinator.async_apply_user_position(
                     entity_id, position, trigger=TRIGGER_GROUP_COVER
                 )
@@ -396,7 +402,11 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """
 
         async def _member(entry, coordinator) -> None:
-            for entity_id in entry.options.get(CONF_ENTITIES, []):
+            # Same per-member ordered view as the position slider (issue #1115).
+            ordered = coordinator._policy.order_for_dispatch(  # noqa: SLF001
+                entry.options.get(CONF_ENTITIES, [])
+            )
+            for entity_id in ordered:
                 await coordinator.async_apply_user_tilt(
                     entity_id, tilt, trigger=TRIGGER_GROUP_COVER_TILT
                 )

@@ -13,6 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -189,6 +191,8 @@ async def test_first_refresh_skips_apply_position_for_manual_cover():
 
     coordinator = MagicMock()
     coordinator.entities = [eid_manual, eid_auto]
+    # Real policy: the startup loop asks it for the entity order (#1115).
+    coordinator._policy = get_policy("cover_blind")
     coordinator.check_adaptive_time = True
     coordinator._is_reload = False
     coordinator.first_refresh = True

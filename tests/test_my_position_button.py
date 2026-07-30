@@ -16,7 +16,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INTERP_LIST_NEW,
     CONF_INVERSE_STATE,
     ControlMethod,
+    CoverType,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from tests.ha_helpers import wire_dispatch_frame
 
 # ---------------------------------------------------------------------------
@@ -89,6 +91,10 @@ def _make_my_position_button(*, options=None, entities=None):
     coordinator.async_apply_user_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
+    # The button reads the policy's ordered dispatch view (#1115), so the mock
+    # needs the real default policy the coordinator would carry — a MagicMock
+    # policy hands back a MagicMock that iterates as empty.
+    coordinator._policy = get_policy(CoverType.BLIND)
 
     button = AdaptiveCoverMyPositionButton.__new__(AdaptiveCoverMyPositionButton)
     button.coordinator = coordinator
@@ -295,6 +301,7 @@ async def test_my_position_button_passes_bypass_kwargs():
     coordinator.async_apply_user_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
+    coordinator._policy = get_policy(CoverType.BLIND)
 
     button = AdaptiveCoverMyPositionButton.__new__(AdaptiveCoverMyPositionButton)
     button.coordinator = coordinator

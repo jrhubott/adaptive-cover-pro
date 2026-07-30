@@ -104,6 +104,7 @@ from .const import (
     ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
+    ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
     LOGGER,
@@ -383,6 +384,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._sun_issue_key = f"{ISSUE_SUN_UNAVAILABLE}_{entry_id}"
         self._envelope_issue_key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{entry_id}"
         self._time_window_issue_key = f"{ISSUE_CONFIG_TIME_WINDOW}_{entry_id}"
+        # B3 (issue #1115): entry-scoped like B1/B2 — the cover-type policy owns
+        # the "is a bound role entity unfilled?" decision, so no cover-type
+        # knowledge lands here.
+        self._role_entity_issue_key = f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{entry_id}"
         # Namespaced cover-availability watch keys currently registered, so a
         # cover dropped from config gets unwatched (its Repair cleared) next cycle.
         self._cover_issue_keys: set[str] = set()
@@ -538,6 +543,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             hass=self.hass,
             logger=self.logger,
             cover_type=self._cover_type,
+            # Share THIS entry's policy object rather than letting the manager
+            # build a private one. Anything the manager asks a stateful policy
+            # — the Model C rail order and travel clearance its reconciliation
+            # pass consults — is only answerable on the instance the dispatch
+            # path primes and ``attach``es (issue #1115).
+            policy=self._policy,
             grace_mgr=self._grace_mgr,
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
@@ -587,6 +598,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             hass=self.hass,
             logger=self.logger,
             grace_mgr=self._grace_mgr,
+            # The instance's covers. A cover type that binds several entities to
+            # distinct physical roles resolves them from this list (the Model C
+            # day/night bottom rail is "whichever cover isn't the middle rail",
+            # issue #1115). Additive: every other policy ignores it.
+            entities=self.entities,
             get_current_position=self._cmd_svc.get_current_position,
             set_commanded_position=self._cmd_svc.set_target,
             position_tolerance=POSITION_TOLERANCE_PERCENT,
@@ -1679,6 +1695,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self._repair.clear_predicate(stale)
             self._a3_issue_keys = a3_desired
 
+            # B3 — a cover type binds a second entity to a named physical role and
+            # that role is unfilled (issue #1115). Entry-scoped like B1/B2, but
+            # sourced from a polymorphic policy predicate like A3
+            # (``required_role_entity_missing``) so the coordinator never branches
+            # on cover type. Today's only such role is the Model C day/night
+            # middle rail: unset — or naming a cover outside this instance's list
+            # — leaves BOTH rails driven to the bottom rail's position, i.e. the
+            # shade silently behaves like a plain vertical blind. Same narrow
+            # per-check guard as A2/A3 so a policy blowing up here cannot starve
+            # ``evaluate()`` and strand every other Repair.
+            try:
+                role_entity_missing = self._policy.required_role_entity_missing(
+                    options, self.entities
+                )
+            except Exception:  # noqa: BLE001 — one check must not starve the rest
+                self.logger.debug("B3 predicate failed; skipping", exc_info=True)
+            else:
+                self._repair.update_predicate(
+                    self._role_entity_issue_key,
+                    role_entity_missing,
+                    translation_key=ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET,
+                    placeholders={"name": name},
+                )
+
             self._sensor_health.evaluate()
             self._repair.evaluate()
 
@@ -2529,7 +2569,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entities that were gated or skipped.
 
         """
-        target_covers = entities if entities is not None else list(self.entities)
+        # Policy-mandated dispatch order (issue #1115) — applied to an explicitly
+        # supplied subset too, since a Model C subset can hold both rails.
+        target_covers = self._policy.order_for_dispatch(
+            entities if entities is not None else self.entities
+        )
 
         if respect_manual_override:
             # Pre-filter rather than lean on the manual-override gate inside
@@ -2835,7 +2879,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 if self._pipeline_bypasses_auto_control
                 else "solar"
             )
-        for cover in self.entities:
+        for cover in self._policy.order_for_dispatch(self.entities):
             ctx = self._build_position_context(
                 cover,
                 options,
@@ -3027,7 +3071,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         sun_just_appeared = self._check_sun_validity_transition()
-        for cover in self.entities:
+        for cover in self._policy.order_for_dispatch(self.entities):
             if self.manager.is_cover_manual(cover):
                 self.logger.debug(
                     "Startup: skipping position command for %s (manual override active/restored)",
@@ -4165,7 +4209,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "cover_count": len(self.entities),
                 }
             )
-            for cover_entity in self.entities:
+            for cover_entity in self._policy.order_for_dispatch(self.entities):
                 ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
                     cover_entity,
@@ -4451,7 +4495,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunset_pos_cfg=options.get(CONF_SUNSET_POS),
             options=options,
             inverse_state_enabled=self._inverse_state,
-            entities=self.entities,
+            # Same policy-mandated rail order as every other dispatch seam
+            # (issue #1115) — the tracker fans the sunset position out in the
+            # order it receives, so the ordering is applied here.
+            entities=self._policy.order_for_dispatch(self.entities),
             is_cover_manual=self.manager.is_cover_manual,
             has_active_override=self._pipeline_has_active_override(),
             build_position_context=lambda c, o: self._build_position_context(

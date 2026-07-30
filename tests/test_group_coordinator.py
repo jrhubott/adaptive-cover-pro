@@ -76,7 +76,13 @@ def _member_entry(
 
 
 def _mock_member_coordinator() -> MagicMock:
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
     coord = MagicMock()
+    # The group's per-member fan-out reads each member's own ordered dispatch
+    # view (#1115), so the mock needs the real default policy the member
+    # coordinator would carry — a MagicMock policy iterates as empty.
+    coord._policy = get_policy(CoverType.BLIND)
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
     coord.async_reset_manual_overrides = AsyncMock(return_value=[])
     coord.async_refresh = AsyncMock()

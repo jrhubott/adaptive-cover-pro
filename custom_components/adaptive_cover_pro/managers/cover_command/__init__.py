@@ -90,6 +90,7 @@ class CoverCommandService:
         on_tick=None,
         endpoint_use_open_close: bool = DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
         *,
+        policy=None,
         event_buffer=None,
         debug_log=None,
         on_command_sent=None,
@@ -126,6 +127,15 @@ class CoverCommandService:
                 the command grace period start).  The coordinator wires this to
                 ``AdaptiveCoverManager.note_command_sent`` so time-based
                 manual-override detectors can clock the post-command window.
+            policy: The config entry's OWN ``CoverTypePolicy`` instance. Pass it
+                whenever one exists (the coordinator does) so this manager and
+                the dispatch path share one object: a policy that carries
+                per-cycle state — the Model C day/night rail roles behind
+                ``order_for_dispatch`` / ``await_dispatch_clearance`` — answers
+                from a private instance nobody primes, and every question this
+                manager asks it silently degrades to the default (issue #1115).
+                Omitted, a fresh instance is built from ``cover_type``, which is
+                still correct for the stateless axis/capability queries.
 
         """
         # Local import: ``cover_types.venetian.sequencer`` imports
@@ -144,7 +154,7 @@ class CoverCommandService:
         # policy carries the axis descriptors that control which HA service
         # this manager calls — see ``_prepare_service_call`` and
         # ``_read_position_with_capabilities``.
-        self._policy = get_policy(cover_type)
+        self._policy = policy if policy is not None else get_policy(cover_type)
         self._grace_mgr = grace_mgr
         self._open_close_threshold = open_close_threshold
         self._endpoint_use_open_close = endpoint_use_open_close
@@ -322,9 +332,26 @@ class CoverCommandService:
         s = self._state.get(entity_id)
         return None if s is None else s.target
 
-    def set_target(self, entity_id: str, position: int | None) -> None:
-        """Set the commanded target position. ``None`` clears the target."""
-        self.state(entity_id).target = position
+    def set_target(
+        self,
+        entity_id: str,
+        position: int | None,
+        *,
+        dispatch_token: Any = None,
+    ) -> None:
+        """Set the commanded target position. ``None`` clears the target.
+
+        The ONE writer of the ``(target, dispatch_token)`` pair (issue #1115).
+        ``dispatch_token`` is the cover-type policy's opaque stamp for the
+        dispatch that produced ``position`` — see ``PerEntityState`` — and it is
+        written here, beside the target, precisely so no code path can record
+        one without the other. Callers with no dispatch behind the write (a
+        rehydrated target, an externally-observed My move, a clear) leave it at
+        ``None``: no provenance is the honest answer there.
+        """
+        s = self.state(entity_id)
+        s.target = position
+        s.dispatch_token = dispatch_token
 
     def restore_target(self, entity_id: str, target: int | None) -> bool:
         """Rehydrate a persisted command target after an ACP reload (issue #1022).
@@ -710,8 +737,8 @@ class CoverCommandService:
             if s.target is not None and not s.is_safety
         ]
         for eid in stale:
+            self.set_target(eid, None)
             s = self._state[eid]
-            s.target = None
             self._clear_waiting(s)
             s.retry_count = 0
             s.gave_up = False
@@ -957,7 +984,16 @@ class CoverCommandService:
         # toward My during the transit window.
         prior_position = self._get_current_position(entity_id)
         s = self.state(entity_id)
-        s.target = target
+        # No dispatch produced this number, so it books no provenance (issue
+        # #1115). ``stop_cover`` carries no position: what lands here is the
+        # user's configured My percent, which nothing resolved and no seam ever
+        # expressed in a frame. Stamping it with the policy's current view would
+        # attribute it to the last unrelated dispatch AND freeze that attribution
+        # for every later resend — the exact provenance defect the stamp exists
+        # to close, pointed the other way. ``None`` is the honest answer: the
+        # policy then maps it with the install's own axis inversion, which is
+        # the right frame for a raw cover-frame percent nothing resolved.
+        self.set_target(entity_id, target)
         s.waiting = True
         s.sent_at = now
         s.last_progress_at = None
@@ -1472,9 +1508,14 @@ class CoverCommandService:
         # check_cover_features + route_service_call work entirely for a
         # value it would never read (issue #1095 audit finding 4).
         # route_service_call is pure/side-effect-free (routing.py's module
-        # docstring); no `await` occurs between this line and either of its
-        # uses (this gate, and the dispatch call further down that reuses
-        # this same `_plan`/`_caps_for_plan`), so both stay valid for both.
+        # docstring), and nothing between this line and either of its uses
+        # (this gate, and the dispatch call further down that reuses this
+        # same `_plan`/`_caps_for_plan`) can invalidate it. The one await
+        # that can intervene is the physical-clearance gate below, and a
+        # policy with no coupled entities returns from it without ever
+        # suspending; a policy that does suspend is waiting on ANOTHER
+        # entity's travel, not on this one's `supported_features`, which is
+        # all `_plan` is derived from.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
         _plan = route_service_call(
             entity_id,
@@ -1608,12 +1649,74 @@ class CoverCommandService:
                     current_position=_current,
                 )
 
+        # ----- physical-clearance gate -----
+        # Cover-type policy question: may this entity be driven to `position`
+        # right now? A cover type whose entities are physically coupled may need
+        # one of them to move first — the Model C day/night middle rail cannot
+        # travel past its bottom rail (issue #1115). Cover-type-agnostic,
+        # exactly like the ``full_endpoint_target`` flag: the bool carries the
+        # decision and this service never inspects the cover type. Every other
+        # policy answers True unconditionally.
+        #
+        # Asked HERE, ahead of _prepare_service_call, because withheld means
+        # SKIPPED and a skip must leave NOTHING behind: _prepare_service_call
+        # books the outbound command (target, waiting, sent_at, the command
+        # grace window, the on_command_sent tick), and every one of those has a
+        # live consequence for a command that never goes out — the grace window
+        # suppresses genuine manual-override detection, ``waiting`` makes the
+        # next reconciliation pass skip the entity, and once it lapses A2 raises
+        # "cover not moving" about a rail ACP is deliberately holding still.
+        # Nothing recorded, nothing to unwind. The policy latches the withheld
+        # command (``has_pending_secondary_axis``) so a later cycle re-attempts
+        # it.
+        #
+        # This is the go/no-go question ONLY — the pre-send SIDE EFFECTS
+        # (venetian's tilt-first) stay in ``before_position_command`` below,
+        # which is why they can keep running after the dry-run gate while the
+        # decision runs before it.
+        #
+        # Skipped entirely in a dry run: the answer is a wall-clock wait on a
+        # physical rail, and a simulated command moves nothing for it to wait on
+        # — the dry-run gate below owns that path.
+        #
+        # The policy's provenance stamp for THIS dispatch is taken first, ONCE,
+        # and used for both the gate and the booking below (issue #1115). Taken
+        # before the gate rather than at the booking because the gate may await
+        # a physical rail for its whole budget, and a policy's per-cycle view can
+        # be restated by another cycle across that await — reading it twice would
+        # stamp the booked target with a dispatch that did not produce it, which
+        # is the exact provenance bug this stamp exists to close. Opaque here:
+        # this service stores and replays it, never interprets it.
+        dispatch_token = (
+            None
+            if context.policy is None
+            else context.policy.capture_dispatch_token(entity_id)
+        )
+        if (
+            not self._dry_run
+            and context.policy is not None
+            and not await context.policy.await_dispatch_clearance(
+                entity_id,
+                position=position,
+                reason=reason,
+                dispatch_token=dispatch_token,
+            )
+        ):
+            return self._skip(
+                entity_id,
+                "policy_deferred",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+
         # ----- send command -----
         # Reuses _caps_for_plan/_plan from the gate above (issue #1095 audit
         # finding 5) instead of a fresh get_cover_capabilities +
-        # route_service_call — safe because nothing between that computation
-        # and this call awaits (confirmed above and in apply_position's
-        # docstring-adjacent comment on `_plan`).
+        # route_service_call — safe for the reason spelled out where `_plan` is
+        # built: nothing that can intervene between there and here changes this
+        # entity's capabilities.
         service, service_data, supports_position = self._prepare_service_call(
             entity_id,
             position,
@@ -1622,6 +1725,7 @@ class CoverCommandService:
             plan=_plan,
             is_safety=context.is_safety,
             use_my_position=context.use_my_position,
+            dispatch_token=dispatch_token,
         )
         if service is None:
             return self._skip(
@@ -1665,7 +1769,9 @@ class CoverCommandService:
         # Cover-type policy hook: dual-axis covers (venetian) pre-send tilt
         # on opening transitions so the actuator's slats are at the target
         # angle before the carriage starts moving (issue #33). Default
-        # policies are no-ops.
+        # policies are no-ops. Pure SIDE EFFECT — the go/no-go decision was
+        # settled by ``await_dispatch_clearance`` above, before anything about
+        # this command was recorded.
         if context.policy is not None:
             await context.policy.before_position_command(
                 self,
@@ -1878,10 +1984,17 @@ class CoverCommandService:
            → skip.  Prevents stale daytime targets from being resent overnight.
         6. Compare actual position to ``target_call`` within tolerance.
         7. If match → reset retry count, done.
-        8. If mismatch → resend the same target (up to ``max_retries``).
+        8. If mismatch → ask the cover-type policy whether the entity is
+           physically clear to move; withhold if not.
+        9. Resend the same target (up to ``max_retries``).
 
-        Note: reconciliation does *not* go through gate checks — the target
-        was already validated when ``apply_position`` was called.
+        Note: reconciliation does *not* go through the ``apply_position`` gate
+        checks — the target was already validated when ``apply_position`` was
+        called. It DOES honour the policy's dispatch order and its
+        physical-clearance answer, because those describe the hardware rather
+        than the decision that produced the target: a Model C day/night middle
+        rail cannot travel past its bottom rail no matter which timer asked it
+        to (issue #1115).
 
         """
         # Coordinator hook: time window transition checks, etc.
@@ -1892,7 +2005,13 @@ class CoverCommandService:
         if not self._enabled:
             return
 
-        for entity_id, target in list(self.iter_targets()):
+        # Same policy-mandated dispatch order as every other fan-out seam
+        # (issue #1115): a Model C day/night shade's bottom rail must be resent
+        # before its middle rail, which cannot physically travel past it.
+        # Identity for every cover type whose entities are independent.
+        recorded = dict(self.iter_targets())
+        for entity_id in self._policy.order_for_dispatch(recorded):
+            target = recorded[entity_id]
             s = self.state(entity_id)
             s.last_reconcile_at = now
 
@@ -2040,16 +2159,81 @@ class CoverCommandService:
                     )
                 continue
 
+            # 9. Physically-coupled entities: a resend is still a position
+            # command, so it obeys the same clearance the dispatch path does —
+            # a Model C day/night middle rail must not be driven while its
+            # bottom rail is stacked above the target (issue #1115). Ordering
+            # alone cannot fix this: the loop does not wait for the bottom
+            # rail's resend to ARRIVE before issuing the middle rail's.
+            # Cover-type-agnostic — the policy answers, this loop never
+            # inspects the cover type. Asked before the retry is counted so a
+            # withheld resend does not burn one of the pass's attempts; the
+            # policy latches it and the next pass re-attempts.
+            #
+            # ``wait=False``: this pass IS the retry loop. Its clearance budget
+            # would otherwise be the reconciliation interval itself, and HA
+            # re-arms the interval listener before dispatching each fire as its
+            # own background task — so a pass blocked on a pinned rail is still
+            # running when the next one starts, and the two mutate the same
+            # per-entity state (issue #1115). One reading, withhold, re-ask in a
+            # minute: identical eventual behaviour, no overlap.
+            #
+            # ``dispatch_token``: a resend re-states the number the ORIGINAL
+            # dispatch put on the wire, so the policy is handed back that
+            # dispatch's own stamp rather than being left to infer one from a
+            # per-cycle view a later resolve may have restated. Without it a
+            # single resolve-then-skip cycle — routine under the default 2 %/2 min
+            # delta gates — flips the verdict either way: withholding a rail
+            # nothing will ever re-target, or resending into a rail that is
+            # physically blocked (issue #1115).
+            #
+            # Target and stamp are read HERE, together, rather than the target
+            # coming from the pass-start snapshot. ``recorded`` was taken before
+            # the loop ran, and the loop awaits — this gate, and every earlier
+            # entity's own resend. A concurrent ``apply_position`` landing in one
+            # of those windows re-books this entity, and pairing the snapshot's
+            # target with a stamp read now describes one number with another's
+            # frame; ``_prepare_service_call`` would then persist that mismatched
+            # pair as the record the NEXT pass gates against. One read, one pair,
+            # carried through the gate and back into the booking below. Which
+            # entities the pass acts on is still the snapshot's call — only the
+            # value going back on the wire moves.
+            resend_target = s.target
+            resend_token = s.dispatch_token
+            if resend_target is None:
+                # Cleared out from under the pass (time-window close, reload).
+                # There is no longer a target to restate.
+                self._logger.debug(
+                    "Reconcile: %s target cleared mid-pass — skipping resend",
+                    entity_id,
+                )
+                continue
+            if not await self._policy.await_dispatch_clearance(
+                entity_id,
+                position=resend_target,
+                reason="reconcile",
+                wait=False,
+                dispatch_token=resend_token,
+            ):
+                self._logger.debug(
+                    "Reconcile: %s withheld by the cover-type policy — a coupled "
+                    "entity has not cleared the target yet",
+                    entity_id,
+                )
+                continue
+
             s.retry_count += 1
             self._logger.debug(
                 "Reconcile: %s missed target (actual=%s target=%s) — retry %d/%d",
                 entity_id,
                 actual,
-                target,
+                resend_target,
                 s.retry_count,
                 self._max_retries,
             )
-            await self._execute_command(entity_id, target)
+            await self._execute_command(
+                entity_id, resend_target, dispatch_token=resend_token
+            )
 
     # ------------------------------------------------------------------ #
     # Diagnostic helpers
@@ -2225,6 +2409,7 @@ class CoverCommandService:
         is_safety: bool = False,
         use_my_position: bool = False,  # noqa: FBT001
         plan: ServiceCallPlan | None = None,
+        dispatch_token: Any = None,
     ) -> tuple[str | None, dict | None, bool]:
         """Build the HA service call for this cover/state.
 
@@ -2258,6 +2443,14 @@ class CoverCommandService:
                 Recomputed internally when omitted, preserving the original
                 call contract for every other caller (e.g.
                 ``_execute_command``).
+            dispatch_token: Opaque cover-type-policy stamp describing the
+                dispatch that produced ``state``, recorded alongside the booked
+                target so a later resend can hand it back to the policy that
+                minted it (issue #1115). ``apply_position`` passes the stamp it
+                took for THIS dispatch; ``_execute_command`` passes the one its
+                caller read alongside the target it is restating, because a
+                resend puts the same number back on the wire and therefore
+                speaks the same dispatch. Never interpreted here.
 
         Returns:
             (service_name, service_data, supports_position).
@@ -2319,7 +2512,10 @@ class CoverCommandService:
         # comparison stays in the raw display frame.
         prior_position = self._read_position_with_capabilities(entity, caps)
         s = self.state(entity)
-        s.target = plan.routed_target
+        # The booking chokepoint: the target and the dispatch provenance that
+        # explains it are recorded by the same call, so a resend can never be
+        # gated against a dispatch that did not produce it (issue #1115).
+        self.set_target(entity, plan.routed_target, dispatch_token=dispatch_token)
         self._set_transit_direction_if_blind(
             entity, plan.routed_target, prior_position, caps
         )
@@ -2348,18 +2544,32 @@ class CoverCommandService:
 
         return plan.service, plan.service_data, plan.supports_position
 
-    async def _execute_command(self, entity_id: str, target: int) -> None:
+    async def _execute_command(
+        self, entity_id: str, target: int, *, dispatch_token: Any = None
+    ) -> None:
         """Send command directly, bypassing gate checks (reconciliation use only).
 
         Does NOT reset the retry count — the caller
         (``run_reconciliation_pass``) owns that.
+
+        ``dispatch_token`` is the provenance of ``target``: a resend re-books the
+        SAME number, so the original dispatch's stamp travels forward instead of
+        the number being re-stamped with whatever the policy's per-cycle view
+        says now (issue #1115). It is supplied by the caller rather than re-read
+        here so that the target and the stamp explaining it come from a single
+        read — re-reading the record would let a re-booking that landed during
+        the caller's clearance await pair this target with another number's
+        frame. A caller with no dispatch behind ``target`` leaves it ``None``.
 
         NB: callers are responsible for entity-loaded-ness. Reconciliation only
         runs for entities that already passed the cover_unavailable gate in
         ``apply_position`` (issue #342), so no duplicate gate is needed here.
         """
         service, service_data, _ = self._prepare_service_call(
-            entity_id, target, reset_retries=False
+            entity_id,
+            target,
+            reset_retries=False,
+            dispatch_token=dispatch_token,
         )
         if service is None:
             return

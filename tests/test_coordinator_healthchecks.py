@@ -29,6 +29,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_MAX_POSITION,
     CONF_MIN_POSITION,
     CUSTOM_POSITION_SAFETY_PRIORITY,
@@ -41,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
+    ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
 )
@@ -145,6 +148,9 @@ def _make_coord(
     # tilt-declaring policy explicitly.
     coord._policy = policy if policy is not None else get_policy("cover_blind")
     coord._a3_issue_keys = set()
+    # B3 (issue #1115): entry-scoped like B1/B2 — the policy answers whether a
+    # required role entity (the Model C day/night middle rail) is unfilled.
+    coord._role_entity_issue_key = f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{_ENTRY}"
     coord._resolved_options = options or {}
     return coord
 
@@ -913,3 +919,102 @@ async def test_a3_fail_open_on_predicate_exception():
     coord.logger.debug.assert_called_once()
     assert "A3 predicate failed" in coord.logger.debug.call_args.args[0]
     assert coord.logger.debug.call_args.args[1] == "cover.a"
+
+
+# --- B3: a bound role entity the cover type requires is unfilled (issue #1115)
+#
+# B3 is entry-scoped config coherence, shaped like B1/B2 but sourced from a
+# polymorphic policy predicate like A3. A Model C (dual_entity) day/night shade
+# binds a SECOND cover entity to the middle-rail role; with that pick unset — or
+# naming a cover outside this instance's list — the middle rail is never remapped
+# and the shade silently behaves like a plain vertical blind. The coordinator
+# never branches on cover type: it asks ``required_role_entity_missing``.
+
+_DUAL_ENTITIES = ["cover.bottom_rail", "cover.middle_rail"]
+
+
+def _dual_entity_coord(*, middle: str | None, entities: list[str] | None = None):
+    """Coordinator stub carrying a Model C day/night policy + its options."""
+    policy = get_policy("cover_day_night_shade")
+    coord = _make_coord(
+        states={
+            "sun.sun": "above_horizon",
+            "cover.bottom_rail": "open",
+            "cover.middle_rail": "open",
+        },
+        entities=_DUAL_ENTITIES if entities is None else entities,
+        policy=policy,
+    )
+    options: dict = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY}
+    if middle is not None:
+        options[CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY] = middle
+    return coord, options
+
+
+async def test_b3_raises_when_middle_rail_unset():
+    """A Model C entry with no middle rail configured raises the B3 Repair."""
+    coord, options = _dual_entity_coord(middle=None)
+    create, _delete = await _run(coord, options)
+    assert f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{_ENTRY}" in _raised_keys(create)
+
+
+async def test_b3_raises_when_middle_rail_not_among_covers():
+    """A middle rail naming a cover outside the instance's list also raises."""
+    coord, options = _dual_entity_coord(middle="cover.not_configured")
+    create, _delete = await _run(coord, options)
+    assert f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{_ENTRY}" in _raised_keys(create)
+
+
+async def test_b3_no_raise_when_middle_rail_set():
+    """A coherent Model C entry raises nothing."""
+    coord, options = _dual_entity_coord(middle="cover.middle_rail")
+    create, _delete = await _run(coord, options)
+    assert f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{_ENTRY}" not in _raised_keys(create)
+
+
+async def test_b3_no_raise_for_other_cover_types():
+    """A blind (no bound role entity) never raises B3, whatever the options."""
+    coord = _make_coord(
+        states={"sun.sun": "above_horizon", "cover.a": "open"},
+        entities=["cover.a"],
+    )  # default policy = blind
+    create, _delete = await _run(coord, {})
+    assert f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{_ENTRY}" not in _raised_keys(create)
+
+
+async def test_b3_clears_on_recovery():
+    """Once the middle rail is picked, the B3 Repair is deleted."""
+    coord, options = _dual_entity_coord(middle=None)
+    key = f"{ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET}_{_ENTRY}"
+    await _run(coord, options)  # cycle 1: raise
+    options[CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY] = "cover.middle_rail"
+    _create, delete = await _run(coord, options)  # cycle 2: recovered
+    assert key in {call.args[2] for call in delete.call_args_list}
+
+
+async def test_b3_fail_open_on_predicate_exception():
+    """A raising B3 predicate must not starve A1/A2/A3/B1/B2/C1.
+
+    Same per-check guard shape as A2/A3: the predicate call sits in its own
+    narrow try, so a policy blowing up is logged and skipped while
+    ``evaluate()`` still runs and a concurrently-unhealthy C1 still raises.
+    """
+    coord, options = _dual_entity_coord(middle=None)
+    coord.hass.states._d["sun.sun"] = _State("unavailable")
+    coord.logger = MagicMock()
+    coord._policy = MagicMock()
+    coord._policy.tilt_capability_contradiction.return_value = False
+    coord._policy.required_role_entity_missing.side_effect = RuntimeError("boom")
+    with (
+        patch(f"{_BASE}.ir.async_create_issue") as create,
+        patch(f"{_BASE}.ir.async_delete_issue"),
+        patch(f"{_COORD}.ir.async_get", return_value=SimpleNamespace(issues={})),
+        patch(f"{_COORD}.ir.async_delete_issue"),
+    ):
+        coord._evaluate_health_checks(options)
+        await _drain()
+    assert f"{ISSUE_SUN_UNAVAILABLE}_{_ENTRY}" in _raised_keys(create)
+    assert any(
+        "B3 predicate failed" in str(call.args[0])
+        for call in coord.logger.debug.call_args_list
+    )

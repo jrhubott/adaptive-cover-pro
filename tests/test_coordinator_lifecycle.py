@@ -534,3 +534,41 @@ async def test_coordinator_wires_post_settle_mode_into_sequencer(
     seq = coordinator._policy.sequencer
     assert seq is not None
     assert seq._post_settle_mode == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE
+
+
+async def test_coordinator_shares_its_own_policy_with_the_command_service(
+    hass: HomeAssistant,
+) -> None:
+    """The command service gets the entry's OWN policy object (issue #1115).
+
+    ``CoverCommandService`` falls back to building a private policy from the
+    cover-type string when none is passed. That fallback is fine for the
+    stateless axis/capability queries, and silently wrong for everything else:
+    the private instance is never primed by ``post_pipeline_resolve`` and never
+    ``attach``ed, so a stateful policy answers every question this manager asks
+    with its unprimed default. The Model C day/night rail order
+    (``order_for_dispatch``) collapses to identity and the travel clearance
+    (``await_dispatch_clearance``) to an unconditional yes — the manager keeps
+    running, silently unsequenced.
+
+    Identity, not equality: a fresh ``get_policy()`` compares indistinguishable
+    while being exactly the wrong object.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Policy Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="policy_share_01",
+        title="Policy Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    assert coordinator._cmd_svc._policy is coordinator._policy

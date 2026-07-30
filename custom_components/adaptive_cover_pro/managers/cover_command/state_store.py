@@ -37,6 +37,23 @@ class PerEntityState:
     """
 
     target: int | None = None
+    # Opaque provenance stamp for ``target``, minted by the cover-type policy
+    # (``CoverTypePolicy.capture_dispatch_token``) at the moment the command was
+    # booked and handed straight back to that policy when the target is later
+    # re-sent (issue #1115). It describes HOW the dispatch that produced
+    # ``target`` expressed it — a Model C day/night middle rail's inversion
+    # frame, say — which a policy asked to re-gate a resend cannot re-derive:
+    # its own per-cycle cache belongs to the last RESOLUTION, and one
+    # resolve-then-skip cycle is enough to make the two disagree. Written and
+    # cleared by exactly the statements that write and clear ``target`` so the
+    # two can never drift apart. NEVER interpreted by this manager: it stores
+    # and replays the value and nothing else (no cover-type knowledge here).
+    # ``None`` means "no dispatch provenance recorded" — every policy that does
+    # not need one, plus every target no dispatch produced: rehydrated after a
+    # reload, observed on the cover from outside, or the user's configured My
+    # percent, which ``stop_cover`` puts on the wire without a position for any
+    # frame to describe.
+    dispatch_token: Any = None
     sent_at: dt.datetime | None = None
     waiting: bool = False
     last_progress_at: dt.datetime | None = None

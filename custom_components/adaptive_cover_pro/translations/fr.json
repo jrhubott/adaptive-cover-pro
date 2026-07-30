@@ -28,6 +28,10 @@
     "cover_tilt_unsupported": {
       "title": "La protection ne peut pas s'incliner",
       "description": "**{name}** est configuré en tant que type de protection capable d'inclinaison, mais la protection `{entity_id}` n'annonce pas le contrôle d'inclinaison (set_tilt_position). Les positions d'inclinaison ne peuvent pas lui être appliquées. Sélectionnez une entité de protection qui prend en charge l'inclinaison, ou changez le type de protection pour un qui n'utilise pas l'inclinaison."
+    },
+    "day_night_middle_rail_unset": {
+      "title": "Barre intermédiaire du store jour/nuit non sélectionnée",
+      "description": "**{name}** est configuré comme store jour/nuit à deux barres, mais la protection de la barre intermédiaire n'est pas sélectionnée — ou fait référence à une protection qui ne figure pas dans la liste des protections de cette instance. Les deux barres reçoivent la même position, le store se comporte donc comme une simple protection et le mélange voilage/occultant ne sera jamais appliqué. Sélectionnez la protection de la barre intermédiaire dans les options de cette protection, et assurez-vous qu'elle figure aussi parmi les protections contrôlées."
     }
   },
   "config": {
