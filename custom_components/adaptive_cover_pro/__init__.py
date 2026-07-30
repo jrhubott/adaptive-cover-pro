@@ -25,6 +25,7 @@ from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DEFAULT_HEIGHT,
     CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENABLE_POSITION_MATCHING,
@@ -64,6 +65,7 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DIAG_CACHE_KEY,
     DOMAIN,
+    POSITION_CLOSED,
     TIME_STRING_RE,
     _LOGGER,
     blind_spot_legacy_to_gamma,
@@ -603,6 +605,78 @@ def _repair_malformed_times(options: dict) -> list[str]:
     return changes
 
 
+def _seed_default_position(sensor_type: str | None, options: dict) -> bool:
+    """Seed default_percentage from the policy's no-coverage endpoint (issue #1126).
+
+    The minimal create wizard (#945 Part 2) has no position step, so an entry
+    created since then never got ``default_percentage`` written — every
+    runtime read then falls back to a hard-coded 0, driving the cover fully
+    closed until a user opens Options -> Position and saves. Gated on
+    ``controls_cover and not is_orchestrator`` — the same gate the create
+    finalizer uses — because a Building Profile or Group policy has no axes
+    and ``position_for_intent`` would raise ``IndexError``.
+
+    ``setdefault``-shaped: a no-op when the key is already present. Returns
+    whether the key was seeded, for the migration log.
+
+    ``sensor_type`` can be ``None``, ``""``, or any string that was never
+    registered — a malformed or pre-#1126-window entry, or simply a value
+    this migration has no opinion on. ``get_policy`` raises ``ValueError``
+    for all of those; that must not propagate out of this function (and
+    therefore out of ``async_migrate_entry``), or it parks the whole entry in
+    ``ConfigEntryState.MIGRATION_ERROR`` and discards every other repair in
+    the same migration cascade.
+    """
+    if CONF_DEFAULT_HEIGHT in options:
+        return False
+    try:
+        policy = get_policy(sensor_type)
+    except ValueError:
+        return False
+    if not (policy.controls_cover and not policy.is_orchestrator):
+        return False
+    options[CONF_DEFAULT_HEIGHT] = policy.position_for_intent(sun_through=True)
+    return True
+
+
+def _seed_default_position_and_log(entry: ConfigEntry, options: dict) -> None:
+    """Seed default_percentage and log when it was actually seeded (issue #1126).
+
+    Wraps ``_seed_default_position`` so the v3.12 → v3.13 block in
+    ``async_migrate_entry`` stays a single call — matching every sibling
+    repair's shape — instead of adding its own conditional to an already-long
+    linear migration cascade. Unlike a silent ``setdefault``, it must leave a
+    log line pointing at the entry, its cover type, and the value seeded —
+    the same pattern every other gated repair in the cascade already follows.
+
+    The pre-fix runtime fallback for a key-less entry was a hard-coded
+    literal 0 (``POSITION_CLOSED``). For most types (blind/tilt/venetian,
+    ``open_blocks_sun=False``) the seeded no-coverage endpoint is 100, so this
+    genuinely is the riskiest repair in the cascade — it moves an
+    already-bitten cover from effectively fully closed to fully open. For the
+    ``open_blocks_sun=True`` types (awning, oscillating awning) the
+    no-coverage endpoint IS 0 — identical to the pre-fix fallback — so the
+    key gets written but nothing actually moves. The message distinguishes
+    the two rather than asserting "was silently fully closed" for a cover
+    that never moved.
+    """
+    if not _seed_default_position(entry.data.get(CONF_SENSOR_TYPE), options):
+        return
+    seeded = options.get(CONF_DEFAULT_HEIGHT)
+    outcome = (
+        "was silently kept fully closed until this migration ran"
+        if seeded != POSITION_CLOSED
+        else "matches the pre-fix runtime fallback, so this cover did not move"
+    )
+    _LOGGER.info(
+        "Seeded default position of %s (%s) to %s%% — %s",
+        entry.data.get("name", entry.entry_id),
+        entry.data.get(CONF_SENSOR_TYPE),
+        seeded,
+        outcome,
+    )
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
@@ -766,6 +840,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 ", ".join(repaired),
             )
         new_minor = 12
+
+    # v3.12 → v3.13: seed default_percentage for entries the minimal create
+    # wizard left key-less (issue #1126). Backfill the policy's no-coverage
+    # endpoint (100 for most cover types, 0 for the polarity-flipped awning
+    # types) so an already-bitten entry is repaired on upgrade instead of
+    # staying fully closed forever. See ``_seed_default_position`` for the
+    # additive/setdefault-shaped, gated details.
+    if new_version == 3 and new_minor < 13:
+        _seed_default_position_and_log(entry, new_options)
+        new_minor = 13
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

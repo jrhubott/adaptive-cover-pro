@@ -65,8 +65,12 @@ from custom_components.adaptive_cover_pro.const import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Keys set by the quick-setup steps (cover_entities, geometry, sun_tracking,
-# position).  Every other key in the options builder is absent from this dict.
+# Keys set by the quick-setup steps (cover_entities, geometry, sun_tracking).
+# Every other key in the options builder is absent from this dict. Notably
+# absent: CONF_DEFAULT_HEIGHT — the minimal create wizard (#945 Part 2) has no
+# position step at all, so self.config never carries it; _build_options_from_
+# config seeds it the same way ConfigFlowHandler._apply_create_defaults does
+# (issue #1126).
 _QUICK_SETUP_CONFIG: dict = {
     CONF_ENTITIES: ["cover.living_room"],
     CONF_AZIMUTH: 180,
@@ -74,7 +78,6 @@ _QUICK_SETUP_CONFIG: dict = {
     CONF_DISTANCE: 0.5,
     CONF_FOV_LEFT: 30,
     CONF_FOV_RIGHT: 30,
-    CONF_DEFAULT_HEIGHT: 60,
     CONF_INVERSE_STATE: False,
     CONF_OPEN_CLOSE_THRESHOLD: 50,
 }
@@ -159,6 +162,8 @@ def _build_options_from_config(config: dict) -> dict:
         CONF_RETURN_SUNSET,
         CONF_CLOUD_SUPPRESSION,
     )
+    from custom_components.adaptive_cover_pro.const import CoverType
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
 
     DEFAULT_MOTION_TIMEOUT = 300
 
@@ -168,7 +173,13 @@ def _build_options_from_config(config: dict) -> dict:
         CONF_DISTANCE: config.get(CONF_DISTANCE),
         CONF_WINDOW_DEPTH: config.get(CONF_WINDOW_DEPTH),
         CONF_SILL_HEIGHT: config.get(CONF_SILL_HEIGHT),
-        CONF_DEFAULT_HEIGHT: config.get(CONF_DEFAULT_HEIGHT),
+        # _apply_create_defaults seeds this from the policy's no-coverage
+        # endpoint, not a literal (issue #1126); mirrored fixtures are always
+        # a blind, so position_for_intent(sun_through=True) == 100.
+        CONF_DEFAULT_HEIGHT: config.get(
+            CONF_DEFAULT_HEIGHT,
+            get_policy(CoverType.BLIND).position_for_intent(sun_through=True),
+        ),
         CONF_MAX_POSITION: config.get(CONF_MAX_POSITION),
         CONF_ENABLE_MAX_POSITION: config.get(CONF_ENABLE_MAX_POSITION),
         CONF_MIN_POSITION: config.get(CONF_MIN_POSITION),
@@ -604,6 +615,22 @@ class TestQuickVsFullSetupParity:
             assert (
                 options[key] is not None
             ), f"{key} was None in full-setup options — schema defaults not applied"
+
+    @pytest.mark.unit
+    def test_quick_setup_default_height_seeded_per_cover_type(self):
+        """CONF_DEFAULT_HEIGHT is seeded from the policy, not left None (#1126).
+
+        Neither quick nor full setup collects a position input anymore (#945
+        Part 2 removed the position step from the create wizard entirely), so
+        ``_QUICK_SETUP_CONFIG``/``_FULL_SETUP_CONFIG`` correctly omit the key —
+        the mirrored builder must fill it in the same way
+        ``ConfigFlowHandler._apply_create_defaults`` does: the policy's
+        no-coverage endpoint, not a bare ``None``.
+        """
+        quick_options = _build_options_from_config(_QUICK_SETUP_CONFIG)
+        full_options = _build_options_from_config(_FULL_SETUP_CONFIG)
+        assert quick_options[CONF_DEFAULT_HEIGHT] == 100
+        assert full_options[CONF_DEFAULT_HEIGHT] == 100
 
     @pytest.mark.unit
     def test_quick_setup_delta_position_is_valid_int(self):

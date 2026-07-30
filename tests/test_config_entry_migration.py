@@ -9,12 +9,15 @@ Exercises async_migrate_entry directly to verify:
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro import async_migrate_entry
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DEFAULT_HEIGHT,
     CONF_SENSOR_TYPE,
     CONF_WINDOW_WIDTH,
     DOMAIN,
@@ -250,7 +253,7 @@ async def test_migrate_v3_2_copies_force_override_into_slot_5(
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
     assert entry.options[_SLOT5["min_mode"]] is True
     assert entry.version == 3
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
@@ -286,7 +289,7 @@ async def test_migrate_v3_2_no_force_config_is_a_noop(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
     assert _SLOT5["position"] not in entry.options
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> None:
@@ -299,7 +302,7 @@ async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_2_missing_position_defaults_to_zero(
@@ -326,7 +329,7 @@ async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.version == 3
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
 
@@ -363,7 +366,7 @@ async def test_migrate_v3_3_copies_legacy_single_sensor_into_list(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CUSTOM_POSITION_SLOTS[1]["sensors"]] == ["binary_sensor.table"]
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_3_leaves_legacy_key_intact(hass: HomeAssistant) -> None:
@@ -405,7 +408,7 @@ async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
         minor_version=2,
     )
     await async_migrate_entry(hass, entry)
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     for slot_n in (1, 2, 3, 4, 5):
         assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
 
@@ -428,7 +431,7 @@ async def test_migrate_v3_4_sets_position_matching_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=3)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> None:
@@ -441,7 +444,7 @@ async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -454,7 +457,7 @@ async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is False
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> None:
@@ -463,7 +466,7 @@ async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> 
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
     assert entry.version == 3
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +488,7 @@ async def test_migrate_v3_6_sets_weather_enabled_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=5)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_WEATHER_ENABLED] is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_6_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -498,7 +501,7 @@ async def test_migrate_v3_6_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is False
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v3_6_explicit_true_survives(hass: HomeAssistant) -> None:
@@ -511,7 +514,7 @@ async def test_migrate_v3_6_explicit_true_survives(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> None:
@@ -520,7 +523,7 @@ async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_WEATHER_ENABLED] is True
     assert entry.version == 3
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 # ---------------------------------------------------------------------------
@@ -531,7 +534,7 @@ async def test_migrate_v1_cascades_to_weather_enabled(hass: HomeAssistant) -> No
 
 
 async def test_migrate_v3_6_to_3_7_is_noop_bump(hass: HomeAssistant) -> None:
-    """A minor-6 entry advances to minor 7 without altering any option."""
+    """A minor-6 entry advances to minor 7 without altering any v3.7-owned option."""
     entry = _make_entry(
         hass,
         {"azimuth": 180, CONF_WEATHER_ENABLED: True},
@@ -541,10 +544,11 @@ async def test_migrate_v3_6_to_3_7_is_noop_bump(hass: HomeAssistant) -> None:
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     # Additive/no-op: no outside_temp_source key seeded, options untouched.
     assert "outside_temp_source" not in entry.options
-    assert entry.options == before
+    # Cascades on through v3.13 too, which seeds default_percentage (#1126).
+    assert entry.options == {**before, CONF_DEFAULT_HEIGHT: 100}
 
 
 async def test_migrate_v3_6_to_3_7_is_idempotent(hass: HomeAssistant) -> None:
@@ -557,9 +561,9 @@ async def test_migrate_v3_6_to_3_7_is_idempotent(hass: HomeAssistant) -> None:
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert entry.options == first
 
 
@@ -575,7 +579,7 @@ async def test_migrate_v3_6_to_3_7_preserves_explicit_source(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options["outside_temp_source"] == "max_of_live_and_forecast"
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
 
 
 # ---------------------------------------------------------------------------
@@ -592,8 +596,10 @@ async def test_migrate_v3_4_bumps_through_minor_5_without_seeding(
     """A minor-4 entry cascades through minor 5 gaining no retraction-toggle key.
 
     The v3.4→v3.5 block is a no-op (it must not seed the removed
-    show_weather_retraction key). The entry continues through the v3.5→v3.6
-    block, which is the *only* addition to its options — weather_enabled=True.
+    show_weather_retraction key). The entry continues cascading through
+    v3.5→v3.6 (weather_enabled=True) and v3.12→v3.13, which seeds
+    default_percentage to this awning's polarity-flipped no-coverage endpoint,
+    0 (#1126).
     """
     entry = _make_entry(
         hass,
@@ -604,11 +610,14 @@ async def test_migrate_v3_4_bumps_through_minor_5_without_seeding(
     )
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     # No dead key seeded by the v3.4→v3.5 block.
     assert "show_weather_retraction" not in entry.options
-    # The only key added across the cascade is the v3.5→v3.6 weather toggle.
-    assert entry.options == {**before, CONF_WEATHER_ENABLED: True}
+    assert entry.options == {
+        **before,
+        CONF_WEATHER_ENABLED: True,
+        CONF_DEFAULT_HEIGHT: 0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +650,7 @@ async def test_migrate_v3_7_to_v3_8_converts_blind_spots(hass: HomeAssistant) ->
     )
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     opts = entry.options
     # Slot 1 converted (new_left = 45-10 = 35, new_right = 30-45 = -15).
     assert opts["blind_spot_left_gamma"] == 35
@@ -674,9 +683,9 @@ async def test_migrate_v3_7_to_v3_8_is_idempotent(hass: HomeAssistant) -> None:
     )
     assert await async_migrate_entry(hass, entry) is True
     first = dict(entry.options)
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert entry.options == first
 
 
@@ -703,7 +712,7 @@ async def test_migrate_v3_7_to_v3_8_preserves_existing_gamma_keys(
 
 
 async def test_migrate_v3_7_to_v3_8_no_blind_spot_is_noop(hass: HomeAssistant) -> None:
-    """An entry without any blind-spot edges only bumps the minor version."""
+    """An entry without any blind-spot edges gains only the v3.13 default position."""
     entry = _make_entry(
         hass,
         {"azimuth": 180},
@@ -712,8 +721,8 @@ async def test_migrate_v3_7_to_v3_8_no_blind_spot_is_noop(hass: HomeAssistant) -
     )
     before = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
-    assert entry.options == before
+    assert entry.minor_version == 13
+    assert entry.options == {**before, CONF_DEFAULT_HEIGHT: 100}
 
 
 async def test_migrate_v3_7_to_v3_8_tolerates_none_fov_left(
@@ -739,7 +748,7 @@ async def test_migrate_v3_7_to_v3_8_tolerates_none_fov_left(
         minor_version=7,
     )
     assert await async_migrate_entry(hass, entry) is True  # no TypeError
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert entry.options["blind_spot_left_gamma"] == 80  # 90 - 10
     assert entry.options["blind_spot_right_gamma"] == -60  # 30 - 90
 
@@ -788,13 +797,14 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     that minor are never seen as stale and the migration is dead code in
     production.
 
-    Currently the highest target is 12 (the v3.11 → v3.12 block that repairs
-    malformed start_time/end_time values, per issue #1049).
+    Currently the highest target is 13 (the v3.12 → v3.13 block that seeds
+    default_percentage for entries the minimal create wizard left key-less,
+    per issue #1126).
     Raise this assertion whenever a new minor migration block is added.
     """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
-    assert ConfigFlowHandler.MINOR_VERSION == 12
+    assert ConfigFlowHandler.MINOR_VERSION == 13
 
 
 # ---------------------------------------------------------------------------
@@ -850,8 +860,8 @@ async def test_migrate_v3_8_to_v3_9_is_additive_noop(hass: HomeAssistant) -> Non
     entry = _make_entry(hass, dict(options), version=3, minor_version=8)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.version == 3
-    assert entry.minor_version == 12
-    assert dict(entry.options) == options
+    assert entry.minor_version == 13
+    assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
 async def test_migrate_v3_8_to_v3_9_seeds_no_constraint_keys(
@@ -879,8 +889,8 @@ async def test_migrate_v3_9_to_v3_10_additive_noop_without_legacy_margin(
     }
     entry = _make_entry(hass, dict(options), version=3, minor_version=9)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
-    assert dict(entry.options) == options
+    assert entry.minor_version == 13
+    assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
 async def test_migrate_v3_9_to_v3_10_copies_legacy_safety_margin(
@@ -903,7 +913,7 @@ async def test_migrate_v3_9_to_v3_10_copies_legacy_safety_margin(
         minor_version=9,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     # New neutral key seeded from the legacy value.
     assert entry.options[CONF_TILT_SAFETY_MARGIN] == 0.5
     # Legacy key retained unchanged (additive / rollback-safe).
@@ -942,8 +952,8 @@ async def test_migrate_v3_10_is_idempotent(hass: HomeAssistant) -> None:
     }
     entry = _make_entry(hass, dict(options), version=3, minor_version=10)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
-    assert dict(entry.options) == options
+    assert entry.minor_version == 13
+    assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
 async def test_migrate_v3_10_to_v3_11_seeds_shade_mode_for_awning(
@@ -967,22 +977,23 @@ async def test_migrate_v3_10_to_v3_11_seeds_shade_mode_for_awning(
         minor_version=10,
     )
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert entry.options[CONF_AWNING_SHADE_MODE] == AWNING_SHADE_MODE_WINDOW
 
 
 async def test_migrate_v3_10_to_v3_11_skips_non_awning(
     hass: HomeAssistant,
 ) -> None:
-    """A non-awning entry (no length_awning) is not seeded — options untouched."""
+    """A non-awning entry (no length_awning) gets no shade-mode key seeded (#1025)."""
     from custom_components.adaptive_cover_pro.const import CONF_AWNING_SHADE_MODE
 
     options = {"azimuth": 180, "custom_position_sensors_1": ["binary_sensor.door"]}
     entry = _make_entry(hass, dict(options), version=3, minor_version=10)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert CONF_AWNING_SHADE_MODE not in entry.options
-    assert dict(entry.options) == options
+    # Cascades on through v3.13, which seeds this blind's default position (#1126).
+    assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
 async def test_migrate_v3_11_does_not_overwrite_existing_shade_mode(
@@ -1054,7 +1065,7 @@ async def test_migrate_v3_11_to_v3_12_repairs_malformed_time(
     """
     entry = _make_entry(hass, {time_key: stored}, version=3, minor_version=11)
     assert await async_migrate_entry(hass, entry) is True
-    assert entry.minor_version == 12
+    assert entry.minor_version == 13
     assert entry.options[time_key] == expected
 
 
@@ -1065,7 +1076,7 @@ async def test_migrate_v3_11_to_v3_12_leaves_canonical_times_alone(
     options = {"start_time": "07:00:00", "end_time": "22:30:00", "azimuth": 180}
     entry = _make_entry(hass, dict(options), version=3, minor_version=11)
     assert await async_migrate_entry(hass, entry) is True
-    assert dict(entry.options) == options
+    assert dict(entry.options) == {**options, CONF_DEFAULT_HEIGHT: 100}
 
 
 @pytest.mark.parametrize("stored", ["garbage", "25:00:00", "24:99:99", ""])
@@ -1136,6 +1147,269 @@ async def test_migrate_v3_12_is_idempotent(hass: HomeAssistant) -> None:
     assert entry.options["end_time"] == "00:00:00"
     assert await async_migrate_entry(hass, entry) is True
     assert dict(entry.options) == first
+
+
+# ---------------------------------------------------------------------------
+# v3.12 → v3.13: seed default_percentage for the minimal create wizard (#1126)
+# ---------------------------------------------------------------------------
+
+
+async def test_migrate_v3_12_to_v3_13_seeds_default_position_for_blind(
+    hass: HomeAssistant,
+) -> None:
+    """A key-less blind entry is backfilled to its no-coverage endpoint (100).
+
+    The minimal create wizard (#945 Part 2) has no position step, so every
+    entry created since then never got default_percentage written — every
+    runtime read then fell back to a hard-coded 0, driving the cover fully
+    closed until Options -> Position was opened and saved (#1126).
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 13
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 100
+
+
+async def test_migrate_v3_12_to_v3_13_seeds_default_position_for_awning(
+    hass: HomeAssistant,
+) -> None:
+    """A key-less awning entry is backfilled to 0, its polarity-flipped endpoint.
+
+    Awning's position axis has ``open_blocks_sun=True`` (100 % = fully
+    extended = maximum shading), so its no-coverage endpoint is 0, not 100 —
+    the opposite of every other registered cover type.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"length_awning": 3.0},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.AWNING,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 13
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 0
+
+
+@pytest.mark.parametrize("stored_default", [0, 42, 100])
+async def test_migrate_v3_13_does_not_overwrite_existing_default_position(
+    hass: HomeAssistant, stored_default: int
+) -> None:
+    """An entry that already has a configured default position keeps it (setdefault).
+
+    Parametrized over 0, 42, and 100 rather than a single value: 0 is the
+    value most at risk of a regression here. ``_seed_default_position`` gates
+    on ``CONF_DEFAULT_HEIGHT in options`` — a true membership check — but if
+    that ever degraded into a truthiness check
+    (``if not options.get(CONF_DEFAULT_HEIGHT)``), a stored 0 would read as
+    falsy and get silently reseeded to the blind's no-coverage endpoint
+    (100), overwriting a user's deliberately configured fully-closed default.
+    42 and 100 keep the ordinary and boundary-open cases covered alongside it.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {CONF_DEFAULT_HEIGHT: stored_default},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.options[CONF_DEFAULT_HEIGHT] == stored_default
+
+
+async def test_migrate_v3_13_skips_virtual_entry_types(hass: HomeAssistant) -> None:
+    """Building Profile and Group entries control no cover and are left untouched.
+
+    Their policies declare no axes, so calling ``position_for_intent`` on them
+    raises ``IndexError`` — the same ``controls_cover and not is_orchestrator``
+    gate the create finalizer uses (#133) must guard the migration too.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    profile_entry = _make_entry(
+        hass,
+        {},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BUILDING_PROFILE,
+    )
+    assert await async_migrate_entry(hass, profile_entry) is True
+    assert CONF_DEFAULT_HEIGHT not in profile_entry.options
+
+    group_entry = _make_entry(
+        hass, {}, version=3, minor_version=12, sensor_type=CoverType.GROUP
+    )
+    assert await async_migrate_entry(hass, group_entry) is True
+    assert CONF_DEFAULT_HEIGHT not in group_entry.options
+
+
+async def test_migrate_v3_13_is_idempotent(hass: HomeAssistant) -> None:
+    """Re-running the migration on an already-seeded entry is stable."""
+    entry = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    first = dict(entry.options)
+    assert await async_migrate_entry(hass, entry) is True
+    assert dict(entry.options) == first
+
+
+@pytest.mark.parametrize("bad_sensor_type", [None, "", "not_a_registered_type"])
+async def test_migrate_v3_13_unknown_sensor_type_does_not_abort_cascade(
+    hass: HomeAssistant, bad_sensor_type
+) -> None:
+    """A missing/unknown sensor_type must not abort the whole migration cascade.
+
+    ``get_policy`` raises ``ValueError`` for ``None``, ``""``, and any
+    unregistered string. Before this fix, ``_seed_default_position`` called
+    ``get_policy`` before checking whether the type even resolves, so the
+    exception propagated straight out of ``async_migrate_entry`` — parking
+    the entry in ``ConfigEntryState.MIGRATION_ERROR`` and silently discarding
+    every OTHER repair in the same cascade (cm→m conversion, force-override
+    slot-5 copy, blind-spot gamma, the v3.12 malformed-time repair). Pairing
+    a malformed end_time (repaired by the v3.11 → v3.12 sibling block) with
+    the bad sensor_type proves the *sibling* repair still lands — not merely
+    that no exception was raised, which is the actual damage a bare
+    "did it raise" assertion would miss.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"end_time": "00:00"},
+        version=3,
+        minor_version=11,
+        sensor_type=bad_sensor_type,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 13
+    # The v3.11 → v3.12 sibling repair still landed — proof the cascade
+    # continued past the bad sensor_type instead of aborting.
+    assert entry.options["end_time"] == "00:00:00"
+    # default_percentage can't be resolved for an unknown type, so it is
+    # correctly left unseeded rather than raising.
+    assert CONF_DEFAULT_HEIGHT not in entry.options
+
+
+async def test_migrate_v3_13_logs_seeded_default_position(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The riskiest repair in the migration cascade must not be silent (#1126).
+
+    ``_seed_default_position`` moves an already-bitten cover from an
+    effective 0 % (fully closed) to its per-type default — the largest blast
+    radius of any repair in ``async_migrate_entry`` — yet, unlike every
+    sibling repair (``_merge_force_override_into_slot_5``,
+    ``copy_legacy_slot_sensors_to_list``, ``_seed_signed_gamma_blind_spots``,
+    ``_repair_malformed_times``), the caller ignored its return value and
+    logged nothing. When a user reports "all my blinds opened after the
+    update" there must be a log line to point at.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    with caplog.at_level(logging.INFO):
+        assert await async_migrate_entry(hass, entry) is True
+
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 100
+    matching = [
+        r.message
+        for r in caplog.records
+        if "Migration Test" in r.message
+        and "100" in r.message
+        and "was silently kept fully closed until this migration ran" in r.message
+    ]
+    assert matching, (
+        "Expected a log line naming the entry, the seeded value, and the"
+        " fact that this repair genuinely moved the cover, got: "
+        f"{[r.message for r in caplog.records]}"
+    )
+
+
+async def test_migrate_v3_13_logs_no_movement_for_open_blocks_sun_seed(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An awning's 0% seed is logged as a no-op, not a "was closed" repair (#1126).
+
+    Awning and oscillating-awning have ``open_blocks_sun=True``, so their
+    no-coverage endpoint is 0 — identical to the pre-fix runtime fallback of
+    a hard-coded 0. The migration still writes the key (so future reads no
+    longer depend on the fallback), but the cover itself never moves, so the
+    log line must say so rather than reusing the "was silently kept fully
+    closed" wording that is only true for the 100%-seeded types. A maintainer
+    reading this log for an awning-only bug report must not be misdirected
+    toward a repair that moved nothing.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"length_awning": 3.0},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.AWNING,
+    )
+    with caplog.at_level(logging.INFO):
+        assert await async_migrate_entry(hass, entry) is True
+
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 0
+    matching = [
+        r.message
+        for r in caplog.records
+        if "Migration Test" in r.message
+        and "matches the pre-fix runtime fallback, so this cover did not move"
+        in r.message
+    ]
+    assert matching, (
+        "Expected a log line naming the entry and stating the cover did not"
+        f" move, got: {[r.message for r in caplog.records]}"
+    )
+    assert not any(
+        "was silently kept fully closed until this migration ran" in r.message
+        for r in caplog.records
+    ), "The awning seed did not move the cover — the log must not claim it did"
+
+
+async def test_migrate_v3_13_does_not_log_when_key_already_present(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No log line when default_percentage was already configured (no-op setdefault)."""
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {CONF_DEFAULT_HEIGHT: 42},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    with caplog.at_level(logging.INFO):
+        assert await async_migrate_entry(hass, entry) is True
+
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 42
+    assert not any("Seeded default position" in r.message for r in caplog.records)
 
 
 async def test_migrate_v3_9_preserves_user_set_constraints(

@@ -225,6 +225,7 @@ from .const import (
     DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TIMEOUT,
+    DEFAULT_POSITION_SELECTOR_FALLBACK,
     GLARE_ZONE_FORM_KEYS,
     GLARE_ZONE_SLOT_NUMBERS,
     GLARE_ZONE_SLOTS,
@@ -597,7 +598,9 @@ def _template_combine_mode_selector() -> selector.SelectSelector:
 # the behavior step reference these positions; they never redefine one.
 POSITION_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_DEFAULT_HEIGHT, default=60): selector.NumberSelector(
+        vol.Required(
+            CONF_DEFAULT_HEIGHT, default=DEFAULT_POSITION_SELECTOR_FALLBACK
+        ): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=100,
@@ -3882,6 +3885,53 @@ def _area_menu(area: str) -> str:
     return "glare_zones" if area == "glare_zone" else area
 
 
+def _apply_create_defaults(options: dict, sensor_type: str | None) -> None:
+    """Seed the create wizard's constant-backed defaults (issue #133 / #1126).
+
+    Quick setup skips some steps (e.g. automation, position) leaving critical
+    keys absent from the accumulated config. ``setdefault`` so an already
+    collected value always wins. ``CONF_DEFAULT_HEIGHT`` seeds the policy's
+    no-coverage endpoint — ``position_for_intent(sun_through=True)`` — rather
+    than a literal, so awning's polarity-flipped position axis (100 % = fully
+    extended = maximum shading) still yields the "leave it alone" value (0,
+    not 100).
+
+    Resolves the policy itself and early-returns on
+    ``not (controls_cover and not is_orchestrator)`` — mirrors the gate
+    ``__init__.py:_seed_default_position`` applies for the same reason: a
+    Building Profile builds no coordinator, and a cover group builds a
+    ``GroupCoordinator`` that reads none of these keys, so neither wants any
+    of the seven defaults below. Unlike that migration-side helper, this one
+    does not catch ``ValueError`` from ``get_policy`` — every call site here
+    is a live wizard step where ``sensor_type`` is always a just-selected or
+    already-loaded-and-valid cover type, and the surrounding config-flow code
+    already calls ``get_policy`` unguarded on the same value, so letting an
+    unknown type raise here matches the pre-refactor failure mode instead of
+    silently skipping the defaults.
+
+    Shared by all three sites that can mint a fresh entry's options —
+    ``async_step_update`` (the entry the normal create wizard actually
+    creates), ``async_step_summary`` (the pre-create preview, so it can never
+    disagree with what ``async_step_update`` is about to write), and
+    ``async_step_duplicate_configure`` (the Duplicate-cover create path,
+    which cannot rely on the source entry already carrying the key — a
+    disabled source entry is never migrated, so an old, still-broken copy
+    would otherwise propagate the missing key forever).
+    """
+    policy = get_policy(sensor_type)
+    if not (policy.controls_cover and not policy.is_orchestrator):
+        return
+    options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
+    options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
+    options.setdefault(CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION)
+    options.setdefault(CONF_MOTION_SENSORS, [])
+    options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
+    options.setdefault(CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING)
+    options.setdefault(
+        CONF_DEFAULT_HEIGHT, policy.position_for_intent(sun_through=True)
+    )
+
+
 # Wiki link surfaced as the ``{learn_more}`` placeholder on each slot sub-menu.
 _SLOT_AREA_WIKI: dict[str, str] = {
     "custom_position": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
@@ -3927,7 +3977,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # Rollback-safe: every other migration block is additive (existing keys
     # retained), and the v3.12 rewrite only ever moves a value into the format
     # older builds already expect.
-    MINOR_VERSION = 12
+    # 3.13 (issue #1126): the minimal create wizard (#945 Part 2) has no
+    # position step, so an entry created since then never got
+    # default_percentage written and every runtime read fell back to a
+    # hard-coded 0 (fully closed). The v3.12→v3.13 block setdefault-seeds the
+    # policy's no-coverage endpoint (position_for_intent(sun_through=True));
+    # an older build already understands default_percentage.
+    MINOR_VERSION = 13
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -4149,6 +4205,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_update()
         from .troubleshoot_i18n import load_troubleshoot_labels
 
+        # Seed the same constant-backed defaults async_step_update applies
+        # (issue #1126) so the pre-create preview and the created entry can
+        # never disagree about the default position — otherwise the summary
+        # would still render "Default → 0 %" for a quick-setup cover that is
+        # actually about to be created at its per-type no-coverage endpoint.
+        _apply_create_defaults(self.config, self.type_blind)
+
         sun_times = await _compute_todays_sun_times(self.hass, self.config)
         _language = _resolve_summary_language(self.hass, self.context)
         labels = await _load_summary_labels(self.hass, _language)
@@ -4206,25 +4269,16 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         # entry.options["mode"] must carry the strategy mode ("basic" / "advanced").
         options[CONF_MODE] = self.mode
 
-        # Quick setup skips some steps (e.g. automation) leaving critical keys
-        # absent from self.config.  Apply constant-backed defaults so the
-        # coordinator never receives None for gating values (issue #133).
-        # Virtual entry types skip this: a Building Profile builds no
-        # coordinator, and a cover group builds a GroupCoordinator that reads
-        # none of the cover-automation options — both keep only what their
-        # create step collected.
-        _finalize_policy = get_policy(self.type_blind)
-        if _finalize_policy.controls_cover and not _finalize_policy.is_orchestrator:
-            options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
-            options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
-            options.setdefault(
-                CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION
-            )
-            options.setdefault(CONF_MOTION_SENSORS, [])
-            options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
-            options.setdefault(
-                CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
-            )
+        # Quick setup skips some steps (e.g. automation, position) leaving
+        # critical keys absent from self.config.  Apply constant-backed
+        # defaults so the coordinator never receives None for gating values,
+        # and so a newly created cover starts at its per-type no-coverage
+        # position instead of 0 % (issues #133 / #1126). Virtual entry types
+        # skip this: a Building Profile builds no coordinator, and a cover
+        # group builds a GroupCoordinator that reads none of the
+        # cover-automation options — both keep only what their create step
+        # collected.
+        _apply_create_defaults(options, self.type_blind)
 
         # If the user linked a Building Profile during creation, merge its
         # non-empty shared-sensor keys into options now — after all form steps
@@ -4295,15 +4349,24 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             sensor_type = source_entry.data.get(CONF_SENSOR_TYPE)
             new_name = await self._ensure_unique_name(user_input["name"], suffix="Copy")
 
+            new_options = {
+                **shared_options,
+                CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                CONF_AZIMUTH: user_input[CONF_AZIMUTH],
+                # CONF_DEVICE_ID intentionally omitted — device association skipped for duplicates
+            }
+            # The source entry may itself be missing CONF_DEFAULT_HEIGHT — a
+            # cover created during the #1126 window and then disabled is
+            # never migrated (HA does not migrate disabled entries), so
+            # _extract_shared_options can copy nothing for the key. Route
+            # through the same seed helper the other two create sites use
+            # instead of relying on that accident (#1126).
+            _apply_create_defaults(new_options, sensor_type)
+
             return self.async_create_entry(  # type: ignore[return-value]
                 title=f"{_cover_type_label(sensor_type)} {new_name}",
                 data={"name": new_name, CONF_SENSOR_TYPE: sensor_type},
-                options={
-                    **shared_options,
-                    CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
-                    CONF_AZIMUTH: user_input[CONF_AZIMUTH],
-                    # CONF_DEVICE_ID intentionally omitted — device association skipped for duplicates
-                },
+                options=new_options,
             )
 
         source_azimuth = source_entry.options.get(CONF_AZIMUTH, 180)

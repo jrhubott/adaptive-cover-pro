@@ -228,6 +228,39 @@ def test_empty_config_returns_string():
     assert len(summary) > 0
 
 
+def test_create_summary_shows_seeded_default_position():
+    """A quick-setup summary shows the seeded per-type default, not 0 % (#1126).
+
+    ``async_step_summary`` seeds ``self.config`` via ``_apply_create_defaults``
+    before rendering (issue #1126) so the pre-create preview matches the entry
+    ``async_step_update`` actually creates. Model that seeding directly against
+    an empty (quick-setup) config dict, which never collected
+    ``CONF_DEFAULT_HEIGHT`` because the minimal create wizard has no position
+    step. A blind's no-coverage endpoint is 100 (not the old literal 60, and
+    not the 0 the unseeded summary used to fall back to); an awning's position
+    axis is polarity-flipped, so its no-coverage endpoint is 0.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _apply_create_defaults,
+    )
+
+    blind_cfg: dict = {}
+    _apply_create_defaults(blind_cfg, CoverType.BLIND)
+    blind_summary = _build_config_summary(blind_cfg, CoverType.BLIND)
+    assert "🌙 Default (no rule matches) → 100%" in blind_summary
+    assert "🌙 Default (no rule matches) → 0%" not in blind_summary
+
+    awning_cfg: dict = {}
+    _apply_create_defaults(awning_cfg, CoverType.AWNING)
+    # The summary text alone can't distinguish "seeded 0" from "never seeded"
+    # — _build_config_summary falls back to config.get(CONF_DEFAULT_HEIGHT, 0)
+    # for an absent key too. Assert the seeded key directly so this test
+    # fails if the awning seed stops happening, not just if it seeds wrong.
+    assert awning_cfg[CONF_DEFAULT_HEIGHT] == 0
+    awning_summary = _build_config_summary(awning_cfg, CoverType.AWNING)
+    assert "🌙 Default (no rule matches) → 0%" in awning_summary
+
+
 def test_dry_run_banner_shown_when_enabled():
     """Dry-run banner is surfaced (and first) when dry_run is on."""
     from custom_components.adaptive_cover_pro.const import CONF_DRY_RUN

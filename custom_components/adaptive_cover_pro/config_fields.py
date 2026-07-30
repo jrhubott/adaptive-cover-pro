@@ -602,7 +602,7 @@ _POSITION_SPECS = _spec(
         SECTION_POSITION,
         ValidatorKind.RANGE,
         rng=const._RANGE_DEFAULT_HEIGHT,
-        default=60,
+        default=const.DEFAULT_POSITION_SELECTOR_FALLBACK,
         required=True,
         make_selector=_number(minimum=0, maximum=100, step=1, unit="%"),
     ),

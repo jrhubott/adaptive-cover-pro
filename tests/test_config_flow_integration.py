@@ -228,6 +228,68 @@ async def test_minimal_create_wizard_geometry_only(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("cover_type", "geometry_input", "expected_default_height"),
+    [
+        (CoverType.BLIND, _VERTICAL_GEOMETRY, 100),
+        (CoverType.AWNING, {"length_awning": 2.1, "angle": 0}, 0),
+    ],
+)
+async def test_create_seeds_default_position_per_cover_type(
+    hass: HomeAssistant,
+    cover_type: str,
+    geometry_input: dict,
+    expected_default_height: int,
+) -> None:
+    """A newly created cover starts at its per-type no-coverage endpoint (#1126).
+
+    The minimal create wizard has no position step, so ``CONF_DEFAULT_HEIGHT``
+    must be seeded by the finalizer — like a blind's fully-open 100, not a
+    literal 60 and not an absent key (which every runtime read falls back to
+    0 for, driving the cover fully closed until Options -> Position is opened
+    and saved). Awning's position axis is polarity-flipped (100 % = fully
+    extended = maximum shading), so its no-coverage endpoint is 0, not 100.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    assert result["step_id"] == "create_new"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Cover", CONF_MODE: cover_type}
+    )
+    assert result["step_id"] == "cover_entities"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    assert result["step_id"] == "geometry"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], geometry_input
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "summary"
+
+    # The pre-create preview must show the same per-type default the entry is
+    # about to be created with (#1126) — async_step_summary seeds
+    # self.config via _apply_create_defaults before rendering, precisely so
+    # the summary and the created entry can't disagree.
+    summary_text = result["description_placeholders"]["summary"]
+    assert f"🌙 Default (no rule matches) → {expected_default_height}%" in summary_text
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+    entry = result["result"]
+    assert entry.data[CONF_SENSOR_TYPE] == cover_type
+    assert entry.options.get(CONF_DEFAULT_HEIGHT) == expected_default_height
+
+
+@pytest.mark.integration
 async def test_quick_setup_horizontal_creates_entry(hass: HomeAssistant) -> None:
     """Quick-setup path for a horizontal awning creates a config entry."""
     result = await hass.config_entries.flow.async_init(
@@ -379,6 +441,63 @@ async def test_duplicate_oscillating_awning(hass: HomeAssistant) -> None:
     )
     assert result["type"] == "create_entry"
     assert result["title"].startswith("Oscillating Awning")
+
+
+@pytest.mark.integration
+async def test_duplicate_seeds_default_position_when_source_lacks_it(
+    hass: HomeAssistant,
+) -> None:
+    """Duplicating a key-less source entry must not propagate the missing key (#1126).
+
+    ``profile_link._cover_entries`` (the duplicate-source picker) enumerates
+    sources via ``hass.config_entries.async_entries(DOMAIN)``, which includes
+    disabled entries — and HA never runs ``async_migrate_entry`` on a
+    disabled entry. So a cover created during the #1126 window and then
+    disabled would, pre-fix, be duplicated straight through
+    ``_extract_shared_options`` with no ``CONF_DEFAULT_HEIGHT`` key at all,
+    stamping the copy at the current ``MINOR_VERSION`` — already past the
+    v3.13 migration threshold, so the copy would never self-heal and stays
+    stuck at an effective 0 % (fully closed) forever. A test that duplicates
+    a well-formed source (which already carries the key via
+    ``_extract_shared_options``) would not catch this — only a source
+    missing the key exercises the bug.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS
+
+    source_options = {
+        k: v for k, v in VERTICAL_OPTIONS.items() if k != CONF_DEFAULT_HEIGHT
+    }
+    assert CONF_DEFAULT_HEIGHT not in source_options
+    source_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bitten Blind", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=source_options,
+        version=3,
+        minor_version=13,
+        entry_id="dup_src_no_default_height",
+        title="Vertical Blind Bitten Blind",
+    )
+    source_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "duplicate_existing"}
+        )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"source_entry": source_entry.entry_id}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Bitten Blind Copy", CONF_AZIMUTH: 180},
+    )
+    assert result["type"] == "create_entry"
+    entry = result["result"]
+    assert entry.options.get(CONF_DEFAULT_HEIGHT) == 100
 
 
 # ---------------------------------------------------------------------------

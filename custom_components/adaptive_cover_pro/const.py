@@ -483,6 +483,18 @@ CONF_DEFAULT_HEIGHT = "default_percentage"
 # Effective default position when no `default_percentage` is configured.
 # 0 % = closed; matches the historical fallback in coordinator.get_blind_data.
 DEFAULT_DEFAULT_HEIGHT = 0
+# Legacy generic (type-agnostic) fallback for default_percentage, used only by
+# code paths that build a schema or read options without cover-type context —
+# POSITION_SCHEMA's selector default, config_fields._POSITION_SPECS, and
+# switch.py's return-to-default-when-disabled read. The real create-time
+# default is per-cover-type (issue #1126): CoverTypePolicy.position_for_intent
+# seeds the actual value at create time and via the v3.12->v3.13 migration, so
+# this constant is a last-resort placeholder that should be unreachable for a
+# well-formed entry. Distinct in meaning from DEFAULT_DEFAULT_HEIGHT (the
+# coordinator's "nothing configured" runtime fallback) even though the values
+# happen to differ — collapses three previously-duplicated `60` literals into
+# one named constant (No Magic Numbers).
+DEFAULT_POSITION_SELECTOR_FALLBACK = 60
 CONF_INVERSE_STATE = "inverse_state"  # True if cover reports 0=open, 100=closed
 CONF_INVERSE_TILT = "inverse_tilt"  # True if tilt reports 0=open, 100=closed
 
