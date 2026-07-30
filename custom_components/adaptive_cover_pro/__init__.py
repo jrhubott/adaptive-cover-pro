@@ -617,14 +617,47 @@ def _seed_default_position(sensor_type: str | None, options: dict) -> bool:
 
     ``setdefault``-shaped: a no-op when the key is already present. Returns
     whether the key was seeded, for the migration log.
+
+    ``sensor_type`` can be ``None``, ``""``, or any string that was never
+    registered — a malformed or pre-#1126-window entry, or simply a value
+    this migration has no opinion on. ``get_policy`` raises ``ValueError``
+    for all of those; that must not propagate out of this function (and
+    therefore out of ``async_migrate_entry``), or it parks the whole entry in
+    ``ConfigEntryState.MIGRATION_ERROR`` and discards every other repair in
+    the same migration cascade.
     """
     if CONF_DEFAULT_HEIGHT in options:
         return False
-    policy = get_policy(sensor_type)
+    try:
+        policy = get_policy(sensor_type)
+    except ValueError:
+        return False
     if not (policy.controls_cover and not policy.is_orchestrator):
         return False
     options[CONF_DEFAULT_HEIGHT] = policy.position_for_intent(sun_through=True)
     return True
+
+
+def _seed_default_position_and_log(entry: ConfigEntry, options: dict) -> None:
+    """Seed default_percentage and log when it was actually seeded (issue #1126).
+
+    Wraps ``_seed_default_position`` so the v3.12 → v3.13 block in
+    ``async_migrate_entry`` stays a single call — matching every sibling
+    repair's shape — instead of adding its own conditional to an already-long
+    linear migration cascade. This is the riskiest repair in that cascade (it
+    deliberately moves an already-bitten cover from an effective 0 % to its
+    per-type default), so unlike a silent ``setdefault``, it must leave a log
+    line pointing at the entry, its cover type, and the value seeded — the
+    same pattern every other gated repair in the cascade already follows.
+    """
+    if _seed_default_position(entry.data.get(CONF_SENSOR_TYPE), options):
+        _LOGGER.info(
+            "Seeded default position of %s (%s) to %s%% — was silently"
+            " fully closed until now",
+            entry.data.get("name", entry.entry_id),
+            entry.data.get(CONF_SENSOR_TYPE),
+            options.get(CONF_DEFAULT_HEIGHT),
+        )
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -798,7 +831,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # staying fully closed forever. See ``_seed_default_position`` for the
     # additive/setdefault-shaped, gated details.
     if new_version == 3 and new_minor < 13:
-        _seed_default_position(entry.data.get(CONF_SENSOR_TYPE), new_options)
+        _seed_default_position_and_log(entry, new_options)
         new_minor = 13
 
     hass.config_entries.async_update_entry(

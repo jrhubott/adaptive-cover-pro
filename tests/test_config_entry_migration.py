@@ -9,6 +9,8 @@ Exercises async_migrate_entry directly to verify:
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -1255,6 +1257,101 @@ async def test_migrate_v3_13_is_idempotent(hass: HomeAssistant) -> None:
     first = dict(entry.options)
     assert await async_migrate_entry(hass, entry) is True
     assert dict(entry.options) == first
+
+
+@pytest.mark.parametrize("bad_sensor_type", [None, "", "not_a_registered_type"])
+async def test_migrate_v3_13_unknown_sensor_type_does_not_abort_cascade(
+    hass: HomeAssistant, bad_sensor_type
+) -> None:
+    """A missing/unknown sensor_type must not abort the whole migration cascade.
+
+    ``get_policy`` raises ``ValueError`` for ``None``, ``""``, and any
+    unregistered string. Before this fix, ``_seed_default_position`` called
+    ``get_policy`` before checking whether the type even resolves, so the
+    exception propagated straight out of ``async_migrate_entry`` — parking
+    the entry in ``ConfigEntryState.MIGRATION_ERROR`` and silently discarding
+    every OTHER repair in the same cascade (cm→m conversion, force-override
+    slot-5 copy, blind-spot gamma, the v3.12 malformed-time repair). Pairing
+    a malformed end_time (repaired by the v3.11 → v3.12 sibling block) with
+    the bad sensor_type proves the *sibling* repair still lands — not merely
+    that no exception was raised, which is the actual damage a bare
+    "did it raise" assertion would miss.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"end_time": "00:00"},
+        version=3,
+        minor_version=11,
+        sensor_type=bad_sensor_type,
+    )
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.minor_version == 13
+    # The v3.11 → v3.12 sibling repair still landed — proof the cascade
+    # continued past the bad sensor_type instead of aborting.
+    assert entry.options["end_time"] == "00:00:00"
+    # default_percentage can't be resolved for an unknown type, so it is
+    # correctly left unseeded rather than raising.
+    assert CONF_DEFAULT_HEIGHT not in entry.options
+
+
+async def test_migrate_v3_13_logs_seeded_default_position(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The riskiest repair in the migration cascade must not be silent (#1126).
+
+    ``_seed_default_position`` moves an already-bitten cover from an
+    effective 0 % (fully closed) to its per-type default — the largest blast
+    radius of any repair in ``async_migrate_entry`` — yet, unlike every
+    sibling repair (``_merge_force_override_into_slot_5``,
+    ``copy_legacy_slot_sensors_to_list``, ``_seed_signed_gamma_blind_spots``,
+    ``_repair_malformed_times``), the caller ignored its return value and
+    logged nothing. When a user reports "all my blinds opened after the
+    update" there must be a log line to point at.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    with caplog.at_level(logging.INFO):
+        assert await async_migrate_entry(hass, entry) is True
+
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 100
+    matching = [
+        r.message
+        for r in caplog.records
+        if "Migration Test" in r.message and "100" in r.message
+    ]
+    assert matching, (
+        "Expected a log line naming the entry and the seeded value, got: "
+        f"{[r.message for r in caplog.records]}"
+    )
+
+
+async def test_migrate_v3_13_does_not_log_when_key_already_present(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No log line when default_percentage was already configured (no-op setdefault)."""
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    entry = _make_entry(
+        hass,
+        {CONF_DEFAULT_HEIGHT: 42},
+        version=3,
+        minor_version=12,
+        sensor_type=CoverType.BLIND,
+    )
+    with caplog.at_level(logging.INFO):
+        assert await async_migrate_entry(hass, entry) is True
+
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 42
+    assert not any("Seeded default position" in r.message for r in caplog.records)
 
 
 async def test_migrate_v3_9_preserves_user_set_constraints(

@@ -3901,9 +3901,14 @@ def _apply_create_defaults(options: dict, policy: CoverTypePolicy) -> None:
     is_orchestrator`` gate: a Building Profile builds no coordinator, and a
     cover group builds a ``GroupCoordinator`` that reads none of these keys.
 
-    Shared by ``async_step_update`` (the entry actually created) and
-    ``async_step_summary`` (the pre-create preview), so the two can never
-    disagree about the seeded default position.
+    Shared by all three sites that can mint a fresh entry's options —
+    ``async_step_update`` (the entry the normal create wizard actually
+    creates), ``async_step_summary`` (the pre-create preview, so it can never
+    disagree with what ``async_step_update`` is about to write), and
+    ``async_step_duplicate_configure`` (the Duplicate-cover create path,
+    which cannot rely on the source entry already carrying the key — a
+    disabled source entry is never migrated, so an old, still-broken copy
+    would otherwise propagate the missing key forever).
     """
     options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
     options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
@@ -4337,15 +4342,26 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             sensor_type = source_entry.data.get(CONF_SENSOR_TYPE)
             new_name = await self._ensure_unique_name(user_input["name"], suffix="Copy")
 
+            new_options = {
+                **shared_options,
+                CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                CONF_AZIMUTH: user_input[CONF_AZIMUTH],
+                # CONF_DEVICE_ID intentionally omitted — device association skipped for duplicates
+            }
+            # The source entry may itself be missing CONF_DEFAULT_HEIGHT — a
+            # cover created during the #1126 window and then disabled is
+            # never migrated (HA does not migrate disabled entries), so
+            # _extract_shared_options can copy nothing for the key. Route
+            # through the same seed helper the other two create sites use
+            # instead of relying on that accident (#1126).
+            _dup_policy = get_policy(sensor_type)
+            if _dup_policy.controls_cover and not _dup_policy.is_orchestrator:
+                _apply_create_defaults(new_options, _dup_policy)
+
             return self.async_create_entry(  # type: ignore[return-value]
                 title=f"{_cover_type_label(sensor_type)} {new_name}",
                 data={"name": new_name, CONF_SENSOR_TYPE: sensor_type},
-                options={
-                    **shared_options,
-                    CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
-                    CONF_AZIMUTH: user_input[CONF_AZIMUTH],
-                    # CONF_DEVICE_ID intentionally omitted — device association skipped for duplicates
-                },
+                options=new_options,
             )
 
         source_azimuth = source_entry.options.get(CONF_AZIMUTH, 180)
