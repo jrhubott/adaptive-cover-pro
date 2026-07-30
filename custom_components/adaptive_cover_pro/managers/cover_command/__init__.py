@@ -990,8 +990,9 @@ class CoverCommandService:
         # expressed in a frame. Stamping it with the policy's current view would
         # attribute it to the last unrelated dispatch AND freeze that attribution
         # for every later resend — the exact provenance defect the stamp exists
-        # to close, pointed the other way. ``None`` is the honest answer; the
-        # policy then falls back to a live reading it can at least re-derive.
+        # to close, pointed the other way. ``None`` is the honest answer: the
+        # policy then maps it with the install's own axis inversion, which is
+        # the right frame for a raw cover-frame percent nothing resolved.
         self.set_target(entity_id, target)
         s.waiting = True
         s.sent_at = now

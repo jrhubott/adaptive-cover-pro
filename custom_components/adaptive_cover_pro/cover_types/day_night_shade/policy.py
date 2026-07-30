@@ -1271,14 +1271,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         this parameter exists to close (issue #1115).
 
         For a number a dispatch DID produce, the frame is emphatically NOT
-        ``context.inverse_state`` — nor the install flag a stamp-less target
-        lands on above. That names the install's configured flag, and the
-        broadcast seams dispatch in a divergent space on purpose — the
-        auto-control-off return loop sends the raw default un-inverted. Flipping the middle rail's target against the
-        install flag while the seam built it un-inverted withholds a command
-        that is already physically clear, on every inverse-state Model C
-        install. Both sides of the comparison ride the same frame: the bottom
-        rail was commanded by the same seam, so its live reading speaks it too.
+        ``context.inverse_state``. That names ``CONF_INVERSE_STATE``
+        unconditionally — a different answer again from the ``axis_inverted``
+        one a stamp-less target lands on above, which additionally folds in
+        interpolation's suppression of inverse-state. The broadcast seams
+        dispatch in a divergent space on purpose: the auto-control-off return
+        loop sends the raw default un-inverted. Flipping the middle rail's
+        target against the configured flag while the seam built it un-inverted
+        withholds a command that is already physically clear, on every
+        inverse-state Model C install. Both sides of the comparison ride the
+        same frame: the bottom rail was commanded by the same seam, so its live
+        reading speaks it too.
 
         ``wait`` picks how long the bottom rail gets. The dispatch path waits
         out the full budget: it has just issued the bottom rail's command and
