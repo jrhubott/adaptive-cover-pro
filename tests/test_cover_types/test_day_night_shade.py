@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.const import SERVICE_SET_COVER_POSITION
+from homeassistant.helpers.selector import ENTITY_FILTER_SELECTOR_CONFIG_SCHEMA
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
@@ -45,6 +46,9 @@ from custom_components.adaptive_cover_pro.cover_types.base import (
 )
 from custom_components.adaptive_cover_pro.cover_types.day_night_shade import (
     DayNightShadePolicy,
+)
+from custom_components.adaptive_cover_pro.cover_types.tilt import (
+    TILT_CAPABLE_ENTITY_FILTER,
 )
 from custom_components.adaptive_cover_pro.engine.covers import (
     DayNightShadeCalculation,
@@ -584,15 +588,29 @@ class TestSchemas:
         )
 
     def test_entity_selector_filter_admits_position_only_cover(self) -> None:
-        """A supported_features=15 cover (open+close+set_position+stop, no
-        tilt) is exactly the Model B/C hardware #1114 reports as locked out
-        of the picker. The filter's declared ``supported_features`` list must
-        not require the tilt bit, so this shape is admitted.
+        """A ``supported_features=15`` cover (open+close+set_position+stop, no
+        tilt) is exactly the Model B/C hardware #1114 reports as locked out of
+        the picker. Resolve the filter through HA's own
+        ``ENTITY_FILTER_SELECTOR_CONFIG_SCHEMA`` validator — the same
+        machinery ``EntitySelector`` construction uses — to get the real
+        bitmask, then check it against mask 15 with a bitwise AND. This
+        exercises the actual mask HA computes (not just the declared string
+        list) and would fail if the enum path were ever mistyped, since the
+        validator raises ``vol.Invalid`` on an unresolvable feature string.
         """
         flt = DayNightShadePolicy().entity_selector_filter()
-        declared = flt.get("supported_features", [])
-        assert "cover.CoverEntityFeature.SET_POSITION" in declared
-        assert "cover.CoverEntityFeature.SET_TILT_POSITION" not in declared
+        mask = ENTITY_FILTER_SELECTOR_CONFIG_SCHEMA(flt)["supported_features"][0]
+        assert 15 & mask, f"position-only cover (mask 15) not admitted by {mask=}"
+
+        # The stricter tilt filter must NOT admit the same position-only
+        # cover — regression guard for a revert of the #1114 fix back onto
+        # TILT_CAPABLE_ENTITY_FILTER.
+        tilt_mask = ENTITY_FILTER_SELECTOR_CONFIG_SCHEMA(TILT_CAPABLE_ENTITY_FILTER)[
+            "supported_features"
+        ][0]
+        assert not (
+            15 & tilt_mask
+        ), f"tilt filter unexpectedly admits mask 15: {tilt_mask=}"
 
     def test_capability_warnings_flag_missing_axes(self) -> None:
         policy = DayNightShadePolicy()
@@ -894,6 +912,33 @@ class TestTiltCapabilityContradiction:
         policy = DayNightShadePolicy()
         assert policy._control_model == DAY_NIGHT_MODEL_POSITION_TILT
         assert policy.tilt_capability_contradiction(self._NO_TILT) is True
+
+    @pytest.mark.parametrize(
+        "model", [DAY_NIGHT_MODEL_SPLIT_RANGE, DAY_NIGHT_MODEL_DUAL_ENTITY]
+    )
+    def test_build_calc_engine_sets_model_before_first_health_check(
+        self, model: str
+    ) -> None:
+        """#1114 audit MUST-FIX 1 (coordinator's cycle-1 false Repair).
+
+        The coordinator calls ``build_calc_engine`` (via ``get_blind_data``)
+        BEFORE ``_evaluate_health_checks`` on every cycle, including the very
+        first one of the coordinator's lifetime — which is also before
+        ``post_pipeline_resolve`` has ever run. A Model B/C policy whose
+        ``_control_model`` is still the ``__init__`` Model A default at that
+        point would make ``_drives_dual_axis()`` return True and
+        ``tilt_capability_contradiction`` falsely report a contradiction for
+        a position-only cover, raising a ``cover_tilt_unsupported`` Repair
+        that never clears. ``build_calc_engine`` must resolve the model from
+        ``options`` itself so cycle 1 already knows it's Model B/C.
+        """
+        policy = DayNightShadePolicy()
+        kw = _resolve_kwargs(options={CONF_DAY_NIGHT_CONTROL_MODEL: model})
+        policy.build_calc_engine(**kw)
+        # No post_pipeline_resolve call yet — this simulates the coordinator's
+        # first update cycle, where the health check runs right after
+        # build_calc_engine and before post_pipeline_resolve ever executes.
+        assert policy.tilt_capability_contradiction(self._NO_TILT) is False
 
 
 # ---------------------------------------------------------------------------

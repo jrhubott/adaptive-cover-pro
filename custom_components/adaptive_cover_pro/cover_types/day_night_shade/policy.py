@@ -384,6 +384,25 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
     # ---- Calculation engine ------------------------------------------- #
 
+    def _set_control_model(self, options: dict) -> None:
+        """Cache the per-instance control model from ``options``.
+
+        Single source for the ``options.get(...)`` read, called from BOTH
+        :meth:`build_calc_engine` and :meth:`post_pipeline_resolve` (the
+        no-duplication rule) so the model is never stale when either hook's
+        caller needs it. ``build_calc_engine`` runs first each cycle (via the
+        coordinator's ``get_blind_data``), *before* ``_evaluate_health_checks``
+        — including on the coordinator's very first update cycle, before
+        ``post_pipeline_resolve`` has ever run. Without this call there,
+        ``_control_model`` would still read the ``__init__`` Model A default
+        when the A3 health check asks ``tilt_capability_contradiction``,
+        falsely flagging a Model B/C position-only cover as a contradiction
+        (#1114 audit finding).
+        """
+        self._control_model = str(
+            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
+        )
+
     def build_calc_engine(
         self,
         *,
@@ -395,7 +414,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         config_service: ConfigurationService,
         options: dict,
     ) -> AdaptiveGeneralCover:
-        """Build a vertical calc engine; the blend is filled post-pipeline."""
+        """Build a vertical calc engine; the blend is filled post-pipeline.
+
+        Also caches the control model from ``options`` — see
+        :meth:`_set_control_model` for why this hook, not just
+        ``post_pipeline_resolve``, must set it.
+        """
+        self._set_control_model(options)
         return AdaptiveVerticalCover(
             logger=logger,
             sol_azi=sol_azi,
@@ -555,21 +580,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Resolve the fabric blend, then map it onto the configured control model.
 
         The blend resolution (:meth:`_resolve_blend`) is model-independent and
-        byte-identical to Model A. The per-instance control model is cached here
-        from ``options`` — the downstream dispatch hooks don't receive
-        ``options``, so they read the cached value. In ``split_range`` (Model B)
-        a single physical axis encodes BOTH coverage and fabric, so the resolved
-        blend is folded into ``result.position`` via :meth:`_split_range_wire`
-        while the abstract blend is kept on ``result.tilt`` for the Target Tilt
-        sensor / forecast / diagnostics. In ``position_tilt`` (Model A, default)
-        the resolved result passes straight through.
+        byte-identical to Model A. The per-instance control model is re-cached
+        here from ``options`` (see :meth:`_set_control_model`; ``build_calc_engine``
+        already set it once earlier this cycle, but options can change between
+        config-entry reloads, so this call keeps it current) — the downstream
+        dispatch hooks don't receive ``options``, so they read the cached value.
+        In ``split_range`` (Model B) a single physical axis encodes BOTH coverage
+        and fabric, so the resolved blend is folded into ``result.position`` via
+        :meth:`_split_range_wire` while the abstract blend is kept on
+        ``result.tilt`` for the Target Tilt sensor / forecast / diagnostics. In
+        ``position_tilt`` (Model A, default) the resolved result passes straight
+        through.
         """
         if result is None:
             return result
 
-        self._control_model = str(
-            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
-        )
+        self._set_control_model(options)
         resolved = self._resolve_blend(
             result,
             logger=logger,
