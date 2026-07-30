@@ -17,6 +17,7 @@ math is replaced by a pure fabric-choice decision keyed on the season.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -170,7 +171,33 @@ GEOMETRY_DAY_NIGHT_SHADE_SCHEMA = geometry_day_night_shade_schema()
 
 
 class DayNightShadePolicy(CoverTypePolicy, register=True):
-    """Dual-fabric shade (single HA entity, position + sheer/blackout blend)."""
+    """Dual-fabric shade (single HA entity, position + sheer/blackout blend).
+
+    **The physical shade, and why Model C is not just arithmetic.** All three
+    control models describe the same hardware: one headbox, sheer fabric spanning
+    the head rail down to a MIDDLE rail, blackout fabric spanning the middle rail
+    down to the BOTTOM rail. Coverage is set by how far the bottom rail has
+    descended; the sheer-vs-blackout blend is set by where the middle rail sits
+    between the head rail and the bottom rail. Model A encodes the blend on a
+    tilt axis and Model B folds it into one carriage's split travel range, so
+    both drive a single HA entity and the blend is a number.
+
+    Model C (``dual_entity``) drives the two rails as two real HA cover entities
+    on a SHARED TRACK, which adds a constraint no arithmetic can express:
+
+    * the middle rail can never be below the bottom rail (hence the no-pass
+      clamp ``M >= P`` in :meth:`resolve_entity_target`, in open-percent space);
+    * and, because they are physically stacked, the middle rail cannot TRAVEL to
+      a target the bottom rail is currently sitting above — so on any cycle that
+      lowers the shade the bottom rail must start positioning first, and the
+      middle rail is free to move only once the bottom rail is below the middle
+      rail's target.
+
+    Those last two are what :meth:`dispatch_order_key` and
+    :meth:`_gate_middle_rail_clearance` enforce (issue #1115). Without them a
+    perfectly valid target pair still drives the middle motor into a mechanical
+    block: stall, over-current trip, or lost calibration.
+    """
 
     cover_type = "cover_day_night_shade"
     # Position drives the carriage; the tilt axis carries the fabric blend. Order
@@ -189,6 +216,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Initialise without a sequencer; ``attach()`` wires one up later."""
         self._sequencer: DualAxisSequencer | None = None
         self._grace_mgr = None
+        # Both bound in ``attach``; only the Model C travel gate reads them, and
+        # it never runs before ``attach`` (it needs the sequencer).
+        self._logger: Any | None = None
+        self._position_tolerance: int = 0
         # Last resolved fabric blend, replayed by ``maybe_update_tilt_only`` when
         # the position axis won't fire this cycle. Cleared on every suppressed
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
@@ -207,6 +238,19 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_blend: int | None = None
         self._dual_entity_inverse: bool = False
         self._dual_entity_middle_rail: str | None = None
+        # The instance's configured covers, snapshotted in ``attach``. Model C
+        # needs to know which entity is the BOTTOM rail (the one that isn't the
+        # middle rail) to gate the middle rail's travel against it. Every options
+        # change except the sun-tracking toggle reloads the config entry, which
+        # rebuilds the coordinator and re-runs ``attach``, so the snapshot cannot
+        # go stale behind a changed cover list.
+        self._attached_entities: tuple[str, ...] = ()
+        # Middle-rail position commands withheld because the bottom rail had not
+        # cleared the target yet (issue #1115). Drives
+        # ``has_pending_secondary_axis``, which makes the coordinator withhold
+        # this cycle's dispatched-target signature so the next cycle re-attempts
+        # the send — the same defer-and-retry latch shape as #756's tilt tail.
+        self._pending_middle_rail: set[str] = set()
 
     # ---- Identity / labels -------------------------------------------- #
 
@@ -345,7 +389,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         single-carriage models (``split_range``, ``dual_entity``) need only
         ``set_position``. Model C additionally binds a second rail entity, so it
         warns when ``CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY`` names an entity that is
-        not among the instance's configured covers (a typo / stale pick).
+        not among the instance's configured covers (a typo / stale pick) — and,
+        since issue #1115, when the middle rail is not configured AT ALL. The old
+        ``if middle and middle not in known`` short-circuited on the absent value,
+        so an unset rail warned about nothing and the shade then silently ran as a
+        plain vertical blind (both rails driven to the bottom rail's position).
+        The runtime twin of this warning is the B3 Repair fed by
+        :meth:`required_role_entity_missing`.
         """
         model = str(
             options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
@@ -360,13 +410,45 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         )
         if model == DAY_NIGHT_MODEL_DUAL_ENTITY:
             middle = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
-            if middle and middle not in known:
+            if not middle:
+                warnings.append(
+                    "⚠️ Configured as a dual-entity day/night shade but no "
+                    "middle-rail entity is selected — without it both rails get "
+                    "the same position and the shade behaves like a plain "
+                    "vertical blind."
+                )
+            elif middle not in known:
                 warnings.append(
                     "⚠️ Configured as a dual-entity day/night shade but the "
                     f"middle-rail entity {middle} is not one of this instance's "
                     "covers — add it to the cover list or pick a configured cover."
                 )
         return warnings
+
+    def required_role_entity_missing(
+        self, options: Mapping[str, Any], entities: Iterable[str]
+    ) -> bool:
+        """Report an unfilled Model C middle-rail role (B3 Repair, issue #1115).
+
+        True when the control model is ``dual_entity`` and the middle-rail pick is
+        either absent or names a cover outside this instance's own list. Both
+        cases collapse to the same runtime symptom: ``resolve_entity_target``
+        never matches an entity, so both rails are driven to the bottom rail's
+        position and the shade silently degrades into a plain vertical blind — no
+        warning, no log line, until #1115 no Repair either.
+
+        Reads the model from ``options`` rather than the cached
+        ``_control_model`` so the health check is correct on the very first cycle,
+        before ``post_pipeline_resolve`` has run. Models A and B bind no second
+        rail, so they always report ``False``.
+        """
+        model = str(
+            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
+        )
+        if model != DAY_NIGHT_MODEL_DUAL_ENTITY:
+            return False
+        middle = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+        return not middle or middle not in set(entities)
 
     def lift_travel_metres(
         self,
@@ -614,6 +696,37 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
 
+    def _is_dual_entity_middle_rail(self, entity_id: str) -> bool:
+        """Whether ``entity_id`` is THIS cycle's Model C middle rail.
+
+        Single source of truth for "is this the rail that must not pass the
+        bottom rail?", consumed by the dispatch-ordering key and the travel gate
+        so neither re-states the model/role test (issue #1115). False for every
+        other model — a coordinator instance has exactly one control model — and
+        for an unconfigured middle rail, which is Defect 2's silent-degradation
+        case rather than something the gate can fix.
+        """
+        return (
+            self._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY
+            and self._dual_entity_middle_rail is not None
+            and entity_id == self._dual_entity_middle_rail
+        )
+
+    def dispatch_order_key(self, entity_id: str) -> int:
+        """Command the bottom rail before the middle rail (Model C, issue #1115).
+
+        The two rails share one track: the middle rail cannot travel below the
+        bottom rail. When a cycle lowers both, the bottom rail must START moving
+        first — otherwise the middle rail is commanded toward a target the
+        still-stacked bottom rail is physically blocking. The per-entity command
+        hooks fire inside the caller's loop and cannot reorder it, so the order
+        has to be expressed here, where the rail roles are known.
+
+        Model A and Model B keep the constant default (a stable-sort no-op):
+        neither binds a second rail entity.
+        """
+        return 1 if self._is_dual_entity_middle_rail(entity_id) else 0
+
     def resolve_entity_target(
         self,
         entity_id: str,
@@ -839,6 +952,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         for a day/night entry that never configures them.
         """
         self._grace_mgr = kwargs.get("grace_mgr")
+        self._logger = kwargs["logger"]
+        self._position_tolerance = kwargs["position_tolerance"]
+        # Model C rail-role resolution needs the instance's cover list; additive
+        # kwarg, read via ``kwargs.get`` so every other policy ignores it.
+        self._attached_entities = tuple(kwargs.get("entities") or ())
         self._sequencer = DualAxisSequencer(
             hass=kwargs["hass"],
             logger=kwargs["logger"],
@@ -958,7 +1076,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         )
 
     def has_pending_secondary_axis(self, entity_id: str) -> bool:
-        """Return True while a deferred blend-only update is queued (#756)."""
+        """Return True while a deferred axis/rail command is queued.
+
+        Two deferral sources share this latch, because the coordinator's response
+        to both is identical — withhold this cycle's dispatched-target signature
+        so the command is re-attempted next cycle: a Model A blend-only update
+        deferred by the back-rotate suppression window (#756), and a Model C
+        middle-rail position command withheld while the bottom rail still blocks
+        its target (#1115).
+        """
+        if entity_id in self._pending_middle_rail:
+            return True
         if self._sequencer is None:
             return False
         return self._sequencer.has_pending_tilt(entity_id)
@@ -993,6 +1121,93 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         )
         return True
 
+    @property
+    def _dual_entity_bottom_rail(self) -> str | None:
+        """The Model C bottom (primary) rail — the configured cover that isn't middle.
+
+        Derived rather than stored: the middle rail is the only role the user
+        picks, so the bottom rail is whatever else this instance controls. ``None``
+        when ``attach`` was never given the cover list, or the list holds nothing
+        but the middle rail — a degenerate config the travel gate cannot act on.
+        """
+        middle = self._dual_entity_middle_rail
+        return next((eid for eid in self._attached_entities if eid != middle), None)
+
+    async def _gate_middle_rail_clearance(
+        self,
+        entity_id: str,
+        position: int,
+        context,
+        reason: str,
+    ) -> bool:
+        """Hold the middle rail until the bottom rail has cleared its target.
+
+        **The physical model.** One headbox carries two rails on a shared track.
+        Sheer fabric spans head rail → middle rail; blackout fabric spans middle
+        rail → bottom rail. The bottom rail is the lower of the two and the
+        middle rail cannot pass below it: whatever the arithmetic says, the middle
+        rail can only reach a target the bottom rail is not currently occupying or
+        sitting above. So the bottom rail has to start positioning first, and the
+        middle rail is free to move the moment the bottom rail is below the middle
+        rail's target.
+
+        The no-pass clamp in :meth:`resolve_entity_target` (``M >= P``) states
+        that invariant about two NUMBERS — the two eventual targets. It cannot see
+        where either rail actually IS. When a cycle lowers a shade whose bottom
+        rail is currently stacked up near the head rail, the middle rail's target
+        sits BELOW the bottom rail's live position, and commanding it there drives
+        a motor into a mechanical block: stall, over-current trip, or lost
+        calibration (issue #1115).
+
+        The comparison is in OPEN-PERCENT space on both sides, via ``flip_if``
+        against ``context.inverse_state`` — the frame of the exact wire value
+        ``apply_position`` is about to send on THIS seam. ``M >= P`` in
+        open-percent is ``M <= P`` on the wire, so a raw comparison inverts the
+        verdict for every inverse-state install (the #993 bug class), and a
+        second, divergent inversion path is exactly what must not be introduced.
+
+        Returns ``True`` to let the command through, ``False`` to withhold it.
+        Withholding latches the entity pending so the coordinator keeps
+        re-attempting on later cycles; it never drops the command. Unreadable or
+        never-clearing is deliberately fail-CLOSED (withhold), because a rail
+        whose position cannot be read cannot be proven safe to drive into — while
+        an un-resolvable bottom rail is fail-OPEN (proceed), because there is then
+        no coupled rail to protect and withholding forever would brick the shade.
+        """
+        seq = self._sequencer
+        bottom_rail = self._dual_entity_bottom_rail
+        if seq is None or bottom_rail is None:
+            self._debug(
+                "Model C rail gate inert for %s: no bottom rail resolved", entity_id
+            )
+            return True
+
+        inverse = bool(getattr(context, "inverse_state", False))
+        middle_open = flip_if(position, inverted=inverse)
+        tolerance = self._position_tolerance
+
+        def _cleared(bottom_wire: int) -> bool:
+            return flip_if(bottom_wire, inverted=inverse) <= middle_open + tolerance
+
+        if await seq.wait_until_position(bottom_rail, _cleared):
+            self._pending_middle_rail.discard(entity_id)
+            return True
+        self._pending_middle_rail.add(entity_id)
+        self._debug(
+            "Model C rail gate deferring %s → %s%% (%s): bottom rail %s has not "
+            "cleared the middle rail's target",
+            entity_id,
+            position,
+            reason,
+            bottom_rail,
+        )
+        return False
+
+    def _debug(self, msg: str, *args) -> None:
+        """Emit a debug line once ``attach`` has supplied a logger."""
+        if self._logger is not None:
+            self._logger.debug(msg, *args)
+
     async def before_position_command(
         self,
         cmd_svc,  # noqa: ARG002
@@ -1002,13 +1217,26 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         position: int,
         context,
         reason: str,
-    ) -> None:
-        """Send the blend FIRST on opening transitions, before the carriage moves.
+    ) -> bool | None:
+        """Gate the Model C middle rail, or send Model A's blend first.
 
-        Mirrors the venetian tilt-first order (issue #33): sending the fabric
-        before the carriage starts opening lets the actuator settle the blend
-        into the target rather than reasserting a cached value mid-travel.
+        Returns ``False`` to withhold this position command (the Model C travel
+        gate); ``None`` to proceed, which is what every other path returns.
+
+        Mirrors the venetian tilt-first order (issue #33) for Model A: sending
+        the fabric before the carriage starts opening lets the actuator settle
+        the blend into the target rather than reasserting a cached value
+        mid-travel.
         """
+        # Model C: the middle rail shares a track with the bottom rail and cannot
+        # pass below it, so its command waits for physical clearance (#1115).
+        # Checked first, above an otherwise untouched Model A path — the two
+        # models are mutually exclusive per coordinator instance, so this branch
+        # can never intercept a blend pre-send.
+        if self._is_dual_entity_middle_rail(entity_id):
+            return await self._gate_middle_rail_clearance(
+                entity_id, position, context, reason
+            )
         # Single-carriage models (B, C) have no separate blend axis to pre-send
         # — the position command carries everything on one carriage move.
         if not self._drives_dual_axis():

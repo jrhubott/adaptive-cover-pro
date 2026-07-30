@@ -41,6 +41,7 @@ _EXPECTED_SKIP_CODES: frozenset[str] = frozenset(
         "dry_run",
         "service_call_failed",
         "cover_unavailable",
+        "policy_deferred",
     }
 )
 

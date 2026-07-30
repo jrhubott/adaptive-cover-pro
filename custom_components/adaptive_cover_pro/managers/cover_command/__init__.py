@@ -1666,8 +1666,17 @@ class CoverCommandService:
         # on opening transitions so the actuator's slats are at the target
         # angle before the carriage starts moving (issue #33). Default
         # policies are no-ops.
+        #
+        # The hook can also WITHHOLD the command by returning False: a cover type
+        # whose entities are physically coupled may need one of them to move
+        # first (the Model C day/night middle rail cannot travel past its bottom
+        # rail — issue #1115). Cover-type-agnostic, exactly like the
+        # ``full_endpoint_target`` flag: the bool carries the decision and this
+        # service never inspects the cover type. Withheld means SKIPPED, not
+        # sent — no target is tracked, no ``after_position_command`` runs — and
+        # the policy latches the command so a later cycle re-attempts it.
         if context.policy is not None:
-            await context.policy.before_position_command(
+            proceed = await context.policy.before_position_command(
                 self,
                 entity_id,
                 service=service,
@@ -1675,6 +1684,15 @@ class CoverCommandService:
                 context=context,
                 reason=reason,
             )
+            if proceed is False:
+                return self._skip(
+                    entity_id,
+                    "policy_deferred",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                )
 
         ctx = Context()
         self._position_context_tracker.record(ctx.id)

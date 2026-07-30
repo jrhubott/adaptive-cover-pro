@@ -28,6 +28,10 @@
     "cover_tilt_unsupported": {
       "title": "Cover cannot tilt",
       "description": "**{name}** is configured as a tilt-capable cover type, but the cover `{entity_id}` does not advertise tilt control (set_tilt_position). Tilt positions cannot be applied to it. Pick a cover entity that supports tilt, or change the cover type to one that does not use tilt."
+    },
+    "day_night_middle_rail_unset": {
+      "title": "Day/night middle rail not selected",
+      "description": "**{name}** is configured as a two-rail day/night shade, but its middle-rail cover is not selected — or names a cover that is not in this instance's cover list. Both rails are being sent the same position, so the shade is behaving like a plain blind and the sheer/blackout blend is never applied. Pick the middle-rail cover in the cover's options, and make sure it is also listed as one of the controlled covers."
     }
   },
   "config": {

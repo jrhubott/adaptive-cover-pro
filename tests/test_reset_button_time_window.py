@@ -11,6 +11,8 @@ shared gate for both the auto-expiry path and the button path.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -37,6 +39,8 @@ def _make_coordinator(
     coordinator.automatic_control = automatic_control
     coordinator.entities = ["cover.test"]
     coordinator.logger = MagicMock()
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coordinator._policy = get_policy("cover_blind")
     coordinator._check_sun_validity_transition.return_value = False
     coordinator._build_position_context.return_value = PositionContext(
         auto_control=True,

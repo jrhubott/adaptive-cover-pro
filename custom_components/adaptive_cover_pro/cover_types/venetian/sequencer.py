@@ -1211,6 +1211,44 @@ class DualAxisSequencer:
         )
         return False, last_position
 
+    async def wait_until_position(
+        self, entity_id: str, done: Callable[[int], bool]
+    ) -> bool:
+        """Poll ``current_position`` until ``done`` accepts a reading, or time out.
+
+        A ONE-SIDED threshold wait, deliberately NOT
+        :meth:`_wait_for_position_settle`: that method declares success only
+        within tolerance OF A TARGET, so it would sail straight past a cover
+        that merely *transits* the threshold on its way somewhere else — exactly
+        what a day/night bottom rail does while descending past the middle
+        rail's target (issue #1115). Same poll interval and same 60 s budget
+        (:data:`VENETIAN_POSITION_SETTLE_POLL_SECONDS` /
+        :data:`VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`) — the semantics differ,
+        the tuning does not, so no parallel constant is introduced.
+
+        ``done`` is evaluated BEFORE the first sleep, so an already-satisfied
+        condition returns on one read with no waiting at all. Returns ``True``
+        when ``done`` accepted a reading, ``False`` on timeout or when the
+        position is unreadable — an unreadable cover cannot be proven to have
+        cleared, and the caller decides what to do about that.
+        """
+        deadline = dt.datetime.now(dt.UTC) + dt.timedelta(
+            seconds=VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
+        )
+        while dt.datetime.now(dt.UTC) < deadline:
+            current = self._get_current_position(entity_id)
+            if current is None:
+                return False
+            if done(current):
+                return True
+            await asyncio.sleep(VENETIAN_POSITION_SETTLE_POLL_SECONDS)
+        self._logger.debug(
+            "Position wait: %s never satisfied its threshold within %.0fs",
+            entity_id,
+            VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
+        )
+        return False
+
     @staticmethod
     def _seconds_since(stamp: dt.datetime) -> float:
         """Return wall-clock seconds since ``stamp`` (UTC).

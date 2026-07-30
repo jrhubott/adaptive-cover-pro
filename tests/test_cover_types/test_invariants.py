@@ -144,6 +144,31 @@ def test_resolve_entity_target_identity_default(policy: CoverTypePolicy) -> None
 
 
 @pytest.mark.unit
+def test_dispatch_order_key_default_is_zero(policy: CoverTypePolicy) -> None:
+    """Every policy leaves the dispatch order untouched by default (issue #1115).
+
+    ``dispatch_order_key`` feeds ``sorted(...)`` at the coordinator's dispatch
+    seams. A constant key makes that a stable-sort no-op, so the user's
+    config-flow pick order survives for every cover type that does not need
+    rail sequencing.
+    """
+    assert policy.dispatch_order_key("cover.x") == 0
+    assert policy.dispatch_order_key("cover.y") == 0
+
+
+@pytest.mark.unit
+def test_required_role_entity_missing_default_false(policy: CoverTypePolicy) -> None:
+    """No cover type reports a missing role entity by default (B3, issue #1115).
+
+    Only a cover type that binds a SECOND entity to a named physical role (the
+    Model C day/night middle rail) can have that role unfilled. Every other
+    policy — and a coherent day/night entry — must answer ``False`` so the
+    generic B3 Repair never false-fires.
+    """
+    assert policy.required_role_entity_missing({}, ["cover.x", "cover.y"]) is False
+
+
+@pytest.mark.unit
 def test_position_for_intent_returns_open_or_closed(policy: CoverTypePolicy) -> None:
     """``position_for_intent`` returns 0 or 100, and the two intents differ."""
     pos_through = policy.position_for_intent(sun_through=True)

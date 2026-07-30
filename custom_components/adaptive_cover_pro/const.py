@@ -830,6 +830,11 @@ ISSUE_COVER_NOT_MOVING = (
 ISSUE_COVER_TILT_UNSUPPORTED = (
     "cover_tilt_unsupported"  # tilt cover type bound to a non-tilt device (issue #991)
 )
+# B3 — a cover type that binds a SECOND entity to a named physical role has that
+# role unfilled (issue #1115). Today's only such role is the Model C day/night
+# middle rail: unset (or naming a cover outside the instance's list) leaves the
+# shade silently behaving like a plain vertical blind.
+ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET = "day_night_middle_rail_unset"
 # Generous debounce so integration restarts / device re-adds don't nag before
 # a genuinely dead sensor is flagged.
 DEFAULT_SENSOR_HEALTH_DEBOUNCE_SECONDS = 900.0

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 
 
@@ -433,6 +434,8 @@ async def test_window_close_skips_reposition_when_auto_control_off():
     config_entry.options = {}
     coord.config_entry = config_entry
     coord.entities = []
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coord._policy = get_policy("cover_blind")
     coord._inverse_state = False
     from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
         EventBuffer,
@@ -598,6 +601,8 @@ async def test_window_close_skips_reposition_when_custom_position_active():
     coord._track_end_time = True
     coord._inverse_state = False
     coord.entities = [MagicMock()]
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coord._policy = get_policy("cover_blind")
     coord.hass = MagicMock()
     coord._pipeline_result = SimpleNamespace(
         control_method=ControlMethod.CUSTOM_POSITION

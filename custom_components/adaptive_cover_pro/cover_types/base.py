@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -575,6 +575,59 @@ class CoverTypePolicy(ABC):
         """
         return position
 
+    def dispatch_order_key(
+        self,
+        entity_id: str,  # noqa: ARG002
+    ) -> int:
+        """Sort key ordering this cover type's entities within one dispatch cycle.
+
+        The coordinator resolves one position per cycle and fans it out to every
+        bound entity. A cover type whose entities are PHYSICALLY coupled — the
+        Model C day/night shade's stacked rails, where the middle rail cannot
+        travel past the bottom rail — needs its blocking entity commanded first,
+        because the per-entity command hooks cannot reach back and reorder the
+        caller's loop. Overriding this hook expresses that constraint once; every
+        dispatch seam consumes the same ordered view (issue #1115).
+
+        The Liskov-safe default is a constant, which makes ``sorted(...)`` a
+        stable-sort no-op: the user's config-flow pick order survives verbatim
+        for every cover type with independent entities.
+        """
+        return 0
+
+    def order_for_dispatch(self, entities: Iterable[str]) -> list[str]:
+        """Return ``entities`` in this cover type's mandated dispatch order.
+
+        The single shared ordering mechanism every dispatch seam consumes — the
+        main state-change loop, the startup loop, the force-send path, the
+        end-time-default and sunset-window broadcasts, and the auto-control-off
+        return loop. One view, six consumers: the ordering rule is stated once
+        as :meth:`dispatch_order_key` rather than mirrored per seam
+        (CODING_GUIDELINES.md "No Code Duplication", issue #1115).
+
+        ``sorted`` is stable, so a policy that leaves ``dispatch_order_key`` at
+        its constant default gets the input order back unchanged.
+        """
+        return sorted(entities, key=self.dispatch_order_key)
+
+    def required_role_entity_missing(
+        self,
+        options: Mapping[str, Any],  # noqa: ARG002
+        entities: Iterable[str],  # noqa: ARG002
+    ) -> bool:
+        """Whether an entity this cover type binds to a named role is unfilled (B3).
+
+        A cover type may bind a SECOND entity to a specific physical role — the
+        Model C day/night shade's middle rail. With that pick unset, or naming a
+        cover outside the instance's own list, the cover type cannot do its job
+        and degrades silently into a lesser one. This predicate is the single
+        source of truth behind the cover-type boundary for the B3 runtime Repair,
+        so the coordinator never branches on cover type (mirrors A3's
+        ``tilt_capability_contradiction``). Liskov-safe default: cover types that
+        bind no role entity have nothing to report (issue #1115).
+        """
+        return False
+
     def attach(self, **kwargs: Any) -> None:
         """Bind late-resolved dependencies (cmd_svc, grace_mgr, …).
 
@@ -691,14 +744,22 @@ class CoverTypePolicy(ABC):
         position: int,  # noqa: ARG002
         context,  # noqa: ARG002
         reason: str,  # noqa: ARG002
-    ) -> None:
+    ) -> bool | None:
         """Run any pre-command work before the position service fires.
 
-        Default: no-op. ``VenetianPolicy`` overrides this to send tilt-first
-        on opening transitions (issue #33) so the actuator's slats reach the
-        target angle before the carriage starts moving.
+        Returns ``False`` to WITHHOLD this position command; ``None`` (or
+        ``True``) to let it proceed. Withholding is for a policy whose entities
+        are physically coupled and cannot be commanded independently right now —
+        the Model C day/night middle rail waiting for its bottom rail to clear
+        (issue #1115). A withheld command is skipped, not dropped: the policy is
+        expected to latch it via :meth:`has_pending_secondary_axis` so the
+        coordinator re-attempts it on a later cycle.
+
+        Default: no-op, proceed. ``VenetianPolicy`` overrides this to send
+        tilt-first on opening transitions (issue #33) so the actuator's slats
+        reach the target angle before the carriage starts moving.
         """
-        return
+        return None
 
     async def after_position_command(
         self,
