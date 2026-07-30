@@ -777,10 +777,13 @@ class CoverTypePolicy(ABC):
         out (issue #1115, the #993 inversion class).
 
         So the transform travels WITH the value instead. ``CoverCommandService``
-        asks for this stamp once per dispatch, stores it beside the target it
-        books, and hands it back verbatim to :meth:`await_dispatch_clearance`
-        when the reconciliation timer re-sends that target. The manager never
-        interprets it — it is this policy's own datum, round-tripped.
+        asks for this stamp ONCE per dispatch, and asks for it BEFORE it puts
+        :meth:`await_dispatch_clearance`'s question: one stamp both answers that
+        dispatch's own clearance question and is stored beside the target it
+        books, so the number is gated and recorded against a single frame rather
+        than two reads of a moving one. The reconciliation timer then hands the
+        stored stamp back verbatim when it re-sends that target. The manager
+        never interprets it — it is this policy's own datum, round-tripped.
 
         Liskov-safe default: ``None``, i.e. "no provenance needed", which is
         every cover type whose dispatched values need no later un-transforming.
@@ -815,14 +818,21 @@ class CoverTypePolicy(ABC):
         two live passes mutating the same per-entity state (issue #1115). Same
         eventual behaviour either way; the next tick re-asks.
 
-        ``dispatch_token`` replays the stamp :meth:`capture_dispatch_token`
-        minted for the dispatch that BOOKED ``position`` — the resend path hands
-        back what it stored, so the answer is computed against the dispatch the
-        number actually came from rather than against whatever a later resolve
-        left in the policy's per-cycle cache (issue #1115). ``None`` means the
-        caller has no stamp to offer: the dispatch path, which is asking about a
-        value it resolved a moment ago, and any target seeded from outside a
-        dispatch.
+        ``dispatch_token`` names the dispatch that produced ``position`` — the
+        stamp :meth:`capture_dispatch_token` minted for it. BOTH position paths
+        supply one: ``apply_position`` captures the stamp just before asking
+        this question and books that same stamp with the target, and the resend
+        hands the stored stamp straight back. So the answer is computed against
+        the dispatch the number actually came from rather than against whatever
+        a later resolve left in the policy's per-cycle cache (issue #1115).
+
+        ``None`` therefore does NOT mean "the dispatch path". It means the
+        number has no dispatch behind it to describe: a target booked from
+        outside one — ``CoverCommandService.restore_target`` rehydrating a
+        persisted target after a reload, the coordinator recording an
+        externally-observed My move, ``send_my_position`` booking the user's
+        configured My percent. A policy that needs provenance has to fall back
+        to whatever it can still infer for those.
 
         Returns ``False`` to withhold, ``True`` to proceed. Withholding is
         expected to latch (:meth:`has_pending_secondary_axis`) so a later pass

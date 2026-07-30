@@ -984,13 +984,15 @@ class CoverCommandService:
         # toward My during the transit window.
         prior_position = self._get_current_position(entity_id)
         s = self.state(entity_id)
-        # A real outbound command, so it books real dispatch provenance — same
-        # rule as ``_prepare_service_call`` (issue #1115).
-        self.set_target(
-            entity_id,
-            target,
-            dispatch_token=self._policy.capture_dispatch_token(entity_id),
-        )
+        # No dispatch produced this number, so it books no provenance (issue
+        # #1115). ``stop_cover`` carries no position: what lands here is the
+        # user's configured My percent, which nothing resolved and no seam ever
+        # expressed in a frame. Stamping it with the policy's current view would
+        # attribute it to the last unrelated dispatch AND freeze that attribution
+        # for every later resend — the exact provenance defect the stamp exists
+        # to close, pointed the other way. ``None`` is the honest answer; the
+        # policy then falls back to a live reading it can at least re-derive.
+        self.set_target(entity_id, target)
         s.waiting = True
         s.sent_at = now
         s.last_progress_at = None
@@ -2183,12 +2185,34 @@ class CoverCommandService:
             # delta gates — flips the verdict either way: withholding a rail
             # nothing will ever re-target, or resending into a rail that is
             # physically blocked (issue #1115).
+            #
+            # Target and stamp are read HERE, together, rather than the target
+            # coming from the pass-start snapshot. ``recorded`` was taken before
+            # the loop ran, and the loop awaits — this gate, and every earlier
+            # entity's own resend. A concurrent ``apply_position`` landing in one
+            # of those windows re-books this entity, and pairing the snapshot's
+            # target with a stamp read now describes one number with another's
+            # frame; ``_prepare_service_call`` would then persist that mismatched
+            # pair as the record the NEXT pass gates against. One read, one pair,
+            # carried through the gate and back into the booking below. Which
+            # entities the pass acts on is still the snapshot's call — only the
+            # value going back on the wire moves.
+            resend_target = s.target
+            resend_token = s.dispatch_token
+            if resend_target is None:
+                # Cleared out from under the pass (time-window close, reload).
+                # There is no longer a target to restate.
+                self._logger.debug(
+                    "Reconcile: %s target cleared mid-pass — skipping resend",
+                    entity_id,
+                )
+                continue
             if not await self._policy.await_dispatch_clearance(
                 entity_id,
-                position=target,
+                position=resend_target,
                 reason="reconcile",
                 wait=False,
-                dispatch_token=s.dispatch_token,
+                dispatch_token=resend_token,
             ):
                 self._logger.debug(
                     "Reconcile: %s withheld by the cover-type policy — a coupled "
@@ -2202,11 +2226,13 @@ class CoverCommandService:
                 "Reconcile: %s missed target (actual=%s target=%s) — retry %d/%d",
                 entity_id,
                 actual,
-                target,
+                resend_target,
                 s.retry_count,
                 self._max_retries,
             )
-            await self._execute_command(entity_id, target)
+            await self._execute_command(
+                entity_id, resend_target, dispatch_token=resend_token
+            )
 
     # ------------------------------------------------------------------ #
     # Diagnostic helpers
@@ -2420,10 +2446,10 @@ class CoverCommandService:
                 dispatch that produced ``state``, recorded alongside the booked
                 target so a later resend can hand it back to the policy that
                 minted it (issue #1115). ``apply_position`` passes the stamp it
-                took for THIS dispatch; ``_execute_command`` passes the stored
-                one forward, because a resend puts the same number back on the
-                wire and therefore speaks the same dispatch. Never interpreted
-                here.
+                took for THIS dispatch; ``_execute_command`` passes the one its
+                caller read alongside the target it is restating, because a
+                resend puts the same number back on the wire and therefore
+                speaks the same dispatch. Never interpreted here.
 
         Returns:
             (service_name, service_data, supports_position).
@@ -2517,11 +2543,22 @@ class CoverCommandService:
 
         return plan.service, plan.service_data, plan.supports_position
 
-    async def _execute_command(self, entity_id: str, target: int) -> None:
+    async def _execute_command(
+        self, entity_id: str, target: int, *, dispatch_token: Any = None
+    ) -> None:
         """Send command directly, bypassing gate checks (reconciliation use only).
 
         Does NOT reset the retry count — the caller
         (``run_reconciliation_pass``) owns that.
+
+        ``dispatch_token`` is the provenance of ``target``: a resend re-books the
+        SAME number, so the original dispatch's stamp travels forward instead of
+        the number being re-stamped with whatever the policy's per-cycle view
+        says now (issue #1115). It is supplied by the caller rather than re-read
+        here so that the target and the stamp explaining it come from a single
+        read — re-reading the record would let a re-booking that landed during
+        the caller's clearance await pair this target with another number's
+        frame. A caller with no dispatch behind ``target`` leaves it ``None``.
 
         NB: callers are responsible for entity-loaded-ness. Reconciliation only
         runs for entities that already passed the cover_unavailable gate in
@@ -2531,10 +2568,7 @@ class CoverCommandService:
             entity_id,
             target,
             reset_retries=False,
-            # A resend re-books the SAME number, so it carries the original
-            # dispatch's provenance forward rather than re-stamping it with
-            # whatever the policy's per-cycle view says now (issue #1115).
-            dispatch_token=self._get(entity_id).dispatch_token,
+            dispatch_token=dispatch_token,
         )
         if service is None:
             return

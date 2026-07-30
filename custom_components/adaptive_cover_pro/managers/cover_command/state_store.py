@@ -49,7 +49,10 @@ class PerEntityState:
     # two can never drift apart. NEVER interpreted by this manager: it stores
     # and replays the value and nothing else (no cover-type knowledge here).
     # ``None`` means "no dispatch provenance recorded" — every policy that does
-    # not need one, plus rehydrated/externally-seeded targets.
+    # not need one, plus every target no dispatch produced: rehydrated after a
+    # reload, observed on the cover from outside, or the user's configured My
+    # percent, which ``stop_cover`` puts on the wire without a position for any
+    # frame to describe.
     dispatch_token: Any = None
     sent_at: dt.datetime | None = None
     waiting: bool = False

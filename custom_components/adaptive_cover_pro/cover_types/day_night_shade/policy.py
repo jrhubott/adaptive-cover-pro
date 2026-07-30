@@ -774,11 +774,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         answer the dispatch-path gate computed for this command — no second
         inversion path (the #993 bug class; issue #1115).
 
-        ``CoverCommandService`` stores the returned bool beside the target it
-        books and hands it back when the reconciliation timer re-sends that
-        target, which is the only way the gate can un-transform a number
-        dispatched by an earlier seam: this policy's own per-cycle cache has by
-        then been restated by every intervening resolve, dispatched or skipped.
+        ``CoverCommandService`` takes the stamp once per dispatch — before the
+        gate, so the same bool answers that dispatch's own clearance question
+        and is stored beside the target it books — and hands it back when the
+        reconciliation timer re-sends that target, which is the only way the
+        gate can un-transform a number dispatched by an earlier seam: this
+        policy's own per-cycle cache has by then been restated by every
+        intervening resolve, dispatched or skipped.
 
         ``None`` for the bottom rail and for every non-Model-C instance — no
         rail there needs its dispatched value un-transformed later.
@@ -1236,14 +1238,27 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
         Which dispatch that is depends on the caller, so the caller says.
         ``dispatch_token`` is the stamp :meth:`capture_dispatch_token` minted
-        when the command was BOOKED — what the resend path replays, because the
-        number it is putting back on the wire is the one that dispatch produced.
-        ``None`` means the caller is the dispatch path itself, asking about a
-        value ``resolve_entity_target`` resolved a moment ago, so the live
-        per-cycle record answers. Reading that record on a resend instead is the
-        provenance bug this parameter exists to close: it belongs to the last
-        RESOLUTION, and one resolve-then-skip cycle is enough to flip the
-        verdict on a target no resolve has touched (issue #1115).
+        when the command was BOOKED. BOTH position paths pass one: the dispatch
+        path captures the stamp immediately before this gate and books that very
+        value with the target, and the resend replays what was stored, because
+        the number it is putting back on the wire is the one that dispatch
+        produced. On a Model C middle rail the stamp is always a ``bool``, so
+        neither position path ever reaches the fallback below.
+
+        ``None`` reaches here only for a target no dispatch produced, and the
+        callers that book one are countable: ``restore_target`` rehydrating a
+        persisted target after a reload, the coordinator recording an
+        externally-observed My move, and ``send_my_position`` booking the user's
+        configured My percent — a number ``stop_cover`` puts on the wire without
+        a position, so nothing ever expressed it in a frame. There is no stamp
+        to replay for those, so the live per-cycle record answers: it is the
+        only frame evidence left, and unlike a frozen stamp invented at booking
+        time it re-converges on the install's own frame the moment the pipeline
+        resolves this rail again. Reading that record on a RESEND that DOES have
+        a stamp is the provenance bug this parameter exists to close: the record
+        belongs to the last RESOLUTION, and one resolve-then-skip cycle is
+        enough to flip the verdict on a target no resolve has touched
+        (issue #1115).
 
         It is emphatically NOT ``context.inverse_state``. That names the
         install's configured flag, and the broadcast seams dispatch in a
@@ -1328,10 +1343,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         withhold latches and the next tick re-asks.
 
         ``dispatch_token`` names WHICH dispatch ``position`` came from — the
-        resend path replays the stamp :meth:`capture_dispatch_token` minted when
-        that command was booked, so the gate un-transforms the number against
-        the frame it is actually expressed in rather than against a per-cycle
-        record a later resolve may have restated (issue #1115).
+        stamp :meth:`capture_dispatch_token` minted when that command was
+        booked. Both paths supply it: the dispatch path the stamp it just took,
+        the resend path the stamp it stored. So the gate un-transforms the
+        number against the frame it is actually expressed in rather than
+        against a per-cycle record a later resolve may have restated
+        (issue #1115). ``None`` arrives only from a target no dispatch produced
+        — see :meth:`_gate_middle_rail_clearance` for the fallback and who
+        relies on it.
         """
         if not self._is_dual_entity_middle_rail(entity_id):
             return True

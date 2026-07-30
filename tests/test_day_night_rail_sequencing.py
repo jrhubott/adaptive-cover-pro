@@ -767,12 +767,25 @@ def _reconcile_harness(
     position: int,
     blend: int | None,
     targets: dict[str, int],
+    tokens: dict[str, bool] | None = None,
 ):
     """Build a ``CoverCommandService`` primed for a reconciliation pass.
 
     ``targets`` is inserted in the given order, which is the order
     ``iter_targets`` yields — pass the middle rail first to model the user's
     config pick order putting it there.
+
+    Seeding goes through ``set_target``, the single production writer of the
+    ``(target, dispatch_token)`` pair, so this harness cannot manufacture a
+    state production could not reach. A raw ``s.target = ...`` leaves the stamp
+    at ``None``, and every pass built on it quietly exercises the policy's
+    no-provenance fallback instead of the stamp mechanism the tests are named
+    after (issue #1115).
+
+    ``tokens`` names the frame a rail's target was booked in, for a test
+    modelling a seam that dispatched in its own space. A rail left out of it
+    gets the stamp ``capture_dispatch_token`` mints right now — which is what a
+    dispatch in the install's own frame books.
     """
     cmd_svc, policy, rails, events = _rail_harness(
         script=script, position=position, blend=blend
@@ -780,10 +793,16 @@ def _reconcile_harness(
     cmd_svc._enable_position_matching = True
     cmd_svc._auto_control_enabled = True
     cmd_svc._in_time_window = True
+    tokens = tokens or {}
     for entity_id, target in targets.items():
-        s = cmd_svc.state(entity_id)
-        s.target = target
-        s.waiting = False
+        cmd_svc.set_target(
+            entity_id,
+            target,
+            dispatch_token=tokens.get(
+                entity_id, policy.capture_dispatch_token(entity_id)
+            ),
+        )
+        cmd_svc.state(entity_id).waiting = False
     return cmd_svc, policy, rails, events
 
 
@@ -1320,16 +1339,22 @@ async def test_reconciliation_gate_keeps_the_frame_of_the_seam_it_resends() -> N
 
     Reconciliation re-sends the number a broadcast seam put on the wire — so
     that seam's inversion frame is the one the number is expressed in, and the
-    only one the gate can legitimately un-transform it against. This cycle's
-    cached decision describes a dispatch that never happened.
+    only one the gate can legitimately un-transform it against. That frame
+    travels with the booked target as its dispatch stamp, and the stamp is what
+    the pass hands back.
 
     Here the install has inverse-state suppressed for this cycle (interpolation
-    forces ``axis_inverted`` False) while the recorded middle-rail target came
-    from a seam that named ``inverted=True`` explicitly. Read in the seam's
+    forces ``axis_inverted`` False) while the recorded middle-rail target was
+    booked by a seam that named ``inverted=True`` explicitly. Read in the seam's
     frame the bottom rail is at the very bottom of its travel and the middle
-    rail is clear; read in the cycle's frame the two swap and the rail is
+    rail is clear; read in the install's own frame the two swap and the rail is
     withheld — and, since the seam is the only thing that will ever refresh that
     target, withheld forever.
+
+    The neighbouring
+    ``test_reconciliation_resends_when_a_later_resolve_flips_the_cached_frame``
+    covers the other half: the stamp beating a policy view that has since moved
+    on. Here the point is simply that the stamp is what the pass consults.
     """
     cmd_svc, policy, _rails, events = _reconcile_harness(
         # Wire 80 == open 20 in the seam's frame: the bottom rail is low, well
@@ -1338,14 +1363,17 @@ async def test_reconciliation_gate_keeps_the_frame_of_the_seam_it_resends() -> N
         position=20,
         blend=100,  # all sheer → the middle rail's remap is identity
         targets={_MIDDLE: 20},
+        # The seam that booked this target dispatched in ITS own frame, so that
+        # is the stamp ``capture_dispatch_token`` minted for it.
+        tokens={_MIDDLE: True},
     )
     assert policy._dual_entity_inverse is False
 
-    # The broadcast seam dispatched in ITS own frame and recorded the target.
+    # The broadcast seam's remap: wire 20 is what it put on the wire.
     assert policy.resolve_entity_target(_MIDDLE, 20, inverted=True) == 20
 
     # A later cycle resolves normally but dispatches nothing (every rail held by
-    # a gate upstream of dispatch), so nothing re-states the frame.
+    # a gate upstream of dispatch), so nothing re-books this target.
     _dual_policy(position=20, blend=100, policy=policy)
 
     with _patch_caps():
@@ -1565,11 +1593,15 @@ async def test_dispatch_provenance_is_written_and_cleared_with_the_target() -> N
     cmd_svc.set_target(_MIDDLE, 40)
     assert cmd_svc.state(_MIDDLE).dispatch_token is None
 
-    # A My move IS a real outbound command, so it books a real stamp.
+    # A My move is a real outbound command but NOT a real dispatch of a number:
+    # ``stop_cover`` carries no position, so the recorded target is the user's
+    # configured My percent and no seam ever expressed it in a frame. Stamping
+    # it with the frame of the last unrelated middle-rail resolve would invent
+    # provenance — and freeze it — so it books none.
     policy.resolve_entity_target(_MIDDLE, 20, inverted=False)
     with _patch_caps():
         assert await cmd_svc.send_my_position(_MIDDLE, 55) is True
-    assert cmd_svc.state(_MIDDLE).dispatch_token is False
+    assert cmd_svc.state(_MIDDLE).dispatch_token is None
 
     # Clearing the target clears the stamp with it.
     cmd_svc.state(_MIDDLE).is_safety = False
@@ -1581,6 +1613,56 @@ async def test_dispatch_provenance_is_written_and_cleared_with_the_target() -> N
     cmd_svc.set_target(_MIDDLE, 40, dispatch_token=True)
     cmd_svc.discard_target(_MIDDLE)
     assert cmd_svc.state(_MIDDLE).dispatch_token is None
+
+
+@pytest.mark.asyncio
+async def test_my_preset_books_no_frame_so_its_gate_stays_live() -> None:
+    """A My preset has no dispatch frame, so it must not be stamped with one.
+
+    ``send_my_position`` sends ``stop_cover``, which carries no position: the
+    number it records is the user's configured My percent, and nothing resolved
+    it or expressed it in an inversion frame. Stamping it with the frame of the
+    last middle-rail RESOLVE attributes it to a dispatch that never produced it
+    — and freezes that attribution, so every later resend of that target is
+    gated against a frame chosen by an unrelated command.
+
+    Inverse-state Model C install whose last middle-rail resolve came from the
+    auto-control-off return loop, a deliberately divergent ``inverted=False``
+    space. A frozen ``False`` reads My=30 as open 30 and the bottom rail's 80 as
+    open 80, calls a clear rail blocked and withholds the resend — and, since
+    only the user's My button ever refreshes that target, withholds it forever.
+    With no stamp the policy falls back to its live record, which the next
+    ordinary cycle restates to the install's own frame: My=30 is open 70, the
+    bottom rail is open 20, and the resend goes out.
+    """
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [80], _MIDDLE: [90]},
+        position=60,
+        blend=50,
+        inverse=True,
+    )
+    assert policy._dual_entity_inverse is True
+
+    # The divergent seam resolves the middle rail un-inverted...
+    policy.resolve_entity_target(_MIDDLE, 60, inverted=False)
+    # ...and the user's My preset is recorded immediately after it.
+    with _patch_caps():
+        assert await cmd_svc.send_my_position(_MIDDLE, 30) is True
+    assert cmd_svc.get_target(_MIDDLE) == 30
+    assert cmd_svc.state(_MIDDLE).dispatch_token is None
+
+    # An ordinary later cycle resolves the rail in the install's own frame.
+    _dual_policy(position=20, blend=50, inverse=True, policy=policy)
+    policy.resolve_entity_target(_MIDDLE, 20)
+
+    cmd_svc.state(_MIDDLE).waiting = False
+    events.clear()
+    _arm_reconciliation(cmd_svc)
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
 
 
 @pytest.mark.asyncio
@@ -1621,3 +1703,145 @@ async def test_a_resend_carries_the_original_dispatch_frame_forward(
 
     assert f"send:{_MIDDLE}" in events, events
     assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_resends_the_pair_it_read_not_the_snapshot_target() -> (
+    None
+):
+    """The resent number and the stamp explaining it come from one read.
+
+    The pass takes its target snapshot before the loop starts and then awaits —
+    on the clearance gate, and on every earlier rail's own resend. An
+    ``apply_position`` landing in one of those windows re-books this entity, and
+    pairing the snapshot's target with a stamp read afterwards describes one
+    number with another number's frame. ``_prepare_service_call`` then persists
+    that mismatched pair as the record the NEXT pass gates against — the #1115
+    provenance defect re-entering through the reconciliation loop's own
+    bookkeeping.
+
+    The bottom rail's resend is the window here: it re-books the middle rail at
+    40 in an explicitly-named frame while the pass is mid-flight. The middle
+    rail must go out at 40 wearing that booking's stamp, not at the snapshot's
+    65 wearing it. Both numbers clear the gate on the readings scripted below,
+    so the verdict is not what separates them — the recorded pair is.
+
+    (A bare ``set_target`` stands in for the concurrent dispatch deliberately: a
+    full ``apply_position`` would also set ``waiting``, and step 1 would skip the
+    rail before the code under test ran.)
+    """
+    cmd_svc, _policy, _rails, events = _reconcile_harness(
+        script={_BOTTOM: [70], _MIDDLE: [90]},
+        position=30,
+        blend=50,
+        targets={_MIDDLE: 65, _BOTTOM: 90},
+    )
+    payloads: dict[str, dict] = {}
+    hass = cmd_svc._hass
+    inner = hass.services.async_call.side_effect
+
+    async def _record_and_rebook(domain, service, data, context=None):
+        await inner(domain, service, data, context=context)
+        payloads[data["entity_id"]] = dict(data)
+        if data["entity_id"] == _BOTTOM:
+            cmd_svc.set_target(_MIDDLE, 40, dispatch_token=True)
+
+    hass.services.async_call = AsyncMock(side_effect=_record_and_rebook)
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert payloads[_MIDDLE]["position"] == 40, payloads
+    assert cmd_svc.get_target(_MIDDLE) == 40
+    assert cmd_svc.state(_MIDDLE).dispatch_token is True
+
+
+@pytest.mark.asyncio
+async def test_a_rebooking_during_the_gate_cannot_split_the_resent_pair() -> None:
+    """The clearance await is a window too, and the resend must survive it intact.
+
+    The gate polls a physical rail, so a dispatch can land between the pass
+    reading its pair and the resend being booked. If the booking re-reads the
+    stamp at that point it pairs the number it is restating with a frame minted
+    for a different one — and that hybrid becomes the record the next pass gates
+    against, which is exactly the provenance defect, one loop further in. The
+    stamp therefore travels down from the same read the target came from instead
+    of being fetched again.
+
+    Which of the two numbers ends up recorded is the pre-existing stale-resend
+    question (a resend restates what the pass read); this asserts only that the
+    two halves belong to each other.
+    """
+    cmd_svc, policy, _rails, events = _reconcile_harness(
+        script={_BOTTOM: [60], _MIDDLE: [90]},
+        position=30,
+        blend=50,
+        targets={_MIDDLE: 65, _BOTTOM: 90},
+    )
+    payloads: dict[str, dict] = {}
+    hass = cmd_svc._hass
+    inner = hass.services.async_call.side_effect
+
+    async def _record(domain, service, data, context=None):
+        await inner(domain, service, data, context=context)
+        payloads[data["entity_id"]] = dict(data)
+
+    hass.services.async_call = AsyncMock(side_effect=_record)
+
+    # A concurrent dispatch re-books the middle rail while the gate is polling
+    # the bottom rail — i.e. after the pass read its pair, before it books.
+    seq = policy._sequencer
+    inner_read = seq._get_current_position
+
+    def _rebook_mid_gate(entity_id: str) -> int | None:
+        value = inner_read(entity_id)
+        if entity_id == _BOTTOM:
+            cmd_svc.set_target(_MIDDLE, 40, dispatch_token=True)
+        return value
+
+    seq._get_current_position = _rebook_mid_gate
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" in events, events
+    recorded = (payloads[_MIDDLE]["position"], cmd_svc.state(_MIDDLE).dispatch_token)
+    assert recorded in {(65, False), (40, True)}, recorded
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_skips_a_target_cleared_out_from_under_the_pass() -> None:
+    """A target cleared mid-pass is not restated from the snapshot.
+
+    Same window as above, used the other way: the bottom rail's resend clears
+    the middle rail's target (a time-window close, a reload) while the pass is
+    between its snapshot and the middle rail's turn. There is no longer a number
+    to put back on the wire, and reviving the snapshot's would re-book a target
+    something deliberately took away.
+
+    The bottom rail is parked low enough that the snapshot's 65 would sail
+    through the clearance gate, so nothing but the cleared target stops it.
+    """
+    cmd_svc, _policy, _rails, events = _reconcile_harness(
+        script={_BOTTOM: [60], _MIDDLE: [90]},
+        position=30,
+        blend=50,
+        targets={_MIDDLE: 65, _BOTTOM: 90},
+    )
+    hass = cmd_svc._hass
+    inner = hass.services.async_call.side_effect
+
+    async def _clear_middle_on_bottom_send(domain, service, data, context=None):
+        await inner(domain, service, data, context=context)
+        if data["entity_id"] == _BOTTOM:
+            cmd_svc.set_target(_MIDDLE, None)
+
+    hass.services.async_call = AsyncMock(side_effect=_clear_middle_on_bottom_send)
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_BOTTOM}" in events, events
+    assert f"send:{_MIDDLE}" not in events, events
+    assert cmd_svc.get_target(_MIDDLE) is None
