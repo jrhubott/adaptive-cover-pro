@@ -17,13 +17,19 @@ Two independent mechanisms fix that, and this module covers both:
   ``order_for_dispatch`` view every dispatch seam consumes.
 * **The wait gate** — the middle rail's command is withheld until the bottom
   rail's LIVE position has cleared the middle rail's target, compared in
-  open-percent space. Owned by ``DayNightShadePolicy.before_position_command``
-  and enforced at the one real chokepoint, ``CoverCommandService.apply_position``.
+  open-percent space against the frame the DISPATCHING SEAM expressed its value
+  in. Owned by ``DayNightShadePolicy``, reached from ``before_position_command``
+  on the dispatch path (``CoverCommandService.apply_position``) and from
+  ``await_dispatch_clearance`` on the reconciliation resend path.
+
+Both mechanisms apply to every seam that puts a position on the wire, including
+the reconciliation timer — the motor does not care which code path asked.
 """
 
 from __future__ import annotations
 
 import ast
+import datetime as dt
 import pathlib
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -33,6 +39,7 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+    CONF_DEFAULT_HEIGHT,
     CONF_ENTITIES,
     CONF_INVERSE_STATE,
     CONF_MY_POSITION_VALUE,
@@ -430,18 +437,22 @@ def _rail_harness(
     state_obj.state = "open"
     hass.states.get = MagicMock(return_value=state_obj)
 
+    policy = _dual_policy(position=position, blend=blend, inverse=inverse)
+
     cmd_svc = CoverCommandService(
         hass=hass,
         logger=MagicMock(),
         cover_type="cover_day_night_shade",
+        # Production shares ONE policy object between the coordinator and this
+        # manager; a private instance would answer every rail question with the
+        # unprimed default.
+        policy=policy,
         grace_mgr=MagicMock(),
         open_close_threshold=50,
         position_tolerance=2,
     )
     cmd_svc._enabled = True
     cmd_svc._get_current_position = MagicMock(side_effect=rails.read)
-
-    policy = _dual_policy(position=position, blend=blend, inverse=inverse)
 
     def _gate_read(entity_id: str) -> int | None:
         events.append(f"poll:{entity_id}")
@@ -476,6 +487,58 @@ def _rail_context(policy, *, inverse: bool = False):
         force=True,
         policy=policy,
     )
+
+
+def _auto_control_off_switch(cmd_svc, policy, *, default_position: int):
+    """Build the real auto-control switch over a real cmd_svc + Model C policy.
+
+    Reproduces the return-to-default seam end to end: the switch orders the
+    rails, remaps the middle one through ``_entity_target(..., inverted=False)``
+    and dispatches both through ``apply_position`` — the chokepoint the travel
+    gate hangs off. The context carries the install's real ``inverse_state``,
+    which is exactly what diverges from the frame this seam dispatches in.
+    """
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        PositionContext,
+    )
+    from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
+
+    coord = MagicMock()
+    coord.logger = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = policy
+    coord._cmd_svc = cmd_svc
+    coord.return_to_default_toggle = True
+    coord.automatic_control = False
+    coord.manager.manual_controlled = []
+    coord.config_entry.options = {CONF_DEFAULT_HEIGHT: default_position}
+    coord.async_refresh = AsyncMock()
+    coord._entity_target = types.MethodType(
+        AdaptiveDataUpdateCoordinator._entity_target, coord
+    )
+    coord._build_position_context = (
+        lambda entity, options, **kw: PositionContext(  # noqa: ARG005
+            auto_control=False,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=1,
+            time_threshold=0,
+            special_positions=[0, 100],
+            inverse_state=True,
+            force=kw.get("force", False),
+            bypass_auto_control=kw.get("bypass_auto_control", False),
+            policy=policy,
+        )
+    )
+
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = coord
+    switch._key = "automatic_control"
+    switch._name = "test_switch"
+    switch._initial_state = True
+    switch._option_key = None
+    switch.schedule_update_ha_state = MagicMock()
+    return switch
 
 
 def _patch_caps():
@@ -681,6 +744,95 @@ async def test_gate_is_inert_without_a_second_rail(monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Reconciliation resends are a dispatch seam too
+# ---------------------------------------------------------------------------
+# ``run_reconciliation_pass`` re-sends recorded targets on its own timer, over
+# its own loop, through ``_execute_command`` — which never reaches
+# ``apply_position``. Both rails drifting off target therefore replay the exact
+# #1115 collision unless the pass honours the same order and the same clearance
+# the dispatch path does. Opt-in (``enable_position_matching``), but the physics
+# do not care how the command was triggered.
+
+
+def _reconcile_harness(
+    *,
+    script: dict[str, list[int | None]],
+    position: int,
+    blend: int,
+    targets: dict[str, int],
+):
+    """Build a ``CoverCommandService`` primed for a reconciliation pass.
+
+    ``targets`` is inserted in the given order, which is the order
+    ``iter_targets`` yields — pass the middle rail first to model the user's
+    config pick order putting it there.
+    """
+    cmd_svc, policy, rails, events = _rail_harness(
+        script=script, position=position, blend=blend
+    )
+    cmd_svc._enable_position_matching = True
+    cmd_svc._auto_control_enabled = True
+    cmd_svc._in_time_window = True
+    for entity_id, target in targets.items():
+        s = cmd_svc.state(entity_id)
+        s.target = target
+        s.waiting = False
+    return cmd_svc, policy, rails, events
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_resends_the_bottom_rail_before_the_middle(
+    monkeypatch,
+) -> None:
+    """A reconciliation pass fans its resends out in policy-mandated rail order."""
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, _policy, _rails, events = _reconcile_harness(
+        # Bottom rail already well clear of the middle rail's 65 target.
+        script={_BOTTOM: [30], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        targets={_MIDDLE: 65, _BOTTOM: 90},
+    )
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_BOTTOM}" in events, events
+    assert f"send:{_MIDDLE}" in events, events
+    assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}")
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_withholds_the_middle_rail_until_the_bottom_clears(
+    monkeypatch,
+) -> None:
+    """The stall repro on the reconciliation path (issue #1115).
+
+    Both rails hold recorded targets and the bottom rail has drifted back up to
+    95, dragging the middle rail with it. Resending the middle rail's 65 while
+    the bottom is still stacked above drives the motor into a mechanical block —
+    and ``_is_cover_in_transit`` cannot save it, because a mechanically-dragged
+    rail reports ``open``, never ``closing``.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, _policy, _rails, events = _reconcile_harness(
+        script={_BOTTOM: [95], _MIDDLE: [95]},
+        position=30,
+        blend=50,
+        targets={_MIDDLE: 65, _BOTTOM: 30},
+    )
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_BOTTOM}" in events, events
+    assert f"send:{_MIDDLE}" not in events, events
+    # A withheld resend must not burn one of the pass's limited retries.
+    assert cmd_svc.state(_MIDDLE).retry_count == 0
+
+
+# ---------------------------------------------------------------------------
 # Inverse state — the clearance test is an OPEN-PERCENT comparison (#993 class)
 # ---------------------------------------------------------------------------
 
@@ -745,6 +897,45 @@ async def test_gate_still_waits_when_open_percent_is_stacked_under_inverse(
     assert f"send:{_MIDDLE}" not in events
 
 
+@pytest.mark.asyncio
+async def test_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
+    monkeypatch,
+) -> None:
+    """Auto-control-OFF on an inverse-state install must still send the middle rail.
+
+    The return-to-default seam dispatches the raw default UN-inverted
+    (``_entity_target(..., inverted=False)``) — a deliberate contract locked by
+    ``test_auto_control_off_seam_never_inverts_middle_rail``. The
+    ``PositionContext`` it builds still carries the install's real
+    ``inverse_state=True``, so a gate that flips against THAT reads the middle
+    rail's open-space target 80 as open 20 and then waits for a bottom rail that
+    is already parked exactly where the same seam put it. The command is
+    withheld for the full wait budget and the rail never returns to default.
+
+    The gate must flip against the frame the dispatched value is actually
+    expressed in — the one ``_entity_target`` named for this very dispatch.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # The bottom rail is parked at the un-inverted default this seam sends.
+        script={_BOTTOM: [60], _MIDDLE: [100]},
+        position=60,
+        blend=50,
+        inverse=True,
+    )
+    switch = _auto_control_off_switch(cmd_svc, policy, default_position=60)
+
+    with _patch_caps():
+        await switch.async_turn_off()
+
+    # Middle rail open-space target 80 >= bottom rail 60 — already clear.
+    assert cmd_svc.get_target(_MIDDLE) == 80
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
 # ---------------------------------------------------------------------------
 # Model A must be untouched — the blend pre-send path stays byte-identical
 # ---------------------------------------------------------------------------
@@ -803,6 +994,7 @@ _PRODUCTION_ROOT = _REPO_ROOT / "custom_components" / "adaptive_cover_pro"
 _POSITION_DISPATCH_CALLS = frozenset(
     {
         "apply_position",  # CoverCommandService — the real chokepoint
+        "_execute_command",  # reconciliation's resend, which BYPASSES the above
         "_dispatch_to_cover",  # coordinator's per-cover dispatch helper
         "async_apply_user_position",  # user-command entry point
         "async_apply_user_axis",  # axis-generic user-command entry point
@@ -824,6 +1016,7 @@ _SEAM_MODULES = frozenset(
         "button.py",
         "coordinator.py",
         "group_coordinator.py",
+        "managers/cover_command/__init__.py",
         "switch.py",
         "services/set_position_service.py",
         "services/set_tilt_service.py",
@@ -833,13 +1026,20 @@ _SEAM_MODULES = frozenset(
 )
 
 # (module path relative to the production root, innermost enclosing function) →
-# why that seam legitimately does not call ``order_for_dispatch`` itself.
+# (the test in THIS module that covers the compensating control, why that seam
+# legitimately does not call ``order_for_dispatch`` itself).
+#
+# The second half of that pair is not documentation. An exemption moves the
+# ordering obligation onto some OTHER function, and nothing in this scan can see
+# whether that function still honours it — so each exemption must name a test
+# that does. See test_every_ordering_exemption_names_a_test_that_covers_its_caller.
 _ORDERING_EXEMPT = {
     ("state/window_transition_tracker.py", "check_sunset_window"): (
+        "test_sunset_window_transition_hands_the_tracker_an_ordered_list",
         "Receives an already-ordered entity list. The tracker is HA-boundary "
         "code with no policy handle, so the coordinator applies "
         "order_for_dispatch at the call site "
-        "(_check_sunset_window_transition, entities=...)."
+        "(_check_sunset_window_transition, entities=...).",
     ),
 }
 
@@ -935,3 +1135,48 @@ def test_every_position_fan_out_seam_consumes_order_for_dispatch() -> None:
         "(issue #1115) — wrap the iteration in "
         "self._policy.order_for_dispatch(...):\n  " + "\n  ".join(offenders)
     )
+
+
+@pytest.mark.unit
+def test_every_ordering_exemption_names_a_test_that_covers_its_caller() -> None:
+    """An exemption's claimed compensating control must itself be covered.
+
+    ``_ORDERING_EXEMPT`` silences the structural scan for a seam whose CALLER
+    does the ordering on its behalf. Nothing in the scan can check that claim —
+    so without a behavioural test on the caller, deleting its
+    ``order_for_dispatch(...)`` wrap leaves the entire suite green while the rail
+    order is silently gone. Every exemption therefore has to name a test in this
+    module that exercises the caller, and that name has to resolve.
+    """
+    unproven = {
+        f"{module}::{fn_name}": covered_by
+        for (module, fn_name), (covered_by, _reason) in _ORDERING_EXEMPT.items()
+        if not callable(globals().get(covered_by))
+    }
+    assert not unproven, (
+        "_ORDERING_EXEMPT entries whose compensating control names a test that "
+        "does not exist in this module — write it, or drop the exemption and "
+        f"order the seam itself: {unproven}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> None:
+    """The compensating control behind the one ordering exemption (issue #1115).
+
+    ``WindowTransitionTracker.check_sunset_window`` fans the sunset position out
+    in the order it is handed, and has no policy handle of its own — so the
+    coordinator has to order the list at the call site. This is the only thing
+    that notices when that wrap goes away.
+    """
+    coord = MagicMock()
+    coord.entities = [_MIDDLE, _BOTTOM]
+    coord._policy = _dual_policy(position=40, blend=50)
+    coord.config_entry.options = {}
+    coord._inverse_state = False
+    coord._window_tracker.check_sunset_window = AsyncMock()
+
+    await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
+
+    kwargs = coord._window_tracker.check_sunset_window.await_args.kwargs
+    assert kwargs["entities"] == [_BOTTOM, _MIDDLE]

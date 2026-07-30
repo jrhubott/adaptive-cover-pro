@@ -761,6 +761,32 @@ class CoverTypePolicy(ABC):
         """
         return None
 
+    async def await_dispatch_clearance(
+        self,
+        entity_id: str,  # noqa: ARG002
+        *,
+        position: int,  # noqa: ARG002
+        reason: str,  # noqa: ARG002
+    ) -> bool:
+        """Whether this entity may be driven to ``position`` right now.
+
+        The physical-coupling question on its own, separated from
+        :meth:`before_position_command` because that hook also carries pre-send
+        SIDE EFFECTS (the venetian tilt-first command). A caller that only needs
+        the go/no-go — ``CoverCommandService.run_reconciliation_pass``, which
+        re-sends a recorded target on a timer without any of the dispatch path's
+        context — asks this instead, and so cannot accidentally trigger another
+        cover type's pre-send. Both callers funnel into ONE implementation per
+        policy; the rule is never written twice (issue #1115).
+
+        Returns ``False`` to withhold, ``True`` to proceed. Withholding is
+        expected to latch, exactly as it does through
+        ``before_position_command``, so a later pass re-attempts the command.
+        Liskov-safe default: a cover type whose entities are physically
+        independent is always clear.
+        """
+        return True
+
     async def after_position_command(
         self,
         cmd_svc,

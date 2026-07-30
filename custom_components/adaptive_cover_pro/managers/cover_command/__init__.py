@@ -90,6 +90,7 @@ class CoverCommandService:
         on_tick=None,
         endpoint_use_open_close: bool = DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
         *,
+        policy=None,
         event_buffer=None,
         debug_log=None,
         on_command_sent=None,
@@ -126,6 +127,15 @@ class CoverCommandService:
                 the command grace period start).  The coordinator wires this to
                 ``AdaptiveCoverManager.note_command_sent`` so time-based
                 manual-override detectors can clock the post-command window.
+            policy: The config entry's OWN ``CoverTypePolicy`` instance. Pass it
+                whenever one exists (the coordinator does) so this manager and
+                the dispatch path share one object: a policy that carries
+                per-cycle state — the Model C day/night rail roles behind
+                ``order_for_dispatch`` / ``await_dispatch_clearance`` — answers
+                from a private instance nobody primes, and every question this
+                manager asks it silently degrades to the default (issue #1115).
+                Omitted, a fresh instance is built from ``cover_type``, which is
+                still correct for the stateless axis/capability queries.
 
         """
         # Local import: ``cover_types.venetian.sequencer`` imports
@@ -144,7 +154,7 @@ class CoverCommandService:
         # policy carries the axis descriptors that control which HA service
         # this manager calls — see ``_prepare_service_call`` and
         # ``_read_position_with_capabilities``.
-        self._policy = get_policy(cover_type)
+        self._policy = policy if policy is not None else get_policy(cover_type)
         self._grace_mgr = grace_mgr
         self._open_close_threshold = open_close_threshold
         self._endpoint_use_open_close = endpoint_use_open_close
@@ -1896,10 +1906,17 @@ class CoverCommandService:
            → skip.  Prevents stale daytime targets from being resent overnight.
         6. Compare actual position to ``target_call`` within tolerance.
         7. If match → reset retry count, done.
-        8. If mismatch → resend the same target (up to ``max_retries``).
+        8. If mismatch → ask the cover-type policy whether the entity is
+           physically clear to move; withhold if not.
+        9. Resend the same target (up to ``max_retries``).
 
-        Note: reconciliation does *not* go through gate checks — the target
-        was already validated when ``apply_position`` was called.
+        Note: reconciliation does *not* go through the ``apply_position`` gate
+        checks — the target was already validated when ``apply_position`` was
+        called. It DOES honour the policy's dispatch order and its
+        physical-clearance answer, because those describe the hardware rather
+        than the decision that produced the target: a Model C day/night middle
+        rail cannot travel past its bottom rail no matter which timer asked it
+        to (issue #1115).
 
         """
         # Coordinator hook: time window transition checks, etc.
@@ -1910,7 +1927,13 @@ class CoverCommandService:
         if not self._enabled:
             return
 
-        for entity_id, target in list(self.iter_targets()):
+        # Same policy-mandated dispatch order as every other fan-out seam
+        # (issue #1115): a Model C day/night shade's bottom rail must be resent
+        # before its middle rail, which cannot physically travel past it.
+        # Identity for every cover type whose entities are independent.
+        recorded = dict(self.iter_targets())
+        for entity_id in self._policy.order_for_dispatch(recorded):
+            target = recorded[entity_id]
             s = self.state(entity_id)
             s.last_reconcile_at = now
 
@@ -2056,6 +2079,26 @@ class CoverCommandService:
                         actual,
                         target,
                     )
+                continue
+
+            # 9. Physically-coupled entities: a resend is still a position
+            # command, so it obeys the same clearance the dispatch path does —
+            # a Model C day/night middle rail must not be driven while its
+            # bottom rail is stacked above the target (issue #1115). Ordering
+            # alone cannot fix this: the loop does not wait for the bottom
+            # rail's resend to ARRIVE before issuing the middle rail's.
+            # Cover-type-agnostic — the policy answers, this loop never
+            # inspects the cover type. Asked before the retry is counted so a
+            # withheld resend does not burn one of the pass's attempts; the
+            # policy latches it and the next pass re-attempts.
+            if not await self._policy.await_dispatch_clearance(
+                entity_id, position=target, reason="reconcile"
+            ):
+                self._logger.debug(
+                    "Reconcile: %s withheld by the cover-type policy — a coupled "
+                    "entity has not cleared the target yet",
+                    entity_id,
+                )
                 continue
 
             s.retry_count += 1

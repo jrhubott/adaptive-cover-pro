@@ -543,6 +543,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             hass=self.hass,
             logger=self.logger,
             cover_type=self._cover_type,
+            # Share THIS entry's policy object rather than letting the manager
+            # build a private one. Anything the manager asks a stateful policy
+            # — the Model C rail order and travel clearance its reconciliation
+            # pass consults — is only answerable on the instance the dispatch
+            # path primes and ``attach``es (issue #1115).
+            policy=self._policy,
             grace_mgr=self._grace_mgr,
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50

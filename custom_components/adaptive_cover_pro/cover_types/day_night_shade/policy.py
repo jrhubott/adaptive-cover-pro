@@ -238,6 +238,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_blend: int | None = None
         self._dual_entity_inverse: bool = False
         self._dual_entity_middle_rail: str | None = None
+        # The inversion frame the most recent middle-rail dispatch was resolved
+        # in, recorded by ``resolve_entity_target`` and replayed by the travel
+        # gate so both read the SAME answer (issue #1115). ``None`` = no dispatch
+        # resolved yet this cycle, which ``_dispatch_frame`` maps back onto the
+        # cached per-cycle decision — the identical rule the dispatch seam uses.
+        self._dual_entity_dispatch_inverse: bool | None = None
         # The instance's configured covers, snapshotted in ``attach``. Model C
         # needs to know which entity is the BOTTOM rail (the one that isn't the
         # middle rail) to gate the middle rail's travel against it. Every options
@@ -695,6 +701,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_blend = resolved.tilt
         self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+        # Drop the previous cycle's dispatch frame so a seam that reaches
+        # ``apply_position`` without going through ``resolve_entity_target``
+        # (reconciliation) falls back to this cycle's cached decision rather
+        # than to a frame some earlier broadcast seam happened to name.
+        self._dual_entity_dispatch_inverse = None
 
     def _is_dual_entity_middle_rail(self, entity_id: str) -> bool:
         """Whether ``entity_id`` is THIS cycle's Model C middle rail.
@@ -726,6 +737,20 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         neither binds a second rail entity.
         """
         return 1 if self._is_dual_entity_middle_rail(entity_id) else 0
+
+    def _dispatch_frame(self, inverted: bool | None) -> bool:
+        """Resolve which inversion frame a dispatched middle-rail value speaks.
+
+        The ONE place that answer is computed. ``None`` means "the caller did
+        not name a frame, so reuse this cycle's cached decision" (the main
+        pipeline path); an explicit ``True``/``False`` is a seam naming its own
+        divergent space. Both ``resolve_entity_target`` — which produces the
+        wire value — and :meth:`_gate_middle_rail_clearance` — which has to
+        un-transform it to compare against a live rail reading — go through
+        here, so the two can never disagree about what frame the number in
+        flight is in (the #993 bug class; issue #1115).
+        """
+        return self._dual_entity_inverse if inverted is None else inverted
 
     def resolve_entity_target(
         self,
@@ -768,12 +793,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """
         if (
             self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY
-            or self._dual_entity_blend is None
             or entity_id != self._dual_entity_middle_rail
         ):
             return position
+        # Record the frame BEFORE the blend check: even a cycle that resolves no
+        # blend still dispatches this rail, and the travel gate that follows has
+        # to un-transform that value against the same frame this call named.
+        inverse = self._dispatch_frame(inverted)
+        self._dual_entity_dispatch_inverse = inverse
+        if self._dual_entity_blend is None:
+            return position
         blend = self._dual_entity_blend
-        inverse = self._dual_entity_inverse if inverted is None else inverted
         p_open = flip_if(position, inverted=inverse)
         m_open = round(
             POSITION_OPEN - blend * (POSITION_OPEN - p_open) / DAY_NIGHT_SHEER
@@ -1137,7 +1167,6 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self,
         entity_id: str,
         position: int,
-        context,
         reason: str,
     ) -> bool:
         """Hold the middle rail until the bottom rail has cleared its target.
@@ -1160,11 +1189,21 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         calibration (issue #1115).
 
         The comparison is in OPEN-PERCENT space on both sides, via ``flip_if``
-        against ``context.inverse_state`` — the frame of the exact wire value
-        ``apply_position`` is about to send on THIS seam. ``M >= P`` in
-        open-percent is ``M <= P`` on the wire, so a raw comparison inverts the
-        verdict for every inverse-state install (the #993 bug class), and a
-        second, divergent inversion path is exactly what must not be introduced.
+        against the DISPATCH FRAME — whatever ``resolve_entity_target`` resolved
+        for this very command, replayed through the one shared
+        :meth:`_dispatch_frame` rule. ``M >= P`` in open-percent is ``M <= P``
+        on the wire, so a raw comparison inverts the verdict for every
+        inverse-state install (the #993 bug class), and a second, divergent
+        inversion path is exactly what must not be introduced.
+
+        It is emphatically NOT ``context.inverse_state``. That names the
+        install's configured flag, and the broadcast seams dispatch in a
+        divergent space on purpose — the auto-control-off return loop sends the
+        raw default un-inverted. Flipping the middle rail's target against the
+        install flag while the seam built it un-inverted withholds a command
+        that is already physically clear, on every inverse-state Model C
+        install. Both sides of the comparison ride the same frame: the bottom
+        rail was commanded by the same seam, so its live reading speaks it too.
 
         Returns ``True`` to let the command through, ``False`` to withhold it.
         Withholding latches the entity pending so the coordinator keeps
@@ -1182,7 +1221,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             )
             return True
 
-        inverse = bool(getattr(context, "inverse_state", False))
+        inverse = self._dispatch_frame(self._dual_entity_dispatch_inverse)
         middle_open = flip_if(position, inverted=inverse)
         tolerance = self._position_tolerance
 
@@ -1202,6 +1241,23 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             bottom_rail,
         )
         return False
+
+    async def await_dispatch_clearance(
+        self,
+        entity_id: str,
+        *,
+        position: int,
+        reason: str,
+    ) -> bool:
+        """Hold a Model C middle-rail command until the bottom rail has cleared.
+
+        The same gate ``before_position_command`` runs, reachable without its
+        Model A blend pre-send — for callers that re-send a position outside the
+        dispatch path (reconciliation) and must not trigger anything else.
+        """
+        if not self._is_dual_entity_middle_rail(entity_id):
+            return True
+        return await self._gate_middle_rail_clearance(entity_id, position, reason)
 
     def _debug(self, msg: str, *args) -> None:
         """Emit a debug line once ``attach`` has supplied a logger."""
@@ -1234,9 +1290,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # models are mutually exclusive per coordinator instance, so this branch
         # can never intercept a blend pre-send.
         if self._is_dual_entity_middle_rail(entity_id):
-            return await self._gate_middle_rail_clearance(
-                entity_id, position, context, reason
-            )
+            return await self._gate_middle_rail_clearance(entity_id, position, reason)
         # Single-carriage models (B, C) have no separate blend axis to pre-send
         # — the position command carries everything on one carriage move.
         if not self._drives_dual_axis():
