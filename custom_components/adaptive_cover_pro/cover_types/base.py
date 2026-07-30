@@ -744,22 +744,21 @@ class CoverTypePolicy(ABC):
         position: int,  # noqa: ARG002
         context,  # noqa: ARG002
         reason: str,  # noqa: ARG002
-    ) -> bool | None:
-        """Run any pre-command work before the position service fires.
+    ) -> None:
+        """Run any pre-command SIDE EFFECTS before the position service fires.
 
-        Returns ``False`` to WITHHOLD this position command; ``None`` (or
-        ``True``) to let it proceed. Withholding is for a policy whose entities
-        are physically coupled and cannot be commanded independently right now —
-        the Model C day/night middle rail waiting for its bottom rail to clear
-        (issue #1115). A withheld command is skipped, not dropped: the policy is
-        expected to latch it via :meth:`has_pending_secondary_axis` so the
-        coordinator re-attempts it on a later cycle.
+        Effects only — whether the command may go out at all is
+        :meth:`await_dispatch_clearance`'s question, asked earlier and against a
+        command that has not been booked yet. Keeping the two apart is what lets
+        this hook run after the dry-run gate (a simulated command must not
+        pre-send anything) while the decision runs before the outbound command
+        is recorded.
 
-        Default: no-op, proceed. ``VenetianPolicy`` overrides this to send
-        tilt-first on opening transitions (issue #33) so the actuator's slats
-        reach the target angle before the carriage starts moving.
+        Default: no-op. ``VenetianPolicy`` overrides this to send tilt-first on
+        opening transitions (issue #33) so the actuator's slats reach the target
+        angle before the carriage starts moving.
         """
-        return None
+        return
 
     async def await_dispatch_clearance(
         self,
@@ -767,23 +766,31 @@ class CoverTypePolicy(ABC):
         *,
         position: int,  # noqa: ARG002
         reason: str,  # noqa: ARG002
+        wait: bool = True,  # noqa: ARG002
     ) -> bool:
         """Whether this entity may be driven to ``position`` right now.
 
         The physical-coupling question on its own, separated from
-        :meth:`before_position_command` because that hook also carries pre-send
-        SIDE EFFECTS (the venetian tilt-first command). A caller that only needs
-        the go/no-go — ``CoverCommandService.run_reconciliation_pass``, which
-        re-sends a recorded target on a timer without any of the dispatch path's
-        context — asks this instead, and so cannot accidentally trigger another
-        cover type's pre-send. Both callers funnel into ONE implementation per
-        policy; the rule is never written twice (issue #1115).
+        :meth:`before_position_command` because that hook carries pre-send SIDE
+        EFFECTS (the venetian tilt-first command) a caller asking only for the
+        go/no-go must not trigger. Both position paths —
+        ``CoverCommandService.apply_position`` and its reconciliation resend —
+        funnel into ONE implementation per policy; the rule is never written
+        twice (issue #1115).
+
+        ``wait`` says whether the caller can afford to BLOCK until the coupled
+        entity clears. The dispatch path can and must: it has just issued the
+        blocking entity's command and nothing else will re-drive this one this
+        cycle. A caller that is itself a periodic retry loop passes ``False``
+        for a single-shot "is it clear right now?" — blocking there would let a
+        pass whose budget matches the timer interval overlap the next one, with
+        two live passes mutating the same per-entity state (issue #1115). Same
+        eventual behaviour either way; the next tick re-asks.
 
         Returns ``False`` to withhold, ``True`` to proceed. Withholding is
-        expected to latch, exactly as it does through
-        ``before_position_command``, so a later pass re-attempts the command.
-        Liskov-safe default: a cover type whose entities are physically
-        independent is always clear.
+        expected to latch (:meth:`has_pending_secondary_axis`) so a later pass
+        re-attempts the command. Liskov-safe default: a cover type whose
+        entities are physically independent is always clear.
         """
         return True
 

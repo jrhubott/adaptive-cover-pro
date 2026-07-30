@@ -15,12 +15,13 @@ Two independent mechanisms fix that, and this module covers both:
   rail's, whatever order the user picked the covers in. Owned by
   ``CoverTypePolicy.dispatch_order_key`` and applied by the single shared
   ``order_for_dispatch`` view every dispatch seam consumes.
-* **The wait gate** — the middle rail's command is withheld until the bottom
-  rail's LIVE position has cleared the middle rail's target, compared in
+* **The clearance gate** — the middle rail's command is withheld until the
+  bottom rail's LIVE position has cleared the middle rail's target, compared in
   open-percent space against the frame the DISPATCHING SEAM expressed its value
-  in. Owned by ``DayNightShadePolicy``, reached from ``before_position_command``
-  on the dispatch path (``CoverCommandService.apply_position``) and from
-  ``await_dispatch_clearance`` on the reconciliation resend path.
+  in. Owned by ``DayNightShadePolicy`` and reached through the one
+  ``await_dispatch_clearance`` hook, which ``CoverCommandService.apply_position``
+  asks before it books an outbound command and ``run_reconciliation_pass`` asks
+  (single-shot) before it re-sends a recorded one.
 
 Both mechanisms apply to every seam that puts a position on the wire, including
 the reconciliation timer — the motor does not care which code path asked.
@@ -76,14 +77,20 @@ class _FakeCmdSvc:
 def _dual_policy(
     *,
     position: int,
-    blend: int,
+    blend: int | None,
     middle: str = _MIDDLE,
     inverse: bool = False,
+    policy: DayNightShadePolicy | None = None,
 ) -> DayNightShadePolicy:
-    """Build a real Model C policy with its per-cycle dispatch cache primed."""
+    """Build a real Model C policy with its per-cycle dispatch cache primed.
+
+    Pass ``policy`` to run a LATER resolve cycle on an existing instance —
+    everything ``post_pipeline_resolve`` refreshes per cycle, without a fresh
+    object.
+    """
     from tests.cover_helpers import make_cover_config, make_vertical_config
 
-    policy = DayNightShadePolicy()
+    policy = policy if policy is not None else DayNightShadePolicy()
     svc = MagicMock()
     svc.get_vertical_data.return_value = make_vertical_config()
     sun_data = MagicMock()
@@ -411,7 +418,7 @@ def _rail_harness(
     *,
     script: dict[str, list[int | None]],
     position: int,
-    blend: int,
+    blend: int | None,
     inverse: bool = False,
 ):
     """Real ``CoverCommandService`` + real Model C policy over a scripted motor.
@@ -758,7 +765,7 @@ def _reconcile_harness(
     *,
     script: dict[str, list[int | None]],
     position: int,
-    blend: int,
+    blend: int | None,
     targets: dict[str, int],
 ):
     """Build a ``CoverCommandService`` primed for a reconciliation pass.
@@ -1180,3 +1187,208 @@ async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> N
 
     kwargs = coord._window_tracker.check_sunset_window.await_args.kwargs
     assert kwargs["entities"] == [_BOTTOM, _MIDDLE]
+
+
+# ---------------------------------------------------------------------------
+# A withheld command must leave NOTHING behind
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_policy_deferred_skip_records_no_command_state(monkeypatch) -> None:
+    """Withholding is a SKIP, so nothing about a sent command may be recorded.
+
+    A ``policy_deferred`` rail never reaches the wire. If the clearance question
+    is asked after the outbound command has already been booked, the withheld
+    rail is left carrying a tracked target, a ``waiting`` flag, a ``sent_at``
+    stamp, an open command-grace window and an ``on_command_sent`` tick — for a
+    command that does not exist. Every one of those has a live consequence: the
+    grace window suppresses genuine manual-override detection, ``waiting`` makes
+    the next reconciliation pass skip the entity, and once ``waiting`` lapses the
+    A2 health check raises "cover not moving" about a rail ACP is deliberately
+    holding still.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+    cmd_svc._on_command_sent = MagicMock()
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+        # A2 reads the predicate once the transit window has lapsed; force that
+        # lapse rather than sleeping for the real backstop.
+        cmd_svc._clear_waiting(cmd_svc.state(_MIDDLE))
+        unreached = cmd_svc.is_target_unreached(_MIDDLE)
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_MIDDLE}" not in events
+    assert cmd_svc.get_target(_MIDDLE) is None
+    assert cmd_svc.state(_MIDDLE).waiting is False
+    assert cmd_svc.state(_MIDDLE).sent_at is None
+    cmd_svc._grace_mgr.start_command_grace_period.assert_not_called()
+    cmd_svc._on_command_sent.assert_not_called()
+    assert unreached is False
+
+
+@pytest.mark.asyncio
+async def test_dry_run_never_waits_on_the_rail_gate(monkeypatch) -> None:
+    """A simulated command must not block on a physical clearance it can't cause.
+
+    Dry run books the target so the card display stays honest, then skips
+    without touching the wire. Asking the rail gate first would stall the cycle
+    for the whole wait budget on a bottom rail nothing is going to move, and
+    report ``policy_deferred`` for a command that was never going to be sent.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # Bottom rail parked above the middle rail's target — the gate would
+        # withhold if it ran.
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+    cmd_svc.dry_run = True
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome[0] == "skipped"
+    assert outcome[1] == "dry_run"
+    assert f"poll:{_BOTTOM}" not in events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation asks; it never waits
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_clearance_check_never_blocks_the_timer() -> None:
+    """The reconciliation pass must not hold the timer for the wait budget.
+
+    The gate's budget (``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS``, 60 s) is
+    the reconciliation interval (``POSITION_CHECK_INTERVAL_MINUTES``, 1 min).
+    HA re-arms the interval listener before dispatching each fire, and each fire
+    is its own background task — so a pass that blocks for its whole budget on a
+    middle rail whose bottom rail is pinned (manual override, step 2 skips its
+    resend forever) is still running when the next pass starts. Two live passes
+    then mutate ``retry_count``, ``last_reconcile_at`` and the pending latch,
+    and can both drive the bottom rail.
+
+    A periodic retry loop has no business waiting: it asks "is it clear right
+    now?", withholds if not, and re-asks on the next tick. Same eventual
+    behaviour, no overlap. The settle constants are deliberately NOT patched
+    down here — the point is that the real 60 s budget is never entered.
+    """
+    cmd_svc, _policy, _rails, events = _reconcile_harness(
+        script={_BOTTOM: [95], _MIDDLE: [95]},
+        position=30,
+        blend=50,
+        targets={_MIDDLE: 65, _BOTTOM: 30},
+    )
+
+    started = dt.datetime.now(dt.UTC)
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    # One read of the bottom rail, no poll loop.
+    assert events.count(f"poll:{_BOTTOM}") == 1, events
+    assert elapsed < 10, elapsed
+    # ...and the middle rail is still withheld, exactly as a blocking wait
+    # would have withheld it.
+    assert f"send:{_MIDDLE}" not in events, events
+    assert cmd_svc.state(_MIDDLE).retry_count == 0
+
+
+# ---------------------------------------------------------------------------
+# The recorded dispatch frame belongs to the SEAM whose target is being resent
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_gate_keeps_the_frame_of_the_seam_it_resends() -> None:
+    """A resend rides the frame of the dispatch that recorded the target.
+
+    Reconciliation re-sends the number a broadcast seam put on the wire — so
+    that seam's inversion frame is the one the number is expressed in, and the
+    only one the gate can legitimately un-transform it against. This cycle's
+    cached decision describes a dispatch that never happened.
+
+    Here the install has inverse-state suppressed for this cycle (interpolation
+    forces ``axis_inverted`` False) while the recorded middle-rail target came
+    from a seam that named ``inverted=True`` explicitly. Read in the seam's
+    frame the bottom rail is at the very bottom of its travel and the middle
+    rail is clear; read in the cycle's frame the two swap and the rail is
+    withheld — and, since the seam is the only thing that will ever refresh that
+    target, withheld forever.
+    """
+    cmd_svc, policy, _rails, events = _reconcile_harness(
+        # Wire 80 == open 20 in the seam's frame: the bottom rail is low, well
+        # clear of a middle rail whose wire-20 target is open 80.
+        script={_BOTTOM: [80], _MIDDLE: [90]},
+        position=20,
+        blend=100,  # all sheer → the middle rail's remap is identity
+        targets={_MIDDLE: 20},
+    )
+    assert policy._dual_entity_inverse is False
+
+    # The broadcast seam dispatched in ITS own frame and recorded the target.
+    assert policy.resolve_entity_target(_MIDDLE, 20, inverted=True) == 20
+
+    # A later cycle resolves normally but dispatches nothing (every rail held by
+    # a gate upstream of dispatch), so nothing re-states the frame.
+    _dual_policy(position=20, blend=100, policy=policy)
+
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_gate_reads_the_seam_frame_even_when_no_blend_resolved(
+    monkeypatch,
+) -> None:
+    """A blend-less cycle still dispatches the middle rail, so it still names a frame.
+
+    ``resolve_entity_target`` returns the position untouched when no blend
+    resolved — but the rail is dispatched all the same, and the gate that
+    follows has to un-transform that value against the frame THIS call named.
+    Recording the frame only on the remapping path leaves the gate reading
+    whatever the last dispatch (or nothing at all) left behind, which for a seam
+    naming a frame that differs from the cached flag is the wrong one.
+
+    Cycle: no blend (a non-solar, non-climate method clears it), inverse-state
+    suppressed for the cycle, and a seam dispatching with ``inverted=True``. In
+    the seam's frame the bottom rail is low and clear; in the cached frame it is
+    stacked on top of the middle rail's target and the command is withheld.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [80], _MIDDLE: [90]},
+        position=20,
+        blend=None,  # no fabric resolved this cycle
+    )
+    assert policy._dual_entity_blend is None
+    assert policy._dual_entity_inverse is False
+    ctx = _rail_context(policy, inverse=True)
+
+    wire = policy.resolve_entity_target(_MIDDLE, 20, inverted=True)
+    assert wire == 20  # identity — no blend to fold in
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, wire, "end_time", ctx)
+
+    assert outcome[0] == "sent", outcome
+    assert f"send:{_MIDDLE}" in events, events

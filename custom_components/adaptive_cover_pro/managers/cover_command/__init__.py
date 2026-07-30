@@ -1482,9 +1482,14 @@ class CoverCommandService:
         # check_cover_features + route_service_call work entirely for a
         # value it would never read (issue #1095 audit finding 4).
         # route_service_call is pure/side-effect-free (routing.py's module
-        # docstring); no `await` occurs between this line and either of its
-        # uses (this gate, and the dispatch call further down that reuses
-        # this same `_plan`/`_caps_for_plan`), so both stay valid for both.
+        # docstring), and nothing between this line and either of its uses
+        # (this gate, and the dispatch call further down that reuses this
+        # same `_plan`/`_caps_for_plan`) can invalidate it. The one await
+        # that can intervene is the physical-clearance gate below, and a
+        # policy with no coupled entities returns from it without ever
+        # suspending; a policy that does suspend is waiting on ANOTHER
+        # entity's travel, not on this one's `supported_features`, which is
+        # all `_plan` is derived from.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
         _plan = route_service_call(
             entity_id,
@@ -1618,12 +1623,57 @@ class CoverCommandService:
                     current_position=_current,
                 )
 
+        # ----- physical-clearance gate -----
+        # Cover-type policy question: may this entity be driven to `position`
+        # right now? A cover type whose entities are physically coupled may need
+        # one of them to move first — the Model C day/night middle rail cannot
+        # travel past its bottom rail (issue #1115). Cover-type-agnostic,
+        # exactly like the ``full_endpoint_target`` flag: the bool carries the
+        # decision and this service never inspects the cover type. Every other
+        # policy answers True unconditionally.
+        #
+        # Asked HERE, ahead of _prepare_service_call, because withheld means
+        # SKIPPED and a skip must leave NOTHING behind: _prepare_service_call
+        # books the outbound command (target, waiting, sent_at, the command
+        # grace window, the on_command_sent tick), and every one of those has a
+        # live consequence for a command that never goes out — the grace window
+        # suppresses genuine manual-override detection, ``waiting`` makes the
+        # next reconciliation pass skip the entity, and once it lapses A2 raises
+        # "cover not moving" about a rail ACP is deliberately holding still.
+        # Nothing recorded, nothing to unwind. The policy latches the withheld
+        # command (``has_pending_secondary_axis``) so a later cycle re-attempts
+        # it.
+        #
+        # This is the go/no-go question ONLY — the pre-send SIDE EFFECTS
+        # (venetian's tilt-first) stay in ``before_position_command`` below,
+        # which is why they can keep running after the dry-run gate while the
+        # decision runs before it.
+        #
+        # Skipped entirely in a dry run: the answer is a wall-clock wait on a
+        # physical rail, and a simulated command moves nothing for it to wait on
+        # — the dry-run gate below owns that path.
+        if (
+            not self._dry_run
+            and context.policy is not None
+            and not await context.policy.await_dispatch_clearance(
+                entity_id, position=position, reason=reason
+            )
+        ):
+            return self._skip(
+                entity_id,
+                "policy_deferred",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+
         # ----- send command -----
         # Reuses _caps_for_plan/_plan from the gate above (issue #1095 audit
         # finding 5) instead of a fresh get_cover_capabilities +
-        # route_service_call — safe because nothing between that computation
-        # and this call awaits (confirmed above and in apply_position's
-        # docstring-adjacent comment on `_plan`).
+        # route_service_call — safe for the reason spelled out where `_plan` is
+        # built: nothing that can intervene between there and here changes this
+        # entity's capabilities.
         service, service_data, supports_position = self._prepare_service_call(
             entity_id,
             position,
@@ -1675,18 +1725,11 @@ class CoverCommandService:
         # Cover-type policy hook: dual-axis covers (venetian) pre-send tilt
         # on opening transitions so the actuator's slats are at the target
         # angle before the carriage starts moving (issue #33). Default
-        # policies are no-ops.
-        #
-        # The hook can also WITHHOLD the command by returning False: a cover type
-        # whose entities are physically coupled may need one of them to move
-        # first (the Model C day/night middle rail cannot travel past its bottom
-        # rail — issue #1115). Cover-type-agnostic, exactly like the
-        # ``full_endpoint_target`` flag: the bool carries the decision and this
-        # service never inspects the cover type. Withheld means SKIPPED, not
-        # sent — no target is tracked, no ``after_position_command`` runs — and
-        # the policy latches the command so a later cycle re-attempts it.
+        # policies are no-ops. Pure SIDE EFFECT — the go/no-go decision was
+        # settled by ``await_dispatch_clearance`` above, before anything about
+        # this command was recorded.
         if context.policy is not None:
-            proceed = await context.policy.before_position_command(
+            await context.policy.before_position_command(
                 self,
                 entity_id,
                 service=service,
@@ -1694,15 +1737,6 @@ class CoverCommandService:
                 context=context,
                 reason=reason,
             )
-            if proceed is False:
-                return self._skip(
-                    entity_id,
-                    "policy_deferred",
-                    position,
-                    trigger=_trigger,
-                    inverse_state=_inverse,
-                    current_position=_current,
-                )
 
         ctx = Context()
         self._position_context_tracker.record(ctx.id)
@@ -2091,8 +2125,16 @@ class CoverCommandService:
             # inspects the cover type. Asked before the retry is counted so a
             # withheld resend does not burn one of the pass's attempts; the
             # policy latches it and the next pass re-attempts.
+            #
+            # ``wait=False``: this pass IS the retry loop. Its clearance budget
+            # would otherwise be the reconciliation interval itself, and HA
+            # re-arms the interval listener before dispatching each fire as its
+            # own background task — so a pass blocked on a pinned rail is still
+            # running when the next one starts, and the two mutate the same
+            # per-entity state (issue #1115). One reading, withhold, re-ask in a
+            # minute: identical eventual behaviour, no overlap.
             if not await self._policy.await_dispatch_clearance(
-                entity_id, position=target, reason="reconcile"
+                entity_id, position=target, reason="reconcile", wait=False
             ):
                 self._logger.debug(
                     "Reconcile: %s withheld by the cover-type policy — a coupled "

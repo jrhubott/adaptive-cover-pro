@@ -240,9 +240,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_middle_rail: str | None = None
         # The inversion frame the most recent middle-rail dispatch was resolved
         # in, recorded by ``resolve_entity_target`` and replayed by the travel
-        # gate so both read the SAME answer (issue #1115). ``None`` = no dispatch
-        # resolved yet this cycle, which ``_dispatch_frame`` maps back onto the
-        # cached per-cycle decision — the identical rule the dispatch seam uses.
+        # gate so both read the SAME answer (issue #1115). Scoped to the
+        # DISPATCH, not to a resolve cycle: reconciliation re-sends the number
+        # that dispatch produced, so that dispatch's frame is the one the number
+        # speaks. ``None`` = no middle rail has been dispatched at all yet, which
+        # ``_dispatch_frame`` maps onto the cached per-cycle decision — the
+        # identical rule the dispatch seam uses.
         self._dual_entity_dispatch_inverse: bool | None = None
         # The instance's configured covers, snapshotted in ``attach``. Model C
         # needs to know which entity is the BOTTOM rail (the one that isn't the
@@ -701,11 +704,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_blend = resolved.tilt
         self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
-        # Drop the previous cycle's dispatch frame so a seam that reaches
-        # ``apply_position`` without going through ``resolve_entity_target``
-        # (reconciliation) falls back to this cycle's cached decision rather
-        # than to a frame some earlier broadcast seam happened to name.
-        self._dual_entity_dispatch_inverse = None
+        # NB: ``_dual_entity_dispatch_inverse`` is deliberately NOT reset here.
+        # It belongs to the last middle-rail DISPATCH, not to a resolve cycle,
+        # and the one caller that reads it without a fresh dispatch of its own —
+        # reconciliation — re-sends the number that dispatch put on the wire. Its
+        # frame is therefore the only one that number is expressed in; clearing
+        # it would hand the gate this cycle's cached decision for a dispatch that
+        # never happened (issue #1115). The dispatch path re-states it every time
+        # through ``resolve_entity_target``, so it can never be stale there.
 
     def _is_dual_entity_middle_rail(self, entity_id: str) -> bool:
         """Whether ``entity_id`` is THIS cycle's Model C middle rail.
@@ -1168,6 +1174,8 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         entity_id: str,
         position: int,
         reason: str,
+        *,
+        wait: bool,
     ) -> bool:
         """Hold the middle rail until the bottom rail has cleared its target.
 
@@ -1205,6 +1213,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         install. Both sides of the comparison ride the same frame: the bottom
         rail was commanded by the same seam, so its live reading speaks it too.
 
+        ``wait`` picks how long the bottom rail gets. The dispatch path waits
+        out the full budget: it has just issued the bottom rail's command and
+        nothing else will re-drive the middle rail this cycle. A caller that is
+        already a periodic retry loop passes ``False`` and takes a single read —
+        see :meth:`await_dispatch_clearance`. The clearance PREDICATE is
+        identical in both modes; only the number of chances the rail gets to
+        satisfy it differs.
+
         Returns ``True`` to let the command through, ``False`` to withhold it.
         Withholding latches the entity pending so the coordinator keeps
         re-attempting on later cycles; it never drops the command. Unreadable or
@@ -1228,7 +1244,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         def _cleared(bottom_wire: int) -> bool:
             return flip_if(bottom_wire, inverted=inverse) <= middle_open + tolerance
 
-        if await seq.wait_until_position(bottom_rail, _cleared):
+        if await seq.wait_until_position(
+            bottom_rail, _cleared, timeout_seconds=None if wait else 0
+        ):
             self._pending_middle_rail.discard(entity_id)
             return True
         self._pending_middle_rail.add(entity_id)
@@ -1248,16 +1266,26 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         *,
         position: int,
         reason: str,
+        wait: bool = True,
     ) -> bool:
         """Hold a Model C middle-rail command until the bottom rail has cleared.
 
-        The same gate ``before_position_command`` runs, reachable without its
-        Model A blend pre-send — for callers that re-send a position outside the
-        dispatch path (reconciliation) and must not trigger anything else.
+        The single gate every position path consults: ``apply_position`` before
+        it books an outbound command, and ``run_reconciliation_pass`` before it
+        re-sends a recorded target. Neither can trigger the Model A blend
+        pre-send that lives in ``before_position_command``.
+
+        ``wait=False`` takes ONE reading instead of polling out the budget —
+        what the reconciliation timer passes, because that budget is its own
+        interval and a blocked rail would otherwise keep a pass alive into the
+        next one. The bottom rail is not going anywhere in the meantime: the
+        withhold latches and the next tick re-asks.
         """
         if not self._is_dual_entity_middle_rail(entity_id):
             return True
-        return await self._gate_middle_rail_clearance(entity_id, position, reason)
+        return await self._gate_middle_rail_clearance(
+            entity_id, position, reason, wait=wait
+        )
 
     def _debug(self, msg: str, *args) -> None:
         """Emit a debug line once ``attach`` has supplied a logger."""
@@ -1273,24 +1301,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         position: int,
         context,
         reason: str,
-    ) -> bool | None:
-        """Gate the Model C middle rail, or send Model A's blend first.
+    ) -> None:
+        """Send Model A's blend before the carriage command fires.
 
-        Returns ``False`` to withhold this position command (the Model C travel
-        gate); ``None`` to proceed, which is what every other path returns.
+        Mirrors the venetian tilt-first order (issue #33): sending the fabric
+        before the carriage starts opening lets the actuator settle the blend
+        into the target rather than reasserting a cached value mid-travel.
 
-        Mirrors the venetian tilt-first order (issue #33) for Model A: sending
-        the fabric before the carriage starts opening lets the actuator settle
-        the blend into the target rather than reasserting a cached value
-        mid-travel.
+        Model C's rail-travel gate is deliberately NOT here — it is a decision,
+        not an effect, and lives in :meth:`await_dispatch_clearance`, which the
+        dispatch path asks before it books the outbound command (issue #1115).
         """
-        # Model C: the middle rail shares a track with the bottom rail and cannot
-        # pass below it, so its command waits for physical clearance (#1115).
-        # Checked first, above an otherwise untouched Model A path — the two
-        # models are mutually exclusive per coordinator instance, so this branch
-        # can never intercept a blend pre-send.
-        if self._is_dual_entity_middle_rail(entity_id):
-            return await self._gate_middle_rail_clearance(entity_id, position, reason)
         # Single-carriage models (B, C) have no separate blend axis to pre-send
         # — the position command carries everything on one carriage move.
         if not self._drives_dual_axis():

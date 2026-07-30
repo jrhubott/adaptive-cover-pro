@@ -1212,7 +1212,11 @@ class DualAxisSequencer:
         return False, last_position
 
     async def wait_until_position(
-        self, entity_id: str, done: Callable[[int], bool]
+        self,
+        entity_id: str,
+        done: Callable[[int], bool],
+        *,
+        timeout_seconds: float | None = None,
     ) -> bool:
         """Poll ``current_position`` until ``done`` accepts a reading, or time out.
 
@@ -1226,26 +1230,39 @@ class DualAxisSequencer:
         :data:`VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`) — the semantics differ,
         the tuning does not, so no parallel constant is introduced.
 
+        ``timeout_seconds`` overrides that budget; ``None`` (the default) uses
+        it. ``0`` makes this a SINGLE-SHOT read — the loop is a do-while, so
+        ``done`` is always evaluated at least once — which is what a caller that
+        is itself a periodic retry loop wants: it asks whether the threshold is
+        satisfied right now and re-asks on its own next tick, instead of
+        blocking for a budget that may be as long as its own interval. One
+        implementation either way; the predicate is never re-stated.
+
         ``done`` is evaluated BEFORE the first sleep, so an already-satisfied
         condition returns on one read with no waiting at all. Returns ``True``
         when ``done`` accepted a reading, ``False`` on timeout or when the
         position is unreadable — an unreadable cover cannot be proven to have
         cleared, and the caller decides what to do about that.
         """
-        deadline = dt.datetime.now(dt.UTC) + dt.timedelta(
-            seconds=VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
+        budget = (
+            VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
+            if timeout_seconds is None
+            else timeout_seconds
         )
-        while dt.datetime.now(dt.UTC) < deadline:
+        deadline = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=budget)
+        while True:
             current = self._get_current_position(entity_id)
             if current is None:
                 return False
             if done(current):
                 return True
+            if dt.datetime.now(dt.UTC) >= deadline:
+                break
             await asyncio.sleep(VENETIAN_POSITION_SETTLE_POLL_SECONDS)
         self._logger.debug(
-            "Position wait: %s never satisfied its threshold within %.0fs",
+            "Position wait: %s did not satisfy its threshold within %.1fs",
             entity_id,
-            VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
+            budget,
         )
         return False
 
