@@ -627,6 +627,9 @@ class CoverTypePolicy(ABC):
     def dispatch_order_key(
         self,
         entity_id: str,  # noqa: ARG002
+        *,
+        position: int | None = None,  # noqa: ARG002
+        inverted: bool | None = None,  # noqa: ARG002
     ) -> int:
         """Sort key ordering this cover type's entities within one dispatch cycle.
 
@@ -638,13 +641,30 @@ class CoverTypePolicy(ABC):
         caller's loop. Overriding this hook expresses that constraint once; every
         dispatch seam consumes the same ordered view (issue #1115).
 
+        Which entity blocks can depend on the DIRECTION of travel: on a stacked
+        pair the rail downstream of the move has to vacate first, and that is the
+        bottom rail when the shade lowers but the middle rail when it raises
+        (issue #1118). So a seam may NAME the number it is about to fan out and
+        the inversion frame it is fanning it out in — the same ``(position,
+        inverted)`` pair it hands ``resolve_entity_target`` in the same loop
+        body. Omitting them is legal and yields the cover type's
+        direction-blind default order; a seam whose per-entity value only comes
+        into existence further down its own call chain has no honest pair to
+        name and should not invent one.
+
         The Liskov-safe default is a constant, which makes ``sorted(...)`` a
         stable-sort no-op: the user's config-flow pick order survives verbatim
         for every cover type with independent entities.
         """
         return 0
 
-    def order_for_dispatch(self, entities: Iterable[str]) -> list[str]:
+    def order_for_dispatch(
+        self,
+        entities: Iterable[str],
+        *,
+        position: int | None = None,
+        inverted: bool | None = None,
+    ) -> list[str]:
         """Return ``entities`` in this cover type's mandated dispatch order.
 
         The single shared ordering mechanism every dispatch seam consumes — the
@@ -654,10 +674,19 @@ class CoverTypePolicy(ABC):
         as :meth:`dispatch_order_key` rather than mirrored per seam
         (CODING_GUIDELINES.md "No Code Duplication", issue #1115).
 
+        ``position`` / ``inverted`` are forwarded verbatim to
+        :meth:`dispatch_order_key`; see there for what naming them buys and when
+        a seam legitimately cannot.
+
         ``sorted`` is stable, so a policy that leaves ``dispatch_order_key`` at
         its constant default gets the input order back unchanged.
         """
-        return sorted(entities, key=self.dispatch_order_key)
+        return sorted(
+            entities,
+            key=lambda entity_id: self.dispatch_order_key(
+                entity_id, position=position, inverted=inverted
+            ),
+        )
 
     def required_role_entity_missing(
         self,
@@ -816,10 +845,11 @@ class CoverTypePolicy(ABC):
         """Return an opaque stamp describing HOW this dispatch expressed its value.
 
         The provenance half of :meth:`await_dispatch_clearance`. A policy that
-        has to un-transform a dispatched number later — the Model C day/night
-        middle rail, whose clearance test compares its target against a live rail
-        reading in open-percent space — cannot re-derive the transform after the
-        fact: its own per-cycle cache describes the last RESOLUTION, and
+        has to un-transform a dispatched number later — either rail of a Model C
+        day/night pair, whose clearance test compares its target against the
+        OTHER rail's live reading in open-percent space — cannot re-derive the
+        transform after the fact: its own per-cycle cache describes the last
+        RESOLUTION, and
         ``resolve_entity_target`` runs as an ARGUMENT to
         ``CoverCommandService.apply_position``, so a cycle that resolves and then
         skips on a delta gate restates that cache for a command which never went
@@ -853,7 +883,10 @@ class CoverTypePolicy(ABC):
         The physical-coupling question on its own, separated from
         :meth:`before_position_command` because that hook carries pre-send SIDE
         EFFECTS (the venetian tilt-first command) a caller asking only for the
-        go/no-go must not trigger. Both position paths —
+        go/no-go must not trigger. Which entity gets withheld may depend on the
+        direction of travel — on a Model C pair the rail downstream of the move
+        leads and the other one waits, so EITHER rail can be the one gated
+        (issue #1118). Both position paths —
         ``CoverCommandService.apply_position`` and its reconciliation resend —
         funnel into ONE implementation per policy; the rule is never written
         twice (issue #1115).

@@ -2570,9 +2570,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         # Policy-mandated dispatch order (issue #1115) — applied to an explicitly
-        # supplied subset too, since a Model C subset can hold both rails.
+        # supplied subset too, since a Model C subset can hold both rails. Name
+        # the number and frame this loop fans out so the ordering view can tell a
+        # raise from a lower (issue #1118) — the same pair ``_entity_target``
+        # gets below.
         target_covers = self._policy.order_for_dispatch(
-            entities if entities is not None else self.entities
+            entities if entities is not None else self.entities,
+            position=state,
         )
 
         if respect_manual_override:
@@ -2879,7 +2883,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 if self._pipeline_bypasses_auto_control
                 else "solar"
             )
-        for cover in self._policy.order_for_dispatch(self.entities):
+        # Name the number and frame this loop fans out so the ordering view can
+        # tell a raise from a lower (issue #1118) — the same pair
+        # ``_entity_target`` gets below.
+        for cover in self._policy.order_for_dispatch(self.entities, position=state):
             ctx = self._build_position_context(
                 cover,
                 options,
@@ -3071,7 +3078,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         sun_just_appeared = self._check_sun_validity_transition()
-        for cover in self._policy.order_for_dispatch(self.entities):
+        # Name the number and frame this loop fans out so the ordering view can
+        # tell a raise from a lower (issue #1118) — the same pair
+        # ``_entity_target`` gets below.
+        for cover in self._policy.order_for_dispatch(self.entities, position=state):
             if self.manager.is_cover_manual(cover):
                 self.logger.debug(
                     "Startup: skipping position command for %s (manual override active/restored)",
@@ -4209,7 +4219,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "cover_count": len(self.entities),
                 }
             )
-            for cover_entity in self._policy.order_for_dispatch(self.entities):
+            # Name the number and frame this loop fans out so the ordering view
+            # can tell a raise from a lower (issue #1118) — the same pair
+            # ``_entity_target`` gets below.
+            for cover_entity in self._policy.order_for_dispatch(
+                self.entities, position=pos_to_send, inverted=self._inverse_state
+            ):
                 ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
                     cover_entity,

@@ -1,27 +1,38 @@
-"""Model C (dual_entity) rail travel sequencing — issue #1115.
+"""Model C (dual_entity) rail travel sequencing — issues #1115 and #1118.
 
 Two stacked rails hang in one headbox: sheer fabric spans head rail → middle
-rail, blackout spans middle rail → bottom rail. They share a track, so the
-middle rail physically CANNOT pass below the bottom rail. That makes the
-arithmetic no-pass clamp in ``resolve_entity_target`` (``M >= P`` on two
-numbers) necessary but not sufficient: if the bottom rail is currently stacked
-ABOVE the middle rail's target, commanding the middle rail there tells a motor
-to travel somewhere it cannot reach until the bottom rail descends past it —
-stall, over-current trip, or lost calibration.
+rail, blackout spans middle rail → bottom rail. They share a track, so neither
+rail can pass the other. That makes the arithmetic no-pass clamp in
+``resolve_entity_target`` (``M >= P`` on two numbers) necessary but not
+sufficient: it says where the two rails will END UP, never where either one
+currently IS, and a rail commanded through a space its partner still occupies
+tells a motor to travel somewhere it cannot reach — stall, over-current trip,
+or lost calibration.
 
-Two independent mechanisms fix that, and this module covers both:
+The rail DOWNSTREAM in the direction of travel has to vacate first, so which
+rail leads depends on which way the shade is going:
 
-* **Ordering** — the bottom rail's command must go out before the middle
-  rail's, whatever order the user picked the covers in. Owned by
+* **lowering** — the bottom rail leads, the middle rail waits until the bottom
+  rail's live position has cleared the middle rail's target (#1115);
+* **raising** — the middle rail leads, the bottom rail waits until the middle
+  rail's live position has cleared the bottom rail's target (#1118).
+
+Two independent mechanisms enforce that, and this module covers both:
+
+* **Ordering** — the leading rail's command must go out first, whatever order
+  the user picked the covers in. Owned by
   ``CoverTypePolicy.dispatch_order_key`` and applied by the single shared
-  ``order_for_dispatch`` view every dispatch seam consumes.
-* **The clearance gate** — the middle rail's command is withheld until the
-  bottom rail's LIVE position has cleared the middle rail's target, compared in
+  ``order_for_dispatch`` view every dispatch seam consumes. A seam that can name
+  the number it is fanning out gets a direction-aware order; one that cannot
+  falls back to bottom-first.
+* **The clearance gate** — the following rail's command is withheld until the
+  leading rail's LIVE position has cleared the follower's target, compared in
   open-percent space against the frame the DISPATCHING SEAM expressed its value
   in. Owned by ``DayNightShadePolicy`` and reached through the one
   ``await_dispatch_clearance`` hook, which ``CoverCommandService.apply_position``
   asks before it books an outbound command and ``run_reconciliation_pass`` asks
-  (single-shot) before it re-sends a recorded one.
+  (single-shot) before it re-sends a recorded one. Always authoritative,
+  whatever order the seam dispatched in.
 
 Both mechanisms apply to every seam that puts a position on the wire, including
 the reconciliation timer — the motor does not care which code path asked.
@@ -152,8 +163,20 @@ def test_order_for_dispatch_preserves_order_for_day_night_model_a() -> None:
     assert policy.order_for_dispatch(picked) == picked
 
 
-def test_order_for_dispatch_puts_bottom_rail_first_under_model_c() -> None:
-    """Model C sorts the middle rail last, whatever order it was picked in."""
+def test_order_for_dispatch_falls_back_to_bottom_first_without_a_live_reading() -> None:
+    """No sequencer and no named target → #1115's shipped constant order.
+
+    Was ``test_order_for_dispatch_puts_bottom_rail_first_under_model_c``. Since
+    #1118 the order depends on the direction of travel, which needs both a live
+    middle-rail reading and the number the seam is fanning out. This policy has
+    neither — it was never ``attach``ed and no ``position=`` is named — so it
+    gets the documented conservative fallback, whatever order it was picked in.
+
+    The assertion this used to carry ("bottom first under Model C") is now
+    carried, with a live reading and a real direction evaluation behind it, by
+    ``test_order_for_dispatch_keeps_bottom_first_when_lowering``; its raise
+    counterpart is ``test_order_for_dispatch_puts_middle_rail_first_when_raising``.
+    """
     policy = _dual_policy(position=40, blend=50)
     assert policy.order_for_dispatch([_MIDDLE, _BOTTOM]) == [_BOTTOM, _MIDDLE]
     assert policy.order_for_dispatch([_BOTTOM, _MIDDLE]) == [_BOTTOM, _MIDDLE]
@@ -208,8 +231,44 @@ async def test_dispatch_cycle_commands_bottom_rail_before_middle() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_cycle_commands_middle_rail_before_bottom_when_raising() -> None:
+    """A RAISING cycle inverts the rail order (issue #1118).
+
+    The mirror of the test above. The bottom rail sits low at 10 and this cycle
+    resolves it up to 60, past a middle rail still parked at 20 — so the middle
+    rail is now the rail downstream of the travel and has to vacate first.
+
+    The main dispatch loop can only get that right if it NAMES the number it is
+    fanning out (``order_for_dispatch(self.entities, position=state)``). Drop
+    that argument and the ordering view falls back to the direction-blind
+    constant: this test goes red while every unit-level ordering test stays
+    green, which is exactly the regression it exists to catch.
+
+    (``_attach_scripted_rails`` is defined further down, beside the ``_Rails``
+    script it wraps — the ordering hook needs a live middle-rail reading, but
+    not the whole command-service harness.)
+    """
+    policy = _dual_policy(position=60, blend=50)
+    _attach_scripted_rails(policy, {_BOTTOM: [10], _MIDDLE: [20]})
+    coordinator = _ordering_coordinator(policy, entities=[_BOTTOM, _MIDDLE])
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=60, options={}
+    )
+
+    assert [eid for eid, _pos in coordinator._cmd_svc.calls] == [_MIDDLE, _BOTTOM]
+    # The per-rail arithmetic is untouched by the reordering.
+    assert dict(coordinator._cmd_svc.calls) == {_BOTTOM: 60, _MIDDLE: 80}
+
+
+@pytest.mark.asyncio
 async def test_first_refresh_commands_bottom_rail_before_middle() -> None:
-    """Startup dispatch rides the same ordered view as the main loop."""
+    """Startup dispatch rides the same ordered view as the main loop.
+
+    This seam does name its fanned-out target (#1118), but the policy here is
+    never ``attach``ed, so the direction check has no live reading to work from
+    and lands on the conservative bottom-first fallback.
+    """
     policy = _dual_policy(position=40, blend=50)
     coordinator = _ordering_coordinator(policy, entities=[_MIDDLE, _BOTTOM])
     coordinator.manager.is_cover_manual = lambda _eid: False
@@ -223,7 +282,12 @@ async def test_first_refresh_commands_bottom_rail_before_middle() -> None:
 
 @pytest.mark.asyncio
 async def test_force_send_commands_bottom_rail_before_middle() -> None:
-    """The force-send seam orders an explicitly-supplied cover subset too."""
+    """The force-send seam orders an explicitly-supplied cover subset too.
+
+    This seam does name its fanned-out target (#1118), but the policy here is
+    never ``attach``ed, so the direction check has no live reading to work from
+    and lands on the conservative bottom-first fallback.
+    """
     policy = _dual_policy(position=40, blend=50)
     coordinator = _ordering_coordinator(policy, entities=[_MIDDLE, _BOTTOM])
     coordinator.manager.is_cover_manual = lambda _eid: False
@@ -261,7 +325,11 @@ def _record_user_commands(coordinator, method_name: str) -> list[str]:
 
 @pytest.mark.asyncio
 async def test_my_position_button_commands_bottom_rail_before_middle() -> None:
-    """The My Position button fans its preset out in policy-mandated rail order."""
+    """The My Position button fans its preset out in policy-mandated rail order.
+
+    This seam does not name its fanned-out target, so it rides the conservative
+    bottom-first fallback (#1118).
+    """
     from custom_components.adaptive_cover_pro.button import (
         AdaptiveCoverMyPositionButton,
     )
@@ -281,7 +349,11 @@ async def test_my_position_button_commands_bottom_rail_before_middle() -> None:
 async def test_set_position_service_commands_bottom_rail_before_middle(
     monkeypatch,
 ) -> None:
-    """``adaptive_cover_pro.set_position`` over a whole instance orders its fan-out."""
+    """``adaptive_cover_pro.set_position`` over a whole instance orders its fan-out.
+
+    This seam does not name its fanned-out target, so it rides the conservative
+    bottom-first fallback (#1118).
+    """
     from custom_components.adaptive_cover_pro.services import set_position_service
 
     coord = MagicMock()
@@ -308,6 +380,9 @@ async def test_set_tilt_service_commands_bottom_rail_before_middle(
     The tilt axis falls back to the position axis on an entity without slat
     support (#684), which puts a real position on the wire — the same seam
     shape, and the same reason to order it.
+
+    This seam does not name its fanned-out target, so it rides the conservative
+    bottom-first fallback (#1118).
     """
     from custom_components.adaptive_cover_pro.services import set_tilt_service
 
@@ -330,7 +405,11 @@ async def test_set_tilt_service_commands_bottom_rail_before_middle(
 async def test_set_axes_service_commands_bottom_rail_before_middle(
     monkeypatch,
 ) -> None:
-    """``set_axes`` validates up front, then dispatches in rail order."""
+    """``set_axes`` validates up front, then dispatches in rail order.
+
+    This seam does not name its fanned-out target, so it rides the conservative
+    bottom-first fallback (#1118).
+    """
     from custom_components.adaptive_cover_pro.services import set_axes_service
 
     coord = MagicMock()
@@ -367,7 +446,11 @@ def _group_fan_out_to_one_member(member_coord) -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_group_cover_slider_commands_bottom_rail_before_middle() -> None:
-    """A cover group dragging its slider orders each member's own rails."""
+    """A cover group dragging its slider orders each member's own rails.
+
+    This seam does not name its fanned-out target, so it rides the conservative
+    bottom-first fallback (#1118).
+    """
     from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
 
     member_coord = MagicMock()
@@ -383,7 +466,11 @@ async def test_group_cover_slider_commands_bottom_rail_before_middle() -> None:
 
 @pytest.mark.asyncio
 async def test_group_cover_tilt_commands_bottom_rail_before_middle() -> None:
-    """The group tilt slider rides the same per-member ordered view."""
+    """The group tilt slider rides the same per-member ordered view.
+
+    This seam does not name its fanned-out target, so it rides the conservative
+    bottom-first fallback (#1118).
+    """
     from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
 
     member_coord = MagicMock()
@@ -422,6 +509,28 @@ class _Rails:
     def park(self, entity_id: str, position: int) -> None:
         """Park one rail at a fixed position for every subsequent read."""
         self._script[entity_id] = [position]
+
+
+def _attach_scripted_rails(policy, script: dict[str, list[int | None]]) -> _Rails:
+    """Attach ``policy`` over a scripted motor, with no command service at all.
+
+    The ordering hook reads the middle rail's LIVE position to tell a raise from
+    a lower (issue #1118), so even an ordering-only test needs a sequencer. This
+    is the cheap half of ``_rail_harness``: rails and an ``attach``, nothing
+    else.
+    """
+    rails = _Rails(script)
+    policy.attach(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=rails.read,
+        set_commanded_position=MagicMock(),
+        position_tolerance=2,
+        is_dry_run=lambda: False,
+        entities=[_BOTTOM, _MIDDLE],
+    )
+    return rails
 
 
 def _rail_harness(
@@ -636,8 +745,23 @@ async def test_middle_rail_proceeds_immediately_when_bottom_already_clear(
 
 
 @pytest.mark.asyncio
-async def test_bottom_rail_is_never_gated(monkeypatch) -> None:
-    """Only the middle rail is gated — the blocking rail must move freely."""
+async def test_bottom_rail_is_not_gated_when_lowering(monkeypatch) -> None:
+    """The leading rail moves freely — and on a lowering that is the bottom rail.
+
+    Was ``test_bottom_rail_is_never_gated`` (#1115), when the bottom rail led
+    every move by construction. It leads a LOWERING (#1118), so the outcome
+    assertion is preserved verbatim: a lowering move never waits on anything.
+
+    What changed is the cost of establishing that. The bottom rail now reads the
+    middle rail ONCE to settle the direction, finds no raise collision, and is
+    waved straight through — one synchronous read, never a poll loop. The exact
+    event list is what pins that: a regression that turned the direction check
+    into a wait would show up here as extra polls, and one that dropped the
+    check entirely would show up as none.
+
+    The "the bottom rail can be gated" case this used to exclude is covered by
+    the raise-direction suite above.
+    """
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
     cmd_svc, policy, _rails, events = _rail_harness(
         script={_BOTTOM: [100], _MIDDLE: [100]},
@@ -650,7 +774,7 @@ async def test_bottom_rail_is_never_gated(monkeypatch) -> None:
         outcome = await cmd_svc.apply_position(_BOTTOM, 30, "solar", ctx)
 
     assert outcome == ("sent", "set_cover_position")
-    assert events == [f"send:{_BOTTOM}"]
+    assert events == [f"poll:{_MIDDLE}", f"send:{_BOTTOM}"]
 
 
 @pytest.mark.asyncio
@@ -761,6 +885,363 @@ async def test_gate_is_inert_without_a_second_rail(monkeypatch) -> None:
 
     assert outcome == ("sent", "set_cover_position")
     assert f"send:{_MIDDLE}" in events
+
+
+# ---------------------------------------------------------------------------
+# The raise direction — the bottom rail is the follower (issue #1118)
+# ---------------------------------------------------------------------------
+# #1115 sequenced one direction. The rail DOWNSTREAM in the direction of travel
+# has to vacate first, and which rail that is depends on where the shade is
+# going: lowering, the bottom rail leads and the middle rail waits; raising, the
+# middle rail leads and the BOTTOM rail waits, because its target now sits above
+# a middle rail that has not moved out of the way yet.
+#
+#   | Travel            | Downstream | Leads  | Follower waits until          |
+#   |-------------------|------------|--------|-------------------------------|
+#   | Lowering (P < p)  | bottom     | bottom | p_open <= M_target_open + tol |
+#   | Raising  (P > m)  | middle     | middle | m_open + tol >= P_target_open |
+#
+# Both mechanisms — ordering and gating — become direction-aware, and both read
+# the direction from ONE predicate so they can never disagree about which rail
+# leads (which is what would deadlock the pair).
+
+
+@pytest.mark.asyncio
+async def test_bottom_rail_is_gated_when_raising_past_the_middle_rail() -> None:
+    """The issue's worked example, at the smallest surface that shows it.
+
+    Bottom rail live at 10, middle rail live at 20 (an intact stack), and this
+    cycle resolves the bottom rail up to 60. Travelling there drags it straight
+    through the middle rail sitting at 20 — the identical mechanical block
+    #1115 closed for the lowering direction, in the opposite direction.
+
+    ``wait=False`` takes the single-shot reading, so this asks the gate's
+    verdict without paying the settle budget.
+    """
+    _cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20]},
+        position=60,
+        blend=50,
+    )
+
+    assert (
+        await policy.await_dispatch_clearance(
+            _BOTTOM, position=60, reason="solar", wait=False
+        )
+        is False
+    )
+
+
+def test_order_for_dispatch_puts_middle_rail_first_when_raising() -> None:
+    """A raising move commands the middle rail first, whatever the pick order.
+
+    The middle rail is the rail downstream of the travel here, so it is the one
+    that has to start vacating before the bottom rail can follow it up.
+    """
+    _cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20]},
+        position=60,
+        blend=50,
+    )
+
+    assert policy.order_for_dispatch([_BOTTOM, _MIDDLE], position=60) == [
+        _MIDDLE,
+        _BOTTOM,
+    ]
+    assert policy.order_for_dispatch([_MIDDLE, _BOTTOM], position=60) == [
+        _MIDDLE,
+        _BOTTOM,
+    ]
+
+
+def test_order_for_dispatch_keeps_bottom_first_when_lowering() -> None:
+    """#1115's order survives, and now for a REASON rather than by construction.
+
+    Same live reading, same evaluation, opposite target: the move lowers, so the
+    bottom rail is downstream and leads. A key that answered "bottom first"
+    unconditionally would pass this too — which is why its raising counterpart
+    above is written against the same harness.
+    """
+    _cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+
+    assert policy.order_for_dispatch([_MIDDLE, _BOTTOM], position=30) == [
+        _BOTTOM,
+        _MIDDLE,
+    ]
+
+
+def test_order_for_dispatch_falls_back_to_bottom_first_without_a_named_target() -> None:
+    """A seam that names no fanned-out target rides the conservative default.
+
+    The sunset broadcast, the user-command seams and the reconciliation pass all
+    dispatch a number that only exists per-entity further down their own call
+    chain, so none of them can hand the ordering view the pair the gate will
+    later be asked about. They get #1115's shipped constant instead — ordering
+    is a LATENCY mechanism, and the gates (which are always authoritative) still
+    withhold anything the fallback order sends too early.
+
+    The empty event log is load-bearing: the fallback must short-circuit before
+    it touches the sequencer, or every poll-count assertion in this module
+    starts drifting.
+    """
+    _cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+
+    assert policy.order_for_dispatch([_MIDDLE, _BOTTOM]) == [_BOTTOM, _MIDDLE]
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_a_raising_cycle_dispatches_both_rails_and_neither_deadlocks(
+    monkeypatch,
+) -> None:
+    """End to end: the middle rail leads, the bottom rail waits, both go out.
+
+    The deadlock this design has to avoid is both rails waiting on each other.
+    Ordering and gating read the SAME direction predicate, so exactly one rail
+    is ever the follower — here the bottom rail, which polls the middle rail's
+    ascent (20 → 50 → 80) and only then travels to 60.
+
+    The wall-clock assertion is the deadlock detector: a mutually-blocked pair
+    would each burn the full ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS``
+    budget, which is deliberately left at its real 60 s here.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # The middle rail climbs once commanded; the bottom rail sits at 10.
+        script={_BOTTOM: [10], _MIDDLE: [20, 20, 20, 20, 20, 50, 80]},
+        position=60,
+        blend=50,
+    )
+    ctx = _rail_context(policy)
+
+    started = dt.datetime.now(dt.UTC)
+    with _patch_caps():
+        for eid in policy.order_for_dispatch([_BOTTOM, _MIDDLE], position=60):
+            await cmd_svc.apply_position(
+                eid, policy.resolve_entity_target(eid, 60), "solar", ctx
+            )
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert f"send:{_MIDDLE}" in events, events
+    assert f"send:{_BOTTOM}" in events, events
+    assert events.index(f"send:{_MIDDLE}") < events.index(f"send:{_BOTTOM}")
+    # Neither rail was withheld, so neither latched pending.
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+    # The bottom rail genuinely waited on the ascent rather than sailing
+    # through — counted AFTER the middle rail's send, so the ordering view's own
+    # direction reads cannot satisfy this on their own.
+    ascent = events[events.index(f"send:{_MIDDLE}") : events.index(f"send:{_BOTTOM}")]
+    assert len([e for e in ascent if e == f"poll:{_MIDDLE}"]) >= 2, events
+    assert (
+        len(
+            [
+                e
+                for e in events[: events.index(f"send:{_BOTTOM}")]
+                if e == f"poll:{_MIDDLE}"
+            ]
+        )
+        >= 2
+    ), events
+    # No rail entered the settle budget, i.e. nothing blocked on anything.
+    assert elapsed < 10, elapsed
+
+
+@pytest.mark.asyncio
+async def test_bottom_rail_defers_and_latches_pending_on_timeout(
+    monkeypatch,
+) -> None:
+    """A middle rail that never rises defers the bottom command, not sends it.
+
+    The mirror of ``test_middle_rail_defers_and_latches_pending_on_timeout``:
+    withheld is a ``policy_deferred`` SKIP and the entity latches pending, so
+    the coordinator keeps withholding this cycle's dispatched-target signature
+    and the next cycle re-attempts the send.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20]},
+        position=60,
+        blend=50,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_BOTTOM, 60, "solar", ctx)
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_BOTTOM}" not in events
+    assert policy.has_pending_secondary_axis(_BOTTOM) is True
+    assert cmd_svc.last_skipped_action["reason"] == "policy_deferred"
+
+
+@pytest.mark.asyncio
+async def test_pending_latch_clears_once_the_middle_rail_has_risen(
+    monkeypatch,
+) -> None:
+    """The next cycle's retry sends the bottom command and clears the latch.
+
+    Proves the withheld bottom-rail command rides the SAME
+    ``_pending_*`` → ``has_pending_secondary_axis`` → withheld-signature →
+    next-cycle-re-dispatch path #1115 built for the middle rail — reused, not
+    rebuilt.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20]},
+        position=60,
+        blend=50,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        assert (await cmd_svc.apply_position(_BOTTOM, 60, "solar", ctx))[1] == (
+            "policy_deferred"
+        )
+        assert policy.has_pending_secondary_axis(_BOTTOM) is True
+        # Cycle 2: the middle rail has climbed to 90 — well clear of 60.
+        rails.park(_MIDDLE, 90)
+        outcome = await cmd_svc.apply_position(_BOTTOM, 60, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+    assert f"send:{_BOTTOM}" in events
+
+
+@pytest.mark.asyncio
+async def test_bottom_rail_proceeds_when_the_middle_rail_is_unreadable(
+    monkeypatch,
+) -> None:
+    """An unreadable MIDDLE rail is fail-OPEN — the deliberate asymmetry.
+
+    ``_gate_rail_clearance`` is fail-CLOSED on an unreadable bottom rail
+    (``test_middle_rail_defers_when_bottom_rail_position_unreadable``, #1115)
+    because there the collision geometry is already KNOWN and an unreadable rail
+    cannot disprove it. Here the unreadable reading is the collision EVIDENCE
+    itself: with no middle-rail position there is nothing to say the bottom rail
+    is about to run into anything, and withholding it on every cycle while the
+    middle-rail entity is unavailable stops the whole shade — the same
+    "withholding forever would brick the shade" reasoning the gate already
+    applies to an unresolvable bottom rail.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [None]},
+        position=60,
+        blend=50,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_BOTTOM, 60, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_BOTTOM}" in events
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+
+
+@pytest.mark.asyncio
+async def test_bottom_rail_proceeds_immediately_when_the_middle_is_already_clear(
+    monkeypatch,
+) -> None:
+    """Steady state on a raise: middle rail already above the target → no wait."""
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [90]},
+        position=60,
+        blend=50,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_BOTTOM, 60, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    # One confirming read to establish direction, no polling loop.
+    assert events.count(f"poll:{_MIDDLE}") == 1, events
+    assert events[-1] == f"send:{_BOTTOM}"
+
+
+# ---------------------------------------------------------------------------
+# Exactly one rail is ever withheld — the deadlock tiebreak, made mechanical
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_two_rail_gates_are_never_both_armed() -> None:
+    """At most one rail is withheld for any pair a single dispatch can produce.
+
+    The theorem the design rests on, over the whole legal state space. The
+    bottom rail blocks only when ``m + tol < P``; the middle rail blocks only
+    when ``p > M + tol``. Both at once needs
+    ``p > M + tol >= P + tol > m + 2·tol`` — i.e. the bottom rail physically
+    ABOVE the middle rail — while ``M >= P`` holds for every target pair
+    ``resolve_entity_target``'s no-pass clamp can emit. Within one dispatch the
+    two gates are therefore mutually exclusive by the same clamp that makes the
+    target pair physically legal.
+
+    ``wait=False`` keeps the whole grid single-shot and sub-second.
+    """
+    for blend in (0, 50, 100):
+        policy = _dual_policy(position=50, blend=blend)
+        rails = _attach_scripted_rails(policy, {_BOTTOM: [0], _MIDDLE: [0]})
+        for p in range(0, 101, 10):
+            for m in range(p, 101, 10):  # an intact stack: middle at or above bottom
+                rails.park(_BOTTOM, p)
+                rails.park(_MIDDLE, m)
+                for target in range(0, 101, 10):
+                    middle_target = policy.resolve_entity_target(_MIDDLE, target)
+                    bottom_ok = await policy.await_dispatch_clearance(
+                        _BOTTOM, position=target, reason="t", wait=False
+                    )
+                    middle_ok = await policy.await_dispatch_clearance(
+                        _MIDDLE, position=middle_target, reason="t", wait=False
+                    )
+                    assert bottom_ok or middle_ok, (p, m, target, middle_target, blend)
+
+
+@pytest.mark.asyncio
+async def test_a_lowering_cycle_still_leads_with_the_bottom_rail(monkeypatch) -> None:
+    """#1115's whole mechanism survives the generalisation, end to end.
+
+    The mirror of ``test_a_raising_cycle_dispatches_both_rails_and_neither_deadlocks``:
+    both rails start stacked at 100 and the cycle lowers them to 30 / 65, so the
+    bottom rail leads and the middle rail polls its descent. Same ordering view,
+    same gate, opposite roles.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # Bottom: apply_position's own read, then the gate's descent samples.
+        script={_BOTTOM: [100, 100, 100, 80, 60], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        for eid in policy.order_for_dispatch([_MIDDLE, _BOTTOM], position=30):
+            await cmd_svc.apply_position(
+                eid, policy.resolve_entity_target(eid, 30), "solar", ctx
+            )
+
+    assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}")
+    descent = [
+        e for e in events[: events.index(f"send:{_MIDDLE}")] if e == f"poll:{_BOTTOM}"
+    ]
+    assert len(descent) >= 2, events
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
 
 
 # ---------------------------------------------------------------------------
@@ -973,6 +1454,74 @@ async def test_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
     assert cmd_svc.get_target(_MIDDLE) == 80
     assert f"send:{_MIDDLE}" in events, events
     assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_raise_gate_compares_in_open_percent_not_raw_wire(monkeypatch) -> None:
+    """The raise predicate is an open-percent comparison too (issue #1118).
+
+    Inverse state on. The middle rail reads wire 80 (= open 20, low down) and
+    the bottom rail's dispatched wire target is 40 (= open 60, high up). Raw
+    wire says ``80 >= 40`` — "the middle rail is already above the target,
+    proceed" — and drives the bottom rail straight into it. Open-percent says
+    ``20 < 60`` and withholds.
+
+    The whole point is that this rides the SAME ``_dispatch_frame``/``flip_if``
+    path the lowering predicate uses; a second, divergent inversion computation
+    would reintroduce the #993 bug class in the new direction.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [90], _MIDDLE: [80]},
+        position=60,
+        blend=50,
+        inverse=True,
+    )
+    ctx = _rail_context(policy, inverse=True)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_BOTTOM, 40, "solar", ctx)
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_BOTTOM}" not in events
+
+
+@pytest.mark.asyncio
+async def test_raise_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
+    monkeypatch,
+) -> None:
+    """The bottom rail's gate un-transforms against the SEAM's frame (issue #1118).
+
+    Inverse-state install, auto-control toggled OFF. The return-to-default seam
+    dispatches the raw default UN-inverted (``_entity_target(..., inverted=False)``),
+    and the middle rail is parked at the un-inverted 80 that same seam put it
+    at. In the seam's frame the middle rail's open 80 is comfortably above the
+    bottom rail's open-60 target, so there is no collision and the command goes
+    out.
+
+    Resolve it against the install flag instead and the numbers swap — middle
+    open 20 under a bottom target of open 40 — so the rail is withheld, and
+    withheld forever, because only that seam ever refreshes the target. That is
+    why ``capture_dispatch_token`` has to stamp the BOTTOM rail as well: with no
+    stamp the gate falls back to the cached ``axis_inverted`` flag, which is the
+    #993 bug class pointed at the new direction.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [80]},
+        position=60,
+        blend=50,
+        inverse=True,
+    )
+    switch = _auto_control_off_switch(cmd_svc, policy, default_position=60)
+
+    with _patch_caps():
+        await switch.async_turn_off()
+
+    assert f"send:{_BOTTOM}" in events, events
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
 
 
 # ---------------------------------------------------------------------------
@@ -1196,6 +1745,123 @@ def test_every_ordering_exemption_names_a_test_that_covers_its_caller() -> None:
         "_ORDERING_EXEMPT entries whose compensating control names a test that "
         "does not exist in this module — write it, or drop the exemption and "
         f"order the seam itself: {unproven}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Structural guard — a seam that CAN name its fanned-out target must do so
+# ---------------------------------------------------------------------------
+# The scan above proves every fan-out loop consumes the ordered view. Since
+# #1118 that view also needs to know WHICH WAY the shade is travelling, and the
+# only honest source for that is the number the seam is about to dispatch. Four
+# of the five wired call sites are invisible to every behavioural test in this
+# module — delete ``position=state`` from the startup, force-send, end-time or
+# auto-off seam and the whole suite stays green while a raise silently stalls
+# for a settle budget at that seam. Same class of hole the scan above was
+# written to close, one argument deeper.
+#
+# (module path relative to the production root, innermost enclosing function) →
+# why this seam legitimately cannot name the number it is fanning out.
+_UNNAMED_TARGET_SEAMS = {
+    ("coordinator.py", "_check_sunset_window_transition"): (
+        "Orders the list on WindowTransitionTracker.check_sunset_window's "
+        "behalf and holds only the raw config percent — the tracker computes "
+        "the dispatched value itself (flip_if(sunset_pos_cfg, "
+        "inverted=inverse_state_enabled)), so re-deriving it here would "
+        "duplicate that line."
+    ),
+    ("button.py", "async_press"): (
+        "Fans out a logical My percent that only becomes a per-entity framed "
+        "number inside async_apply_user_position, so no single "
+        "(position, inverted) pair exists here."
+    ),
+    ("services/set_position_service.py", "async_handle_set_position"): (
+        "User command: the framed per-entity value is produced downstream in "
+        "async_apply_user_position, not at this call site."
+    ),
+    ("services/set_tilt_service.py", "async_handle_set_tilt"): (
+        "User command: the framed per-entity value is produced downstream in "
+        "async_apply_user_position, not at this call site."
+    ),
+    ("services/set_axes_service.py", "async_handle_set_axes"): (
+        "User command: the framed per-entity value is produced downstream in "
+        "async_apply_user_position, not at this call site."
+    ),
+    ("group_coordinator.py", "_member"): (
+        "Group fan-out hands each member a logical percent; the member "
+        "coordinator frames it per entity further down."
+    ),
+    ("managers/cover_command/__init__.py", "run_reconciliation_pass"): (
+        "Holds a MAP of per-entity targets booked by different seams in "
+        "different eras, not one fanned-out number."
+    ),
+}
+
+
+def _order_view_calls(tree: ast.AST) -> list[tuple[ast.Call, ast.AST | None]]:
+    """Every ``order_for_dispatch(...)`` call, with its enclosing function."""
+    found: list[tuple[ast.Call, ast.AST | None]] = []
+
+    def walk(node: ast.AST, enclosing: ast.AST | None) -> None:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            enclosing = node
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == _ORDER_VIEW
+        ):
+            found.append((node, enclosing))
+        for child in ast.iter_child_nodes(node):
+            walk(child, enclosing)
+
+    walk(tree, None)
+    return found
+
+
+@pytest.mark.unit
+def test_pipeline_dispatch_seams_name_their_fanned_out_target() -> None:
+    """Fail if a seam that holds its dispatched number orders without naming it.
+
+    Pass ``position=`` (and ``inverted=`` where the seam dispatches in its own
+    divergent space) — the SAME pair the loop body hands ``_entity_target``.
+    Without it the ordering view cannot tell a raise from a lower and falls back
+    to bottom-first, which on a raising cycle commands the follower rail into a
+    middle rail that has not vacated yet: the command is correctly withheld by
+    the gate, but the shade stalls for a whole cycle at that seam.
+
+    If a seam genuinely has no such pair — because the per-entity value is only
+    framed further down its own call chain — add it to
+    ``_UNNAMED_TARGET_SEAMS`` with the reason. Inventing a pair there would buy
+    ordering latency at the cost of naming a number that is not the one being
+    dispatched, which is the exact provenance mistake #1115 closed.
+    """
+    offenders: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    for path in sorted(_PRODUCTION_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        module = path.relative_to(_PRODUCTION_ROOT).as_posix()
+        for call, enclosing in _order_view_calls(tree):
+            fn_name = getattr(enclosing, "name", "<module>")
+            seen.add((module, fn_name))
+            if any(kw.arg == "position" for kw in call.keywords):
+                continue
+            if (module, fn_name) in _UNNAMED_TARGET_SEAMS:
+                continue
+            offenders.append(
+                f"{path.relative_to(_REPO_ROOT)}:{call.lineno} ({fn_name})"
+            )
+
+    stale = set(_UNNAMED_TARGET_SEAMS) - seen
+    assert not stale, (
+        "_UNNAMED_TARGET_SEAMS names call sites that no longer exist — the seam "
+        f"moved or was wired up; drop the entry: {sorted(stale)}"
+    )
+    assert not offenders, (
+        "Dispatch seams that order without naming the number they are fanning "
+        "out (issue #1118) — pass position=<the value _entity_target gets>, or "
+        "add the seam to _UNNAMED_TARGET_SEAMS with its reason:\n  "
+        + "\n  ".join(offenders)
     )
 
 

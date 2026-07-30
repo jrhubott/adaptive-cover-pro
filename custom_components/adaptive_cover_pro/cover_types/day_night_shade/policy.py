@@ -187,16 +187,17 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
     * the middle rail can never be below the bottom rail (hence the no-pass
       clamp ``M >= P`` in :meth:`resolve_entity_target`, in open-percent space);
-    * and, because they are physically stacked, the middle rail cannot TRAVEL to
-      a target the bottom rail is currently sitting above — so on any cycle that
-      lowers the shade the bottom rail must start positioning first, and the
-      middle rail is free to move only once the bottom rail is below the middle
-      rail's target.
+    * and, because they are physically stacked, neither rail can TRAVEL through
+      the space the other is currently occupying — so the rail DOWNSTREAM of the
+      move has to start positioning first and the other one waits. Lowering,
+      that is the bottom rail leading and the middle rail waiting (#1115);
+      raising, it is the middle rail leading and the bottom rail waiting
+      (#1118).
 
     Those last two are what :meth:`dispatch_order_key` and
-    :meth:`_gate_middle_rail_clearance` enforce (issue #1115). Without them a
-    perfectly valid target pair still drives the middle motor into a mechanical
-    block: stall, over-current trip, or lost calibration.
+    :meth:`_gate_rail_clearance` enforce. Without them a perfectly valid target
+    pair still drives a motor into a mechanical block: stall, over-current trip,
+    or lost calibration.
     """
 
     cover_type = "cover_day_night_shade"
@@ -256,12 +257,15 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # rebuilds the coordinator and re-runs ``attach``, so the snapshot cannot
         # go stale behind a changed cover list.
         self._attached_entities: tuple[str, ...] = ()
-        # Middle-rail position commands withheld because the bottom rail had not
-        # cleared the target yet (issue #1115). Drives
-        # ``has_pending_secondary_axis``, which makes the coordinator withhold
-        # this cycle's dispatched-target signature so the next cycle re-attempts
-        # the send — the same defer-and-retry latch shape as #756's tilt tail.
-        self._pending_middle_rail: set[str] = set()
+        # Rail position commands withheld because the rail LEADING this move had
+        # not cleared the target yet — the middle rail on a lowering (#1115), the
+        # bottom rail on a raising (#1118). Rail-agnostic on purpose: which rail
+        # ends up in here is a property of the direction of travel, not of a
+        # role. Drives ``has_pending_secondary_axis``, which makes the
+        # coordinator withhold this cycle's dispatched-target signature so the
+        # next cycle re-attempts the send — the same defer-and-retry latch shape
+        # as #756's tilt tail.
+        self._pending_rail_command: set[str] = set()
 
     # ---- Identity / labels -------------------------------------------- #
 
@@ -769,7 +773,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
         # NB: ``_dual_entity_dispatch_inverse`` is deliberately NOT reset here.
-        # It records the frame of the last middle-rail RESOLUTION — which is
+        # It records the frame of the last Model C rail RESOLUTION — which is
         # exactly right for its one reader, ``capture_dispatch_token`` on the
         # DISPATCH path: ``apply_position`` takes the stamp immediately after
         # ``resolve_entity_target`` restated this field for the very value being
@@ -802,30 +806,127 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             and entity_id == self._dual_entity_middle_rail
         )
 
-    def dispatch_order_key(self, entity_id: str) -> int:
-        """Command the bottom rail before the middle rail (Model C, issue #1115).
+    def _is_dual_entity_bottom_rail(self, entity_id: str) -> bool:
+        """Whether ``entity_id`` is THIS cycle's Model C bottom rail.
 
-        The two rails share one track: the middle rail cannot travel below the
-        bottom rail. When a cycle lowers both, the bottom rail must START moving
-        first — otherwise the middle rail is commanded toward a target the
-        still-stacked bottom rail is physically blocking. The per-entity command
-        hooks fire inside the caller's loop and cannot reorder it, so the order
-        has to be expressed here, where the rail roles are known.
+        The mirror of :meth:`_is_dual_entity_middle_rail`, and the reason it
+        exists separately from "not the middle rail": the travel gate has to
+        distinguish the paired bottom rail — which CAN be withheld when the
+        shade raises past the middle rail (issue #1118) — from every other
+        entity, which is never gated at all.
+        """
+        return (
+            self._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY
+            and self._dual_entity_bottom_rail is not None
+            and entity_id == self._dual_entity_bottom_rail
+        )
+
+    def dispatch_order_key(
+        self,
+        entity_id: str,
+        *,
+        position: int | None = None,
+        inverted: bool | None = None,
+    ) -> int:
+        """Command the rail DOWNSTREAM of this move first (Model C, #1115/#1118).
+
+        The two rails share one track and neither can pass the other, so the one
+        the move is travelling toward has to start vacating before the other can
+        follow it. Which rail that is depends on the direction:
+
+        * lowering (the bottom rail's target is below where it sits) — the
+          bottom rail is downstream and leads, the middle rail follows (#1115);
+        * raising (the bottom rail's target is above where the MIDDLE rail
+          sits) — the middle rail is downstream and leads, the bottom rail
+          follows (#1118).
+
+        The direction question is answered by the one shared
+        :meth:`_dual_entity_middle_leads` predicate, which the travel gate
+        consults too — so ordering and gating can never disagree about which
+        rail leads, and the pair can never both wait on each other.
+
+        ``position`` is the number the calling seam is fanning out and
+        ``inverted`` the frame it is expressed in — the same pair the seam hands
+        ``resolve_entity_target`` in the same loop. With no ``position`` named
+        there is nothing to compare a live reading against, so the key falls
+        back to #1115's shipped constant (bottom rail first) WITHOUT reading
+        anything: ordering is a latency mechanism and the gates stay
+        authoritative either way, so a fallback costs at worst a deferred cycle.
 
         Model A and Model B keep the constant default (a stable-sort no-op):
         neither binds a second rail entity.
         """
-        return 1 if self._is_dual_entity_middle_rail(entity_id) else 0
+        if (
+            self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY
+            or self._dual_entity_middle_rail is None
+        ):
+            return 0
+        inverse = self._dispatch_frame(inverted)
+        target_open = None if position is None else flip_if(position, inverted=inverse)
+        middle_leads = self._dual_entity_middle_leads(target_open, inverse)
+        is_middle = entity_id == self._dual_entity_middle_rail
+        return 0 if is_middle == middle_leads else 1
+
+    def _dual_entity_middle_leads(
+        self, bottom_target_open: int | None, inverse: bool
+    ) -> bool:
+        """Whether a RAISE-direction collision exists right now (issue #1118).
+
+        The single direction predicate, consulted by :meth:`dispatch_order_key`
+        (which rail to command first) and by :meth:`_gate_rail_clearance` (which
+        rail to withhold). One answer, two readers, so the two can never
+        disagree — a disagreement is precisely what would leave both rails
+        waiting on each other.
+
+        The question is target-vs-live, not live-vs-live: the bottom rail is
+        blocked exactly when the position it is being driven to sits above where
+        the middle rail currently IS, i.e. ``m_open + tol < P_target_open``. That
+        is the exact complement of the follower's clearance predicate in
+        :meth:`_gate_rail_clearance` — one inequality, stated once, used twice.
+
+        ``bottom_target_open`` is the bottom rail's target for the dispatch in
+        question, already in OPEN-PERCENT space; ``inverse`` names the frame the
+        live wire reading is un-flipped through, and is the SAME frame that
+        open-percent target was derived in. Comparing a raw wire number against
+        an open-percent one inverts the verdict on every inverse-state install
+        (the #993 bug class), so both sides ride ``flip_if`` against one frame.
+
+        Every ``False`` here means "no raise collision can be evidenced", which
+        leaves the bottom rail ungated:
+
+        * no ``bottom_target_open`` — the caller named no target, so there is
+          nothing to compare (the ordering fallback);
+        * no sequencer, or no resolvable rail pair — the same degenerate config
+          the travel gate is inert for;
+        * an unreadable middle rail — deliberately fail-OPEN. The middle rail's
+          own gate is fail-CLOSED on an unreadable bottom rail because there the
+          collision geometry is already known and cannot be disproven; here the
+          reading IS the evidence of a collision, and withholding the bottom
+          rail on every cycle while the middle-rail entity is unavailable would
+          stop the whole shade, including for safe lowering moves.
+        """
+        if bottom_target_open is None:
+            return False
+        seq = self._sequencer
+        middle = self._dual_entity_middle_rail
+        if seq is None or middle is None or self._dual_entity_bottom_rail is None:
+            return False
+        live = seq._get_current_position(middle)  # noqa: SLF001
+        if live is None:
+            return False
+        return flip_if(live, inverted=inverse) + self._position_tolerance < (
+            bottom_target_open
+        )
 
     def _dispatch_frame(self, inverted: bool | None) -> bool:
-        """Resolve which inversion frame a dispatched middle-rail value speaks.
+        """Resolve which inversion frame a dispatched rail value speaks.
 
         The ONE place that answer is computed. ``None`` means "nobody named a
         frame, so use this cycle's cached ``axis_inverted`` decision" — the main
         pipeline path, and equally a target that no dispatch ever expressed in a
         frame at all; an explicit ``True``/``False`` is a seam naming its own
         divergent space. Both ``resolve_entity_target`` — which produces the
-        wire value — and :meth:`_gate_middle_rail_clearance` — which has to
+        wire value — and :meth:`_gate_rail_clearance` — which has to
         un-transform it to compare against a live rail reading — go through
         here, so the two can never disagree about what frame the number in
         flight is in (the #993 bug class; issue #1115).
@@ -833,7 +934,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         return self._dual_entity_inverse if inverted is None else inverted
 
     def capture_dispatch_token(self, entity_id: str) -> bool | None:
-        """Stamp the middle rail's dispatch frame onto the command being booked.
+        """Stamp a Model C rail's dispatch frame onto the command being booked.
 
         Resolves the frame through the SAME :meth:`_dispatch_frame` rule the
         gate and ``resolve_entity_target`` use, so the stamp is literally the
@@ -848,10 +949,21 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         policy's own per-cycle cache has by then been restated by every
         intervening resolve, dispatched or skipped.
 
-        ``None`` for the bottom rail and for every non-Model-C instance — no
-        rail there needs its dispatched value un-transformed later.
+        BOTH rails are stamped, because either can be the gated one: the middle
+        rail when the shade lowers, the bottom rail when it raises past a middle
+        rail that has not vacated yet (issue #1118). Leaving the bottom rail
+        unstamped would resolve its gate against the cached ``axis_inverted``
+        flag rather than the dispatching seam's own space — and the seams that
+        dispatch in a divergent space are real (the auto-control-off return loop
+        sends the raw default un-inverted), so that is the #993 bug class
+        pointed at the new direction.
+
+        ``None`` for every non-rail entity and for every non-Model-C instance —
+        no cover there needs its dispatched value un-transformed later.
         """
-        if not self._is_dual_entity_middle_rail(entity_id):
+        if not self._is_dual_entity_middle_rail(
+            entity_id
+        ) and not self._is_dual_entity_bottom_rail(entity_id):
             return None
         return self._dispatch_frame(self._dual_entity_dispatch_inverse)
 
@@ -894,16 +1006,20 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         either way. Mapping a motor reading back onto the linear scale is
         #925's territory, not this hook's.
         """
-        if (
-            self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY
-            or entity_id != self._dual_entity_middle_rail
-        ):
+        if self._control_model != DAY_NIGHT_MODEL_DUAL_ENTITY:
             return position
-        # Record the frame BEFORE the blend check: even a cycle that resolves no
-        # blend still dispatches this rail, and the travel gate that follows has
-        # to un-transform that value against the same frame this call named.
+        # Record the frame BEFORE the role check and BEFORE the blend check:
+        # every Model C rail this seam resolves is about to be dispatched, and
+        # EITHER of them may be the one the travel gate withholds (issue #1118),
+        # so both need their value un-transformable against the frame this call
+        # named. A seam names one frame for its whole loop, so the bottom rail's
+        # call and the middle rail's call write the same value — the field means
+        # "the frame of the last Model C rail resolution", and its one reader
+        # (``capture_dispatch_token``) still re-states it immediately after.
         inverse = self._dispatch_frame(inverted)
         self._dual_entity_dispatch_inverse = inverse
+        if entity_id != self._dual_entity_middle_rail:
+            return position
         if self._dual_entity_blend is None:
             return position
         blend = self._dual_entity_blend
@@ -1214,11 +1330,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         Two deferral sources share this latch, because the coordinator's response
         to both is identical — withhold this cycle's dispatched-target signature
         so the command is re-attempted next cycle: a Model A blend-only update
-        deferred by the back-rotate suppression window (#756), and a Model C
-        middle-rail position command withheld while the bottom rail still blocks
-        its target (#1115).
+        deferred by the back-rotate suppression window (#756), and a Model C rail
+        position command withheld while the rail leading this move still blocks
+        its target (#1115 lowering, #1118 raising).
         """
-        if entity_id in self._pending_middle_rail:
+        if entity_id in self._pending_rail_command:
             return True
         if self._sequencer is None:
             return False
@@ -1266,7 +1382,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         middle = self._dual_entity_middle_rail
         return next((eid for eid in self._attached_entities if eid != middle), None)
 
-    async def _gate_middle_rail_clearance(
+    async def _gate_rail_clearance(
         self,
         entity_id: str,
         position: int,
@@ -1274,17 +1390,53 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         *,
         wait: bool,
         dispatch_token: bool | None,
+        is_middle: bool,
     ) -> bool:
-        """Hold the middle rail until the bottom rail has cleared its target.
+        """Hold a Model C rail until the rail leading this move has cleared it.
 
         **The physical model.** One headbox carries two rails on a shared track.
         Sheer fabric spans head rail → middle rail; blackout fabric spans middle
-        rail → bottom rail. The bottom rail is the lower of the two and the
-        middle rail cannot pass below it: whatever the arithmetic says, the middle
-        rail can only reach a target the bottom rail is not currently occupying or
-        sitting above. So the bottom rail has to start positioning first, and the
-        middle rail is free to move the moment the bottom rail is below the middle
-        rail's target.
+        rail → bottom rail. The bottom rail is the lower of the two and neither
+        rail can pass the other: whatever the arithmetic says, a rail can only
+        reach a target its partner is not currently occupying or standing
+        between it and.
+
+        Which rail leads therefore depends on the DIRECTION of travel — the rail
+        downstream of the move has to vacate first:
+
+        | Travel            | Downstream | Leads  | Follower waits until          |
+        |-------------------|------------|--------|-------------------------------|
+        | Lowering (P < p)  | bottom     | bottom | p_open <= M_target_open + tol |
+        | Raising  (P > m)  | middle     | middle | m_open + tol >= P_target_open |
+
+        The lowering row is #1115; the raising row is #1118, and its predicate is
+        the exact complement of :meth:`_dual_entity_middle_leads`'s collision
+        test — one inequality, stated once, read from both ends.
+
+        **The two gates are never both armed.** The bottom rail blocks only when
+        ``m + tol < P``; the middle rail blocks only when ``p > M + tol``. Both
+        at once needs ``p > M + tol >= P + tol > m + 2·tol``, i.e. the bottom
+        rail physically ABOVE the middle rail — while ``M >= P`` holds for every
+        target pair the no-pass clamp in :meth:`resolve_entity_target` can emit.
+        Within one dispatch the two are mutually exclusive by the same clamp that
+        makes the target pair physically legal. Two states sit outside that
+        guarantee and both are bounded: crossed targets booked across ERAS (only
+        reachable on the reconciliation path, where every gate runs ``wait=False``
+        — a single read, so both rails simply defer for one tick and the next
+        pass re-asks), and crossed RAILS (``p > m``, physically impossible for an
+        intact shade on one track — both rails would defer after their budget,
+        latch pending, and retry next cycle).
+
+        **The asymmetry is deliberate.** The middle rail's branch does NOT
+        consult :meth:`_dual_entity_middle_leads`; it gates unconditionally,
+        exactly as #1115 shipped it. The direction predicate needs the BOTTOM
+        rail's target, and the middle rail's gate is only ever handed its own —
+        so answering the direction question for it would mean reading a cached
+        number that is stale at four seams, and a stale "middle leads" would
+        UNGATE the middle rail during a lowering, re-opening #1115 through the
+        very mechanism built to close it. The middle rail is therefore never
+        ungated by a direction reading; only the bottom rail's gate is
+        conditional, and it is conditional on a number it holds authoritatively.
 
         The no-pass clamp in :meth:`resolve_entity_target` (``M >= P``) states
         that invariant about two NUMBERS — the two eventual targets. It cannot see
@@ -1308,7 +1460,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         path captures the stamp immediately before this gate and books that very
         value with the target, and the resend replays what was stored, because
         the number it is putting back on the wire is the one that dispatch
-        produced. On a Model C middle rail the stamp is always a ``bool``, so
+        produced. On either Model C rail the stamp is always a ``bool``, so
         neither position path ever hands this method a ``None``.
 
         ``None`` reaches here only for a target no dispatch produced, and the
@@ -1324,7 +1476,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         is forwarded unchanged and no second answer is computed here.
 
         The live ``_dual_entity_dispatch_inverse`` record is deliberately NOT
-        read for those. It describes the last middle-rail RESOLUTION — a
+        read for those. It describes the last rail RESOLUTION — a
         different number — and one seam resolve is enough to leave it naming a
         divergent space: the sunset/end-time loops invert iff inverse-state is
         CONFIGURED, so an install running interpolation (where ``axis_inverted``
@@ -1344,53 +1496,79 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         target against the configured flag while the seam built it un-inverted
         withholds a command that is already physically clear, on every
         inverse-state Model C install. Both sides of the comparison ride the
-        same frame: the bottom rail was commanded by the same seam, so its live
+        same frame: the leading rail was commanded by the same seam, so its live
         reading speaks it too.
 
-        ``wait`` picks how long the bottom rail gets. The dispatch path waits
-        out the full budget: it has just issued the bottom rail's command and
-        nothing else will re-drive the middle rail this cycle. A caller that is
-        already a periodic retry loop passes ``False`` and takes a single read —
-        see :meth:`await_dispatch_clearance`. The clearance PREDICATE is
-        identical in both modes; only the number of chances the rail gets to
-        satisfy it differs.
+        ``wait`` picks how long the leading rail gets. The dispatch path waits
+        out the full budget: it has just issued that rail's command and nothing
+        else will re-drive this one this cycle. A caller that is already a
+        periodic retry loop passes ``False`` and takes a single read — see
+        :meth:`await_dispatch_clearance`. The clearance PREDICATE is identical in
+        both modes; only the number of chances the rail gets to satisfy it
+        differs.
 
         Returns ``True`` to let the command through, ``False`` to withhold it.
         Withholding latches the entity pending so the coordinator keeps
-        re-attempting on later cycles; it never drops the command. Unreadable or
-        never-clearing is deliberately fail-CLOSED (withhold), because a rail
-        whose position cannot be read cannot be proven safe to drive into — while
-        an un-resolvable bottom rail is fail-OPEN (proceed), because there is then
-        no coupled rail to protect and withholding forever would brick the shade.
+        re-attempting on later cycles; it never drops the command. Once a
+        clearance question is answered "proceed" the latch is cleared, whichever
+        branch answered it — a rail withheld by one cycle's raise must not stay
+        latched through the next cycle's lower.
+
+        A leading rail that is unreadable or never clears is fail-CLOSED
+        (withhold), because a rail whose position cannot be read cannot be proven
+        safe to drive into. Two things are fail-OPEN instead: an unresolvable
+        rail PAIR (there is then no coupled rail to protect, and withholding
+        forever would brick the shade), and an unreadable MIDDLE rail on the
+        bottom rail's direction check — see :meth:`_dual_entity_middle_leads`,
+        where the reading is the evidence of a collision rather than the
+        disproof of a known one.
         """
         seq = self._sequencer
+        middle_rail = self._dual_entity_middle_rail
         bottom_rail = self._dual_entity_bottom_rail
-        if seq is None or bottom_rail is None:
+        if seq is None or bottom_rail is None or middle_rail is None:
             self._debug(
-                "Model C rail gate inert for %s: no bottom rail resolved", entity_id
+                "Model C rail gate inert for %s: no paired rail resolved", entity_id
             )
             return True
 
         inverse = self._dispatch_frame(dispatch_token)
-        middle_open = flip_if(position, inverted=inverse)
+        target_open = flip_if(position, inverted=inverse)
         tolerance = self._position_tolerance
 
-        def _cleared(bottom_wire: int) -> bool:
-            return flip_if(bottom_wire, inverted=inverse) <= middle_open + tolerance
+        if is_middle:
+            leading_rail = bottom_rail
+
+            def _cleared(wire: int) -> bool:
+                return flip_if(wire, inverted=inverse) <= target_open + tolerance
+
+        elif self._dual_entity_middle_leads(target_open, inverse):
+            leading_rail = middle_rail
+
+            def _cleared(wire: int) -> bool:
+                return flip_if(wire, inverted=inverse) + tolerance >= target_open
+
+        else:
+            # The bottom rail leads this move: nothing is downstream of it, so
+            # it is unconditionally ungated — #1115's behaviour, now stated as a
+            # direction rather than as a rail. Clear any latch a previous
+            # raising cycle left on it; this command is going out.
+            self._pending_rail_command.discard(entity_id)
+            return True
 
         if await seq.wait_until_position(
-            bottom_rail, _cleared, timeout_seconds=None if wait else 0
+            leading_rail, _cleared, timeout_seconds=None if wait else 0
         ):
-            self._pending_middle_rail.discard(entity_id)
+            self._pending_rail_command.discard(entity_id)
             return True
-        self._pending_middle_rail.add(entity_id)
+        self._pending_rail_command.add(entity_id)
         self._debug(
-            "Model C rail gate deferring %s → %s%% (%s): bottom rail %s has not "
-            "cleared the middle rail's target",
+            "Model C rail gate deferring %s → %s%% (%s): leading rail %s has not "
+            "cleared this rail's target",
             entity_id,
             position,
             reason,
-            bottom_rail,
+            leading_rail,
         )
         return False
 
@@ -1403,17 +1581,24 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         wait: bool = True,
         dispatch_token: bool | None = None,
     ) -> bool:
-        """Hold a Model C middle-rail command until the bottom rail has cleared.
+        """Hold a Model C rail until the rail leading this move has cleared.
 
         The single gate every position path consults: ``apply_position`` before
         it books an outbound command, and ``run_reconciliation_pass`` before it
         re-sends a recorded target. Neither can trigger the Model A blend
         pre-send that lives in ``before_position_command``.
 
+        EITHER rail of the pair may be the one held: the middle rail when the
+        shade lowers (#1115), the bottom rail when it raises past a middle rail
+        that has not vacated yet (#1118). Every other entity — Models A and B,
+        an unconfigured middle rail, a cover outside the pair — is always clear.
+        Which of the two is being asked about is passed down rather than
+        re-derived, so the role test is stated once.
+
         ``wait=False`` takes ONE reading instead of polling out the budget —
         what the reconciliation timer passes, because that budget is its own
         interval and a blocked rail would otherwise keep a pass alive into the
-        next one. The bottom rail is not going anywhere in the meantime: the
+        next one. The leading rail is not going anywhere in the meantime: the
         withhold latches and the next tick re-asks.
 
         ``dispatch_token`` names WHICH dispatch ``position`` came from — the
@@ -1424,13 +1609,19 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         against a per-cycle record a later resolve may have restated
         (issue #1115). ``None`` arrives only from a target no dispatch produced,
         and resolves to the install's own frame like every other unnamed frame
-        — see :meth:`_gate_middle_rail_clearance` for who books one and why the
+        — see :meth:`_gate_rail_clearance` for who books one and why the
         install flag, not the per-cycle record, is the honest answer there.
         """
-        if not self._is_dual_entity_middle_rail(entity_id):
+        is_middle = self._is_dual_entity_middle_rail(entity_id)
+        if not is_middle and not self._is_dual_entity_bottom_rail(entity_id):
             return True
-        return await self._gate_middle_rail_clearance(
-            entity_id, position, reason, wait=wait, dispatch_token=dispatch_token
+        return await self._gate_rail_clearance(
+            entity_id,
+            position,
+            reason,
+            wait=wait,
+            dispatch_token=dispatch_token,
+            is_middle=is_middle,
         )
 
     def _debug(self, msg: str, *args) -> None:
