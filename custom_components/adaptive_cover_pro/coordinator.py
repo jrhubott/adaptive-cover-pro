@@ -4504,16 +4504,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         (issue #895).
         """
         options = self.config_entry.options
+        sunset_pos_cfg = options.get(CONF_SUNSET_POS)
         await self._window_tracker.check_sunset_window(
             track_end_time=self._track_end_time,
             automatic_control=self.automatic_control,
-            sunset_pos_cfg=options.get(CONF_SUNSET_POS),
+            sunset_pos_cfg=sunset_pos_cfg,
             options=options,
             inverse_state_enabled=self._inverse_state,
             # Same policy-mandated rail order as every other dispatch seam
             # (issue #1115) — the tracker fans the sunset position out in the
             # order it receives, so the ordering is applied here.
-            entities=self._policy.order_for_dispatch(self.entities),
+            #
+            # Name the number and frame it will fan out so the ordering view can
+            # tell a raise from a lower (issue #1118). This seam inverts iff
+            # inverse-state is CONFIGURED — unconditional of interpolation, like
+            # the end-time loop above and unlike ``_to_cover_frame`` (#993) — so
+            # the pair is stated in that space. A raising sunset position
+            # ordered bottom-first would park the bottom rail's gate on a middle
+            # rail nothing has commanded for a whole settle budget, and this
+            # runs on the reconciliation tick.
+            entities=self._policy.order_for_dispatch(
+                self.entities,
+                position=(
+                    None
+                    if sunset_pos_cfg is None
+                    else flip_if(int(sunset_pos_cfg), inverted=self._inverse_state)
+                ),
+                inverted=self._inverse_state,
+            ),
             is_cover_manual=self.manager.is_cover_manual,
             has_active_override=self._pipeline_has_active_override(),
             build_position_context=lambda c, o: self._build_position_context(

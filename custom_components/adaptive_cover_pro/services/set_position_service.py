@@ -62,7 +62,15 @@ async def async_handle_set_position(call: ServiceCall) -> None:
         # (issue #1115) — applied to an explicit entity filter too, since a
         # Model C target block can name both rails. Identity for every cover
         # type whose entities are physically independent.
-        ordered = coord._policy.order_for_dispatch(entity_ids)  # noqa: SLF001
+        #
+        # Name the number and frame this loop fans out so the ordering view can
+        # tell a raise from a lower (issue #1118) — the same pair
+        # ``async_apply_user_position`` hands ``_entity_target`` downstream.
+        ordered = coord._policy.order_for_dispatch(  # noqa: SLF001
+            entity_ids,
+            position=coord._to_cover_frame(requested),  # noqa: SLF001
+            inverted=coord.position_axis_inverted,
+        )
         for entity_id in ordered:
             await coord.async_apply_user_axis(
                 entity_id,

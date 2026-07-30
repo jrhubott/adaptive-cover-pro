@@ -376,10 +376,15 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
 
         async def _member(entry, coordinator) -> None:
             # Each member's OWN policy decides its rail order (issue #1115) —
-            # a Model C day/night member inside a group needs its bottom rail
-            # commanded first exactly as it does standalone.
+            # a Model C day/night member inside a group sequences its rails
+            # exactly as it does standalone, and names the number and frame this
+            # loop fans out so the ordering view can tell a raise from a lower
+            # (issue #1118). Same pair ``async_apply_user_position`` hands
+            # ``_entity_target`` below, resolved against the MEMBER's own frame.
             ordered = coordinator._policy.order_for_dispatch(  # noqa: SLF001
-                entry.options.get(CONF_ENTITIES, [])
+                entry.options.get(CONF_ENTITIES, []),
+                position=coordinator._to_cover_frame(position),  # noqa: SLF001
+                inverted=coordinator.position_axis_inverted,
             )
             for entity_id in ordered:
                 await coordinator.async_apply_user_position(
@@ -402,9 +407,15 @@ class GroupCoordinator(DataUpdateCoordinator[GroupAggregates]):
         """
 
         async def _member(entry, coordinator) -> None:
-            # Same per-member ordered view as the position slider (issue #1115).
+            # Same per-member ordered view as the position slider (issue #1115),
+            # naming the tilt value for the direction check (issue #1118): on a
+            # single-carriage type the tilt axis falls back to the position path
+            # (#684), so that IS the number reaching ``_entity_target``; a type
+            # with a real tilt axis ignores the pair entirely.
             ordered = coordinator._policy.order_for_dispatch(  # noqa: SLF001
-                entry.options.get(CONF_ENTITIES, [])
+                entry.options.get(CONF_ENTITIES, []),
+                position=coordinator._to_cover_frame(tilt),  # noqa: SLF001
+                inverted=coordinator.position_axis_inverted,
             )
             for entity_id in ordered:
                 await coordinator.async_apply_user_tilt(

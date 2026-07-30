@@ -327,8 +327,10 @@ def _record_user_commands(coordinator, method_name: str) -> list[str]:
 async def test_my_position_button_commands_bottom_rail_before_middle() -> None:
     """The My Position button fans its preset out in policy-mandated rail order.
 
-    This seam does not name its fanned-out target, so it rides the conservative
-    bottom-first fallback (#1118).
+    This seam DOES name its fanned-out target (#1118), but the coordinator here
+    is a stub whose policy was never ``attach``ed, so the direction check has no
+    live reading to work from and lands on the conservative bottom-first
+    fallback — which is what this test is about.
     """
     from custom_components.adaptive_cover_pro.button import (
         AdaptiveCoverMyPositionButton,
@@ -351,8 +353,10 @@ async def test_set_position_service_commands_bottom_rail_before_middle(
 ) -> None:
     """``adaptive_cover_pro.set_position`` over a whole instance orders its fan-out.
 
-    This seam does not name its fanned-out target, so it rides the conservative
-    bottom-first fallback (#1118).
+    This seam DOES name its fanned-out target (#1118), but the coordinator here
+    is a stub whose policy was never ``attach``ed, so the direction check has no
+    live reading to work from and lands on the conservative bottom-first
+    fallback — which is what this test is about.
     """
     from custom_components.adaptive_cover_pro.services import set_position_service
 
@@ -381,8 +385,10 @@ async def test_set_tilt_service_commands_bottom_rail_before_middle(
     support (#684), which puts a real position on the wire — the same seam
     shape, and the same reason to order it.
 
-    This seam does not name its fanned-out target, so it rides the conservative
-    bottom-first fallback (#1118).
+    This seam DOES name its fanned-out target (#1118), but the coordinator here
+    is a stub whose policy was never ``attach``ed, so the direction check has no
+    live reading to work from and lands on the conservative bottom-first
+    fallback — which is what this test is about.
     """
     from custom_components.adaptive_cover_pro.services import set_tilt_service
 
@@ -407,8 +413,10 @@ async def test_set_axes_service_commands_bottom_rail_before_middle(
 ) -> None:
     """``set_axes`` validates up front, then dispatches in rail order.
 
-    This seam does not name its fanned-out target, so it rides the conservative
-    bottom-first fallback (#1118).
+    This seam DOES name its fanned-out target (#1118), but the coordinator here
+    is a stub whose policy was never ``attach``ed, so the direction check has no
+    live reading to work from and lands on the conservative bottom-first
+    fallback — which is what this test is about.
     """
     from custom_components.adaptive_cover_pro.services import set_axes_service
 
@@ -448,8 +456,10 @@ def _group_fan_out_to_one_member(member_coord) -> MagicMock:
 async def test_group_cover_slider_commands_bottom_rail_before_middle() -> None:
     """A cover group dragging its slider orders each member's own rails.
 
-    This seam does not name its fanned-out target, so it rides the conservative
-    bottom-first fallback (#1118).
+    This seam DOES name its fanned-out target (#1118), but the coordinator here
+    is a stub whose policy was never ``attach``ed, so the direction check has no
+    live reading to work from and lands on the conservative bottom-first
+    fallback — which is what this test is about.
     """
     from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
 
@@ -468,8 +478,10 @@ async def test_group_cover_slider_commands_bottom_rail_before_middle() -> None:
 async def test_group_cover_tilt_commands_bottom_rail_before_middle() -> None:
     """The group tilt slider rides the same per-member ordered view.
 
-    This seam does not name its fanned-out target, so it rides the conservative
-    bottom-first fallback (#1118).
+    This seam DOES name its fanned-out target (#1118), but the coordinator here
+    is a stub whose policy was never ``attach``ed, so the direction check has no
+    live reading to work from and lands on the conservative bottom-first
+    fallback — which is what this test is about.
     """
     from custom_components.adaptive_cover_pro.group_coordinator import GroupCoordinator
 
@@ -977,12 +989,14 @@ def test_order_for_dispatch_keeps_bottom_first_when_lowering() -> None:
 def test_order_for_dispatch_falls_back_to_bottom_first_without_a_named_target() -> None:
     """A seam that names no fanned-out target rides the conservative default.
 
-    The sunset broadcast, the user-command seams and the reconciliation pass all
-    dispatch a number that only exists per-entity further down their own call
-    chain, so none of them can hand the ordering view the pair the gate will
-    later be asked about. They get #1115's shipped constant instead — ordering
-    is a LATENCY mechanism, and the gates (which are always authoritative) still
-    withhold anything the fallback order sends too early.
+    The reconciliation pass holds a MAP of per-entity targets booked by
+    different seams in different eras, not one fanned-out number, so it cannot
+    hand the ordering view the pair the gate will later be asked about. It gets
+    #1115's shipped constant instead — ordering is a LATENCY mechanism, and the
+    gates (which are always authoritative) still withhold anything the fallback
+    order sends too early. That deferral is harmless there specifically because
+    every gate on the reconciliation path runs ``wait=False``: one reading, no
+    settle budget, and the recorded target is still booked for the next pass.
 
     The empty event log is load-bearing: the fallback must short-circuit before
     it touches the sequencer, or every poll-count assertion in this module
@@ -1171,6 +1185,122 @@ async def test_bottom_rail_proceeds_immediately_when_the_middle_is_already_clear
     # One confirming read to establish direction, no polling loop.
     assert events.count(f"poll:{_MIDDLE}") == 1, events
     assert events[-1] == f"send:{_BOTTOM}"
+
+
+# ---------------------------------------------------------------------------
+# A raising USER command must not strand the bottom rail
+# ---------------------------------------------------------------------------
+# The user-command seams are the worst place to lose the rail order, because the
+# same press engages manual override. Ordered bottom-first on a RAISE, the bottom
+# rail's gate polls a middle rail that nothing has commanded — it cannot move, so
+# the gate burns its whole settle budget and then withholds. A withheld command
+# is a ``policy_deferred`` SKIP: nothing is booked, so the reconciliation pass
+# has no target to resend, and manual override stops the pipeline re-driving it.
+# The shade half-moves, hangs for the budget, and stays split until the user
+# presses again. Naming the fanned-out number at the seam makes the middle rail
+# lead instead, and the whole failure disappears.
+
+
+def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch):
+    """Build a coordinator over the REAL ``async_apply_user_position`` tail.
+
+    Everything a user command actually crosses on its way to the wire is
+    production code: the logical→cover frame mapping, the per-entity middle-rail
+    remap, the command service and the policy's travel gate. Only the
+    snapshot / pipeline / manager collaborators around the floor clamp are
+    stubbed, because none of them has anything to say about the rails.
+    """
+    from custom_components.adaptive_cover_pro import coordinator as coordinator_module
+
+    coord = MagicMock()
+    coord.logger = MagicMock()
+    coord.entities = list(entities)
+    coord._policy = policy
+    coord._cmd_svc = cmd_svc
+    coord._resolved_options = {}
+    coord.config_entry.options = {}
+    coord._inverse_state = False
+    coord._use_interpolation = False
+    coord.position_axis_inverted = False
+    coord._pipeline.evaluate = MagicMock(
+        return_value=types.SimpleNamespace(decision_trace=[])
+    )
+    coord._build_position_context = lambda _entity, _options, **_kw: _rail_context(
+        policy
+    )  # noqa: ARG005
+    for name in ("_entity_target", "_to_cover_frame", "async_apply_user_position"):
+        setattr(
+            coord,
+            name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
+        )
+    # No min-mode floor is configured here, and the real gatherer would otherwise
+    # walk the stubbed snapshot.
+    monkeypatch.setattr(coordinator_module, "gather_active_floors", lambda _s: [])
+    return coord
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_raise_sends_both_rails_without_stalling(
+    monkeypatch,
+) -> None:
+    """A raising My press must move BOTH rails, and must not wait out a budget.
+
+    End to end through the real button, the real
+    ``Coordinator.async_apply_user_position``, the real ``CoverCommandService``
+    and the real policy gate — the ordering decision is the seam's own, not a
+    hand-rolled ``order_for_dispatch`` call, which is the point: this is the one
+    thing that notices if the My button stops naming the number it fans out.
+
+    The middle rail is pinned at 20 until its OWN command goes out, which is what
+    makes the failure deterministic rather than a race: dispatched bottom-first,
+    the bottom rail's gate polls a rail that physically cannot have moved and
+    burns the full ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS``, then withholds.
+    The budget is deliberately left at its real value — entering it at all is the
+    failure this test exists to catch.
+    """
+    from custom_components.adaptive_cover_pro.button import (
+        AdaptiveCoverMyPositionButton,
+    )
+
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20]},
+        position=60,
+        blend=50,
+    )
+
+    # A rail only moves once it has been commanded. Until then the middle rail
+    # sits where it is, however long anything waits on it.
+    scripted_read = rails.read
+
+    def _read(entity_id: str) -> int | None:
+        if entity_id == _MIDDLE and f"send:{_MIDDLE}" in events:
+            return 90
+        return scripted_read(entity_id)
+
+    rails.read = _read
+
+    coord = _user_seam_coordinator(
+        cmd_svc, policy, entities=[_MIDDLE, _BOTTOM], monkeypatch=monkeypatch
+    )
+    button = MagicMock()
+    button._entities = [_MIDDLE, _BOTTOM]
+    button.config_entry.options = {CONF_MY_POSITION_VALUE: 60}
+    button.coordinator = coord
+
+    started = dt.datetime.now(dt.UTC)
+    with _patch_caps():
+        await AdaptiveCoverMyPositionButton.async_press(button)
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert f"send:{_BOTTOM}" in events, events
+    assert f"send:{_MIDDLE}" in events, events
+    assert events.index(f"send:{_MIDDLE}") < events.index(f"send:{_BOTTOM}")
+    # Nothing was withheld, so nothing is left latched waiting for a retry that
+    # manual override has already blocked.
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+    assert elapsed < 10, elapsed
 
 
 # ---------------------------------------------------------------------------
@@ -1763,37 +1893,12 @@ def test_every_ordering_exemption_names_a_test_that_covers_its_caller() -> None:
 # (module path relative to the production root, innermost enclosing function) →
 # why this seam legitimately cannot name the number it is fanning out.
 _UNNAMED_TARGET_SEAMS = {
-    ("coordinator.py", "_check_sunset_window_transition"): (
-        "Orders the list on WindowTransitionTracker.check_sunset_window's "
-        "behalf and holds only the raw config percent — the tracker computes "
-        "the dispatched value itself (flip_if(sunset_pos_cfg, "
-        "inverted=inverse_state_enabled)), so re-deriving it here would "
-        "duplicate that line."
-    ),
-    ("button.py", "async_press"): (
-        "Fans out a logical My percent that only becomes a per-entity framed "
-        "number inside async_apply_user_position, so no single "
-        "(position, inverted) pair exists here."
-    ),
-    ("services/set_position_service.py", "async_handle_set_position"): (
-        "User command: the framed per-entity value is produced downstream in "
-        "async_apply_user_position, not at this call site."
-    ),
-    ("services/set_tilt_service.py", "async_handle_set_tilt"): (
-        "User command: the framed per-entity value is produced downstream in "
-        "async_apply_user_position, not at this call site."
-    ),
-    ("services/set_axes_service.py", "async_handle_set_axes"): (
-        "User command: the framed per-entity value is produced downstream in "
-        "async_apply_user_position, not at this call site."
-    ),
-    ("group_coordinator.py", "_member"): (
-        "Group fan-out hands each member a logical percent; the member "
-        "coordinator frames it per entity further down."
-    ),
     ("managers/cover_command/__init__.py", "run_reconciliation_pass"): (
         "Holds a MAP of per-entity targets booked by different seams in "
-        "different eras, not one fanned-out number."
+        "different eras, not one fanned-out number. Harmless: every gate on "
+        "this path runs wait=False, so a mis-ordered rail takes ONE reading, "
+        "defers for a tick and is re-asked by the next pass — it never enters "
+        "a settle budget and the recorded target is still there to resend."
     ),
 }
 
