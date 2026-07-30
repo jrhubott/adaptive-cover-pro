@@ -39,6 +39,7 @@ from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
     TILT_AXIS_PRIMARY,
+    TILT_CAPABLE_ENTITY_FILTER,
     CoverAxis,
     CoverTypePolicy,
     caps_get,
@@ -141,16 +142,6 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
 # Module-level constant for backward compatibility with tests / re-exports.
 # Built without hass (== metric labels), identical to the historical schema.
 GEOMETRY_TILT_SCHEMA = geometry_tilt_schema()
-
-
-# Filter shared by tilt and venetian: cover entities that expose
-# ``set_tilt_position``. HA's ``supported_features`` filter is OR-of-listed,
-# not AND, so venetian uses this same filter and surfaces the
-# missing-set_position case as a config-flow capability warning.
-TILT_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
-    domain="cover",
-    supported_features=["cover.CoverEntityFeature.SET_TILT_POSITION"],
-)
 
 
 class TiltPolicy(CoverTypePolicy, register=True):

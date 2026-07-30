@@ -264,6 +264,32 @@ def _make_coordinator_with_options(options: dict):
     return coord
 
 
+def _coordinator_for_update_options():
+    """Build an ``__init__``-bypassed coordinator wired for ``_update_options``.
+
+    One place listing the collaborators ``_update_options`` reaches for, so a new
+    one is added here instead of in each test that drives it. Every attribute the
+    real ``__init__`` assigns before the first ``_update_options`` call belongs
+    here, ``_policy`` included — the method ends by handing the options dict to
+    ``policy.sync_runtime_options`` (issue #1114).
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord._cmd_svc = MagicMock()
+    coord._time_mgr = MagicMock()
+    coord._motion_mgr = MagicMock()
+    coord._weather_mgr = MagicMock()
+    coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
+    coord.manager = MagicMock()
+    coord._policy = MagicMock()
+    return coord
+
+
 # ---------------------------------------------------------------------------
 # Group 1 — Options builder never stores None for critical keys
 # ---------------------------------------------------------------------------
@@ -416,19 +442,7 @@ class TestCoordinatorInitWithNoneOptions:
     @pytest.mark.unit
     def test_update_options_resolves_none_delta_position(self):
         """_update_options must resolve None delta_position to 1."""
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        coord._cmd_svc = MagicMock()
-        coord._time_mgr = MagicMock()
-        coord._motion_mgr = MagicMock()
-        coord._weather_mgr = MagicMock()
-        coord._cloud_mgr = MagicMock()
-        coord._climate_smoothing_mgr = MagicMock()
-        coord._climate_smoothing_mgr.resolved_flags = None
-        coord.manager = MagicMock()
+        coord = _coordinator_for_update_options()
 
         coord._update_options(self._POISONED_OPTIONS)
 
@@ -444,19 +458,7 @@ class TestCoordinatorInitWithNoneOptions:
     @pytest.mark.unit
     def test_update_options_resolves_none_delta_time(self):
         """_update_options must resolve None delta_time to 2."""
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        coord._cmd_svc = MagicMock()
-        coord._time_mgr = MagicMock()
-        coord._motion_mgr = MagicMock()
-        coord._weather_mgr = MagicMock()
-        coord._cloud_mgr = MagicMock()
-        coord._climate_smoothing_mgr = MagicMock()
-        coord._climate_smoothing_mgr.resolved_flags = None
-        coord.manager = MagicMock()
+        coord = _coordinator_for_update_options()
 
         coord._update_options(self._POISONED_OPTIONS)
 
@@ -472,19 +474,7 @@ class TestCoordinatorInitWithNoneOptions:
     @pytest.mark.unit
     def test_update_options_resolves_none_manual_duration(self):
         """_update_options must resolve None manual_duration to {'hours': 2}."""
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        coord._cmd_svc = MagicMock()
-        coord._time_mgr = MagicMock()
-        coord._motion_mgr = MagicMock()
-        coord._weather_mgr = MagicMock()
-        coord._cloud_mgr = MagicMock()
-        coord._climate_smoothing_mgr = MagicMock()
-        coord._climate_smoothing_mgr.resolved_flags = None
-        coord.manager = MagicMock()
+        coord = _coordinator_for_update_options()
 
         coord._update_options(self._POISONED_OPTIONS)
 
@@ -497,19 +487,8 @@ class TestCoordinatorInitWithNoneOptions:
     def test_update_options_forwards_configured_position_tolerance(self):
         """_update_options pushes the configured tolerance to the command service (issue #507)."""
         from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
 
-        coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        coord._cmd_svc = MagicMock()
-        coord._time_mgr = MagicMock()
-        coord._motion_mgr = MagicMock()
-        coord._weather_mgr = MagicMock()
-        coord._cloud_mgr = MagicMock()
-        coord._climate_smoothing_mgr = MagicMock()
-        coord._climate_smoothing_mgr.resolved_flags = None
-        coord.manager = MagicMock()
+        coord = _coordinator_for_update_options()
 
         coord._update_options({**self._POISONED_OPTIONS, CONF_POSITION_TOLERANCE: 12})
 
@@ -518,19 +497,7 @@ class TestCoordinatorInitWithNoneOptions:
     @pytest.mark.unit
     def test_update_options_position_tolerance_defaults_to_three(self):
         """Absent tolerance option resolves to the default (3) on options change (issue #507)."""
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        coord._cmd_svc = MagicMock()
-        coord._time_mgr = MagicMock()
-        coord._motion_mgr = MagicMock()
-        coord._weather_mgr = MagicMock()
-        coord._cloud_mgr = MagicMock()
-        coord._climate_smoothing_mgr = MagicMock()
-        coord._climate_smoothing_mgr.resolved_flags = None
-        coord.manager = MagicMock()
+        coord = _coordinator_for_update_options()
 
         coord._update_options(self._POISONED_OPTIONS)
 

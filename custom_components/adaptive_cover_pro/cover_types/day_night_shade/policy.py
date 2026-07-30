@@ -67,6 +67,7 @@ from ..base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
+    POSITION_CAPABLE_ENTITY_FILTER,
     TILT_AXIS,
     CoverAxis,
     CoverTypePolicy,
@@ -74,7 +75,6 @@ from ..base import (
     caps_get,
 )
 from ..blind import VERTICAL_LENGTH_KEYS, geometry_vertical_schema
-from ..tilt import TILT_CAPABLE_ENTITY_FILTER
 from ..venetian import DualAxisSequencer
 
 if TYPE_CHECKING:
@@ -194,10 +194,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
         self._last_blend: int | None = None
         self._schedule_refresh_after: Any | None = None
-        # Per-instance control model (Model A vs B). Read from options and cached
-        # once per cycle in ``post_pipeline_resolve`` so the downstream dispatch
-        # hooks — which don't receive ``options`` — can gate on it. Defaults to
-        # the dual-axis Model A so an un-resolved cycle behaves like Phase A.
+        # Per-instance control model (Model A vs B vs C). Read from options and
+        # cached once per cycle in ``sync_runtime_options`` — the generic hook the
+        # coordinator drives before the pipeline and the health checks — so the
+        # downstream dispatch hooks, which don't receive ``options``, can gate on
+        # it. Defaults to the dual-axis Model A so an un-resolved cycle behaves
+        # like Phase A.
         self._control_model: str = DEFAULT_DAY_NIGHT_CONTROL_MODEL
         # Model C (dual_entity) dispatch cache, filled in ``post_pipeline_resolve``
         # and read by ``resolve_entity_target`` at the coordinator dispatch seam
@@ -226,6 +228,38 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """User-facing label for day/night shades."""
         L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
         return L["cover_types.day_night_shade"]
+
+    # ---- Control model ------------------------------------------------ #
+
+    @staticmethod
+    def _read_control_model(source: dict) -> str:
+        """Read the control model out of an options/config mapping.
+
+        The single source for the ``CONF_DAY_NIGHT_CONTROL_MODEL`` read — every
+        consumer routes through here rather than repeating the key + default
+        (CODING_GUIDELINES.md "No Code Duplication"). The parameter is *source*,
+        not *options*, because :meth:`summary_geometry_lines` passes the
+        config-flow ``config`` mapping while :meth:`_set_control_model` and
+        :meth:`capability_warnings_for_options` pass ``options``: same key, same
+        default, two mappings.
+        """
+        return str(
+            source.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
+        )
+
+    def _set_control_model(self, options: dict) -> None:
+        """Cache the per-instance control model from ``options``.
+
+        The downstream dispatch hooks (``resolve_entity_target``,
+        ``after_position_command``, the A3 ``tilt_capability_contradiction``
+        predicate) receive no ``options``, so they read ``_control_model``. This
+        writes it, and is called from :meth:`sync_runtime_options` — the generic
+        per-cycle hook the coordinator drives on the event loop before the
+        pipeline and the health checks — and again from
+        :meth:`post_pipeline_resolve` so that hook is self-sufficient when
+        called directly.
+        """
+        self._control_model = self._read_control_model(options)
 
     # ---- Geometry / config-flow surfaces ------------------------------ #
 
@@ -258,8 +292,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         return VERTICAL_LENGTH_KEYS
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
-        """Require entities that advertise ``set_tilt_position`` (both axes needed)."""
-        return TILT_CAPABLE_ENTITY_FILTER
+        """Require ``set_position`` — every control model needs it.
+
+        Only Model A (``position_tilt``) additionally needs
+        ``set_tilt_position``; that case is surfaced by
+        ``capability_warnings_for_options`` and the A3 Repair, so the
+        single-carriage models are not locked out of the picker.
+        """
+        return POSITION_CAPABLE_ENTITY_FILTER
 
     def summary_geometry_lines(
         self, config: dict[str, Any], labels: dict[str, str] | None = None
@@ -267,9 +307,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Render the window-dimensions block plus the control-model line."""
         lines = window_dimensions_lines(config, labels)
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
-        model = config.get(
-            CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL
-        )
+        model = self._read_control_model(config)
         model_label = {
             DAY_NIGHT_MODEL_POSITION_TILT: L["geometry.day_night.model_position_tilt"],
             DAY_NIGHT_MODEL_SPLIT_RANGE: L["geometry.day_night.model_split_range"],
@@ -347,9 +385,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         warns when ``CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY`` names an entity that is
         not among the instance's configured covers (a typo / stale pick).
         """
-        model = str(
-            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
-        )
+        model = self._read_control_model(options)
         single_axis_label = (
             "dual-entity" if model == DAY_NIGHT_MODEL_DUAL_ENTITY else "split-range"
         )
@@ -378,6 +414,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
     # ---- Calculation engine ------------------------------------------- #
 
+    def sync_runtime_options(self, options: dict) -> None:
+        """Resolve the control model for this cycle (base hook, #1114).
+
+        The coordinator drives this from ``_update_options``, on the event loop,
+        before the pipeline and before ``_evaluate_health_checks`` — so the A3
+        ``tilt_capability_contradiction`` predicate already knows it is looking
+        at a single-carriage Model B/C on the coordinator's very first cycle,
+        rather than reporting a position-only cover as a contradiction against
+        the ``__init__`` Model A default.
+        """
+        self._set_control_model(options)
+
     def build_calc_engine(
         self,
         *,
@@ -389,7 +437,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         config_service: ConfigurationService,
         options: dict,
     ) -> AdaptiveGeneralCover:
-        """Build a vertical calc engine; the blend is filled post-pipeline."""
+        """Build a vertical calc engine; the blend is filled post-pipeline.
+
+        A pure builder — it mutates no policy state. ``forecast`` calls this
+        ~289× per strip from an executor thread, so a write here would land off
+        the event loop; the control model is cached by
+        :meth:`sync_runtime_options` instead.
+        """
         return AdaptiveVerticalCover(
             logger=logger,
             sol_azi=sol_azi,
@@ -549,21 +603,31 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Resolve the fabric blend, then map it onto the configured control model.
 
         The blend resolution (:meth:`_resolve_blend`) is model-independent and
-        byte-identical to Model A. The per-instance control model is cached here
-        from ``options`` — the downstream dispatch hooks don't receive
-        ``options``, so they read the cached value. In ``split_range`` (Model B)
-        a single physical axis encodes BOTH coverage and fabric, so the resolved
-        blend is folded into ``result.position`` via :meth:`_split_range_wire`
-        while the abstract blend is kept on ``result.tilt`` for the Target Tilt
-        sensor / forecast / diagnostics. In ``position_tilt`` (Model A, default)
-        the resolved result passes straight through.
+        byte-identical to Model A. The downstream dispatch hooks don't receive
+        ``options``, so they read the cached ``_control_model``.
+
+        The :meth:`_set_control_model` call below is a **defensive no-op in
+        production**: ``sync_runtime_options`` already resolved the model from
+        the same per-cycle ``options`` object before the pipeline ran, and a
+        model change is not runtime-applicable — it reloads the config entry
+        (``__init__.async_update_options``) and yields a fresh policy, so the
+        value can't drift mid-lifetime. It is retained because this hook is also
+        exercised directly, without the coordinator's per-cycle seam: the
+        ``post_pipeline_resolve`` unit tests pass ``options`` straight in and
+        expect the model to take effect. Keeping it here means the hook is
+        self-sufficient rather than order-dependent on its caller.
+
+        In ``split_range`` (Model B) a single physical axis encodes BOTH coverage
+        and fabric, so the resolved blend is folded into ``result.position`` via
+        :meth:`_split_range_wire` while the abstract blend is kept on
+        ``result.tilt`` for the Target Tilt sensor / forecast / diagnostics. In
+        ``position_tilt`` (Model A, default) the resolved result passes straight
+        through.
         """
         if result is None:
             return result
 
-        self._control_model = str(
-            options.get(CONF_DAY_NIGHT_CONTROL_MODEL, DEFAULT_DAY_NIGHT_CONTROL_MODEL)
-        )
+        self._set_control_model(options)
         resolved = self._resolve_blend(
             result,
             logger=logger,

@@ -89,6 +89,35 @@ AXIS_VALUE_MAX = 100
 AXIS_VALUE_UNIT = "%"
 
 
+# ---------------------------------------------------------------------------
+# Config-flow entity-selector filters
+# ---------------------------------------------------------------------------
+# The ``EntityFilterSelectorConfig`` structures returned by
+# ``entity_selector_filter()``, built from HA's own ``CoverEntityFeature`` names.
+# They belong here rather than in ``const.py`` for the same reason as the
+# capability flags above — they define the cover-type abstraction boundary — and
+# because they are schema structures assembled at import time, not plain values.
+# Both strictness levels sit together so a policy author reads them side by side
+# and picks deliberately (#1114).
+
+# Cover types that drive a tilt axis unconditionally (tilt, venetian, louvered
+# roof). HA's ``supported_features`` filter is OR-of-listed, not AND, so the
+# venetian's additional ``set_position`` need is surfaced as a config-flow
+# capability warning rather than by a second entry here.
+TILT_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
+    domain="cover",
+    supported_features=["cover.CoverEntityFeature.SET_TILT_POSITION"],
+)
+
+# Cover types whose control models all need only ``set_position`` (e.g. Day/Night
+# Models B/C, #1114) — intentionally admits position-only hardware
+# (``supported_features`` with no tilt bit) that the tilt filter would exclude.
+POSITION_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
+    domain="cover",
+    supported_features=["cover.CoverEntityFeature.SET_POSITION"],
+)
+
+
 @dataclass(frozen=True, slots=True)
 class CoverAxis:
     """One controllable axis on a cover entity.
@@ -417,6 +446,26 @@ class CoverTypePolicy(ABC):
         if not inserted:
             rebuilt[toggle_marker] = toggle_selector
         return vol.Schema(rebuilt)
+
+    def sync_runtime_options(self, options: dict) -> None:  # noqa: ARG002
+        """Refresh option-derived policy state for this update cycle.
+
+        The coordinator calls this once per cycle from ``_update_options`` — on
+        the event loop, before the pipeline runs and before the health checks
+        ask their predicates — so a policy that caches an option-derived mode
+        has it resolved before anything reads it, including on the coordinator's
+        very first cycle. Generic on purpose: the coordinator must not know
+        which cover types cache what, and must never call a type-specific method
+        (CODING_GUIDELINES.md "No String Branches Outside ``cover_types/``").
+
+        Default: no-op. Most policies derive everything from the ``options``
+        dict each hook already receives and need no cache.
+
+        This exists so ``build_calc_engine`` can stay a pure builder:
+        ``forecast.build_forecast_for_coord`` calls it ~289× per forecast from
+        an executor thread, so mutating live policy state there would write
+        off the event loop.
+        """
 
     @abstractmethod
     def build_calc_engine(
