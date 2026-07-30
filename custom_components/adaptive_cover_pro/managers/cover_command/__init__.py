@@ -324,7 +324,18 @@ class CoverCommandService:
 
     def set_target(self, entity_id: str, position: int | None) -> None:
         """Set the commanded target position. ``None`` clears the target."""
-        self.state(entity_id).target = position
+        state = self.state(entity_id)
+        state.target = position
+        state.desired_target = position
+
+    def set_desired_target(self, entity_id: str, position: int | None) -> None:
+        """Record the latest calculated target, even when its command is gated."""
+        self.state(entity_id).desired_target = position
+
+    def get_desired_target(self, entity_id: str) -> int | None:
+        """Return the latest calculated target position."""
+        state = self._state.get(entity_id)
+        return state.desired_target if state is not None else None
 
     def restore_target(self, entity_id: str, target: int | None) -> bool:
         """Rehydrate a persisted command target after an ACP reload (issue #1022).
@@ -370,10 +381,11 @@ class CoverCommandService:
         return True
 
     def iter_targets(self) -> Iterator[tuple[str, int]]:
-        """Yield (entity_id, target) for every entity with a recorded target."""
+        """Yield the latest desired target for every tracked entity."""
         for eid, s in list(self._state.items()):
-            if s.target is not None:
-                yield eid, s.target
+            target = s.desired_target if s.desired_target is not None else s.target
+            if target is not None:
+                yield eid, target
 
     def is_waiting_for_target(self, entity_id: str) -> bool:
         """Return True if the cover is currently expected to be moving toward target."""
@@ -1359,6 +1371,15 @@ class CoverCommandService:
                 current_position=_current,
             )
 
+        state = self.state(entity_id)
+        previous_desired = state.desired_target
+        state.desired_target = position
+        if previous_desired != position:
+            state.retry_count = 0
+            state.gave_up = False
+            if state.target != position:
+                state.waiting = False
+
         # Same-position band — applies to ALL callers, including force=True and
         # is_safety=True.  Issuing set_cover_position when the cover is already
         # at the target is a true no-op that causes audible relay clicks on many
@@ -1562,7 +1583,12 @@ class CoverCommandService:
                     },
                 )
 
-            if not self._check_time_delta(entity_id, context.time_threshold):
+            target_changed = (
+                state.desired_target != state.target
+            )
+            if not target_changed and not self._check_time_delta(
+                entity_id, context.time_threshold
+            ):
                 _elapsed = self._elapsed_minutes(entity_id)
                 # Issue #954: delta_time is a carriage rate-limiter, not a
                 # tilt gate — same reasoning as delta_too_small above.
@@ -1894,6 +1920,7 @@ class CoverCommandService:
 
         for entity_id, target in list(self.iter_targets()):
             s = self.state(entity_id)
+            target = s.desired_target if s.desired_target is not None else target
             s.last_reconcile_at = now
 
             # 1. Timeout: clear stuck wait_for_target
@@ -2076,6 +2103,7 @@ class CoverCommandService:
         )
         return {
             "target": target,
+            "desired_target": s.desired_target,
             "actual": actual,
             "at_target": at_target,
             "retry_count": s.retry_count,

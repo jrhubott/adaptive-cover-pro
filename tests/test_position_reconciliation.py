@@ -134,6 +134,39 @@ async def test_apply_skips_time_delta_too_small(svc):
 
 
 @pytest.mark.asyncio
+async def test_apply_sends_new_desired_target_despite_time_gate(svc, mock_hass):
+    """A changed target must not remain blocked by the previous command timestamp."""
+    _patch_position(svc, 50)
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
+    ):
+        outcome, _ = await svc.apply_position("cover.test", 94, "solar", context=_ctx())
+    assert outcome == "sent"
+
+    _patch_position(svc, 94)
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10)
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 0, "solar", context=_ctx(time_threshold=15)
+        )
+
+    assert outcome == "sent"
+    assert reason == "set_cover_position"
+    assert mock_hass.services.async_call.call_args.args[1] == "set_cover_position"
+    assert mock_hass.services.async_call.call_args.args[2]["position"] == 0
+
+
+@pytest.mark.asyncio
 async def test_apply_force_bypasses_time_delta_for_custom_position(svc, mock_hass):
     """Issue #348: force=True bypasses the time-delta gate for custom-position edge-triggers."""
     _patch_position(svc, 30)

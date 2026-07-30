@@ -37,6 +37,7 @@ class PerEntityState:
     """
 
     target: int | None = None
+    desired_target: int | None = None
     sent_at: dt.datetime | None = None
     waiting: bool = False
     last_progress_at: dt.datetime | None = None

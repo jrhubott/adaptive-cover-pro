@@ -1455,6 +1455,7 @@ DEFAULT_ENABLE_POSITION_MATCHING = False
 VENETIAN_POSITION_SETTLE_POLL_SECONDS = 0.5  # poll interval while settling
 VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS = 60.0  # hard cap on settle wait
 VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES = 3  # samples → "settled"
+VENETIAN_POSITION_SETTLE_CONFIRMATION_SAMPLES = 3  # consecutive in-target samples
 
 # Suppress tilt-axis manual override detection for this many seconds after a
 # venetian position command. Real motors back-rotate the slats while moving
