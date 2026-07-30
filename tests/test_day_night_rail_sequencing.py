@@ -42,6 +42,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DEFAULT_HEIGHT,
     CONF_ENTITIES,
+    CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_MY_POSITION_VALUE,
     DAY_NIGHT_MODEL_DUAL_ENTITY,
@@ -80,6 +81,7 @@ def _dual_policy(
     blend: int | None,
     middle: str = _MIDDLE,
     inverse: bool = False,
+    interp: bool = False,
     policy: DayNightShadePolicy | None = None,
 ) -> DayNightShadePolicy:
     """Build a real Model C policy with its per-cycle dispatch cache primed.
@@ -87,6 +89,12 @@ def _dual_policy(
     Pass ``policy`` to run a LATER resolve cycle on an existing instance —
     everything ``post_pipeline_resolve`` refreshes per cycle, without a fresh
     object.
+
+    ``interp`` turns interpolation on, which is how an install can have
+    inverse-state CONFIGURED while ``axis_inverted`` — and therefore the cached
+    ``_dual_entity_inverse`` — answers ``False``. That split is what makes the
+    seams' "invert iff configured" contract diverge from the install's own
+    frame.
     """
     from tests.cover_helpers import make_cover_config, make_vertical_config
 
@@ -101,6 +109,8 @@ def _dual_policy(
     }
     if inverse:
         options[CONF_INVERSE_STATE] = True
+    if interp:
+        options[CONF_INTERP] = True
     policy.post_pipeline_resolve(
         PipelineResult(
             position=position,
@@ -420,6 +430,7 @@ def _rail_harness(
     position: int,
     blend: int | None,
     inverse: bool = False,
+    interp: bool = False,
 ):
     """Real ``CoverCommandService`` + real Model C policy over a scripted motor.
 
@@ -444,7 +455,9 @@ def _rail_harness(
     state_obj.state = "open"
     hass.states.get = MagicMock(return_value=state_obj)
 
-    policy = _dual_policy(position=position, blend=blend, inverse=inverse)
+    policy = _dual_policy(
+        position=position, blend=blend, inverse=inverse, interp=interp
+    )
 
     cmd_svc = CoverCommandService(
         hass=hass,
@@ -1339,22 +1352,22 @@ async def test_reconciliation_gate_keeps_the_frame_of_the_seam_it_resends() -> N
 
     Reconciliation re-sends the number a broadcast seam put on the wire — so
     that seam's inversion frame is the one the number is expressed in, and the
-    only one the gate can legitimately un-transform it against. That frame
-    travels with the booked target as its dispatch stamp, and the stamp is what
-    the pass hands back.
+    only one the gate can legitimately un-transform it against.
 
-    Here the install has inverse-state suppressed for this cycle (interpolation
-    forces ``axis_inverted`` False) while the recorded middle-rail target was
-    booked by a seam that named ``inverted=True`` explicitly. Read in the seam's
-    frame the bottom rail is at the very bottom of its travel and the middle
-    rail is clear; read in the install's own frame the two swap and the rail is
-    withheld — and, since the seam is the only thing that will ever refresh that
-    target, withheld forever.
+    Here the recorded middle-rail target was booked by a seam that named
+    ``inverted=True`` explicitly, while this cycle's own ``axis_inverted``
+    answer is ``False``. Read in the seam's frame the bottom rail is at the very
+    bottom of its travel and the middle rail is clear; read in the install's own
+    frame the two swap and the rail is withheld — and, since the seam is the
+    only thing that will ever refresh that target, withheld forever.
 
-    The neighbouring
-    ``test_reconciliation_resends_when_a_later_resolve_flips_the_cached_frame``
-    covers the other half: the stamp beating a policy view that has since moved
-    on. Here the point is simply that the stamp is what the pass consults.
+    Scope, stated plainly: the seam's ``True`` reaches the gate here as BOTH the
+    booked stamp and the policy's live per-cycle record, which still agree — so
+    this test cannot tell those two apart and does not claim to. What it pins is
+    the narrower thing: the resend is gated in the SEAM's frame and not in the
+    install's own. Separating stamp from record is the neighbouring
+    ``test_reconciliation_resends_when_a_later_resolve_flips_the_cached_frame``,
+    which adds the later resolve that moves the record off the stamp.
     """
     cmd_svc, policy, _rails, events = _reconcile_harness(
         # Wire 80 == open 20 in the seam's frame: the bottom rail is low, well
@@ -1631,9 +1644,10 @@ async def test_my_preset_books_no_frame_so_its_gate_stays_live() -> None:
     space. A frozen ``False`` reads My=30 as open 30 and the bottom rail's 80 as
     open 80, calls a clear rail blocked and withholds the resend — and, since
     only the user's My button ever refreshes that target, withholds it forever.
-    With no stamp the policy falls back to its live record, which the next
-    ordinary cycle restates to the install's own frame: My=30 is open 70, the
-    bottom rail is open 20, and the resend goes out.
+    With no stamp the gate reads the install's own frame instead, which is the
+    frame a raw My percent is genuinely in: My=30 is open 70, the bottom rail is
+    open 20, and the resend goes out. The ordinary cycle run at the end is a
+    negative control — an unrelated later resolve must not disturb that answer.
     """
     cmd_svc, policy, _rails, events = _rail_harness(
         script={_BOTTOM: [80], _MIDDLE: [90]},
@@ -1663,6 +1677,59 @@ async def test_my_preset_books_no_frame_so_its_gate_stays_live() -> None:
 
     assert f"send:{_MIDDLE}" in events, events
     assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_an_unstamped_target_is_gated_in_the_installs_own_frame() -> None:
+    """A stamp-less target rides the INSTALL's frame, never the live record.
+
+    ``restore_target``, the coordinator's externally-observed My move and
+    ``send_my_position`` each book a raw COVER-frame number — the space
+    ``get_current_position`` reports in and ``_at_target`` compares against —
+    with no dispatch behind it. The only honest way to map that onto
+    open-percent is the install's own ``axis_inverted`` answer, which is what an
+    unnamed frame resolves to everywhere else in this policy.
+
+    The live ``_dual_entity_dispatch_inverse`` record is not a substitute, and
+    this is the case that separates them. Inverse-state is CONFIGURED but
+    suppressed by interpolation, so the install's own frame is ``False`` — while
+    the sunset/end-time seam inverts iff inverse-state is CONFIGURED and so
+    leaves ``True`` on the record. The coordinator then books My=30 from an
+    externally-observed stop, and reconciliation fires before any ordinary
+    resolve restates the record.
+
+    Read in the install's frame the bottom rail's 60 is open 60, stacked above
+    the middle rail's open-30 target, and the resend must be withheld. Read
+    against the record's ``True`` the two swap — open 40 under open 70 — and a
+    physically blocked rail is waved through: the mechanical block #1115 exists
+    to prevent, reached through the gate added to prevent it.
+    """
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [60], _MIDDLE: [90]},
+        position=30,
+        blend=100,  # all sheer → the middle rail's remap is identity
+        inverse=True,
+        interp=True,
+    )
+    assert policy._dual_entity_inverse is False
+
+    # 1. The sunset seam resolves the middle rail in the CONFIGURED frame.
+    assert policy.resolve_entity_target(_MIDDLE, 40, inverted=True) == 40
+    assert policy._dual_entity_dispatch_inverse is True
+
+    # 2. The coordinator records an externally-observed My move through the one
+    #    writer of the pair — no dispatch produced it, so it books no stamp.
+    cmd_svc.set_target(_MIDDLE, 30)
+    assert cmd_svc.state(_MIDDLE).dispatch_token is None
+
+    cmd_svc.state(_MIDDLE).waiting = False
+    events.clear()
+    _arm_reconciliation(cmd_svc)
+    with _patch_caps():
+        await cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert f"send:{_MIDDLE}" not in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is True
 
 
 @pytest.mark.asyncio

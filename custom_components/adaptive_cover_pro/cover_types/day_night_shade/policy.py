@@ -706,11 +706,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
         # NB: ``_dual_entity_dispatch_inverse`` is deliberately NOT reset here.
         # It records the frame of the last middle-rail RESOLUTION — which is
-        # exactly right for its one reader, the DISPATCH path: ``apply_position``
-        # asks the travel gate immediately after ``resolve_entity_target``
-        # restated it for the very value being dispatched, with nothing in
-        # between. Clearing it here would hand that gate a cached per-cycle
-        # decision instead of the seam's own answer (issue #1115).
+        # exactly right for its one reader, ``capture_dispatch_token`` on the
+        # DISPATCH path: ``apply_position`` takes the stamp immediately after
+        # ``resolve_entity_target`` restated this field for the very value being
+        # dispatched, with nothing in between. Clearing it here would stamp that
+        # command with a cached per-cycle decision instead of the seam's own
+        # answer (issue #1115).
         #
         # It is emphatically NOT the frame a RESEND speaks. ``resolve_entity_target``
         # is evaluated as an argument to ``apply_position``, so a cycle that
@@ -755,9 +756,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     def _dispatch_frame(self, inverted: bool | None) -> bool:
         """Resolve which inversion frame a dispatched middle-rail value speaks.
 
-        The ONE place that answer is computed. ``None`` means "the caller did
-        not name a frame, so reuse this cycle's cached decision" (the main
-        pipeline path); an explicit ``True``/``False`` is a seam naming its own
+        The ONE place that answer is computed. ``None`` means "nobody named a
+        frame, so use this cycle's cached ``axis_inverted`` decision" — the main
+        pipeline path, and equally a target that no dispatch ever expressed in a
+        frame at all; an explicit ``True``/``False`` is a seam naming its own
         divergent space. Both ``resolve_entity_target`` — which produces the
         wire value — and :meth:`_gate_middle_rail_clearance` — which has to
         un-transform it to compare against a live rail reading — go through
@@ -1243,27 +1245,36 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         value with the target, and the resend replays what was stored, because
         the number it is putting back on the wire is the one that dispatch
         produced. On a Model C middle rail the stamp is always a ``bool``, so
-        neither position path ever reaches the fallback below.
+        neither position path ever hands this method a ``None``.
 
         ``None`` reaches here only for a target no dispatch produced, and the
         callers that book one are countable: ``restore_target`` rehydrating a
         persisted target after a reload, the coordinator recording an
         externally-observed My move, and ``send_my_position`` booking the user's
         configured My percent — a number ``stop_cover`` puts on the wire without
-        a position, so nothing ever expressed it in a frame. There is no stamp
-        to replay for those, so the live per-cycle record answers: it is the
-        only frame evidence left, and unlike a frozen stamp invented at booking
-        time it re-converges on the install's own frame the moment the pipeline
-        resolves this rail again. Reading that record on a RESEND that DOES have
-        a stamp is the provenance bug this parameter exists to close: the record
-        belongs to the last RESOLUTION, and one resolve-then-skip cycle is
-        enough to flip the verdict on a target no resolve has touched
-        (issue #1115).
+        a position, so nothing ever expressed it in a frame. What all three
+        record is a raw COVER-frame number: the space ``get_current_position``
+        reports in and ``_at_target`` compares against. Mapping that onto
+        open-percent is the install's own inversion flag by definition — which
+        is exactly what ``_dispatch_frame(None)`` returns, so the ``None`` stamp
+        is forwarded unchanged and no second answer is computed here.
 
-        It is emphatically NOT ``context.inverse_state``. That names the
-        install's configured flag, and the broadcast seams dispatch in a
-        divergent space on purpose — the auto-control-off return loop sends the
-        raw default un-inverted. Flipping the middle rail's target against the
+        The live ``_dual_entity_dispatch_inverse`` record is deliberately NOT
+        read for those. It describes the last middle-rail RESOLUTION — a
+        different number — and one seam resolve is enough to leave it naming a
+        divergent space: the sunset/end-time loops invert iff inverse-state is
+        CONFIGURED, so an install running interpolation (where ``axis_inverted``
+        is False) parks a ``True`` there. Gating a token-less My percent against
+        that ``True`` inverts the verdict and waves the middle rail into a
+        bottom rail it cannot pass. Reading the record on a RESEND that DOES
+        have a stamp is the same defect one step earlier — the provenance bug
+        this parameter exists to close (issue #1115).
+
+        For a number a dispatch DID produce, the frame is emphatically NOT
+        ``context.inverse_state`` — nor the install flag a stamp-less target
+        lands on above. That names the install's configured flag, and the
+        broadcast seams dispatch in a divergent space on purpose — the
+        auto-control-off return loop sends the raw default un-inverted. Flipping the middle rail's target against the
         install flag while the seam built it un-inverted withholds a command
         that is already physically clear, on every inverse-state Model C
         install. Both sides of the comparison ride the same frame: the bottom
@@ -1293,11 +1304,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             )
             return True
 
-        inverse = self._dispatch_frame(
-            self._dual_entity_dispatch_inverse
-            if dispatch_token is None
-            else dispatch_token
-        )
+        inverse = self._dispatch_frame(dispatch_token)
         middle_open = flip_if(position, inverted=inverse)
         tolerance = self._position_tolerance
 
@@ -1348,9 +1355,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         the resend path the stamp it stored. So the gate un-transforms the
         number against the frame it is actually expressed in rather than
         against a per-cycle record a later resolve may have restated
-        (issue #1115). ``None`` arrives only from a target no dispatch produced
-        — see :meth:`_gate_middle_rail_clearance` for the fallback and who
-        relies on it.
+        (issue #1115). ``None`` arrives only from a target no dispatch produced,
+        and resolves to the install's own frame like every other unnamed frame
+        — see :meth:`_gate_middle_rail_clearance` for who books one and why the
+        install flag, not the per-cycle record, is the honest answer there.
         """
         if not self._is_dual_entity_middle_rail(entity_id):
             return True

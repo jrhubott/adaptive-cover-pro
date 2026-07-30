@@ -831,8 +831,10 @@ class CoverTypePolicy(ABC):
         outside one — ``CoverCommandService.restore_target`` rehydrating a
         persisted target after a reload, the coordinator recording an
         externally-observed My move, ``send_my_position`` booking the user's
-        configured My percent. A policy that needs provenance has to fall back
-        to whatever it can still infer for those.
+        configured My percent. Those are raw cover-frame numbers, so a policy
+        that needs provenance answers them from what it knows about the INSTALL
+        rather than from any one dispatch — nothing expressed them in a
+        dispatch's frame for a stamp to name.
 
         Returns ``False`` to withhold, ``True`` to proceed. Withholding is
         expected to latch (:meth:`has_pending_secondary_axis`) so a later pass
