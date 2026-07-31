@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
 import voluptuous as vol
@@ -2221,3 +2221,182 @@ CUSTOM_POSITION_TILT_KEYS: tuple[str, ...] = tuple(
     for slot in CUSTOM_POSITION_SLOTS.values()
     for k in (slot["tilt"], slot["tilt_only"])
 ) + (CONF_DEFAULT_TILT, CONF_SUNSET_TILT)
+
+
+# =============================================================================
+# Position roles (axis semantics of every stored 0-100 % option)
+# =============================================================================
+# Changing a cover's type can flip which end of its primary axis means "let the
+# sun through" — a blind is out of the way at 100 %, an awning at 0 %. Every
+# stored percentage that names a position on that axis therefore means the
+# opposite after such a switch, and the "Change Cover Type" confirm screen has
+# to say so (issue #1132). Which ones those are is declared once, here, next to
+# the fields themselves; ``percentage_option_keys()`` below is the structural
+# enumeration that proves the declaration complete.
+
+
+class PositionRole(StrEnum):
+    """What a stored 0-100 % option means on a cover's travel axes.
+
+    ``RESEED`` is reserved for the one case where a policy already owns the
+    correct value: ``default_percentage`` is seeded at creation from
+    ``position_for_intent(sun_through=True)`` (``__init__._seed_default_position``,
+    issue #1126), so a type switch can re-seed it from the same hook without
+    inventing an answer. Every other primary-axis position is the user's own
+    choice with no policy counterpart — rewriting a deliberate travel limit or
+    scene value would be worse than the flip — so they are disclosed instead.
+    """
+
+    #: Primary-axis position with a policy-defined correct value.
+    RESEED = "reseed"
+    #: Primary-axis lower clamp; neutral (nothing to disclose) at its range floor.
+    FLOOR = "floor"
+    #: Primary-axis upper clamp; neutral at its range ceiling.
+    CEILING = "ceiling"
+    #: A commanded primary-axis position — any stored value inverts.
+    VALUE = "value"
+    #: Primary-axis position that is migration-read-only and no longer applied.
+    LEGACY = "legacy"
+    #: A position on the secondary (tilt) axis, not the primary one.
+    TILT = "tilt"
+    #: A percentage that is not a travel position (delta, threshold, opacity).
+    NEUTRAL = "neutral"
+
+    @classmethod
+    def disclosed_roles(cls) -> frozenset[PositionRole]:
+        """Roles whose stored value must be named when the polarity flips."""
+        return frozenset({cls.FLOOR, cls.CEILING, cls.VALUE})
+
+
+def _slot_roles() -> dict[str, PositionRole]:
+    """Per-slot custom-position roles, generated from the slot key map.
+
+    Slot values are user-authored scene positions and slot ceilings are
+    user-authored clamps; neither has a policy answer, so both are disclosed.
+    The per-slot tilt keys ride the secondary axis.
+    """
+    roles: dict[str, PositionRole] = {}
+    for slot in CUSTOM_POSITION_SLOTS.values():
+        roles[slot["position"]] = PositionRole.VALUE
+        roles[slot["position_max"]] = PositionRole.CEILING
+        for tilt_key in ("tilt", "tilt_min", "tilt_max"):
+            roles[slot[tilt_key]] = PositionRole.TILT
+    return roles
+
+
+#: ``{option key: PositionRole}`` for every stored 0-100 % option.
+#: Completeness (in both directions) is locked by
+#: ``tests/test_config_flow_change_cover_type.py::
+#: test_every_percentage_option_declares_a_position_role``.
+_POSITION_ROLES: dict[str, PositionRole] = {
+    # ---- primary axis ----------------------------------------------------
+    CONF_DEFAULT_HEIGHT: PositionRole.RESEED,
+    CONF_MIN_POSITION: PositionRole.FLOOR,
+    CONF_MIN_POSITION_SUN_TRACKING: PositionRole.FLOOR,
+    CONF_MAX_POSITION: PositionRole.CEILING,
+    CONF_SUNSET_POS: PositionRole.VALUE,
+    CONF_END_OF_WINDOW_POS: PositionRole.VALUE,
+    CONF_MY_POSITION_VALUE: PositionRole.VALUE,
+    CONF_CLOUDY_POSITION: PositionRole.VALUE,
+    CONF_WEATHER_OVERRIDE_POSITION: PositionRole.VALUE,
+    CONF_EXTREME_HEAT_POSITION: PositionRole.VALUE,
+    # Superseded by custom-position slot 5 (v3.2 migration) and never read at
+    # runtime since. Disclosing a key the options UI no longer shows would send
+    # the user looking for a screen that does not exist; the slot it was copied
+    # into is disclosed in its place.
+    CONF_FORCE_OVERRIDE_POSITION: PositionRole.LEGACY,
+    # ---- secondary (tilt) axis -------------------------------------------
+    # Every tilt-capable policy shares one tilt convention, so a switch between
+    # them does not invert these. They are classified, not disclosed.
+    CONF_DEFAULT_TILT: PositionRole.TILT,
+    CONF_SUNSET_TILT: PositionRole.TILT,
+    CONF_MIN_TILT: PositionRole.TILT,
+    CONF_MAX_TILT: PositionRole.TILT,
+    # ---- percentages that are not travel positions -----------------------
+    # Magnitudes and hardware-frame thresholds. A type switch changes which end
+    # of the axis shades the window; it does not renumber the axis, so a delta,
+    # a movement tolerance, an open/closed cut-off and the interpolation domain
+    # (which calibrates commanded % against the same physical travel) all keep
+    # meaning exactly what they meant. The day/night values are fabric opacity
+    # percentages, not positions at all.
+    CONF_DELTA_POSITION: PositionRole.NEUTRAL,
+    CONF_POSITION_TOLERANCE: PositionRole.NEUTRAL,
+    CONF_MANUAL_THRESHOLD: PositionRole.NEUTRAL,
+    CONF_OPEN_CLOSE_THRESHOLD: PositionRole.NEUTRAL,
+    CONF_INTERP_START: PositionRole.NEUTRAL,
+    CONF_INTERP_END: PositionRole.NEUTRAL,
+    CONF_DAY_NIGHT_OPACITY_SHEER: PositionRole.NEUTRAL,
+    CONF_DAY_NIGHT_OPACITY_BLACKOUT: PositionRole.NEUTRAL,
+    CONF_DAY_NIGHT_BLACKOUT_THRESHOLD: PositionRole.NEUTRAL,
+    **_slot_roles(),
+}
+
+
+def position_roles() -> dict[str, PositionRole]:
+    """Return the declared ``{option key: PositionRole}`` map (a copy)."""
+    return dict(_POSITION_ROLES)
+
+
+def disclosed_position_keys() -> tuple[str, ...]:
+    """Primary-axis positions to name when a switch flips the axis polarity.
+
+    Registry order, so the confirm screen lists them the way the options
+    screens do: Position, then the handler sections, then the slots.
+    """
+    disclosed = PositionRole.disclosed_roles()
+    ordered = [k for k in FIELD_SPECS if _POSITION_ROLES.get(k) in disclosed]
+    # Every key declared today also has a ``FieldSpec``, but a field emitted
+    # only by a dynamic section builder would not — and quietly dropping it
+    # here is exactly the short list this whole seam exists to prevent.
+    ordered += sorted(
+        k
+        for k, role in _POSITION_ROLES.items()
+        if role in disclosed and k not in ordered
+    )
+    return tuple(ordered)
+
+
+def reseeded_position_keys() -> tuple[str, ...]:
+    """Primary-axis positions a switch rewrites to the new type's own value."""
+    return tuple(
+        k for k, role in _POSITION_ROLES.items() if role is PositionRole.RESEED
+    )
+
+
+def polarity_neutral_value(key: str) -> float | None:
+    """Return the value of *key* that constrains nothing under either polarity.
+
+    A floor at its range minimum and a ceiling at its range maximum clamp
+    nothing whichever end means "out of the way", so they have nothing to
+    disclose. Derived from ``OPTION_RANGES`` rather than restated, so a widened
+    bound cannot leave a stale neutral behind. ``None`` = no neutral value; any
+    stored value inverts.
+    """
+    role = _POSITION_ROLES.get(key)
+    rng = OPTION_RANGES.get(key)
+    if rng is None:
+        return None
+    if role is PositionRole.FLOOR:
+        return rng[0]
+    if role is PositionRole.CEILING:
+        return rng[1]
+    return None
+
+
+def is_percentage_marker(validator: Any) -> bool:
+    """Whether a rendered schema value stores a 0-100 % axis percentage.
+
+    Two shapes, because the field registry has two: the shared ``%``-unit
+    ``NumberSelector`` (``position_slider`` and friends) and the raw
+    ``vol.Range`` a couple of geometry builders still emit. Used by
+    ``cover_types.percentage_option_keys`` to enumerate the options
+    ``_POSITION_ROLES`` must classify.
+    """
+    config = getattr(validator, "config", None)
+    if isinstance(config, dict) and config.get("unit_of_measurement") == "%":
+        return True
+    parts = validator.validators if isinstance(validator, vol.All) else (validator,)
+    return any(
+        isinstance(part, vol.Range) and part.min == 0 and part.max in (99, 100)
+        for part in parts
+    )

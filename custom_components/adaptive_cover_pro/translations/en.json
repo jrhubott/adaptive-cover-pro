@@ -281,6 +281,7 @@
         "description": "Configuring: **{instance_name}**{profile_line}\n\nIf Adaptive Cover Pro has been useful, you can [☕ Buy Me a Coffee]({coffee_url}).",
         "menu_options": {
           "cover_entities": "🪟 Covers & Device",
+          "change_cover_type": "🔁 Change Cover Type",
           "geometry": "📐 Cover Geometry",
           "sun_tracking": "☀️ Sun Tracking",
           "position": "📊 Position Settings",
@@ -355,6 +356,23 @@
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
           "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the sun acceptance angle and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
+        }
+      },
+      "change_cover_type": {
+        "title": "Change Cover Type",
+        "description": "This instance is currently of type **{current_type}**. Pick the cover type it should become — every entity keeps its current entity ID, so your dashboards and automations keep working.\n\nOnly types your bound covers can actually drive are listed. Not offered here:\n\n{blocked_types}\n\n[Learn more]({learn_more})",
+        "data": {
+          "sensor_type": "New Cover Type"
+        },
+        "data_description": {
+          "sensor_type": "The cover type this instance will switch to. You confirm on the next screen, then fill in the new type's geometry."
+        }
+      },
+      "change_cover_type_confirm": {
+        "title": "Change Cover Type — Confirm",
+        "description": "Switching from **{from_type}** to **{to_type}**.\n\nSettings only the old type uses stay stored and are not deleted, so switching back finds them intact. Currently inert after the switch:\n\n{stranded_options}\n\nCapability notes for the new type:\n\n{capability_notes}\n\nPosition polarity:\n\n{position_polarity}\n\nEvery entity keeps its entity ID. Type-specific entities the new type does not provide stay in the entity registry as unavailable, and return if you switch back. After confirming, fill in the new type's geometry and finish with Save & Close to apply the change.",
+        "data": {
+          "confirm": "Confirm cover type change"
         }
       },
       "cover_entities": {
@@ -1050,6 +1068,7 @@
       }
     },
     "abort": {
+      "no_eligible_cover_types": "No other cover type can drive the covers bound to this instance, so there is nothing to switch to.",
       "no_covers_to_sync": "No other covers of the same type exist to sync to.",
       "no_targets_selected": "No covers were selected to sync to.",
       "no_categories_selected": "No categories were selected to sync.",
