@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 import voluptuous as vol
 
+from custom_components.adaptive_cover_pro.const import CoverType
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     CAP_HAS_SET_POSITION,
@@ -65,6 +66,86 @@ def test_capability_warnings_for_options_matches_plain_by_default(
     assert policy.capability_warnings_for_options(
         known, {}
     ) == policy.cover_capability_warnings(known)
+
+
+@pytest.mark.unit
+def test_prospective_capability_warnings_returns_list(policy: CoverTypePolicy) -> None:
+    """Always a list — the "Change Cover Type" confirm step extends it (#1137)."""
+    assert isinstance(policy.prospective_capability_warnings(known={}), list)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "known",
+    [
+        {"cover.x": {"has_set_position": False, "has_set_tilt_position": False}},
+        {"cover.x": {"has_set_position": True, "has_set_tilt_position": False}},
+        {"cover.x": {"has_set_position": False, "has_set_tilt_position": True}},
+        {"cover.x": {"has_set_position": True, "has_set_tilt_position": True}},
+    ],
+    ids=["both_missing", "position_only", "tilt_only", "both_present"],
+)
+def test_prospective_defaults_to_plain_warnings(
+    policy: CoverTypePolicy, known: dict
+) -> None:
+    """The pre-configuration hook defaults to the plain warnings (Liskov, #1137).
+
+    Gated reflectively, not by cover-type name: a policy that overrides
+    ``prospective_capability_warnings`` — today only ``DayNightShadePolicy``,
+    deliberately tilt-relaxed because the control model isn't known before
+    the geometry step — opts itself out of this invariant by definition and
+    is skipped. Every non-overriding policy must match
+    ``cover_capability_warnings`` across every combination of the two
+    capability flags, not just "everything present": with both flags
+    ``True`` every real policy already returns ``[]`` from both methods, so a
+    hook silently rewritten to ``return []`` unconditionally — no longer
+    delegating at all — would still pass that one case. Only the
+    missing-capability combinations exercise the branches where a genuine
+    delegation and a hardcoded empty list disagree, so a failure here means
+    the hook has drifted from the plain method it is supposed to mirror by
+    default.
+    """
+    if (
+        type(policy).prospective_capability_warnings
+        is not CoverTypePolicy.prospective_capability_warnings
+    ):
+        pytest.skip("policy legitimately overrides the hook")
+    assert policy.prospective_capability_warnings(
+        known
+    ) == policy.cover_capability_warnings(known)
+
+
+@pytest.mark.unit
+def test_prospective_capability_warnings_override_allowlist() -> None:
+    """Pin exactly which policies may opt out of the Liskov invariant above.
+
+    ``test_prospective_defaults_to_plain_warnings`` skips any policy that
+    overrides ``prospective_capability_warnings`` instead of failing it — a
+    deliberate exemption for ``DayNightShadePolicy`` (#1137), whose control
+    model isn't known until the following geometry step. But a ``skip`` has
+    no failure mode of its own: nothing else pins *which* policies are
+    allowed to take that exemption, so a future policy that overrides the
+    hook for an unrelated reason would silently drop out of the invariant
+    with no signal anywhere in the suite.
+
+    This test closes that gap. It derives the overriding set reflectively
+    from the same ``ALL_POLICIES_WITH_STUBS`` registry the parametrized test
+    above draws its ``policy`` fixture from, and asserts it is exactly
+    ``{CoverType.DAY_NIGHT_SHADE}``.
+
+    Adding a legitimate second override is a deliberate act: when it
+    happens, extend the right-hand side here on purpose, with the same kind
+    of justification ``DayNightShadePolicy.prospective_capability_warnings``
+    carries in its own docstring — don't widen this set to make a failure
+    go away without reading why it fired.
+    """
+    overriding = {
+        policy_cls.cover_type
+        for policy_cls in ALL_POLICIES_WITH_STUBS
+        if policy_cls.prospective_capability_warnings
+        is not CoverTypePolicy.prospective_capability_warnings
+    }
+    assert overriding == {CoverType.DAY_NIGHT_SHADE}
 
 
 @pytest.mark.unit

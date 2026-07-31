@@ -1443,6 +1443,33 @@ class CoverTypePolicy(ABC):
         """
         return selector.EntityFilterSelectorConfig(domain="cover")
 
+    def prospective_capability_warnings(self, known: dict[str, dict]) -> list[str]:
+        """Capability advice valid for EVERY configuration of this type.
+
+        Asked before the type's own options exist — the "Change Cover Type"
+        confirm step (#1132/#1135) evaluates the DESTINATION type while
+        ``self.options`` still belong to the outgoing one, so an option-aware
+        question (:meth:`capability_warnings_for_options`) cannot be asked yet
+        (issue #1137). Must agree with :meth:`entities_satisfy_selector`: a
+        type the picker admitted cannot be told on the next screen that its
+        covers are unfit for it.
+
+        The Liskov-safe default delegates to :meth:`cover_capability_warnings`,
+        so every policy that has no per-instance option affecting its
+        capability requirement is unchanged. ``DayNightShadePolicy`` overrides
+        this to relax the tilt requirement, since its control model — the
+        thing that decides whether tilt is required — is not chosen until the
+        following geometry step.
+
+        Unlike :meth:`entities_satisfy_selector`'s *known*, entries here must
+        already be resolved capability dicts, not ``None`` — the delegate,
+        :meth:`cover_capability_warnings`, has no unavailable-entity skip, and
+        ``caps_get(None, key)`` silently reads as "missing every capability".
+        The only caller (``helpers.check_cover_capabilities``) already filters
+        ``None`` entries out before calling this hook.
+        """
+        return self.cover_capability_warnings(known)
+
     def entities_satisfy_selector(
         self, known: Mapping[str, Mapping[str, bool] | None]
     ) -> bool:

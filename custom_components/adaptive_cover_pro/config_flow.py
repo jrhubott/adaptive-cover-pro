@@ -3663,9 +3663,10 @@ def _blocked_types_text(
     """Render one explained line per cover type the bound covers rule out.
 
     Each policy states its own requirement through
-    ``cover_capability_warnings`` — the same advisory text the create flow and
-    the configuration summary render — so this never grows a second capability
-    matrix.
+    ``prospective_capability_warnings`` — the same pre-configuration hook the
+    "Change Cover Type" confirm screen asks (issue #1137) — so this explains a
+    decision ``entities_satisfy_selector`` made using the same matrix that
+    made it, and never grows a second one.
 
     Covers HA cannot read yet (``None`` caps) are dropped first, exactly as
     ``helpers.check_cover_capabilities`` drops them before the same call. The
@@ -3679,7 +3680,7 @@ def _blocked_types_text(
     lines: list[str] = []
     for cover_type in blocked:
         policy = get_policy(cover_type)
-        reasons = policy.cover_capability_warnings(readable)
+        reasons = policy.prospective_capability_warnings(readable)
         reason = reasons[0] if reasons else _BLOCKED_TYPE_GENERIC_REASON
         lines.append(f"- **{policy.display_label(labels)}** — {reason}")
     return "\n".join(lines)
@@ -4990,8 +4991,13 @@ class OptionsFlowHandler(OptionsFlow):
         # Capability advice for the DESTINATION type, from the same helper the
         # create flow and the configuration summary already render. Read from
         # the live options — which covers are bound is not part of the switch.
+        # ``prospective=True`` (issue #1137): ``self.options`` still belong to
+        # the OUTGOING type here (the destination's own options, e.g. a
+        # day/night control model, aren't collected until the geometry step
+        # that follows), so an option-aware capability question would judge
+        # the destination against options it doesn't own yet.
         _, capability_notes = check_cover_capabilities(
-            self.options, new_type, self.hass
+            self.options, new_type, self.hass, prospective=True
         )
         return self.async_show_form(  # type: ignore[return-value]
             step_id="change_cover_type_confirm",

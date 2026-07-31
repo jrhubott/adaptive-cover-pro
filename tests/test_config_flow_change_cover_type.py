@@ -20,6 +20,8 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_SUN_TRACKING,
     CONF_ENTITIES,
@@ -27,6 +29,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MIN_POSITION,
     CONF_SENSOR_TYPE,
     CONF_SUNSET_POS,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
     DOMAIN,
     CoverType,
 )
@@ -302,6 +305,53 @@ async def test_picker_lists_blocked_types_with_reason(hass: HomeAssistant) -> No
 
 
 @pytest.mark.integration
+async def test_blocked_type_reason_names_set_position_for_day_night(
+    hass: HomeAssistant,
+) -> None:
+    """Day/Night's blocked reason names ``set_position``, not ``set_tilt_position`` (#1137).
+
+    ``_blocked_types_text`` explains a decision ``entities_satisfy_selector``
+    already made, so it must read the SAME capability matrix that made that
+    decision: ``prospective_capability_warnings``, not
+    ``cover_capability_warnings``. Day/Night's ``entity_selector_filter`` only
+    requires ``set_position`` (issue #1114/#1117 — every control model needs
+    it, only Model A additionally needs tilt), so an ordinary open/close-only
+    cover (no ``set_position``, no ``set_tilt_position``) is blocked here
+    because it lacks ``set_position`` — not because it lacks tilt. Naming
+    ``set_tilt_position`` in this line would blame the wrong axis and
+    contradict ``entity_selector_filter``, the same inconsistency the confirm
+    screen had before this fix.
+    """
+    from homeassistant.components.cover import CoverEntityFeature
+
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    entry = await _setup_entry(hass, entry_id="blocked_open_close_only")
+    # Ordinary open/close-only hardware: OPEN | CLOSE | STOP, no SET_POSITION
+    # and no SET_TILT_POSITION.
+    features = (
+        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+    )
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": int(features)},
+    )
+
+    result = await _open_picker(hass, entry)
+
+    blocked_text = result["description_placeholders"]["blocked_types"]
+    day_night_label = get_policy(CoverType.DAY_NIGHT_SHADE).display_label()
+    assert day_night_label in blocked_text
+
+    day_night_line = next(
+        line for line in blocked_text.splitlines() if day_night_label in line
+    )
+    assert "set_position" in day_night_line
+    assert "set_tilt_position" not in day_night_line
+
+
+@pytest.mark.integration
 async def test_picker_blocked_list_never_renders_a_dangling_heading(
     hass: HomeAssistant,
 ) -> None:
@@ -413,10 +463,92 @@ async def test_confirm_lists_stranded_options(hass: HomeAssistant) -> None:
 
 @pytest.mark.integration
 async def test_confirm_shows_capability_notes(hass: HomeAssistant) -> None:
-    """Capability advice is evaluated against the DESTINATION type."""
+    """The confirm screen must not assume a control model before one is picked (#1137).
+
+    The bound covers are position-only — exactly the Model B/C hardware
+    #1114/#1117 exist to support. Day/Night's control model is chosen on the
+    NEXT screen (geometry), so the confirm screen must not warn about a tilt
+    requirement only Model A has; the picker already admitted this type via
+    the same all-models intersection ``entity_selector_filter()`` encodes.
+    """
     entry = await _setup_entry(hass, entry_id="confirm_caps")
 
     result = await _pick(hass, entry, CoverType.DAY_NIGHT_SHADE)
+
+    notes = result["description_placeholders"]["capability_notes"]
+    assert "set_tilt_position" not in notes
+
+
+@pytest.mark.integration
+async def test_confirm_shows_generic_open_close_only_note(hass: HomeAssistant) -> None:
+    """A real-flow positive on ``capability_notes`` (#1137 audit item D).
+
+    Every other assertion on ``capability_notes`` reached through the real
+    options flow (``test_confirm_shows_capability_notes``,
+    ``test_confirm_to_save_model_c_no_capability_warning``) is negative —
+    "this note is NOT there". The only positive assertion
+    (``test_confirm_still_warns_for_tilt_only_destination``) runs against a
+    hand-constructed ``OptionsFlowHandler`` with ``_pending_cover_type`` set
+    directly, bypassing ``hass.config_entries.options.async_configure``
+    entirely. Nothing proves the placeholder still carries real advice
+    through the actual flow users take — which is the exact property that
+    ruled out "remove ``capability_notes`` from the confirm screen" as a fix
+    for #1137.
+
+    Awning's ``entity_selector_filter`` is the plain ``cover``-domain default
+    (no capability requirement), so an open/close-only cover — no
+    ``set_position``, no ``set_tilt_position`` — reaches the real confirm
+    screen for it rather than being blocked at the picker. The generic
+    per-entity note this exercises (``helpers.check_cover_capabilities``'s
+    "is open/close-only" line) is untouched by the #1137 fix — it fires for
+    every destination type, not just Day/Night — so this is coverage for the
+    screen's continued usefulness, not a regression guard for this change.
+    """
+    from homeassistant.components.cover import CoverEntityFeature
+
+    entry = await _setup_entry(hass, entry_id="confirm_open_close_only")
+    # Ordinary open/close-only hardware: OPEN | CLOSE | STOP, no SET_POSITION.
+    features = (
+        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+    )
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": int(features)},
+    )
+
+    result = await _pick(hass, entry, CoverType.AWNING)
+
+    assert result["step_id"] == "change_cover_type_confirm"
+    notes = result["description_placeholders"]["capability_notes"]
+    assert "cover.test_blind is open/close-only" in notes
+    assert "will be driven via threshold compare" in notes
+
+
+@pytest.mark.integration
+async def test_confirm_still_warns_for_tilt_only_destination(
+    hass: HomeAssistant,
+) -> None:
+    """The Day/Night tilt relaxation must not leak to a type that always needs it.
+
+    Venetian genuinely needs tilt on every configuration — #1117's
+    intersection filter is specific to Day/Night's multiple control models, so
+    Venetian keeps the strict, unconditional both-axes requirement. The
+    reporter's position-only covers cannot reach Venetian through the real
+    picker at all (Venetian's own ``entity_selector_filter`` blocks them
+    there — see ``test_picker_offers_capability_compatible_types_only``), so
+    this constructs the flow handler directly and sets the pending type by
+    hand, to isolate the confirm screen's capability advice from the picker's
+    eligibility gate.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    entry = await _setup_entry(hass, entry_id="confirm_caps_venetian")
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    flow._pending_cover_type = CoverType.VENETIAN
+
+    result = await flow.async_step_change_cover_type_confirm()
 
     notes = result["description_placeholders"]["capability_notes"]
     assert "set_tilt_position" in notes
@@ -651,6 +783,55 @@ async def test_data_written_only_at_save_and_close(hass: HomeAssistant) -> None:
     assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
     assert entry.data["name"] == "Switchable"
     assert _reloads(reload, entry) == 1
+
+
+@pytest.mark.integration
+async def test_confirm_to_save_model_c_no_capability_warning(
+    hass: HomeAssistant,
+) -> None:
+    """End-to-end (#1137): position-only covers, Model C, no false warning.
+
+    Exactly the reporter's Smartwings/ZVIDAR two-motor day/night shade
+    (#1114/#1117): two position-only rails, switching to Day/Night and
+    picking Model C (``dual_entity``) plus a middle rail on the geometry
+    step. The confirm screen must show no tilt warning (the control model
+    isn't known yet), and the switch must save cleanly through to
+    ``entry.data``.
+    """
+    entry = await _setup_entry(
+        hass,
+        entry_id="model_c_e2e",
+        entities=["cover.bottom_rail", "cover.middle_rail"],
+    )
+
+    confirm = await _pick(hass, entry, CoverType.DAY_NIGHT_SHADE)
+    assert (
+        "set_tilt_position"
+        not in confirm["description_placeholders"]["capability_notes"]
+    )
+
+    geometry = await hass.config_entries.options.async_configure(
+        confirm["flow_id"], {"confirm": True}
+    )
+    assert geometry["step_id"] == "geometry"
+
+    menu = await hass.config_entries.options.async_configure(
+        geometry["flow_id"],
+        {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail",
+        },
+    )
+    assert menu["type"] == "menu"
+
+    await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "done"}
+    )
+    await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    assert entry.options[CONF_DAY_NIGHT_CONTROL_MODEL] == DAY_NIGHT_MODEL_DUAL_ENTITY
+    assert entry.options[CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY] == "cover.middle_rail"
 
 
 # ---------------------------------------------------------------------------
