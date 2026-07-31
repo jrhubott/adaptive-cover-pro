@@ -372,6 +372,7 @@ from .profile_link import (  # noqa: E402
     clear_cover_override,
     cleared_profile_keys,
     compute_override_keys,
+    effective_profile_overrides,
     merge_profile_into_config,
     profile_for_cover,
     propagate_profile_clears,
@@ -5695,22 +5696,40 @@ class OptionsFlowHandler(OptionsFlow):
             if chosen != _PROFILE_NONE_SENTINEL:
                 profile = self.hass.config_entries.async_get_entry(chosen)
                 if profile is not None:
-                    before = dict(self._config_entry.options)
+                    overridden = effective_profile_overrides(self._config_entry.options)
                     _copy_profile_to_cover(self.hass, profile, self._config_entry)
-                    # Take what the copier changed, not the whole entry.
+                    # Stage the write the copier just made to disk, over the
+                    # keys the copier owns and no others.
+                    #
                     # Re-reading ``self.options`` wholesale discarded every
                     # unsaved edit in this dialog — including a pending
                     # cover-type switch's re-seed and the incoming type's
                     # geometry, while the switch itself stayed pending, so Save
                     # & Close flipped ``data`` to a type whose options
                     # contradicted the disclosure the user had just read.
-                    self.options.update(
-                        {
-                            key: value
-                            for key, value in self._config_entry.options.items()
-                            if key not in before or before[key] != value
-                        }
-                    )
+                    # Diffing what the copier changed fixes that but makes
+                    # linking mean two things: an unsaved edit to a
+                    # profile-owned key survives when the profile happens to
+                    # name what is already stored (empty diff) and is
+                    # overwritten when it does not — same gesture, opposite
+                    # outcome, decided by state the user cannot see. The
+                    # survivor then reads as a local override, because
+                    # ``_recompute_profile_overrides`` is a pure value-diff
+                    # against the profile at save.
+                    #
+                    # Linking means adopt, which is what the copier does on disk
+                    # for a cover with no recorded overrides, so staging it here
+                    # lands where hitting Save first would have.
+                    # ``merge_profile_into_config`` is the single source of
+                    # truth for the subset (profile-defined, non-empty, not
+                    # already overridden); nothing else in ``self.options`` is
+                    # touched, so a pending switch's keys — positions and the
+                    # incoming type's geometry, never shared sensors — stay put.
+                    adopted: dict[str, Any] = {
+                        CONF_BUILDING_PROFILE_ID: profile.entry_id
+                    }
+                    merge_profile_into_config(profile, adopted, overridden=overridden)
+                    self.options.update(adopted)
             elif self.options.pop(CONF_BUILDING_PROFILE_ID, None) is not None:
                 self._persist_entry()
             return await self.async_step_init()

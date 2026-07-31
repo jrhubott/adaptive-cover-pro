@@ -992,7 +992,9 @@ async def _confirm_and_return_to_menu(
 
 
 def _add_profile(
-    hass: HomeAssistant, entry_id: str = "profile_for_link"
+    hass: HomeAssistant,
+    entry_id: str = "profile_for_link",
+    extra_options: dict | None = None,
 ) -> MockConfigEntry:
     """Register a Building Profile entry (options-only; never set up)."""
     from custom_components.adaptive_cover_pro.const import CONF_TEMP_ENTITY
@@ -1000,7 +1002,7 @@ def _add_profile(
     profile = MockConfigEntry(
         domain=DOMAIN,
         data={"name": "HQ", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
-        options={CONF_TEMP_ENTITY: "sensor.outside_temp"},
+        options={CONF_TEMP_ENTITY: "sensor.outside_temp", **(extra_options or {})},
         entry_id=entry_id,
         title="HQ",
     )
@@ -1222,6 +1224,124 @@ async def test_profile_link_does_not_strand_a_pending_switch(
     assert entry.options[CONF_BUILDING_PROFILE_ID] == profile.entry_id
 
 
+async def _link_profile_after_editing(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    profile: MockConfigEntry,
+    edit: dict,
+) -> None:
+    """Make *edit* in an open dialog, link *profile*, then Save & Close.
+
+    The edit is injected through a patched step rather than a real form so the
+    test says "an unsaved edit to this key" without dragging in whichever form
+    happens to own the field today.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+    from custom_components.adaptive_cover_pro.const import CONF_BUILDING_PROFILE_ID
+
+    async def _edit(self, user_input=None):
+        self.options.update(edit)
+        return await self.async_step_init()
+
+    with patch.object(OptionsFlowHandler, "async_step_geometry", _edit):
+        menu = await hass.config_entries.options.async_init(entry.entry_id)
+        menu = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "geometry"}
+        )
+        form = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "building_profile"}
+        )
+        menu = await hass.config_entries.options.async_configure(
+            form["flow_id"], {CONF_BUILDING_PROFILE_ID: profile.entry_id}
+        )
+        await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "done"}
+        )
+        await hass.async_block_till_done()
+
+
+@pytest.mark.integration
+async def test_profile_link_adopts_the_profile_over_an_unsaved_edit(
+    hass: HomeAssistant,
+) -> None:
+    """With no switch pending, linking still means "adopt the profile".
+
+    The keys a profile owns are the whole point of linking, and on disk
+    ``_copy_profile_to_cover`` overwrites the cover's stored value with the
+    profile's (a cover being linked for the first time has no recorded
+    overrides for the copier to spare). Staging that write in the dialog must
+    reach the same place, or the outcome of "type a value, link a profile"
+    depends on whether the user happened to hit Save in between — inherit if
+    they did, a manufactured local override if they did not.
+
+    ``compute_override_keys`` is a pure value-diff at save time, so whatever
+    ``self.options`` holds at Save & Close decides inherit-vs-override. Leaving
+    the typed-over value there records an override the user never asked for.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_BUILDING_PROFILE_ID,
+        CONF_OUTSIDETEMP_ENTITY,
+        CONF_PROFILE_SENSOR_OVERRIDES,
+    )
+
+    # The profile names the same sensor the cover already has stored, so the
+    # copier changes nothing on disk and the "what did the copier change?" diff
+    # is empty for this key — the case the delta merge cannot see.
+    profile = _add_profile(
+        hass,
+        entry_id="profile_owns_outside_temp",
+        extra_options={CONF_OUTSIDETEMP_ENTITY: "sensor.hq_outside"},
+    )
+    entry = await _setup_entry(
+        hass,
+        entry_id="link_adopts_profile_key",
+        extra_options={CONF_OUTSIDETEMP_ENTITY: "sensor.hq_outside"},
+    )
+
+    await _link_profile_after_editing(
+        hass, entry, profile, {CONF_OUTSIDETEMP_ENTITY: "sensor.typed_in_dialog"}
+    )
+
+    assert entry.options[CONF_BUILDING_PROFILE_ID] == profile.entry_id
+    assert entry.options[CONF_OUTSIDETEMP_ENTITY] == "sensor.hq_outside"
+    assert CONF_PROFILE_SENSOR_OVERRIDES not in entry.options
+
+
+@pytest.mark.integration
+async def test_profile_link_keeps_an_unsaved_edit_the_profile_does_not_own(
+    hass: HomeAssistant,
+) -> None:
+    """Adopting is scoped to what the profile actually defines, not a category.
+
+    A blank profile key means "the profile does not define this" — indistinguishable
+    from never filled in — so ``merge_profile_into_config`` skips it and the
+    cover keeps its own value. An unsaved edit to such a key is the cover's own
+    just the same, and linking says nothing about it.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_LUX_ENTITY,
+        CONF_OUTSIDETEMP_ENTITY,
+        CONF_PROFILE_SENSOR_OVERRIDES,
+    )
+
+    profile = _add_profile(
+        hass,
+        entry_id="profile_leaves_lux_blank",
+        extra_options={CONF_OUTSIDETEMP_ENTITY: "sensor.hq_outside"},
+    )
+    entry = await _setup_entry(hass, entry_id="link_keeps_local_key")
+
+    await _link_profile_after_editing(
+        hass, entry, profile, {CONF_LUX_ENTITY: "sensor.my_own_lux"}
+    )
+
+    assert entry.options[CONF_LUX_ENTITY] == "sensor.my_own_lux"
+    # The profile leaves it blank, so it is "local", never an override.
+    assert CONF_PROFILE_SENSOR_OVERRIDES not in entry.options
+    # And the key the profile does own was adopted.
+    assert entry.options[CONF_OUTSIDETEMP_ENTITY] == "sensor.hq_outside"
+
+
 @pytest.mark.integration
 async def test_mid_flow_write_without_a_pending_switch_is_unchanged(
     hass: HomeAssistant,
@@ -1308,7 +1428,22 @@ async def test_mid_flow_write_keeps_a_position_re_entered_after_the_switch(
     assert entry.options[CONF_DEFAULT_HEIGHT] == 30
 
 
-_OWN_ENTRY_ATTR = "_config_entry"
+# Both attributes reach the SAME ``ConfigEntry`` object, so a guard that knows
+# only one of them can be walked past by spelling the other.
+#
+# ``_config_entry`` is what ``OptionsFlowHandler.__init__`` stores: HA's
+# ``OptionsFlowManager.async_create_flow`` resolves the entry with
+# ``hass.config_entries.async_get_known_entry(handler_key)`` and hands that
+# object to ``async_get_options_flow(entry)`` (homeassistant/config_entries.py).
+# ``config_entry`` is HA's own ``OptionsFlow.config_entry`` property, which is a
+# live ``hass.config_entries.async_get_known_entry(self._config_entry_id)``
+# lookup with ``_config_entry_id`` returning ``self.handler`` — the same
+# ``handler_key``. Both therefore resolve to ``ConfigEntries._entries.data[
+# entry_id]``, and ``async_update_entry`` mutates that object in place rather
+# than replacing it, so the identity holds for the life of the flow.
+#
+# Not hypothetical: ``async_step_init`` already reads ``self.config_entry.title``.
+_OWN_ENTRY_ATTRS = frozenset({"_config_entry", "config_entry"})
 
 
 def _called_name(call: ast.Call) -> str | None:
@@ -1320,7 +1455,7 @@ def _is_own_entry(node: ast.AST | None, aliases: set[str]) -> bool:
     """Whether *node* evaluates to this flow's own config entry."""
     if isinstance(node, ast.Attribute):
         return (
-            node.attr == _OWN_ENTRY_ATTR
+            node.attr in _OWN_ENTRY_ATTRS
             and isinstance(node.value, ast.Name)
             and node.value.id == "self"
         )
@@ -1328,12 +1463,12 @@ def _is_own_entry(node: ast.AST | None, aliases: set[str]) -> bool:
 
 
 def _own_entry_aliases(func: ast.AST) -> set[str]:
-    """Local names bound to ``self._config_entry`` anywhere inside *func*.
+    """Local names bound to this flow's own entry anywhere inside *func*.
 
     Assigning to a local is the cheapest way to walk past a guard that only
-    looks at ``self._config_entry`` literally, so the alias set is transitive
-    (``a = self._config_entry`` then ``b = a``) and is rebuilt to a fixpoint
-    rather than in source order.
+    looks at ``self._config_entry`` (or ``self.config_entry``) literally, so the
+    alias set is transitive (``a = self._config_entry`` then ``b = a``) and is
+    rebuilt to a fixpoint rather than in source order.
     """
     aliases: set[str] = set()
     grew = True
@@ -1357,26 +1492,116 @@ def _own_entry_aliases(func: ast.AST) -> set[str]:
     return aliases
 
 
+def _writer_closure(calls: dict[str, set[str]]) -> frozenset[str]:
+    """Names in *calls* that reach ``async_update_entry``, however many hops.
+
+    ``calls`` maps a function name to the bare names it calls. One hop is not
+    enough: ``def _sync_now(entry): _copy_profile_to_cover(hass, p, entry)``
+    writes the entry it is handed just as surely as the copier does, so handing
+    it this flow's own entry is the same bypass — invisible to a set built only
+    from direct callers of ``async_update_entry``.
+
+    Seeded with ``async_update_entry`` itself so direct and indirect writers
+    fall out of one rule, then dropped from the result — it is HA's method, not
+    a helper of ours anyone could hand an entry to.
+    """
+    reaching = {"async_update_entry"}
+    grew = True
+    while grew:
+        grew = False
+        for name, called in calls.items():
+            if name not in reaching and called & reaching:
+                reaching.add(name)
+                grew = True
+    return frozenset(reaching - {"async_update_entry"})
+
+
 def _entry_writing_helpers() -> frozenset[str]:
-    """Every function in the integration that calls ``async_update_entry``.
+    """Every function in the integration that can end up writing a config entry.
 
     Derived, not listed: a helper added later that writes an entry is picked up
     without anyone remembering to name it here.
+
+    Names are matched bare, so two same-named functions in different modules
+    merge into one entry. That over-approximates, which is the safe direction —
+    it can make the guard demand a review that was not strictly needed, never
+    let an unreviewed write past.
     """
     import pathlib
 
     from custom_components.adaptive_cover_pro import config_flow as cf
 
-    names: set[str] = set()
+    calls: dict[str, set[str]] = {}
     for path in sorted(pathlib.Path(cf.__file__).parent.rglob("*.py")):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and any(
-                isinstance(call, ast.Call)
-                and _called_name(call) == "async_update_entry"
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            calls.setdefault(node.name, set()).update(
+                name
                 for call in ast.walk(node)
-            ):
-                names.add(node.name)
-    return frozenset(names)
+                if isinstance(call, ast.Call) and (name := _called_name(call))
+            )
+    return _writer_closure(calls)
+
+
+def test_entry_writing_helpers_follow_calls_more_than_one_hop() -> None:
+    """The indirect check is only as deep as the set of helpers it is given.
+
+    A one-hop set names the copier but not the wrapper around it, so the
+    wrapper becomes a free bypass. The closure is the same fixpoint the alias
+    tracker uses, one level up.
+    """
+    calls = {
+        "_copy_profile_to_cover": {"async_update_entry"},
+        "_sync_now": {"_copy_profile_to_cover"},
+        "_and_its_caller": {"_sync_now"},
+        "_unrelated": {"dict"},
+    }
+
+    assert _writer_closure(calls) == {
+        "_copy_profile_to_cover",
+        "_sync_now",
+        "_and_its_caller",
+    }
+    # And the real derivation is wired to it: ``_persist_entry`` writes
+    # directly, ``_update_options`` only by calling it.
+    assert {"_persist_entry", "_update_options"} <= _entry_writing_helpers()
+
+
+def _base_names(cls: ast.ClassDef) -> set[str]:
+    """Bare names of *cls*'s declared bases (``a.B`` counts as ``B``)."""
+    return {
+        name
+        for base in cls.bases
+        if (name := getattr(base, "attr", None) or getattr(base, "id", None))
+    }
+
+
+def _handler_classes(tree: ast.Module, class_name: str) -> list[ast.ClassDef]:
+    """*class_name* plus every class in the module that descends from it.
+
+    A method that writes the entry is no less a write for being declared on a
+    subclass, so matching one ``ClassDef`` by name leaves a bypass that costs
+    one ``class Foo(OptionsFlowHandler):`` to take. The fixpoint over declared
+    bases is ten lines and needs no assumption stated in prose — which is the
+    argument for deriving it rather than asserting "no subclass exists today"
+    and leaving the next author to discover that a correct extension fails a
+    guard they then have to edit. Resolution is limited to what the module AST
+    shows: a subclass declared in another module is out of reach, which is
+    fine — this guard is about *this* module's writes.
+    """
+    classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    assert any(c.name == class_name for c in classes), f"no class {class_name}"
+
+    family = {class_name}
+    grew = True
+    while grew:
+        grew = False
+        for cls in classes:
+            if cls.name not in family and _base_names(cls) & family:
+                family.add(cls.name)
+                grew = True
+    return [c for c in classes if c.name in family]
 
 
 def _seam_violations(
@@ -1388,22 +1613,22 @@ def _seam_violations(
     ``async_update_entry`` on their own entry, and ``(method, helper)`` pairs
     that hand their own entry to something that writes it for them.
 
-    Only methods declared directly on the class are iterated, so a call inside
-    a nested closure is attributed to the method that contains it rather than
-    to the closure's own name.
+    Only methods declared directly on the class (or on a subclass of it — see
+    :func:`_handler_classes`) are iterated, so a call inside a nested closure is
+    attributed to the method that contains it rather than to the closure's own
+    name.
     """
     tree = ast.parse(source)
-    cls = next(
-        n
-        for n in ast.walk(tree)
-        if isinstance(n, ast.ClassDef) and n.name == class_name
-    )
+    methods = [
+        node
+        for cls in _handler_classes(tree, class_name)
+        for node in cls.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    ]
 
     direct: set[str] = set()
     indirect: set[tuple[str, str]] = set()
-    for method in cls.body:
-        if not isinstance(method, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
+    for method in methods:
         aliases = _own_entry_aliases(method)
         for node in ast.walk(method):
             if not isinstance(node, ast.Call):
@@ -1472,14 +1697,39 @@ class OptionsFlowHandler:
 
         _inner()
 
+    def ha_property(self):
+        self.hass.config_entries.async_update_entry(self.config_entry, options={})
+
+    def aliased_ha_property(self):
+        entry = self.config_entry
+        self.hass.config_entries.async_update_entry(entry, options={})
+
     def indirect(self):
         _copy_profile_to_cover(self.hass, profile, self._config_entry)
+
+    def indirect_via_ha_property(self):
+        _copy_profile_to_cover(self.hass, profile, self.config_entry)
 
     def hands_it_over_as_a_non_target(self, target):
         _copy_profile_to_cover(self.hass, self._config_entry, target)
 
     def writes_someone_else(self, target):
         self.hass.config_entries.async_update_entry(target, options={})
+
+
+class _LaterSubclass(OptionsFlowHandler):
+    def subclass_write(self):
+        self.hass.config_entries.async_update_entry(self._config_entry, options={})
+
+
+class _DeeperStill(_LaterSubclass):
+    def deeper_subclass_write(self):
+        self.hass.config_entries.async_update_entry(self.config_entry, options={})
+
+
+class _SomeOtherFlow:
+    def unrelated_write(self):
+        self.hass.config_entries.async_update_entry(self._config_entry, options={})
 """
 
 
@@ -1495,6 +1745,11 @@ def test_seam_guard_sees_through_aliases_keywords_closures_and_helpers() -> None
     argument is the written one is the helper's business and can change. That
     is what ``_ALLOWED_INDIRECT_WRITES`` is for: each reviewed call site says
     in prose why it is safe, and an unreviewed one fails.
+
+    Subclassing is the same bypass one level up: a method that writes the entry
+    is no less a write for being declared on a subclass of the handler, so the
+    scan follows ``bases`` rather than matching one class by name. A class that
+    does not descend from the handler is nobody's business here.
     """
     direct, indirect = _seam_violations(
         _SEAM_EVASIONS,
@@ -1502,10 +1757,21 @@ def test_seam_guard_sees_through_aliases_keywords_closures_and_helpers() -> None
         writer_helpers=frozenset({"_copy_profile_to_cover"}),
     )
 
-    assert direct == {"_persist_entry", "aliased", "keyword", "nested"}
+    assert direct == {
+        "_persist_entry",
+        "aliased",
+        "keyword",
+        "nested",
+        "ha_property",
+        "aliased_ha_property",
+        "subclass_write",
+        "deeper_subclass_write",
+    }
     assert "writes_someone_else" not in direct
+    assert "unrelated_write" not in direct
     assert indirect == {
         ("indirect", "_copy_profile_to_cover"),
+        ("indirect_via_ha_property", "_copy_profile_to_cover"),
         ("hands_it_over_as_a_non_target", "_copy_profile_to_cover"),
     }
 
@@ -1530,8 +1796,13 @@ def test_options_flow_writes_its_own_entry_through_one_seam() -> None:
         "_persist_entry"
     }, f"self._config_entry is written outside the seam: {sorted(direct)}"
     assert indirect <= _ALLOWED_INDIRECT_WRITES, (
-        "self._config_entry is handed to an entry-writing helper from a call "
+        "this flow's own entry is handed to an entry-writing helper from a call "
         f"site that has not been reviewed: {sorted(indirect - _ALLOWED_INDIRECT_WRITES)}"
+    )
+    assert indirect >= _ALLOWED_INDIRECT_WRITES, (
+        "reviewed-call-site notes that no longer describe a real call site — a "
+        "stale exemption is one a future write can land in without review: "
+        f"{sorted(_ALLOWED_INDIRECT_WRITES - indirect)}"
     )
 
 
