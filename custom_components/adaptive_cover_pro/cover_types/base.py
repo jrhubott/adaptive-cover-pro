@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import voluptuous as vol
 from homeassistant.const import (
-    ATTR_ASSUMED_STATE,
     SERVICE_SET_COVER_POSITION,
     SERVICE_SET_COVER_TILT_POSITION,
 )
@@ -37,7 +36,12 @@ from ..const import (
     POSITION_OPEN,
     GroupScene,
 )
-from ..helpers import get_open_close_state, should_use_tilt, state_attr
+from ..helpers import (
+    get_open_close_state,
+    is_assumed_state,
+    should_use_tilt,
+    state_attr,
+)
 from ._summary_labels import AXIS_LABELS_EN
 
 if TYPE_CHECKING:
@@ -1219,7 +1223,7 @@ class CoverTypePolicy(ABC):
         live = get_open_close_state(hass, entity, state_obj=state_obj)
         if assumed is not None:
             st = state_obj if state_obj is not None else hass.states.get(entity)
-            if st is not None and st.attributes.get(ATTR_ASSUMED_STATE):
+            if is_assumed_state(st):
                 # Issue #888 follow-up: for an assumed-state cover, open/closed is
                 # the last-command direction, not a real position. A recorded
                 # high-confidence assumed value (a My arrival) is more specific, so

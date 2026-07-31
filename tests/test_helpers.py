@@ -7,11 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ENTITIES,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CUSTOM_POSITION_SLOTS,
 )
 from custom_components.adaptive_cover_pro.helpers import (
+    check_cover_capabilities,
     check_cover_features,
     check_time_passed,
     custom_position_slot_configured,
@@ -24,6 +26,7 @@ from custom_components.adaptive_cover_pro.helpers import (
     get_open_close_state,
     get_safe_state,
     get_timedelta_str,
+    is_assumed_state,
     motion_entities,
     resolve_sun_boundaries,
     should_use_tilt,
@@ -591,6 +594,80 @@ def test_get_open_close_state_returns_none_for_other_states(mock_hass):
     result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
+
+
+# --- is_assumed_state ---
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_true_when_attribute_truthy():
+    """Test is_assumed_state returns True when assumed_state attribute is truthy."""
+    state_obj = MagicMock()
+    state_obj.attributes = {"assumed_state": True}
+
+    assert is_assumed_state(state_obj) is True
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_attribute_absent():
+    """Test is_assumed_state returns False when assumed_state attribute is missing."""
+    state_obj = MagicMock()
+    state_obj.attributes = {}
+
+    assert is_assumed_state(state_obj) is False
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_attribute_explicitly_false():
+    """Test is_assumed_state returns False when assumed_state is explicitly False."""
+    state_obj = MagicMock()
+    state_obj.attributes = {"assumed_state": False}
+
+    assert is_assumed_state(state_obj) is False
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_state_is_none():
+    """Test is_assumed_state returns False when state is None (entity not resolved)."""
+    assert is_assumed_state(None) is False
+
+
+# --- check_cover_capabilities: assumed_state warning ---
+
+
+@pytest.mark.unit
+def test_check_cover_capabilities_warns_when_assumed_state(mock_hass):
+    """check_cover_capabilities appends the assumed_state warning for a ready cover whose state carries assumed_state=True."""
+    state_obj = MagicMock()
+    state_obj.state = "closed"
+    state_obj.attributes = {"assumed_state": True}
+    mock_hass.states.get.return_value = state_obj
+
+    cap_map, warnings = check_cover_capabilities(
+        {CONF_ENTITIES: ["cover.test"]}, None, mock_hass
+    )
+
+    assert cap_map["cover.test"] is not None
+    assert warnings == [
+        "⚠️ cover.test has assumed_state — real position cannot be "
+        "read back, which may affect position verification and delta-bypass."
+    ]
+
+
+@pytest.mark.unit
+def test_check_cover_capabilities_no_warning_without_assumed_state(mock_hass):
+    """check_cover_capabilities does not warn when the state has no assumed_state attribute."""
+    state_obj = MagicMock()
+    state_obj.state = "closed"
+    state_obj.attributes = {}
+    mock_hass.states.get.return_value = state_obj
+
+    cap_map, warnings = check_cover_capabilities(
+        {CONF_ENTITIES: ["cover.test"]}, None, mock_hass
+    )
+
+    assert cap_map["cover.test"] is not None
+    assert warnings == []
 
 
 # --- should_use_tilt ---

@@ -12,6 +12,7 @@ import pandas as pd
 from dateutil import parser
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
+    ATTR_ASSUMED_STATE,
     STATE_OFF,
     STATE_ON,
     STATE_UNAVAILABLE,
@@ -665,7 +666,7 @@ def check_cover_capabilities(
                     "threshold compare, not set_position."
                 )
             state = hass.states.get(eid)
-            if state and state.attributes.get("assumed_state"):
+            if is_assumed_state(state):
                 warnings.append(
                     f"⚠️ {eid} has assumed_state — real position cannot be "
                     "read back, which may affect position verification and delta-bypass."
@@ -1328,6 +1329,19 @@ def get_open_close_state(
         return 100
 
     return None
+
+
+def is_assumed_state(state: "State | None") -> bool:
+    """Return True if *state* reports HA's ``assumed_state`` attribute.
+
+    Single source of truth for the assumed-state check duplicated at three
+    sites: ``CoverTypePolicy.read_axis_value``'s open/close fallback,
+    ``CoverCommandService``'s same-position gate (``_current_is_assumed_mapping``,
+    issue #1130), and this module's ``check_cover_capabilities`` summary
+    warning. ``state=None`` (entity not yet resolved) reports False, matching
+    every prior call site's guard.
+    """
+    return state is not None and bool(state.attributes.get(ATTR_ASSUMED_STATE))
 
 
 def climate_mode_from_diagnostics(diagnostics: dict | None) -> str | None:

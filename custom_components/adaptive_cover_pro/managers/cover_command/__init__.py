@@ -7,7 +7,11 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
-from homeassistant.const import STATE_CLOSED, STATE_OPEN, STATE_UNAVAILABLE
+from homeassistant.const import (
+    STATE_CLOSED,
+    STATE_OPEN,
+    STATE_UNAVAILABLE,
+)
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
@@ -29,6 +33,7 @@ from ...diagnostics.event_buffer import EventBuffer
 from ...helpers import (
     check_cover_features,
     get_last_updated,
+    is_assumed_state,
 )
 from . import gates
 from .diagnostics import DiagnosticsRecorder
@@ -1190,20 +1195,31 @@ class CoverCommandService:
         (issue #779 follow-up regression from PR #781, which hand-rolled a
         partial copy of this math and ignored ``use_my_position``).
 
-        Consulted only when ``_current is None`` — a *resolved* ``_current``
-        is compared directly against ``plan.routed_target`` by the caller
-        instead (issue #1095; see the same-position gate's comment in
-        ``apply_position`` for the "not position-capable" routing-algebra
-        explanation of which routes ``routed_target`` can actually diverge
-        from ``position`` on). A resolved live reading that contradicts the
-        stored target (e.g. the cover reports mechanically closed while the
-        last commanded target was "open") must be free to fall through and
-        dispatch; routing it through the last-*commanded*-target comparison
-        here would let a stale stored target mask a genuine state change.
-        This fallback exists solely for the case where there is no live
-        reading to compare at all. The delta/time gates and reconciliation
-        intentionally keep reading the real current position and are
-        untouched by this fallback.
+        Consulted when ``_current is None``, and also when ``_current`` is
+        not ``None`` but is a *synthetic* mapping rather than a genuine
+        reading — an ``assumed_state`` cover whose default axis is not
+        position-capable (``caps_get(caps, axis.capability_key)`` is
+        false), whose raw HA open/closed state was mapped straight to
+        100/0 by ``get_open_close_state`` (issue #1130).
+        A *resolved, genuine* ``_current`` is still compared directly
+        against ``plan.routed_target`` by the caller instead (issue #1095;
+        see the same-position gate's comment in ``apply_position`` for the
+        "not position-capable" routing-algebra explanation of which routes
+        ``routed_target`` can actually diverge from ``position`` on). A
+        genuine live reading that contradicts the stored target (e.g. the
+        cover reports mechanically closed while the last commanded target
+        was "open") must be free to fall through and dispatch; routing it
+        through the last-*commanded*-target comparison here would let a
+        stale stored target mask a genuine state change. That reasoning
+        does not hold for the synthetic open/close mapping — it is not a
+        genuine position reading at all, so it must not be allowed to
+        contradict the stored target either; falling back to the
+        commanded-target comparison is the correct behavior for it too.
+        This fallback's "no live reading to compare" framing therefore now
+        covers both "no reading at all" and "a reading that cannot be
+        trusted as a real position." The delta/time gates and
+        reconciliation intentionally keep reading the real current position
+        and are untouched by this fallback.
 
         Args:
             entity_id: Cover entity ID.
@@ -1459,10 +1475,13 @@ class CoverCommandService:
         # below only ever compares a *resolved* `_current` directly against
         # `_plan.routed_target` — it never calls
         # _same_position_via_target_fallback. That fallback (see its
-        # docstring) is reserved for the third arm, `_current is None`,
-        # where there is no live reading to compare at all. Delta/time gates
-        # and reconciliation deliberately keep reading the real `_current` —
-        # this routed comparison is scoped to the same-position gate only.
+        # docstring) is reserved for the third arm: `_current is None`, and,
+        # per the #1130 carve-out below, a resolved `_current` that is a
+        # synthetic open/close mapping rather than a genuine reading — in
+        # both cases there is no trustworthy live reading to compare
+        # against. Delta/time gates and reconciliation deliberately keep
+        # reading the real `_current` — this routed comparison is scoped to
+        # the same-position gate only.
         #
         # The second arm keeps `not _plan.supports_position` even though it
         # is currently provably redundant there (a position-capable route's
@@ -1471,6 +1490,27 @@ class CoverCommandService:
         # cheap, explicit boolean check that states the case up front and
         # defends against a future route_service_call change breaking that
         # invariant on a position-capable route.
+        #
+        # A third condition narrows entry into arms one and two, and widens
+        # entry into the third arm's fallback, beyond "not
+        # position-capable" alone: an `assumed_state` cover whose default
+        # axis has NO position-capability (its `capability_key`, e.g.
+        # CAP_HAS_SET_POSITION, is false) has its `_current` sourced from
+        # `get_open_close_state`'s raw open/close→100/0 mapping, not a
+        # genuine position reading (issue #1130). RFXtrx-style Somfy RTS
+        # covers report HA state "open" after every stop_cover regardless
+        # of where the motor actually parked, so a My-route move to (say)
+        # 10% reads back as `_current = 100` forever — arms one and two can
+        # never match (100 != 10), so the same command re-fires every
+        # cycle, and a later genuine return to the default 100 is wrongly
+        # swallowed as same_position because 100 == 100 even though the
+        # cover physically sits elsewhere. `_current_is_assumed_mapping`
+        # (computed just below, right after `_plan`) detects this shape and
+        # routes it to the stored-target-vs-routed-target comparison
+        # instead — the same fallback #779/#1095 already use for `_current
+        # is None` — which is the correct comparison for a synthetic
+        # reading rather than a genuine one.
+        #
         # An explicit user command (context.user_command) must ALWAYS dispatch —
         # a user pressing Open/Close/Set from the card is never "already there"
         # as far as ACP is entitled to decide, especially on a no-feedback cover
@@ -1517,14 +1557,46 @@ class CoverCommandService:
         # entity's travel, not on this one's `supported_features`, which is
         # all `_plan` is derived from.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
+        _axis_for_plan = self._policy.select_default_axis(_caps_for_plan)
         _plan = route_service_call(
             entity_id,
             position,
             _caps_for_plan,
-            axis=self._policy.select_default_axis(_caps_for_plan),
+            axis=_axis_for_plan,
             use_my_position=context.use_my_position,
             open_close_threshold=self._open_close_threshold,
             endpoint_use_open_close=self._endpoint_use_open_close,
+        )
+
+        # Issue #1130 (narrowed post-audit): an assumed_state cover whose
+        # default axis is genuinely NOT position-capable has its `_current`
+        # sourced from the open/close→100/0 mapping (get_open_close_state),
+        # not a genuine position reading. The predicate checks the axis
+        # CAPABILITY (`caps_get(..., _axis_for_plan.capability_key)`) rather
+        # than `_plan.supports_position` (a routing OUTCOME): a
+        # position-capable cover that also sets assumed_state — an
+        # MQTT/template optimistic cover, or a `cover` group containing an
+        # RTS member — can still route through open_cover/close_cover under
+        # endpoint_use_open_close (the default) at a mechanical endpoint,
+        # yet its `_current` there IS a genuine position read and must not
+        # be treated as synthetic (it would otherwise re-dispatch
+        # open_cover/close_cover on every cycle and disturb a venetian's
+        # slats, weakening the #985 guarantee). This mirrors the branch
+        # `read_axis_value` (cover_types/base.py) itself takes when deciding
+        # whether to read a genuine position attribute or fall back to
+        # `get_open_close_state` — the gate should classify `_current` the
+        # same way the reader that produced it did. Trust the open/close
+        # mapping for the same-position gate's direct-equality arms only
+        # when the cover is NOT assumed_state on a non-position-capable
+        # axis; otherwise fall through to the stored-target-vs-routed-target
+        # comparison (arm three, #779/#1095), which is the correct
+        # comparison for a synthetic reading.
+        _current_is_assumed_mapping = (
+            _current is not None
+            and not caps_get(
+                _caps_for_plan, _axis_for_plan.capability_key, default=True
+            )
+            and is_assumed_state(state_obj)
         )
         if (
             not sun_reconfirm
@@ -1533,6 +1605,7 @@ class CoverCommandService:
             and (
                 (
                     _current is not None
+                    and not _current_is_assumed_mapping
                     and (
                         _current == position
                         or (
@@ -1543,10 +1616,11 @@ class CoverCommandService:
                 or (
                     _current is not None
                     and not _plan.supports_position
+                    and not _current_is_assumed_mapping
                     and _current == _plan.routed_target
                 )
                 or (
-                    _current is None
+                    (_current is None or _current_is_assumed_mapping)
                     and self._same_position_via_target_fallback(
                         entity_id, position, context, plan=_plan
                     )
