@@ -1009,6 +1009,47 @@ class TestCapabilityWarningsPerModel:
 
 
 # ---------------------------------------------------------------------------
+# Issue #1137 — prospective capability warnings (pre-configuration confirm
+# screen). The "Change Cover Type" confirm step (#1132/#1135) asks the
+# DESTINATION policy a capability question before any of its own options
+# exist, so it cannot know the control model yet. ``prospective_capability_
+# warnings`` answers with the all-models intersection ``entity_selector_
+# filter()`` already encodes — set_position only — rather than assuming
+# Model A via ``DEFAULT_DAY_NIGHT_CONTROL_MODEL``.
+# ---------------------------------------------------------------------------
+
+
+class TestProspectiveCapabilityWarnings:
+    """``DayNightShadePolicy.prospective_capability_warnings`` is tilt-relaxed."""
+
+    def test_prospective_capability_warnings_omit_tilt(self) -> None:
+        """A position-only cover (Model B/C hardware) draws no tilt warning.
+
+        The control model is chosen on the NEXT screen (geometry_schema), so
+        the pre-configuration question must not assume Model A.
+        """
+        policy = DayNightShadePolicy()
+        known = {"cover.a": {"has_set_position": True, "has_set_tilt_position": False}}
+        assert policy.prospective_capability_warnings(known) == []
+
+    def test_prospective_capability_warnings_still_flag_missing_position(
+        self,
+    ) -> None:
+        """Missing ``set_position`` still warns — every control model needs it.
+
+        The tail wording must stay model-neutral (no "split-range" / "dual-
+        entity" / "position_tilt" name) since no model has been chosen yet.
+        """
+        policy = DayNightShadePolicy()
+        known = {"cover.a": {"has_set_position": False, "has_set_tilt_position": True}}
+        warnings = policy.prospective_capability_warnings(known)
+        assert any("set_position" in w for w in warnings)
+        joined = " ".join(warnings)
+        assert "split-range" not in joined
+        assert "dual-entity" not in joined
+
+
+# ---------------------------------------------------------------------------
 # Step 18 — control-model select in the geometry schema + summary + labels
 # ---------------------------------------------------------------------------
 

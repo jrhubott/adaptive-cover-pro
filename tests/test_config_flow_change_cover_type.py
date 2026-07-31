@@ -20,6 +20,8 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_SUN_TRACKING,
     CONF_ENTITIES,
@@ -27,6 +29,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MIN_POSITION,
     CONF_SENSOR_TYPE,
     CONF_SUNSET_POS,
+    DAY_NIGHT_MODEL_DUAL_ENTITY,
     DOMAIN,
     CoverType,
 )
@@ -413,10 +416,46 @@ async def test_confirm_lists_stranded_options(hass: HomeAssistant) -> None:
 
 @pytest.mark.integration
 async def test_confirm_shows_capability_notes(hass: HomeAssistant) -> None:
-    """Capability advice is evaluated against the DESTINATION type."""
+    """The confirm screen must not assume a control model before one is picked (#1137).
+
+    The bound covers are position-only — exactly the Model B/C hardware
+    #1114/#1117 exist to support. Day/Night's control model is chosen on the
+    NEXT screen (geometry), so the confirm screen must not warn about a tilt
+    requirement only Model A has; the picker already admitted this type via
+    the same all-models intersection ``entity_selector_filter()`` encodes.
+    """
     entry = await _setup_entry(hass, entry_id="confirm_caps")
 
     result = await _pick(hass, entry, CoverType.DAY_NIGHT_SHADE)
+
+    notes = result["description_placeholders"]["capability_notes"]
+    assert "set_tilt_position" not in notes
+
+
+@pytest.mark.integration
+async def test_confirm_still_warns_for_tilt_only_destination(
+    hass: HomeAssistant,
+) -> None:
+    """The Day/Night tilt relaxation must not leak to a type that always needs it.
+
+    Venetian genuinely needs tilt on every configuration — #1117's
+    intersection filter is specific to Day/Night's multiple control models, so
+    Venetian keeps the strict, unconditional both-axes requirement. The
+    reporter's position-only covers cannot reach Venetian through the real
+    picker at all (Venetian's own ``entity_selector_filter`` blocks them
+    there — see ``test_picker_offers_capability_compatible_types_only``), so
+    this constructs the flow handler directly and sets the pending type by
+    hand, to isolate the confirm screen's capability advice from the picker's
+    eligibility gate.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    entry = await _setup_entry(hass, entry_id="confirm_caps_venetian")
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    flow._pending_cover_type = CoverType.VENETIAN
+
+    result = await flow.async_step_change_cover_type_confirm()
 
     notes = result["description_placeholders"]["capability_notes"]
     assert "set_tilt_position" in notes
@@ -651,6 +690,55 @@ async def test_data_written_only_at_save_and_close(hass: HomeAssistant) -> None:
     assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
     assert entry.data["name"] == "Switchable"
     assert _reloads(reload, entry) == 1
+
+
+@pytest.mark.integration
+async def test_confirm_to_save_model_c_no_capability_warning(
+    hass: HomeAssistant,
+) -> None:
+    """End-to-end (#1137): position-only covers, Model C, no false warning.
+
+    Exactly the reporter's Smartwings/ZVIDAR two-motor day/night shade
+    (#1114/#1117): two position-only rails, switching to Day/Night and
+    picking Model C (``dual_entity``) plus a middle rail on the geometry
+    step. The confirm screen must show no tilt warning (the control model
+    isn't known yet), and the switch must save cleanly through to
+    ``entry.data``.
+    """
+    entry = await _setup_entry(
+        hass,
+        entry_id="model_c_e2e",
+        entities=["cover.bottom_rail", "cover.middle_rail"],
+    )
+
+    confirm = await _pick(hass, entry, CoverType.DAY_NIGHT_SHADE)
+    assert (
+        "set_tilt_position"
+        not in confirm["description_placeholders"]["capability_notes"]
+    )
+
+    geometry = await hass.config_entries.options.async_configure(
+        confirm["flow_id"], {"confirm": True}
+    )
+    assert geometry["step_id"] == "geometry"
+
+    menu = await hass.config_entries.options.async_configure(
+        geometry["flow_id"],
+        {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle_rail",
+        },
+    )
+    assert menu["type"] == "menu"
+
+    await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "done"}
+    )
+    await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    assert entry.options[CONF_DAY_NIGHT_CONTROL_MODEL] == DAY_NIGHT_MODEL_DUAL_ENTITY
+    assert entry.options[CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY] == "cover.middle_rail"
 
 
 # ---------------------------------------------------------------------------

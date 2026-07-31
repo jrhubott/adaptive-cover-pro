@@ -378,24 +378,27 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         known: dict[str, dict],
         *,
         require_tilt: bool,
-        single_axis_label: str = "split-range",
+        single_axis_label: str | None = "split-range",
     ) -> list[str]:
         """Warn about covers missing the axes this control model needs.
 
-        Single source for both the default (dual-axis, Model A) requirement and
-        the single-carriage (split-range / dual-entity) relaxation — the
+        Single source for the default (dual-axis, Model A) requirement, the
+        single-carriage (split-range / dual-entity) relaxation, and the
+        model-neutral pre-configuration phrasing (issue #1137) — the
         ``require_tilt`` flag is the only behavioural difference, so the
         warning-building logic isn't duplicated (CODING_GUIDELINES.md "No Code
         Duplication"). ``single_axis_label`` names the model in the
         set_position tail so a dual-entity shade isn't mislabelled as
-        split-range (only consulted when ``require_tilt`` is False).
+        split-range (only consulted when ``require_tilt`` is False); ``None``
+        means no model is known yet, so the tail names no model at all.
         """
         both = "day/night shade requires both set_position and set_tilt_position."
-        pos_tail = (
-            both
-            if require_tilt
-            else f"a {single_axis_label} day/night shade requires set_position."
-        )
+        if require_tilt:
+            pos_tail = both
+        elif single_axis_label is None:
+            pos_tail = "a day/night shade requires set_position."
+        else:
+            pos_tail = f"a {single_axis_label} day/night shade requires set_position."
         warnings: list[str] = []
         missing_pos = [
             eid
@@ -430,6 +433,23 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         the single-axis split-range model.
         """
         return self._missing_axis_warnings(known, require_tilt=True)
+
+    def prospective_capability_warnings(self, known: dict[str, dict]) -> list[str]:
+        """Warn on ``set_position`` only — the control model isn't chosen yet.
+
+        Issue #1137: the "Change Cover Type" confirm step asks this before the
+        instance has any options of its own, so
+        :meth:`capability_warnings_for_options` can't be asked — there is no
+        control model to read yet; it lives on the geometry step that
+        follows. Only Model A needs tilt, so assuming it here would reject
+        Model B/C hardware the picker just admitted via
+        :meth:`entity_selector_filter` — exactly the all-models intersection
+        that filter already encodes. ``single_axis_label=None`` keeps the
+        tail model-neutral, since no model has been picked yet.
+        """
+        return self._missing_axis_warnings(
+            known, require_tilt=False, single_axis_label=None
+        )
 
     def capability_warnings_for_options(
         self, known: dict[str, dict], options: dict

@@ -626,6 +626,8 @@ def check_cover_capabilities(
     config: dict,
     sensor_type: str | None,
     hass: HomeAssistant | None,
+    *,
+    prospective: bool = False,
 ) -> tuple[dict[str, dict[str, bool] | None], list[str]]:
     """Inspect bound cover entities and return capabilities + warning lines.
 
@@ -641,6 +643,19 @@ def check_cover_capabilities(
     ``cover_types`` import below stays function-local: ``cover_types.base``
     imports THIS module at module level, so importing ``cover_types`` back from
     here at module scope would be circular.
+
+    ``prospective`` (issue #1137): when True, the policy-level capability line
+    is asked via :meth:`CoverTypePolicy.prospective_capability_warnings`
+    instead of :meth:`CoverTypePolicy.capability_warnings_for_options`. The
+    "Change Cover Type" confirm step asks about a DESTINATION type before any
+    of its own options exist — ``config`` still belongs to the outgoing type
+    — so an option-aware question would silently assume whatever the
+    destination's schema defaults to. Every generic per-entity note above
+    (unavailable / open-close-only / ``assumed_state`` / mixed capabilities /
+    position limits) is unaffected; only the policy line's source hook
+    changes. Default ``False`` leaves every existing caller's behaviour
+    unchanged (CODING_GUIDELINES.md "No Code Duplication" — generalize with a
+    safe default rather than branch at each call site).
 
     """
     entities: list[str] = config.get(CONF_ENTITIES) or []
@@ -708,8 +723,11 @@ def check_cover_capabilities(
             )
 
         if sensor_type is not None:
+            policy = get_policy(sensor_type)
             warnings.extend(
-                get_policy(sensor_type).capability_warnings_for_options(known, config)
+                policy.prospective_capability_warnings(known)
+                if prospective
+                else policy.capability_warnings_for_options(known, config)
             )
 
         min_pos_val = config.get(CONF_MIN_POSITION)
