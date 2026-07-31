@@ -480,6 +480,52 @@ async def test_confirm_shows_capability_notes(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.integration
+async def test_confirm_shows_generic_open_close_only_note(hass: HomeAssistant) -> None:
+    """A real-flow positive on ``capability_notes`` (#1137 audit item D).
+
+    Every other assertion on ``capability_notes`` reached through the real
+    options flow (``test_confirm_shows_capability_notes``,
+    ``test_confirm_to_save_model_c_no_capability_warning``) is negative —
+    "this note is NOT there". The only positive assertion
+    (``test_confirm_still_warns_for_tilt_only_destination``) runs against a
+    hand-constructed ``OptionsFlowHandler`` with ``_pending_cover_type`` set
+    directly, bypassing ``hass.config_entries.options.async_configure``
+    entirely. Nothing proves the placeholder still carries real advice
+    through the actual flow users take — which is the exact property that
+    ruled out "remove ``capability_notes`` from the confirm screen" as a fix
+    for #1137.
+
+    Awning's ``entity_selector_filter`` is the plain ``cover``-domain default
+    (no capability requirement), so an open/close-only cover — no
+    ``set_position``, no ``set_tilt_position`` — reaches the real confirm
+    screen for it rather than being blocked at the picker. The generic
+    per-entity note this exercises (``helpers.check_cover_capabilities``'s
+    "is open/close-only" line) is untouched by the #1137 fix — it fires for
+    every destination type, not just Day/Night — so this is coverage for the
+    screen's continued usefulness, not a regression guard for this change.
+    """
+    from homeassistant.components.cover import CoverEntityFeature
+
+    entry = await _setup_entry(hass, entry_id="confirm_open_close_only")
+    # Ordinary open/close-only hardware: OPEN | CLOSE | STOP, no SET_POSITION.
+    features = (
+        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+    )
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": int(features)},
+    )
+
+    result = await _pick(hass, entry, CoverType.AWNING)
+
+    assert result["step_id"] == "change_cover_type_confirm"
+    notes = result["description_placeholders"]["capability_notes"]
+    assert "cover.test_blind is open/close-only" in notes
+    assert "will be driven via threshold compare" in notes
+
+
+@pytest.mark.integration
 async def test_confirm_still_warns_for_tilt_only_destination(
     hass: HomeAssistant,
 ) -> None:

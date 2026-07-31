@@ -1443,9 +1443,7 @@ class CoverTypePolicy(ABC):
         """
         return selector.EntityFilterSelectorConfig(domain="cover")
 
-    def prospective_capability_warnings(
-        self, known: Mapping[str, Mapping[str, bool] | None]
-    ) -> list[str]:
+    def prospective_capability_warnings(self, known: dict[str, dict]) -> list[str]:
         """Capability advice valid for EVERY configuration of this type.
 
         Asked before the type's own options exist — the "Change Cover Type"
@@ -1462,6 +1460,13 @@ class CoverTypePolicy(ABC):
         this to relax the tilt requirement, since its control model — the
         thing that decides whether tilt is required — is not chosen until the
         following geometry step.
+
+        Unlike :meth:`entities_satisfy_selector`'s *known*, entries here must
+        already be resolved capability dicts, not ``None`` — the delegate,
+        :meth:`cover_capability_warnings`, has no unavailable-entity skip, and
+        ``caps_get(None, key)`` silently reads as "missing every capability".
+        The only caller (``helpers.check_cover_capabilities``) already filters
+        ``None`` entries out before calling this hook.
         """
         return self.cover_capability_warnings(known)
 

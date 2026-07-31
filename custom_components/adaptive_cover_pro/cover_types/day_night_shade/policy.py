@@ -378,7 +378,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         known: dict[str, dict],
         *,
         require_tilt: bool,
-        single_axis_label: str | None = "split-range",
+        single_axis_label: str | None,
     ) -> list[str]:
         """Warn about covers missing the axes this control model needs.
 
@@ -390,7 +390,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         Duplication"). ``single_axis_label`` names the model in the
         set_position tail so a dual-entity shade isn't mislabelled as
         split-range (only consulted when ``require_tilt`` is False); ``None``
-        means no model is known yet, so the tail names no model at all.
+        means no model is known yet, so the tail names no model at all. No
+        default: every caller states its own tail explicitly, even
+        ``cover_capability_warnings`` below, where ``require_tilt=True`` makes
+        the value inert — a future fourth caller must decide on purpose
+        rather than silently inheriting whatever the last caller needed.
         """
         both = "day/night shade requires both set_position and set_tilt_position."
         if require_tilt:
@@ -432,7 +436,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         :meth:`capability_warnings_for_options` relaxes the tilt requirement for
         the single-axis split-range model.
         """
-        return self._missing_axis_warnings(known, require_tilt=True)
+        return self._missing_axis_warnings(
+            known, require_tilt=True, single_axis_label=None
+        )
 
     def prospective_capability_warnings(self, known: dict[str, dict]) -> list[str]:
         """Warn on ``set_position`` only — the control model isn't chosen yet.
@@ -446,6 +452,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         :meth:`entity_selector_filter` — exactly the all-models intersection
         that filter already encodes. ``single_axis_label=None`` keeps the
         tail model-neutral, since no model has been picked yet.
+
+        This hook takes no ``config``/``options`` argument at all, so it
+        ignores a ``day_night_control_model`` that may already be sitting in
+        the entry's stored options — e.g. a Day/Night → Blind → Day/Night
+        round trip, where ``_stranded_option_keys`` only advises about the
+        stale key and never deletes it. A confirm screen reached that way
+        still gets the model-neutral answer, not whatever the leftover key
+        says. That's deliberate, not an oversight: the information isn't
+        lost, only deferred — the next geometry step re-collects (or
+        re-defaults) the control model, and both the option-aware
+        configuration summary and the A3 Repair evaluate the model that is
+        actually saved, not this screen's guess.
         """
         return self._missing_axis_warnings(
             known, require_tilt=False, single_axis_label=None
