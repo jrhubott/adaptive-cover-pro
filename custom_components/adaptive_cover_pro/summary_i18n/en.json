@@ -295,7 +295,10 @@
     "day_night": {
       "model_position_tilt": "position and tilt (dual axis)",
       "model_split_range": "split range (single axis)",
-      "model_dual_entity": "two rail entities (dual entity)"
+      "model_dual_entity": "two rail entities (dual entity)",
+      "rail_travel": "rail travel: {v}",
+      "rail_travel_concurrent": "both rails move concurrently once the leading rail is under way",
+      "rail_travel_serialized": "rails move one at a time — the following rail waits for full clearance"
     },
     "dual_panel": {
       "front_entity": "front (sheer) panel: {v}",

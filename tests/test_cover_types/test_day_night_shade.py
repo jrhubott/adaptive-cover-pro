@@ -18,6 +18,7 @@ from homeassistant.helpers.selector import ENTITY_FILTER_SELECTOR_CONFIG_SCHEMA
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
@@ -28,6 +29,7 @@ from custom_components.adaptive_cover_pro.const import (
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
     OPTION_RANGES,
@@ -1400,3 +1402,106 @@ def test_dual_entity_labels_present_in_en_translations() -> None:
     # The middle-rail field label in both config + options geometry steps.
     assert en["config"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY]
     assert en["options"]["step"]["geometry"]["data"][CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY]
+
+
+# ---------------------------------------------------------------------------
+# Step 22 — concurrent rail travel (#1140)
+# ---------------------------------------------------------------------------
+# Model C's two rails share one track and their targets can never cross, so the
+# follower can start as soon as the leader is under way instead of waiting out
+# its whole travel. Default ON; the switch keeps the conservative #1115/#1118
+# full-clearance wait available for hardware that needs it.
+
+
+def test_geometry_schema_has_concurrent_rail_travel_toggle() -> None:
+    import voluptuous as vol
+
+    schema = DayNightShadePolicy().geometry_schema()
+    keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
+    assert CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL in keys
+    # Default ON — an upgraded install gets the faster behaviour.
+    assert schema({})[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL] is True
+    assert (
+        schema({CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: False})[
+            CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
+        ]
+        is False
+    )
+
+
+def test_concurrent_rail_travel_option_registered() -> None:
+    """A boolean option: a FIELD_VALIDATORS entry, and no OPTION_RANGES entry.
+
+    Being in ``FIELD_VALIDATORS`` is not enough — a key the ``set_geometry``
+    service does not accept is silently dropped and its validator is dead code,
+    the wiring the middle-rail picker documents (#993). It also has to be in the
+    policy's own live-option set, which the geometry schema supplies.
+    """
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+        FIELD_VALIDATORS,
+    )
+
+    assert DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL is True
+    assert CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL not in OPTION_RANGES
+
+    validator = FIELD_VALIDATORS[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL]
+    assert validator(True) is True
+    assert validator(False) is False
+    with pytest.raises(vol.Invalid):
+        validator("not a boolean")
+
+    assert CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL in ALL_SETTABLE_KEYS
+    assert (
+        CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
+        in DayNightShadePolicy().live_option_keys()
+    )
+
+
+def test_summary_renders_rail_travel_for_dual_entity_only() -> None:
+    """The rail-travel line is rendered for Model C, in both states — and only
+    for Model C, since it describes a two-entity sequencing policy the
+    single-carriage models have no rails to apply.
+    """
+    policy = DayNightShadePolicy()
+    base = {
+        CONF_HEIGHT_WIN: 2.0,
+        CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+    }
+
+    default_on = policy.summary_geometry_lines(base)
+    assert any("concurrently" in line for line in default_on), default_on
+
+    explicit_off = policy.summary_geometry_lines(
+        {**base, CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: False}
+    )
+    assert any("one at a time" in line for line in explicit_off), explicit_off
+
+    model_a = policy.summary_geometry_lines(
+        {
+            CONF_HEIGHT_WIN: 2.0,
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_POSITION_TILT,
+        }
+    )
+    assert not any("rail travel" in line for line in model_a), model_a
+
+
+def test_concurrent_rail_travel_label_present_in_en_translations() -> None:
+    import json
+    import pathlib
+
+    en = json.loads(
+        (
+            pathlib.Path(__file__).resolve().parent.parent.parent
+            / "custom_components"
+            / "adaptive_cover_pro"
+            / "translations"
+            / "en.json"
+        ).read_text(encoding="utf-8")
+    )
+    for flow in ("config", "options"):
+        step = en[flow]["step"]["geometry"]
+        assert step["data"][CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL]
+        assert step["data_description"][CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL]

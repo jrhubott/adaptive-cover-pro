@@ -17,7 +17,7 @@ math is replaced by a pure fabric-choice decision keyed on the season.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -32,6 +32,7 @@ from homeassistant.helpers import selector
 from ...config_types import DayNightShadeConfig
 from ...const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
@@ -40,8 +41,10 @@ from ...const import (
     DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
+    DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS,
     DAY_NIGHT_SPLIT_MIDPOINT,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     DEFAULT_DAY_NIGHT_CONTROL_MODEL,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
@@ -161,6 +164,13 @@ def geometry_day_night_shade_schema(hass: HomeAssistant | None = None) -> vol.Sc
             # select itself. Optional with no default so an un-set value is
             # simply absent from options.
             vol.Optional(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY): _middle_rail_select(),
+            # Model C: may the following rail start while the leading rail is
+            # still travelling (#1140)? Inert for Models A and B, which have no
+            # second rail to sequence against.
+            vol.Optional(
+                CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+                default=DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+            ): selector.BooleanSelector(),
         }
     )
 
@@ -233,6 +243,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # it. Defaults to the dual-axis Model A so an un-resolved cycle behaves
         # like Phase A.
         self._control_model: str = DEFAULT_DAY_NIGHT_CONTROL_MODEL
+        # Model C rail-travel policy: may the following rail start before the
+        # leading one has fully cleared it (#1140)? Cached from options by the
+        # same pair of hooks that resolve the control model, because the travel
+        # gate runs at the dispatch seam, which receives no ``options``.
+        self._dual_entity_concurrent_travel: bool = (
+            DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
+        )
         # Model C (dual_entity) dispatch cache, filled in ``post_pipeline_resolve``
         # and read by ``resolve_entity_target`` at the coordinator dispatch seam
         # (which receives no ``options``). The blend folds into the middle rail's
@@ -318,6 +335,28 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """
         self._control_model = self._read_control_model(options)
 
+    def _cache_runtime_options(self, options: dict) -> None:
+        """Cache every per-instance option the option-less hooks downstream read.
+
+        The single seam for "read the raw options dict into policy state" —
+        both :meth:`sync_runtime_options` (the coordinator's per-cycle hook) and
+        :meth:`post_pipeline_resolve` (self-sufficiency for direct callers) go
+        through here rather than each listing the reads, so a new per-instance
+        option lands in one place (CODING_GUIDELINES.md "No Code Duplication").
+
+        These deliberately do NOT ride ``RuntimeConfig.from_options``: that hook
+        covers the options the COORDINATOR reads, and these are read by the
+        policy itself at seams the coordinator hands no ``options`` to — the
+        control-model precedent (#1114).
+        """
+        self._set_control_model(options)
+        self._dual_entity_concurrent_travel = bool(
+            options.get(
+                CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+                DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+            )
+        )
+
     # ---- Geometry / config-flow surfaces ------------------------------ #
 
     def disallowed_geometry_fields(
@@ -361,7 +400,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     def summary_geometry_lines(
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
-        """Render the window-dimensions block plus the control-model line."""
+        """Render the window-dimensions block plus the control-model line.
+
+        Model C additionally renders the rail-travel policy (#1140), which the
+        single-carriage models have no second rail to apply — rendering it for
+        them would describe behaviour they cannot exhibit.
+        """
         lines = window_dimensions_lines(config, labels)
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         model = self._read_control_model(config)
@@ -371,6 +415,16 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             DAY_NIGHT_MODEL_DUAL_ENTITY: L["geometry.day_night.model_dual_entity"],
         }.get(model, model)
         lines.append(L["geometry.slat.mode"].format(v=model_label))
+        if model == DAY_NIGHT_MODEL_DUAL_ENTITY:
+            travel = (
+                "geometry.day_night.rail_travel_concurrent"
+                if config.get(
+                    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+                    DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+                )
+                else "geometry.day_night.rail_travel_serialized"
+            )
+            lines.append(L["geometry.day_night.rail_travel"].format(v=L[travel]))
         return lines
 
     def _missing_axis_warnings(
@@ -510,7 +564,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     # ---- Calculation engine ------------------------------------------- #
 
     def sync_runtime_options(self, options: dict) -> None:
-        """Resolve the control model for this cycle (base hook, #1114).
+        """Resolve the per-instance options for this cycle (base hook, #1114).
 
         The coordinator drives this from ``_update_options``, on the event loop,
         before the pipeline and before ``_evaluate_health_checks`` — so the A3
@@ -519,7 +573,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         rather than reporting a position-only cover as a contradiction against
         the ``__init__`` Model A default.
         """
-        self._set_control_model(options)
+        self._cache_runtime_options(options)
 
     def build_calc_engine(
         self,
@@ -701,7 +755,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         byte-identical to Model A. The downstream dispatch hooks don't receive
         ``options``, so they read the cached ``_control_model``.
 
-        The :meth:`_set_control_model` call below is a **defensive no-op in
+        The :meth:`_cache_runtime_options` call below is a **defensive no-op in
         production**: ``sync_runtime_options`` already resolved the model from
         the same per-cycle ``options`` object before the pipeline ran, and a
         model change is not runtime-applicable — it reloads the config entry
@@ -722,7 +776,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         if result is None:
             return result
 
-        self._set_control_model(options)
+        self._cache_runtime_options(options)
         resolved = self._resolve_blend(
             result,
             logger=logger,
@@ -1382,6 +1436,55 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         middle = self._dual_entity_middle_rail
         return next((eid for eid in self._attached_entities if eid != middle), None)
 
+    def _start_confirmation(
+        self,
+        cleared: Callable[[int], bool],
+        direction: int,
+        inverse: bool,
+        tolerance: int,
+    ) -> Callable[[int], bool]:
+        """Wrap a clearance predicate so leader MOTION also releases the gate.
+
+        The relaxation behind concurrent rail travel (#1140), expressed as a
+        strict WEAKENING of the branch's own predicate: ``cleared`` still
+        releases exactly when it did, and a second disjunct releases earlier
+        when the leading rail is demonstrably under way and ahead.
+
+        "Under way and ahead" is the leader's live OPEN-PERCENT reading having
+        moved from its FIRST sampled value, by more than ``tolerance``, toward
+        satisfying ``cleared``'s own inequality. ``direction`` is the sign of
+        that inequality — ``-1`` where clearance needs the leader's open percent
+        to fall (the middle rail's branch, a lowering), ``+1`` where it needs it
+        to rise (the bottom rail's branch, a raising). It is derived from the
+        branch's own release test and NOT from
+        :meth:`_dual_entity_middle_leads`; a leader moving the wrong way can
+        therefore never confirm, which is what stops this becoming the back door
+        that ungates the middle rail during a lowering (issue #1115).
+
+        Both sides of the delta ride ``flip_if`` against the SAME dispatch frame
+        the threshold does — a delta computed on raw wire numbers inverts its
+        own sign on every inverse-state install (the #993 bug class).
+
+        The start reference lives in this closure, so it is scoped to ONE
+        invocation of the gate: a single-shot ``wait=False`` pass takes one
+        reading, records it as the reference, and returns ``False``, exactly as
+        the un-wrapped predicate would have. Nothing survives to the next pass,
+        so a delta can never be accumulated across cycles.
+        """
+        start_open: int | None = None
+
+        def _done(wire: int) -> bool:
+            nonlocal start_open
+            if cleared(wire):
+                return True
+            live_open = flip_if(wire, inverted=inverse)
+            if start_open is None:
+                start_open = live_open
+                return False
+            return (live_open - start_open) * direction > tolerance
+
+        return _done
+
     async def _gate_rail_clearance(
         self,
         entity_id: str,
@@ -1427,6 +1530,30 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         intact shade on one track — both rails would defer after their budget,
         latch pending, and retry next cycle).
 
+        **That theorem survives concurrent travel (#1140) unchanged**, and the
+        re-derivation is worth stating because the proof above is phrased in
+        terms of ``_cleared``'s specific inequalities. Three facts carry it:
+
+        1. It is a theorem about ARMING, not about release — which branch a
+           dispatch selects, and whether that branch's block condition holds on
+           the reading it sees. Branch selection is untouched by the option:
+           ``is_middle`` and :meth:`_dual_entity_middle_leads` are evaluated
+           before the predicate is ever wrapped.
+        2. On the FIRST reading the concurrent disjunct is structurally
+           ``False`` — there is no start reference yet, so
+           :meth:`_start_confirmation` records one and returns. The very first
+           verdict is therefore pointwise identical to ``_cleared``'s, which is
+           the only verdict the single-read ``wait=False`` path ever produces
+           and the only one the grid the theorem quantifies over ever asks for.
+        3. The wrapper is a monotone WEAKENING: ``cleared(w) or delta(w)``
+           accepts a superset of what ``cleared(w)`` accepts. It can only
+           release an armed gate EARLIER; it can never arm one that was not
+           already armed, so no pair of block conditions it produces was
+           unreachable before.
+
+        The option therefore changes how long a follower waits and what
+        threshold ends that wait — never which rail is the follower.
+
         **The asymmetry is deliberate.** The middle rail's branch does NOT
         consult :meth:`_dual_entity_middle_leads`; it gates unconditionally,
         exactly as #1115 shipped it. The direction predicate needs the BOTTOM
@@ -1437,6 +1564,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         very mechanism built to close it. The middle rail is therefore never
         ungated by a direction reading; only the bottom rail's gate is
         conditional, and it is conditional on a number it holds authoritatively.
+        Concurrent travel keeps that intact: the ``direction`` sign each branch
+        hands :meth:`_start_confirmation` is read off that branch's OWN release
+        inequality, never off :meth:`_dual_entity_middle_leads`, so the middle
+        rail's gate still consults nothing but the bottom rail's live motion
+        relative to its own target.
 
         The no-pass clamp in :meth:`resolve_entity_target` (``M >= P``) states
         that invariant about two NUMBERS — the two eventual targets. It cannot see
@@ -1507,6 +1639,15 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         both modes; only the number of chances the rail gets to satisfy it
         differs.
 
+        Which budget the waiting mode gets depends on what it is waiting FOR.
+        Serialized, it is a whole travel, so it takes the sequencer's settle cap
+        (``timeout_seconds=None``). Confirming a START only has to outlast the
+        actuator's command latency plus one state publish, so it takes the far
+        shorter :data:`DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS` — which
+        also bounds the cost of a rail that has gone silent, since expiry lands
+        on the same fail-closed path either way. Both are still hard-capped by
+        the settle cap inside ``wait_until_position``.
+
         Returns ``True`` to let the command through, ``False`` to withhold it.
         Withholding latches the entity pending so the coordinator keeps
         re-attempting on later cycles; it never drops the command. Once a
@@ -1538,12 +1679,16 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
 
         if is_middle:
             leading_rail = bottom_rail
+            # Clearance needs the bottom rail's open percent to FALL.
+            direction = -1
 
             def _cleared(wire: int) -> bool:
                 return flip_if(wire, inverted=inverse) <= target_open + tolerance
 
         elif self._dual_entity_middle_leads(target_open, inverse):
             leading_rail = middle_rail
+            # Clearance needs the middle rail's open percent to RISE.
+            direction = 1
 
             def _cleared(wire: int) -> bool:
                 return flip_if(wire, inverted=inverse) + tolerance >= target_open
@@ -1556,19 +1701,25 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             self._pending_rail_command.discard(entity_id)
             return True
 
-        if await seq.wait_until_position(
-            leading_rail, _cleared, timeout_seconds=None if wait else 0
-        ):
+        done = _cleared
+        budget: float | None = None if wait else 0
+        if self._dual_entity_concurrent_travel:
+            done = self._start_confirmation(_cleared, direction, inverse, tolerance)
+            if wait:
+                budget = DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS
+
+        if await seq.wait_until_position(leading_rail, done, timeout_seconds=budget):
             self._pending_rail_command.discard(entity_id)
             return True
         self._pending_rail_command.add(entity_id)
         self._debug(
             "Model C rail gate deferring %s → %s%% (%s): leading rail %s has not "
-            "cleared this rail's target",
+            "%s this rail's target",
             entity_id,
             position,
             reason,
             leading_rail,
+            "started clearing" if self._dual_entity_concurrent_travel else "cleared",
         )
         return False
 

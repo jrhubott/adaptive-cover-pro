@@ -58,6 +58,7 @@ from .const import (
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
@@ -1926,6 +1927,13 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.ENTITY,
         make_selector=_entity("cover"),
+    ),
+    # Model C concurrent rail travel (#1140). Boolean, so no OPTION_RANGES entry
+    # — this spec exists to single-source the options-service validator.
+    FieldSpec(
+        CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+        SECTION_GEOMETRY,
+        ValidatorKind.BOOL,
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

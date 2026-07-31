@@ -59,7 +59,7 @@
     "until_sunrise": "hält bis zum nächsten Sonnenaufgang",
     "until_next_sun_event": "hält bis zum nächsten Sonnenauf- oder -untergang",
     "until_window_end": "hält bis zum Ende des Zeitfensters",
-    "until_window_end_no_window": "\u26a0\ufe0f Die manuelle Übersteuerung soll bis zum Ende des Zeitfensters halten, es ist aber keine Endzeit konfiguriert \u2014 stattdessen wird die eingestellte Dauer verwendet",
+    "until_window_end_no_window": "⚠️ Die manuelle Übersteuerung soll bis zum Ende des Zeitfensters halten, es ist aber keine Endzeit konfiguriert — stattdessen wird die eingestellte Dauer verwendet",
     "threshold": "Schwellwert {threshold}%",
     "resets_on_move": "setzt bei nächster Bewegung zurück",
     "ignore_intermediate": "ignoriert Zwischenpositionen",
@@ -294,7 +294,10 @@
     "day_night": {
       "model_position_tilt": "position und neigung (zweiachsig)",
       "model_split_range": "geteilter bereich (einachsig)",
-      "model_dual_entity": "zwei Schienen-Entitäten (Doppelentität)"
+      "model_dual_entity": "zwei Schienen-Entitäten (Doppelentität)",
+      "rail_travel": "Schienenbewegung: {v}",
+      "rail_travel_concurrent": "beide Schienen bewegen sich gleichzeitig, sobald die führende Schiene unterwegs ist",
+      "rail_travel_serialized": "Schienen bewegen sich nacheinander — die nachfolgende Schiene wartet auf vollständige Freigabe"
     },
     "dual_panel": {
       "front_entity": "transparentes Frontpaneel: {v}",

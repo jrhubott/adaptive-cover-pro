@@ -59,7 +59,7 @@
     "until_sunrise": "maintient jusqu'au prochain lever de soleil",
     "until_next_sun_event": "maintient jusqu'au prochain lever ou coucher de soleil",
     "until_window_end": "maintient jusqu'à la fin de la fenêtre de temps",
-    "until_window_end_no_window": "\u26a0\ufe0f La dérogation manuelle doit maintenir jusqu'à la fin de la fenêtre de temps, mais aucune heure de fin n'est configurée \u2014 la durée configurée est utilisée à la place",
+    "until_window_end_no_window": "⚠️ La dérogation manuelle doit maintenir jusqu'à la fin de la fenêtre de temps, mais aucune heure de fin n'est configurée — la durée configurée est utilisée à la place",
     "threshold": "seuil {threshold}%",
     "resets_on_move": "réinitialise au prochain mouvement",
     "ignore_intermediate": "ignore les positions intermédiaires",
@@ -294,7 +294,10 @@
     "day_night": {
       "model_position_tilt": "position et inclinaison (à deux axes)",
       "model_split_range": "plage fractionnée (à un seul axe)",
-      "model_dual_entity": "deux entités de rail (double entité)"
+      "model_dual_entity": "deux entités de rail (double entité)",
+      "rail_travel": "déplacement du rail : {v}",
+      "rail_travel_concurrent": "les deux rails se déplacent simultanément une fois que le rail de tête est en mouvement",
+      "rail_travel_serialized": "les rails se déplacent à tour de rôle — le rail suivant attend le dégagement complet"
     },
     "dual_panel": {
       "front_entity": "panneau avant (voile) : {v}",

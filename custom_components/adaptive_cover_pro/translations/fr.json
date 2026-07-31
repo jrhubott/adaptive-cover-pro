@@ -125,7 +125,8 @@
           "day_night_middle_rail_entity": "Entité du Rail Central (modèle double entité)",
           "dual_panel_front_entity": "Entité du panneau avant (voile)",
           "dual_panel_blackout_triggers": "Déclencheurs du déploiement de l'occultant",
-          "awning_shade_mode": "Mode Store Banne"
+          "awning_shade_mode": "Mode Store Banne",
+          "day_night_concurrent_rail_travel": "Déplacer les deux rails ensemble (modèle double entité)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -181,7 +182,8 @@
           "day_night_middle_rail_entity": "Pour le modèle **Deux entités de rail** uniquement : laquelle des stores configurées de cette instance est le rail central. L'autre store configurée est le rail inférieur. Le rail central est garanti de ne jamais descendre en dessous du rail inférieur.",
           "dual_panel_front_entity": "Quel store de cette instance est le panneau **avant / voile**. Il suit le soleil comme un store vertical simple. Tous les autres stores configurés sont le panneau **arrière / occultant**. Laissez non défini pour fonctionner comme un store vertical simple.",
           "dual_panel_blackout_triggers": "Quand le panneau **occultant** arrière se déploie (se ferme). **Chaleur** : un été climatique / blocage total chaleur extrême. **Confidentialité** : la fenêtre du coucher du soleil. **Nuit** : le soleil est sous l'horizon. Sélectionnez n'importe quelle combinaison — l'arrière se rétracte (s'ouvre) chaque fois qu'aucun des déclencheurs sélectionnés n'est actif. Les deux panneaux sont indépendants (aucun couplage no-pass).",
-          "awning_shade_mode": "Détermine si la store banne protège la vitre de la fenêtre ou toute la zone devant elle. **Ombrager la vitre** (par défaut) : déployez juste assez pour garder le soleil direct loin de la fenêtre, se rétractant à mesure que le soleil se déplace vers le côté de la fenêtre — idéal pour réduire l'éblouissement et la chaleur à la vitre. **Ombrage de la zone avant (terrasse)** : rester complètement déployé chaque fois que le soleil est devant la store banne, pour ombrager une terrasse ou un espace assis plutôt que la fenêtre."
+          "awning_shade_mode": "Détermine si la store banne protège la vitre de la fenêtre ou toute la zone devant elle. **Ombrager la vitre** (par défaut) : déployez juste assez pour garder le soleil direct loin de la fenêtre, se rétractant à mesure que le soleil se déplace vers le côté de la fenêtre — idéal pour réduire l'éblouissement et la chaleur à la vitre. **Ombrage de la zone avant (terrasse)** : rester complètement déployé chaque fois que le soleil est devant la store banne, pour ombrager une terrasse ou un espace assis plutôt que la fenêtre.",
+          "day_night_concurrent_rail_travel": "Pour le modèle **Deux entités de rail** uniquement : permettre aux deux rails de se déplacer au même moment. **Activé** (par défaut) : le rail suivant démarre dès que le rail de tête est confirmé en mouvement et le devance, de sorte que le store atteigne sa position en un seul temps de déplacement au lieu de deux. Les rails partagent une seule piste et leurs cibles ne peuvent jamais se croiser, de sorte que la séparation est maintenue pour le reste du déplacement. **Désactivé** : le rail suivant attend que le rail de tête ait complètement quitté sa position cible avant de se déplacer du tout — plus lent, mais l'option la plus prudente si vos deux rails se déplacent à des vitesses notablement différentes ou si vos moteurs rapportent la position avec un long délai."
         }
       },
       "duplicate_select": {
@@ -407,7 +409,8 @@
           "day_night_middle_rail_entity": "Entité du Rail Central (modèle double entité)",
           "dual_panel_front_entity": "Entité du panneau avant (voile)",
           "dual_panel_blackout_triggers": "Déclencheurs du déploiement de l'occultant",
-          "awning_shade_mode": "Mode Store Banne"
+          "awning_shade_mode": "Mode Store Banne",
+          "day_night_concurrent_rail_travel": "Déplacer les deux rails ensemble (modèle double entité)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -463,7 +466,8 @@
           "day_night_middle_rail_entity": "Pour le modèle **Deux entités de rail** uniquement : laquelle des stores configurées de cette instance est le rail central. L'autre store configurée est le rail inférieur. Le rail central est garanti de ne jamais descendre en dessous du rail inférieur.",
           "dual_panel_front_entity": "Quel store de cette instance est le panneau **avant / voile**. Il suit le soleil comme un store vertical simple. Tous les autres stores configurés sont le panneau **arrière / occultant**. Laissez non défini pour fonctionner comme un store vertical simple.",
           "dual_panel_blackout_triggers": "Quand le panneau **occultant** arrière se déploie (se ferme). **Chaleur** : un été climatique / blocage total chaleur extrême. **Confidentialité** : la fenêtre du coucher du soleil. **Nuit** : le soleil est sous l'horizon. Sélectionnez n'importe quelle combinaison — l'arrière se rétracte (s'ouvre) chaque fois qu'aucun des déclencheurs sélectionnés n'est actif. Les deux panneaux sont indépendants (aucun couplage no-pass).",
-          "awning_shade_mode": "Détermine si la store banne protège la vitre de la fenêtre ou toute la zone devant elle. **Ombrager la vitre** (par défaut) : déployez juste assez pour garder le soleil direct loin de la fenêtre, se rétractant à mesure que le soleil se déplace vers le côté de la fenêtre — idéal pour réduire l'éblouissement et la chaleur à la vitre. **Ombrage de la zone avant (terrasse)** : rester complètement déployé chaque fois que le soleil est devant la store banne, pour ombrager une terrasse ou un espace assis plutôt que la fenêtre."
+          "awning_shade_mode": "Détermine si la store banne protège la vitre de la fenêtre ou toute la zone devant elle. **Ombrager la vitre** (par défaut) : déployez juste assez pour garder le soleil direct loin de la fenêtre, se rétractant à mesure que le soleil se déplace vers le côté de la fenêtre — idéal pour réduire l'éblouissement et la chaleur à la vitre. **Ombrage de la zone avant (terrasse)** : rester complètement déployé chaque fois que le soleil est devant la store banne, pour ombrager une terrasse ou un espace assis plutôt que la fenêtre.",
+          "day_night_concurrent_rail_travel": "Pour le modèle **Deux entités de rail** uniquement : permettre aux deux rails de se déplacer au même moment. **Activé** (par défaut) : le rail suivant démarre dès que le rail de tête est confirmé en mouvement et le devance, de sorte que le store atteigne sa position en un seul temps de déplacement au lieu de deux. Les rails partagent une seule piste et leurs cibles ne peuvent jamais se croiser, de sorte que la séparation est maintenue pour le reste du déplacement. **Désactivé** : le rail suivant attend que le rail de tête ait complètement quitté sa position cible avant de se déplacer du tout — plus lent, mais l'option la plus prudente si vos deux rails se déplacent à des vitesses notablement différentes ou si vos moteurs rapportent la position avec un long délai."
         }
       },
       "sun_tracking": {

@@ -967,7 +967,7 @@ def test_config_entry_version_unchanged() -> None:
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
     assert ConfigFlowHandler.VERSION == 3
-    assert ConfigFlowHandler.MINOR_VERSION == 13
+    assert ConfigFlowHandler.MINOR_VERSION == 14
 
 
 # ---------------------------------------------------------------------------

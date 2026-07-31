@@ -1230,13 +1230,20 @@ class DualAxisSequencer:
         :data:`VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`) — the semantics differ,
         the tuning does not, so no parallel constant is introduced.
 
-        ``timeout_seconds`` overrides that budget; ``None`` (the default) uses
-        it. ``0`` makes this a SINGLE-SHOT read — the loop is a do-while, so
-        ``done`` is always evaluated at least once — which is what a caller that
-        is itself a periodic retry loop wants: it asks whether the threshold is
-        satisfied right now and re-asks on its own next tick, instead of
-        blocking for a budget that may be as long as its own interval. One
-        implementation either way; the predicate is never re-stated.
+        ``timeout_seconds`` SHORTENS that budget; ``None`` (the default) takes
+        it whole. It is a ceiling, not a swap: an explicit number is clamped by
+        ``min`` to :data:`VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`, so the
+        settle cap remains the one number that bounds every wait this class can
+        perform. That matters because the cap is what the test suite shrinks to
+        keep the day/night rail gate sub-second — a caller-supplied budget that
+        won outright would silently reinstate the real multi-second wait
+        wherever a test patched only the cap. ``0`` makes this a SINGLE-SHOT
+        read — the loop is a do-while, so ``done`` is always evaluated at least
+        once — which is what a caller that is itself a periodic retry loop
+        wants: it asks whether the threshold is satisfied right now and re-asks
+        on its own next tick, instead of blocking for a budget that may be as
+        long as its own interval. One implementation either way; the predicate
+        is never re-stated.
 
         ``done`` is evaluated BEFORE the first sleep, so an already-satisfied
         condition returns on one read with no waiting at all. Returns ``True``
@@ -1247,7 +1254,7 @@ class DualAxisSequencer:
         budget = (
             VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
             if timeout_seconds is None
-            else timeout_seconds
+            else min(timeout_seconds, VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS)
         )
         deadline = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=budget)
         while True:
