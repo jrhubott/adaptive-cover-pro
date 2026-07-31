@@ -7,11 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ENTITIES,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CUSTOM_POSITION_SLOTS,
 )
 from custom_components.adaptive_cover_pro.helpers import (
+    check_cover_capabilities,
     check_cover_features,
     check_time_passed,
     custom_position_slot_configured,
@@ -628,6 +630,44 @@ def test_is_assumed_state_returns_false_when_attribute_explicitly_false():
 def test_is_assumed_state_returns_false_when_state_is_none():
     """Test is_assumed_state returns False when state is None (entity not resolved)."""
     assert is_assumed_state(None) is False
+
+
+# --- check_cover_capabilities: assumed_state warning ---
+
+
+@pytest.mark.unit
+def test_check_cover_capabilities_warns_when_assumed_state(mock_hass):
+    """check_cover_capabilities appends the assumed_state warning for a ready cover whose state carries assumed_state=True."""
+    state_obj = MagicMock()
+    state_obj.state = "closed"
+    state_obj.attributes = {"assumed_state": True}
+    mock_hass.states.get.return_value = state_obj
+
+    cap_map, warnings = check_cover_capabilities(
+        {CONF_ENTITIES: ["cover.test"]}, None, mock_hass
+    )
+
+    assert cap_map["cover.test"] is not None
+    assert warnings == [
+        "⚠️ cover.test has assumed_state — real position cannot be "
+        "read back, which may affect position verification and delta-bypass."
+    ]
+
+
+@pytest.mark.unit
+def test_check_cover_capabilities_no_warning_without_assumed_state(mock_hass):
+    """check_cover_capabilities does not warn when the state has no assumed_state attribute."""
+    state_obj = MagicMock()
+    state_obj.state = "closed"
+    state_obj.attributes = {}
+    mock_hass.states.get.return_value = state_obj
+
+    cap_map, warnings = check_cover_capabilities(
+        {CONF_ENTITIES: ["cover.test"]}, None, mock_hass
+    )
+
+    assert cap_map["cover.test"] is not None
+    assert warnings == []
 
 
 # --- should_use_tilt ---
