@@ -967,3 +967,444 @@ def test_config_entry_version_unchanged() -> None:
 
     assert ConfigFlowHandler.VERSION == 3
     assert ConfigFlowHandler.MINOR_VERSION == 13
+
+
+# ---------------------------------------------------------------------------
+# Step 11 — a pending switch never leaks through a mid-flow entry write
+# ---------------------------------------------------------------------------
+#
+# ``_update_options`` is not the only place this flow writes its own entry:
+# ``async_step_sync_confirm`` and ``async_step_building_profile``'s unlink
+# branch both persist ``self.options`` mid-dialog, and each write fires the
+# update listener (so it can reload). A confirmed-but-unsaved switch must not
+# ride along on either — the entry would come back up on the OLD type carrying
+# the NEW type's derived values (a blind whose no-sun default is 0 %, i.e.
+# fully closed on every fallback).
+
+
+async def _confirm_and_return_to_menu(
+    hass: HomeAssistant, entry: MockConfigEntry, new_type: str
+) -> dict:
+    """Confirm a switch, submit the incoming type's geometry, land on the menu."""
+    geometry = await _confirm(hass, entry, new_type)
+    return await hass.config_entries.options.async_configure(geometry["flow_id"], {})
+
+
+def _add_profile(
+    hass: HomeAssistant, entry_id: str = "profile_for_link"
+) -> MockConfigEntry:
+    """Register a Building Profile entry (options-only; never set up)."""
+    from custom_components.adaptive_cover_pro.const import CONF_TEMP_ENTITY
+
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "HQ", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={CONF_TEMP_ENTITY: "sensor.outside_temp"},
+        entry_id=entry_id,
+        title="HQ",
+    )
+    profile.add_to_hass(hass)
+    return profile
+
+
+@pytest.mark.integration
+async def test_sync_confirm_does_not_persist_a_pending_switch(
+    hass: HomeAssistant,
+) -> None:
+    """Sync saves this cover's settings first — but not a pending switch.
+
+    ``async_step_sync_confirm`` writes ``options=dict(self.options)`` so the
+    copy sees the latest values. With a switch pending those options already
+    carry the awning re-seed, so the write leaves a BLIND whose no-sun default
+    is 0 % — and reloads it straight into that state.
+    """
+    sibling = await _setup_entry(
+        hass,
+        cover_type=CoverType.AWNING,
+        entities=["cover.awning_a"],
+        extra_options={"length_awning": 2.1, "angle": 0},
+        entry_id="sync_sibling_awning",
+    )
+    entry = await _setup_entry(hass, entry_id="sync_pending_switch")
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+
+    menu = await _confirm_and_return_to_menu(hass, entry, CoverType.AWNING)
+    sync = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "sync"}
+    )
+    confirm = await hass.config_entries.options.async_configure(
+        sync["flow_id"],
+        {"target_entries": [sibling.entry_id], "sync_categories": ["position"]},
+    )
+    await hass.config_entries.options.async_configure(
+        confirm["flow_id"], {"confirm": True}
+    )
+    await hass.async_block_till_done()
+
+    # data and options must agree with each other: both still the blind's.
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+    # The incoming type's geometry is part of the same pending switch.
+    assert "length_awning" not in entry.options
+
+
+@pytest.mark.integration
+async def test_profile_unlink_does_not_persist_a_pending_switch(
+    hass: HomeAssistant,
+) -> None:
+    """The Building Profile unlink branch is the same write, narrower gate."""
+    from custom_components.adaptive_cover_pro.config_flow import _PROFILE_NONE_SENTINEL
+    from custom_components.adaptive_cover_pro.const import CONF_BUILDING_PROFILE_ID
+
+    profile = _add_profile(hass, entry_id="profile_for_unlink")
+    entry = await _setup_entry(
+        hass,
+        entry_id="unlink_pending_switch",
+        extra_options={CONF_BUILDING_PROFILE_ID: profile.entry_id},
+    )
+
+    menu = await _confirm_and_return_to_menu(hass, entry, CoverType.AWNING)
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "building_profile"}
+    )
+    await hass.config_entries.options.async_configure(
+        form["flow_id"], {CONF_BUILDING_PROFILE_ID: _PROFILE_NONE_SENTINEL}
+    )
+    await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+    assert "length_awning" not in entry.options
+    # The unlink itself still happened.
+    assert CONF_BUILDING_PROFILE_ID not in entry.options
+
+
+@pytest.mark.integration
+async def test_profile_link_does_not_strand_a_pending_switch(
+    hass: HomeAssistant,
+) -> None:
+    """Linking a profile re-reads the entry — it must not drop the pending switch.
+
+    The link branch replaces ``self.options`` wholesale from the freshly written
+    entry, discarding the polarity re-seed and the new type's geometry while the
+    switch stays pending. Save & Close then flips ``data`` to the new type with
+    options that contradict the disclosure the user just read.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_BUILDING_PROFILE_ID
+
+    profile = _add_profile(hass)
+    entry = await _setup_entry(hass, entry_id="link_pending_switch")
+
+    menu = await _confirm_and_return_to_menu(hass, entry, CoverType.AWNING)
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "building_profile"}
+    )
+    back = await hass.config_entries.options.async_configure(
+        form["flow_id"], {CONF_BUILDING_PROFILE_ID: profile.entry_id}
+    )
+    await hass.config_entries.options.async_configure(
+        back["flow_id"], {"next_step_id": "done"}
+    )
+    await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.AWNING
+    # The confirm screen promised this re-seed; the switch landed, so must it.
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 0
+    assert "length_awning" in entry.options
+    assert entry.options[CONF_BUILDING_PROFILE_ID] == profile.entry_id
+
+
+@pytest.mark.integration
+async def test_mid_flow_write_without_a_pending_switch_is_unchanged(
+    hass: HomeAssistant,
+) -> None:
+    """No pending switch → a mid-flow write still persists every unsaved edit.
+
+    The regression risk of routing the writes through one seam: it must strip
+    only what a pending switch put there, never an ordinary edit.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    sibling = await _setup_entry(
+        hass, entities=["cover.other_blind"], entry_id="plain_sync_sibling"
+    )
+    entry = await _setup_entry(hass, entry_id="plain_sync_source")
+
+    async def _edit(self, user_input=None):
+        self.options[CONF_DEFAULT_HEIGHT] = 33
+        return await self.async_step_init()
+
+    with patch.object(OptionsFlowHandler, "async_step_geometry", _edit):
+        menu = await hass.config_entries.options.async_init(entry.entry_id)
+        menu = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "geometry"}
+        )
+        sync = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "sync"}
+        )
+        confirm = await hass.config_entries.options.async_configure(
+            sync["flow_id"],
+            {"target_entries": [sibling.entry_id], "sync_categories": ["position"]},
+        )
+        await hass.config_entries.options.async_configure(
+            confirm["flow_id"], {"confirm": True}
+        )
+        await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 33
+    assert sibling.options[CONF_DEFAULT_HEIGHT] == 33
+
+
+def test_options_flow_writes_its_own_entry_through_one_seam() -> None:
+    """Every ``async_update_entry(self._config_entry, …)`` goes through the seam.
+
+    The drift guard for the fix: a future step that persists ``self.options``
+    directly would silently reintroduce the half-applied switch.
+    """
+    import ast
+    import inspect
+
+    from custom_components.adaptive_cover_pro import config_flow as cf
+
+    tree = ast.parse(inspect.getsource(cf))
+    handler = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ClassDef) and n.name == "OptionsFlowHandler"
+    )
+
+    callers: set[str] = set()
+    for func in ast.walk(handler):
+        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "attr", None) != "async_update_entry":
+                continue
+            first = node.args[0] if node.args else None
+            if (
+                isinstance(first, ast.Attribute)
+                and first.attr == "_config_entry"
+                and isinstance(first.value, ast.Name)
+                and first.value.id == "self"
+            ):
+                callers.add(func.name)
+
+    assert callers == {
+        "_persist_entry"
+    }, f"self._config_entry is written outside the seam: {sorted(callers)}"
+
+
+# ---------------------------------------------------------------------------
+# Step 12 — a switch round trip inside one dialog is a no-op
+# ---------------------------------------------------------------------------
+
+
+async def _switch_to(
+    hass: HomeAssistant, flow_id: str, new_type: str, *, geometry: bool = True
+) -> dict:
+    """Drive an already-open flow from the menu through a switch to *new_type*."""
+    picker = await hass.config_entries.options.async_configure(
+        flow_id, {"next_step_id": "change_cover_type"}
+    )
+    confirm = await hass.config_entries.options.async_configure(
+        picker["flow_id"], {CONF_SENSOR_TYPE: new_type}
+    )
+    result = await hass.config_entries.options.async_configure(
+        confirm["flow_id"], {"confirm": True}
+    )
+    if not geometry:
+        return result
+    return await hass.config_entries.options.async_configure(result["flow_id"], {})
+
+
+@pytest.mark.integration
+async def test_round_trip_switch_restores_the_original_default(
+    hass: HomeAssistant,
+) -> None:
+    """Blind → awning → blind must land back on the user's stored default.
+
+    Each hop re-seeds against the type it is leaving, so a round trip walks
+    50 → 0 → 100 and the original value is gone. The re-seed belongs to the
+    pending switch, so unwinding the switch must unwind it too.
+    """
+    entry = await _setup_entry(hass, entry_id="round_trip_default")
+
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    menu = await _switch_to(hass, menu["flow_id"], CoverType.AWNING)
+    menu = await _switch_to(hass, menu["flow_id"], CoverType.BLIND)
+    await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "done"}
+    )
+    await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+
+
+@pytest.mark.integration
+async def test_round_trip_switch_reloads_nothing(hass: HomeAssistant) -> None:
+    """Back on the type it started as, Save & Close has nothing to apply.
+
+    Counted across BOTH reload paths: the sticky flag writes ``data`` (a no-op)
+    and schedules an explicit reload, and the re-seed round trip leaves a
+    ``default_percentage`` delta the update listener reloads for on its own.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    entry = await _setup_entry(hass, entry_id="round_trip_reload")
+    options_before = dict(entry.options)
+
+    async def _straight_back_to_menu(self, user_input=None):
+        return await self.async_step_init()
+
+    with (
+        patch.object(OptionsFlowHandler, "async_step_geometry", _straight_back_to_menu),
+        _count_reloads(hass) as reload,
+    ):
+        menu = await hass.config_entries.options.async_init(entry.entry_id)
+        menu = await _switch_to(hass, menu["flow_id"], CoverType.AWNING, geometry=False)
+        menu = await _switch_to(hass, menu["flow_id"], CoverType.BLIND, geometry=False)
+        await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "done"}
+        )
+        await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert dict(entry.options) == options_before
+    assert _reloads(reload, entry) == 0
+
+
+# ---------------------------------------------------------------------------
+# Step 13 — the polarity screen names every stored position, not four of them
+# ---------------------------------------------------------------------------
+#
+# ``_POLARITY_CARRIED_LINE`` says "these stored positions now mean the
+# opposite". Naming three keys out of ten makes it worse than silence: a user
+# who checks exactly what they were told to check is left with the rest
+# inverted.
+
+
+@pytest.mark.integration
+async def test_polarity_disclosure_names_weather_override_position(
+    hass: HomeAssistant,
+) -> None:
+    """A blind's "raise fully in wind/rain" becomes "extend fully" on an awning."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OVERRIDE_POSITION,
+    )
+
+    entry = await _setup_entry(
+        hass,
+        entry_id="polarity_weather",
+        extra_options={CONF_WEATHER_OVERRIDE_POSITION: 100},
+    )
+
+    note = await _polarity_note(hass, entry, CoverType.AWNING)
+
+    assert CONF_WEATHER_OVERRIDE_POSITION in note
+
+
+@pytest.mark.integration
+async def test_polarity_disclosure_names_custom_position_slots(
+    hass: HomeAssistant,
+) -> None:
+    """Custom-position scene values and their ceilings invert too."""
+    entry = await _setup_entry(
+        hass,
+        entry_id="polarity_custom_slots",
+        extra_options={
+            "custom_position_1": 100,
+            "custom_position_position_max_1": 40,
+        },
+    )
+
+    note = await _polarity_note(hass, entry, CoverType.AWNING)
+
+    assert "custom_position_1" in note
+    assert "custom_position_position_max_1" in note
+
+
+@pytest.mark.integration
+async def test_polarity_disclosure_names_every_stored_position(
+    hass: HomeAssistant,
+) -> None:
+    """The completeness assertion, driven off the field registry itself."""
+    from custom_components.adaptive_cover_pro.config_fields import (
+        PositionRole,
+        position_roles,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    disclosed = {
+        key
+        for key, role in position_roles().items()
+        if role in PositionRole.disclosed_roles()
+    }
+    assert disclosed, "no disclosed primary-axis positions declared"
+
+    # A value that is not the polarity-neutral no-op for any of them.
+    stored = dict.fromkeys(disclosed, 40)
+    entry = await _setup_entry(
+        hass, entry_id="polarity_completeness", extra_options=stored
+    )
+
+    note = await _polarity_note(hass, entry, CoverType.AWNING)
+
+    live = get_policy(CoverType.AWNING).live_option_keys()
+    missing = sorted(k for k in disclosed if k in live and k not in note)
+    assert not missing, f"undisclosed inverting positions: {missing}"
+
+
+def test_every_percentage_option_declares_a_position_role() -> None:
+    """A new 0-100 % option must be classified before it can ship.
+
+    The drift guard: without it the disclosure list is a second hand-maintained
+    tuple that falls behind ``const.py`` exactly the way the first one did.
+    """
+    from custom_components.adaptive_cover_pro.config_fields import position_roles
+    from custom_components.adaptive_cover_pro.cover_types import percentage_option_keys
+
+    classified = set(position_roles())
+    candidates = percentage_option_keys()
+
+    assert not (candidates - classified), (
+        "percentage options with no PositionRole: " f"{sorted(candidates - classified)}"
+    )
+    assert not (classified - candidates), (
+        f"PositionRole declared for non-percentage keys: "
+        f"{sorted(classified - candidates)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step 14 — the blocked-type reason and the filter must agree on unavailability
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_blocked_type_reason_ignores_unavailable_covers(
+    hass: HomeAssistant,
+) -> None:
+    """An unreadable cover is skipped by the filter, so it must not be blamed.
+
+    ``entities_satisfy_selector`` skips a ``None`` cap entry; the warning
+    builder does not, and ``caps_get(None, …)`` is False — so a merely
+    unavailable entity gets reported as "does not support set_position".
+    """
+    from homeassistant.const import STATE_UNAVAILABLE
+
+    entry = await _setup_entry(
+        hass,
+        entities=["cover.readable", "cover.offline"],
+        entry_id="blocked_unavailable",
+    )
+    hass.states.async_set("cover.offline", STATE_UNAVAILABLE, {})
+
+    result = await _open_picker(hass, entry)
+
+    blocked = result["description_placeholders"]["blocked_types"]
+    assert "cover.offline" not in blocked
+    assert "cover.readable" in blocked

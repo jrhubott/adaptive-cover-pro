@@ -245,8 +245,6 @@ from .const import (
     MAX_TRANSIT_TIMEOUT,
     MIN_TRANSIT_TIMEOUT,
     MODE2_OPEN_HORIZONTAL_PERCENT,
-    POSITION_CLOSED,
-    POSITION_OPEN,
     DOMAIN,
     TIME_OPTION_KEYS,
     TIME_STRING_RE,
@@ -3667,11 +3665,20 @@ def _blocked_types_text(
     ``cover_capability_warnings`` — the same advisory text the create flow and
     the configuration summary render — so this never grows a second capability
     matrix.
+
+    Covers HA cannot read yet (``None`` caps) are dropped first, exactly as
+    ``helpers.check_cover_capabilities`` drops them before the same call. The
+    warning builders read a missing capability as an absent one, so an
+    unavailable entity would otherwise be reported as "does not support
+    set_position" — and it is the one entity ``entities_satisfy_selector``
+    deliberately skips, so blaming it here contradicts the filter that produced
+    this list.
     """
+    readable = {eid: caps for eid, caps in known.items() if caps is not None}
     lines: list[str] = []
     for cover_type in blocked:
         policy = get_policy(cover_type)
-        reasons = policy.cover_capability_warnings(dict(known))
+        reasons = policy.cover_capability_warnings(readable)
         reason = reasons[0] if reasons else _BLOCKED_TYPE_GENERIC_REASON
         lines.append(f"- **{policy.display_label(labels)}** — {reason}")
     return "\n".join(lines)
@@ -3691,16 +3698,6 @@ def _stranded_option_keys(
     return sorted((outgoing - incoming) & set(options))
 
 
-# Stored positions whose meaning inverts with the axis, mapped to the value that
-# means "no constraint" and is therefore polarity-neutral. ``min_position`` at
-# 0 % and ``max_position`` at 100 % clamp nothing under either polarity, so they
-# have nothing to disclose; any other value does (issue #1132).
-_POLARITY_NEUTRAL_POSITIONS: dict[str, int | None] = {
-    CONF_MIN_POSITION: POSITION_CLOSED,
-    CONF_MAX_POSITION: POSITION_OPEN,
-    CONF_SUNSET_POS: None,
-}
-
 _POLARITY_DEFAULT_LINE = (
     "⚠️ **0 % and 100 % mean the opposite on the new type.** The default "
     "position is re-seeded from **{old}%** to **{new}%** — the value a cover "
@@ -3708,7 +3705,8 @@ _POLARITY_DEFAULT_LINE = (
 )
 _POLARITY_CARRIED_LINE = (
     "⚠️ These stored positions now mean the opposite of what they did. They "
-    "are left exactly as they are — check them on the Position screen: {keys}."
+    "are left exactly as they are — check them on the Position screen and on "
+    "the screen that owns each one: {keys}."
 )
 
 
@@ -3723,6 +3721,40 @@ def _no_coverage_position(cover_type: str | None) -> int:
     return get_policy(cover_type).position_for_intent(sun_through=True)
 
 
+def _polarity_reseed(current_type: str | None, new_type: str) -> dict[str, int]:
+    """Option values a switch to *new_type* rewrites, or ``{}`` if none.
+
+    Only ``default_percentage`` qualifies (``PositionRole.RESEED``): it is the
+    one primary-axis position a policy already owns an answer for, seeded at
+    creation from the very endpoint compared here. Empty when the two types
+    share a polarity — a switch that changes nothing about positions rewrites
+    nothing.
+    """
+    endpoint = _no_coverage_position(new_type)
+    if _no_coverage_position(current_type) == endpoint:
+        return {}
+    return dict.fromkeys(config_fields.reseeded_position_keys(), endpoint)
+
+
+def _inverted_position_keys(new_type: str, options: Mapping[str, Any]) -> list[str]:
+    """Return stored primary-axis positions that will mean the opposite.
+
+    Every disclosed key comes from ``config_fields.disclosed_position_keys()``,
+    so a percentage option added to the registry cannot go unnamed here — the
+    completeness guard fails first. Filtered to keys the INCOMING type actually
+    reads: one the new type ignores is inert, and ``{stranded_options}`` already
+    says so.
+    """
+    live = get_policy(new_type).live_option_keys()
+    return [
+        key
+        for key in config_fields.disclosed_position_keys()
+        if key in live
+        and options.get(key) is not None
+        and options.get(key) != config_fields.polarity_neutral_value(key)
+    ]
+
+
 def _position_polarity_text(
     current_type: str | None, new_type: str, options: Mapping[str, Any]
 ) -> str:
@@ -3732,25 +3764,23 @@ def _position_polarity_text(
     in ``{stranded_options}`` — yet on a blind 100 % is the no-coverage end and
     on an awning that end is 0 %. Carried over silently, "stay out of the way"
     becomes "shade as hard as you can" on every fallback (outside the time
-    window, ``return_sunset``, sun tracking off).
+    window, ``return_sunset``, sun tracking off). Every other stored
+    primary-axis position inverts the same way and is named rather than
+    rewritten, because none of them has a policy-defined answer to re-seed from.
 
     Empty when the two types share a polarity, so a switch that changes nothing
     about positions says nothing about them.
     """
-    new_endpoint = _no_coverage_position(new_type)
-    old_endpoint = _no_coverage_position(current_type)
-    if old_endpoint == new_endpoint:
+    reseed = _polarity_reseed(current_type, new_type)
+    if not reseed:
         return ""
     lines = [
         _POLARITY_DEFAULT_LINE.format(
-            old=options.get(CONF_DEFAULT_HEIGHT, old_endpoint), new=new_endpoint
+            old=options.get(CONF_DEFAULT_HEIGHT, _no_coverage_position(current_type)),
+            new=reseed[CONF_DEFAULT_HEIGHT],
         )
     ]
-    carried = [
-        key
-        for key, neutral in _POLARITY_NEUTRAL_POSITIONS.items()
-        if options.get(key, neutral) != neutral
-    ]
+    carried = _inverted_position_keys(new_type, options)
     if carried:
         lines.append(
             _POLARITY_CARRIED_LINE.format(keys=", ".join(f"`{k}`" for k in carried))
@@ -4592,12 +4622,17 @@ class OptionsFlowHandler(OptionsFlow):
         # here instead of in the step id.
         self._delete_area: str = ""
         # "Change Cover Type" (issue #1132). ``_pending_cover_type`` carries the
-        # picked destination from the picker to the confirm screen;
-        # ``_cover_type_changed`` records that ``entry.data`` was rewritten, so
-        # Save & Close knows it must schedule a reload even when no option value
-        # changed.
+        # picked destination from the picker to the confirm screen. A switch is
+        # pending whenever ``self.sensor_type`` has moved away from the stored
+        # one — see ``_cover_type_changed``; there is no sticky flag, so a round
+        # trip back to the original type is simply not a switch any more.
+        #
+        # ``_pre_switch_options`` snapshots the option values a pending switch is
+        # allowed to touch, taken the first time one is confirmed. It is what
+        # lets a mid-dialog entry write persist the pre-switch configuration,
+        # and what a round trip restores from.
         self._pending_cover_type: str | None = None
-        self._cover_type_changed: bool = False
+        self._pre_switch_options: dict[str, Any] | None = None
 
     def __getattr__(self, name: str):
         """Dispatch dynamic per-slot options steps (issue #945).
@@ -4927,15 +4962,7 @@ class OptionsFlowHandler(OptionsFlow):
             # ``_update_options``; until then the coordinator keeps running the
             # OUTGOING policy, which is what a half-configured type must never
             # be allowed to do.
-            self.current_config[CONF_SENSOR_TYPE] = new_type
-            no_coverage = _no_coverage_position(new_type)
-            if _no_coverage_position(self.sensor_type) != no_coverage:
-                # Polarity flip: the stored number now means the opposite. Land
-                # on the value a cover created as the new type would get — the
-                # confirm screen the user just read named this exact change.
-                self.options[CONF_DEFAULT_HEIGHT] = no_coverage
-            self.sensor_type = new_type  # type: ignore[assignment]
-            self._cover_type_changed = True
+            self._apply_pending_cover_type(new_type)
             self._pending_cover_type = None
             # Straight into the EXISTING generic geometry step, which renders
             # ``_get_geometry_schema(self.sensor_type, …)`` — the incoming
@@ -4946,9 +4973,16 @@ class OptionsFlowHandler(OptionsFlow):
         labels = await _load_summary_labels(
             self.hass, _resolve_summary_language(self.hass, self.context)
         )
-        stranded = _stranded_option_keys(self.sensor_type, new_type, self.options)
+        # Everything this screen states is the NET change against what is
+        # actually stored, not against a previous hop inside the same dialog:
+        # nothing has been written yet, so "switching from X to Y" is only true
+        # of the stored type and the pre-switch values.
+        stored_type = self._stored_cover_type
+        baseline = self._switch_baseline_options()
+        stranded = _stranded_option_keys(stored_type, new_type, baseline)
         # Capability advice for the DESTINATION type, from the same helper the
-        # create flow and the configuration summary already render.
+        # create flow and the configuration summary already render. Read from
+        # the live options — which covers are bound is not part of the switch.
         _, capability_notes = check_cover_capabilities(
             self.options, new_type, self.hass
         )
@@ -4958,17 +4992,98 @@ class OptionsFlowHandler(OptionsFlow):
                 {vol.Required("confirm", default=False): selector.BooleanSelector()}
             ),
             description_placeholders={
-                "from_type": get_policy(self.sensor_type).display_label(labels),
+                "from_type": get_policy(stored_type).display_label(labels),
                 "to_type": get_policy(new_type).display_label(labels),
                 "stranded_options": "\n".join(f"- `{k}`" for k in stranded) or "—",
                 "capability_notes": "\n".join(f"- {n}" for n in capability_notes)
                 or "—",
                 "position_polarity": _position_polarity_text(
-                    self.sensor_type, new_type, self.options
+                    stored_type, new_type, baseline
                 )
                 or "—",
             },
         )
+
+    # ---- Pending cover-type switch (issue #1132) ------------------------- #
+
+    @property
+    def _stored_cover_type(self) -> str:
+        """The cover type this entry currently is on disk."""
+        return self._config_entry.data.get(CONF_SENSOR_TYPE) or CoverType.BLIND
+
+    @property
+    def _cover_type_changed(self) -> bool:
+        """Whether a cover-type switch is pending.
+
+        Derived, never sticky: a dialog that switches A → B → A has nothing
+        left to apply, so it must not write ``data`` (a no-op) and must not
+        schedule the reload that write would otherwise need.
+        """
+        return self.sensor_type != self._stored_cover_type
+
+    def _switch_baseline_options(self) -> dict[str, Any]:
+        """``self.options`` as they stood before any pending switch touched them."""
+        if self._pre_switch_options is None:
+            return self.options
+        return self._pre_switch_options
+
+    def _pending_switch_option_keys(self) -> set[str]:
+        """Option keys a pending switch has already changed in ``self.options``.
+
+        Two ways a confirmed-but-unsaved switch shows up: the polarity re-seed
+        it applied itself, and the incoming type's own keys, collected by the
+        follow-on geometry step. Both belong to the switch, so both unwind with
+        it — and neither may ride along on a write that leaves ``data`` alone.
+        """
+        stored = self._stored_cover_type
+        if self.sensor_type == stored:
+            return set()
+        incoming_only = (
+            get_policy(self.sensor_type).live_option_keys()
+            - get_policy(stored).live_option_keys()
+        )
+        return set(_polarity_reseed(stored, self.sensor_type)) | incoming_only
+
+    def _options_without_pending_switch(self) -> dict[str, Any]:
+        """``self.options`` with a pending switch's contribution rolled back.
+
+        What a mid-dialog write persists. The invariant is that the type change
+        and the option values it implies are either both stored or neither is;
+        only ``_update_options`` can store the type, so every other write takes
+        the "neither" side. Ordinary edits made in the same dialog are
+        untouched — they belong to the entry as it stands, not to the switch.
+        """
+        baseline = self._pre_switch_options
+        options = dict(self.options)
+        if baseline is None:
+            return options
+        for key in self._pending_switch_option_keys():
+            if key in baseline:
+                options[key] = baseline[key]
+            else:
+                options.pop(key, None)
+        return options
+
+    def _apply_pending_cover_type(self, new_type: str) -> None:
+        """Move the flow onto *new_type* in memory and re-derive its option delta.
+
+        The delta is always computed against the STORED type and the pre-switch
+        option values, never against a previous hop's result. Chaining instead
+        would re-seed once per flip — blind(50) → awning → blind lands on 100,
+        a value neither type asked for and the user never chose — and would
+        leave a round trip looking like a switch that still has to be written.
+        """
+        if self._pre_switch_options is None:
+            self._pre_switch_options = dict(self.options)
+        stored = self._stored_cover_type
+        # Unwind whatever the previous hop (if any) applied, then apply the
+        # single net switch stored → new_type.
+        self.options = self._options_without_pending_switch()
+        self.current_config[CONF_SENSOR_TYPE] = new_type
+        self.sensor_type = new_type  # type: ignore[assignment]
+        self.options.update(_polarity_reseed(stored, new_type))
+        if new_type == stored:
+            self._pre_switch_options = None
 
     async def async_step_geometry(self, user_input: dict[str, Any] | None = None):
         """Adjust geometry parameters."""
@@ -5556,12 +5671,24 @@ class OptionsFlowHandler(OptionsFlow):
             if chosen != _PROFILE_NONE_SENTINEL:
                 profile = self.hass.config_entries.async_get_entry(chosen)
                 if profile is not None:
+                    before = dict(self._config_entry.options)
                     _copy_profile_to_cover(self.hass, profile, self._config_entry)
-                    self.options = dict(self._config_entry.options)
+                    # Take what the copier changed, not the whole entry.
+                    # Re-reading ``self.options`` wholesale discarded every
+                    # unsaved edit in this dialog — including a pending
+                    # cover-type switch's re-seed and the incoming type's
+                    # geometry, while the switch itself stayed pending, so Save
+                    # & Close flipped ``data`` to a type whose options
+                    # contradicted the disclosure the user had just read.
+                    self.options.update(
+                        {
+                            key: value
+                            for key, value in self._config_entry.options.items()
+                            if key not in before or before[key] != value
+                        }
+                    )
             elif self.options.pop(CONF_BUILDING_PROFILE_ID, None) is not None:
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, options=dict(self.options)
-                )
+                self._persist_entry()
             return await self.async_step_init()
 
         profiles = _building_profile_entries(self.hass)
@@ -5957,11 +6084,10 @@ class OptionsFlowHandler(OptionsFlow):
         """Confirm and execute sync to selected covers."""
         if user_input is not None:
             if user_input.get("confirm"):
-                # Save current cover's settings first so sync copies the latest values
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry,
-                    options=dict(self.options),
-                )
+                # Save current cover's settings first so sync copies the latest
+                # values. Through the seam: a pending cover-type switch is not
+                # one of this cover's settings until Save & Close writes it.
+                self._persist_entry()
                 shared_options = _extract_shared_options(
                     self._config_entry, categories=self.selected_sync_categories
                 )
@@ -6201,42 +6327,61 @@ class OptionsFlowHandler(OptionsFlow):
         self._recompute_profile_overrides()
         self._propagate_profile_clears()
         if self._cover_type_changed:
-            self._apply_cover_type_change()
+            self._persist_entry(commit_cover_type=True)
         return self.async_create_entry(title="", data=self.options)  # type: ignore[return-value]
 
-    def _apply_cover_type_change(self) -> None:
-        """Land a pending cover-type switch with exactly one reload (issue #1132).
+    def _persist_entry(self, *, commit_cover_type: bool = False) -> None:
+        """Write this flow's own config entry — the single seam (issue #1132).
 
-        ``data`` and ``options`` go out in a single ``async_update_entry`` rather
-        than letting ``OptionsFlowManager.async_finish_flow`` write the options a
-        moment later. Two writes would mean two update-listener runs, and — worse
-        — ``async_schedule_reload`` starts its reload task eagerly, so a reload
-        scheduled here begins unloading before ``async_finish_flow`` gets to
-        write the options (there *is* an await between this step returning and
-        that write). The rebuilt coordinator could then read pre-edit options.
-        One write, one listener run, no ordering to reason about.
+        Two kinds of write reach the same config entry, and only one of them
+        may land a cover-type switch:
 
-        ``_async_update_listener`` diffs options only, so it never reacts to the
-        ``data`` half — but it may well reload for the options half. Asking it
-        first, through the shared predicate, is what keeps this from becoming a
-        second reload stacked on the one the write already causes. "Options
-        changed" is not the question: a delta confined to the runtime-applicable
-        keys is applied in place and never reloads.
+        * ``commit_cover_type=True`` — Save & Close. ``data`` and ``options`` go
+          out in a single ``async_update_entry`` rather than letting
+          ``OptionsFlowManager.async_finish_flow`` write the options a moment
+          later. Two writes would mean two update-listener runs, and — worse —
+          ``async_schedule_reload`` starts its reload task eagerly, so a reload
+          scheduled here begins unloading before ``async_finish_flow`` gets to
+          write the options (there *is* an await between this step returning and
+          that write). The rebuilt coordinator could then read pre-edit options.
+          One write, one listener run, no ordering to reason about.
+
+          ``_async_update_listener`` diffs options only, so it never reacts to
+          the ``data`` half — but it may well reload for the options half.
+          Asking it first, through the shared predicate, is what keeps this from
+          becoming a second reload stacked on the one the write already causes.
+          "Options changed" is not the question: a delta confined to the
+          runtime-applicable keys is applied in place and never reloads.
+
+        * everything else — a mid-dialog write ("Copy to other covers" saving
+          this cover first, a Building Profile unlink). These leave ``data``
+          alone, so they must also leave behind the option values a pending
+          switch implies; otherwise the entry reloads as the OLD type carrying
+          the NEW type's numbers, and a blind comes back up with a no-sun
+          default of 0 % — fully closed on every fallback. Routing them through
+          here rather than guarding each one is what makes that true of a write
+          site added later, too, and is locked by
+          ``test_options_flow_writes_its_own_entry_through_one_seam``.
         """
+        if not (commit_cover_type and self._cover_type_changed):
+            self.hass.config_entries.async_update_entry(
+                self._config_entry, options=self._options_without_pending_switch()
+            )
+            return
+
         # Imported here, not at module scope: ``config_flow`` is loaded by HA's
         # platform loader, and reaching into the package root at import time is
         # the one edge that could reintroduce a cycle.
         from . import options_write_reloads
 
-        entry = self._config_entry
-        reload_needed = not options_write_reloads(entry, self.options)
+        reload_needed = not options_write_reloads(self._config_entry, self.options)
         self.hass.config_entries.async_update_entry(
-            entry,
-            data={**entry.data, CONF_SENSOR_TYPE: self.sensor_type},
+            self._config_entry,
+            data={**self._config_entry.data, CONF_SENSOR_TYPE: self.sensor_type},
             options=dict(self.options),
         )
         if reload_needed:
-            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            self.hass.config_entries.async_schedule_reload(self._config_entry.entry_id)
 
     def _recompute_profile_overrides(self) -> None:
         """Refresh the cover's local-override list against its profile on save.
