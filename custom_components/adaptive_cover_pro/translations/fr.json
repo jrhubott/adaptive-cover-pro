@@ -1056,14 +1056,14 @@
         "data_description": {
           "sensor_type": "Le type de store vers lequel cette instance basculera. Vous confirmerez sur l'écran suivant, puis remplirez la géométrie du nouveau type."
         },
-        "description": "Cette instance est actuellement un **{current_type}**. Choisissez le type de store qu'elle devrait devenir — chaque entité conserve son ID d'entité actuel, donc vos tableaux de bord et automations continuent de fonctionner.\n\nSeuls les types que vos protections peuvent réellement gérer sont énumérés. Non proposés ici :\n\n{blocked_types}\n\n[En savoir plus]({learn_more})",
+        "description": "Cette instance est actuellement de type **{current_type}**. Choisissez le type de store qu'elle devrait devenir — chaque entité conserve son ID d'entité actuel, donc vos tableaux de bord et automations continuent de fonctionner.\n\nSeuls les types que vos protections peuvent réellement gérer sont énumérés. Non proposés ici :\n\n{blocked_types}\n\n[En savoir plus]({learn_more})",
         "title": "Modifier le type de store"
       },
       "change_cover_type_confirm": {
         "data": {
           "confirm": "Confirmer le changement de type de store"
         },
-        "description": "Basculement de **{from_type}** vers **{to_type}**.\n\nLes paramètres que seul l'ancien type utilise restent stockés et ne sont pas supprimés, ainsi revenir en arrière les retrouve intacts. Actuellement inactifs après le basculement :\n\n{stranded_options}\n\nNotes de capacité pour le nouveau type :\n\n{capability_notes}\n\nChaque entité conserve son ID d'entité. Les entités spécifiques au type que le nouveau type ne fournit pas restent dans le registre des entités comme indisponibles et reviennent si vous revenez à l'ancien type. Après confirmation, remplissez la géométrie du nouveau type et terminez avec Enregistrer et fermer pour appliquer la modification.",
+        "description": "Basculement de **{from_type}** vers **{to_type}**.\n\nLes paramètres que seul l'ancien type utilise restent stockés et ne sont pas supprimés, ainsi revenir en arrière les retrouve intacts. Actuellement inactifs après le basculement :\n\n{stranded_options}\n\nNotes de capacité pour le nouveau type :\n\n{capability_notes}\n\nPolarité des positions :\n\n{position_polarity}\n\nChaque entité conserve son ID d'entité. Les entités spécifiques au type que le nouveau type ne fournit pas restent dans le registre des entités comme indisponibles et reviennent si vous revenez à l'ancien type. Après confirmation, remplissez la géométrie du nouveau type et terminez avec Enregistrer et fermer pour appliquer la modification.",
         "title": "Modifier le type de store — Confirmer"
       }
     },

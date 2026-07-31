@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_CALL_SERVICE, Platform
@@ -868,6 +869,41 @@ _RUNTIME_APPLICABLE_OPTIONS: dict[str, str] = {
 }
 
 
+def _changed_option_keys(
+    previous: Mapping[str, Any], current: Mapping[str, Any]
+) -> set[str]:
+    """Keys whose value differs between two option mappings."""
+    return {
+        key
+        for key in current.keys() | previous.keys()
+        if current.get(key) != previous.get(key)
+    }
+
+
+def options_write_reloads(entry: ConfigEntry, new_options: Mapping[str, Any]) -> bool:
+    """Whether writing *new_options* onto *entry* will reload it.
+
+    The single statement of ``_async_update_listener``'s reload rule.
+    ``config_flow`` has to ask this question *before* it writes — a cover-type
+    switch changes ``entry.data``, which the listener does not look at, so it
+    needs its own reload, but only when the options write is not about to
+    produce one anyway (issue #1132). Restating the rule there instead of
+    sharing it is how the two answers drift apart into a double reload.
+
+    Note the answer is *not* "did the options change": a delta confined to
+    ``_RUNTIME_APPLICABLE_OPTIONS`` is applied in place and never reloads.
+    """
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is None:
+        # Nothing is set up, so no update listener is registered to react.
+        return False
+    previous = getattr(coordinator, "_cached_options", None)
+    if previous is None:
+        return True
+    changed = _changed_option_keys(previous, new_options)
+    return bool(changed) and not changed.issubset(_RUNTIME_APPLICABLE_OPTIONS)
+
+
 async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Propagate a Building Profile's sensor changes to its linked covers.
 
@@ -892,24 +928,14 @@ async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> N
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
+    if options_write_reloads(entry, entry.options):
+        await hass.config_entries.async_reload(entry.entry_id)
+        return
+
     coordinator = entry.runtime_data
     previous_options = coordinator._cached_options
-    if previous_options is not None:
-        current_options = dict(entry.options)
-        previous_options = dict(previous_options)
-        changed_keys = {
-            key
-            for key in current_options.keys() | previous_options.keys()
-            if current_options.get(key) != previous_options.get(key)
-        }
-
-        if not changed_keys:
-            return
-        if changed_keys.issubset(_RUNTIME_APPLICABLE_OPTIONS):
-            for apply_name in {
-                _RUNTIME_APPLICABLE_OPTIONS[key] for key in changed_keys
-            }:
-                await getattr(coordinator, apply_name)()
-            return
-
-    await hass.config_entries.async_reload(entry.entry_id)
+    if previous_options is None:
+        return
+    changed_keys = _changed_option_keys(previous_options, entry.options)
+    for apply_name in {_RUNTIME_APPLICABLE_OPTIONS[key] for key in changed_keys}:
+        await getattr(coordinator, apply_name)()

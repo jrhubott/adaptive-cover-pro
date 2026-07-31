@@ -14,6 +14,7 @@ overrides everything.
 from __future__ import annotations
 
 import dataclasses
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -46,6 +47,8 @@ if TYPE_CHECKING:
     from ..engine.covers import AdaptiveGeneralCover
     from ..pipeline.types import PipelineResult
     from ..services.configuration_service import ConfigurationService
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _as_optional(marker: vol.Marker) -> vol.Optional:
@@ -121,8 +124,9 @@ POSITION_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
 # flag ``check_cover_features`` sets for it. Lets
 # ``CoverTypePolicy.entities_satisfy_selector`` turn any policy's picker filter
 # back into a predicate over already-bound covers (issue #1132) without a second
-# capability matrix. A feature name with no CAP_* counterpart imposes no
-# requirement — the picker would still have offered the entity.
+# capability matrix. Every feature any registered policy filters on must appear
+# here — locked by
+# ``tests/test_cover_types/test_invariants.py::test_entity_filter_features_are_all_mapped``.
 ENTITY_FILTER_FEATURE_CAPS: dict[str, str] = {
     "cover.CoverEntityFeature.SET_POSITION": CAP_HAS_SET_POSITION,
     "cover.CoverEntityFeature.SET_TILT_POSITION": CAP_HAS_SET_TILT_POSITION,
@@ -1455,12 +1459,25 @@ class CoverTypePolicy(ABC):
         HA's ``supported_features`` filter is OR-of-listed, so the predicate
         mirrors that — an entity satisfies the filter when it advertises at
         least one of the listed features.
+
+        A feature name with no ``CAP_*`` counterpart is a bug, not a no-op: it
+        would answer "satisfied" for a requirement nothing tested, offering the
+        type to hardware that cannot drive it *and* dropping it from the
+        explained blocked list. It fails the type shut and says so.
         """
-        required = [
-            ENTITY_FILTER_FEATURE_CAPS[feature]
-            for feature in self.entity_selector_filter().get("supported_features", ())
-            if feature in ENTITY_FILTER_FEATURE_CAPS
-        ]
+        required: list[str] = []
+        for feature in self.entity_selector_filter().get("supported_features") or ():
+            cap = ENTITY_FILTER_FEATURE_CAPS.get(feature)
+            if cap is None:
+                _LOGGER.warning(
+                    "Cover type %s filters its entity picker on %s, which "
+                    "ENTITY_FILTER_FEATURE_CAPS does not map to a capability "
+                    "flag; treating the type as ineligible",
+                    self.cover_type,
+                    feature,
+                )
+                return False
+            required.append(cap)
         if not required:
             return True
         return all(

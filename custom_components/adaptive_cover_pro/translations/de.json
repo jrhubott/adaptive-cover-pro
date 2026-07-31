@@ -1056,14 +1056,14 @@
         "data_description": {
           "sensor_type": "Der Beschattungstyp, zu dem diese Instanz wechselt. Sie bestätigen im nächsten Bildschirm und geben dann die Geometrie des neuen Typs ein."
         },
-        "description": "Diese Instanz ist derzeit eine **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nEs werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
+        "description": "Diese Instanz ist derzeit vom Typ **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nEs werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
         "title": "Beschattungstyp ändern"
       },
       "change_cover_type_confirm": {
         "data": {
           "confirm": "Beschattungstypänderung bestätigen"
         },
-        "description": "Wechsel von **{from_type}** zu **{to_type}**.\n\nEinstellungen, die nur der alte Typ verwendet, bleiben gespeichert und werden nicht gelöscht, sodass ein Zurückwechsel sie intakt vorfindet. Nach dem Wechsel derzeit inaktiv:\n\n{stranded_options}\n\nFunktionseigenschaften für den neuen Typ:\n\n{capability_notes}\n\nJede Entität behält ihre Entitäts-ID. Typspezifische Entitäten, die der neue Typ nicht bereitstellt, bleiben in der Entitätsregistrierung als nicht verfügbar und werden wiederhergestellt, wenn Sie zurückwechseln. Füllen Sie nach der Bestätigung die Geometrie des neuen Typs aus und beenden Sie mit Speichern und schließen, um die Änderung anzuwenden.",
+        "description": "Wechsel von **{from_type}** zu **{to_type}**.\n\nEinstellungen, die nur der alte Typ verwendet, bleiben gespeichert und werden nicht gelöscht, sodass ein Zurückwechsel sie intakt vorfindet. Nach dem Wechsel derzeit inaktiv:\n\n{stranded_options}\n\nFunktionseigenschaften für den neuen Typ:\n\n{capability_notes}\n\nPositionspolarität:\n\n{position_polarity}\n\nJede Entität behält ihre Entitäts-ID. Typspezifische Entitäten, die der neue Typ nicht bereitstellt, bleiben in der Entitätsregistrierung als nicht verfügbar und werden wiederhergestellt, wenn Sie zurückwechseln. Füllen Sie nach der Bestätigung die Geometrie des neuen Typs aus und beenden Sie mit Speichern und schließen, um die Änderung anzuwenden.",
         "title": "Beschattungstyp ändern – Bestätigung"
       }
     },

@@ -245,6 +245,8 @@ from .const import (
     MAX_TRANSIT_TIMEOUT,
     MIN_TRANSIT_TIMEOUT,
     MODE2_OPEN_HORIZONTAL_PERCENT,
+    POSITION_CLOSED,
+    POSITION_OPEN,
     DOMAIN,
     TIME_OPTION_KEYS,
     TIME_STRING_RE,
@@ -3618,6 +3620,12 @@ def _extract_shared_options(
 # Fallback line for a destination type that is filtered out but whose policy
 # offers no capability warning of its own — the blocked list must always say
 # something rather than list a bare label (issue #1132).
+#
+# Reachable, and not rarely: the two sides disagree on quantifier.
+# ``entities_satisfy_selector`` blocks a type when ANY bound cover misses the
+# feature, while ``TiltPolicy`` / ``LouveredRoofPolicy.cover_capability_warnings``
+# only warn when NO bound cover has it. A two-cover instance where exactly one
+# advertises set_tilt_position blocks Tilt and produces an empty warning list.
 _BLOCKED_TYPE_GENERIC_REASON = (
     "⚠️ The covers bound to this instance do not advertise the features this "
     "cover type requires."
@@ -3681,6 +3689,73 @@ def _stranded_option_keys(
     outgoing = get_policy(current_type).live_option_keys()
     incoming = get_policy(new_type).live_option_keys()
     return sorted((outgoing - incoming) & set(options))
+
+
+# Stored positions whose meaning inverts with the axis, mapped to the value that
+# means "no constraint" and is therefore polarity-neutral. ``min_position`` at
+# 0 % and ``max_position`` at 100 % clamp nothing under either polarity, so they
+# have nothing to disclose; any other value does (issue #1132).
+_POLARITY_NEUTRAL_POSITIONS: dict[str, int | None] = {
+    CONF_MIN_POSITION: POSITION_CLOSED,
+    CONF_MAX_POSITION: POSITION_OPEN,
+    CONF_SUNSET_POS: None,
+}
+
+_POLARITY_DEFAULT_LINE = (
+    "⚠️ **0 % and 100 % mean the opposite on the new type.** The default "
+    "position is re-seeded from **{old}%** to **{new}%** — the value a cover "
+    "created as this type would start with."
+)
+_POLARITY_CARRIED_LINE = (
+    "⚠️ These stored positions now mean the opposite of what they did. They "
+    "are left exactly as they are — check them on the Position screen: {keys}."
+)
+
+
+def _no_coverage_position(cover_type: str | None) -> int:
+    """Return the position that means "no coverage" for *cover_type*.
+
+    ``position_for_intent(sun_through=True)`` is the same seam ``#1126``'s
+    ``_seed_default_position`` uses, so the answer here can never disagree with
+    the value a freshly created cover of this type is given. It is also the
+    polarity test itself: the endpoint moves iff the primary axis flips.
+    """
+    return get_policy(cover_type).position_for_intent(sun_through=True)
+
+
+def _position_polarity_text(
+    current_type: str | None, new_type: str, options: Mapping[str, Any]
+) -> str:
+    """Disclose a switch that inverts what a stored position means (issue #1132).
+
+    ``default_percentage`` is stored by every cover type, so it can never appear
+    in ``{stranded_options}`` — yet on a blind 100 % is the no-coverage end and
+    on an awning that end is 0 %. Carried over silently, "stay out of the way"
+    becomes "shade as hard as you can" on every fallback (outside the time
+    window, ``return_sunset``, sun tracking off).
+
+    Empty when the two types share a polarity, so a switch that changes nothing
+    about positions says nothing about them.
+    """
+    new_endpoint = _no_coverage_position(new_type)
+    old_endpoint = _no_coverage_position(current_type)
+    if old_endpoint == new_endpoint:
+        return ""
+    lines = [
+        _POLARITY_DEFAULT_LINE.format(
+            old=options.get(CONF_DEFAULT_HEIGHT, old_endpoint), new=new_endpoint
+        )
+    ]
+    carried = [
+        key
+        for key, neutral in _POLARITY_NEUTRAL_POSITIONS.items()
+        if options.get(key, neutral) != neutral
+    ]
+    if carried:
+        lines.append(
+            _POLARITY_CARRIED_LINE.format(keys=", ".join(f"`{k}`" for k in carried))
+        )
+    return "\n\n".join(lines)
 
 
 def _build_cover_entity_schema(
@@ -4823,7 +4898,7 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "current_type": get_policy(self.sensor_type).display_label(labels),
-                "blocked_types": _blocked_types_text(blocked, known, labels),
+                "blocked_types": _blocked_types_text(blocked, known, labels) or "—",
                 "learn_more": f"{_WIKI_BASE_URL}/Cover-Types",
             },
         )
@@ -4844,24 +4919,21 @@ class OptionsFlowHandler(OptionsFlow):
             if not user_input.get("confirm"):
                 self._pending_cover_type = None
                 return await self.async_step_init()
-            # ``CONF_SENSOR_TYPE`` lives in ``entry.data``, so this is the one
-            # post-creation ``data`` write in the integration. Unique IDs are
-            # ``f"{entry_id}_{suffix}"`` — never keyed on the cover type — so
-            # every entity that exists under both types keeps its entity_id.
-            # Options are left alone: the outgoing type's keys stay stored so
-            # switching back finds its configuration intact.
-            #
-            # Deliberately NO reload here. ``_async_update_listener`` diffs
-            # options only, so a data-only write leaves the coordinator running
-            # the OUTGOING policy while the user fills in the incoming type's
-            # geometry. Reloading now would bring it up on a half-configured
-            # type that can already command hardware. The reload is scheduled
-            # once, at Save & Close, in ``_update_options``.
-            self.hass.config_entries.async_update_entry(
-                self._config_entry,
-                data={**self._config_entry.data, CONF_SENSOR_TYPE: new_type},
-            )
+            # In-memory only. ``CONF_SENSOR_TYPE`` lives in ``entry.data``, and
+            # persisting it here would strand every non-Save exit from the
+            # dialog — abandoning it, or any step that aborts — with an entry
+            # permanently switched, never reloaded, and missing the geometry the
+            # user was on their way to enter. The whole switch lands together in
+            # ``_update_options``; until then the coordinator keeps running the
+            # OUTGOING policy, which is what a half-configured type must never
+            # be allowed to do.
             self.current_config[CONF_SENSOR_TYPE] = new_type
+            no_coverage = _no_coverage_position(new_type)
+            if _no_coverage_position(self.sensor_type) != no_coverage:
+                # Polarity flip: the stored number now means the opposite. Land
+                # on the value a cover created as the new type would get — the
+                # confirm screen the user just read named this exact change.
+                self.options[CONF_DEFAULT_HEIGHT] = no_coverage
             self.sensor_type = new_type  # type: ignore[assignment]
             self._cover_type_changed = True
             self._pending_cover_type = None
@@ -4890,6 +4962,10 @@ class OptionsFlowHandler(OptionsFlow):
                 "to_type": get_policy(new_type).display_label(labels),
                 "stranded_options": "\n".join(f"- `{k}`" for k in stranded) or "—",
                 "capability_notes": "\n".join(f"- {n}" for n in capability_notes)
+                or "—",
+                "position_polarity": _position_polarity_text(
+                    self.sensor_type, new_type, self.options
+                )
                 or "—",
             },
         )
@@ -5094,7 +5170,7 @@ class OptionsFlowHandler(OptionsFlow):
 
     def _custom_position_include_tilt(self) -> bool:
         """Whether this cover type carries per-slot / global tilt fields."""
-        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        sensor_type = self.sensor_type
         return sensor_type in POLICY_REGISTRY and bool(
             get_policy(sensor_type).extra_field_keys(
                 config_fields.SECTION_CUSTOM_POSITION
@@ -5787,7 +5863,6 @@ class OptionsFlowHandler(OptionsFlow):
             self.optional_entities(_PIPELINE_PRIORITY_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
-        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
         return self.async_show_form(
             step_id="pipeline_priorities",
             data_schema=self.add_suggested_values_to_schema(
@@ -5796,7 +5871,7 @@ class OptionsFlowHandler(OptionsFlow):
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides",
                 "priority_scale": _render_priority_scale(
-                    self.options, get_policy(sensor_type)
+                    self.options, get_policy(self.sensor_type)
                 ),
             },
         )
@@ -5805,7 +5880,11 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Select target covers and setting categories to sync."""
-        current_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        # ``self.sensor_type``, not ``entry.data`` — a pending cover-type switch
+        # (issue #1132) is not persisted until Save & Close, and syncing this
+        # instance's settings into covers of the type it is about to stop being
+        # is not what the user asked for.
+        current_type = self.sensor_type
         other_entries = [
             e
             for e in self.hass.config_entries.async_entries(DOMAIN)
@@ -6122,18 +6201,42 @@ class OptionsFlowHandler(OptionsFlow):
         self._recompute_profile_overrides()
         self._propagate_profile_clears()
         if self._cover_type_changed:
-            # A cover-type switch writes ``entry.data``, which
-            # ``_async_update_listener`` does not look at — it diffs options and
-            # early-returns on an empty set. So the reload has to be explicit:
-            # if the geometry form came back byte-identical, nothing else would
-            # reload and the coordinator would keep running the OUTGOING policy
-            # until the next restart. Scheduling here is safe even though the
-            # options write happens afterwards, in
-            # ``OptionsFlowManager.async_finish_flow`` — there is no await
-            # between this step returning and that write, so the reloaded
-            # coordinator sees both the new ``data`` and the new ``options``.
-            self.hass.config_entries.async_schedule_reload(self._config_entry.entry_id)
+            self._apply_cover_type_change()
         return self.async_create_entry(title="", data=self.options)  # type: ignore[return-value]
+
+    def _apply_cover_type_change(self) -> None:
+        """Land a pending cover-type switch with exactly one reload (issue #1132).
+
+        ``data`` and ``options`` go out in a single ``async_update_entry`` rather
+        than letting ``OptionsFlowManager.async_finish_flow`` write the options a
+        moment later. Two writes would mean two update-listener runs, and — worse
+        — ``async_schedule_reload`` starts its reload task eagerly, so a reload
+        scheduled here begins unloading before ``async_finish_flow`` gets to
+        write the options (there *is* an await between this step returning and
+        that write). The rebuilt coordinator could then read pre-edit options.
+        One write, one listener run, no ordering to reason about.
+
+        ``_async_update_listener`` diffs options only, so it never reacts to the
+        ``data`` half — but it may well reload for the options half. Asking it
+        first, through the shared predicate, is what keeps this from becoming a
+        second reload stacked on the one the write already causes. "Options
+        changed" is not the question: a delta confined to the runtime-applicable
+        keys is applied in place and never reloads.
+        """
+        # Imported here, not at module scope: ``config_flow`` is loaded by HA's
+        # platform loader, and reaching into the package root at import time is
+        # the one edge that could reintroduce a cycle.
+        from . import options_write_reloads
+
+        entry = self._config_entry
+        reload_needed = not options_write_reloads(entry, self.options)
+        self.hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, CONF_SENSOR_TYPE: self.sensor_type},
+            options=dict(self.options),
+        )
+        if reload_needed:
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
     def _recompute_profile_overrides(self) -> None:
         """Refresh the cover's local-override list against its profile on save.

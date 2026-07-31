@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
+    ENTITY_FILTER_FEATURE_CAPS,
     AxisDescriptor,
     CoverAxis,
     CoverDescriptor,
@@ -91,6 +92,23 @@ def test_entity_selector_filter_targets_cover_domain(
     """Every policy targets HA cover entities — the selector must say so."""
     flt = policy.entity_selector_filter()
     assert flt.get("domain") == "cover"
+
+
+@pytest.mark.unit
+def test_entity_filter_features_are_all_mapped(policy: CoverTypePolicy) -> None:
+    """Every feature a policy's picker filters on must have a ``CAP_*`` counterpart.
+
+    ``entities_satisfy_selector`` inverts the picker filter into a predicate via
+    ``ENTITY_FILTER_FEATURE_CAPS``. A feature name missing from that map — a new
+    cover type filtering on ``OPEN_TILT``, or a typo in an existing name — has no
+    capability to test, so the "would the picker have admitted these covers?"
+    question silently loses its content (issue #1132).
+    """
+    for feature in policy.entity_selector_filter().get("supported_features") or ():
+        assert feature in ENTITY_FILTER_FEATURE_CAPS, (
+            f"{policy.cover_type} filters on {feature!r}, which "
+            "ENTITY_FILTER_FEATURE_CAPS does not map to a CAP_* flag"
+        )
 
 
 @pytest.mark.unit

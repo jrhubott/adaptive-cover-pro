@@ -141,6 +141,38 @@ class TestEntitiesSatisfySelector:
         )
         assert isinstance(result, bool)
 
+    def test_unmapped_filter_feature_blocks_the_type(self, caplog):
+        """An unmappable filter feature makes the type ineligible, loudly.
+
+        Dropping it instead would answer "yes, these covers satisfy me" for a
+        requirement nothing checked — offering the type to hardware it cannot
+        drive, and hiding it from the explained blocked list at the same time.
+        """
+        import logging
+
+        from homeassistant.helpers import selector
+
+        from custom_components.adaptive_cover_pro.cover_types.base import (
+            CoverTypePolicy,
+        )
+
+        class _OpenTiltPolicy(BlindPolicy):
+            def entity_selector_filter(self):
+                return selector.EntityFilterSelectorConfig(
+                    domain="cover",
+                    supported_features=["cover.CoverEntityFeature.OPEN_TILT"],
+                )
+
+        with caplog.at_level(logging.WARNING, logger=CoverTypePolicy.__module__):
+            assert (
+                _OpenTiltPolicy().entities_satisfy_selector(
+                    {"cover.a": {"has_set_position": True}}
+                )
+                is False
+            )
+
+        assert "OPEN_TILT" in caplog.text
+
 
 @pytest.mark.unit
 class TestSummaryGeometryLines:

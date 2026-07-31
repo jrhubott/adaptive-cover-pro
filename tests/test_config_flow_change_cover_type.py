@@ -5,20 +5,27 @@ post-creation write path touched ``data`` — so a cover's type could only chang
 by deleting and re-adding the entry, which re-mints every ACP entity's
 ``unique_id`` (``entity_base.py``: ``f"{entry_id}_{suffix}"``) and breaks every
 dashboard and automation referencing them. These tests pin the new options-flow
-step that rewrites ``entry.data[CONF_SENSOR_TYPE]`` in place.
+step that rewrites ``entry.data[CONF_SENSOR_TYPE]`` in place — picked and
+confirmed in memory, persisted (with exactly one reload) only at Save & Close.
 """
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import contextlib
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DEFAULT_HEIGHT,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_ENTITIES,
+    CONF_MAX_POSITION,
+    CONF_MIN_POSITION,
     CONF_SENSOR_TYPE,
+    CONF_SUNSET_POS,
     DOMAIN,
     CoverType,
 )
@@ -118,12 +125,14 @@ async def _setup_entry(
     options = dict(VERTICAL_OPTIONS)
     options[CONF_ENTITIES] = list(entities)
     # Model an entry that has already completed its one-time orphan-prune
-    # migrations. Without these, the prune passes write ``entry.options`` DURING
-    # setup — after the coordinator snapshotted ``_cached_options`` — leaving the
-    # cache permanently stale, so the update listener sees a non-empty diff and
-    # reloads on the next ``async_update_entry`` no matter what changed. That is
-    # pre-existing first-boot behaviour unrelated to the cover-type switch; a
-    # settled entry is what these tests need to measure.
+    # migrations. In production the prunes are harmless: they write
+    # ``entry.options`` during setup, and ``_async_update_data`` re-snapshots
+    # ``_cached_options`` on the first refresh right afterwards. Here
+    # ``_patch_coordinator_refresh`` replaces that first refresh with an
+    # ``AsyncMock``, so the snapshot never happens and the cache stays stale for
+    # the life of the test — the update listener would then see a non-empty diff
+    # and reload on any ``async_update_entry``. Pre-seeding the flags keeps the
+    # harness honest about what a settled entry does.
     options[_PRUNE_V1_FLAG] = True
     options[_PRUNE_SENSORS_V1_FLAG] = True
     options[_PRUNE_SENSORS_V2_FLAG] = True
@@ -292,6 +301,36 @@ async def test_picker_lists_blocked_types_with_reason(hass: HomeAssistant) -> No
 
 
 @pytest.mark.integration
+async def test_picker_blocked_list_never_renders_a_dangling_heading(
+    hass: HomeAssistant,
+) -> None:
+    """Nothing blocked still needs a placeholder — the heading is unconditional."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    entry = await _setup_entry(hass, entry_id="change_type_nothing_blocked")
+    # A cover that can do everything satisfies every policy's entity filter.
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {
+            "current_position": 100,
+            "current_tilt_position": 100,
+            "supported_features": int(
+                CoverEntityFeature.OPEN
+                | CoverEntityFeature.CLOSE
+                | CoverEntityFeature.STOP
+                | CoverEntityFeature.SET_POSITION
+                | CoverEntityFeature.SET_TILT_POSITION
+            ),
+        },
+    )
+
+    result = await _open_picker(hass, entry)
+
+    assert result["description_placeholders"]["blocked_types"] == "—"
+
+
+@pytest.mark.integration
 async def test_picker_uses_mode_translation_key(hass: HomeAssistant) -> None:
     """Reuse the ten already-translated selector.mode labels — no new strings."""
     entry = await _setup_entry(hass, entry_id="change_type_i18n")
@@ -408,7 +447,7 @@ async def test_declining_confirm_leaves_type_unchanged(hass: HomeAssistant) -> N
 
 
 # ---------------------------------------------------------------------------
-# Step 6 — the entry.data write and in-memory propagation
+# Step 6 — in-memory propagation; nothing is persisted before Save & Close
 # ---------------------------------------------------------------------------
 
 
@@ -420,17 +459,55 @@ async def _confirm(hass: HomeAssistant, entry: MockConfigEntry, new_type: str) -
     )
 
 
+def _handler(hass: HomeAssistant, flow_id: str):
+    """Return the live OptionsFlowHandler behind *flow_id*."""
+    return hass.config_entries.options._progress[flow_id]
+
+
+@contextlib.contextmanager
+def _count_reloads(hass: HomeAssistant):
+    """Count reloads from BOTH paths that can trigger one.
+
+    ``async_schedule_reload`` calls ``async_reload`` inside a task and
+    ``_async_update_listener`` awaits it directly, so patching the one method
+    both go through is the only way to see the total. Patching
+    ``async_schedule_reload`` alone counts the explicit path and misses the
+    listener entirely — which is exactly how a double reload hides.
+    """
+    with patch.object(
+        hass.config_entries, "async_reload", new_callable=AsyncMock
+    ) as reload:
+        yield reload
+
+
+def _reloads(reload_mock, entry: MockConfigEntry) -> int:
+    """How many times *entry* specifically was reloaded."""
+    return sum(
+        1 for call in reload_mock.call_args_list if call.args[0] == entry.entry_id
+    )
+
+
 @pytest.mark.integration
-async def test_confirm_writes_entry_data(hass: HomeAssistant) -> None:
-    """Confirming rewrites entry.data in place and leaves options untouched."""
+async def test_confirm_switches_the_flow_but_not_the_entry(
+    hass: HomeAssistant,
+) -> None:
+    """Confirming moves the in-memory type only — ``entry.data`` is untouched.
+
+    Persisting at confirm time would leave every non-Save exit (abandon the
+    dialog, hit an aborting step) with an entry permanently switched, never
+    reloaded, and missing the geometry the user was about to enter.
+    """
     entry = await _setup_entry(hass, entry_id="write_data")
     options_before = dict(entry.options)
 
-    await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
+    result = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
 
-    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
     assert entry.data["name"] == "Switchable"
     assert dict(entry.options) == options_before
+    handler = _handler(hass, result["flow_id"])
+    assert handler.sensor_type == CoverType.DAY_NIGHT_SHADE
+    assert handler._cover_type_changed is True
 
 
 @pytest.mark.integration
@@ -492,16 +569,108 @@ async def test_menu_after_switch_reflects_new_type(hass: HomeAssistant) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Step 7 — exactly one reload, at Save & Close
+# Step 7 — nothing persists unless the user reaches Save & Close
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-async def test_done_schedules_reload_after_type_change(hass: HomeAssistant) -> None:
-    """Save & Close applies the switch with exactly one scheduled reload."""
+async def test_abandoning_after_confirm_leaves_type_unchanged(
+    hass: HomeAssistant,
+) -> None:
+    """Closing the dialog on the geometry step must not leave a switched entry.
+
+    A ``data`` write at confirm time survives an abandoned flow: the entry is
+    permanently the new type, never reloaded, and missing every key the geometry
+    step was about to collect. On the next HA restart the coordinator comes up
+    on a half-configured type that already drives hardware.
+    """
+    entry = await _setup_entry(hass, entry_id="abandon_after_confirm")
+    options_before = dict(entry.options)
+
+    with _count_reloads(hass) as reload:
+        geometry = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
+        assert geometry["step_id"] == "geometry"
+        hass.config_entries.options.async_abort(geometry["flow_id"])
+        await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert dict(entry.options) == options_before
+    assert _reloads(reload, entry) == 0
+
+
+@pytest.mark.integration
+async def test_confirm_then_aborting_step_leaves_type_unchanged(
+    hass: HomeAssistant,
+) -> None:
+    """An aborting step after confirm ends the flow without ever writing options.
+
+    ``async_step_sync`` filters sibling covers on this instance's own type. Once
+    the switch is pending there is no sibling of the new type, so it aborts —
+    and ``OptionsFlowManager.async_finish_flow`` returns on an ABORT without
+    writing options or running ``_update_options``. Everything the flow did must
+    unwind with it.
+    """
+    entry = await _setup_entry(hass, entry_id="abort_via_sync")
+    options_before = dict(entry.options)
+
+    with _count_reloads(hass) as reload:
+        geometry = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
+        menu = await hass.config_entries.options.async_configure(
+            geometry["flow_id"], {}
+        )
+        result = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "sync"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "no_covers_to_sync"
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert dict(entry.options) == options_before
+    assert _reloads(reload, entry) == 0
+
+
+@pytest.mark.integration
+async def test_data_written_only_at_save_and_close(hass: HomeAssistant) -> None:
+    """``entry.data`` flips on Save & Close, together with exactly one reload."""
+    entry = await _setup_entry(hass, entry_id="data_at_save")
+
+    with _count_reloads(hass) as reload:
+        geometry = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
+        assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+        menu = await hass.config_entries.options.async_configure(
+            geometry["flow_id"], {}
+        )
+        assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+        await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "done"}
+        )
+        await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    assert entry.data["name"] == "Switchable"
+    assert _reloads(reload, entry) == 1
+
+
+# ---------------------------------------------------------------------------
+# Step 8 — exactly one reload, however the options happen to fall
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_type_change_with_option_edits_reloads_once(
+    hass: HomeAssistant,
+) -> None:
+    """A switch that also edits options reloads once, not twice.
+
+    The incoming type's geometry form writes its own defaults, so the options
+    write at Save & Close already reloads the entry through
+    ``_async_update_listener``. Scheduling a reload unconditionally on top of it
+    takes every entity through unavailable → available twice.
+    """
     entry = await _setup_entry(hass, entry_id="reload_on_done")
 
-    with patch.object(hass.config_entries, "async_schedule_reload") as sched:
+    with _count_reloads(hass) as reload:
         geometry = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
         menu = await hass.config_entries.options.async_configure(
             geometry["flow_id"], {}
@@ -511,28 +680,65 @@ async def test_done_schedules_reload_after_type_change(hass: HomeAssistant) -> N
         )
         await hass.async_block_till_done()
 
-    sched.assert_called_once_with(entry.entry_id)
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    # The geometry step really did move options — this is the double-reload case.
+    assert entry.options["day_night_control_model"]
+    assert _reloads(reload, entry) == 1
 
 
 @pytest.mark.integration
-async def test_done_does_not_schedule_reload_without_type_change(
+async def test_type_change_with_runtime_only_option_edits_still_reloads_once(
+    hass: HomeAssistant,
+) -> None:
+    """A runtime-applicable-only delta never reloads, so the switch must.
+
+    ``_async_update_listener`` applies a change confined to
+    ``_RUNTIME_APPLICABLE_OPTIONS`` in place and returns. "Options changed" is
+    therefore not the same question as "the write will reload".
+    """
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    entry = await _setup_entry(hass, entry_id="reload_runtime_only")
+
+    async def _runtime_only_edit(self, user_input=None):
+        self.options[CONF_ENABLE_SUN_TRACKING] = False
+        return await self.async_step_init()
+
+    with (
+        _count_reloads(hass) as reload,
+        patch.object(OptionsFlowHandler, "async_step_geometry", _runtime_only_edit),
+    ):
+        menu = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
+        assert menu["type"] == "menu"
+        await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "done"}
+        )
+        await hass.async_block_till_done()
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    assert entry.options[CONF_ENABLE_SUN_TRACKING] is False
+    assert _reloads(reload, entry) == 1
+
+
+@pytest.mark.integration
+async def test_done_does_not_reload_without_type_change(
     hass: HomeAssistant,
 ) -> None:
     """An ordinary Save & Close does not gain a reload it never had."""
     entry = await _setup_entry(hass, entry_id="reload_no_change")
 
-    with patch.object(hass.config_entries, "async_schedule_reload") as sched:
+    with _count_reloads(hass) as reload:
         menu = await hass.config_entries.options.async_init(entry.entry_id)
         await hass.config_entries.options.async_configure(
             menu["flow_id"], {"next_step_id": "done"}
         )
         await hass.async_block_till_done()
 
-    sched.assert_not_called()
+    assert _reloads(reload, entry) == 0
 
 
 @pytest.mark.integration
-async def test_reload_scheduled_even_when_options_unchanged(
+async def test_reload_happens_even_when_options_unchanged(
     hass: HomeAssistant,
 ) -> None:
     """The reload must be explicit, not left to the options-write listener.
@@ -549,7 +755,7 @@ async def test_reload_scheduled_even_when_options_unchanged(
         return await self.async_step_init()
 
     with (
-        patch.object(hass.config_entries, "async_schedule_reload") as sched,
+        _count_reloads(hass) as reload,
         patch.object(OptionsFlowHandler, "async_step_geometry", _straight_back_to_menu),
     ):
         options_before = dict(entry.options)
@@ -561,11 +767,129 @@ async def test_reload_scheduled_even_when_options_unchanged(
         await hass.async_block_till_done()
 
     assert dict(entry.options) == options_before
-    sched.assert_called_once_with(entry.entry_id)
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DAY_NIGHT_SHADE
+    assert _reloads(reload, entry) == 1
 
 
 # ---------------------------------------------------------------------------
-# Step 8 — entity-ID preservation, end to end (the acceptance test)
+# Step 9 — position polarity across the switch
+# ---------------------------------------------------------------------------
+#
+# ``default_percentage`` is stored by every cover type, so it can never show up
+# in ``{stranded_options}`` — yet its correct value is the opposite across a
+# polarity flip. On a blind 100 % is the no-coverage end; on an awning that end
+# is 0 %. Carrying the number over silently turns "stay out of the way" into
+# "shade as hard as you can".
+
+
+async def _polarity_note(
+    hass: HomeAssistant, entry: MockConfigEntry, new_type: str
+) -> str:
+    """Return the confirm screen's polarity disclosure for a switch to *new_type*."""
+    confirm = await _pick(hass, entry, new_type)
+    note = confirm["description_placeholders"]["position_polarity"]
+    hass.config_entries.options.async_abort(confirm["flow_id"])
+    return note
+
+
+async def _switch_and_save(
+    hass: HomeAssistant, entry: MockConfigEntry, new_type: str
+) -> None:
+    """Run the whole switch through to Save & Close."""
+    geometry = await _confirm(hass, entry, new_type)
+    menu = await hass.config_entries.options.async_configure(geometry["flow_id"], {})
+    await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "done"}
+    )
+    await hass.async_block_till_done()
+
+
+@pytest.mark.integration
+async def test_polarity_flip_reseeds_default_position_blind_to_awning(
+    hass: HomeAssistant,
+) -> None:
+    """Blind → awning re-seeds the default to the awning's no-coverage end."""
+    entry = await _setup_entry(hass, entry_id="polarity_to_awning")
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+
+    note = await _polarity_note(hass, entry, CoverType.AWNING)
+    assert "50" in note
+    assert "0" in note
+
+    await _switch_and_save(hass, entry, CoverType.AWNING)
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.AWNING
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 0
+
+
+@pytest.mark.integration
+async def test_polarity_flip_reseeds_default_position_awning_to_blind(
+    hass: HomeAssistant,
+) -> None:
+    """Awning → blind re-seeds the other way, to the blind's no-coverage end."""
+    entry = await _setup_entry(
+        hass,
+        cover_type=CoverType.AWNING,
+        entry_id="polarity_to_blind",
+        extra_options={"length_awning": 2.1, "angle": 0},
+    )
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+
+    note = await _polarity_note(hass, entry, CoverType.BLIND)
+    assert "100" in note
+
+    await _switch_and_save(hass, entry, CoverType.BLIND)
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 100
+
+
+@pytest.mark.integration
+async def test_non_flipping_switch_leaves_default_position_alone(
+    hass: HomeAssistant,
+) -> None:
+    """Blind → dual panel shares a polarity — say nothing, change nothing."""
+    entry = await _setup_entry(hass, entry_id="polarity_none")
+
+    note = await _polarity_note(hass, entry, CoverType.DUAL_PANEL)
+    assert note == "—"
+
+    await _switch_and_save(hass, entry, CoverType.DUAL_PANEL)
+
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.DUAL_PANEL
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+
+
+@pytest.mark.integration
+async def test_polarity_flip_names_the_positions_it_does_not_change(
+    hass: HomeAssistant,
+) -> None:
+    """Travel limits have no policy answer, so they are disclosed, not rewritten."""
+    entry = await _setup_entry(
+        hass,
+        entry_id="polarity_limits",
+        extra_options={
+            CONF_MIN_POSITION: 20,
+            CONF_MAX_POSITION: 100,
+            CONF_SUNSET_POS: 30,
+        },
+    )
+
+    note = await _polarity_note(hass, entry, CoverType.AWNING)
+
+    assert CONF_MIN_POSITION in note
+    assert CONF_SUNSET_POS in note
+    # 100 % is "no upper clamp" under either polarity — nothing to disclose.
+    assert CONF_MAX_POSITION not in note
+
+    await _switch_and_save(hass, entry, CoverType.AWNING)
+
+    assert entry.options[CONF_MIN_POSITION] == 20
+    assert entry.options[CONF_SUNSET_POS] == 30
+
+
+# ---------------------------------------------------------------------------
+# Step 10 — entity-ID preservation, end to end (the acceptance test)
 # ---------------------------------------------------------------------------
 
 
