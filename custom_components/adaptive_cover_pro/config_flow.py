@@ -4631,8 +4631,14 @@ class OptionsFlowHandler(OptionsFlow):
         # allowed to touch, taken the first time one is confirmed. It is what
         # lets a mid-dialog entry write persist the pre-switch configuration,
         # and what a round trip restores from.
+        #
+        # ``_switch_applied_values`` is the other half: the values the switch
+        # itself wrote. A rollback needs both — the baseline to restore to, and
+        # what the switch put there, so it can tell its own value from one the
+        # user has since typed over.
         self._pending_cover_type: str | None = None
         self._pre_switch_options: dict[str, Any] | None = None
+        self._switch_applied_values: dict[str, Any] = {}
 
     def __getattr__(self, name: str):
         """Dispatch dynamic per-slot options steps (issue #945).
@@ -5052,12 +5058,26 @@ class OptionsFlowHandler(OptionsFlow):
         only ``_update_options`` can store the type, so every other write takes
         the "neither" side. Ordinary edits made in the same dialog are
         untouched — they belong to the entry as it stands, not to the switch.
+
+        Which is why a re-seeded key is restored only while the re-seeded value
+        is still the one sitting there. Confirm blind → awning, then open
+        Position and type 30: ``default_percentage`` no longer holds anything
+        the switch put there, so there is nothing of the switch's left to roll
+        back and 30 is an ordinary edit like any other. Restoring the baseline
+        50 over it would discard a value the user typed — recoverable only by
+        going on to Save & Close, and lost outright if the dialog is abandoned.
+        The incoming type's own keys carry no such test and unwind
+        unconditionally: the stored type does not read them at all, so no value
+        of theirs can be an edit to the entry as it stands.
         """
         baseline = self._pre_switch_options
         options = dict(self.options)
         if baseline is None:
             return options
+        applied = self._switch_applied_values
         for key in self._pending_switch_option_keys():
+            if key in applied and options.get(key) != applied[key]:
+                continue
             if key in baseline:
                 options[key] = baseline[key]
             else:
@@ -5081,7 +5101,11 @@ class OptionsFlowHandler(OptionsFlow):
         self.options = self._options_without_pending_switch()
         self.current_config[CONF_SENSOR_TYPE] = new_type
         self.sensor_type = new_type  # type: ignore[assignment]
-        self.options.update(_polarity_reseed(stored, new_type))
+        reseed = _polarity_reseed(stored, new_type)
+        self.options.update(reseed)
+        # Remember what the switch wrote, not just which keys it touched, so a
+        # later rollback can tell its own value from one the user typed over.
+        self._switch_applied_values = dict(reseed)
         if new_type == stored:
             self._pre_switch_options = None
 
@@ -6007,11 +6031,17 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Select target covers and setting categories to sync."""
-        # ``self.sensor_type``, not ``entry.data`` — a pending cover-type switch
-        # (issue #1132) is not persisted until Save & Close, and syncing this
-        # instance's settings into covers of the type it is about to stop being
-        # is not what the user asked for.
-        current_type = self.sensor_type
+        # The STORED type, not ``self.sensor_type`` (issue #1132). What this
+        # step copies is whatever ``_persist_entry`` just wrote, and that write
+        # deliberately rolls a pending switch back out — so the values leaving
+        # here are the outgoing type's. Filtering targets by the type the user
+        # is about to switch to would offer covers of one type and hand them
+        # another type's positions: a blind's "raised 80 %" written onto an
+        # awning as "extended 80 %", on someone else's cover. The filter and
+        # the copied values have to name the same type, and only the stored one
+        # is on both sides. ``available`` below already reads the stored
+        # options for the same reason.
+        current_type = self._stored_cover_type
         other_entries = [
             e
             for e in self.hass.config_entries.async_entries(DOMAIN)

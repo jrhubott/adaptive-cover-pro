@@ -11,6 +11,7 @@ confirmed in memory, persisted (with exactly one reload) only at Save & Close.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 from unittest.mock import AsyncMock, patch
 
@@ -1007,6 +1008,14 @@ def _add_profile(
     return profile
 
 
+def _sync_target_options(result: dict) -> list[dict]:
+    """Return the covers the sync step offers as copy targets."""
+    for marker, value in result["data_schema"].schema.items():
+        if str(marker) == "target_entries":
+            return list(value.config["options"])
+    raise AssertionError(f"no target_entries field in {result['data_schema'].schema}")
+
+
 @pytest.mark.integration
 async def test_sync_confirm_does_not_persist_a_pending_switch(
     hass: HomeAssistant,
@@ -1016,14 +1025,14 @@ async def test_sync_confirm_does_not_persist_a_pending_switch(
     ``async_step_sync_confirm`` writes ``options=dict(self.options)`` so the
     copy sees the latest values. With a switch pending those options already
     carry the awning re-seed, so the write leaves a BLIND whose no-sun default
-    is 0 % — and reloads it straight into that state.
+    is 0 % — and reloads it straight into that state, and hands that 0 % on to
+    every cover it then copies into.
     """
     sibling = await _setup_entry(
         hass,
-        cover_type=CoverType.AWNING,
-        entities=["cover.awning_a"],
-        extra_options={"length_awning": 2.1, "angle": 0},
-        entry_id="sync_sibling_awning",
+        entities=["cover.blind_a"],
+        extra_options={CONF_DEFAULT_HEIGHT: 90},
+        entry_id="sync_sibling_blind",
     )
     entry = await _setup_entry(hass, entry_id="sync_pending_switch")
     assert entry.options[CONF_DEFAULT_HEIGHT] == 50
@@ -1046,6 +1055,105 @@ async def test_sync_confirm_does_not_persist_a_pending_switch(
     assert entry.options[CONF_DEFAULT_HEIGHT] == 50
     # The incoming type's geometry is part of the same pending switch.
     assert "length_awning" not in entry.options
+    # What the source persisted is what the target receives — the copy reads
+    # the source entry back off disk, so a leaked re-seed lands here too.
+    assert sibling.options[CONF_DEFAULT_HEIGHT] == 50
+    assert "length_awning" not in sibling.options
+
+
+@pytest.mark.integration
+async def test_sync_targets_are_filtered_by_the_stored_type(
+    hass: HomeAssistant,
+) -> None:
+    """A pending switch must not re-aim "Copy to other covers" at the new type.
+
+    The write that precedes the copy rolls the pending switch back out, so what
+    ``_extract_shared_options`` reads off the entry is the OUTGOING type's
+    values. Offering the incoming type's covers as targets would copy one type's
+    positions onto another's — the target filter and the copied values have to
+    describe the same cover type, and only the stored one is on both sides.
+    """
+    awning_sibling = await _setup_entry(
+        hass,
+        cover_type=CoverType.AWNING,
+        entities=["cover.probe_awning"],
+        extra_options={"length_awning": 2.1, "angle": 0, CONF_DEFAULT_HEIGHT: 10},
+        entry_id="probe_sibling_awning",
+    )
+    blind_sibling = await _setup_entry(
+        hass,
+        entities=["cover.probe_blind"],
+        extra_options={CONF_DEFAULT_HEIGHT: 90},
+        entry_id="probe_sibling_blind",
+    )
+    entry = await _setup_entry(
+        hass,
+        extra_options={CONF_DEFAULT_HEIGHT: 80},
+        entry_id="probe_sync_source",
+    )
+
+    menu = await _confirm_and_return_to_menu(hass, entry, CoverType.AWNING)
+    sync = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "sync"}
+    )
+
+    offered = {opt["value"] for opt in _sync_target_options(sync)}
+    assert offered == {blind_sibling.entry_id}
+    assert awning_sibling.entry_id not in offered
+
+
+@pytest.mark.integration
+async def test_sync_does_not_write_inverted_positions_to_siblings(
+    hass: HomeAssistant,
+) -> None:
+    """The copy must never land a blind's 80 % on an awning as "extended 80 %".
+
+    ``SYNC_CATEGORIES["position"]`` carries every polarity-sensitive key
+    (``default_percentage``, ``min_position``, ``max_position``,
+    ``sunset_position``, ``my_position_value``), so a target of the wrong type
+    gets the whole inverted block — silently, on someone else's cover.
+    """
+    awning_sibling = await _setup_entry(
+        hass,
+        cover_type=CoverType.AWNING,
+        entities=["cover.inverted_awning"],
+        extra_options={"length_awning": 2.1, "angle": 0, CONF_DEFAULT_HEIGHT: 10},
+        entry_id="inverted_sibling_awning",
+    )
+    blind_sibling = await _setup_entry(
+        hass,
+        entities=["cover.inverted_blind"],
+        extra_options={CONF_DEFAULT_HEIGHT: 90},
+        entry_id="inverted_sibling_blind",
+    )
+    entry = await _setup_entry(
+        hass,
+        extra_options={CONF_DEFAULT_HEIGHT: 80},
+        entry_id="inverted_sync_source",
+    )
+
+    menu = await _confirm_and_return_to_menu(hass, entry, CoverType.AWNING)
+    sync = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "sync"}
+    )
+    targets = [opt["value"] for opt in _sync_target_options(sync)]
+    confirm = await hass.config_entries.options.async_configure(
+        sync["flow_id"],
+        {"target_entries": targets, "sync_categories": ["position"]},
+    )
+    await hass.config_entries.options.async_configure(
+        confirm["flow_id"], {"confirm": True}
+    )
+    await hass.async_block_till_done()
+
+    # The awning is a different cover type — nothing of this blind's belongs
+    # in it, least of all a position whose ends mean the opposite.
+    assert awning_sibling.options[CONF_DEFAULT_HEIGHT] == 10
+    # The same-type sibling gets the source's stored (blind) value.
+    assert blind_sibling.options[CONF_DEFAULT_HEIGHT] == 80
+    # And the source is untouched: still a blind, still 80.
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 80
 
 
 @pytest.mark.integration
@@ -1156,45 +1264,275 @@ async def test_mid_flow_write_without_a_pending_switch_is_unchanged(
     assert sibling.options[CONF_DEFAULT_HEIGHT] == 33
 
 
+@pytest.mark.integration
+async def test_mid_flow_write_keeps_a_position_re_entered_after_the_switch(
+    hass: HomeAssistant,
+) -> None:
+    """A value the user typed after confirming is an edit, not the switch's.
+
+    The rollback restores what the switch put there. Once the user has typed
+    over the re-seeded ``default_percentage``, the switch's contribution to that
+    key is gone — what is there is an ordinary edit, and the seam promises those
+    survive a mid-dialog write like any other.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import _PROFILE_NONE_SENTINEL
+    from custom_components.adaptive_cover_pro.const import CONF_BUILDING_PROFILE_ID
+
+    profile = _add_profile(hass, entry_id="profile_for_reentry")
+    entry = await _setup_entry(
+        hass,
+        entry_id="reentered_default",
+        extra_options={CONF_BUILDING_PROFILE_ID: profile.entry_id},
+    )
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 50
+
+    menu = await _confirm_and_return_to_menu(hass, entry, CoverType.AWNING)
+    position = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "position"}
+    )
+    menu = await hass.config_entries.options.async_configure(
+        position["flow_id"], {CONF_DEFAULT_HEIGHT: 30}
+    )
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "building_profile"}
+    )
+    await hass.config_entries.options.async_configure(
+        form["flow_id"], {CONF_BUILDING_PROFILE_ID: _PROFILE_NONE_SENTINEL}
+    )
+    await hass.async_block_till_done()
+
+    # The switch itself is still pending, and its own contribution still unwinds.
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert "length_awning" not in entry.options
+    # But the typed-over position is the user's, not the switch's.
+    assert entry.options[CONF_DEFAULT_HEIGHT] == 30
+
+
+_OWN_ENTRY_ATTR = "_config_entry"
+
+
+def _called_name(call: ast.Call) -> str | None:
+    """Return the bare name of what *call* invokes (``a.b.c()`` → ``"c"``)."""
+    return getattr(call.func, "attr", None) or getattr(call.func, "id", None)
+
+
+def _is_own_entry(node: ast.AST | None, aliases: set[str]) -> bool:
+    """Whether *node* evaluates to this flow's own config entry."""
+    if isinstance(node, ast.Attribute):
+        return (
+            node.attr == _OWN_ENTRY_ATTR
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+        )
+    return isinstance(node, ast.Name) and node.id in aliases
+
+
+def _own_entry_aliases(func: ast.AST) -> set[str]:
+    """Local names bound to ``self._config_entry`` anywhere inside *func*.
+
+    Assigning to a local is the cheapest way to walk past a guard that only
+    looks at ``self._config_entry`` literally, so the alias set is transitive
+    (``a = self._config_entry`` then ``b = a``) and is rebuilt to a fixpoint
+    rather than in source order.
+    """
+    aliases: set[str] = set()
+    grew = True
+    while grew:
+        grew = False
+        for node in ast.walk(func):
+            if isinstance(node, ast.Assign):
+                targets, value = node.targets, node.value
+            elif isinstance(node, ast.AnnAssign | ast.NamedExpr):
+                if node.value is None:
+                    continue
+                targets, value = [node.target], node.value
+            else:
+                continue
+            if not _is_own_entry(value, aliases):
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in aliases:
+                    aliases.add(target.id)
+                    grew = True
+    return aliases
+
+
+def _entry_writing_helpers() -> frozenset[str]:
+    """Every function in the integration that calls ``async_update_entry``.
+
+    Derived, not listed: a helper added later that writes an entry is picked up
+    without anyone remembering to name it here.
+    """
+    import pathlib
+
+    from custom_components.adaptive_cover_pro import config_flow as cf
+
+    names: set[str] = set()
+    for path in sorted(pathlib.Path(cf.__file__).parent.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and any(
+                isinstance(call, ast.Call)
+                and _called_name(call) == "async_update_entry"
+                for call in ast.walk(node)
+            ):
+                names.add(node.name)
+    return frozenset(names)
+
+
+def _seam_violations(
+    source: str, *, class_name: str, writer_helpers: frozenset[str]
+) -> tuple[set[str], set[tuple[str, str]]]:
+    """Find every place *class_name* writes its own config entry.
+
+    Returns ``(direct, indirect)``: method names that call
+    ``async_update_entry`` on their own entry, and ``(method, helper)`` pairs
+    that hand their own entry to something that writes it for them.
+
+    Only methods declared directly on the class are iterated, so a call inside
+    a nested closure is attributed to the method that contains it rather than
+    to the closure's own name.
+    """
+    tree = ast.parse(source)
+    cls = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ClassDef) and n.name == class_name
+    )
+
+    direct: set[str] = set()
+    indirect: set[tuple[str, str]] = set()
+    for method in cls.body:
+        if not isinstance(method, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        aliases = _own_entry_aliases(method)
+        for node in ast.walk(method):
+            if not isinstance(node, ast.Call):
+                continue
+            name = _called_name(node)
+            if name == "async_update_entry":
+                # ``entry`` is positional-or-keyword on HA's signature.
+                entry = (
+                    node.args[0]
+                    if node.args
+                    else next(
+                        (kw.value for kw in node.keywords if kw.arg == "entry"), None
+                    )
+                )
+                if _is_own_entry(entry, aliases):
+                    direct.add(method.name)
+            elif name in writer_helpers and (
+                any(_is_own_entry(arg, aliases) for arg in node.args)
+                or any(_is_own_entry(kw.value, aliases) for kw in node.keywords)
+            ):
+                indirect.add((method.name, name))
+    return direct, indirect
+
+
+# Helpers that write a config entry and are handed this flow's own entry. Each
+# is listed with the reason it cannot land a pending cover-type switch:
+#
+# * ``_copy_profile_to_cover`` really does write ``self._config_entry`` — but it
+#   builds the new options from ``cover_entry.options``, i.e. what is on disk,
+#   never from ``self.options``, which is the only place a pending switch
+#   exists. ``async_step_building_profile`` then merges back only the keys the
+#   copier changed, so the switch stays pending and is still committed by the
+#   seam at Save & Close.
+# * ``clear_cover_override`` and ``propagate_profile_clears`` receive
+#   ``self._config_entry`` as the *profile* argument and write the covers linked
+#   to it. A profile is never linked to itself, so this flow's own entry is not
+#   among the entries they write.
+_ALLOWED_INDIRECT_WRITES = {
+    ("async_step_building_profile", "_copy_profile_to_cover"),
+    ("async_step_profile_overrides", "clear_cover_override"),
+    ("_propagate_profile_clears", "propagate_profile_clears"),
+}
+
+
+# A class shaped like every way a future edit could write its own entry without
+# writing the literal ``async_update_entry(self._config_entry, …)`` the first
+# version of this guard looked for.
+_SEAM_EVASIONS = """
+class OptionsFlowHandler:
+    def _persist_entry(self):
+        self.hass.config_entries.async_update_entry(self._config_entry, options={})
+
+    def aliased(self):
+        entry = self._config_entry
+        also = entry
+        self.hass.config_entries.async_update_entry(also, options={})
+
+    def keyword(self):
+        self.hass.config_entries.async_update_entry(
+            entry=self._config_entry, options={}
+        )
+
+    def nested(self):
+        def _inner():
+            self.hass.config_entries.async_update_entry(self._config_entry, options={})
+
+        _inner()
+
+    def indirect(self):
+        _copy_profile_to_cover(self.hass, profile, self._config_entry)
+
+    def hands_it_over_as_a_non_target(self, target):
+        _copy_profile_to_cover(self.hass, self._config_entry, target)
+
+    def writes_someone_else(self, target):
+        self.hass.config_entries.async_update_entry(target, options={})
+"""
+
+
+def test_seam_guard_sees_through_aliases_keywords_closures_and_helpers() -> None:
+    """The guard is only worth having if it cannot be stepped around.
+
+    Assigning the entry to a local, passing it by keyword, writing it from a
+    nested closure, or handing it to a helper that writes it are all the same
+    bypass. A guard that matches one literal call shape catches none of them.
+
+    Indirect writes are flagged wherever the entry appears in the argument
+    list, not just in the position the helper happens to write today — which
+    argument is the written one is the helper's business and can change. That
+    is what ``_ALLOWED_INDIRECT_WRITES`` is for: each reviewed call site says
+    in prose why it is safe, and an unreviewed one fails.
+    """
+    direct, indirect = _seam_violations(
+        _SEAM_EVASIONS,
+        class_name="OptionsFlowHandler",
+        writer_helpers=frozenset({"_copy_profile_to_cover"}),
+    )
+
+    assert direct == {"_persist_entry", "aliased", "keyword", "nested"}
+    assert "writes_someone_else" not in direct
+    assert indirect == {
+        ("indirect", "_copy_profile_to_cover"),
+        ("hands_it_over_as_a_non_target", "_copy_profile_to_cover"),
+    }
+
+
 def test_options_flow_writes_its_own_entry_through_one_seam() -> None:
-    """Every ``async_update_entry(self._config_entry, …)`` goes through the seam.
+    """Every write of this flow's own entry goes through ``_persist_entry``.
 
     The drift guard for the fix: a future step that persists ``self.options``
     directly would silently reintroduce the half-applied switch.
     """
-    import ast
     import inspect
 
     from custom_components.adaptive_cover_pro import config_flow as cf
 
-    tree = ast.parse(inspect.getsource(cf))
-    handler = next(
-        n
-        for n in ast.walk(tree)
-        if isinstance(n, ast.ClassDef) and n.name == "OptionsFlowHandler"
+    direct, indirect = _seam_violations(
+        inspect.getsource(cf),
+        class_name="OptionsFlowHandler",
+        writer_helpers=_entry_writing_helpers(),
     )
 
-    callers: set[str] = set()
-    for func in ast.walk(handler):
-        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        for node in ast.walk(func):
-            if not isinstance(node, ast.Call):
-                continue
-            if getattr(node.func, "attr", None) != "async_update_entry":
-                continue
-            first = node.args[0] if node.args else None
-            if (
-                isinstance(first, ast.Attribute)
-                and first.attr == "_config_entry"
-                and isinstance(first.value, ast.Name)
-                and first.value.id == "self"
-            ):
-                callers.add(func.name)
-
-    assert callers == {
+    assert direct == {
         "_persist_entry"
-    }, f"self._config_entry is written outside the seam: {sorted(callers)}"
+    }, f"self._config_entry is written outside the seam: {sorted(direct)}"
+    assert indirect <= _ALLOWED_INDIRECT_WRITES, (
+        "self._config_entry is handed to an entry-writing helper from a call "
+        f"site that has not been reviewed: {sorted(indirect - _ALLOWED_INDIRECT_WRITES)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1248,9 +1586,12 @@ async def test_round_trip_switch_restores_the_original_default(
 async def test_round_trip_switch_reloads_nothing(hass: HomeAssistant) -> None:
     """Back on the type it started as, Save & Close has nothing to apply.
 
-    Counted across BOTH reload paths: the sticky flag writes ``data`` (a no-op)
-    and schedules an explicit reload, and the re-seed round trip leaves a
-    ``default_percentage`` delta the update listener reloads for on its own.
+    Counted across BOTH reload paths, because a round trip can trip either.
+    ``_cover_type_changed`` is derived from ``self.sensor_type`` against the
+    stored one, so A → B → A must read as "no switch" and skip the ``data``
+    write and the explicit reload it schedules; and the re-seed each hop applied
+    must unwind, or the leftover ``default_percentage`` delta has the update
+    listener reloading on its own.
     """
     from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
 
