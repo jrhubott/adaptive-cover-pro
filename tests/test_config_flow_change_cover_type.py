@@ -305,6 +305,53 @@ async def test_picker_lists_blocked_types_with_reason(hass: HomeAssistant) -> No
 
 
 @pytest.mark.integration
+async def test_blocked_type_reason_names_set_position_for_day_night(
+    hass: HomeAssistant,
+) -> None:
+    """Day/Night's blocked reason names ``set_position``, not ``set_tilt_position`` (#1137).
+
+    ``_blocked_types_text`` explains a decision ``entities_satisfy_selector``
+    already made, so it must read the SAME capability matrix that made that
+    decision: ``prospective_capability_warnings``, not
+    ``cover_capability_warnings``. Day/Night's ``entity_selector_filter`` only
+    requires ``set_position`` (issue #1114/#1117 — every control model needs
+    it, only Model A additionally needs tilt), so an ordinary open/close-only
+    cover (no ``set_position``, no ``set_tilt_position``) is blocked here
+    because it lacks ``set_position`` — not because it lacks tilt. Naming
+    ``set_tilt_position`` in this line would blame the wrong axis and
+    contradict ``entity_selector_filter``, the same inconsistency the confirm
+    screen had before this fix.
+    """
+    from homeassistant.components.cover import CoverEntityFeature
+
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    entry = await _setup_entry(hass, entry_id="blocked_open_close_only")
+    # Ordinary open/close-only hardware: OPEN | CLOSE | STOP, no SET_POSITION
+    # and no SET_TILT_POSITION.
+    features = (
+        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+    )
+    hass.states.async_set(
+        "cover.test_blind",
+        "open",
+        {"supported_features": int(features)},
+    )
+
+    result = await _open_picker(hass, entry)
+
+    blocked_text = result["description_placeholders"]["blocked_types"]
+    day_night_label = get_policy(CoverType.DAY_NIGHT_SHADE).display_label()
+    assert day_night_label in blocked_text
+
+    day_night_line = next(
+        line for line in blocked_text.splitlines() if day_night_label in line
+    )
+    assert "set_position" in day_night_line
+    assert "set_tilt_position" not in day_night_line
+
+
+@pytest.mark.integration
 async def test_picker_blocked_list_never_renders_a_dangling_heading(
     hass: HomeAssistant,
 ) -> None:

@@ -74,21 +74,41 @@ def test_prospective_capability_warnings_returns_list(policy: CoverTypePolicy) -
 
 
 @pytest.mark.unit
-def test_prospective_defaults_to_plain_warnings(policy: CoverTypePolicy) -> None:
+@pytest.mark.parametrize(
+    "known",
+    [
+        {"cover.x": {"has_set_position": False, "has_set_tilt_position": False}},
+        {"cover.x": {"has_set_position": True, "has_set_tilt_position": False}},
+        {"cover.x": {"has_set_position": False, "has_set_tilt_position": True}},
+        {"cover.x": {"has_set_position": True, "has_set_tilt_position": True}},
+    ],
+    ids=["both_missing", "position_only", "tilt_only", "both_present"],
+)
+def test_prospective_defaults_to_plain_warnings(
+    policy: CoverTypePolicy, known: dict
+) -> None:
     """The pre-configuration hook defaults to the plain warnings (Liskov, #1137).
 
-    A fully-capable cover draws no warning from either hook for ANY policy,
-    including ``DayNightShadePolicy`` — whose override is deliberately
-    tilt-relaxed and therefore only equals ``cover_capability_warnings`` in
-    cases like this one with nothing to warn about. Every other registered
-    policy, and both stub policies, delegate outright and would match on any
-    input; this is the strongest input every policy can agree on.
+    Gated reflectively, not by cover-type name: a policy that overrides
+    ``prospective_capability_warnings`` — today only ``DayNightShadePolicy``,
+    deliberately tilt-relaxed because the control model isn't known before
+    the geometry step — opts itself out of this invariant by definition and
+    is skipped. Every non-overriding policy must match
+    ``cover_capability_warnings`` across every combination of the two
+    capability flags, not just "everything present": that single case is
+    what every policy (including a hook that always returns ``[]``) answers
+    identically, so it cannot tell a real delegation from a hook that has
+    quietly stopped delegating — see the regression this replaces, flagged
+    in the issue #1137 audit.
     """
-    known = {"cover.x": {"has_set_position": True, "has_set_tilt_position": True}}
+    if (
+        type(policy).prospective_capability_warnings
+        is not CoverTypePolicy.prospective_capability_warnings
+    ):
+        pytest.skip("policy legitimately overrides the hook")
     assert policy.prospective_capability_warnings(
         known
     ) == policy.cover_capability_warnings(known)
-    assert policy.prospective_capability_warnings(known) == []
 
 
 @pytest.mark.unit
