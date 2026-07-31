@@ -8,7 +8,6 @@ from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
 from homeassistant.const import (
-    ATTR_ASSUMED_STATE,
     STATE_CLOSED,
     STATE_OPEN,
     STATE_UNAVAILABLE,
@@ -34,6 +33,7 @@ from ...diagnostics.event_buffer import EventBuffer
 from ...helpers import (
     check_cover_features,
     get_last_updated,
+    is_assumed_state,
 )
 from . import gates
 from .diagnostics import DiagnosticsRecorder
@@ -1197,9 +1197,10 @@ class CoverCommandService:
 
         Consulted when ``_current is None``, and also when ``_current`` is
         not ``None`` but is a *synthetic* mapping rather than a genuine
-        reading — an ``assumed_state`` cover routed through a
-        non-position-capable service, whose raw HA open/closed state was
-        mapped straight to 100/0 by ``get_open_close_state`` (issue #1130).
+        reading — an ``assumed_state`` cover whose default axis is not
+        position-capable (``caps_get(caps, axis.capability_key)`` is
+        false), whose raw HA open/closed state was mapped straight to
+        100/0 by ``get_open_close_state`` (issue #1130).
         A *resolved, genuine* ``_current`` is still compared directly
         against ``plan.routed_target`` by the caller instead (issue #1095;
         see the same-position gate's comment in ``apply_position`` for the
@@ -1474,10 +1475,13 @@ class CoverCommandService:
         # below only ever compares a *resolved* `_current` directly against
         # `_plan.routed_target` — it never calls
         # _same_position_via_target_fallback. That fallback (see its
-        # docstring) is reserved for the third arm, `_current is None`,
-        # where there is no live reading to compare at all. Delta/time gates
-        # and reconciliation deliberately keep reading the real `_current` —
-        # this routed comparison is scoped to the same-position gate only.
+        # docstring) is reserved for the third arm: `_current is None`, and,
+        # per the #1130 carve-out below, a resolved `_current` that is a
+        # synthetic open/close mapping rather than a genuine reading — in
+        # both cases there is no trustworthy live reading to compare
+        # against. Delta/time gates and reconciliation deliberately keep
+        # reading the real `_current` — this routed comparison is scoped to
+        # the same-position gate only.
         #
         # The second arm keeps `not _plan.supports_position` even though it
         # is currently provably redundant there (a position-capable route's
@@ -1506,6 +1510,7 @@ class CoverCommandService:
         # instead — the same fallback #779/#1095 already use for `_current
         # is None` — which is the correct comparison for a synthetic
         # reading rather than a genuine one.
+        #
         # An explicit user command (context.user_command) must ALWAYS dispatch —
         # a user pressing Open/Close/Set from the card is never "already there"
         # as far as ACP is entitled to decide, especially on a no-feedback cover
@@ -1591,7 +1596,7 @@ class CoverCommandService:
             and not caps_get(
                 _caps_for_plan, _axis_for_plan.capability_key, default=True
             )
-            and bool(state_obj.attributes.get(ATTR_ASSUMED_STATE))
+            and is_assumed_state(state_obj)
         )
         if (
             not sun_reconfirm

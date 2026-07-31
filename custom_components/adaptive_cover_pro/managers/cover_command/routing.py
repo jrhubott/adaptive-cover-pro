@@ -119,7 +119,7 @@ def route_service_call(
         :class:`ServiceCallPlan` describing what the orchestrator must do.
 
     """
-    supports_position = caps.get(axis.capability_key, True)
+    supports_position = caps_get(caps, axis.capability_key, default=True)
 
     if (
         supports_position

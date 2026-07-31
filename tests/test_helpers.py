@@ -24,6 +24,7 @@ from custom_components.adaptive_cover_pro.helpers import (
     get_open_close_state,
     get_safe_state,
     get_timedelta_str,
+    is_assumed_state,
     motion_entities,
     resolve_sun_boundaries,
     should_use_tilt,
@@ -591,6 +592,42 @@ def test_get_open_close_state_returns_none_for_other_states(mock_hass):
     result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
+
+
+# --- is_assumed_state ---
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_true_when_attribute_truthy():
+    """Test is_assumed_state returns True when assumed_state attribute is truthy."""
+    state_obj = MagicMock()
+    state_obj.attributes = {"assumed_state": True}
+
+    assert is_assumed_state(state_obj) is True
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_attribute_absent():
+    """Test is_assumed_state returns False when assumed_state attribute is missing."""
+    state_obj = MagicMock()
+    state_obj.attributes = {}
+
+    assert is_assumed_state(state_obj) is False
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_attribute_explicitly_false():
+    """Test is_assumed_state returns False when assumed_state is explicitly False."""
+    state_obj = MagicMock()
+    state_obj.attributes = {"assumed_state": False}
+
+    assert is_assumed_state(state_obj) is False
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_state_is_none():
+    """Test is_assumed_state returns False when state is None (entity not resolved)."""
+    assert is_assumed_state(None) is False
 
 
 # --- should_use_tilt ---
