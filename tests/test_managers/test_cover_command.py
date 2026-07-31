@@ -2512,6 +2512,170 @@ async def test_apply_position_endpoint_contradicted_by_current_dispatches_after_
     mock_hass.services.async_call.assert_called_once()
 
 
+# --- same-position gate: assumed_state cover's synthetic open/close mapping
+# is not a genuine reading (issue #1130) ---
+#
+# `get_open_close_state` maps a no-feedback cover's raw HA state string
+# (open/closed) to a synthetic `_current` of 100/0. RFXtrx-style Somfy RTS
+# covers clear `is_closed` on every stop_cover, so an `assumed_state` cover
+# parked at My~=10% still reads back `_current = 100` forever. Arms one and
+# two of the same-position gate treat that synthetic value as a genuine
+# reading, which produces two symptoms: a My-route repeat is never
+# suppressed (100 never equals the My target), and a genuine return to the
+# default (100) is wrongly swallowed as same_position (100 == 100) even
+# though the cover physically sits elsewhere. The fix routes an
+# assumed_state, non-position-capable cover's `_current` through the
+# stored-target-vs-routed-target fallback instead (the same comparison
+# #779/#1095 already use for `_current is None`).
+
+
+@pytest.mark.asyncio
+async def test_apply_position_assumed_state_my_route_repeat_suppressed(
+    cmd_svc, mock_hass
+):
+    """Issue #1130 symptom 1: a repeated identical My-preset move on an
+    assumed_state cover must be suppressed as same_position, not resent
+    every cycle.
+
+    The cover's raw HA state is "open" (assumed_state=True), so
+    `_current` resolves to 100 via the open/close mapping -- not a genuine
+    reading. On the My route `routed_target == position` by construction,
+    so arms one and two both degenerate to `100 != 10` and can never
+    match. Without the widened fallback, `sun.sun`'s frequent tracked
+    updates would re-fire stop_cover every cycle, interrupting the
+    cover's own travel.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"assumed_state": True}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_assumed", 10, "solar", _ctx_with_special(use_my_position=True)
+        )
+        assert (outcome, reason) == ("sent", "stop_cover")
+        assert cmd_svc.get_target("cover.rts_assumed") == 10
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_assumed", 10, "solar", _ctx_with_special(use_my_position=True)
+        )
+
+    assert (outcome2, reason2) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_assumed_state_return_to_default_dispatches(
+    cmd_svc, mock_hass
+):
+    """Issue #1130 symptom 2: a pipeline-driven return to the default (100)
+    must dispatch, not be swallowed as same_position, even though the
+    assumed_state cover's synthetic `_current` also reads 100.
+
+    The stored *commanded* target is 10 (a prior My move); the newly
+    routed target is 100 (open_cover). Those genuinely differ, so the
+    widened fallback must let this through -- unlike the un-widened arm
+    one, which would wrongly match on `_current(100) == position(100)`
+    alone and drop the reopen.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"assumed_state": True}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    cmd_svc.set_target("cover.rts_assumed_default", 10)
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_assumed_default", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "open_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_non_assumed_open_close_cover_unaffected(
+    cmd_svc, mock_hass
+):
+    """Regression guard: the widening must key off assumed_state, not "resolved
+    _current on a non-position-capable route" alone.
+
+    Identical shape to the symptom-1 test above -- same My-route repeat,
+    same open/close-only caps, same synthetic `_current = 100` from the
+    open state -- but with no `assumed_state` attribute. Without that
+    flag, `_current_is_assumed_mapping` must stay False and arms one/two
+    must behave exactly as before this fix: neither matches (100 != 10),
+    so the repeat is NOT suppressed. This proves the new branch is scoped
+    to genuinely assumed_state covers and does not change behavior for
+    every open/close-only cover.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="open", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_not_assumed",
+            10,
+            "solar",
+            _ctx_with_special(use_my_position=True),
+        )
+        assert (outcome, reason) == ("sent", "stop_cover")
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_not_assumed",
+            10,
+            "solar",
+            _ctx_with_special(use_my_position=True),
+        )
+
+    assert (outcome2, reason2) == ("sent", "stop_cover")
+
+
 # --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---
 # Issue #990. Read-only predicate the coordinator polls each cycle to raise the
 # cover_not_moving Repair. True iff a target is set, the cover has settled

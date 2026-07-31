@@ -1301,6 +1301,10 @@ async def test_same_position_skips_even_for_special_target(svc, mock_hass):
     guard in apply_position that applies even to force=True callers).
     """
     _patch_position(svc, 100)  # cover is already at 100%
+    # Real attributes dict (not an unconfigured MagicMock, whose auto-created
+    # `.attributes.get(...)` return value is truthy) so the assumed_state
+    # carve-out (issue #1130) reads a genuine falsy absence here.
+    mock_hass.states.get.return_value = MagicMock(state="open", attributes={})
     outcome, reason = await svc.apply_position(
         "cover.test",
         100,  # same as current → short-circuit fires
@@ -1315,6 +1319,8 @@ async def test_same_position_skips_even_for_special_target(svc, mock_hass):
 async def test_same_position_skips_for_zero_special(svc, mock_hass):
     """Cover at 0% targeting 0% is short-circuited (no command sent)."""
     _patch_position(svc, 0)
+    # See the attributes-dict note above (issue #1130).
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
     outcome, reason = await svc.apply_position(
         "cover.test",
         0,
@@ -1415,6 +1421,10 @@ async def test_sun_just_appeared_no_resend_at_mechanical_stop(svc, mock_hass):
     _patch_position(svc, 0)  # carriage already at 0
     state = MagicMock()
     state.state = "closed"  # STATE_CLOSED -> _is_at_mechanical_stop True
+    # Real attributes dict (not an unconfigured MagicMock — issue #1130's
+    # assumed_state carve-out reads `.attributes.get(...)`, and an
+    # auto-created Mock there would be spuriously truthy).
+    state.attributes = {}
     mock_hass.states.get.return_value = state
     svc._service_secondary_axis = AsyncMock()  # spy: tilt must still get a turn
     with (
