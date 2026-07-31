@@ -124,6 +124,14 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.day_night.model_position_tilt": "position and tilt (dual axis)",
     "geometry.day_night.model_split_range": "split range (single axis)",
     "geometry.day_night.model_dual_entity": "two rail entities (dual entity)",
+    # Model C rail-travel sequencing (#1140). Only rendered for dual_entity.
+    "geometry.day_night.rail_travel": "rail travel: {v}",
+    "geometry.day_night.rail_travel_concurrent": (
+        "both rails move concurrently once the leading rail is under way"
+    ),
+    "geometry.day_night.rail_travel_serialized": (
+        "rails move one at a time — the following rail waits for full clearance"
+    ),
     # Dual-panel shade (#996): the front/sheer designator + the blackout
     # trigger list rendered on the config summary.
     "geometry.dual_panel.front_entity": "front (sheer) panel: {v}",

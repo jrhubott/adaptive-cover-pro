@@ -248,6 +248,17 @@ DAY_NIGHT_SPLIT_MIDPOINT = 50  # % — split-range fabric boundary (blackout bel
 # Model C middle-rail entity: which of the instance's cover entities is the
 # middle rail (the other configured cover is the bottom rail / primary).
 CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
+# Model C rail travel: may the FOLLOWING rail start moving while the leading
+# rail is still under way, or must it wait for full clearance first (#1140)?
+# The two rails share one track at one speed and the no-pass clamp already
+# guarantees their two TARGETS never cross, so once the leader is under way and
+# ahead of the follower in the direction of travel, separation holds for the
+# rest of the move — the pair can travel concurrently and the shade reaches its
+# position in one travel time instead of two. Off, the follower waits for the
+# leader's live position to clear the follower's own target, which is the
+# conservative #1115/#1118 behaviour. An absent key reads as ON.
+CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = "day_night_concurrent_rail_travel"
+DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = True
 
 # --- Dual-panel shade (#996) ------------------------------------------------
 # Two INDEPENDENT HA shade entities over one window: a sheer FRONT that
@@ -1472,6 +1483,14 @@ DEFAULT_ENABLE_POSITION_MATCHING = False
 VENETIAN_POSITION_SETTLE_POLL_SECONDS = 0.5  # poll interval while settling
 VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS = 60.0  # hard cap on settle wait
 VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES = 3  # samples → "settled"
+
+# How long a day/night Model C follower rail waits for the LEADING rail to be
+# seen under way, when concurrent rail travel is enabled (#1140). This is a
+# start confirmation, not a travel wait: it only has to outlast the actuator's
+# command latency plus one state publish, so it is an order of magnitude below
+# the settle cap above (which still hard-caps it — see ``wait_until_position``).
+# Internal tuning, deliberately not user-configurable.
+DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS = 10.0
 
 # Suppress tilt-axis manual override detection for this many seconds after a
 # venetian position command. Real motors back-rotate the slats while moving

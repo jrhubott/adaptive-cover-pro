@@ -124,6 +124,7 @@
           "day_night_blackout_threshold": "Blackout Engage Threshold (%)",
           "day_night_control_model": "Control Model",
           "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)",
+          "day_night_concurrent_rail_travel": "Move Both Rails Together (dual-entity model)",
           "dual_panel_front_entity": "Front (Sheer) Panel Entity",
           "dual_panel_blackout_triggers": "Blackout Deploy Triggers"
         },
@@ -180,6 +181,7 @@
           "day_night_blackout_threshold": "When the sun is in the tracking window during summer and the sheer fabric's opacity is **below** this value, the shade escalates to the blackout fabric to block the heat. Default 65. Raise it to reach for blackout sooner; lower it to keep the sheer fabric longer.",
           "day_night_control_model": "How the abstract coverage + fabric pair maps onto your physical cover. **Position + tilt** (default): the shade drives set_position for coverage and set_tilt_position for the sheer/blackout fabric blend — for hardware exposing both axes. **Split range**: a single-axis cover whose position range encodes both — the lower half (0–50%) selects the blackout fabric, the upper half (50–100%) the sheer fabric — for hardware with only one motor. **Two rail entities**: two separate cover entities — a bottom rail and a middle rail — where the fabric blend folds into the middle rail's absolute position.",
           "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail.",
+          "day_night_concurrent_rail_travel": "For the **Two rail entities** model only: whether the two rails may travel at the same time. **On** (default): the following rail starts as soon as the leading rail is confirmed under way and ahead of it, so the shade reaches its position in one travel time instead of two. The rails share one track and their targets can never cross, so the separation holds for the rest of the move. **Off**: the following rail waits until the leading rail has fully cleared its target before moving at all — slower, but the most conservative option if your two rails travel at noticeably different speeds or your motors report position with a long lag.",
           "dual_panel_front_entity": "Which of this instance's covers is the **front / sheer** panel. It sun-tracks like a plain vertical blind. Every other configured cover is the **back / blackout** panel. Leave unset to run as a plain vertical blind.",
           "dual_panel_blackout_triggers": "When the back **blackout** panel deploys (closes). **Heat**: a climate summer / extreme-heat full block. **Privacy**: the sunset window. **Night**: the sun is below the horizon. Select any combination — the back retracts (opens) whenever none of the selected triggers is active. The two panels are independent (no no-pass coupling)."
         }
@@ -445,6 +447,7 @@
           "day_night_blackout_threshold": "Blackout Engage Threshold (%)",
           "day_night_control_model": "Control Model",
           "day_night_middle_rail_entity": "Middle Rail Entity (dual-entity model)",
+          "day_night_concurrent_rail_travel": "Move Both Rails Together (dual-entity model)",
           "dual_panel_front_entity": "Front (Sheer) Panel Entity",
           "dual_panel_blackout_triggers": "Blackout Deploy Triggers"
         },
@@ -501,6 +504,7 @@
           "day_night_blackout_threshold": "When the sun is in the tracking window during summer and the sheer fabric's opacity is **below** this value, the shade escalates to the blackout fabric to block the heat. Default 65. Raise it to reach for blackout sooner; lower it to keep the sheer fabric longer.",
           "day_night_control_model": "How the abstract coverage + fabric pair maps onto your physical cover. **Position + tilt** (default): the shade drives set_position for coverage and set_tilt_position for the sheer/blackout fabric blend — for hardware exposing both axes. **Split range**: a single-axis cover whose position range encodes both — the lower half (0–50%) selects the blackout fabric, the upper half (50–100%) the sheer fabric — for hardware with only one motor. **Two rail entities**: two separate cover entities — a bottom rail and a middle rail — where the fabric blend folds into the middle rail's absolute position.",
           "day_night_middle_rail_entity": "For the **Two rail entities** model only: which of this instance's covers is the middle rail. The other configured cover is the bottom rail. The middle rail is guaranteed never to drop below the bottom rail.",
+          "day_night_concurrent_rail_travel": "For the **Two rail entities** model only: whether the two rails may travel at the same time. **On** (default): the following rail starts as soon as the leading rail is confirmed under way and ahead of it, so the shade reaches its position in one travel time instead of two. The rails share one track and their targets can never cross, so the separation holds for the rest of the move. **Off**: the following rail waits until the leading rail has fully cleared its target before moving at all — slower, but the most conservative option if your two rails travel at noticeably different speeds or your motors report position with a long lag.",
           "dual_panel_front_entity": "Which of this instance's covers is the **front / sheer** panel. It sun-tracks like a plain vertical blind. Every other configured cover is the **back / blackout** panel. Leave unset to run as a plain vertical blind.",
           "dual_panel_blackout_triggers": "When the back **blackout** panel deploys (closes). **Heat**: a climate summer / extreme-heat full block. **Privacy**: the sunset window. **Night**: the sun is below the horizon. Select any combination — the back retracts (opens) whenever none of the selected triggers is active. The two panels are independent (no no-pass coupling)."
         }

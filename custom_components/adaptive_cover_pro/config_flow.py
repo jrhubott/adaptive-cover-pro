@@ -4159,7 +4159,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # hard-coded 0 (fully closed). The v3.12→v3.13 block setdefault-seeds the
     # policy's no-coverage endpoint (position_for_intent(sun_through=True));
     # an older build already understands default_percentage.
-    MINOR_VERSION = 13
+    # 3.14 (issue #1140): added the additive day_night_concurrent_rail_travel
+    # option. An absent key already reads as "on" (the default), so the
+    # v3.13→v3.14 block seeds nothing and exists only to advance a stale minor
+    # so it stops re-triggering migration every restart.
+    MINOR_VERSION = 14
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

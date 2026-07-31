@@ -45,6 +45,7 @@ from ..const import (
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUD_SUPPRESSION_PRIORITY,
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
@@ -455,6 +456,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD: _range(CONF_DAY_NIGHT_BLACKOUT_THRESHOLD),
     CONF_DAY_NIGHT_CONTROL_MODEL: _select_v(*DAY_NIGHT_CONTROL_MODELS),
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: _entity_v(),
+    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: _bool_v(),
     # Geometry — dual-panel shade (#996)
     CONF_DUAL_PANEL_FRONT_ENTITY: _entity_v(),
     CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: _list_subset_v(*DUAL_PANEL_BLACKOUT_TRIGGERS),
@@ -928,6 +930,8 @@ _SECTION_GEOMETRY_DAY_NIGHT = frozenset(
         # Model C middle-rail entity — has a FIELD_VALIDATORS entry, so it must
         # be service-settable too (else the validator is dead code) (#993).
         CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
+        # Model C rail-travel policy, same wiring rule (#1140).
+        CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     }
 )
 _SECTION_GEOMETRY_DUAL_PANEL = frozenset(

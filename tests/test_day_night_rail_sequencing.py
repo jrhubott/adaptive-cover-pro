@@ -49,6 +49,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DEFAULT_HEIGHT,
@@ -71,6 +72,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 _BOTTOM = "cover.bottom_rail"
 _MIDDLE = "cover.middle_rail"
 _SEQ = "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+_POLICY = "custom_components.adaptive_cover_pro.cover_types.day_night_shade.policy"
 
 
 class _FakeCmdSvc:
@@ -93,6 +95,7 @@ def _dual_policy(
     middle: str = _MIDDLE,
     inverse: bool = False,
     interp: bool = False,
+    concurrent: bool | None = None,
     policy: DayNightShadePolicy | None = None,
 ) -> DayNightShadePolicy:
     """Build a real Model C policy with its per-cycle dispatch cache primed.
@@ -106,6 +109,10 @@ def _dual_policy(
     ``_dual_entity_inverse`` — answers ``False``. That split is what makes the
     seams' "invert iff configured" contract diverge from the install's own
     frame.
+
+    ``concurrent`` writes ``CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL`` explicitly;
+    ``None`` (the default) leaves the key absent, which is how an upgraded
+    install arrives and therefore what the option's own default governs.
     """
     from tests.cover_helpers import make_cover_config, make_vertical_config
 
@@ -118,6 +125,8 @@ def _dual_policy(
         CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
         CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: middle,
     }
+    if concurrent is not None:
+        options[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL] = concurrent
     if inverse:
         options[CONF_INVERSE_STATE] = True
     if interp:
@@ -552,6 +561,7 @@ def _rail_harness(
     blend: int | None,
     inverse: bool = False,
     interp: bool = False,
+    concurrent: bool | None = None,
 ):
     """Real ``CoverCommandService`` + real Model C policy over a scripted motor.
 
@@ -559,6 +569,9 @@ def _rail_harness(
     gate's position polls (``poll:<entity>``) with the actual service calls
     (``send:<entity>``), which is exactly the ordering the physical constraint
     is about.
+
+    ``concurrent`` is forwarded to :func:`_dual_policy` — ``None`` leaves the
+    rail-travel key absent so the option's own default governs.
     """
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         CoverCommandService,
@@ -577,7 +590,11 @@ def _rail_harness(
     hass.states.get = MagicMock(return_value=state_obj)
 
     policy = _dual_policy(
-        position=position, blend=blend, inverse=inverse, interp=interp
+        position=position,
+        blend=blend,
+        inverse=inverse,
+        interp=interp,
+        concurrent=concurrent,
     )
 
     cmd_svc = CoverCommandService(
@@ -696,17 +713,77 @@ def _patch_caps():
     )
 
 
+# ---------------------------------------------------------------------------
+# The concurrent-rail-travel option is cached by the same hooks the model is
+# ---------------------------------------------------------------------------
+# The gate runs at the coordinator's dispatch seam, which is handed no
+# ``options``. Model C's control model solves that by caching from
+# ``sync_runtime_options`` (the coordinator's per-cycle hook) and again from
+# ``post_pipeline_resolve`` (so the hook is self-sufficient when a test drives
+# it directly). The rail-travel option rides exactly that path — no second
+# mechanism, no ``RuntimeConfig`` entry.
+
+
+def test_concurrent_travel_option_is_cached_by_runtime_hooks() -> None:
+    """Both option-reading hooks cache the flag; an absent key reads as ON."""
+    off = _dual_policy(position=30, blend=50, concurrent=False)
+    assert off._dual_entity_concurrent_travel is False
+
+    on = _dual_policy(position=30, blend=50, concurrent=True)
+    assert on._dual_entity_concurrent_travel is True
+
+    # An upgraded install has no key at all — the new behaviour is the default.
+    absent = _dual_policy(position=30, blend=50)
+    assert absent._dual_entity_concurrent_travel is True
+
+    # The coordinator's own per-cycle hook writes it too, not just the
+    # post-pipeline one, and a later cycle can flip it back.
+    off.sync_runtime_options(
+        {
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+            CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: True,
+        }
+    )
+    assert off._dual_entity_concurrent_travel is True
+    assert off._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY
+    off.sync_runtime_options({CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: False})
+    assert off._dual_entity_concurrent_travel is False
+
+
+def test_concurrent_travel_defaults_on_for_a_fresh_policy() -> None:
+    """Before any options are seen the policy already answers with the default."""
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+    )
+
+    assert DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL is True
+    assert (
+        DayNightShadePolicy()._dual_entity_concurrent_travel
+        is DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
+    )
+
+
 @pytest.mark.asyncio
-async def test_middle_rail_waits_for_bottom_rail_to_descend_past_it(
+async def test_middle_rail_waits_for_bottom_rail_to_start_descending(
     monkeypatch,
 ) -> None:
     """The crash repro: bottom rail stacked ABOVE the middle rail's target.
 
     Bottom rail live at 100 (fully up), this cycle's targets are bottom 30 /
     middle 65 (blend 50). The middle rail cannot reach 65 while the bottom rail
-    sits at 100 above it — commanding it there stalls the motor. The gate must
-    hold the middle rail's ``set_cover_position`` until a live reading shows the
-    bottom rail has descended to (or past) 65.
+    still sits at 100 above it — commanding it there stalls the motor. The gate
+    must hold the middle rail's ``set_cover_position`` until live readings prove
+    the bottom rail is descending out of the way.
+
+    Under the default concurrent-travel policy (#1140) "out of the way" means
+    under way and ahead: the two rails share one track at one speed and their
+    two TARGETS can never cross, so a bottom rail that has demonstrably started
+    down stays ahead for the rest of the move. What the gate withholds against
+    is therefore a bottom rail that has not moved at all — which is exactly the
+    #1115 state, a rail parked in the space the middle rail is being driven
+    into. The full-clearance wait this used to demand is still available and
+    pinned by ``test_middle_rail_waits_for_full_clearance_when_concurrent``
+    ``_travel_off``.
     """
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
     cmd_svc, policy, _rails, events = _rail_harness(
@@ -725,13 +802,44 @@ async def test_middle_rail_waits_for_bottom_rail_to_descend_past_it(
 
     assert bottom_outcome[0] == "sent"
     assert middle_outcome[0] == "sent"
-    # The bottom rail's command goes out first, then the gate polls it until the
-    # reading clears 65, and only then does the middle rail's command fire.
+    # The bottom rail's command goes out first, then the gate polls its descent,
+    # and only then does the middle rail's command fire.
     assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}")
     polls_before_send = [
         e for e in events[: events.index(f"send:{_MIDDLE}")] if e == f"poll:{_BOTTOM}"
     ]
     assert len(polls_before_send) >= 2, events
+
+
+@pytest.mark.asyncio
+async def test_middle_rail_waits_for_full_clearance_when_concurrent_travel_off(
+    monkeypatch,
+) -> None:
+    """With the option off, the follower waits out the leader's WHOLE travel.
+
+    The conservative #1115 semantics, kept verbatim behind the switch. The
+    bottom rail descends 100 → 90 → 80 → 70 → 60 and only the last reading is
+    at-or-below the middle rail's 65 target (+2 tolerance). Start confirmation
+    would have released on the 90; full clearance holds all five readings, which
+    is what the exact poll count pins.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100, 90, 80, 70, 60], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=False,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    polls_before_send = [
+        e for e in events[: events.index(f"send:{_MIDDLE}")] if e == f"poll:{_BOTTOM}"
+    ]
+    assert len(polls_before_send) == 5, events
 
 
 @pytest.mark.asyncio
@@ -1538,6 +1646,39 @@ async def test_the_two_rail_gates_are_never_both_armed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_the_two_rail_gates_are_never_both_armed_under_concurrent_travel() -> (
+    None
+):
+    """The same theorem, over the same grid, with concurrent travel switched on.
+
+    The proof above is stated in terms of ``_cleared``'s inequalities, so the
+    relaxed predicate does not inherit it for free — it has to be re-derived,
+    and re-derived proofs deserve the same exhaustive check the original got.
+    It holds for three reasons: branch selection is untouched by the option; on
+    the FIRST reading the concurrent disjunct is structurally ``False`` (there
+    is no start reference yet), which is the only reading a ``wait=False`` pass
+    takes; and the disjunct is a monotone weakening, so it can release an armed
+    gate earlier but never arm one that was not already armed.
+    """
+    for blend in (0, 50, 100):
+        policy = _dual_policy(position=50, blend=blend, concurrent=True)
+        rails = _attach_scripted_rails(policy, {_BOTTOM: [0], _MIDDLE: [0]})
+        for p in range(0, 101, 10):
+            for m in range(p, 101, 10):  # an intact stack: middle at or above bottom
+                rails.park(_BOTTOM, p)
+                rails.park(_MIDDLE, m)
+                for target in range(0, 101, 10):
+                    middle_target = policy.resolve_entity_target(_MIDDLE, target)
+                    bottom_ok = await policy.await_dispatch_clearance(
+                        _BOTTOM, position=target, reason="t", wait=False
+                    )
+                    middle_ok = await policy.await_dispatch_clearance(
+                        _MIDDLE, position=middle_target, reason="t", wait=False
+                    )
+                    assert bottom_ok or middle_ok, (p, m, target, middle_target, blend)
+
+
+@pytest.mark.asyncio
 async def test_a_lowering_cycle_still_leads_with_the_bottom_rail(monkeypatch) -> None:
     """#1115's whole mechanism survives the generalisation, end to end.
 
@@ -1851,6 +1992,207 @@ async def test_raise_gate_uses_the_dispatching_seams_frame_not_the_install_flag(
 
 
 # ---------------------------------------------------------------------------
+# Concurrent rail travel — the follower starts once the leader is under way
+# ---------------------------------------------------------------------------
+# Both rails hang on one track and travel at one speed, and the no-pass clamp
+# already guarantees their two TARGETS never cross. So the moment the leader is
+# under way AND ahead of the follower in the direction of travel, the separation
+# holds for the whole remaining move: there is nothing left for the follower to
+# wait for, and waiting doubles the time the shade takes to reach position.
+#
+# "Under way and ahead" is the leader's live OPEN-PERCENT reading having moved
+# from its first sampled value, by more than the position tolerance, TOWARD
+# satisfying that branch's own ``_cleared`` inequality. The direction comes from
+# the branch's own release predicate, never from ``_dual_entity_middle_leads`` —
+# consulting it from the middle rail's branch is the #1115 back door the
+# asymmetry at ``policy.py``'s gate docstring exists to keep shut.
+
+
+@pytest.mark.asyncio
+async def test_middle_rail_starts_once_bottom_rail_is_underway(monkeypatch) -> None:
+    """The middle rail is released by MOTION, not by full clearance.
+
+    Same crash geometry as ``test_middle_rail_waits_for_bottom_rail_to_descend``
+    ``_past_it``: bottom rail stacked at 100, middle target 65. The scripted
+    descent stops at 90 and stays there — it NEVER reaches the 67 that the
+    full-clearance predicate needs. Under the serialized gate that is a timeout
+    and a deferral; with concurrent travel the 10-point descent is proof the
+    bottom rail is under way and ahead, so the middle rail's command goes out.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100, 90], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+    # Two readings minimum: the first only establishes the start reference.
+    polls = [
+        e for e in events[: events.index(f"send:{_MIDDLE}")] if e == f"poll:{_BOTTOM}"
+    ]
+    assert len(polls) >= 2, events
+
+
+@pytest.mark.asyncio
+async def test_bottom_rail_starts_once_middle_rail_is_underway(monkeypatch) -> None:
+    """The raise mirror: the bottom rail is released by the middle rail's ascent.
+
+    Bottom rail live at 10 with a target of 60, middle rail live at 20 — the
+    #1118 collision. The middle rail rises to 30 and stops, never reaching the
+    58 full clearance would demand, and the bottom rail's command still goes
+    out.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # First middle read settles the direction; the rest are the gate's.
+        script={_BOTTOM: [10], _MIDDLE: [20, 20, 30]},
+        position=60,
+        blend=50,
+        concurrent=True,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_BOTTOM, 60, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_BOTTOM}" in events, events
+    assert policy.has_pending_secondary_axis(_BOTTOM) is False
+
+
+@pytest.mark.asyncio
+async def test_wrong_direction_motion_keeps_the_middle_rail_gated(monkeypatch) -> None:
+    """The #1115 back door, nailed shut: motion the WRONG way never releases.
+
+    A lowering cycle with the bottom rail RISING — nudged up by a user or a
+    stray command while the cycle is in flight. It moves, and moves by far more
+    than the tolerance, but every step takes it further from vacating the middle
+    rail's target. A bare "has the leader started moving at all" predicate would
+    wave the middle rail straight into it; the direction-signed one must not.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [70, 80, 90, 100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_MIDDLE}" not in events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is True
+
+
+@pytest.mark.asyncio
+async def test_start_confirmation_times_out_and_latches(monkeypatch) -> None:
+    """A leader that reports nothing new falls into today's exact fail-closed path.
+
+    The start confirmation gets its own short budget, not the settle cap: the
+    cap is left at 2 s here and the confirmation timeout patched to 0.05 s, so a
+    wait that honours the settle cap instead would take more than a second. The
+    outcome on expiry is unchanged — ``policy_deferred``, latched pending, retried
+    next cycle. No new way to hang.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 2.0)
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+    )
+    ctx = _rail_context(policy)
+
+    started = dt.datetime.now(dt.UTC)
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_MIDDLE}" not in events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is True
+    assert cmd_svc.last_skipped_action["reason"] == "policy_deferred"
+    assert elapsed < 1.0, elapsed
+
+
+@pytest.mark.asyncio
+async def test_start_confirmation_compares_in_open_percent_not_raw_wire(
+    monkeypatch,
+) -> None:
+    """The motion delta rides the same open-percent frame the threshold does.
+
+    Inverse state on, so the wire runs backwards: the bottom rail's readings
+    CLIMB from wire 10 to wire 25 while its open percent FALLS from 90 to 75 —
+    a genuine descent toward the middle rail's open-65 target, which it never
+    actually reaches. A delta computed on raw wire numbers gets the sign exactly
+    backwards, reads a descent as a retreat, and withholds a command that is
+    already safe (the #993 bug class, pointed at the new predicate).
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10, 25], _MIDDLE: [50]},
+        position=70,  # wire 70 == open 30 for the bottom rail
+        blend=50,
+        inverse=True,
+        concurrent=True,
+    )
+    ctx = _rail_context(policy, inverse=True)
+    wire_middle = policy.resolve_entity_target(_MIDDLE, 70)
+    assert wire_middle == 35  # open 65 on an inverse install
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, wire_middle, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_MIDDLE}" in events, events
+
+
+@pytest.mark.asyncio
+async def test_start_confirmation_needs_two_samples() -> None:
+    """One reading can never confirm motion — which is what keeps arming intact.
+
+    The mutual-exclusion theorem is a statement about when a gate ARMS, and the
+    relaxation must not touch that. It doesn't, structurally: on the first read
+    there is no start reference yet, so the concurrent disjunct is ``False`` and
+    the verdict is exactly ``_cleared``'s. The single-shot reconciliation path
+    is therefore byte-for-byte today's, and — because the reference lives in a
+    per-invocation closure — a second single-shot pass cannot inherit the first
+    one's sample and release on a delta that spans two cycles.
+    """
+    _cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [20, 30, 40]},
+        position=60,
+        blend=50,
+        concurrent=True,
+    )
+
+    for _pass in range(3):
+        assert (
+            await policy.await_dispatch_clearance(
+                _BOTTOM, position=60, reason="t", wait=False
+            )
+            is False
+        )
+
+
+# ---------------------------------------------------------------------------
 # Model A must be untouched — the blend pre-send path stays byte-identical
 # ---------------------------------------------------------------------------
 
@@ -1877,6 +2219,79 @@ async def test_model_a_before_position_command_still_pre_sends_blend() -> None:
 
     assert result is not False  # never withholds
     seq._send_tilt_command.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# The settle cap is a CEILING, not merely a fallback (issue #1140)
+# ---------------------------------------------------------------------------
+# ``wait_until_position`` used to treat an explicit ``timeout_seconds`` as the
+# whole answer and only reach for ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS``
+# when the caller passed ``None``. The start-confirmation gate introduces the
+# first caller that passes a real number, and ~19 existing tests shrink the
+# settle cap via ``monkeypatch`` to keep the suite sub-second. If the explicit
+# number won outright, every one of those tests would silently start paying the
+# real 10 s budget. The cap therefore has to bound BOTH forms.
+
+
+def _bare_sequencer(read):
+    """Build a ``DualAxisSequencer`` wired to nothing but a position reader."""
+    from custom_components.adaptive_cover_pro.cover_types.venetian import (
+        DualAxisSequencer,
+    )
+
+    return DualAxisSequencer(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=read,
+        set_commanded_position=MagicMock(),
+        position_tolerance=2,
+        is_dry_run=lambda: False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_wait_until_position_explicit_timeout_is_clamped_by_settle_cap(
+    monkeypatch,
+) -> None:
+    """An explicit budget above the settle cap is clamped down to the cap.
+
+    The predicate never accepts, so the wait can only end on the deadline. With
+    the cap patched to 0.05 s, a caller asking for 10 s must still give up
+    almost immediately — proof the cap bounds an explicit number rather than
+    only filling in for ``None``.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    seq = _bare_sequencer(lambda _eid: 50)
+
+    started = dt.datetime.now(dt.UTC)
+    cleared = await seq.wait_until_position(
+        _BOTTOM, lambda _pos: False, timeout_seconds=10.0
+    )
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert cleared is False
+    assert elapsed < 1.0, elapsed
+
+
+@pytest.mark.asyncio
+async def test_wait_until_position_explicit_timeout_below_the_cap_is_honoured(
+    monkeypatch,
+) -> None:
+    """A budget under the cap still wins — the clamp is a ``min``, not a swap."""
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 30.0)
+    seq = _bare_sequencer(lambda _eid: 50)
+
+    started = dt.datetime.now(dt.UTC)
+    assert (
+        await seq.wait_until_position(_BOTTOM, lambda _pos: False, timeout_seconds=0)
+        is False
+    )
+    elapsed = (dt.datetime.now(dt.UTC) - started).total_seconds()
+
+    assert elapsed < 1.0, elapsed
 
 
 # ---------------------------------------------------------------------------

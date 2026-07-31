@@ -678,6 +678,24 @@ def _seed_default_position_and_log(entry: ConfigEntry, options: dict) -> None:
     )
 
 
+def _advance_noop_minor(version: int, minor: int, target: int) -> int:
+    """Advance a stale minor past an ADDITIVE option that needs no seeding.
+
+    Several schema additions store a key whose ABSENCE already reads as the
+    default, so there is nothing for migration to write — but the minor still
+    has to advance, or HA sees the entry as stale and re-runs the whole cascade
+    on every restart. Four blocks in ``async_migrate_entry`` are exactly that
+    bump and nothing else (v3.4→v3.5, v3.6→v3.7, v3.8→v3.9, v3.13→v3.14), so
+    the condition-and-assignment is stated once here and called four times
+    rather than copied (CODING_GUIDELINES.md "No Code Duplication"). Each call
+    site keeps its own comment explaining which option it is advancing past.
+
+    Returns the new minor, unchanged when the entry is already at or past
+    ``target`` — which is what makes every call idempotent.
+    """
+    return target if version == 3 and minor < target else minor
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
@@ -750,8 +768,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # retraction pickers are always shown), so this is a no-op minor bump kept
     # only to advance entries sitting at minor 4 to 5 — without it they would
     # stay below MINOR_VERSION and re-trigger migration every restart.
-    if new_version == 3 and new_minor < 5:
-        new_minor = 5
+    new_minor = _advance_noop_minor(new_version, new_minor, 5)
 
     # v3.5 → v3.6: enable the weather override by default for every pre-existing
     # entry so upgrading covers keep firing weather safety overrides (issue
@@ -765,8 +782,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # An absent key already reads as "live" (the default), so nothing needs
     # seeding — this is a no-op minor bump kept only to advance entries sitting
     # at minor 6 to 7 so they stop re-triggering migration every restart.
-    if new_version == 3 and new_minor < 7:
-        new_minor = 7
+    new_minor = _advance_noop_minor(new_version, new_minor, 7)
 
     # v3.7 → v3.8: convert legacy FOV-relative blind-spot edges to signed gamma
     # from the window normal (issue #247). Additive + rollback-safe: the new
@@ -789,8 +805,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # precedent). Rollback-safe: min_mode / tilt_only remain the stored wire
     # format and are untouched, so an older build finds its config exactly as it
     # left it and simply ignores the new keys.
-    if new_version == 3 and new_minor < 9:
-        new_minor = 9
+    new_minor = _advance_noop_minor(new_version, new_minor, 9)
 
     # v3.9 → v3.10: the tilt safety margin was renamed from the venetian-prefixed
     # key to the neutral CONF_TILT_SAFETY_MARGIN now that tilt-only and
@@ -851,6 +866,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if new_version == 3 and new_minor < 13:
         _seed_default_position_and_log(entry, new_options)
         new_minor = 13
+
+    # v3.13 → v3.14: added the additive day_night_concurrent_rail_travel option
+    # (issue #1140). An absent key already reads as "on" — the default — so
+    # nothing needs seeding; this is a no-op minor bump kept only to advance
+    # entries sitting at minor 13 to 14 so they stop re-triggering migration
+    # every restart (the v3.6 → v3.7 precedent). Rollback-safe: an older build
+    # finds every key exactly as it left it and ignores the one it doesn't know.
+    new_minor = _advance_noop_minor(new_version, new_minor, 14)
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
