@@ -256,6 +256,7 @@ from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
 from .troubleshoot_i18n import load_troubleshoot_labels
 from .helpers import (
+    bound_cover_capabilities,
     check_cover_capabilities,
     clear_custom_position_slot,
     clear_slot,
@@ -3614,6 +3615,74 @@ def _extract_shared_options(
     return result
 
 
+# Fallback line for a destination type that is filtered out but whose policy
+# offers no capability warning of its own — the blocked list must always say
+# something rather than list a bare label (issue #1132).
+_BLOCKED_TYPE_GENERIC_REASON = (
+    "⚠️ The covers bound to this instance do not advertise the features this "
+    "cover type requires."
+)
+
+
+def _eligible_cover_types(
+    current_type: str | None,
+    known: Mapping[str, Mapping[str, bool] | None],
+) -> tuple[list[str], list[str]]:
+    """Split the offerable cover types into ``(eligible, blocked)`` (issue #1132).
+
+    Starts from ``SENSOR_TYPE_MENU`` — the same registry-derived list the create
+    flow offers, so virtual entry types (Building Profile, Group) can never
+    appear — drops the type this instance already is, and asks each remaining
+    candidate policy whether its own entity picker would have admitted the
+    covers already bound here.
+    """
+    eligible: list[str] = []
+    blocked: list[str] = []
+    for candidate in SENSOR_TYPE_MENU:
+        if candidate == current_type:
+            continue
+        if get_policy(candidate).entities_satisfy_selector(known):
+            eligible.append(candidate)
+        else:
+            blocked.append(candidate)
+    return eligible, blocked
+
+
+def _blocked_types_text(
+    blocked: list[str],
+    known: Mapping[str, Mapping[str, bool] | None],
+    labels: dict[str, str] | None = None,
+) -> str:
+    """Render one explained line per cover type the bound covers rule out.
+
+    Each policy states its own requirement through
+    ``cover_capability_warnings`` — the same advisory text the create flow and
+    the configuration summary render — so this never grows a second capability
+    matrix.
+    """
+    lines: list[str] = []
+    for cover_type in blocked:
+        policy = get_policy(cover_type)
+        reasons = policy.cover_capability_warnings(dict(known))
+        reason = reasons[0] if reasons else _BLOCKED_TYPE_GENERIC_REASON
+        lines.append(f"- **{policy.display_label(labels)}** — {reason}")
+    return "\n".join(lines)
+
+
+def _stranded_option_keys(
+    current_type: str | None, new_type: str, options: Mapping[str, Any]
+) -> list[str]:
+    """Return stored keys the outgoing type reads and the incoming one does not.
+
+    Advisory only (issue #1132): nothing is deleted, so switching back finds the
+    configuration intact. Both sides come from ``live_option_keys()`` so the
+    comparison stays on the policy layer.
+    """
+    outgoing = get_policy(current_type).live_option_keys()
+    incoming = get_policy(new_type).live_option_keys()
+    return sorted((outgoing - incoming) & set(options))
+
+
 def _build_cover_entity_schema(
     sensor_type: str,
     devices: dict[str, str] | None = None,
@@ -4447,6 +4516,13 @@ class OptionsFlowHandler(OptionsFlow):
         # step id so the translation block is authored once, so the area lives
         # here instead of in the step id.
         self._delete_area: str = ""
+        # "Change Cover Type" (issue #1132). ``_pending_cover_type`` carries the
+        # picked destination from the picker to the confirm screen;
+        # ``_cover_type_changed`` records that ``entry.data`` was rewritten, so
+        # Save & Close knows it must schedule a reload even when no option value
+        # changed.
+        self._pending_cover_type: str | None = None
+        self._cover_type_changed: bool = False
 
     def __getattr__(self, name: str):
         """Dispatch dynamic per-slot options steps (issue #945).
@@ -4565,6 +4641,11 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Layer 1: What am I? (physical setup) ─────────────────────
         keys = [
             "cover_entities",
+            # Switch this instance to another cover type in place, keeping every
+            # entity_id (issue #1132). Offered unconditionally on the cover menu
+            # so "nothing you can switch to" is an explained screen rather than
+            # a silently missing row.
+            "change_cover_type",
             "geometry",
             "sun_tracking",
         ]
@@ -4704,6 +4785,112 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
+            },
+        )
+
+    async def async_step_change_cover_type(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Pick a new cover type for this instance (issue #1132).
+
+        Offers every registry type whose own entity picker would have admitted
+        the covers already bound here, and explains the ones it filtered out
+        instead of hiding them. The dropdown reuses the ``selector.mode`` label
+        bundle the create flow already ships, so no per-type string is added.
+        """
+        known = bound_cover_capabilities(self.hass, self.options)
+        eligible, blocked = _eligible_cover_types(self.sensor_type, known)
+        if not eligible:
+            return self.async_abort(reason="no_eligible_cover_types")  # type: ignore[return-value]
+
+        if user_input is not None:
+            self._pending_cover_type = user_input[CONF_SENSOR_TYPE]
+            return await self.async_step_change_cover_type_confirm()
+
+        labels = await _load_summary_labels(
+            self.hass, _resolve_summary_language(self.hass, self.context)
+        )
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="change_cover_type",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SENSOR_TYPE): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=eligible, translation_key="mode"
+                        )
+                    )
+                }
+            ),
+            description_placeholders={
+                "current_type": get_policy(self.sensor_type).display_label(labels),
+                "blocked_types": _blocked_types_text(blocked, known, labels),
+                "learn_more": f"{_WIKI_BASE_URL}/Cover-Types",
+            },
+        )
+
+    async def async_step_change_cover_type_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm the cover-type switch before anything is written (issue #1132).
+
+        Same one-extra-click shape as ``async_step_sync_confirm``. Unticking the
+        box returns to the menu with nothing changed.
+        """
+        new_type = self._pending_cover_type
+        if new_type is None:
+            return await self.async_step_init()
+
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                self._pending_cover_type = None
+                return await self.async_step_init()
+            # ``CONF_SENSOR_TYPE`` lives in ``entry.data``, so this is the one
+            # post-creation ``data`` write in the integration. Unique IDs are
+            # ``f"{entry_id}_{suffix}"`` — never keyed on the cover type — so
+            # every entity that exists under both types keeps its entity_id.
+            # Options are left alone: the outgoing type's keys stay stored so
+            # switching back finds its configuration intact.
+            #
+            # Deliberately NO reload here. ``_async_update_listener`` diffs
+            # options only, so a data-only write leaves the coordinator running
+            # the OUTGOING policy while the user fills in the incoming type's
+            # geometry. Reloading now would bring it up on a half-configured
+            # type that can already command hardware. The reload is scheduled
+            # once, at Save & Close, in ``_update_options``.
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                data={**self._config_entry.data, CONF_SENSOR_TYPE: new_type},
+            )
+            self.current_config[CONF_SENSOR_TYPE] = new_type
+            self.sensor_type = new_type  # type: ignore[assignment]
+            self._cover_type_changed = True
+            self._pending_cover_type = None
+            # Straight into the EXISTING generic geometry step, which renders
+            # ``_get_geometry_schema(self.sensor_type, …)`` — the incoming
+            # type's own schema, including its type-specific keys. No bespoke
+            # per-type collection form is needed.
+            return await self.async_step_geometry()
+
+        labels = await _load_summary_labels(
+            self.hass, _resolve_summary_language(self.hass, self.context)
+        )
+        stranded = _stranded_option_keys(self.sensor_type, new_type, self.options)
+        # Capability advice for the DESTINATION type, from the same helper the
+        # create flow and the configuration summary already render.
+        _, capability_notes = check_cover_capabilities(
+            self.options, new_type, self.hass
+        )
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="change_cover_type_confirm",
+            data_schema=vol.Schema(
+                {vol.Required("confirm", default=False): selector.BooleanSelector()}
+            ),
+            description_placeholders={
+                "from_type": get_policy(self.sensor_type).display_label(labels),
+                "to_type": get_policy(new_type).display_label(labels),
+                "stranded_options": "\n".join(f"- `{k}`" for k in stranded) or "—",
+                "capability_notes": "\n".join(f"- {n}" for n in capability_notes)
+                or "—",
             },
         )
 
@@ -5934,6 +6121,18 @@ class OptionsFlowHandler(OptionsFlow):
         """Update config entry options."""
         self._recompute_profile_overrides()
         self._propagate_profile_clears()
+        if self._cover_type_changed:
+            # A cover-type switch writes ``entry.data``, which
+            # ``_async_update_listener`` does not look at — it diffs options and
+            # early-returns on an empty set. So the reload has to be explicit:
+            # if the geometry form came back byte-identical, nothing else would
+            # reload and the coordinator would keep running the OUTGOING policy
+            # until the next restart. Scheduling here is safe even though the
+            # options write happens afterwards, in
+            # ``OptionsFlowManager.async_finish_flow`` — there is no await
+            # between this step returning and that write, so the reloaded
+            # coordinator sees both the new ``data`` and the new ``options``.
+            self.hass.config_entries.async_schedule_reload(self._config_entry.entry_id)
         return self.async_create_entry(title="", data=self.options)  # type: ignore[return-value]
 
     def _recompute_profile_overrides(self) -> None:

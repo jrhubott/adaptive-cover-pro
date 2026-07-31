@@ -604,6 +604,23 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
     }
 
 
+def bound_cover_capabilities(
+    hass: HomeAssistant | None, config: dict
+) -> dict[str, dict[str, bool] | None]:
+    """Map every cover bound to *config* to its detected capabilities.
+
+    ``entity_id → feature dict``, or ``None`` for an entity HA cannot read yet.
+    Extracted from :func:`check_cover_capabilities` (issue #1132) so the
+    "Change Cover Type" options step can ask a candidate policy whether the
+    already-bound covers satisfy its entity filter without also building the
+    warning lines.
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return {}
+    return {eid: check_cover_features(hass, eid) for eid in entities}
+
+
 def check_cover_capabilities(
     config: dict,
     sensor_type: str | None,
@@ -644,9 +661,7 @@ def check_cover_capabilities(
     # keeps its exact ordering (and its interleaving with the open/close-only and
     # assumed_state lines). Rendered in English to match the legacy raw f-string,
     # which was hardcoded English regardless of the summary language.
-    cap_map: dict[str, dict[str, bool] | None] = {
-        eid: check_cover_features(hass, eid) for eid in entities
-    }
+    cap_map = bound_cover_capabilities(hass, config)
     _not_ready = {
         f.reason.params["eid"]: f
         for f in run_triage({"capabilities": cap_map}, only=RuleInput.CONFIG)

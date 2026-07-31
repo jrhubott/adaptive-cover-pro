@@ -4069,3 +4069,44 @@ def test_manual_override_summary_tolerates_an_unknown_duration_mode():
 
     assert isinstance(summary, str)
     assert "pauses for 3 h" in _manual_block(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Issue #1132 — the summary must follow a mid-dialog cover-type switch
+# ---------------------------------------------------------------------------
+
+
+async def test_summary_renders_incoming_type_after_switch(hass) -> None:
+    """After a cover-type switch the summary describes the INCOMING type.
+
+    ``_build_config_summary`` reads the in-memory ``self.sensor_type``, which the
+    change-cover-type step rewrites, so this needs no summary-side change — it
+    pins that the two stay wired together.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+    from tests.test_config_flow_change_cover_type import _confirm, _setup_entry
+
+    entry = await _setup_entry(
+        hass,
+        cover_type=CoverType.DUAL_PANEL,
+        entities=["cover.panel_front", "cover.panel_back"],
+        extra_options={
+            CONF_DUAL_PANEL_FRONT_ENTITY: "cover.panel_front",
+            CONF_DUAL_PANEL_BLACKOUT_TRIGGERS: ["night"],
+        },
+        entry_id="summary_after_switch",
+    )
+
+    geometry = await _confirm(hass, entry, CoverType.DAY_NIGHT_SHADE)
+    menu = await hass.config_entries.options.async_configure(geometry["flow_id"], {})
+    summary_step = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "summary"}
+    )
+
+    summary = summary_step["description_placeholders"]["summary"]
+    incoming = get_policy(CoverType.DAY_NIGHT_SHADE)
+    outgoing = get_policy(CoverType.DUAL_PANEL)
+    assert incoming.display_label() in summary
+    assert outgoing.display_label() not in summary
+    for line in incoming.summary_geometry_lines(dict(entry.options)):
+        assert line in summary

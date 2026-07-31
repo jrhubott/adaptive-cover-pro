@@ -307,7 +307,8 @@
           "profile_overrides": "🧹 Dérogations locales",
           "group_membership": "👥 Membres du groupe",
           "group_arbitration": "⚖️ Arbitrage & Synchronisation",
-          "group_entities": "🧩 Entités exposées"
+          "group_entities": "🧩 Entités exposées",
+          "change_cover_type": "🔁 Modifier le type de store"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1047,6 +1048,23 @@
       "delete_slot": {
         "title": "Supprimer un emplacement",
         "description": "Choisissez l'emplacement à supprimer. Chaque paramètre stocké pour celui-ci est supprimé — capteurs déclencheurs, modèle, position, priorité, limites d'axe et tous les indicateurs définis par la carte ou un service. Cela ne peut pas être annulé. Le numéro d'emplacement devient disponible pour un nouvel emplacement."
+      },
+      "change_cover_type": {
+        "data": {
+          "sensor_type": "Nouveau type de store"
+        },
+        "data_description": {
+          "sensor_type": "Le type de store vers lequel cette instance basculera. Vous confirmerez sur l'écran suivant, puis remplirez la géométrie du nouveau type."
+        },
+        "description": "Cette instance est actuellement un **{current_type}**. Choisissez le type de store qu'elle devrait devenir — chaque entité conserve son ID d'entité actuel, donc vos tableaux de bord et automations continuent de fonctionner.\n\nSeuls les types que vos protections peuvent réellement gérer sont énumérés. Non proposés ici :\n\n{blocked_types}\n\n[En savoir plus]({learn_more})",
+        "title": "Modifier le type de store"
+      },
+      "change_cover_type_confirm": {
+        "data": {
+          "confirm": "Confirmer le changement de type de store"
+        },
+        "description": "Basculement de **{from_type}** vers **{to_type}**.\n\nLes paramètres que seul l'ancien type utilise restent stockés et ne sont pas supprimés, ainsi revenir en arrière les retrouve intacts. Actuellement inactifs après le basculement :\n\n{stranded_options}\n\nNotes de capacité pour le nouveau type :\n\n{capability_notes}\n\nChaque entité conserve son ID d'entité. Les entités spécifiques au type que le nouveau type ne fournit pas restent dans le registre des entités comme indisponibles et reviennent si vous revenez à l'ancien type. Après confirmation, remplissez la géométrie du nouveau type et terminez avec Enregistrer et fermer pour appliquer la modification.",
+        "title": "Modifier le type de store — Confirmer"
       }
     },
     "abort": {
@@ -1054,7 +1072,8 @@
       "no_targets_selected": "Aucun store n'a été sélectionné comme cible.",
       "no_categories_selected": "Aucune catégorie n'a été sélectionnée pour la synchronisation.",
       "user_cancelled": "Synchronisation annulée.",
-      "sync_complete": "Paramètres synchronisés avec succès."
+      "sync_complete": "Paramètres synchronisés avec succès.",
+      "no_eligible_cover_types": "Aucun autre type de store ne peut gérer les protections liées à cette instance, il n'y a donc rien vers quoi basculer."
     }
   },
   "entity": {

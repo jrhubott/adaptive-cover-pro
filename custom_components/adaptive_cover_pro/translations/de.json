@@ -307,7 +307,8 @@
           "profile_overrides": "🧹 Lokale Übersteuerungen",
           "group_membership": "👥 Gruppenmitglieder",
           "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung",
-          "group_entities": "🧩 Verfügbar gemachte Entitäten"
+          "group_entities": "🧩 Verfügbar gemachte Entitäten",
+          "change_cover_type": "🔁 Beschattungstyp ändern"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1047,6 +1048,23 @@
       "delete_slot": {
         "title": "Eintrag löschen",
         "description": "Wählen Sie den Eintrag aus, den Sie löschen möchten. Alle gespeicherten Einstellungen werden entfernt — Auslösesensoren, Vorlage, Position, Priorität, Achsengrenzen und alle Flags, die von der Karte oder einem Service gesetzt wurden. Dies kann nicht rückgängig gemacht werden. Die Slot-Nummer wird für einen neuen Eintrag verfügbar."
+      },
+      "change_cover_type": {
+        "data": {
+          "sensor_type": "Neuer Beschattungstyp"
+        },
+        "data_description": {
+          "sensor_type": "Der Beschattungstyp, zu dem diese Instanz wechselt. Sie bestätigen im nächsten Bildschirm und geben dann die Geometrie des neuen Typs ein."
+        },
+        "description": "Diese Instanz ist derzeit eine **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nEs werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
+        "title": "Beschattungstyp ändern"
+      },
+      "change_cover_type_confirm": {
+        "data": {
+          "confirm": "Beschattungstypänderung bestätigen"
+        },
+        "description": "Wechsel von **{from_type}** zu **{to_type}**.\n\nEinstellungen, die nur der alte Typ verwendet, bleiben gespeichert und werden nicht gelöscht, sodass ein Zurückwechsel sie intakt vorfindet. Nach dem Wechsel derzeit inaktiv:\n\n{stranded_options}\n\nFunktionseigenschaften für den neuen Typ:\n\n{capability_notes}\n\nJede Entität behält ihre Entitäts-ID. Typspezifische Entitäten, die der neue Typ nicht bereitstellt, bleiben in der Entitätsregistrierung als nicht verfügbar und werden wiederhergestellt, wenn Sie zurückwechseln. Füllen Sie nach der Bestätigung die Geometrie des neuen Typs aus und beenden Sie mit Speichern und schließen, um die Änderung anzuwenden.",
+        "title": "Beschattungstyp ändern – Bestätigung"
       }
     },
     "abort": {
@@ -1054,7 +1072,8 @@
       "no_targets_selected": "Es wurden keine Beschattungen zum Synchronisieren ausgewählt.",
       "no_categories_selected": "Es wurden keine Kategorien zum Synchronisieren ausgewählt.",
       "user_cancelled": "Synchronisierung abgebrochen.",
-      "sync_complete": "Einstellungen erfolgreich synchronisiert."
+      "sync_complete": "Einstellungen erfolgreich synchronisiert.",
+      "no_eligible_cover_types": "Kein anderer Beschattungstyp kann die an diese Instanz gebundenen Beschattungen steuern, daher gibt es nichts zum Wechseln."
     }
   },
   "entity": {

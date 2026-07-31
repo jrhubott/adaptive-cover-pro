@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from custom_components.adaptive_cover_pro.cover_types import (
+    POLICY_REGISTRY,
     AwningPolicy,
     BlindPolicy,
     TiltPolicy,
@@ -72,6 +73,73 @@ class TestEntitySelectorFilter:
         # not AND, so we filter on the rarer capability and surface the
         # missing-set_position case via cover_capability_warnings).
         assert VenetianPolicy().entity_selector_filter() is TILT_CAPABLE_ENTITY_FILTER
+
+
+@pytest.mark.unit
+class TestEntitiesSatisfySelector:
+    """``entities_satisfy_selector`` inverts the selector filter into a predicate.
+
+    The "Change Cover Type" options step (issue #1132) needs to ask "would this
+    candidate policy's entity picker have admitted the covers already bound to
+    this instance?" without re-implementing the capability matrix. The predicate
+    is derived generically from ``entity_selector_filter()`` on the base class,
+    so an eleventh cover type answers it for free.
+    """
+
+    def test_plain_domain_filter_admits_open_close_only(self):
+        assert BlindPolicy().entities_satisfy_selector(
+            {
+                "cover.a": {
+                    "has_set_position": False,
+                    "has_set_tilt_position": False,
+                    "has_open": True,
+                    "has_close": True,
+                }
+            }
+        )
+
+    @pytest.mark.parametrize(
+        "cover_type",
+        ["cover_tilt", "cover_venetian", "cover_louvered_roof"],
+    )
+    def test_tilt_filter_rejects_position_only(self, cover_type):
+        assert not get_policy(cover_type).entities_satisfy_selector(
+            {"cover.a": {"has_set_position": True, "has_set_tilt_position": False}}
+        )
+
+    @pytest.mark.parametrize(
+        "cover_type",
+        ["cover_tilt", "cover_venetian", "cover_louvered_roof"],
+    )
+    def test_tilt_filter_accepts_tilt_capable(self, cover_type):
+        assert get_policy(cover_type).entities_satisfy_selector(
+            {"cover.a": {"has_set_position": True, "has_set_tilt_position": True}}
+        )
+
+    def test_position_filter_rejects_open_close_only(self):
+        policy = get_policy("cover_day_night_shade")
+        assert not policy.entities_satisfy_selector(
+            {"cover.a": {"has_set_position": False, "has_open": True}}
+        )
+        assert policy.entities_satisfy_selector(
+            {"cover.a": {"has_set_position": True, "has_open": True}}
+        )
+
+    def test_unavailable_entity_is_skipped_not_failed(self):
+        # ``None`` caps mean "entity not readable right now" — create-time could
+        # not have judged it either, so it must not block the switch.
+        assert get_policy("cover_tilt").entities_satisfy_selector({"cover.a": None})
+
+    def test_empty_map_is_satisfied(self):
+        for cover_type in POLICY_REGISTRY:
+            assert get_policy(cover_type).entities_satisfy_selector({}) is True
+
+    @pytest.mark.parametrize("cover_type", list(POLICY_REGISTRY))
+    def test_every_registered_policy_answers(self, cover_type):
+        result = get_policy(cover_type).entities_satisfy_selector(
+            {"cover.a": {"has_set_position": True, "has_set_tilt_position": True}}
+        )
+        assert isinstance(result, bool)
 
 
 @pytest.mark.unit

@@ -117,6 +117,20 @@ POSITION_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
     supported_features=["cover.CoverEntityFeature.SET_POSITION"],
 )
 
+# Inverse of the filters above: HA ``supported_features`` name → the ``CAP_*``
+# flag ``check_cover_features`` sets for it. Lets
+# ``CoverTypePolicy.entities_satisfy_selector`` turn any policy's picker filter
+# back into a predicate over already-bound covers (issue #1132) without a second
+# capability matrix. A feature name with no CAP_* counterpart imposes no
+# requirement — the picker would still have offered the entity.
+ENTITY_FILTER_FEATURE_CAPS: dict[str, str] = {
+    "cover.CoverEntityFeature.SET_POSITION": CAP_HAS_SET_POSITION,
+    "cover.CoverEntityFeature.SET_TILT_POSITION": CAP_HAS_SET_TILT_POSITION,
+    "cover.CoverEntityFeature.OPEN": CAP_HAS_OPEN,
+    "cover.CoverEntityFeature.CLOSE": CAP_HAS_CLOSE,
+    "cover.CoverEntityFeature.STOP": CAP_HAS_STOP,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class CoverAxis:
@@ -1420,6 +1434,40 @@ class CoverTypePolicy(ABC):
         entities).
         """
         return selector.EntityFilterSelectorConfig(domain="cover")
+
+    def entities_satisfy_selector(
+        self, known: Mapping[str, Mapping[str, bool] | None]
+    ) -> bool:
+        """Report whether this policy's picker would admit every bound cover.
+
+        The predicate form of :meth:`entity_selector_filter`, used by the
+        "Change Cover Type" options step (issue #1132) to decide whether an
+        instance's already-bound covers could switch to this type. Derived
+        generically from the filter, so a new cover type answers it for free —
+        there is no second capability matrix to keep in sync.
+
+        *known* is the ``entity_id → capability dict`` map
+        ``helpers.check_cover_features`` produces. A ``None`` entry (entity
+        unavailable / not yet initialised) is **skipped, not failed**: the
+        create-time picker could not have judged it either. An empty map is
+        satisfied.
+
+        HA's ``supported_features`` filter is OR-of-listed, so the predicate
+        mirrors that — an entity satisfies the filter when it advertises at
+        least one of the listed features.
+        """
+        required = [
+            ENTITY_FILTER_FEATURE_CAPS[feature]
+            for feature in self.entity_selector_filter().get("supported_features", ())
+            if feature in ENTITY_FILTER_FEATURE_CAPS
+        ]
+        if not required:
+            return True
+        return all(
+            any(caps_get(caps, cap) for cap in required)
+            for caps in known.values()
+            if caps is not None
+        )
 
     def geometry_schema(
         self,
