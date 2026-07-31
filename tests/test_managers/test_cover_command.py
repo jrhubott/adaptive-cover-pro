@@ -2676,6 +2676,56 @@ async def test_apply_position_non_assumed_open_close_cover_unaffected(
     assert (outcome2, reason2) == ("sent", "stop_cover")
 
 
+@pytest.mark.asyncio
+async def test_apply_position_position_capable_assumed_state_still_same_position(
+    cmd_svc, mock_hass
+):
+    """Post-audit regression guard: a position-capable, assumed_state cover
+    must NOT have its genuine `_current` reading treated as a synthetic
+    open/close mapping.
+
+    An MQTT/template optimistic cover (or a `cover` group containing an RTS
+    member) can advertise `has_set_position: True` AND `assumed_state:
+    True` at once. Routed to the 100 endpoint under
+    `endpoint_use_open_close` (the default), it goes through `open_cover`
+    just like a genuinely non-position-capable cover would --
+    `_plan.supports_position` is False either way -- but here `_current`
+    (100) IS a real position read, not a synthetic mapping. The
+    #1130-widened gate must not misclassify it: `_current_is_assumed_mapping`
+    has to key off the axis's actual position CAPABILITY
+    (`caps_get(..., axis.capability_key)`), not the routing outcome, or this
+    shape re-dispatches `open_cover` every cycle and disturbs a coupled
+    venetian's slats -- exactly the #985 guarantee the same-position gate
+    exists to protect.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"assumed_state": True}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.pos_assumed", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
 # --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---
 # Issue #990. Read-only predicate the coordinator polls each cycle to raise the
 # cover_not_moving Repair. True iff a target is set, the cover has settled

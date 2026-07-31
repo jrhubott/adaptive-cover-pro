@@ -1489,8 +1489,9 @@ class CoverCommandService:
         #
         # A third condition narrows entry into arms one and two, and widens
         # entry into the third arm's fallback, beyond "not
-        # position-capable" alone: an `assumed_state` cover routed through a
-        # non-position-capable service has its `_current` sourced from
+        # position-capable" alone: an `assumed_state` cover whose default
+        # axis has NO position-capability (its `capability_key`, e.g.
+        # CAP_HAS_SET_POSITION, is false) has its `_current` sourced from
         # `get_open_close_state`'s raw open/close→100/0 mapping, not a
         # genuine position reading (issue #1130). RFXtrx-style Somfy RTS
         # covers report HA state "open" after every stop_cover regardless
@@ -1551,27 +1552,45 @@ class CoverCommandService:
         # entity's travel, not on this one's `supported_features`, which is
         # all `_plan` is derived from.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
+        _axis_for_plan = self._policy.select_default_axis(_caps_for_plan)
         _plan = route_service_call(
             entity_id,
             position,
             _caps_for_plan,
-            axis=self._policy.select_default_axis(_caps_for_plan),
+            axis=_axis_for_plan,
             use_my_position=context.use_my_position,
             open_close_threshold=self._open_close_threshold,
             endpoint_use_open_close=self._endpoint_use_open_close,
         )
 
-        # Issue #1130: an assumed_state, non-position-capable cover's
-        # `_current` came from the open/close→100/0 mapping
-        # (get_open_close_state), not a genuine position reading. Trust
-        # that mapping for the same-position gate's direct-equality arms
-        # only when the cover is NOT assumed_state; otherwise fall through
-        # to the stored-target-vs-routed-target comparison (arm three,
-        # #779/#1095), which is the correct comparison for a synthetic
-        # reading.
+        # Issue #1130 (narrowed post-audit): an assumed_state cover whose
+        # default axis is genuinely NOT position-capable has its `_current`
+        # sourced from the open/close→100/0 mapping (get_open_close_state),
+        # not a genuine position reading. The predicate checks the axis
+        # CAPABILITY (`caps_get(..., _axis_for_plan.capability_key)`) rather
+        # than `_plan.supports_position` (a routing OUTCOME): a
+        # position-capable cover that also sets assumed_state — an
+        # MQTT/template optimistic cover, or a `cover` group containing an
+        # RTS member — can still route through open_cover/close_cover under
+        # endpoint_use_open_close (the default) at a mechanical endpoint,
+        # yet its `_current` there IS a genuine position read and must not
+        # be treated as synthetic (it would otherwise re-dispatch
+        # open_cover/close_cover on every cycle and disturb a venetian's
+        # slats, weakening the #985 guarantee). This mirrors the branch
+        # `read_axis_value` (cover_types/base.py) itself takes when deciding
+        # whether to read a genuine position attribute or fall back to
+        # `get_open_close_state` — the gate should classify `_current` the
+        # same way the reader that produced it did. Trust the open/close
+        # mapping for the same-position gate's direct-equality arms only
+        # when the cover is NOT assumed_state on a non-position-capable
+        # axis; otherwise fall through to the stored-target-vs-routed-target
+        # comparison (arm three, #779/#1095), which is the correct
+        # comparison for a synthetic reading.
         _current_is_assumed_mapping = (
             _current is not None
-            and not _plan.supports_position
+            and not caps_get(
+                _caps_for_plan, _axis_for_plan.capability_key, default=True
+            )
             and bool(state_obj.attributes.get(ATTR_ASSUMED_STATE))
         )
         if (
