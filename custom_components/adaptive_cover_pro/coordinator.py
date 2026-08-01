@@ -112,6 +112,7 @@ from .const import (
     ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
+    ISSUE_CUSTOM_POSITION_OUT_OF_RANGE,
     ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -413,6 +414,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         entry_id = self.config_entry.entry_id
         self._sun_issue_key = f"{ISSUE_SUN_UNAVAILABLE}_{entry_id}"
         self._envelope_issue_key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{entry_id}"
+        self._custom_position_issue_key = (
+            f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{entry_id}"
+        )
         self._time_window_issue_key = f"{ISSUE_CONFIG_TIME_WINDOW}_{entry_id}"
         # B3 (issue #1115): entry-scoped like B1/B2 — the cover-type policy owns
         # the "is a bound role entity unfilled?" decision, so no cover-type
@@ -1874,18 +1878,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
             self._cover_issue_keys = desired
 
-            # B1 — position-envelope coherence. Consume the canonical min/max
-            # resolution from CoverConfig (single source of truth) instead of
-            # re-deriving the defaults here, and render the placeholders as plain
-            # ints so a HA NumberSelector float doesn't surface as "80.0".
+            # B1 — position-envelope coherence, split into two independent
+            # predicates (issue #1146) so each Repair's message states only its
+            # own condition: min>max and slot-outside-envelope are unrelated
+            # misconfigurations that used to share one message asserting both
+            # clauses regardless of which actually fired. Consume the canonical
+            # min/max resolution from CoverConfig (single source of truth)
+            # instead of re-deriving the defaults here, and render the
+            # placeholders as plain ints so a HA NumberSelector float doesn't
+            # surface as "80.0".
             cover_cfg = CoverConfig.from_options(options)
             min_pos = int(cover_cfg.min_pos)
             max_pos = int(cover_cfg.max_pos)
+            placeholders = {"name": name, "min": str(min_pos), "max": str(max_pos)}
             self._repair.update_predicate(
                 self._envelope_issue_key,
-                self._position_envelope_incoherent(options, min_pos, max_pos),
+                self._min_exceeds_max(min_pos, max_pos),
                 translation_key=ISSUE_CONFIG_POSITION_ENVELOPE,
-                placeholders={"name": name, "min": str(min_pos), "max": str(max_pos)},
+                placeholders=placeholders,
+            )
+            self._repair.update_predicate(
+                self._custom_position_issue_key,
+                self._custom_position_out_of_range(options, min_pos, max_pos),
+                translation_key=ISSUE_CUSTOM_POSITION_OUT_OF_RANGE,
+                placeholders=placeholders,
             )
 
             # B2 — time-window coherence. Only fire when BOTH sides resolve, so an
@@ -2037,22 +2053,37 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Health-check evaluation failed", exc_info=True)
 
     @staticmethod
-    def _position_envelope_incoherent(
+    def _min_exceeds_max(min_pos: int, max_pos: int) -> bool:
+        """Whether the position envelope itself is inverted (issue #975/#1146, B1).
+
+        True only when ``min > max``. Split from
+        ``_custom_position_out_of_range`` (issue #1146) so this Repair's message
+        states only this clause — sibling condition (a slot pinned outside a
+        *coherent* envelope) is that method's job, not this one's.
+        """
+        return min_pos > max_pos
+
+    @staticmethod
+    def _custom_position_out_of_range(
         options: dict, min_pos: int, max_pos: int
     ) -> bool:
-        """Whether the position envelope is self-contradictory (issue #975, B1).
+        """Whether a fixed custom-position slot is pinned outside the envelope.
 
-        True when ``min > max`` or an enabled, non-safety slot that would deliver
-        an exact (FIXED) cover position pins it outside ``[min, max]``. Slots that
-        never deliver a fixed position claim — ``use_my``, tilt-only, or a
-        non-FIXED constraint mode (floor / ceiling / range) — are exempt: they
-        compose as constraints the envelope clamps and cannot conflict with it.
-        Cover-type-agnostic: loops the slots generically and delegates the
-        fixed-position determination to the shared helper (same seam the pipeline
-        handler uses), with no branching on cover type or capabilities.
+        (issue #975/#1146, B1.) False immediately when ``min > max`` — that is
+        ``_min_exceeds_max``'s condition to report, and short-circuiting here
+        keeps the two Repairs mutually exclusive so they never double-fire for
+        one underlying breakage. Otherwise True when an enabled, non-safety slot
+        that would deliver an exact (FIXED) cover position pins it outside
+        ``[min, max]``. Slots that never deliver a fixed position claim —
+        ``use_my``, tilt-only, or a non-FIXED constraint mode (floor / ceiling /
+        range) — are exempt: they compose as constraints the envelope clamps and
+        cannot conflict with it. Cover-type-agnostic: loops the slots generically
+        and delegates the fixed-position determination to the shared helper
+        (same seam the pipeline handler uses), with no branching on cover type
+        or capabilities.
         """
         if min_pos > max_pos:
-            return True
+            return False
         for slot_keys in CUSTOM_POSITION_SLOTS.values():
             if not options.get(slot_keys["enabled"], DEFAULT_CUSTOM_POSITION_ENABLED):
                 continue

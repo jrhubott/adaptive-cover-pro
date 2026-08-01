@@ -15,7 +15,7 @@
     },
     "config_position_envelope": {
       "title": "Positionierungsgrenzen sind widersprüchlich",
-      "description": "Die auf **{name}** konfigurierten Positionierungsgrenzen sind inkonsistent: Das Minimum ({min}) liegt über dem Maximum ({max}), oder eine benutzerdefinierte Position ist außerhalb dieses Bereichs festgelegt und würde diese Grenzen außer Kraft setzen. Überprüfen Sie die Einstellungen für Mindest- und Höchstposition sowie benutzerdefinierte Positionen in den Optionen der Beschattung."
+      "description": "Die auf **{name}** konfigurierten Positionierungsgrenzen sind inkonsistent: Das Minimum ({min}) liegt über dem Maximum ({max}). Überprüfen Sie die Einstellungen für Mindest- und Höchstposition in den Optionen der Beschattung."
     },
     "config_time_window": {
       "title": "Betriebszeitfenster ist invertiert",
@@ -32,6 +32,10 @@
     "day_night_middle_rail_unset": {
       "title": "Tag/Nacht-Mittelschiene nicht ausgewählt",
       "description": "**{name}** ist als zweigeteiltes Tag/Nacht-Rollo konfiguriert, aber seine Mittelschienen-Beschattung ist nicht ausgewählt – oder verweist auf eine Beschattung, die nicht in der Beschattungsliste dieser Instanz enthalten ist. Beide Schienen erhalten dieselbe Position, daher verhält sich das Rollo wie eine normale Jalousie und die Mischung aus transparent und Verdunkelung wird nie angewendet. Wählen Sie die Mittelschienen-Beschattung in den Optionen der Beschattung aus, und stellen Sie sicher, dass sie auch als eine der gesteuerten Beschattungen aufgeführt ist."
+    },
+    "custom_position_out_of_range": {
+      "title": "Benutzerdefinierte Position außerhalb der konfigurierten Grenzen",
+      "description": "Eine auf **{name}** konfigurierte benutzerdefinierte Position ist außerhalb des konfigurierten Mindest-/Höchstbereichs ({min}-{max}) festgelegt und würde diese Grenzen außer Kraft setzen. Überprüfen Sie die Einstellungen für Mindest-, Höchst- und benutzerdefinierte Position in den Optionen der Beschattung."
     }
   },
   "config": {

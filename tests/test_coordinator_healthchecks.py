@@ -43,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
+    ISSUE_CUSTOM_POSITION_OUT_OF_RANGE,
     ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -133,6 +134,7 @@ def _make_coord(
     coord._temp_issue_key = f"{ISSUE_TEMP_SENSOR_UNAVAILABLE}_{_ENTRY}"
     coord._sun_issue_key = f"{ISSUE_SUN_UNAVAILABLE}_{_ENTRY}"
     coord._envelope_issue_key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"
+    coord._custom_position_issue_key = f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}"
     coord._time_window_issue_key = f"{ISSUE_CONFIG_TIME_WINDOW}_{_ENTRY}"
     coord._cover_issue_keys = set()
     coord._a1_orphans_swept = False
@@ -368,6 +370,10 @@ async def test_b1_placeholders_render_as_int():
 
 
 async def test_b1_pinned_slot_outside_envelope_raises():
+    """A slot outside a *coherent* envelope raises only the custom-position
+    Repair — the envelope key must not also fire, since min <= max here and
+    that clause of the (now-split) message would be false (issue #1146).
+    """
     slot = CUSTOM_POSITION_SLOTS[1]
     options = {
         CONF_MIN_POSITION: 0,
@@ -377,7 +383,39 @@ async def test_b1_pinned_slot_outside_envelope_raises():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" in raised
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+
+
+async def test_b1_min_exceeds_max_does_not_raise_custom_position_key():
+    """An inverted envelope (no slot involved) raises only the envelope
+    Repair — the custom-position key must not also fire.
+    """
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, {CONF_MIN_POSITION: 80, CONF_MAX_POSITION: 20})
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
+
+
+async def test_b1_min_exceeds_max_suppresses_slot_check():
+    """When the envelope itself is broken, the slot check short-circuits so
+    the two Repairs never double-fire for one underlying breakage — only the
+    envelope key raises, even with a slot present.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 80,
+        CONF_MAX_POSITION: 20,
+        slot["enabled"]: True,
+        slot["position"]: 50,
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_use_my_slot_outside_envelope_no_raise():
@@ -394,7 +432,9 @@ async def test_b1_use_my_slot_outside_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_tilt_only_slot_outside_envelope_no_raise():
@@ -411,7 +451,9 @@ async def test_b1_tilt_only_slot_outside_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_nonfixed_mode_slot_outside_envelope_no_raise():
@@ -428,7 +470,9 @@ async def test_b1_nonfixed_mode_slot_outside_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_safety_slot_ignored():
@@ -442,7 +486,9 @@ async def test_b1_safety_slot_ignored():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_disabled_slot_ignored():
@@ -455,7 +501,9 @@ async def test_b1_disabled_slot_ignored():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_coherent_envelope_no_raise():
@@ -468,7 +516,9 @@ async def test_b1_coherent_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 # --- B2: time window --------------------------------------------------------

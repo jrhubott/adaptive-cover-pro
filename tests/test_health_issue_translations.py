@@ -29,6 +29,7 @@ _HEALTH_ISSUES = {
     "cover_unavailable": {"{name}", "{entity_id}"},
     "sun_unavailable": {"{name}"},
     "config_position_envelope": {"{name}", "{min}", "{max}"},
+    "custom_position_out_of_range": {"{name}", "{min}", "{max}"},
     "config_time_window": {"{name}", "{start}", "{end}"},
     "cover_not_moving": {"{name}", "{entity_id}"},
     "cover_tilt_unsupported": {"{name}", "{entity_id}"},
