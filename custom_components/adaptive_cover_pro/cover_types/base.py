@@ -357,6 +357,18 @@ class ExternalInterlockPlan:
     ``reason`` is the dispatch label the corrective commands carry into the
     command service, the manual-override manager and the event timeline, so the
     whole sequence is attributable to one cause in diagnostics.
+
+    ``dispatch_token`` is the provenance stamp for BOTH targets, minted by the
+    planning policy and replayed verbatim by the executor into
+    ``CoverCommandService.apply_position`` — opaque to everything in between,
+    exactly like the stamp :meth:`CoverTypePolicy.capture_dispatch_token`
+    produces on the normal dispatch path. It travels WITH the plan because the
+    plan is the seam that produced these numbers: nothing resolved them, so
+    ``capture_dispatch_token`` would answer about some unrelated earlier
+    dispatch instead (issue #1115's provenance bug, pointed at the corrective
+    caller). The default ``None`` says "no dispatch produced this number", which
+    every gate already resolves to the install's own frame — the right answer
+    for a policy that has no frame of its own.
     """
 
     leading_entity_id: str
@@ -364,6 +376,7 @@ class ExternalInterlockPlan:
     follower_entity_id: str
     follower_target: int
     reason: str
+    dispatch_token: Any = None
 
 
 def caps_get(caps: Any, key: str, default: bool = False) -> bool:

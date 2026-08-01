@@ -1237,18 +1237,42 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         already speak the device frame, so ``_to_cover_frame`` / ``_entity_target``
         would double-apply the transforms and re-map the user's own target.
 
-        The stop between them is ``apply_user_stop``, not a raw service call, so
-        the resulting ``stop_cover`` carries an ACP context stamp and
-        :meth:`async_check_cover_service_call` ignores its own echo. It exists
-        because a command the hardware refused can leave the follower latched in
-        ``closing`` indefinitely (41 minutes in the reporter's recorder trace),
-        and re-dispatching on top of that latch does nothing.
+        ``plan.dispatch_token`` is replayed onto both dispatches, opaque —
+        exactly as ``apply_position`` itself treats the stamp. It has to travel
+        with the plan because these numbers came off a service call rather than
+        out of a policy resolve, so the stamp ``capture_dispatch_token`` would
+        mint here describes some unrelated earlier dispatch and can un-transform
+        the corrective targets in a frame they were never expressed in
+        (issues #1115 / #1138).
 
-        Manual override is engaged BEFORE either dispatch so the next pipeline
-        evaluation yields to the manual-override handler (priority 80) instead of
-        fighting the correction mid-flight. Handlers above it — weather at 90,
-        the safety custom-position slot at 100 — can still retake the pair on a
-        later cycle, which is the inherited and intended precedence.
+        **Everything after the leading dispatch is conditional on that dispatch
+        having actually been SENT.** ``apply_position`` answers
+        ``("skipped", reason)`` for a command it withheld — the integration's
+        hard kill switch and dry-run mode both land there — while
+        ``apply_user_stop`` consults neither and reaches the motor regardless.
+        Running on would interrupt the user's in-flight command on real hardware
+        and then decline to complete it, which is worse than the stall this
+        whole feature exists to fix and is reachable in ordinary use: a disabled
+        ACP is exactly when people drive rails by hand. A withheld leader
+        therefore ends the sequence, loudly, on its own event row.
+
+        The stop between the two dispatches is ``apply_user_stop``, not a raw
+        service call, so the resulting ``stop_cover`` carries an ACP context
+        stamp and :meth:`async_check_cover_service_call` ignores its own echo.
+        It exists because a command the hardware refused can leave the follower
+        latched in ``closing`` indefinitely (41 minutes in the reporter's
+        recorder trace), and re-dispatching on top of that latch does nothing.
+
+        Manual override is engaged once the leader is away and BEFORE the
+        follower's re-dispatch — the one that sits in the clearance gate waiting
+        on it — so the next pipeline evaluation yields to the manual-override
+        handler (priority 80) instead of fighting the correction mid-flight.
+        Handlers above it — weather at 90, the safety custom-position slot at
+        100 — can still retake the pair on a later cycle, which is the inherited
+        and intended precedence. Marking any earlier would hand ACP's tracking
+        of BOTH rails away for the whole override duration on the strength of a
+        correction that never happened, including the partner rail the user
+        never touched.
 
         ``manual_ignore_external`` gates only that marking: it governs whether an
         external touch takes OWNERSHIP of the cover, never whether the command
@@ -1256,9 +1280,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         BEFORE the marking rather than inside the loop, so the two entities can
         never diverge on it mid-sequence.
 
-        The two event rows bracket the sequence on the diagnostics timeline (and
+        The event rows bracket the sequence on the diagnostics timeline (and
         therefore the Lovelace card), so a rail that moved without being
-        commanded is explainable after the fact rather than mysterious.
+        commanded — or a correction that was engaged and then abandoned — is
+        explainable after the fact rather than mysterious.
         """
         options = self.config_entry.options
         # One context shape for both commands, stated once. ``force`` clears the
@@ -1302,22 +1327,44 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             plan.follower_target,
         )
 
-        if not self.manual_ignore_external:
-            for entity_id in (plan.leading_entity_id, plan.follower_entity_id):
-                self.manager.mark_user_command(entity_id, reason=plan.reason)
-
-        await self._cmd_svc.apply_position(
+        outcome, detail = await self._cmd_svc.apply_position(
             plan.leading_entity_id,
             plan.leading_target,
             plan.reason,
             ctx[plan.leading_entity_id],
+            dispatch_token=plan.dispatch_token,
         )
+        if outcome != "sent":
+            self.logger.warning(
+                "[%s] %s was not dispatched (%s), so %s is left alone: stopping "
+                "and re-issuing it would interrupt the user's command without "
+                "completing it",
+                plan.reason,
+                plan.leading_entity_id,
+                detail,
+                plan.follower_entity_id,
+            )
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "external_interlock_abandoned",
+                    "outcome": detail,
+                    **row,
+                }
+            )
+            return
+
+        if not self.manual_ignore_external:
+            for entity_id in (plan.leading_entity_id, plan.follower_entity_id):
+                self.manager.mark_user_command(entity_id, reason=plan.reason)
+
         await self._cmd_svc.apply_user_stop(plan.follower_entity_id)
         await self._cmd_svc.apply_position(
             plan.follower_entity_id,
             plan.follower_target,
             plan.reason,
             ctx[plan.follower_entity_id],
+            dispatch_token=plan.dispatch_token,
         )
 
         self._event_buffer.record(

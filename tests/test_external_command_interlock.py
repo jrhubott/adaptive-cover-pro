@@ -330,6 +330,30 @@ def test_option_off_returns_none_and_logs_warning(caplog) -> None:
     assert "day_night_external_command_interlock" in message
 
 
+def test_plan_stamps_the_frame_its_own_decision_used() -> None:
+    """The plan carries its targets' provenance, not whatever cache is parked.
+
+    The decision runs in ``_dispatch_frame(None)`` — the install's own frame,
+    the honest answer for a wire number no ACP dispatch produced. The gate that
+    later releases the corrective commands has to be handed THAT bool, or it
+    falls back to ``capture_dispatch_token``, which replays
+    ``_dual_entity_dispatch_inverse`` — the frame of the last rail RESOLUTION,
+    which a sunset/end-time seam parks divergent on an interpolation install.
+    Decision frame and gate frame must be one bool, minted once, here.
+    """
+    policy = _model_c(bottom=100)
+    # The sunset/end-time loop's own call shape: ``inverted=`` is the install's
+    # CONFIGURED inverse-state, unconditional of interpolation.
+    policy.resolve_entity_target(_BOTTOM, 40, inverted=True)
+
+    plan = policy.plan_external_command_interlock(
+        _MIDDLE, service="close_cover", wire_target=0
+    )
+
+    assert plan is not None
+    assert plan.dispatch_token is False
+
+
 def test_option_on_by_default_for_an_upgraded_install() -> None:
     """No stored key at all still plans — the option ships on."""
     from custom_components.adaptive_cover_pro.const import (
@@ -355,7 +379,12 @@ def test_option_on_by_default_for_an_upgraded_install() -> None:
 # listener: it exercises the real branching without standing up a coordinator.
 
 
-def _plan(follower: str = _MIDDLE, leader: str = _BOTTOM, target: int = 0):
+def _plan(
+    follower: str = _MIDDLE,
+    leader: str = _BOTTOM,
+    target: int = 0,
+    dispatch_token: object = False,
+):
     from custom_components.adaptive_cover_pro.cover_types.base import (
         ExternalInterlockPlan,
     )
@@ -366,6 +395,7 @@ def _plan(follower: str = _MIDDLE, leader: str = _BOTTOM, target: int = 0):
         follower_entity_id=follower,
         follower_target=target,
         reason="external_command_interlock",
+        dispatch_token=dispatch_token,
     )
 
 
@@ -600,8 +630,18 @@ async def test_set_cover_position_without_a_position_is_ignored() -> None:
 # proven end to end in ``tests/test_day_night_rail_sequencing.py``.
 
 
-def _executor_coordinator(*, manual_ignore_external: bool = False):
-    """Build a duck-typed coordinator recording every side effect in call order."""
+def _executor_coordinator(
+    *,
+    manual_ignore_external: bool = False,
+    leader_outcome: tuple[str, str] = ("sent", "set_cover_position"),
+):
+    """Build a duck-typed coordinator recording every side effect in call order.
+
+    ``leader_outcome`` is what the FIRST ``apply_position`` answers — the
+    leading rail's dispatch. ``apply_position``'s real contract is
+    ``("sent", service)`` or ``("skipped", reason)``, and the corrective
+    sequence only makes sense once the leader is genuinely away.
+    """
     from unittest.mock import AsyncMock, MagicMock
 
     calls: list[tuple] = []
@@ -611,9 +651,14 @@ def _executor_coordinator(*, manual_ignore_external: bool = False):
     coordinator.config_entry = MagicMock()
     coordinator.config_entry.options = {"azimuth": 180}
 
-    async def _apply_position(entity_id, position, reason, context):
-        calls.append(("apply_position", entity_id, position, reason, context))
-        return ("sent", "set_cover_position")
+    async def _apply_position(
+        entity_id, position, reason, context, dispatch_token=None
+    ):
+        first = not any(c[0] == "apply_position" for c in calls)
+        calls.append(
+            ("apply_position", entity_id, position, reason, context, dispatch_token)
+        )
+        return leader_outcome if first else ("sent", "set_cover_position")
 
     async def _apply_user_stop(entity_id):
         calls.append(("apply_user_stop", entity_id))
@@ -686,13 +731,40 @@ async def test_executor_order_leader_then_stop_then_follower() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_marks_user_command_on_both_rails_before_dispatch() -> None:
-    """Manual override lands first so the next cycle yields instead of fighting.
+async def test_executor_forwards_the_plan_stamp_to_both_dispatches() -> None:
+    """Both corrective commands are gated in the frame the DECISION used (#1138).
+
+    The plan's targets are wire numbers no ACP dispatch produced, so their
+    provenance is the install's own frame and the policy mints it once, at
+    decision time. Handed down, the gate un-transforms against exactly that.
+    Left off, ``apply_position`` falls back to ``capture_dispatch_token``, which
+    replays the frame of the last rail RESOLUTION — a divergent seam parks one
+    there and the verdict inverts. Opaque here: the executor replays the stamp
+    without interpreting it, exactly as the command service does.
+    """
+    coordinator, calls = _executor_coordinator()
+
+    await _execute(coordinator, _plan(dispatch_token=False))
+
+    assert [c[5] for c in calls if c[0] == "apply_position"] == [False, False]
+
+
+@pytest.mark.asyncio
+async def test_executor_marks_user_command_on_both_rails_once_the_leader_is_away() -> (
+    None
+):
+    """Manual override lands before the re-dispatch, and only if there IS one.
 
     The manual-override handler sits at priority 80, so a marked pair is left
-    alone by the solar path while the correction completes. Marking after the
-    dispatches would leave a window where the very next pipeline evaluation
-    could re-drive the rails.
+    alone by the solar path while the correction completes. What has to be
+    marked before is the FOLLOWER's re-dispatch — the one that sits in the
+    clearance gate waiting on the leader — not the leader's own command, which
+    is ungated by construction and returns immediately.
+
+    Marking earlier than the leader's outcome is known would hand ACP's tracking
+    of BOTH rails to the manual-override handler for the full override duration
+    on the strength of a correction that never happened — including the partner
+    rail, which the user never touched and which never moved.
     """
     coordinator, calls = _executor_coordinator()
 
@@ -702,10 +774,43 @@ async def test_executor_marks_user_command_on_both_rails_before_dispatch() -> No
     assert {m[1] for m in marks} == {_BOTTOM, _MIDDLE}
     assert all(m[2] == "external_command_interlock" for m in marks)
 
-    first_dispatch = next(
-        i for i, c in enumerate(calls) if c[0] in ("apply_position", "apply_user_stop")
-    )
-    assert all(calls.index(m) < first_dispatch for m in marks)
+    leader = next(i for i, c in enumerate(calls) if c[0] == "apply_position")
+    stop = next(i for i, c in enumerate(calls) if c[0] == "apply_user_stop")
+    assert all(leader < calls.index(m) < stop for m in marks), calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("skip_reason", ["integration_disabled", "dry_run"])
+async def test_executor_abandons_the_correction_when_the_leader_never_went_out(
+    skip_reason,
+) -> None:
+    """No stop, no re-dispatch, no override marks — and a row that says why.
+
+    ``apply_position`` answers ``("skipped", <reason>)`` for a command it
+    withheld; the integration's hard kill switch and dry-run mode both land
+    there. ``apply_user_stop`` → ``call_stop_cover`` consults NEITHER. Ignoring
+    the leader's outcome therefore interrupts the user's in-flight command on
+    real hardware and then refuses to complete it, flags both rails
+    manually-overridden, and files the whole thing as completed — strictly worse
+    than the stall this feature exists to fix, and reachable in ordinary use,
+    since a disabled ACP is precisely when people drive rails by hand.
+    """
+    coordinator, calls = _executor_coordinator(leader_outcome=("skipped", skip_reason))
+
+    await _execute(coordinator, _plan())
+
+    assert [c[0] for c in calls] == ["record", "apply_position", "record"], calls
+    coordinator._cmd_svc.apply_user_stop.assert_not_awaited()
+    coordinator.manager.mark_user_command.assert_not_called()
+
+    rows = [c[2] for c in calls if c[0] == "record"]
+    assert [r["event"] for r in rows] == [
+        "external_interlock_engaged",
+        "external_interlock_abandoned",
+    ]
+    assert rows[-1]["outcome"] == skip_reason
+    assert rows[-1]["leading_entity_id"] == _BOTTOM
+    assert rows[-1]["follower_entity_id"] == _MIDDLE
 
 
 @pytest.mark.asyncio

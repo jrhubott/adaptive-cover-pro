@@ -1914,6 +1914,24 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         the install's own, which is the honest answer for a command no ACP
         dispatch produced (the #993 bug class).
 
+        **That same bool rides out on the plan as its ``dispatch_token``**, so
+        the gate that later releases the two corrective commands un-transforms
+        them in the frame this decision was taken in. One bool, minted once,
+        read by both — the ``_dispatch_frame`` doctrine applied to a new pair of
+        readers. Without it ``apply_position`` would fall back to
+        :meth:`capture_dispatch_token`, which replays
+        ``_dual_entity_dispatch_inverse`` — the frame of the last rail
+        RESOLUTION, which this path never performs. The sunset/end-time loop
+        parks a ``True`` there on an interpolation install and the auto-control-
+        off return loop parks a ``False`` on an inverse-state one, so the stamp
+        would routinely name a frame these numbers were never expressed in and
+        INVERT the verdict: the plan's leader, clear by construction, reads as
+        blocked, while the follower reads as clear and is waved into a rail it
+        cannot pass — #1115's stall, re-opened from inside the correction. That
+        is the provenance bug the stamp exists to close (issue #1115), and the
+        plan is the seam that has to close it here, because it is the seam that
+        produced the numbers.
+
         Returns ``None`` — nothing to correct — for every non-Model-C instance,
         every entity outside the pair, a degenerate pair the gate is itself inert
         for, an unreadable partner rail (no reading, no evidence of a collision),
@@ -1974,6 +1992,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             follower_entity_id=entity_id,
             follower_target=wire_target,
             reason=_EXTERNAL_INTERLOCK_REASON,
+            dispatch_token=inverse,
         )
 
     def _debug(self, msg: str, *args) -> None:
