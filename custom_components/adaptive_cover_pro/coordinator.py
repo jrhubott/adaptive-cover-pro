@@ -48,6 +48,7 @@ from .helpers import (
     _read_sun_boundary_options,
     check_cover_features,
     custom_position_slot_delivers_fixed_position,
+    custom_position_slot_name,
     custom_position_slot_sensors,
     has_configured_window_end,
     resolve_override_deadline,
@@ -1890,18 +1891,40 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cover_cfg = CoverConfig.from_options(options)
             min_pos = int(cover_cfg.min_pos)
             max_pos = int(cover_cfg.max_pos)
-            placeholders = {"name": name, "min": str(min_pos), "max": str(max_pos)}
+            # Each Repair gets its own placeholder dict (issue #1146): the
+            # custom-position description carries `{slot}` but the envelope's
+            # does not, and HA silently drops a description whose placeholder
+            # set differs from the key's, so the two must never share one dict.
+            envelope_placeholders = {
+                "name": name,
+                "min": str(min_pos),
+                "max": str(max_pos),
+            }
             self._repair.update_predicate(
                 self._envelope_issue_key,
                 self._min_exceeds_max(min_pos, max_pos),
                 translation_key=ISSUE_CONFIG_POSITION_ENVELOPE,
-                placeholders=placeholders,
+                placeholders=envelope_placeholders,
             )
+            violating_slot = self._custom_position_out_of_range(
+                options, min_pos, max_pos
+            )
+            custom_position_placeholders = {
+                "name": name,
+                "min": str(min_pos),
+                "max": str(max_pos),
+            }
+            if violating_slot is not None:
+                slot_keys = CUSTOM_POSITION_SLOTS[violating_slot]
+                custom_position_placeholders["slot"] = (
+                    custom_position_slot_name(options, slot_keys)
+                    or f"Slot {violating_slot}"
+                )
             self._repair.update_predicate(
                 self._custom_position_issue_key,
-                self._custom_position_out_of_range(options, min_pos, max_pos),
+                violating_slot is not None,
                 translation_key=ISSUE_CUSTOM_POSITION_OUT_OF_RANGE,
-                placeholders=placeholders,
+                placeholders=custom_position_placeholders,
             )
 
             # B2 — time-window coherence. Only fire when BOTH sides resolve, so an
@@ -2056,9 +2079,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _min_exceeds_max(min_pos: int, max_pos: int) -> bool:
         """Whether the position envelope itself is inverted (issue #975/#1146, B1).
 
-        True only when ``min > max``. Split from
-        ``_custom_position_out_of_range`` (issue #1146) so this Repair's message
-        states only this clause — sibling condition (a slot pinned outside a
+        True only when ``min > max``. Split, along with
+        ``_custom_position_out_of_range``, out of the former
+        ``_position_envelope_incoherent`` (issue #1146) so this Repair's message
+        states only this clause — the sibling condition (a slot pinned outside a
         *coherent* envelope) is that method's job, not this one's.
         """
         return min_pos > max_pos
@@ -2066,28 +2090,33 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     @staticmethod
     def _custom_position_out_of_range(
         options: dict, min_pos: int, max_pos: int
-    ) -> bool:
-        """Whether a fixed custom-position slot is pinned outside the envelope.
+    ) -> int | None:
+        """Return the first fixed custom-position slot pinned outside the envelope.
 
-        (issue #975/#1146, B1.) False immediately when ``_min_exceeds_max``
-        reports the envelope itself inverted — that is the sibling predicate's
-        condition to report, and delegating to the single seam (rather than
-        re-testing ``min > max`` here) keeps the two Repairs mutually exclusive
-        so they never double-fire for one underlying breakage, and keeps the
-        inversion definition in exactly one place. Otherwise True when an
-        enabled, non-safety slot that would deliver an exact (FIXED) cover
-        position pins it outside ``[min, max]``. Slots that never deliver a
-        fixed position claim — ``use_my``, tilt-only, or a non-FIXED constraint
-        mode (floor / ceiling / range) — are exempt: they compose as
-        constraints the envelope clamps and cannot conflict with it.
-        Cover-type-agnostic: loops the slots generically and delegates the
-        fixed-position determination to the shared helper (same seam the
-        pipeline handler uses), with no branching on cover type or
-        capabilities.
+        Returns ``None`` if none is (issue #975/#1146, B1). Returns the slot
+        *number*, not a bool, so the caller can name which of up-to-10 slots
+        violated in the Repair's ``{slot}`` placeholder — the message would
+        otherwise give no way to tell which slot is at fault. ``None``
+        immediately when ``_min_exceeds_max`` reports the envelope itself
+        inverted — that is the sibling predicate's condition to report, and
+        delegating to the single seam (rather than re-testing ``min > max``
+        here) keeps the two Repairs mutually exclusive so they never
+        double-fire for one underlying breakage, and keeps the inversion
+        definition in exactly one place. Otherwise the number of the first
+        (lowest-numbered) enabled, non-safety slot that would deliver an exact
+        (FIXED) cover position pinned outside ``[min, max]`` — deterministic
+        when more than one slot violates, since ``CUSTOM_POSITION_SLOTS``
+        iterates in slot order. Slots that never deliver a fixed position
+        claim — ``use_my``, tilt-only, or a non-FIXED constraint mode (floor /
+        ceiling / range) — are exempt: they compose as constraints the
+        envelope clamps and cannot conflict with it. Cover-type-agnostic:
+        loops the slots generically and delegates the fixed-position
+        determination to the shared helper (same seam the pipeline handler
+        uses), with no branching on cover type or capabilities.
         """
         if AdaptiveDataUpdateCoordinator._min_exceeds_max(min_pos, max_pos):
-            return False
-        for slot_keys in CUSTOM_POSITION_SLOTS.values():
+            return None
+        for slot_number, slot_keys in CUSTOM_POSITION_SLOTS.items():
             if not options.get(slot_keys["enabled"], DEFAULT_CUSTOM_POSITION_ENABLED):
                 continue
             priority = options.get(
@@ -2099,8 +2128,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 continue  # only exact-position slots can contradict the envelope
             position = options.get(slot_keys["position"])
             if position < min_pos or position > max_pos:
-                return True
-        return False
+                return slot_number
+        return None
 
     def _calculate_cover_state(self, cover_data, options) -> int:
         """Calculate cover state via pipeline and return final position.

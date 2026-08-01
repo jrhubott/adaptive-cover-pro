@@ -19,7 +19,7 @@
     },
     "custom_position_out_of_range": {
       "title": "Custom position outside configured limits",
-      "description": "A custom position configured on **{name}** is pinned outside the configured minimum/maximum range ({min}-{max}) and would override those limits. Review the minimum/maximum position and custom-position settings in the cover's options."
+      "description": "The custom position **{slot}** configured on **{name}** is pinned outside the configured minimum/maximum range ({min}-{max}) and would override those limits. Review the minimum/maximum position and custom-position settings in the cover's options."
     },
     "config_time_window": {
       "title": "Operational time window is inverted",

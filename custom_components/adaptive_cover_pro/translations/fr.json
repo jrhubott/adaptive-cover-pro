@@ -15,7 +15,11 @@
     },
     "config_position_envelope": {
       "title": "Les limites de position sont contradictoires",
-      "description": "Les limites de position configurées sur **{name}** sont incompatibles : le minimum ({min}) est supérieur au maximum ({max}). Vérifiez les paramètres de position minimale/maximale dans les options du store."
+      "description": "Les limites de position configurées sur **{name}** sont incohérentes : le minimum ({min}) est supérieur au maximum ({max}). Vérifiez les paramètres de position minimale/maximale dans les options du store."
+    },
+    "custom_position_out_of_range": {
+      "title": "Position personnalisée en dehors des limites configurées",
+      "description": "La position personnalisée **{slot}** configurée sur **{name}** est en dehors de la plage minimum/maximum configurée ({min}-{max}) et remplacerait ces limites. Vérifiez les paramètres de position minimale/maximale et de position personnalisée dans les options du store."
     },
     "config_time_window": {
       "title": "La fenêtre temporelle opérationnelle est inversée",
@@ -32,10 +36,6 @@
     "day_night_middle_rail_unset": {
       "title": "Barre intermédiaire du store jour/nuit non sélectionnée",
       "description": "**{name}** est configuré comme store jour/nuit à deux barres, mais la protection de la barre intermédiaire n'est pas sélectionnée — ou fait référence à une protection qui ne figure pas dans la liste des protections de cette instance. Les deux barres reçoivent la même position, le store se comporte donc comme une simple protection et le mélange voilage/occultant ne sera jamais appliqué. Sélectionnez la protection de la barre intermédiaire dans les options de cette protection, et assurez-vous qu'elle figure aussi parmi les protections contrôlées."
-    },
-    "custom_position_out_of_range": {
-      "title": "Position personnalisée en dehors des limites configurées",
-      "description": "Une position personnalisée configurée sur **{name}** est en dehors de la plage minimum/maximum configurée ({min}-{max}) et remplacerait ces limites. Vérifiez les paramètres de position minimale/maximale et de position personnalisée dans les options du store."
     }
   },
   "config": {
