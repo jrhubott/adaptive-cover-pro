@@ -346,18 +346,8 @@ async def test_b1_inverted_envelope_raises():
     assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in _raised_keys(create)
 
 
-def _envelope_call(create_mock):
-    """Return the ir.async_create_issue call that raised the envelope Repair."""
-    key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"
-    for call in create_mock.call_args_list:
-        if call.args[2] == key:
-            return call
-    return None
-
-
-def _custom_position_call(create_mock):
-    """Return the create-issue call that raised the custom-position Repair."""
-    key = f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}"
+def _issue_call(create_mock, key):
+    """Return the ir.async_create_issue call that raised the Repair for ``key``."""
     for call in create_mock.call_args_list:
         if call.args[2] == key:
             return call
@@ -371,7 +361,7 @@ async def test_b1_placeholders_render_as_int():
     create, _delete = await _run(
         coord, {CONF_MIN_POSITION: 80.0, CONF_MAX_POSITION: 20.0}
     )
-    call = _envelope_call(create)
+    call = _issue_call(create, f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}")
     assert call is not None
     assert call.kwargs["translation_key"] == ISSUE_CONFIG_POSITION_ENVELOPE
     placeholders = call.kwargs["translation_placeholders"]
@@ -396,7 +386,7 @@ async def test_b1_pinned_slot_outside_envelope_raises():
     raised = _raised_keys(create)
     assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" in raised
     assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
-    call = _custom_position_call(create)
+    call = _issue_call(create, f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}")
     assert call is not None
     assert call.kwargs["translation_key"] == ISSUE_CUSTOM_POSITION_OUT_OF_RANGE
 
@@ -532,6 +522,32 @@ async def test_b1_coherent_envelope_no_raise():
     raised = _raised_keys(create)
     assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
     assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
+
+
+async def test_b1_min_equals_max_is_coherent_and_slot_check_runs():
+    """``min == max`` is a degenerate but coherent envelope, not an inversion.
+
+    ``_min_exceeds_max`` is ``min_pos > max_pos`` (strictly greater) — the
+    boundary case where they're equal must read as coherent, so the envelope
+    Repair stays quiet and the slot check still runs (rather than
+    short-circuiting) and correctly flags a slot pinned outside the
+    single-point envelope. A `>=` mutant would flip both: it would fire the
+    envelope Repair with a false "the minimum (50) is above the maximum (50)"
+    message, and its short-circuit would suppress the accurate
+    custom-position Repair.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 50,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 30,  # outside the degenerate [50, 50] envelope
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" in raised
 
 
 # --- B2: time window --------------------------------------------------------
