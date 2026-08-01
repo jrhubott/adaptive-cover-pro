@@ -15,7 +15,11 @@
     },
     "config_position_envelope": {
       "title": "Position limits are contradictory",
-      "description": "The position limits configured on **{name}** are inconsistent: the minimum ({min}) is above the maximum ({max}), or a custom position is pinned outside that range and would override those limits. Review the minimum/maximum position and custom-position settings in the cover's options."
+      "description": "The position limits configured on **{name}** are inconsistent: the minimum ({min}) is above the maximum ({max}). Review the minimum/maximum position settings in the cover's options."
+    },
+    "custom_position_out_of_range": {
+      "title": "Custom position outside configured limits",
+      "description": "The custom position **{slot}** configured on **{name}** is pinned outside the configured minimum/maximum range ({min}-{max}) and would override those limits. Review the minimum/maximum position and custom-position settings in the cover's options."
     },
     "config_time_window": {
       "title": "Operational time window is inverted",

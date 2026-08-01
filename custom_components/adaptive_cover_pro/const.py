@@ -857,7 +857,10 @@ ISSUE_TEMP_SENSOR_UNAVAILABLE = "temp_sensor_unavailable"
 # raise time (`{id}_{entry_id}` — A1 also appends the cover entity_id).
 ISSUE_COVER_UNAVAILABLE = "cover_unavailable"  # a controlled cover is unavailable
 ISSUE_SUN_UNAVAILABLE = "sun_unavailable"  # sun.sun is unavailable/missing
-ISSUE_CONFIG_POSITION_ENVELOPE = "config_position_envelope"  # min>max or slot outside
+ISSUE_CONFIG_POSITION_ENVELOPE = "config_position_envelope"  # min > max
+# slot outside min/max, split from config_position_envelope so each Repair
+# states only its own condition — issue #1146
+ISSUE_CUSTOM_POSITION_OUT_OF_RANGE = "custom_position_out_of_range"
 ISSUE_CONFIG_TIME_WINDOW = "config_time_window"  # start >= end
 ISSUE_COVER_NOT_MOVING = (
     "cover_not_moving"  # commanded but not reaching target (issue #990)

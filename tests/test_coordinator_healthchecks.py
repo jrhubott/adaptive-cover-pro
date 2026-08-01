@@ -43,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     ISSUE_COVER_NOT_MOVING,
     ISSUE_COVER_TILT_UNSUPPORTED,
     ISSUE_COVER_UNAVAILABLE,
+    ISSUE_CUSTOM_POSITION_OUT_OF_RANGE,
     ISSUE_DAY_NIGHT_MIDDLE_RAIL_UNSET,
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
@@ -133,6 +134,7 @@ def _make_coord(
     coord._temp_issue_key = f"{ISSUE_TEMP_SENSOR_UNAVAILABLE}_{_ENTRY}"
     coord._sun_issue_key = f"{ISSUE_SUN_UNAVAILABLE}_{_ENTRY}"
     coord._envelope_issue_key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"
+    coord._custom_position_issue_key = f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}"
     coord._time_window_issue_key = f"{ISSUE_CONFIG_TIME_WINDOW}_{_ENTRY}"
     coord._cover_issue_keys = set()
     coord._a1_orphans_swept = False
@@ -338,15 +340,8 @@ async def test_c1_no_raise_when_sun_healthy():
 # --- B1: position envelope --------------------------------------------------
 
 
-async def test_b1_inverted_envelope_raises():
-    coord = _make_coord(entities=[])
-    create, _delete = await _run(coord, {CONF_MIN_POSITION: 80, CONF_MAX_POSITION: 20})
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in _raised_keys(create)
-
-
-def _envelope_call(create_mock):
-    """Return the ir.async_create_issue call that raised the envelope Repair."""
-    key = f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"
+def _issue_call(create_mock, key):
+    """Return the ir.async_create_issue call that raised the Repair for ``key``."""
     for call in create_mock.call_args_list:
         if call.args[2] == key:
             return call
@@ -360,14 +355,19 @@ async def test_b1_placeholders_render_as_int():
     create, _delete = await _run(
         coord, {CONF_MIN_POSITION: 80.0, CONF_MAX_POSITION: 20.0}
     )
-    call = _envelope_call(create)
+    call = _issue_call(create, f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}")
     assert call is not None
+    assert call.kwargs["translation_key"] == ISSUE_CONFIG_POSITION_ENVELOPE
     placeholders = call.kwargs["translation_placeholders"]
     assert placeholders["min"] == "80"
     assert placeholders["max"] == "20"
 
 
 async def test_b1_pinned_slot_outside_envelope_raises():
+    """A slot outside a *coherent* envelope raises only the custom-position
+    Repair — the envelope key must not also fire, since min <= max here and
+    that clause of the (now-split) message would be false (issue #1146).
+    """
     slot = CUSTOM_POSITION_SLOTS[1]
     options = {
         CONF_MIN_POSITION: 0,
@@ -377,7 +377,133 @@ async def test_b1_pinned_slot_outside_envelope_raises():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" in raised
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    call = _issue_call(create, f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}")
+    assert call is not None
+    assert call.kwargs["translation_key"] == ISSUE_CUSTOM_POSITION_OUT_OF_RANGE
+
+
+async def test_b1_custom_position_placeholder_names_violating_slot():
+    """The {slot} placeholder names the offending slot by its configured label
+    (issue #1146) so the Repair is directly actionable across up-to-10 slots.
+    """
+    slot = CUSTOM_POSITION_SLOTS[2]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 80,  # above max
+        slot["name"]: "Canicule",
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    call = _issue_call(create, f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}")
+    assert call is not None
+    assert call.kwargs["translation_placeholders"]["slot"] == "Canicule"
+
+
+async def test_b1_custom_position_placeholder_falls_back_to_slot_number():
+    """An unnamed violating slot names itself "Slot N" — the same fallback
+    ``custom_position_slot_name(...) or f"Slot {n}"`` pattern config_flow
+    already uses, so an unnamed slot is still identifiable.
+    """
+    slot = CUSTOM_POSITION_SLOTS[3]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 80,
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    call = _issue_call(create, f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}")
+    assert call is not None
+    assert call.kwargs["translation_placeholders"]["slot"] == "Slot 3"
+
+
+async def test_b1_custom_position_names_first_violating_slot_deterministically():
+    """When multiple slots violate the envelope, the lowest-numbered slot is
+    named — deterministic regardless of which slot the user notices first.
+    """
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    slot4 = CUSTOM_POSITION_SLOTS[4]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot1["enabled"]: True,
+        slot1["position"]: 80,
+        slot1["name"]: "First",
+        slot4["enabled"]: True,
+        slot4["position"]: 90,
+        slot4["name"]: "Fourth",
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    call = _issue_call(create, f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}")
+    assert call is not None
+    assert call.kwargs["translation_placeholders"]["slot"] == "First"
+
+
+async def test_b1_envelope_and_custom_position_placeholder_dicts_are_independent():
+    """The envelope and custom-position Repairs must never share one
+    placeholder dict object (issue #1146). The custom-position description
+    carries ``{slot}`` but the envelope's does not, and HA silently drops a
+    description whose placeholder set differs from the key's — sharing one
+    dict between the two ``update_predicate`` calls would corrupt whichever
+    fires. Patches ``update_predicate`` itself (rather than reading the raised
+    Repair) so both calls are observable even though only one fires here.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 0,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 80,
+        slot["name"]: "Canicule",
+    }
+    coord = _make_coord(entities=[])
+    coord._repair.update_predicate = MagicMock(wraps=coord._repair.update_predicate)
+    create, _delete = await _run(coord, options)
+    calls_by_key = {c.args[0]: c for c in coord._repair.update_predicate.call_args_list}
+    envelope_call = calls_by_key[f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}"]
+    custom_call = calls_by_key[f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}"]
+    envelope_placeholders = envelope_call.kwargs["placeholders"]
+    custom_placeholders = custom_call.kwargs["placeholders"]
+    assert envelope_placeholders is not custom_placeholders
+    assert "slot" not in envelope_placeholders
+    assert custom_placeholders["slot"] == "Canicule"
+
+
+async def test_b1_min_exceeds_max_does_not_raise_custom_position_key():
+    """An inverted envelope (no slot involved) raises only the envelope
+    Repair — the custom-position key must not also fire.
+    """
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, {CONF_MIN_POSITION: 80, CONF_MAX_POSITION: 20})
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
+
+
+async def test_b1_min_exceeds_max_suppresses_slot_check():
+    """When the envelope itself is broken, the slot check short-circuits so
+    the two Repairs never double-fire for one underlying breakage — only the
+    envelope key raises, even with a slot present.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 80,
+        CONF_MAX_POSITION: 20,
+        slot["enabled"]: True,
+        slot["position"]: 50,
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_use_my_slot_outside_envelope_no_raise():
@@ -394,7 +520,9 @@ async def test_b1_use_my_slot_outside_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_tilt_only_slot_outside_envelope_no_raise():
@@ -411,7 +539,9 @@ async def test_b1_tilt_only_slot_outside_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_nonfixed_mode_slot_outside_envelope_no_raise():
@@ -428,7 +558,9 @@ async def test_b1_nonfixed_mode_slot_outside_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_safety_slot_ignored():
@@ -442,7 +574,9 @@ async def test_b1_safety_slot_ignored():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_disabled_slot_ignored():
@@ -455,7 +589,9 @@ async def test_b1_disabled_slot_ignored():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
 
 
 async def test_b1_coherent_envelope_no_raise():
@@ -468,7 +604,35 @@ async def test_b1_coherent_envelope_no_raise():
     }
     coord = _make_coord(entities=[])
     create, _delete = await _run(coord, options)
-    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in _raised_keys(create)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" not in raised
+
+
+async def test_b1_min_equals_max_is_coherent_and_slot_check_runs():
+    """``min == max`` is a degenerate but coherent envelope, not an inversion.
+
+    ``_min_exceeds_max`` is ``min_pos > max_pos`` (strictly greater) — the
+    boundary case where they're equal must read as coherent, so the envelope
+    Repair stays quiet and the slot check still runs (rather than
+    short-circuiting) and correctly flags a slot pinned outside the
+    single-point envelope. A `>=` mutant would flip both: it would fire the
+    envelope Repair with a false "the minimum (50) is above the maximum (50)"
+    message, and its short-circuit would suppress the accurate
+    custom-position Repair.
+    """
+    slot = CUSTOM_POSITION_SLOTS[1]
+    options = {
+        CONF_MIN_POSITION: 50,
+        CONF_MAX_POSITION: 50,
+        slot["enabled"]: True,
+        slot["position"]: 30,  # outside the degenerate [50, 50] envelope
+    }
+    coord = _make_coord(entities=[])
+    create, _delete = await _run(coord, options)
+    raised = _raised_keys(create)
+    assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" in raised
 
 
 # --- B2: time window --------------------------------------------------------
