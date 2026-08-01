@@ -22,7 +22,7 @@ from custom_components.adaptive_cover_pro.const import (
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
-from tests.ha_helpers import wire_dispatch_frame
+from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
 
 
 def _slot(
@@ -67,9 +67,7 @@ def _make_coord(custom_states, *, options: dict | None = None):
     coord._cmd_svc.apply_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     # set_position routes through the axis collapse point (issue #725) — bind the
     # real dispatcher so the service reaches async_apply_user_position as before.
     coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))

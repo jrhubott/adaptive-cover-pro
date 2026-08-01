@@ -1143,14 +1143,11 @@ async def test_entity_area_id_unregistered_entity(group_setup) -> None:
 def _dispatch_member_coordinator(options: dict, entity: str) -> MagicMock:
     """Build a member coord whose real user-position path runs to the dispatch seam."""
     from custom_components.adaptive_cover_pro.const import ControlMethod
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
-    )
     from custom_components.adaptive_cover_pro.pipeline.types import (
         DecisionStep,
         PipelineResult,
     )
-    from tests.ha_helpers import wire_dispatch_frame
+    from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
     from tests.test_pipeline.conftest import make_snapshot
 
     coord = MagicMock()
@@ -1177,9 +1174,7 @@ def _dispatch_member_coordinator(options: dict, entity: str) -> MagicMock:
     coord._handler_by_name = {"solar": solar}
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     coord.async_reset_manual_overrides = AsyncMock(return_value=[])
     coord.async_refresh = AsyncMock()
     coord.async_request_refresh = AsyncMock()

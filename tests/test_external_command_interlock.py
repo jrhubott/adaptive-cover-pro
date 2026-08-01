@@ -805,8 +805,8 @@ async def test_executor_abandons_the_correction_when_the_leader_never_went_out(
 
     rows = [c[2] for c in calls if c[0] == "record"]
     assert [r["event"] for r in rows] == [
-        "external_interlock_engaged",
-        "external_interlock_abandoned",
+        "rail_interlock_engaged",
+        "rail_interlock_abandoned",
     ]
     assert rows[-1]["outcome"] == skip_reason
     assert rows[-1]["leading_entity_id"] == _BOTTOM
@@ -846,8 +846,8 @@ async def test_executor_records_engaged_and_completed_event_rows() -> None:
 
     rows = [c[2] for c in calls if c[0] == "record"]
     assert [r["event"] for r in rows] == [
-        "external_interlock_engaged",
-        "external_interlock_completed",
+        "rail_interlock_engaged",
+        "rail_interlock_completed",
     ]
     for row in rows:
         assert row["ts"]

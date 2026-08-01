@@ -4160,9 +4160,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # policy's no-coverage endpoint (position_for_intent(sun_through=True));
     # an older build already understands default_percentage.
     # 3.14 (issue #1140): added the additive day_night_concurrent_rail_travel
-    # option. An absent key already reads as "on" (the default), so the
-    # v3.13→v3.14 block seeds nothing and exists only to advance a stale minor
-    # so it stops re-triggering migration every restart.
+    # option. An absent key reads as the default, so the v3.13→v3.14 block seeds
+    # nothing and exists only to advance a stale minor so it stops re-triggering
+    # migration every restart. The default has since flipped to OFF and the
+    # block stays a no-op on purpose — see the note there.
     # 3.15 (issue #1138): the same shape again for the additive
     # day_night_external_command_interlock option — absent reads as "on", so the
     # v3.14→v3.15 block is a no-op bump and nothing else.

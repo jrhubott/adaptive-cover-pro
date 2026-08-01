@@ -417,6 +417,20 @@ class CoverCommandService:
             if s.target is not None:
                 yield eid, s.target
 
+    def is_entity_unavailable(self, entity_id: str) -> bool:
+        """Return True when HA has no usable state for ``entity_id``.
+
+        The single statement of "this cover cannot be commanded right now",
+        shared by ``apply_position``'s own ``cover_unavailable`` gate and by
+        every caller that needs to know the same thing BEFORE dispatching — the
+        coupled-cover interlock has to, because its correction moves a second
+        entity and must not spend that move on a command the gate below will
+        refuse anyway. Two copies of this predicate is how one of them ends up
+        checking ``unknown`` and the other not.
+        """
+        state_obj = self._hass.states.get(entity_id)
+        return state_obj is None or state_obj.state == STATE_UNAVAILABLE
+
     def is_waiting_for_target(self, entity_id: str) -> bool:
         """Return True if the cover is currently expected to be moving toward target."""
         s = self._state.get(entity_id)
@@ -1372,7 +1386,7 @@ class CoverCommandService:
         # of the other gates: even is_safety / force=True must wait for the
         # entity to register.
         state_obj = self._hass.states.get(entity_id)
-        if state_obj is None or state_obj.state == STATE_UNAVAILABLE:
+        if self.is_entity_unavailable(entity_id):
             return self._skip(
                 entity_id,
                 "cover_unavailable",
@@ -1898,6 +1912,23 @@ class CoverCommandService:
                 entity_id,
                 err,
             )
+            # The target was booked (with ``waiting``) before the call, because
+            # a command normally IS in flight by the time control reaches here.
+            # This one demonstrably is not, and leaving the flag set claims a
+            # motion nobody can observe ending: the transit-timeout backstop
+            # holds it for ~45 s, during which a physically coupled cover type
+            # reads it as "the partner rail is on its way" and releases a
+            # follower into a rail that never moved.
+            #
+            # The TARGET is deliberately kept, but NOT because anything is
+            # guaranteed to resend it — ``run_reconciliation_pass`` is gated on
+            # ``enable_position_matching``, which defaults OFF (#591), so on a
+            # default install nothing does. It is kept because it is still the
+            # honest record of what this entity was last asked for: the delta
+            # gates, the diagnostics and a later resend all read it, and
+            # dropping it would make ACP forget a command the user gave. Only
+            # the CLAIM OF MOTION is false here, so only that is withdrawn.
+            self.set_waiting(entity_id, False)
             return self._skip(
                 entity_id,
                 "service_call_failed",

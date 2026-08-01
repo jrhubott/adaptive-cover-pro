@@ -35,6 +35,7 @@ from ...const import (
     CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
     CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+    EXTERNAL_INTERLOCK_REASON,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
@@ -107,14 +108,6 @@ _POSITION_AXIS_SERVICES = frozenset(
 _CLIMATE_METHODS = frozenset(
     {ControlMethod.SUMMER, ControlMethod.WINTER, ControlMethod.EXTREME_HEAT}
 )
-
-# Dispatch label carried by every command of an external-command interlock
-# correction (#1138) — into the command service's trigger field, the
-# manual-override manager's reason, and the diagnostic event timeline, so the
-# whole three-command sequence is attributable to one cause. It leaves this
-# module only as ``ExternalInterlockPlan.reason``, which the coordinator replays
-# verbatim without interpreting it.
-_EXTERNAL_INTERLOCK_REASON = "external_command_interlock"
 
 
 def _pct_slider() -> selector.NumberSelector:
@@ -251,6 +244,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # it never runs before ``attach`` (it needs the sequencer).
         self._logger: Any | None = None
         self._position_tolerance: int = 0
+        # Signal 0 of the start confirmation — see :meth:`_start_confirmation`.
+        # ``None`` until ``attach``, and harmlessly ``None`` for a host that
+        # supplies no accessor: the gate then falls back on the two observation
+        # signals, which is exactly the pre-#1140 behaviour.
+        self._get_booked_target: Callable[[str], int | None] | None = None
         # Last resolved fabric blend, replayed by ``maybe_update_tilt_only`` when
         # the position axis won't fire this cycle. Cleared on every suppressed
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
@@ -1053,8 +1051,86 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         live = seq._get_current_position(middle)  # noqa: SLF001
         if live is None:
             return False
-        return flip_if(live, inverted=inverse) + self._position_tolerance < (
-            bottom_target_open
+        return self._rail_blocks(live, bottom_target_open, inverse, is_middle=False)
+
+    def _rail_blocks(
+        self, reading: int, follower_target_open: int, inverse: bool, *, is_middle: bool
+    ) -> bool:
+        """Return whether a leading rail at ``reading`` blocks ``follower_target_open``.
+
+        The one inequality behind every "is the way clear?" question this policy
+        asks, stated once and read from four places: the travel gate's release
+        test (negated), :meth:`_dual_entity_middle_leads`'s collision test,
+        :meth:`plan_external_command_interlock`'s blocked test, and the
+        booked-target checks both of the last two make. Those used to be
+        separate restatements, which is how the gate and the planner drifted
+        into disagreeing about a rail neither of them could move.
+
+        ``reading`` is a WIRE number — a live position or a booked target, the
+        caller says which. ``follower_target_open`` is the follower's target in
+        OPEN-percent. ``is_middle`` selects the branch by WHICH RAIL IS ASKING,
+        exactly as the gate does:
+
+        * the middle rail is asking (the bottom rail leads a lowering) — the
+          bottom rail blocks while its open percent is still ABOVE the middle
+          rail's target;
+        * the bottom rail is asking (the middle rail leads a raising, #1118) —
+          the middle rail blocks while its open percent is still BELOW the
+          bottom rail's target.
+
+        Both are ``flip_if``-converted against the dispatch frame the caller
+        named, never against raw wire numbers: the comparison inverts on every
+        inverse-state install otherwise (the #993 bug class).
+        """
+        reading_open = flip_if(reading, inverted=inverse)
+        if is_middle:
+            return reading_open > follower_target_open + self._position_tolerance
+        return reading_open + self._position_tolerance < follower_target_open
+
+    def _booked_clears(
+        self,
+        leading_rail: str,
+        follower_target_open: int,
+        inverse: bool,
+        *,
+        is_middle: bool,
+    ) -> bool:
+        """Return whether the leading rail is already ORDERED somewhere that clears.
+
+        The evidence ACP owns about its own dispatches, and the answer to the
+        only question that legitimately excuses a follower from being corrected:
+        not "is the leader busy?" but "is the leader on its way somewhere that
+        actually makes room for me?".
+
+        Those two come apart badly. "Busy" is
+        ``CoverCommandService.is_waiting_for_target``, which on an actuator that
+        publishes nothing mid-travel is true for most of every move and can
+        latch past its own timeout. A correction suppressed on "busy" alone
+        therefore declines to act *because* it believes the blocker is moving,
+        while the travel gate refuses to release *because* the blocker is not
+        going anywhere useful — and the command is dropped by both. That was the
+        reported failure: two ``set_axes`` presses recorded with no command sent
+        and no skip logged, against a pair of rails carrying stale in-flight
+        targets of 61 and 83.
+
+        Asking whether the BOOKED TARGET clears fixes both ends, because it is
+        the same :meth:`_rail_blocks` inequality the gate itself releases on. A
+        fan-out seam's leader is booked to a target that clears by construction
+        (the no-pass clamp guarantees ``M >= P``), so its follower still yields
+        to the gate exactly as before. A stale or unrelated target does not
+        clear, so the follower is corrected instead of stranded.
+
+        ``False`` whenever there is no accessor, no in-flight target, or the
+        target does not clear — every one of which means "nothing is making room
+        for me", which is the answer that lets the correction run.
+        """
+        if self._get_booked_target is None:
+            return False
+        booked = self._get_booked_target(leading_rail)
+        if booked is None:
+            return False
+        return not self._rail_blocks(
+            booked, follower_target_open, inverse, is_middle=is_middle
         )
 
     def _dispatch_frame(self, inverted: bool | None) -> bool:
@@ -1342,6 +1418,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         self._grace_mgr = kwargs.get("grace_mgr")
         self._logger = kwargs["logger"]
         self._position_tolerance = kwargs["position_tolerance"]
+        # Signal 0 of the start confirmation: the target ACP has in flight on a
+        # rail, or None once it settles. Additive kwarg — every other policy
+        # ignores it, and an absent one degrades to the observation signals.
+        self._get_booked_target = kwargs.get("get_booked_target")
         # Model C rail-role resolution needs the instance's cover list; additive
         # kwarg, read via ``kwargs.get`` so every other policy ignores it.
         self._attached_entities = tuple(kwargs.get("entities") or ())
@@ -1528,13 +1608,53 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         inverse: bool,
         tolerance: int,
         leading_rail: str,
+        follower_target_open: int,
+        is_middle: bool,  # noqa: FBT001
     ) -> Callable[[int], bool]:
         """Wrap a clearance predicate so leader MOTION also releases the gate.
 
         The relaxation behind concurrent rail travel (#1140), expressed as a
         strict WEAKENING of the branch's own predicate: ``cleared`` still
-        releases exactly when it did, and two further disjuncts release earlier
-        when the leading rail is demonstrably under way and ahead.
+        releases exactly when it did, and three further disjuncts release
+        earlier when the leading rail is demonstrably under way and ahead.
+
+        **Signal 0 — ACP's own in-flight target on the leading rail**, and the
+        only one that needs no cooperation from the hardware at all. Signals 1
+        and 2 both ask the actuator to REPORT that it has started; this one
+        knows, because ACP is what started it. If the leading rail is carrying a
+        target ACP dispatched and has not yet settled, and that target itself
+        satisfies ``cleared``, then the rail has been ordered out of the
+        follower's way and is travelling there — which is the entire content of
+        "started in order, now travelling concurrently".
+
+        It is checked FIRST because it is both the cheapest and the strongest:
+        no baseline sample, no poll, no publish latency. It is also the only
+        signal that fires on the hardware that motivated this method. Measured
+        on the ZVIDAR WB04V, a partial ``set_cover_position`` move publishes
+        NOTHING for its whole traverse — the recorder shows the leading rail at
+        ``state=open current_position=60`` and then, 20 s later,
+        ``state=open current_position=34``, with no transit state and no
+        intermediate position in between. Signal 2 never sees a transit string
+        (that actuator only publishes one for ``open_cover`` / ``close_cover``
+        endpoint moves) and signal 1 differences 60 against 60 on every poll, so
+        both are structurally dead and the follower waits out the leader's ENTIRE
+        travel — the serialization #1140 exists to remove, still fully present.
+
+        The predicate is reused verbatim rather than restated: ``cleared`` is
+        asked about the booked target exactly as it is asked about a live
+        reading, so the frame, the tolerance and the direction are the branch's
+        own and there is no second inequality to drift. The accessor is
+        responsible for answering ``None`` for a target that is no longer in
+        flight — a settled rail's stale target must not confirm a start that
+        already finished.
+
+        **The trust it extends.** A command the motor silently refuses reads
+        here as a rail that is moving. That is the same exposure signal 2 takes
+        on a stale ``closing`` and is bounded the same way: the follower's own
+        dispatch is still gated, still latches pending when it cannot complete,
+        and the reconciliation pass still re-asks. Trusting an accepted command
+        is precisely what "start in order" means; the alternative on this
+        hardware is not more safety, it is no concurrency ever.
 
         **Signal 1 — a position delta.** The leader's live OPEN-PERCENT reading
         having moved from its FIRST sampled value, by more than ``tolerance``,
@@ -1605,6 +1725,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         def _done(wire: int) -> bool:
             nonlocal start_open
             if cleared(wire):
+                return True
+            if self._booked_clears(
+                leading_rail, follower_target_open, inverse, is_middle=is_middle
+            ):
                 return True
             sign = (
                 transit_wire_sign(seq._get_state(leading_rail))
@@ -1685,12 +1809,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
            fire on a first read and that pointwise identity does not extend to
            it — only point 3 does, which is all the theorem needs.
         3. The wrapper is a monotone WEAKENING:
-           ``cleared(w) or transit() or delta(w)`` accepts a superset of what
-           ``cleared(w)`` accepts. It can only release an armed gate EARLIER; it
-           can never arm one that was not already armed, so no pair of block
-           conditions it produces was unreachable before. The two-stage budget
-           below is a weakening of the same kind, in time rather than in the
-           predicate: it only adds chances to release.
+           ``cleared(w) or booked() or transit() or delta(w)`` accepts a
+           superset of what ``cleared(w)`` accepts. It can only release an armed
+           gate EARLIER; it can never arm one that was not already armed, so no
+           pair of block conditions it produces was unreachable before. The
+           two-stage budget below is a weakening of the same kind, in time
+           rather than in the predicate: it only adds chances to release.
+
+           This point, not point 2, is what carries the theorem across the
+           disjuncts that CAN fire on a first read — the booked-target signal
+           and the transit signal both can, by design. Point 2's structural
+           argument is specific to the delta, which needs two readings before it
+           can say anything at all.
 
         The option therefore changes how long a follower waits and what
         threshold ends that wait — never which rail is the follower.
@@ -1841,22 +1971,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         target_open = flip_if(position, inverted=inverse)
         tolerance = self._position_tolerance
 
+        # Both branches release on exactly the negation of :meth:`_rail_blocks`,
+        # and say so by calling it rather than by restating its inequality. The
+        # gate is the site the planner historically drifted AWAY from, so a
+        # hand-written copy here is the one that must not exist: a tolerance or
+        # polarity edit made in the shared helper would otherwise move the
+        # planner and leave the gate behind, and a follower would be declined a
+        # correction the gate then refuses — the stranding this all exists to
+        # fix.
         if is_middle:
             leading_rail = bottom_rail
             # Clearance needs the bottom rail's open percent to FALL.
             direction = -1
-
-            def _cleared(wire: int) -> bool:
-                return flip_if(wire, inverted=inverse) <= target_open + tolerance
-
         elif self._dual_entity_middle_leads(target_open, inverse):
             leading_rail = middle_rail
             # Clearance needs the middle rail's open percent to RISE.
             direction = 1
-
-            def _cleared(wire: int) -> bool:
-                return flip_if(wire, inverted=inverse) + tolerance >= target_open
-
         else:
             # The bottom rail leads this move: nothing is downstream of it, so
             # it is unconditionally ungated — #1115's behaviour, now stated as a
@@ -1865,11 +1995,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             self._pending_rail_command.discard(entity_id)
             return True
 
+        def _cleared(wire: int) -> bool:
+            return not self._rail_blocks(
+                wire, target_open, inverse, is_middle=is_middle
+            )
+
         done = _cleared
         budget: float | None = None if wait else 0
         if self._dual_entity_concurrent_travel:
             done = self._start_confirmation(
-                _cleared, direction, inverse, tolerance, leading_rail
+                _cleared,
+                direction,
+                inverse,
+                tolerance,
+                leading_rail,
+                target_open,
+                is_middle,
             )
             if wait:
                 budget = DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS
@@ -1969,8 +2110,9 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         *,
         service: str,
         wire_target: int,
+        dispatch_token: Any = None,
     ) -> ExternalInterlockPlan | None:
-        """Plan the partner-rail move an EXTERNAL command needs (#1138).
+        """Plan the partner-rail move a blocked command needs (#1138).
 
         The corrective mirror of :meth:`await_dispatch_clearance`. That gate
         withholds an ACP dispatch until the leading rail has cleared; this hook
@@ -2009,10 +2151,16 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         the user's own middle-rail target.
 
         ``wire_target`` is a DEVICE-frame number by HA convention, so the
-        comparison converts it with the same ``flip_if(..., _dispatch_frame(None))``
-        rule the gate uses for its live readings — an unnamed frame resolves to
-        the install's own, which is the honest answer for a command no ACP
-        dispatch produced (the #993 bug class).
+        comparison converts it with the same
+        ``flip_if(..., _dispatch_frame(dispatch_token))`` rule the gate uses for
+        its live readings (the #993 bug class). An EXTERNAL command passes no
+        stamp and resolves to the install's own frame, which is the honest
+        answer for a number no ACP dispatch produced. ACP's own withheld user
+        command passes the stamp its dispatch was gated against, because there
+        the number DID come out of a resolve and the two tests below are the
+        exact complements of that gate's release inequalities — read in a
+        different frame, one of them inverts and the correction moves the wrong
+        rail.
 
         **That same bool rides out on the plan as its ``dispatch_token``**, so
         the gate that later releases the two corrective commands un-transforms
@@ -2048,7 +2196,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         if seq is None or middle_rail is None or bottom_rail is None:
             return None
 
-        inverse = self._dispatch_frame(None)
+        inverse = self._dispatch_frame(dispatch_token)
         target_open = flip_if(wire_target, inverted=inverse)
 
         if is_middle:
@@ -2056,9 +2204,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             live = seq._get_current_position(bottom_rail)  # noqa: SLF001
             if live is None:
                 return None
-            blocked = (
-                flip_if(live, inverted=inverse) > target_open + self._position_tolerance
-            )
+            blocked = self._rail_blocks(live, target_open, inverse, is_middle=True)
         else:
             leading_rail = middle_rail
             blocked = self._dual_entity_middle_leads(target_open, inverse)
@@ -2066,10 +2212,34 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         if not blocked:
             return None
 
+        # Already ordered out of the way — the gate's own wait is the right
+        # thing to spend, and correcting here would command the leading rail to
+        # the FOLLOWER's target and undo the move that is already clearing it.
+        # Asked as "does its booked target clear me?", never as "is it busy?":
+        # a rail that publishes nothing mid-travel is busy for most of every
+        # move and can latch past its timeout, and suppressing on that strands
+        # the command between a correction that declines and a gate that
+        # refuses.
+        if self._booked_clears(leading_rail, target_open, inverse, is_middle=is_middle):
+            self._debug(
+                "Model C interlock: %s is blocked by %s, but %s is already "
+                "booked to a target that clears it — leaving it to the gate",
+                entity_id,
+                leading_rail,
+                leading_rail,
+            )
+            return None
+
         if not self._dual_entity_external_interlock:
+            # Deliberately origin-neutral. This hook is asked about commands
+            # from OUTSIDE ACP and about ACP's own withheld user commands alike,
+            # and it cannot tell them apart — the coordinator restamps the
+            # reason afterwards. Naming one origin here made the log blame an
+            # "External" command for a card slider the user moved inside ACP's
+            # own UI, which is the opposite of a diagnosable message.
             self._warn(
-                "External cover.%s on %s → %s%% cannot be reached: the %s rail is "
-                "in the way and %s is off, so no corrective move will be made",
+                "cover.%s on %s → %s%% cannot be reached: the %s rail is in the "
+                "way and %s is off, so no corrective move will be made",
                 service,
                 entity_id,
                 wire_target,
@@ -2091,7 +2261,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             leading_target=wire_target,
             follower_entity_id=entity_id,
             follower_target=wire_target,
-            reason=_EXTERNAL_INTERLOCK_REASON,
+            reason=EXTERNAL_INTERLOCK_REASON,
             dispatch_token=inverse,
         )
 

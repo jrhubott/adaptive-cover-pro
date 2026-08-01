@@ -1460,8 +1460,9 @@ def test_geometry_schema_has_concurrent_rail_travel_toggle() -> None:
     schema = DayNightShadePolicy().geometry_schema()
     keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
     assert CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL in keys
-    # Default ON — an upgraded install gets the faster behaviour.
-    assert schema({})[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL] is True
+    # Default OFF — an upgraded install gets the conservative behaviour, and
+    # the faster one is an explicit opt-in.
+    assert schema({})[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL] is False
     assert (
         schema({CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: False})[
             CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
@@ -1485,7 +1486,7 @@ def test_concurrent_rail_travel_option_registered() -> None:
         FIELD_VALIDATORS,
     )
 
-    assert DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL is True
+    assert DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL is False
     assert CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL not in OPTION_RANGES
 
     validator = FIELD_VALIDATORS[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL]
@@ -1512,13 +1513,15 @@ def test_summary_renders_rail_travel_for_dual_entity_only() -> None:
         CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
     }
 
-    default_on = policy.summary_geometry_lines(base)
-    assert any("concurrently" in line for line in default_on), default_on
+    # The default is OFF, so the un-configured summary describes serialized
+    # travel; concurrency only appears once someone has opted in.
+    default_off = policy.summary_geometry_lines(base)
+    assert any("one at a time" in line for line in default_off), default_off
 
-    explicit_off = policy.summary_geometry_lines(
-        {**base, CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: False}
+    explicit_on = policy.summary_geometry_lines(
+        {**base, CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL: True}
     )
-    assert any("one at a time" in line for line in explicit_off), explicit_off
+    assert any("concurrently" in line for line in explicit_on), explicit_on
 
     model_a = policy.summary_geometry_lines(
         {

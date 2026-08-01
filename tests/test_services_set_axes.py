@@ -329,7 +329,7 @@ def _make_dispatch_coord(options: dict) -> MagicMock:
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
-    from tests.ha_helpers import wire_dispatch_frame
+    from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
     from tests.test_pipeline.conftest import make_snapshot
 
     coord = MagicMock()
@@ -346,9 +346,7 @@ def _make_dispatch_coord(options: dict) -> MagicMock:
     coord._build_position_context.return_value = ctx
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     coord.async_apply_user_axis = (
         AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
     )

@@ -326,3 +326,62 @@ def assert_entities_registered(
         len(ids) >= min_count
     ), f"Expected >= {min_count} {platform} entities, got {len(ids)}: {ids}"
     return ids
+
+
+def make_mock_policy(**attrs: Any) -> MagicMock:
+    """Return a ``MagicMock`` cover-type policy inert on control-flow hooks.
+
+    A bare ``MagicMock`` answers a truthy ``Mock`` to every question, which for
+    a hook that DECIDES something — "is this command blocked?" — silently routes
+    production code down the branch the test is not about. The base
+    ``CoverTypePolicy`` answers ``None`` there ("nothing blocks it"), which is
+    what every cover type with physically independent entities really does, so
+    that is the honest stand-in. Tests about a specific hook set it themselves.
+    """
+    policy = MagicMock(**attrs)
+    policy.plan_external_command_interlock.return_value = None
+    return policy
+
+
+def bind_user_position_seam(coord: Any, *, interlock_plan: Any = None) -> Any:
+    """Bind ``async_apply_user_position`` and the siblings it calls onto ``coord``.
+
+    A test that binds the user-position seam onto a ``MagicMock`` coordinator is
+    exercising real production code that reaches for real collaborators, and
+    every one it does not bind resolves to a bare ``MagicMock`` — which for an
+    awaited call raises ``TypeError`` and for a returned value is truthy, so an
+    unbound sibling does not fail loudly, it silently changes the seam's control
+    flow. Binding them here rather than in nine harnesses means the next
+    collaborator is added in one place.
+
+    ``plan_external_command_interlock`` is defaulted to ``None`` on a mocked
+    policy because that is the BASE ``CoverTypePolicy`` answer — "nothing blocks
+    it", which is every cover type whose entities are physically independent. A
+    ``MagicMock`` would answer a truthy plan instead and send these tests
+    through a corrective partner move they are not about. Pass
+    ``interlock_plan`` to exercise the correction deliberately. A harness
+    carrying a REAL policy or command service is left alone: its answers are the
+    production ones, which is the point of using it.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    for name in (
+        "async_apply_user_position",
+        "_interlock_user_command",
+        "_execute_external_interlock",
+    ):
+        setattr(
+            coord, name, getattr(AdaptiveDataUpdateCoordinator, name).__get__(coord)
+        )
+
+    hook = getattr(
+        coord._policy, "plan_external_command_interlock", None
+    )  # noqa: SLF001
+    if isinstance(hook, MagicMock):
+        hook.return_value = interlock_plan
+    unavailable = getattr(coord._cmd_svc, "is_entity_unavailable", None)  # noqa: SLF001
+    if isinstance(unavailable, MagicMock):
+        unavailable.return_value = False
+    return coord

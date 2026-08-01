@@ -337,18 +337,21 @@ class CoverDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class ExternalInterlockPlan:
-    """How to make an externally-commanded entity's target reachable (#1138).
+    """How to make a blocked entity's target reachable (#1138).
 
     The answer :meth:`CoverTypePolicy.plan_external_command_interlock` returns
-    when a command that arrived from OUTSIDE ACP cannot physically complete
-    because a coupled entity is standing in the way. Pure data, deliberately
-    free of any cover-type vocabulary: a "leading" entity to move first and a
-    "follower" whose own command has to be re-issued behind it. The coordinator
-    executes it without knowing that the two are rails, or that the cover is a
-    day/night shade.
+    when a command cannot physically complete because a coupled entity is
+    standing in the way. The name says "external" for the origin it was built
+    for, and the class keeps it, but the plan is origin-agnostic: it answers the
+    same question for a command that arrived from outside ACP and for one of
+    ACP's own user seams that the clearance gate withheld. Pure data,
+    deliberately free of any cover-type vocabulary: a "leading" entity to move
+    first and a "follower" whose own command has to be re-issued behind it. The
+    coordinator executes it without knowing that the two are rails, or that the
+    cover is a day/night shade.
 
-    Both targets are WIRE numbers — the device frame the observed service call
-    was already expressed in — so the executor hands them straight to
+    Both targets are WIRE numbers — the device frame the command was already
+    expressed in — so the executor hands them straight to
     ``CoverCommandService.apply_position``, whose contract is "already
     transformed". Running them back through the coordinator's
     ``_entity_target`` would double-apply inverse/interpolation and re-map the
@@ -997,17 +1000,28 @@ class CoverTypePolicy(ABC):
         *,
         service: str,  # noqa: ARG002
         wire_target: int,  # noqa: ARG002
+        dispatch_token: Any = None,  # noqa: ARG002
     ) -> ExternalInterlockPlan | None:
-        """How to make an EXTERNAL command on ``entity_id`` reachable (#1138).
+        """How to make a blocked command on ``entity_id`` reachable (#1138).
 
         The corrective counterpart of :meth:`await_dispatch_clearance`. That
         hook answers "may ACP drive this entity right now?" about a command ACP
-        is about to issue and can therefore withhold. This one answers "a
-        command ACP did not issue has already gone out at this entity — is a
-        coupled entity standing where it needs to go, and what would clear the
-        way?" Nothing can be withheld by then: ``EVENT_CALL_SERVICE`` fires as
-        the call executes, so the only remedy is to move the blocker and
-        re-issue the user's own target behind it.
+        is about to issue. This one answers "that command cannot complete
+        because a coupled entity is standing where it needs to go — what would
+        clear the way?" Two origins reach it, and the answer is the same for
+        both because the physics is:
+
+        * an EXTERNAL command, already gone out and unvetoable —
+          ``EVENT_CALL_SERVICE`` fires as the call executes, so the only remedy
+          is corrective: move the blocker and re-issue the user's own target
+          behind it;
+        * one of ACP's OWN user seams, which :meth:`await_dispatch_clearance`
+          just withheld — same remedy, asked one step earlier, before anything
+          reached the motor.
+
+        Only the automatic path never asks: it resolves every coupled entity
+        from one logical position and dispatches them together, so the blocker
+        is always already on its way out.
 
         DECISION ONLY. The returned :class:`ExternalInterlockPlan` names two
         entities and two targets; the coordinator owns the side effects
@@ -1016,14 +1030,24 @@ class CoverTypePolicy(ABC):
         arithmetic stay here — the "managers hold state, policies hold behaviour"
         split.
 
-        ``service`` is the observed ``cover.*`` service and ``wire_target`` the
-        position it implies in the DEVICE frame (``close_cover`` → 0,
-        ``open_cover`` → 100, ``set_cover_position`` → its ``position``). HA's
-        cover services are defined in that frame regardless of ACP's
-        ``inverse_state``, which describes how ACP's own logical numbers map
-        onto it — so a policy that compares against a live reading must convert
-        both sides through the same frame rule it uses everywhere else (the
-        #993 bug class).
+        ``service`` is the ``cover.*`` service this target would be sent as and
+        ``wire_target`` the position it implies in the DEVICE frame
+        (``close_cover`` → 0, ``open_cover`` → 100, ``set_cover_position`` → its
+        ``position``). HA's cover services are defined in that frame regardless
+        of ACP's ``inverse_state``, which describes how ACP's own logical
+        numbers map onto it — so a policy that compares against a live reading
+        must convert both sides through the same frame rule it uses everywhere
+        else (the #993 bug class).
+
+        ``dispatch_token`` names WHICH dispatch produced ``wire_target``, in the
+        same opaque form :meth:`capture_dispatch_token` mints and
+        :meth:`await_dispatch_clearance` consumes. The user seam passes the very
+        stamp its withheld dispatch was gated against, so the blocked test here
+        and the gate's release test cannot resolve the number in different
+        frames — they are the same inequality read from opposite ends, and a
+        divergent frame inverts one of them (#993 / #1115). ``None`` is honest
+        for an external command: nothing ACP resolved produced that number, so
+        it falls back to the install's own frame.
 
         Liskov-safe default: ``None`` — "nothing blocks it", which is every
         cover type whose entities are physically independent.
