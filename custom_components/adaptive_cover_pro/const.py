@@ -256,21 +256,54 @@ CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
 # rest of the move — the pair can travel concurrently and the shade reaches its
 # position in one travel time instead of two. Off, the follower waits for the
 # leader's live position to clear the follower's own target, which is the
-# conservative #1115/#1118 behaviour. An absent key reads as ON.
+# conservative #1115/#1118 behaviour.
+#
+# DEFAULT OFF, deliberately. Concurrency is only as sound as the evidence that
+# the leading rail has actually started, and that evidence is hardware-dependent
+# in a way nothing here can detect up front: an actuator that publishes no
+# transit state and no intermediate position (measured on the ZVIDAR WB04V —
+# ``state=open current_position=60``, then 20 s later ``current_position=34``,
+# nothing in between) starves every start signal, and the ones that remain are
+# inferences about a motor ACP cannot observe. Getting that wrong drives a rail
+# into a rail. Waiting for full clearance is slower and always correct, so it is
+# what an install gets until someone knowingly turns concurrency on and watches
+# their own hardware do it. An absent key reads as OFF.
 CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = "day_night_concurrent_rail_travel"
-DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = True
-# Model C external-command interlock: when a position command arrives at one
-# rail from OUTSIDE ACP — a dashboard tap, a script, a handheld remote — and the
-# partner rail is parked in the space that rail is being driven into, may ACP
-# move the partner out of the way and re-issue the user's own command behind it
-# (#1138)? ACP cannot veto such a call: EVENT_CALL_SERVICE fires as the call
-# executes, and by then the motor is already being asked to travel somewhere it
-# physically cannot reach — it stalls or latches in ``closing`` indefinitely. On
-# (the default), the command actually completes and both rails engage manual
-# override. Off, ACP stays out of the way and logs a warning naming the
-# unreachable target. An absent key reads as ON.
+DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = False
+# Model C unreachable-command interlock: when a position command asks one rail
+# to travel into the space the partner rail is parked in, may ACP move the
+# partner out of the way and re-issue the command behind it (#1138)? Two kinds
+# of command reach that state, and one switch governs both because the remedy
+# and the risk are identical:
+#
+#   * EXTERNAL — a dashboard tap, a script, a handheld remote. ACP cannot veto
+#     such a call: EVENT_CALL_SERVICE fires as the call executes, so by then the
+#     motor is already being asked to travel somewhere it physically cannot
+#     reach and it stalls or latches in ``closing`` indefinitely. The remedy is
+#     corrective.
+#   * ACP'S OWN USER SEAMS — the card, ``set_position`` / ``set_axes``, the proxy
+#     cover, the My button. These DO pass through the clearance gate, which
+#     withholds them; without the interlock the command is simply dropped and
+#     nothing moves at all. The remedy is the same partner move, asked one step
+#     earlier.
+#
+# Automatic control never needs either: it resolves both rails from one logical
+# position and dispatches them together, so the blocker is always already on its
+# way out. On (the default), a blocked command completes and both rails engage
+# manual override. Off, ACP stays out of the way and logs a warning naming the
+# unreachable target. The key keeps its ``external`` name for rollback safety —
+# renaming it would strand the stored value on downgrade. An absent key reads as
+# ON.
 CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK = "day_night_external_command_interlock"
 DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK = True
+
+# Dispatch labels the two interlock origins carry into the command service, the
+# manual-override manager and the event timeline, so a corrective sequence is
+# attributable to WHICH kind of command triggered it. The policy plans with the
+# external label; the user seam restamps it (issue #1138).
+EXTERNAL_INTERLOCK_REASON = "external_command_interlock"
+MANUAL_INTERLOCK_REASON = "manual_command_interlock"
+
 
 # --- Dual-panel shade (#996) ------------------------------------------------
 # Two INDEPENDENT HA shade entities over one window: a sheer FRONT that

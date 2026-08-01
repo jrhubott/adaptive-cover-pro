@@ -751,9 +751,11 @@ def test_concurrent_travel_option_is_cached_by_runtime_hooks() -> None:
     on = _dual_policy(position=30, blend=50, concurrent=True)
     assert on._dual_entity_concurrent_travel is True
 
-    # An upgraded install has no key at all — the new behaviour is the default.
+    # An upgraded install has no key at all, so it reads as the default — which
+    # is OFF, deliberately moving existing entries onto the conservative
+    # behaviour rather than seeding the old ON for them.
     absent = _dual_policy(position=30, blend=50)
-    assert absent._dual_entity_concurrent_travel is True
+    assert absent._dual_entity_concurrent_travel is False
 
     # The coordinator's own per-cycle hook writes it too, not just the
     # post-pipeline one, and a later cycle can flip it back.
@@ -769,13 +771,20 @@ def test_concurrent_travel_option_is_cached_by_runtime_hooks() -> None:
     assert off._dual_entity_concurrent_travel is False
 
 
-def test_concurrent_travel_defaults_on_for_a_fresh_policy() -> None:
-    """Before any options are seen the policy already answers with the default."""
+def test_concurrent_travel_defaults_off_for_a_fresh_policy() -> None:
+    """Before any options are seen the policy already answers with the default.
+
+    That default is OFF: concurrency is only as good as the evidence that the
+    leading rail has started, and on an actuator that publishes neither a
+    transit state nor an intermediate position there is none. Serialized travel
+    is slower and always correct, so it is what an install gets until someone
+    knowingly opts in.
+    """
     from custom_components.adaptive_cover_pro.const import (
         DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     )
 
-    assert DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL is True
+    assert DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL is False
     assert (
         DayNightShadePolicy()._dual_entity_concurrent_travel
         is DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
@@ -1387,6 +1396,12 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=())
         "_clamp_to_active_floor",
         "user_dispatch_position",
         "async_apply_user_position",
+        # The user seam's own collaborators. Unbound they resolve to bare
+        # MagicMocks, and an awaited one raises rather than no-ops — so the
+        # interlock has to be real here, which is right: this harness carries a
+        # REAL Model C policy, so the correction it plans is the production one.
+        "_interlock_user_command",
+        "_execute_external_interlock",
     ):
         setattr(
             coord,

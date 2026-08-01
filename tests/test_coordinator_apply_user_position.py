@@ -33,7 +33,11 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
-from tests.ha_helpers import wire_dispatch_frame
+from tests.ha_helpers import (
+    bind_user_position_seam,
+    make_mock_policy,
+    wire_dispatch_frame,
+)
 
 
 def _slot(
@@ -155,9 +159,7 @@ def _make_coord(
     coord.manager.mark_user_command = MagicMock()
 
     # Bind the real method
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     return coord, ctx
 
 
@@ -635,7 +637,7 @@ def _make_tilt_coord(*, policy):
 @pytest.mark.asyncio
 async def test_async_apply_user_tilt_engages_override_and_delegates_to_policy() -> None:
     """Venetian: the tilt entry point engages manual override and delegates to the policy."""
-    policy = MagicMock()
+    policy = make_mock_policy()
     policy.apply_user_tilt = AsyncMock(return_value=True)
     coord = _make_tilt_coord(policy=policy)
 
@@ -836,7 +838,7 @@ async def test_user_position_routes_through_entity_target_with_explicit_frame(
     and "neither" are different frames that both read as ``inverted=False``.
     """
     coord, _ctx = _make_coord([], default_options=options)
-    policy = MagicMock()
+    policy = make_mock_policy()
     policy.resolve_entity_target = MagicMock(return_value=dispatched)
     coord._policy = policy
 
@@ -869,7 +871,7 @@ async def test_user_position_entity_target_frame_names_both_halves_after_a_floor
         [_slot(25, is_on=True, min_mode=True, priority=82)],
         default_options={CONF_INVERSE_STATE: True, **_INTERP_OPTIONS},
     )
-    policy = MagicMock()
+    policy = make_mock_policy()
     policy.resolve_entity_target = MagicMock(return_value=45)
     coord._policy = policy
 

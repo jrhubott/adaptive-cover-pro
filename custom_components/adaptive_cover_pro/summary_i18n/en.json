@@ -300,8 +300,8 @@
       "rail_travel_concurrent": "both rails move concurrently once the leading rail is under way",
       "rail_travel_serialized": "rails move one at a time — the following rail waits for full clearance",
       "rail_interlock": "rail interlock: {v}",
-      "rail_interlock_on": "⚠️ an external command a rail cannot reach is completed by moving the other rail first — ACP may move the rail you did not command",
-      "rail_interlock_off": "an external command a rail cannot reach is left alone"
+      "rail_interlock_on": "⚠️ a command a rail cannot reach is completed by moving the other rail first — ACP may move the rail you did not command",
+      "rail_interlock_off": "a command a rail cannot reach is left alone"
     },
     "dual_panel": {
       "front_entity": "front (sheer) panel: {v}",

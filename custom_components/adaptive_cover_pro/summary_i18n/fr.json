@@ -299,8 +299,8 @@
       "rail_travel_concurrent": "les deux rails se déplacent simultanément une fois que le rail de tête est en mouvement",
       "rail_travel_serialized": "les rails se déplacent à tour de rôle — le rail suivant attend le dégagement complet",
       "rail_interlock": "verrouillage des rails : {v}",
-      "rail_interlock_on": "⚠️ une commande externe qu'un rail ne peut pas atteindre est menée à bien en déplaçant d'abord l'autre rail — ACP peut déplacer le rail que vous n'avez pas commandé",
-      "rail_interlock_off": "une commande externe qu'un rail ne peut pas atteindre est laissée telle quelle"
+      "rail_interlock_on": "⚠️ une commande qu'un rail ne peut pas atteindre est menée à bien en déplaçant d'abord l'autre rail — ACP peut déplacer le rail que vous n'avez pas commandé",
+      "rail_interlock_off": "une commande qu'un rail ne peut pas atteindre est laissée telle quelle"
     },
     "dual_panel": {
       "front_entity": "panneau avant (voile) : {v}",

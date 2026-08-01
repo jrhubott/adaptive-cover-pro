@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
 from tests.ha_helpers import (
+    bind_user_position_seam,
     VERTICAL_OPTIONS,
     _patch_coordinator_refresh,
     wire_dispatch_frame,
@@ -102,9 +103,7 @@ def _make_coord(
         AdaptiveDataUpdateCoordinator,
     )
 
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     # set_position now routes through the axis collapse point (issue #725); bind
     # the real dispatcher so behavior tests exercise the same path production does.
     coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))

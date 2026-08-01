@@ -118,6 +118,7 @@ from .const import (
     ISSUE_SUN_UNAVAILABLE,
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
     LOGGER,
+    MANUAL_INTERLOCK_REASON,
     MANUAL_OVERRIDE_DURATION_MODE_FIXED,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -643,6 +644,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             position_tolerance=POSITION_TOLERANCE_PERCENT,
             is_dry_run=lambda: self._cmd_svc.dry_run,
             get_state=lambda eid: getattr(self.hass.states.get(eid), "state", None),
+            # The target ACP currently has IN FLIGHT on an entity, or None once
+            # it settles. A physically coupled cover type uses it as direct
+            # evidence that a partner entity has been sent on its way, instead
+            # of waiting for an actuator to report a motion it may never publish
+            # (issue #1145). The in-flight test is what makes a settled entity's
+            # stale target answer None rather than confirm a finished move.
+            #
+            # Dry run answers None unconditionally: nothing was sent, so there
+            # is no motion to be evidence OF. The booking still happens there on
+            # purpose — it is what makes the simulated diagnostics look like a
+            # real cycle — which is exactly why this accessor, whose whole
+            # contract is "a partner is physically travelling", must not read it.
+            get_booked_target=lambda eid: (
+                None
+                if self._cmd_svc.dry_run
+                else (
+                    self._cmd_svc.get_target(eid)
+                    if self._cmd_svc.is_waiting_for_target(eid)
+                    else None
+                )
+            ),
             get_current_tilt_position=lambda eid: state_attr(
                 self.hass, eid, "current_tilt_position"
             ),
@@ -1226,12 +1248,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
             )
 
-    async def _execute_external_interlock(self, plan: ExternalInterlockPlan) -> None:
+    async def _execute_external_interlock(
+        self,
+        plan: ExternalInterlockPlan,
+        *,
+        stop_follower: bool = True,
+        mark_override: bool | None = None,
+    ) -> tuple[str, str] | None:
         """Run the corrective sequence a policy planned (#1138).
 
         Generic by construction: two entity ids and two device-frame targets. It
         never asks what kind of cover this is, which entity is "upper", or why
         one blocks the other — that is the policy's answer, already given.
+
+        ``stop_follower`` says whether the follower's own command already reached
+        the motor. It did on the external path, and a refused one can leave the
+        entity latched in ``closing`` indefinitely, so that latch is cleared
+        before the re-issue. It did NOT on the user-seam path
+        (:meth:`_interlock_withheld_user_command`): the clearance gate withheld
+        the command, so there is no latch, and stopping anyway is a live side
+        effect rather than a no-op — on an open/close-only motor a
+        stop-while-stationary is the hardware's "go to My" gesture, which would
+        drive the follower somewhere nobody asked for.
 
         **Both dispatches go through ``_cmd_svc.apply_position``**, the only
         path that consults ``await_dispatch_clearance``. Calling
@@ -1357,14 +1395,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     **row,
                 }
             )
-            return
+            return outcome, detail
 
-        if not self.manual_ignore_external:
+        # Whether this correction takes OWNERSHIP of the pair. The external
+        # path's answer is ``manual_ignore_external``, the option that governs
+        # exactly that question for a touch from outside ACP — so ``None`` means
+        # "use it". A caller with its own override contract states the answer
+        # instead: ACP's user seams honour ``force``, which documents that the
+        # command skips engagement, and reading the external option there would
+        # let an option about other people's commands override it.
+        if (
+            mark_override
+            if mark_override is not None
+            else not self.manual_ignore_external
+        ):
             for entity_id in (plan.leading_entity_id, plan.follower_entity_id):
                 self.manager.mark_user_command(entity_id, reason=plan.reason)
 
-        await self._cmd_svc.apply_user_stop(plan.follower_entity_id)
-        await self._cmd_svc.apply_position(
+        if stop_follower:
+            await self._cmd_svc.apply_user_stop(plan.follower_entity_id)
+        follower_outcome = await self._cmd_svc.apply_position(
             plan.follower_entity_id,
             plan.follower_target,
             plan.reason,
@@ -1379,6 +1429,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 **row,
             }
         )
+        return follower_outcome
 
     async def async_check_weather_state_change(
         self, event: Event[EventStateChangedData]
@@ -3947,7 +3998,130 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             inverted=self.position_axis_inverted,
             interpolated=self._use_interpolation,
         )
+        # Asked BEFORE the dispatch, and handed the stamp from the resolve two
+        # lines above — the very one ``apply_position`` would mint for its own
+        # gate, rather than one re-read after an intervening resolve.
+        interlocked = await self._interlock_user_command(
+            entity_id,
+            target,
+            dispatch_token=self._policy.capture_dispatch_token(entity_id),
+            force=force,
+        )
+        if interlocked is not None:
+            return interlocked
         return await self._cmd_svc.apply_position(entity_id, target, trigger, ctx)
+
+    async def _interlock_user_command(
+        self,
+        entity_id: str,
+        wire_target: int,
+        *,
+        dispatch_token: Any,
+        force: bool = False,
+    ) -> tuple[str, str] | None:
+        """Clear the way for a user command a coupled entity would block (#1138).
+
+        The user-seam half of the interlock. ``await_dispatch_clearance``
+        answers "may ACP drive this entity right now?", and on a coupled cover
+        type the honest answer for a SINGLE-entity user command is often "no" —
+        the partner entity is standing where the user's target is. Left to the
+        gate alone the command is withheld and latched, so it simply never
+        happens: no movement, no error, nothing above DEBUG.
+
+        Automatic control never lands there because it resolves BOTH entities
+        from one logical position and dispatches them together, so the blocker
+        is always already on its way out. An EXTERNAL command doesn't land there
+        either — :meth:`_plan_external_interlock` observes it and corrects it.
+        Only ACP's OWN user seams were left with a gate and no remedy.
+
+        **Asked BEFORE the dispatch, not after the gate refuses it.** The gate's
+        budget buys time for a leading rail that is ALREADY TRAVELLING to get
+        out of the way, and it is generous on purpose: a start-confirmation
+        window plus the remainder of the full clearance budget (#1140/#1145).
+        Spending it here would be pure dead time — the blocker is stationary and
+        nothing has been asked to move it, so no reading inside that budget can
+        ever release the gate. Measured on real hardware the command sat 60 s
+        before the correction was even considered, then took another 19 s of
+        legitimate travel; asking first removes the 60 s outright. It also keeps
+        the user's own command off the skip record, where a ``policy_deferred``
+        row would claim a drop that did not happen.
+
+        Returning the follower's own outcome — rather than dispatching a second
+        time behind the correction — is what keeps that true: the executor
+        re-issues the user's target itself, through the same gate, so there is
+        exactly one command per user action either way.
+
+        **Nothing is re-derived.** The policy's
+        ``plan_external_command_interlock`` states the blocked test as the
+        complement of the gate's own release inequality, so a plan here means
+        the gate would have refused, and no plan means it would have let the
+        command straight through. ``wire_target`` is the number
+        ``apply_position`` is about to be handed — already through
+        ``_entity_target``, already in the device frame — which is exactly the
+        space the hook documents for it, and ``dispatch_token`` is the stamp
+        that dispatch will be gated against, so both ends resolve it in one
+        frame (#993). ``SERVICE_SET_COVER_POSITION`` names the service the
+        target WOULD be sent as; the endpoint routing to ``open_cover`` /
+        ``close_cover`` happens downstream in ``apply_position`` and changes
+        nothing about the number or the geometry.
+
+        **The fan-out case is the policy's to exclude, not this method's.** A
+        fan-out seam (the whole-instance ``set_axes``, the group slider, the My
+        button) dispatches the pair in policy order, so a follower behind its
+        leader has a leader already booked to a clearing target; correcting
+        there would command the leader to the FOLLOWER's target and undo the
+        user's own fan-out. That exclusion lives in
+        ``plan_external_command_interlock``, which answers ``None`` for it,
+        because deciding it needs the coupling geometry — and a coordinator-level
+        approximation of the same question got it wrong: gating on "is the
+        leading entity busy?" suppressed the correction on hardware that reports
+        nothing mid-travel, where busy is true for most of every move, leaving
+        the command stranded between a correction that declined and a gate that
+        refused. This method asks one polymorphic question and acts on the
+        answer.
+
+        **Nothing is corrected for a command that could not have been sent
+        anyway.** The correction moves an entity the user did not name, so it
+        has to be worth something: if this dispatch would be refused outright,
+        the only effect left is the partner move, and the user is handed a rail
+        they never touched moving while the one they did touch stays put — with
+        both of them in manual override for the whole window. Availability is
+        the reachable case (a rail drops off a mesh far more often than the
+        integration is disabled mid-command) and it is the one gate that is
+        settled BEFORE any dispatch could tell us, so it is asked here. Every
+        other refusal — kill switch, dry run, no capable service — still lands
+        on the leading dispatch and abandons the sequence loudly, which is where
+        it belongs.
+
+        ``force`` mirrors the caller's own manual-override contract. A
+        ``force=True`` user command documents that it skips override
+        engagement, and a correction must not smuggle it back in for BOTH
+        entities; a default command engages it, as the caller would have. It is
+        threaded rather than re-derived from ``manual_ignore_external``, which
+        governs whether an EXTERNAL touch takes ownership and has no authority
+        over ACP's own seams.
+
+        Returns the follower's dispatch outcome when the correction ran, or
+        ``None`` when the caller should dispatch normally.
+        """
+        if self._cmd_svc.is_entity_unavailable(entity_id):
+            return None
+        plan = self._policy.plan_external_command_interlock(
+            entity_id,
+            service=SERVICE_SET_COVER_POSITION,
+            wire_target=wire_target,
+            dispatch_token=dispatch_token,
+        )
+        if plan is None:
+            return None
+        # Nothing has reached the motor, so there is no refused-command latch to
+        # clear and the follower must NOT be stopped: on an open/close-only
+        # cover a stop-while-stationary is the hardware's "go to My" gesture.
+        return await self._execute_external_interlock(
+            replace(plan, reason=MANUAL_INTERLOCK_REASON),
+            stop_follower=False,
+            mark_override=not force,
+        )
 
     async def async_apply_user_tilt(
         self,

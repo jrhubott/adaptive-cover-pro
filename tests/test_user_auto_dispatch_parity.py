@@ -51,7 +51,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
-from tests.ha_helpers import wire_dispatch_frame
+from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
 
 _FRONT = "cover.front_sheer"
 _BACK = "cover.back_blackout"
@@ -232,9 +232,7 @@ def _make_coord(
     coord._pipeline_result = winner
     coord._pipeline_bypasses_auto_control = False
 
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     return coord
 
 

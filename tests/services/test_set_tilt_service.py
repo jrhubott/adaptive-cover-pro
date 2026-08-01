@@ -275,7 +275,7 @@ def _make_fallback_coord(options: dict):
     )
     from custom_components.adaptive_cover_pro.const import ControlMethod
     from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
-    from tests.ha_helpers import wire_dispatch_frame
+    from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
     from tests.test_pipeline.conftest import make_snapshot
 
     coord = MagicMock()
@@ -291,9 +291,7 @@ def _make_fallback_coord(options: dict):
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
     coord._pipeline_bypasses_auto_control = False
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
     coord.async_apply_user_tilt = (
         AdaptiveDataUpdateCoordinator.async_apply_user_tilt.__get__(coord)
     )

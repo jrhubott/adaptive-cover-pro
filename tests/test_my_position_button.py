@@ -19,7 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
 )
 from custom_components.adaptive_cover_pro.cover_types import get_policy
-from tests.ha_helpers import wire_dispatch_frame
+from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
 
 # ---------------------------------------------------------------------------
 # Step 8 — My Position button created when entities configured
@@ -238,9 +238,7 @@ def _make_my_position_coord(options: dict | None = None):
     coord._build_position_context = (
         AdaptiveDataUpdateCoordinator._build_position_context.__get__(coord)
     )
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
-    )
+    bind_user_position_seam(coord)
 
     return coord
 

@@ -868,11 +868,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_minor = 13
 
     # v3.13 → v3.14: added the additive day_night_concurrent_rail_travel option
-    # (issue #1140). An absent key already reads as "on" — the default — so
-    # nothing needs seeding; this is a no-op minor bump kept only to advance
-    # entries sitting at minor 13 to 14 so they stop re-triggering migration
-    # every restart (the v3.6 → v3.7 precedent). Rollback-safe: an older build
-    # finds every key exactly as it left it and ignores the one it doesn't know.
+    # (issue #1140). An absent key reads as the default, so nothing needs
+    # seeding; this is a no-op minor bump kept only to advance entries sitting
+    # at minor 13 to 14 so they stop re-triggering migration every restart (the
+    # v3.6 → v3.7 precedent). Rollback-safe: an older build finds every key
+    # exactly as it left it and ignores the one it doesn't know.
+    #
+    # That default has since flipped to OFF, and this block is deliberately
+    # still a no-op. Seeding the old ON for existing entries would preserve
+    # concurrent travel exactly where it is most likely to be wrong — installs
+    # that never chose it and whose hardware nobody has checked. Leaving the key
+    # absent moves them onto the conservative behaviour, which is the point of
+    # the flip. Anyone who set it explicitly keeps their choice either way.
     new_minor = _advance_noop_minor(new_version, new_minor, 14)
 
     # v3.14 → v3.15: added the additive day_night_external_command_interlock
