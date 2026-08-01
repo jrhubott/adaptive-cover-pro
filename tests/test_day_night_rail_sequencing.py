@@ -1429,8 +1429,7 @@ def _assert_ordering_was_right_first_time(coord) -> None:
     corrections = [
         call.args[0]
         for call in coord._event_buffer.record.call_args_list
-        if call.args
-        and str(call.args[0].get("event", "")).startswith("external_interlock")
+        if call.args and str(call.args[0].get("event", "")).startswith("rail_interlock")
     ]
     assert not corrections, (
         "the rails were sent by a corrective interlock, not by dispatch "

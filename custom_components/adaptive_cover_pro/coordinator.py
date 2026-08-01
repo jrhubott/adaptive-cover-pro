@@ -1356,7 +1356,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._event_buffer.record(
             {
                 "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "external_interlock_engaged",
+                "event": "rail_interlock_engaged",
                 **row,
             }
         )
@@ -1390,7 +1390,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._event_buffer.record(
                 {
                     "ts": dt.datetime.now(dt.UTC).isoformat(),
-                    "event": "external_interlock_abandoned",
+                    "event": "rail_interlock_abandoned",
                     "outcome": detail,
                     **row,
                 }
@@ -1425,7 +1425,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._event_buffer.record(
             {
                 "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "external_interlock_completed",
+                "event": "rail_interlock_completed",
                 **row,
             }
         )

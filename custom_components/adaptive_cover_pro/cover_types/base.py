@@ -337,18 +337,21 @@ class CoverDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class ExternalInterlockPlan:
-    """How to make an externally-commanded entity's target reachable (#1138).
+    """How to make a blocked entity's target reachable (#1138).
 
     The answer :meth:`CoverTypePolicy.plan_external_command_interlock` returns
-    when a command that arrived from OUTSIDE ACP cannot physically complete
-    because a coupled entity is standing in the way. Pure data, deliberately
-    free of any cover-type vocabulary: a "leading" entity to move first and a
-    "follower" whose own command has to be re-issued behind it. The coordinator
-    executes it without knowing that the two are rails, or that the cover is a
-    day/night shade.
+    when a command cannot physically complete because a coupled entity is
+    standing in the way. The name says "external" for the origin it was built
+    for, and the class keeps it, but the plan is origin-agnostic: it answers the
+    same question for a command that arrived from outside ACP and for one of
+    ACP's own user seams that the clearance gate withheld. Pure data,
+    deliberately free of any cover-type vocabulary: a "leading" entity to move
+    first and a "follower" whose own command has to be re-issued behind it. The
+    coordinator executes it without knowing that the two are rails, or that the
+    cover is a day/night shade.
 
-    Both targets are WIRE numbers — the device frame the observed service call
-    was already expressed in — so the executor hands them straight to
+    Both targets are WIRE numbers — the device frame the command was already
+    expressed in — so the executor hands them straight to
     ``CoverCommandService.apply_position``, whose contract is "already
     transformed". Running them back through the coordinator's
     ``_entity_target`` would double-apply inverse/interpolation and re-map the
