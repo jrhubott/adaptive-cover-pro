@@ -14,11 +14,19 @@ paths need the same policy, extract one helper and have both call it.
 
 from __future__ import annotations
 
+# The direction each HA transit state reports, as the sign of the change in
+# the entity's raw ``current_position``. This is a WIRE fact: HA's convention
+# ties "opening" to that number RISING, whatever the install's inverse-state
+# flag says about what "open" means. A caller comparing it against a direction
+# expressed in open-percent space has to flip it (see #993).
+_TRANSIT_WIRE_SIGN: dict[str, int] = {"opening": 1, "closing": -1}
+
 # HA cover states that indicate the motor is actively moving the carriage.
 # Kept as a module-level frozenset so callers that need set membership
 # (e.g. existing tests that monkeypatched ``_COVER_MOVING_STATES``) can
-# still poke a single attribute.
-_MOVING_STATES: frozenset[str] = frozenset({"opening", "closing"})
+# still poke a single attribute. Derived from the sign table rather than
+# restated, so the two can never drift apart.
+_MOVING_STATES: frozenset[str] = frozenset(_TRANSIT_WIRE_SIGN)
 
 
 def is_state_in_transit(state: str | None) -> bool:
@@ -38,3 +46,23 @@ def is_state_in_transit(state: str | None) -> bool:
       override-suppression tier (a) for the tilt axis.
     """
     return state in _MOVING_STATES
+
+
+def transit_wire_sign(state: str | None) -> int | None:
+    """Return which way ``state`` says the raw ``current_position`` is moving.
+
+    ``+1`` for ``"opening"`` (the wire number rising), ``-1`` for ``"closing"``
+    (falling), ``None`` for every state that is not a transit state. By
+    construction ``transit_wire_sign(s) is not None`` holds for exactly the same
+    ``s`` as :func:`is_state_in_transit` — both read the one
+    :data:`_TRANSIT_WIRE_SIGN` table — so a caller that needs the direction as
+    well as the fact of motion asks this and does not also ask the predicate.
+
+    The sign is in WIRE space. Code comparing it against a direction expressed
+    in open-percent / dispatch frame must negate it on an inverse-state install:
+    flipping the frame negates every delta and therefore every direction. Used
+    by ``DayNightShadePolicy._start_confirmation`` (issues #1145, #993), where a
+    rail that publishes a transit state but no intermediate position is the
+    only evidence that the leading rail has started to move.
+    """
+    return _TRANSIT_WIRE_SIGN.get(state)
