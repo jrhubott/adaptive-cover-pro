@@ -1265,7 +1265,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         the motor. It did on the external path, and a refused one can leave the
         entity latched in ``closing`` indefinitely, so that latch is cleared
         before the re-issue. It did NOT on the user-seam path
-        (:meth:`_interlock_withheld_user_command`): the clearance gate withheld
+        (:meth:`_interlock_user_command`): the clearance gate withheld
         the command, so there is no latch, and stopping anyway is a live side
         effect rather than a no-op — on an open/close-only motor a
         stop-while-stationary is the hardware's "go to My" gesture, which would

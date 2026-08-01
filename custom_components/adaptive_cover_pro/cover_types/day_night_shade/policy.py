@@ -1809,12 +1809,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
            fire on a first read and that pointwise identity does not extend to
            it — only point 3 does, which is all the theorem needs.
         3. The wrapper is a monotone WEAKENING:
-           ``cleared(w) or transit() or delta(w)`` accepts a superset of what
-           ``cleared(w)`` accepts. It can only release an armed gate EARLIER; it
-           can never arm one that was not already armed, so no pair of block
-           conditions it produces was unreachable before. The two-stage budget
-           below is a weakening of the same kind, in time rather than in the
-           predicate: it only adds chances to release.
+           ``cleared(w) or booked() or transit() or delta(w)`` accepts a
+           superset of what ``cleared(w)`` accepts. It can only release an armed
+           gate EARLIER; it can never arm one that was not already armed, so no
+           pair of block conditions it produces was unreachable before. The
+           two-stage budget below is a weakening of the same kind, in time
+           rather than in the predicate: it only adds chances to release.
+
+           This point, not point 2, is what carries the theorem across the
+           disjuncts that CAN fire on a first read — the booked-target signal
+           and the transit signal both can, by design. Point 2's structural
+           argument is specific to the delta, which needs two readings before it
+           can say anything at all.
 
         The option therefore changes how long a follower waits and what
         threshold ends that wait — never which rail is the follower.
@@ -1965,22 +1971,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         target_open = flip_if(position, inverted=inverse)
         tolerance = self._position_tolerance
 
+        # Both branches release on exactly the negation of :meth:`_rail_blocks`,
+        # and say so by calling it rather than by restating its inequality. The
+        # gate is the site the planner historically drifted AWAY from, so a
+        # hand-written copy here is the one that must not exist: a tolerance or
+        # polarity edit made in the shared helper would otherwise move the
+        # planner and leave the gate behind, and a follower would be declined a
+        # correction the gate then refuses — the stranding this all exists to
+        # fix.
         if is_middle:
             leading_rail = bottom_rail
             # Clearance needs the bottom rail's open percent to FALL.
             direction = -1
-
-            def _cleared(wire: int) -> bool:
-                return flip_if(wire, inverted=inverse) <= target_open + tolerance
-
         elif self._dual_entity_middle_leads(target_open, inverse):
             leading_rail = middle_rail
             # Clearance needs the middle rail's open percent to RISE.
             direction = 1
-
-            def _cleared(wire: int) -> bool:
-                return flip_if(wire, inverted=inverse) + tolerance >= target_open
-
         else:
             # The bottom rail leads this move: nothing is downstream of it, so
             # it is unconditionally ungated — #1115's behaviour, now stated as a
@@ -1988,6 +1994,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             # raising cycle left on it; this command is going out.
             self._pending_rail_command.discard(entity_id)
             return True
+
+        def _cleared(wire: int) -> bool:
+            return not self._rail_blocks(
+                wire, target_open, inverse, is_middle=is_middle
+            )
 
         done = _cleared
         budget: float | None = None if wait else 0

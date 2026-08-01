@@ -1414,6 +1414,30 @@ def _user_seam_coordinator(cmd_svc, policy, *, entities, monkeypatch, floors=())
     return coord
 
 
+def _assert_ordering_was_right_first_time(coord) -> None:
+    """No corrective partner move ran, so the ORDERING is what sent both rails.
+
+    Without this, these three tests no longer guard what they were written to
+    guard. Their failure signal is ``send:<rail> in events``, and the manual
+    interlock (#1151) repairs a wrongly-ordered follower before the gate is ever
+    consulted — it plans a correction and dispatches leader-then-follower, which
+    satisfies both the membership AND the index assertions. Regress
+    ``dispatch_order_key`` to the pre-#1118 "bottom rail always first" and every
+    other assertion here still passes; only the absence of an interlock row
+    tells the two apart.
+    """
+    corrections = [
+        call.args[0]
+        for call in coord._event_buffer.record.call_args_list
+        if call.args
+        and str(call.args[0].get("event", "")).startswith("external_interlock")
+    ]
+    assert not corrections, (
+        "the rails were sent by a corrective interlock, not by dispatch "
+        f"ordering — ordering has regressed: {corrections}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_my_position_button_raise_sends_both_rails_without_stalling(
     monkeypatch,
@@ -1471,6 +1495,7 @@ async def test_my_position_button_raise_sends_both_rails_without_stalling(
     assert f"send:{_BOTTOM}" in events, events
     assert f"send:{_MIDDLE}" in events, events
     assert events.index(f"send:{_MIDDLE}") < events.index(f"send:{_BOTTOM}")
+    _assert_ordering_was_right_first_time(coord)
     # Nothing was withheld, so nothing is left latched waiting for a retry that
     # manual override has already blocked.
     assert policy.has_pending_secondary_axis(_BOTTOM) is False
@@ -1561,6 +1586,7 @@ async def test_my_position_button_raise_under_a_floor_sends_both_rails(
     assert f"send:{_MIDDLE}" in events, events
     assert f"send:{_BOTTOM}" in events, events
     assert events.index(f"send:{_MIDDLE}") < events.index(f"send:{_BOTTOM}")
+    _assert_ordering_was_right_first_time(coord)
     # The floor really did clamp — without this the test could pass by the
     # request and the dispatch happening to agree.
     assert cmd_svc.get_target(_BOTTOM) == 80
@@ -1635,6 +1661,7 @@ async def test_my_position_button_lower_under_a_descending_curve_leads_bottom(
     assert f"send:{_BOTTOM}" in events, events
     assert f"send:{_MIDDLE}" in events, events
     assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}")
+    _assert_ordering_was_right_first_time(coord)
     # Curve applied to the CLAMPED request, not the raw one (f(80) = 20).
     assert cmd_svc.get_target(_BOTTOM) == 20
     assert policy.has_pending_secondary_axis(_MIDDLE) is False

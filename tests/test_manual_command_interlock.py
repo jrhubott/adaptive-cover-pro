@@ -306,8 +306,15 @@ async def test_a_dry_run_target_is_not_evidence_of_motion(monkeypatch) -> None:
     physically travelling" must not read it: in a dry run nothing was sent, so
     there is no motion to be evidence OF, and the follower stays gated.
     """
+    # concurrent=True is load-bearing: with the option OFF (the default) the
+    # gate never builds ``_start_confirmation``, so ``_booked_clears`` is never
+    # consulted and this test would pass on the live reading alone — proving
+    # nothing about the dry-run guard it is named for.
     cmd_svc, policy, _rails, _events = _harness(
-        monkeypatch, script={_BOTTOM: [100], _MIDDLE: [100]}, position=40
+        monkeypatch,
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=40,
+        concurrent=True,
     )
     ctx = _rail_context(policy)
     _coord(cmd_svc, policy, ctx, dry_run=True)

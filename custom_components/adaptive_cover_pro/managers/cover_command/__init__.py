@@ -1918,10 +1918,16 @@ class CoverCommandService:
             # motion nobody can observe ending: the transit-timeout backstop
             # holds it for ~45 s, during which a physically coupled cover type
             # reads it as "the partner rail is on its way" and releases a
-            # follower into a rail that never moved. The TARGET stays — the
-            # reconciliation pass resends it, and clearing ``waiting`` is what
-            # lets that pass pick it up on its next tick instead of skipping it
-            # as still-moving.
+            # follower into a rail that never moved.
+            #
+            # The TARGET is deliberately kept, but NOT because anything is
+            # guaranteed to resend it — ``run_reconciliation_pass`` is gated on
+            # ``enable_position_matching``, which defaults OFF (#591), so on a
+            # default install nothing does. It is kept because it is still the
+            # honest record of what this entity was last asked for: the delta
+            # gates, the diagnostics and a later resend all read it, and
+            # dropping it would make ACP forget a command the user gave. Only
+            # the CLAIM OF MOTION is false here, so only that is withdrawn.
             self.set_waiting(entity_id, False)
             return self._skip(
                 entity_id,
