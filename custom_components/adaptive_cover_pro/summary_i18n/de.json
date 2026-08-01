@@ -297,7 +297,10 @@
       "model_dual_entity": "zwei Schienen-Entitäten (Doppelentität)",
       "rail_travel": "Schienenbewegung: {v}",
       "rail_travel_concurrent": "beide Schienen bewegen sich gleichzeitig, sobald die führende Schiene unterwegs ist",
-      "rail_travel_serialized": "Schienen bewegen sich nacheinander — die nachfolgende Schiene wartet auf vollständige Freigabe"
+      "rail_travel_serialized": "Schienen bewegen sich nacheinander — die nachfolgende Schiene wartet auf vollständige Freigabe",
+      "rail_interlock": "Schienenverriegelung: {v}",
+      "rail_interlock_on": "⚠️ ein externer Befehl, den eine Schiene nicht erreichen kann, wird ausgeführt, indem zuerst die andere Schiene bewegt wird — ACP bewegt möglicherweise die Schiene, die Sie nicht angesteuert haben",
+      "rail_interlock_off": "ein externer Befehl, den eine Schiene nicht erreichen kann, bleibt unangetastet"
     },
     "dual_panel": {
       "front_entity": "transparentes Frontpaneel: {v}",

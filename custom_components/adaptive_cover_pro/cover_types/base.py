@@ -335,6 +335,50 @@ class CoverDescriptor:
     axes: tuple[AxisDescriptor, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalInterlockPlan:
+    """How to make an externally-commanded entity's target reachable (#1138).
+
+    The answer :meth:`CoverTypePolicy.plan_external_command_interlock` returns
+    when a command that arrived from OUTSIDE ACP cannot physically complete
+    because a coupled entity is standing in the way. Pure data, deliberately
+    free of any cover-type vocabulary: a "leading" entity to move first and a
+    "follower" whose own command has to be re-issued behind it. The coordinator
+    executes it without knowing that the two are rails, or that the cover is a
+    day/night shade.
+
+    Both targets are WIRE numbers — the device frame the observed service call
+    was already expressed in — so the executor hands them straight to
+    ``CoverCommandService.apply_position``, whose contract is "already
+    transformed". Running them back through the coordinator's
+    ``_entity_target`` would double-apply inverse/interpolation and re-map the
+    very target the user named.
+
+    ``reason`` is the dispatch label the corrective commands carry into the
+    command service, the manual-override manager and the event timeline, so the
+    whole sequence is attributable to one cause in diagnostics.
+
+    ``dispatch_token`` is the provenance stamp for BOTH targets, minted by the
+    planning policy and replayed verbatim by the executor into
+    ``CoverCommandService.apply_position`` — opaque to everything in between,
+    exactly like the stamp :meth:`CoverTypePolicy.capture_dispatch_token`
+    produces on the normal dispatch path. It travels WITH the plan because the
+    plan is the seam that produced these numbers: nothing resolved them, so
+    ``capture_dispatch_token`` would answer about some unrelated earlier
+    dispatch instead (issue #1115's provenance bug, pointed at the corrective
+    caller). The default ``None`` says "no dispatch produced this number", which
+    every gate already resolves to the install's own frame — the right answer
+    for a policy that has no frame of its own.
+    """
+
+    leading_entity_id: str
+    leading_target: int
+    follower_entity_id: str
+    follower_target: int
+    reason: str
+    dispatch_token: Any = None
+
+
 def caps_get(caps: Any, key: str, default: bool = False) -> bool:
     """Read a capability flag from either a dict or a ``CoverCapabilities``.
 
@@ -946,6 +990,45 @@ class CoverTypePolicy(ABC):
         entities are physically independent is always clear.
         """
         return True
+
+    def plan_external_command_interlock(
+        self,
+        entity_id: str,  # noqa: ARG002
+        *,
+        service: str,  # noqa: ARG002
+        wire_target: int,  # noqa: ARG002
+    ) -> ExternalInterlockPlan | None:
+        """How to make an EXTERNAL command on ``entity_id`` reachable (#1138).
+
+        The corrective counterpart of :meth:`await_dispatch_clearance`. That
+        hook answers "may ACP drive this entity right now?" about a command ACP
+        is about to issue and can therefore withhold. This one answers "a
+        command ACP did not issue has already gone out at this entity — is a
+        coupled entity standing where it needs to go, and what would clear the
+        way?" Nothing can be withheld by then: ``EVENT_CALL_SERVICE`` fires as
+        the call executes, so the only remedy is to move the blocker and
+        re-issue the user's own target behind it.
+
+        DECISION ONLY. The returned :class:`ExternalInterlockPlan` names two
+        entities and two targets; the coordinator owns the side effects
+        (manual-override marking, the stop, the two dispatches, the event-timeline
+        rows) because it owns the command service and the managers. Behaviour and
+        arithmetic stay here — the "managers hold state, policies hold behaviour"
+        split.
+
+        ``service`` is the observed ``cover.*`` service and ``wire_target`` the
+        position it implies in the DEVICE frame (``close_cover`` → 0,
+        ``open_cover`` → 100, ``set_cover_position`` → its ``position``). HA's
+        cover services are defined in that frame regardless of ACP's
+        ``inverse_state``, which describes how ACP's own logical numbers map
+        onto it — so a policy that compares against a live reading must convert
+        both sides through the same frame rule it uses everywhere else (the
+        #993 bug class).
+
+        Liskov-safe default: ``None`` — "nothing blocks it", which is every
+        cover type whose entities are physically independent.
+        """
+        return None
 
     async def after_position_command(
         self,

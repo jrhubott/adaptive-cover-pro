@@ -51,6 +51,7 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DEFAULT_HEIGHT,
     CONF_ENTITIES,
@@ -96,6 +97,7 @@ def _dual_policy(
     inverse: bool = False,
     interp: bool = False,
     concurrent: bool | None = None,
+    interlock: bool | None = None,
     policy: DayNightShadePolicy | None = None,
 ) -> DayNightShadePolicy:
     """Build a real Model C policy with its per-cycle dispatch cache primed.
@@ -110,7 +112,8 @@ def _dual_policy(
     seams' "invert iff configured" contract diverge from the install's own
     frame.
 
-    ``concurrent`` writes ``CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL`` explicitly;
+    ``concurrent`` writes ``CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL`` explicitly
+    and ``interlock`` writes ``CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK``;
     ``None`` (the default) leaves the key absent, which is how an upgraded
     install arrives and therefore what the option's own default governs.
     """
@@ -127,6 +130,8 @@ def _dual_policy(
     }
     if concurrent is not None:
         options[CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL] = concurrent
+    if interlock is not None:
+        options[CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK] = interlock
     if inverse:
         options[CONF_INVERSE_STATE] = True
     if interp:
@@ -3380,3 +3385,309 @@ async def test_reconciliation_skips_a_target_cleared_out_from_under_the_pass() -
     assert f"send:{_BOTTOM}" in events, events
     assert f"send:{_MIDDLE}" not in events, events
     assert cmd_svc.get_target(_MIDDLE) is None
+
+
+# ---------------------------------------------------------------------------
+# The external-command interlock rides the SAME gate (issue #1138)
+# ---------------------------------------------------------------------------
+# A ``cover.close_cover`` sent straight at one rail never passes through ACP's
+# dispatch seam, so nothing orders or gates it — the motor is asked to travel
+# into the space its partner occupies and stalls. The correction moves the
+# blocking rail and re-issues the user's own command, and the whole point of
+# routing it through ``CoverCommandService.apply_position`` rather than
+# ``hass.services.async_call`` is that the re-issue meets the same
+# ``await_dispatch_clearance`` gate as every other dispatch. A corrective path
+# that talked to HA directly would recreate #1115's stall class from inside ACP.
+
+
+def _interlock_coordinator(cmd_svc, policy):
+    """Wire the REAL listener + executor onto a real command service and policy.
+
+    Returns ``(coord, spawned)``. ``spawned`` collects the executor coroutines
+    the listener hands to ``config_entry.async_create_task``, so a test can await
+    the correction inline instead of racing a background task.
+    """
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        PositionContext,
+    )
+
+    spawned: list = []
+    coord = MagicMock()
+    coord.entities = [_BOTTOM, _MIDDLE]
+    coord.logger = MagicMock()
+    coord._policy = policy
+    coord._cmd_svc = cmd_svc
+    # The same fake hass the command service talks to, so a corrective path that
+    # reached for ``hass.services.async_call`` directly would still land on the
+    # recorder — and be caught by the ordering/gate assertions rather than
+    # dying on an un-awaitable mock.
+    coord.hass = cmd_svc._hass
+    coord.manual_ignore_external = False
+    coord.manager = MagicMock()
+    coord._event_buffer = MagicMock()
+    coord._external_interlock_tasks = {}
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {}
+    coord.config_entry.async_create_task = MagicMock(
+        side_effect=lambda _hass, coro, name=None: (  # noqa: ARG005
+            spawned.append(coro) or MagicMock()
+        )
+    )
+    coord._build_position_context = (
+        lambda entity, options, **kw: PositionContext(  # noqa: ARG005
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=1,
+            time_threshold=0,
+            special_positions=[0, 100],
+            inverse_state=False,
+            force=kw.get("force", False),
+            bypass_auto_control=kw.get("bypass_auto_control", False),
+            user_command=kw.get("user_command", False),
+            policy=policy,
+        )
+    )
+    for name in ("_plan_external_interlock", "_execute_external_interlock"):
+        setattr(
+            coord,
+            name,
+            types.MethodType(getattr(AdaptiveDataUpdateCoordinator, name), coord),
+        )
+    return coord, spawned
+
+
+def _external_call_event(service: str, entity_id: str, *, position: int | None = None):
+    service_data: dict = {"entity_id": entity_id}
+    if position is not None:
+        service_data["position"] = position
+    event = MagicMock()
+    event.data = {
+        "domain": "cover",
+        "service": service,
+        "service_data": service_data,
+    }
+    event.context = MagicMock()
+    event.context.id = "ctx-external-user"
+    return event
+
+
+@pytest.mark.asyncio
+async def test_external_close_on_middle_rail_dispatches_bottom_first(
+    monkeypatch,
+) -> None:
+    """The reported repro, corrected end to end through the real gate.
+
+    Bottom rail parked at 100, a user closes the middle rail from a dashboard.
+    The bottom rail's command must go out first, the middle rail is stopped (it
+    may be latched in ``closing`` from the refused command), and only then is the
+    user's own target re-issued — through ``apply_position``, which asks
+    ``await_dispatch_clearance`` and therefore polls the bottom rail's descent
+    before letting the middle rail move.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100, 100, 100, 90, 0], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+
+    gate_calls: list[tuple[str, int]] = []
+    real_gate = policy.await_dispatch_clearance
+
+    async def _spy(entity_id, **kwargs):
+        gate_calls.append((entity_id, kwargs.get("position")))
+        return await real_gate(entity_id, **kwargs)
+
+    policy.await_dispatch_clearance = _spy
+
+    hass = cmd_svc._hass
+    inner = hass.services.async_call.side_effect
+    wire: list[tuple[str, str]] = []
+
+    async def _record(domain, service, data, context=None):
+        wire.append((service, data["entity_id"]))
+        await inner(domain, service, data, context=context)
+
+    hass.services.async_call = AsyncMock(side_effect=_record)
+
+    coord, spawned = _interlock_coordinator(cmd_svc, policy)
+
+    with _patch_caps():
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _external_call_event("close_cover", _MIDDLE)
+        )
+        assert spawned, "the blocked external command produced no correction"
+        await spawned[0]
+
+    # Bottom rail first, then the follower's stop, then the follower's re-issue.
+    assert wire[0][1] == _BOTTOM, wire
+    assert ("stop_cover", _MIDDLE) in wire, wire
+    assert wire.index(("stop_cover", _MIDDLE)) < len(wire) - 1, wire
+    assert wire[-1][1] == _MIDDLE and wire[-1][0] != "stop_cover", wire
+    assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}"), events
+
+    # The re-issue went through the gate, and the gate actually waited on the
+    # bottom rail's live descent before releasing it.
+    assert (_MIDDLE, 0) in gate_calls, gate_calls
+    polls_before_middle = [
+        e
+        for e in events[: len(events) - 1 - events[::-1].index(f"send:{_MIDDLE}")]
+        if e == f"poll:{_BOTTOM}"
+    ]
+    assert len(polls_before_middle) >= 2, events
+
+
+@pytest.mark.asyncio
+async def test_external_interlock_never_arms_both_rail_gates() -> None:
+    """The mutual-exclusion theorem holds for the corrective caller too.
+
+    Same grid and same shape as ``test_the_two_rail_gates_are_never_both_armed``,
+    but every dispatch pair here is one the external-command interlock itself
+    produced. Two things are asserted, and the stronger one is what makes the
+    correction terminate: the LEADING rail of any plan is always clear right now,
+    so the corrective sequence can never open with a command that is itself
+    withheld. Both being blocked would be a deadlock the coordinator would sit
+    in; a blocked leader would be a correction that never starts.
+    """
+    policy = _dual_policy(position=50, blend=50)
+    rails = _attach_scripted_rails(policy, {_BOTTOM: [0], _MIDDLE: [0]})
+    for p in range(0, 101, 10):
+        for m in range(p, 101, 10):  # an intact stack: middle at or above bottom
+            rails.park(_BOTTOM, p)
+            rails.park(_MIDDLE, m)
+            for target in range(0, 101, 10):
+                for entity in (_BOTTOM, _MIDDLE):
+                    plan = policy.plan_external_command_interlock(
+                        entity, service="set_cover_position", wire_target=target
+                    )
+                    if plan is None:
+                        continue
+                    lead_ok = await policy.await_dispatch_clearance(
+                        plan.leading_entity_id,
+                        position=plan.leading_target,
+                        reason="t",
+                        wait=False,
+                    )
+                    follow_ok = await policy.await_dispatch_clearance(
+                        plan.follower_entity_id,
+                        position=plan.follower_target,
+                        reason="t",
+                        wait=False,
+                    )
+                    assert lead_ok, (p, m, target, entity)
+                    assert lead_ok or follow_ok, (p, m, target, entity)
+
+
+@pytest.mark.asyncio
+async def test_external_interlock_gates_the_correction_in_the_install_frame(
+    monkeypatch,
+) -> None:
+    """A divergent seam must not flip the corrective dispatch's frame (#1138).
+
+    ``plan_external_command_interlock`` decides in ``_dispatch_frame(None)`` —
+    the install's own frame, which is the honest answer for a wire number no ACP
+    dispatch produced. The corrective dispatches then have to be GATED in that
+    same frame. Left to ``capture_dispatch_token`` they are not: that stamp
+    replays ``_dual_entity_dispatch_inverse``, the frame of the last rail
+    RESOLUTION, and the end-time/sunset loop parks a ``True`` there on an
+    interpolation install whose own ``axis_inverted`` answers ``False``.
+    Overnight, after ``end_time``, is exactly when an external command arrives.
+
+    Un-flipped in the wrong frame the verdict inverts BOTH ways at once: the
+    bottom rail — the plan's leader, which is clear by construction — reads as
+    blocked behind a middle rail that is parked and will never move, while the
+    middle rail's own gate reads as clear and waves it into the bottom rail it
+    cannot pass. That is #1115's stall, re-opened from inside ACP's own
+    correction.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100, 100, 100, 90, 0], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+
+    # The divergent seam in its own call shape: the end-time/sunset loop
+    # resolves every rail with ``inverted=self._inverse_state``, unconditional
+    # of interpolation, so it parks a frame that is not the install's own.
+    policy.resolve_entity_target(_BOTTOM, 40, inverted=True)
+    assert policy._dual_entity_dispatch_inverse is True
+    assert policy._dual_entity_inverse is False
+
+    hass = cmd_svc._hass
+    inner = hass.services.async_call.side_effect
+    wire: list[tuple[str, str]] = []
+
+    async def _record(domain, service, data, context=None):
+        wire.append((service, data["entity_id"]))
+        await inner(domain, service, data, context=context)
+
+    hass.services.async_call = AsyncMock(side_effect=_record)
+
+    coord, spawned = _interlock_coordinator(cmd_svc, policy)
+
+    with _patch_caps():
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _external_call_event("close_cover", _MIDDLE)
+        )
+        assert spawned, "the blocked external command produced no correction"
+        await spawned[0]
+
+    # Leader first, follower's stop, follower's re-issue — the same sequence the
+    # non-divergent case produces, because the frame the gate uses is the frame
+    # the DECISION used, not whatever a later seam happened to park.
+    assert wire and wire[0][1] == _BOTTOM, wire
+    assert ("stop_cover", _MIDDLE) in wire, wire
+    assert wire[-1][1] == _MIDDLE and wire[-1][0] != "stop_cover", wire
+    assert events.index(f"send:{_BOTTOM}") < events.index(f"send:{_MIDDLE}"), events
+
+    # The stamp booked WITH the re-issued target is the install's frame too, so
+    # a reconciliation resend of it un-transforms the same way.
+    assert cmd_svc.state(_MIDDLE).dispatch_token is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["disabled", "dry_run"])
+async def test_external_interlock_stops_no_rail_when_the_leader_is_withheld(
+    mode,
+) -> None:
+    """A correction that cannot dispatch must not touch the motor at all (#1138).
+
+    ``apply_position`` honours the integration's hard kill switch and dry-run
+    mode. ``apply_user_stop`` → ``StopTracker.call_stop_cover`` honours neither
+    — it calls ``cover.stop_cover`` unconditionally. So with ACP disabled (or
+    simulating) the two position commands are skipped while the STOP is real:
+    ACP interrupts the user's in-flight command on the hardware and then never
+    completes it. A disabled ACP is exactly when people drive rails by hand, so
+    this is ordinary use, not a corner.
+    """
+    cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+    )
+    if mode == "disabled":
+        cmd_svc._enabled = False
+    else:
+        cmd_svc._dry_run = True
+
+    hass = cmd_svc._hass
+    wire: list[tuple[str, str]] = []
+
+    async def _record(_domain, service, data, context=None):  # noqa: ARG001
+        wire.append((service, data["entity_id"]))
+
+    hass.services.async_call = AsyncMock(side_effect=_record)
+
+    coord, spawned = _interlock_coordinator(cmd_svc, policy)
+
+    with _patch_caps():
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(
+            coord, _external_call_event("close_cover", _MIDDLE)
+        )
+        assert spawned, "the blocked external command produced no correction"
+        await spawned[0]
+
+    assert wire == [], wire

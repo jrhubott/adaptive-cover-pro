@@ -259,6 +259,18 @@ CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY = "day_night_middle_rail_entity"
 # conservative #1115/#1118 behaviour. An absent key reads as ON.
 CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = "day_night_concurrent_rail_travel"
 DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL = True
+# Model C external-command interlock: when a position command arrives at one
+# rail from OUTSIDE ACP — a dashboard tap, a script, a handheld remote — and the
+# partner rail is parked in the space that rail is being driven into, may ACP
+# move the partner out of the way and re-issue the user's own command behind it
+# (#1138)? ACP cannot veto such a call: EVENT_CALL_SERVICE fires as the call
+# executes, and by then the motor is already being asked to travel somewhere it
+# physically cannot reach — it stalls or latches in ``closing`` indefinitely. On
+# (the default), the command actually completes and both rails engage manual
+# override. Off, ACP stays out of the way and logs a warning naming the
+# unreachable target. An absent key reads as ON.
+CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK = "day_night_external_command_interlock"
+DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK = True
 
 # --- Dual-panel shade (#996) ------------------------------------------------
 # Two INDEPENDENT HA shade entities over one window: a sheer FRONT that

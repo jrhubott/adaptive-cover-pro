@@ -34,6 +34,7 @@ from ...const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
@@ -46,6 +47,7 @@ from ...const import (
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
     DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     DEFAULT_DAY_NIGHT_CONTROL_MODEL,
+    DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
     POSITION_CLOSED,
@@ -75,6 +77,7 @@ from ..base import (
     TILT_AXIS,
     CoverAxis,
     CoverTypePolicy,
+    ExternalInterlockPlan,
     axis_inverted,
     caps_get,
 )
@@ -102,6 +105,14 @@ _POSITION_AXIS_SERVICES = frozenset(
 _CLIMATE_METHODS = frozenset(
     {ControlMethod.SUMMER, ControlMethod.WINTER, ControlMethod.EXTREME_HEAT}
 )
+
+# Dispatch label carried by every command of an external-command interlock
+# correction (#1138) — into the command service's trigger field, the
+# manual-override manager's reason, and the diagnostic event timeline, so the
+# whole three-command sequence is attributable to one cause. It leaves this
+# module only as ``ExternalInterlockPlan.reason``, which the coordinator replays
+# verbatim without interpreting it.
+_EXTERNAL_INTERLOCK_REASON = "external_command_interlock"
 
 
 def _pct_slider() -> selector.NumberSelector:
@@ -170,6 +181,13 @@ def geometry_day_night_shade_schema(hass: HomeAssistant | None = None) -> vol.Sc
             vol.Optional(
                 CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
                 default=DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+            ): selector.BooleanSelector(),
+            # Model C: may ACP move the partner rail to make an externally
+            # commanded rail's target reachable (#1138)? Inert for Models A
+            # and B, which have no partner rail to be blocked by.
+            vol.Optional(
+                CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+                default=DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
             ): selector.BooleanSelector(),
         }
     )
@@ -249,6 +267,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # gate runs at the dispatch seam, which receives no ``options``.
         self._dual_entity_concurrent_travel: bool = (
             DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL
+        )
+        # Model C external-command interlock: may ACP move the partner rail to
+        # make an externally-commanded rail's target reachable (#1138)? Cached
+        # by the same hooks and for the same reason — the decision runs at the
+        # coordinator's EVENT_CALL_SERVICE listener, which hands no ``options``.
+        self._dual_entity_external_interlock: bool = (
+            DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK
         )
         # Model C (dual_entity) dispatch cache, filled in ``post_pipeline_resolve``
         # and read by ``resolve_entity_target`` at the coordinator dispatch seam
@@ -356,6 +381,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
                 DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
             )
         )
+        self._dual_entity_external_interlock = bool(
+            options.get(
+                CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+                DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+            )
+        )
 
     # ---- Geometry / config-flow surfaces ------------------------------ #
 
@@ -402,9 +433,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
     ) -> list[str]:
         """Render the window-dimensions block plus the control-model line.
 
-        Model C additionally renders the rail-travel policy (#1140), which the
-        single-carriage models have no second rail to apply — rendering it for
-        them would describe behaviour they cannot exhibit.
+        Model C additionally renders the two rail-pair policies — travel
+        sequencing (#1140) and the external-command interlock (#1138) — which
+        the single-carriage models have no second rail to apply; rendering them
+        for those models would describe behaviour they cannot exhibit. The
+        interlock's "on" wording carries a ⚠️ because the feature moves a rail
+        the user did not name (the footgun rule in CODING_GUIDELINES.md).
         """
         lines = window_dimensions_lines(config, labels)
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
@@ -425,6 +459,15 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
                 else "geometry.day_night.rail_travel_serialized"
             )
             lines.append(L["geometry.day_night.rail_travel"].format(v=L[travel]))
+            interlock = (
+                "geometry.day_night.rail_interlock_on"
+                if config.get(
+                    CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+                    DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+                )
+                else "geometry.day_night.rail_interlock_off"
+            )
+            lines.append(L["geometry.day_night.rail_interlock"].format(v=L[interlock]))
         return lines
 
     def _missing_axis_warnings(
@@ -965,16 +1008,18 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """Whether a RAISE-direction collision exists right now (issue #1118).
 
         The single direction predicate, consulted by :meth:`dispatch_order_key`
-        (which rail to command first) and by :meth:`_gate_rail_clearance` (which
-        rail to withhold). One answer, two readers, so the two can never
-        disagree — a disagreement is precisely what would leave both rails
-        waiting on each other.
+        (which rail to command first), by :meth:`_gate_rail_clearance` (which
+        rail to withhold) and by
+        :meth:`plan_external_command_interlock` (whether a command ACP did not
+        issue is reachable at all, #1138). One answer, three readers, so no two
+        of them can ever disagree — a disagreement is precisely what would leave
+        both rails waiting on each other.
 
         The question is target-vs-live, not live-vs-live: the bottom rail is
         blocked exactly when the position it is being driven to sits above where
         the middle rail currently IS, i.e. ``m_open + tol < P_target_open``. That
         is the exact complement of the follower's clearance predicate in
-        :meth:`_gate_rail_clearance` — one inequality, stated once, used twice.
+        :meth:`_gate_rail_clearance` — one inequality, stated once, used thrice.
 
         ``bottom_target_open`` is the bottom rail's target for the dispatch in
         question, already in OPEN-PERCENT space; ``inverse`` names the frame the
@@ -1606,7 +1651,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         hands :meth:`_start_confirmation` is read off that branch's OWN release
         inequality, never off :meth:`_dual_entity_middle_leads`, so the middle
         rail's gate still consults nothing but the bottom rail's live motion
-        relative to its own target.
+        relative to its own target. So does the external-command interlock
+        (#1138): :meth:`plan_external_command_interlock` states its blocked test
+        as the complement of the two ``_cleared`` predicates below — the middle
+        rail's from this method's own inequality, the bottom rail's by calling
+        :meth:`_dual_entity_middle_leads` directly — so the middle rail's
+        decision never reads the raise-direction predicate there either.
 
         The no-pass clamp in :meth:`resolve_entity_target` (``M >= P``) states
         that invariant about two NUMBERS — the two eventual targets. It cannot see
@@ -1813,10 +1863,147 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             is_middle=is_middle,
         )
 
+    def plan_external_command_interlock(
+        self,
+        entity_id: str,
+        *,
+        service: str,
+        wire_target: int,
+    ) -> ExternalInterlockPlan | None:
+        """Plan the partner-rail move an EXTERNAL command needs (#1138).
+
+        The corrective mirror of :meth:`await_dispatch_clearance`. That gate
+        withholds an ACP dispatch until the leading rail has cleared; this hook
+        is asked about a command that has ALREADY gone out at one rail without
+        passing through any of ACP's seams — a dashboard tap, a script, a
+        handheld remote. Nothing can be withheld any more, so the question
+        becomes "what would make the target reachable?".
+
+        **The blocked test is the complement of the gate's own release
+        inequality**, not an inversion of :meth:`resolve_entity_target`'s blend
+        arithmetic. That matters at exactly the reported failure: with the bottom
+        rail at 100, ``M = 100 - blend·(100 - P)/100`` is 100 for every blend, so
+        solving it for a blend has no answer at all, while the inequality answers
+        cleanly. Both branches are read straight off
+        :meth:`_gate_rail_clearance`:
+
+        * middle rail — the gate releases on ``p_open <= target_open + tol``, so
+          it is blocked exactly when ``p_open > target_open + tol``;
+        * bottom rail — the gate's raise branch is selected by
+          :meth:`_dual_entity_middle_leads`, which IS the collision test, so it
+          is reused verbatim rather than restated.
+
+        The direction asymmetry #1115/#1118 established survives: the middle
+        rail's branch never consults :meth:`_dual_entity_middle_leads`. That
+        predicate reads the MIDDLE rail's own live position, which during a
+        lowering is the number the collision is about, so consulting it here
+        would ungate the very rail the gate exists to hold — this hook must not
+        become the back door.
+
+        **Minimal displacement.** The leading rail is sent to the SAME wire
+        number the user sent, which is the smallest partner move that satisfies
+        either inequality (both clear at equality, within tolerance). Keeping it
+        a wire number means the executor can hand it straight to
+        ``apply_position`` — running it back through the coordinator's
+        ``_entity_target`` would double-apply inverse/interpolation and re-map
+        the user's own middle-rail target.
+
+        ``wire_target`` is a DEVICE-frame number by HA convention, so the
+        comparison converts it with the same ``flip_if(..., _dispatch_frame(None))``
+        rule the gate uses for its live readings — an unnamed frame resolves to
+        the install's own, which is the honest answer for a command no ACP
+        dispatch produced (the #993 bug class).
+
+        **That same bool rides out on the plan as its ``dispatch_token``**, so
+        the gate that later releases the two corrective commands un-transforms
+        them in the frame this decision was taken in. One bool, minted once,
+        read by both — the ``_dispatch_frame`` doctrine applied to a new pair of
+        readers. Without it ``apply_position`` would fall back to
+        :meth:`capture_dispatch_token`, which replays
+        ``_dual_entity_dispatch_inverse`` — the frame of the last rail
+        RESOLUTION, which this path never performs. The sunset/end-time loop
+        parks a ``True`` there on an interpolation install and the auto-control-
+        off return loop parks a ``False`` on an inverse-state one, so the stamp
+        would routinely name a frame these numbers were never expressed in and
+        INVERT the verdict: the plan's leader, clear by construction, reads as
+        blocked, while the follower reads as clear and is waved into a rail it
+        cannot pass — #1115's stall, re-opened from inside the correction. That
+        is the provenance bug the stamp exists to close (issue #1115), and the
+        plan is the seam that has to close it here, because it is the seam that
+        produced the numbers.
+
+        Returns ``None`` — nothing to correct — for every non-Model-C instance,
+        every entity outside the pair, a degenerate pair the gate is itself inert
+        for, an unreadable partner rail (no reading, no evidence of a collision),
+        and any target the gate would have let through. With the option off it
+        also returns ``None``, after a warning naming the target that will not be
+        reached and the switch that would fix it.
+        """
+        is_middle = self._is_dual_entity_middle_rail(entity_id)
+        if not is_middle and not self._is_dual_entity_bottom_rail(entity_id):
+            return None
+        seq = self._sequencer
+        middle_rail = self._dual_entity_middle_rail
+        bottom_rail = self._dual_entity_bottom_rail
+        if seq is None or middle_rail is None or bottom_rail is None:
+            return None
+
+        inverse = self._dispatch_frame(None)
+        target_open = flip_if(wire_target, inverted=inverse)
+
+        if is_middle:
+            leading_rail = bottom_rail
+            live = seq._get_current_position(bottom_rail)  # noqa: SLF001
+            if live is None:
+                return None
+            blocked = (
+                flip_if(live, inverted=inverse) > target_open + self._position_tolerance
+            )
+        else:
+            leading_rail = middle_rail
+            blocked = self._dual_entity_middle_leads(target_open, inverse)
+
+        if not blocked:
+            return None
+
+        if not self._dual_entity_external_interlock:
+            self._warn(
+                "External cover.%s on %s → %s%% cannot be reached: the %s rail is "
+                "in the way and %s is off, so no corrective move will be made",
+                service,
+                entity_id,
+                wire_target,
+                "bottom" if is_middle else "middle",
+                CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+            )
+            return None
+
+        self._debug(
+            "Model C external interlock: cover.%s on %s → %s%% needs %s to move "
+            "first",
+            service,
+            entity_id,
+            wire_target,
+            leading_rail,
+        )
+        return ExternalInterlockPlan(
+            leading_entity_id=leading_rail,
+            leading_target=wire_target,
+            follower_entity_id=entity_id,
+            follower_target=wire_target,
+            reason=_EXTERNAL_INTERLOCK_REASON,
+            dispatch_token=inverse,
+        )
+
     def _debug(self, msg: str, *args) -> None:
         """Emit a debug line once ``attach`` has supplied a logger."""
         if self._logger is not None:
             self._logger.debug(msg, *args)
+
+    def _warn(self, msg: str, *args) -> None:
+        """Emit a warning line once ``attach`` has supplied a logger."""
+        if self._logger is not None:
+            self._logger.warning(msg, *args)
 
     async def before_position_command(
         self,

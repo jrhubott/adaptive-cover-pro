@@ -52,6 +52,16 @@ __all__ = [
     "route_service_call",
 ]
 
+# Default for ``apply_position``'s ``dispatch_token``: "this caller minted no
+# stamp — ask the policy". It cannot be ``None``, because ``None`` is itself a
+# valid stamp meaning "no dispatch produced this number", which the day/night
+# rail gate resolves to the install's own frame. A caller that HAS the
+# provenance — the external-command interlock, whose targets came off a service
+# call rather than out of ``resolve_entity_target`` — supplies it explicitly
+# instead of letting ``capture_dispatch_token`` answer about an unrelated
+# earlier dispatch (issue #1115, #1138).
+_STAMP_FROM_POLICY: Any = object()
+
 
 class CoverCommandService:
     """Self-contained service for positioning cover entities.
@@ -1309,6 +1319,8 @@ class CoverCommandService:
         position: int,
         reason: str,
         context: PositionContext,
+        *,
+        dispatch_token: Any = _STAMP_FROM_POLICY,
     ) -> tuple[str, str]:
         """Evaluate gates and send a cover position command if appropriate.
 
@@ -1324,6 +1336,18 @@ class CoverCommandService:
             reason: Human-readable source ("solar", "startup", "sunset",
                 "reconciliation", "force_override", ...)
             context: Current coordinator state used for gate checks
+            dispatch_token: Opaque provenance stamp for ``position``, used by
+                the policy's clearance gate and stored with the booked target
+                for the reconciliation resend. Omitted by every seam that
+                resolved ``position`` through ``resolve_entity_target``
+                immediately beforehand — those get the answer
+                ``policy.capture_dispatch_token`` mints right here. A caller
+                whose number came from somewhere else entirely supplies its own
+                (issue #1138): the policy cache ``capture_dispatch_token``
+                replays describes the last RESOLUTION, so asking it about a
+                number no resolve produced stamps the command with an unrelated
+                dispatch's frame and inverts the gate's verdict — issue #1115's
+                provenance bug, pointed at a caller that never resolves.
 
         Returns:
             Tuple of (outcome, detail) where outcome is "sent" or "skipped"
@@ -1761,11 +1785,15 @@ class CoverCommandService:
         # stamp the booked target with a dispatch that did not produce it, which
         # is the exact provenance bug this stamp exists to close. Opaque here:
         # this service stores and replays it, never interprets it.
-        dispatch_token = (
-            None
-            if context.policy is None
-            else context.policy.capture_dispatch_token(entity_id)
-        )
+        #
+        # A caller that minted its own stamp keeps it: it knows where its number
+        # came from and this policy cache does not (issue #1138).
+        if dispatch_token is _STAMP_FROM_POLICY:
+            dispatch_token = (
+                None
+                if context.policy is None
+                else context.policy.capture_dispatch_token(entity_id)
+            )
         if (
             not self._dry_run
             and context.policy is not None

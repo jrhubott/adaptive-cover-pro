@@ -4163,7 +4163,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # option. An absent key already reads as "on" (the default), so the
     # v3.13→v3.14 block seeds nothing and exists only to advance a stale minor
     # so it stops re-triggering migration every restart.
-    MINOR_VERSION = 14
+    # 3.15 (issue #1138): the same shape again for the additive
+    # day_night_external_command_interlock option — absent reads as "on", so the
+    # v3.14→v3.15 block is a no-op bump and nothing else.
+    MINOR_VERSION = 15
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
