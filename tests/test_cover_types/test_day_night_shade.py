@@ -1546,3 +1546,130 @@ def test_concurrent_rail_travel_label_present_in_en_translations() -> None:
         step = en[flow]["step"]["geometry"]
         assert step["data"][CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL]
         assert step["data_description"][CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL]
+
+
+# ---------------------------------------------------------------------------
+# Step 23 — the external-command rail interlock (#1138)
+# ---------------------------------------------------------------------------
+# A position command sent straight at one Model C rail never passes through
+# ACP's ordered, gated dispatch seam, so the partner rail can be standing
+# exactly where the motor is being told to go. Default ON: ACP moves the
+# blocker and re-issues the user's own command through the same gate. The
+# switch exists because doing so moves a rail the user did not name, which is a
+# footgun worth surfacing on the config summary.
+
+
+def test_geometry_schema_has_external_command_interlock_toggle() -> None:
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+    )
+
+    schema = DayNightShadePolicy().geometry_schema()
+    keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
+    assert CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK in keys
+    assert schema({})[CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK] is True
+    assert (
+        schema({CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK: False})[
+            CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK
+        ]
+        is False
+    )
+
+
+def test_external_command_interlock_option_registered() -> None:
+    """Boolean option wiring: a validator, service-settable, and no range entry.
+
+    Same three-way check the concurrent-travel option documents (#1140/#993):
+    a key ``set_geometry`` will not accept is silently dropped and its validator
+    is dead code.
+    """
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+        DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+    )
+    from custom_components.adaptive_cover_pro.services.options_service import (
+        ALL_SETTABLE_KEYS,
+        FIELD_VALIDATORS,
+    )
+
+    assert DEFAULT_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK is True
+    assert CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK not in OPTION_RANGES
+
+    validator = FIELD_VALIDATORS[CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK]
+    assert validator(True) is True
+    assert validator(False) is False
+    with pytest.raises(vol.Invalid):
+        validator("not a boolean")
+
+    assert CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK in ALL_SETTABLE_KEYS
+    assert (
+        CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK
+        in DayNightShadePolicy().live_option_keys()
+    )
+
+
+def test_summary_renders_rail_interlock_for_dual_entity_only() -> None:
+    """Model C renders the interlock line in both states, with the ⚠️ when on.
+
+    CODING_GUIDELINES requires a footgun option to be surfaced as a warning on
+    the config summary, and "ACP may move the rail you did not command" is
+    exactly that. Models A and B have no partner rail to move, so rendering the
+    line for them would describe behaviour they cannot exhibit.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+    )
+
+    policy = DayNightShadePolicy()
+    base = {
+        CONF_HEIGHT_WIN: 2.0,
+        CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+    }
+
+    default_on = policy.summary_geometry_lines(base)
+    interlock_on = [line for line in default_on if "rail interlock" in line]
+    assert interlock_on, default_on
+    assert any("⚠️" in line for line in interlock_on), interlock_on
+    assert any("did not command" in line for line in interlock_on), interlock_on
+
+    explicit_off = policy.summary_geometry_lines(
+        {**base, CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK: False}
+    )
+    interlock_off = [line for line in explicit_off if "rail interlock" in line]
+    assert interlock_off, explicit_off
+    assert not any("⚠️" in line for line in interlock_off), interlock_off
+
+    model_a = policy.summary_geometry_lines(
+        {
+            CONF_HEIGHT_WIN: 2.0,
+            CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_POSITION_TILT,
+        }
+    )
+    assert not any("rail interlock" in line for line in model_a), model_a
+
+
+def test_external_command_interlock_label_present_in_en_translations() -> None:
+    import json
+    import pathlib
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
+    )
+
+    en = json.loads(
+        (
+            pathlib.Path(__file__).resolve().parent.parent.parent
+            / "custom_components"
+            / "adaptive_cover_pro"
+            / "translations"
+            / "en.json"
+        ).read_text(encoding="utf-8")
+    )
+    for flow in ("config", "options"):
+        step = en[flow]["step"]["geometry"]
+        assert step["data"][CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK]
+        assert step["data_description"][CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK]

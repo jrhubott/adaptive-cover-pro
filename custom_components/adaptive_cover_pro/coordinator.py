@@ -16,7 +16,13 @@ if TYPE_CHECKING:
 
 import pytz
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_ON
+from homeassistant.const import (
+    SERVICE_CLOSE_COVER,
+    SERVICE_OPEN_COVER,
+    SERVICE_SET_COVER_POSITION,
+    SERVICE_STOP_COVER,
+    STATE_ON,
+)
 from homeassistant.core import (
     Event,
     HomeAssistant,
@@ -55,12 +61,14 @@ from .cover_types.base import (
     AXIS_NAME_TILT,
     STATE_ATTR_TILT_POSITION,
     CoverDescriptor,
+    ExternalInterlockPlan,
     axis_inverted,
     caps_get,
 )
 from .services.configuration_service import ConfigurationService
 from .const import (
     _LOGGER,
+    ATTR_POSITION,
     COMMAND_GRACE_PERIOD_SECONDS,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -109,6 +117,8 @@ from .const import (
     ISSUE_TEMP_SENSOR_UNAVAILABLE,
     LOGGER,
     MANUAL_OVERRIDE_DURATION_MODE_FIXED,
+    POSITION_CLOSED,
+    POSITION_OPEN,
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
     TRIGGER_FORCE_APPLY_CALCULATED,
@@ -162,6 +172,26 @@ _MANIFEST_VERSION: str = json.loads(
 # online-from-None case; issue #546 the unavailable-comeback case), not a real
 # position change — it must not feed numeric manual-override detection.
 _NON_POSITION_COVER_STATES = ("unavailable", "unknown")
+
+# The device-frame position each observed ``cover.*`` service implies (#1138).
+# HA defines these services in the wire frame regardless of ACP's own
+# ``inverse_state`` — that option describes how ACP's logical numbers map ONTO
+# this same frame, so an external caller's ``close_cover`` is wire 0 on every
+# install. ``set_cover_position`` carries its number in the call itself, hence
+# the ``None`` placeholder.
+_EXTERNAL_POSITION_SERVICES: dict[str, int | None] = {
+    SERVICE_CLOSE_COVER: POSITION_CLOSED,
+    SERVICE_OPEN_COVER: POSITION_OPEN,
+    SERVICE_SET_COVER_POSITION: None,
+}
+
+# Every ``cover.*`` service ``async_check_cover_service_call`` reacts to: the
+# stop that feeds manual-override detection plus the three position services the
+# external-command interlock corrects. Derived from the mapping above so a new
+# position service is added in exactly one place.
+_EXTERNAL_COVER_SERVICES: frozenset[str] = frozenset(
+    {SERVICE_STOP_COVER, *_EXTERNAL_POSITION_SERVICES}
+)
 
 
 @dataclass
@@ -684,6 +714,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # daytime gate.
         self._custom_position_hold_unsub: Callable[[], None] | None = None
 
+        # Issue #1138: in-flight external-command interlock corrections, keyed
+        # by the entity whose command is being re-issued. One per follower —
+        # a fresh plan for the same follower supersedes (cancels) the previous
+        # correction rather than racing it. Entry-scoped tasks, cancelled on
+        # shutdown so nothing is left pending after an unload.
+        self._external_interlock_tasks: dict[str, asyncio.Task] = {}
+
     def _make_detector_config(self, options) -> DetectorConfig:
         """Build the manual-override DetectorConfig from raw options.
 
@@ -1006,19 +1043,35 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
 
     async def async_check_cover_service_call(self, event: Event) -> None:
-        """Detect user-initiated cover.stop_cover and start manual override.
+        """Route an externally-issued ``cover.*`` call on a tracked entity.
 
-        Listens to EVENT_CALL_SERVICE for ``cover.stop_cover`` on tracked
-        entities. If the call was NOT originated by ACP (per
-        ``_cmd_svc.was_acp_stop_context``) and a ``my_position_value`` is
-        configured, the cover is flagged as manually overridden.
+        Two independent responses hang off one EVENT_CALL_SERVICE subscription,
+        because both need the same four answers first — is it a cover service we
+        care about, which entities did it name, are any of them ours, and did ACP
+        issue it? That parse is stated once here and each branch adds only its
+        own question.
 
-        This path covers non-position-capable covers (e.g. Somfy RTS) where
-        pressing STOP moves to the hardware "My" preset without ever reporting
-        a new position — the normal state-change detection is blind to it.
+        ``stop_cover`` → manual-override detection. If the call was NOT
+        originated by ACP (per ``_cmd_svc.was_acp_stop_context``) and a
+        ``my_position_value`` is configured, the cover is flagged as manually
+        overridden. This path covers non-position-capable covers (e.g. Somfy RTS)
+        where pressing STOP moves to the hardware "My" preset without ever
+        reporting a new position — the normal state-change detection is blind
+        to it.
+
+        ``open_cover`` / ``close_cover`` / ``set_cover_position`` → the
+        external-command interlock (#1138). A position command that never passed
+        through ACP's dispatch seam is not ordered or gated against a physically
+        coupled entity, so the owning cover-type policy is asked whether a
+        partner entity blocks it and, if so, what would clear the way. Purely
+        corrective: EVENT_CALL_SERVICE fires as the call executes, so there is
+        nothing left to veto by the time we see it.
         """
         data = event.data
-        if data.get("domain") != "cover" or data.get("service") != "stop_cover":
+        if data.get("domain") != "cover":
+            return
+        service = data.get("service")
+        if service not in _EXTERNAL_COVER_SERVICES:
             return
 
         service_data = data.get("service_data") or {}
@@ -1033,6 +1086,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         tracked = called_entities & set(self.entities)
         if not tracked:
+            return
+
+        if service != SERVICE_STOP_COVER:
+            self._plan_external_interlock(event, service, service_data, tracked)
             return
 
         # Skip if ACP originated this stop_cover call.
@@ -1095,6 +1152,181 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self._cmd_svc._record_assumed_if_blind(
                     entity_id, int(my_position_value)
                 )
+
+    def _plan_external_interlock(
+        self,
+        event: Event,
+        service: str,
+        service_data: dict,
+        tracked: set[str],
+    ) -> None:
+        """Ask the policy whether an external position command needs correcting.
+
+        The position half of :meth:`async_check_cover_service_call` (#1138).
+        Cover-type-agnostic by construction: it maps the observed service onto a
+        device-frame number, asks ONE polymorphic hook, and executes whatever
+        plan comes back. The base hook answers ``None`` for every cover type
+        whose entities are physically independent, so this costs a virtual call
+        and nothing else on the other four types.
+
+        Skipping ACP's own position calls is what makes the correction
+        loop-safe. ``apply_position`` records its context BEFORE the HA service
+        call runs and ``EVENT_CALL_SERVICE`` fires during it, so the stamp is
+        always in place by the time the echo arrives here — the same guarantee
+        ``was_acp_stop_context`` gives the stop branch, and no new tracking
+        mechanism.
+
+        Deliberately does NOT consult ``manual_ignore_external``,
+        ``manual_toggle`` or ``automatic_control``. Those govern whether a user
+        touch takes OWNERSHIP of a cover; this branch is about whether the
+        command the user already sent can physically complete, which is true
+        regardless. ``manual_ignore_external`` is still honoured where it
+        belongs — the override-marking step inside the executor.
+        """
+        if event.context and self._cmd_svc.was_acp_position_context(event.context.id):
+            self.logger.debug(
+                "async_check_cover_service_call: ignoring ACP-originated %s "
+                "(context %s)",
+                service,
+                event.context.id,
+            )
+            return
+
+        wire_target = _EXTERNAL_POSITION_SERVICES[service]
+        if wire_target is None:
+            raw_position = service_data.get(ATTR_POSITION)
+            if raw_position is None:
+                return
+            wire_target = int(raw_position)
+
+        for entity_id in sorted(tracked):
+            plan = self._policy.plan_external_command_interlock(
+                entity_id, service=service, wire_target=wire_target
+            )
+            if plan is None:
+                continue
+            # Last writer wins, keyed by the entity whose command is being
+            # re-issued: a second genuine external command on the same pair
+            # supersedes the correction still in flight for the first rather
+            # than racing it. Entry-scoped so an unload cancels whatever is
+            # still running instead of leaking a pending task.
+            prior = self._external_interlock_tasks.get(plan.follower_entity_id)
+            if prior is not None and not prior.done():
+                prior.cancel()
+            self._external_interlock_tasks[plan.follower_entity_id] = (
+                self.config_entry.async_create_task(
+                    self.hass,
+                    self._execute_external_interlock(plan),
+                    name=f"acp_external_interlock_{plan.follower_entity_id}",
+                )
+            )
+
+    async def _execute_external_interlock(self, plan: ExternalInterlockPlan) -> None:
+        """Run the corrective sequence a policy planned (#1138).
+
+        Generic by construction: two entity ids and two device-frame targets. It
+        never asks what kind of cover this is, which entity is "upper", or why
+        one blocks the other — that is the policy's answer, already given.
+
+        **Both dispatches go through ``_cmd_svc.apply_position``**, the only
+        path that consults ``await_dispatch_clearance``. Calling
+        ``hass.services.async_call`` here would drive a physically coupled entity
+        with no ordering guarantee at all — the exact stall/over-current defect
+        #1115 and #1118 closed, re-opened from inside ACP. The targets are passed
+        through untouched for the same reason the plan carries wire numbers: they
+        already speak the device frame, so ``_to_cover_frame`` / ``_entity_target``
+        would double-apply the transforms and re-map the user's own target.
+
+        The stop between them is ``apply_user_stop``, not a raw service call, so
+        the resulting ``stop_cover`` carries an ACP context stamp and
+        :meth:`async_check_cover_service_call` ignores its own echo. It exists
+        because a command the hardware refused can leave the follower latched in
+        ``closing`` indefinitely (41 minutes in the reporter's recorder trace),
+        and re-dispatching on top of that latch does nothing.
+
+        Manual override is engaged BEFORE either dispatch so the next pipeline
+        evaluation yields to the manual-override handler (priority 80) instead of
+        fighting the correction mid-flight. Handlers above it — weather at 90,
+        the safety custom-position slot at 100 — can still retake the pair on a
+        later cycle, which is the inherited and intended precedence.
+
+        ``manual_ignore_external`` gates only that marking: it governs whether an
+        external touch takes OWNERSHIP of the cover, never whether the command
+        the user already sent is allowed to physically complete. It is read
+        BEFORE the marking rather than inside the loop, so the two entities can
+        never diverge on it mid-sequence.
+
+        The two event rows bracket the sequence on the diagnostics timeline (and
+        therefore the Lovelace card), so a rail that moved without being
+        commanded is explainable after the fact rather than mysterious.
+        """
+        options = self.config_entry.options
+        # One context shape for both commands, stated once. ``force`` clears the
+        # delta and time gates — this is not a tracking move and must not be
+        # deduped against the last calculated target. ``bypass_auto_control`` and
+        # ``user_command`` follow the #1128 user-seam doctrine: completing a
+        # command the user explicitly sent is a user action, so it lands even
+        # with automatic control off and even when ACP's own view already matches
+        # the target (#900).
+        ctx = {
+            entity_id: self._build_position_context(
+                entity_id,
+                options,
+                force=True,
+                bypass_auto_control=True,
+                user_command=True,
+            )
+            for entity_id in (plan.leading_entity_id, plan.follower_entity_id)
+        }
+        row = {
+            "leading_entity_id": plan.leading_entity_id,
+            "leading_target": plan.leading_target,
+            "follower_entity_id": plan.follower_entity_id,
+            "follower_target": plan.follower_target,
+            "reason": plan.reason,
+        }
+        self._event_buffer.record(
+            {
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "external_interlock_engaged",
+                **row,
+            }
+        )
+        self.logger.info(
+            "[%s] %s blocks %s — moving it to %s%% first, then re-issuing %s → %s%%",
+            plan.reason,
+            plan.leading_entity_id,
+            plan.follower_entity_id,
+            plan.leading_target,
+            plan.follower_entity_id,
+            plan.follower_target,
+        )
+
+        if not self.manual_ignore_external:
+            for entity_id in (plan.leading_entity_id, plan.follower_entity_id):
+                self.manager.mark_user_command(entity_id, reason=plan.reason)
+
+        await self._cmd_svc.apply_position(
+            plan.leading_entity_id,
+            plan.leading_target,
+            plan.reason,
+            ctx[plan.leading_entity_id],
+        )
+        await self._cmd_svc.apply_user_stop(plan.follower_entity_id)
+        await self._cmd_svc.apply_position(
+            plan.follower_entity_id,
+            plan.follower_target,
+            plan.reason,
+            ctx[plan.follower_entity_id],
+        )
+
+        self._event_buffer.record(
+            {
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "external_interlock_completed",
+                **row,
+            }
+        )
 
     async def async_check_weather_state_change(
         self, event: Event[EventStateChangedData]
@@ -4673,6 +4905,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._custom_position_hold_unsub is not None:
             self._custom_position_hold_unsub()
             self._custom_position_hold_unsub = None
+
+        # Cancel any in-flight external-command interlock correction (#1138).
+        # Each is a config-entry task, so HA would wait on it during unload;
+        # cancelling here means an unload never blocks on a rail-clearance wait.
+        for task in self._external_interlock_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._external_interlock_tasks.clear()
 
         self.logger.debug("Coordinator shutdown complete")
 

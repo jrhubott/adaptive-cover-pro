@@ -132,6 +132,17 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.day_night.rail_travel_serialized": (
         "rails move one at a time — the following rail waits for full clearance"
     ),
+    # Model C external-command rail interlock (#1138). Only rendered for
+    # dual_entity. The "on" wording carries the ⚠️ because the feature moves a
+    # rail the user did not name — the footgun rule in CODING_GUIDELINES.
+    "geometry.day_night.rail_interlock": "rail interlock: {v}",
+    "geometry.day_night.rail_interlock_on": (
+        "⚠️ an external command a rail cannot reach is completed by moving the "
+        "other rail first — ACP may move the rail you did not command"
+    ),
+    "geometry.day_night.rail_interlock_off": (
+        "an external command a rail cannot reach is left alone"
+    ),
     # Dual-panel shade (#996): the front/sheer designator + the blackout
     # trigger list rendered on the config summary.
     "geometry.dual_panel.front_entity": "front (sheer) panel: {v}",

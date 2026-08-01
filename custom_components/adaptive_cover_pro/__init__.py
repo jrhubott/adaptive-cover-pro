@@ -875,6 +875,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # finds every key exactly as it left it and ignores the one it doesn't know.
     new_minor = _advance_noop_minor(new_version, new_minor, 14)
 
+    # v3.14 → v3.15: added the additive day_night_external_command_interlock
+    # option (issue #1138). An absent key already reads as "on" — the default —
+    # so nothing needs seeding; this is a no-op minor bump kept only to advance
+    # entries sitting at minor 14 to 15 so they stop re-triggering migration
+    # every restart (the v3.13 → v3.14 precedent). Rollback-safe: an older build
+    # finds every key exactly as it left it and ignores the one it doesn't know.
+    new_minor = _advance_noop_minor(new_version, new_minor, 15)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

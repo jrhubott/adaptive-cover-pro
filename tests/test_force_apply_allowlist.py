@@ -78,6 +78,11 @@ ALLOWED_LITERAL_FORCE_TRUE_SITES: frozenset[str] = frozenset(
         # proxy cover entity). Bypasses delta/time/manual_override gates so
         # an explicit slider move always lands.
         "async_apply_user_position",
+        # External-command rail interlock (#1138). Completing a command the
+        # user explicitly sent is a user action, so both corrective dispatches
+        # ride bypass_auto_control=True through the auto_control gate with
+        # force=True for the delta gates — never is_safety=True.
+        "_execute_external_interlock",
     }
 )
 

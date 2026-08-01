@@ -60,6 +60,7 @@ from .const import (
     CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
     CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     CONF_DAY_NIGHT_CONTROL_MODEL,
+    CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
     CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY,
     CONF_DAY_NIGHT_OPACITY_BLACKOUT,
     CONF_DAY_NIGHT_OPACITY_SHEER,
@@ -1932,6 +1933,13 @@ _GEOMETRY_SPECS = _spec(
     # — this spec exists to single-source the options-service validator.
     FieldSpec(
         CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
+        SECTION_GEOMETRY,
+        ValidatorKind.BOOL,
+    ),
+    # Model C external-command rail interlock (#1138). Same shape and same
+    # reason as the sibling above: boolean, so no OPTION_RANGES entry.
+    FieldSpec(
+        CONF_DAY_NIGHT_EXTERNAL_COMMAND_INTERLOCK,
         SECTION_GEOMETRY,
         ValidatorKind.BOOL,
     ),

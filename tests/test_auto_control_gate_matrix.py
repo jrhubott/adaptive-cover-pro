@@ -239,6 +239,36 @@ async def _trigger_force_apply_calculated_position(coord):
         await coord.async_force_apply_calculated_position()
 
 
+async def _trigger_external_command_interlock(coord):
+    """Trigger: an external position command a coupled entity blocked (#1138).
+
+    ACP did not issue the command and cannot veto it — it can only make it
+    reachable. Completing what the user explicitly sent is a user action, so
+    both corrective dispatches ride ``bypass_auto_control=True`` through the
+    auto_control gate with ``force=True`` for the delta gates. Never
+    ``is_safety=True``: reconciliation must not resend a corrected external
+    command outside the time window (#215/#216).
+    """
+    from custom_components.adaptive_cover_pro.cover_types.base import (  # noqa: PLC0415
+        ExternalInterlockPlan,
+    )
+
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {}
+    coord.manual_ignore_external = False
+    coord._event_buffer = MagicMock()
+    coord._cmd_svc.apply_user_stop = AsyncMock(return_value=("sent", "stop_cover"))
+    await coord._execute_external_interlock(
+        ExternalInterlockPlan(
+            leading_entity_id="cover.leader",
+            leading_target=0,
+            follower_entity_id="cover.follower",
+            follower_target=0,
+            reason="external_command_interlock",
+        )
+    )
+
+
 async def _trigger_state_change_safety_custom_position(coord):
     coord._pipeline_result = _make_pipeline_result(bypass=True)
     coord._time_mgr = MagicMock()
@@ -570,6 +600,16 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         is_safety_target=False,
         setup=lambda _: None,
         trigger=_trigger_force_apply_calculated_position,
+    ),
+    MatrixCase(
+        # Issue #1138: an external position command a coupled entity blocked.
+        # ACP corrects it so the user's own command completes — a user action,
+        # so bypass_auto_control=True + force=True, is_safety=False.
+        id="external_command_interlock",
+        is_safety_bypass=True,
+        is_safety_target=False,
+        setup=lambda _: None,
+        trigger=_trigger_external_command_interlock,
     ),
 ]
 
