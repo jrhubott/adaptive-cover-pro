@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import ast
 import datetime as dt
+import importlib
 import pathlib
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -567,6 +568,7 @@ def _rail_harness(
     inverse: bool = False,
     interp: bool = False,
     concurrent: bool | None = None,
+    rail_states: dict[str, str] | None = None,
 ):
     """Real ``CoverCommandService`` + real Model C policy over a scripted motor.
 
@@ -577,6 +579,13 @@ def _rail_harness(
 
     ``concurrent`` is forwarded to :func:`_dual_policy` — ``None`` leaves the
     rail-travel key absent so the option's own default governs.
+
+    ``rail_states`` maps an entity id onto the HA cover state its ``get_state``
+    accessor reports (``"opening"`` / ``"closing"`` / ``"open"`` / ...). ``None``
+    — the default — leaves the sequencer's ``_get_state`` UNSET, exactly as
+    every rail test predating issue #1145 had it, so the transit disjunct is
+    structurally inert and those tests keep their original behaviour. An entity
+    absent from a supplied mapping reads ``None``, which is not a transit state.
     """
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         CoverCommandService,
@@ -621,6 +630,10 @@ def _rail_harness(
         events.append(f"poll:{entity_id}")
         return rails.read(entity_id)
 
+    attach_kwargs: dict = {}
+    if rail_states is not None:
+        attach_kwargs["get_state"] = lambda eid: rail_states.get(eid)
+
     policy.attach(
         hass=hass,
         logger=MagicMock(),
@@ -630,6 +643,7 @@ def _rail_harness(
         position_tolerance=2,
         is_dry_run=lambda: False,
         entities=[_BOTTOM, _MIDDLE],
+        **attach_kwargs,
     )
     return cmd_svc, policy, rails, events
 
@@ -2104,17 +2118,216 @@ async def test_wrong_direction_motion_keeps_the_middle_rail_gated(monkeypatch) -
 
 
 @pytest.mark.asyncio
-async def test_start_confirmation_times_out_and_latches(monkeypatch) -> None:
-    """A leader that reports nothing new falls into today's exact fail-closed path.
+async def test_transit_state_confirms_a_start_with_no_position_delta(
+    monkeypatch,
+) -> None:
+    """A rail that publishes ``closing`` but no intermediate position still confirms.
 
-    The start confirmation gets its own short budget, not the settle cap: the
-    cap is left at 2 s here and the confirmation timeout patched to 0.05 s, so a
-    wait that honours the settle cap instead would take more than a second. The
-    outcome on expiry is unchanged — ``policy_deferred``, latched pending, retried
-    next cycle. No new way to hang.
+    Issue #1145's reproduction. The ZVIDAR WB04V (zwave_js) reports
+    ``state: closing`` the moment the motor engages and then holds
+    ``current_position`` at its pre-move value for the whole ~36 s traverse,
+    jumping straight to the final number on arrival. Every poll therefore sees
+    ``live_open == start_open``, the delta is exactly 0 forever, and a
+    delta-only start confirmation can never fire on this hardware — it expires
+    and latches the follower pending instead.
+
+    The state itself is the started-moving report, so it releases the gate with
+    no baseline sample at all.
     """
     monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
-    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 2.0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        # The leader's position is CONSTANT across every poll — the whole point.
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+        rail_states={_BOTTOM: "closing"},
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_transit_state_confirms_in_the_dispatch_frame_on_inverse_installs(
+    monkeypatch,
+) -> None:
+    """The transit state is a WIRE fact and has to be flipped like every other one.
+
+    The mirror of ``test_start_confirmation_compares_in_open_percent_not_raw_wire``
+    for the transit disjunct, on the same inverse-state numbers. HA's transit
+    strings describe the entity's raw ``current_position``: ``"opening"`` means
+    that number is RISING. The branch's ``direction`` lives in open-percent /
+    dispatch frame, and flipping the frame negates every delta and therefore
+    every direction — so the conversion is
+    ``expected_wire_sign = -direction if inverse else direction``.
+
+    Here the middle rail's branch needs the bottom rail's OPEN percent to fall
+    (``direction == -1``) on an inverse install, so the confirming wire state is
+    ``"opening"``. The naive ``direction == -1 → "closing"`` mapping gets this
+    exactly backwards and withholds a command that is already under way — the
+    #993 bug class, pointed at the new predicate. No position delta is ever
+    available (the wire reading is constant), so the transit disjunct is the
+    only thing that can release the gate.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.05)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [50]},
+        position=70,  # wire 70 == open 30 for the bottom rail
+        blend=50,
+        inverse=True,
+        concurrent=True,
+        # Wire rising == open percent falling == a genuine descent.
+        rail_states={_BOTTOM: "opening"},
+    )
+    ctx = _rail_context(policy, inverse=True)
+    wire_middle = policy.resolve_entity_target(_MIDDLE, 70)
+    assert wire_middle == 35  # open 65 on an inverse install
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, wire_middle, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_wrong_direction_transit_state_keeps_the_middle_rail_gated(
+    monkeypatch,
+) -> None:
+    """#1115's back door, transit edition: moving is not the same as clearing.
+
+    A lowering cycle with the bottom rail reporting ``"opening"`` — it is
+    demonstrably under power, but every turn of the motor takes it further from
+    vacating the middle rail's target. An UNSIGNED ``is_state_in_transit``
+    disjunct would wave the middle rail straight into it; the direction-signed
+    one must not.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.02)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+        rail_states={_BOTTOM: "opening"},
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_MIDDLE}" not in events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is True
+
+
+@pytest.mark.asyncio
+async def test_wrong_direction_transit_state_stays_gated_on_inverse_installs(
+    monkeypatch,
+) -> None:
+    """The fourth cell of the 2×2: inverse install, wire state the wrong way.
+
+    Same inverse geometry as
+    ``test_transit_state_confirms_in_the_dispatch_frame_on_inverse_installs``,
+    with the bottom rail reporting ``"closing"`` instead. On an inverse install
+    a falling wire number is a RISING open percent — the leader retreating from
+    the middle rail's target, not approaching it. Together with the three
+    siblings this pins both signs against both frames, so neither a dropped
+    flip nor an inverted one can pass.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.02)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [10], _MIDDLE: [50]},
+        position=70,
+        blend=50,
+        inverse=True,
+        concurrent=True,
+        rail_states={_BOTTOM: "closing"},
+    )
+    ctx = _rail_context(policy, inverse=True)
+    wire_middle = policy.resolve_entity_target(_MIDDLE, 70)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, wire_middle, "solar", ctx)
+
+    assert outcome == ("skipped", "policy_deferred")
+    assert f"send:{_MIDDLE}" not in events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is True
+
+
+@pytest.mark.asyncio
+async def test_confirm_timeout_falls_back_to_the_clearance_budget(monkeypatch) -> None:
+    """An unconfirmed start must not cost the follower MORE than the option off.
+
+    Part 2 of issue #1145. With concurrent travel OFF the gate waits out the
+    settle cap against the bare clearance predicate, so a rail that goes quiet
+    for the whole traverse and then jumps to its final number still releases the
+    follower the moment it lands. With the option ON the wrapped predicate got
+    the short confirmation budget and NOTHING else — expiry latched the follower
+    pending and handed it back to whenever the coordinator next happened to
+    fire. The default-on feature was therefore a strict regression on hardware
+    that cannot satisfy the confirmation.
+
+    The confirmation budget is spent first, and what it buys is an EARLIER
+    release; failing to confirm falls back onto the clearance budget rather than
+    replacing it. Scripted as the reported shape: constant through the
+    confirmation window, then the jump to cleared.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.5)
+    # 0 makes the confirmation wait single-shot: one read, which the delta path
+    # consumes as its baseline and can never confirm from.
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0)
+    cmd_svc, policy, _rails, events = _rail_harness(
+        script={_BOTTOM: [100, 100, 0], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+    )
+    ctx = _rail_context(policy)
+
+    with _patch_caps():
+        outcome = await cmd_svc.apply_position(_MIDDLE, 65, "solar", ctx)
+
+    assert outcome == ("sent", "set_cover_position")
+    assert f"send:{_MIDDLE}" in events, events
+    assert policy.has_pending_secondary_axis(_MIDDLE) is False
+
+
+@pytest.mark.asyncio
+async def test_gate_defers_only_after_the_clearance_fallback_also_expires(
+    monkeypatch,
+) -> None:
+    """The fail-closed terminal path survives — it is just reached later.
+
+    A leader that reports nothing new for its whole budget still lands on
+    today's exact outcome: ``policy_deferred``, latched pending, retried next
+    cycle. No new way to hang. What issue #1145 changed is WHEN that outcome is
+    reached — the confirmation budget expiring is no longer the end of the
+    question, only the end of the fast answer, so the gate must also have burnt
+    the clearance budget before it withholds.
+
+    Confirmation patched to 0.05 s and the settle cap to 0.2 s: giving up at the
+    confirmation budget alone would return in ~0.05 s, so the lower bound is
+    what distinguishes the two behaviours. The upper bound still proves the
+    fallback is bounded by the settle cap rather than unbounded.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.2)
     monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.05)
     cmd_svc, policy, _rails, events = _rail_harness(
         script={_BOTTOM: [100], _MIDDLE: [100]},
@@ -2133,7 +2346,66 @@ async def test_start_confirmation_times_out_and_latches(monkeypatch) -> None:
     assert f"send:{_MIDDLE}" not in events
     assert policy.has_pending_secondary_axis(_MIDDLE) is True
     assert cmd_svc.last_skipped_action["reason"] == "policy_deferred"
-    assert elapsed < 1.0, elapsed
+    assert 0.2 <= elapsed < 1.0, elapsed
+
+
+@pytest.mark.asyncio
+async def test_clearance_fallback_keeps_the_settle_cap_as_the_total_budget(
+    monkeypatch,
+) -> None:
+    """Two waits, one budget: the fallback gets the cap MINUS what confirming spent.
+
+    ``wait_until_position``'s contract is that the settle cap "bounds every wait
+    this class can perform". Composing a second wait after the confirmation one
+    would raise the per-gate worst case from the cap to cap-plus-confirmation
+    unless the second wait is handed the remainder — and the seconds spent
+    confirming a start are part of the same physical wait for the same rail. So
+    the total stays exactly the serialized bound.
+
+    Asserted on the arguments rather than the clock: a wall-clock check of a sum
+    of two timeouts is a race, an argument check is not.
+    """
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(f"{_SEQ}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(f"{_POLICY}.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(f"{_POLICY}.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS", 0.02)
+    _cmd_svc, policy, _rails, _events = _rail_harness(
+        script={_BOTTOM: [100], _MIDDLE: [100]},
+        position=30,
+        blend=50,
+        concurrent=True,
+    )
+
+    budgets: list[float | None] = []
+    real_wait = policy.sequencer.wait_until_position
+
+    async def _spy(entity_id, done, *, timeout_seconds=None):
+        budgets.append(timeout_seconds)
+        return await real_wait(entity_id, done, timeout_seconds=timeout_seconds)
+
+    policy.sequencer.wait_until_position = _spy
+
+    assert (
+        await policy.await_dispatch_clearance(
+            _MIDDLE, position=65, reason="t", wait=True
+        )
+        is False
+    )
+
+    policy_mod = importlib.import_module(_POLICY)
+    confirm = policy_mod.DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS
+    settle = policy_mod.VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
+    assert budgets == [confirm, pytest.approx(settle - confirm)], budgets
+
+    # The single-shot reconciliation path is untouched: one read, no fallback.
+    budgets.clear()
+    assert (
+        await policy.await_dispatch_clearance(
+            _MIDDLE, position=65, reason="t", wait=False
+        )
+        is False
+    )
+    assert budgets == [0], budgets
 
 
 @pytest.mark.asyncio
@@ -2171,15 +2443,24 @@ async def test_start_confirmation_compares_in_open_percent_not_raw_wire(
 
 @pytest.mark.asyncio
 async def test_start_confirmation_needs_two_samples() -> None:
-    """One reading can never confirm motion — which is what keeps arming intact.
+    """One reading can never confirm a DELTA — no baseline exists to differ from.
 
-    The mutual-exclusion theorem is a statement about when a gate ARMS, and the
-    relaxation must not touch that. It doesn't, structurally: on the first read
-    there is no start reference yet, so the concurrent disjunct is ``False`` and
-    the verdict is exactly ``_cleared``'s. The single-shot reconciliation path
-    is therefore byte-for-byte today's, and — because the reference lives in a
-    per-invocation closure — a second single-shot pass cannot inherit the first
-    one's sample and release on a delta that spans two cycles.
+    Scoped to the delta disjunct, which is the only one this harness can reach:
+    it wires no ``get_state``, so the transit disjunct (#1145) is structurally
+    inert here. On the first read there is no start reference yet, so the delta
+    disjunct is ``False`` and the verdict is exactly ``_cleared``'s. The
+    single-shot reconciliation path is therefore byte-for-byte today's, and —
+    because the reference lives in a per-invocation closure — a second
+    single-shot pass cannot inherit the first one's sample and release on a
+    delta that spans two cycles.
+
+    The transit disjunct deliberately does NOT share that property: a state
+    string is a started-moving report rather than something differenced out of
+    two readings, so one look at a rail saying ``closing`` is the whole
+    observation and a single ``wait=False`` read may confirm through it. The
+    arming theorem is untouched either way — both disjuncts are release-side
+    weakenings, and a weakening can release an armed gate earlier but never arm
+    one that was not already armed.
     """
     _cmd_svc, policy, _rails, _events = _rail_harness(
         script={_BOTTOM: [10], _MIDDLE: [20, 30, 40]},

@@ -52,6 +52,7 @@ from ...const import (
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
     POSITION_CLOSED,
     POSITION_OPEN,
+    VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
     ControlMethod,
 )
 from ...engine.covers import AdaptiveVerticalCover, DayNightShadeCalculation
@@ -60,6 +61,7 @@ from ...engine.covers.day_night_shade import (
     DAY_NIGHT_SHEER,
     FabricSelection,
 )
+from ...managers.cover_command.transit import transit_wire_sign
 from ...managers.manual_override import (
     SecondaryAxisCheck,
     resolve_dispatched_secondary_expected,
@@ -1525,21 +1527,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         direction: int,
         inverse: bool,
         tolerance: int,
+        leading_rail: str,
     ) -> Callable[[int], bool]:
         """Wrap a clearance predicate so leader MOTION also releases the gate.
 
         The relaxation behind concurrent rail travel (#1140), expressed as a
         strict WEAKENING of the branch's own predicate: ``cleared`` still
-        releases exactly when it did, and a second disjunct releases earlier
+        releases exactly when it did, and two further disjuncts release earlier
         when the leading rail is demonstrably under way and ahead.
 
-        "Under way and ahead" is the leader's live OPEN-PERCENT reading having
-        moved from its FIRST sampled value, by more than ``tolerance``, toward
-        satisfying ``cleared``'s own inequality. ``direction`` is the sign of
-        that inequality — ``-1`` where clearance needs the leader's open percent
-        to fall (the middle rail's branch, a lowering), ``+1`` where it needs it
-        to rise (the bottom rail's branch, a raising). It is derived from the
-        branch's own release test and NOT from
+        **Signal 1 — a position delta.** The leader's live OPEN-PERCENT reading
+        having moved from its FIRST sampled value, by more than ``tolerance``,
+        toward satisfying ``cleared``'s own inequality. ``direction`` is the sign
+        of that inequality — ``-1`` where clearance needs the leader's open
+        percent to fall (the middle rail's branch, a lowering), ``+1`` where it
+        needs it to rise (the bottom rail's branch, a raising). It is derived
+        from the branch's own release test and NOT from
         :meth:`_dual_entity_middle_leads`; a leader moving the wrong way can
         therefore never confirm, which is what stops this becoming the back door
         that ungates the middle rail during a lowering (issue #1115).
@@ -1548,17 +1551,67 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         the threshold does — a delta computed on raw wire numbers inverts its
         own sign on every inverse-state install (the #993 bug class).
 
+        **Signal 2 — a transit STATE.** ``opening``/``closing`` on the leading
+        rail, read through the shared :func:`transit_wire_sign` table. Some
+        actuators publish no intermediate ``current_position`` at all: the
+        ZVIDAR WB04V (zwave_js) reports ``closing`` the instant the motor
+        engages and then holds its pre-move position for the whole ~36 s
+        traverse, jumping to the final number on arrival. Signal 1 sees a delta
+        of exactly 0 on every poll of such a rail and can NEVER fire, which is
+        issue #1145. A transit state needs NO baseline sample, because unlike a
+        bare position number it is already a started-moving REPORT rather than
+        evidence one has to be differenced out of two readings.
+
+        **The frame conversion is the same #993 bug class, in sign space.** HA's
+        transit strings describe the WIRE: ``"opening"`` means the entity's raw
+        ``current_position`` is RISING, whatever the install's inverse-state
+        flag says "open" means. ``direction`` lives in open-percent / dispatch
+        frame. Flipping the frame negates every delta and therefore every
+        direction, so the conversion — stated once, here — is::
+
+            expected_wire_sign = -direction if inverse else direction
+
+        On an inverse install a lowering (``direction == -1``, open percent must
+        fall) is confirmed by the wire state ``"opening"``. The naive
+        ``direction == -1 → "closing"`` mapping is the same silent inversion
+        ``flip_if`` exists to prevent, reintroduced on a new code path.
+
+        A wrong-signed transit state is NOT a confirmation, exactly as a
+        wrong-signed delta is not: a rail under power moving away from the
+        follower's target is the #1115 collision, not clearance of it.
+
+        **The trust boundary.** A stale ``opening``/``closing`` — an actuator
+        that never publishes its terminal state — reads as motion that is not
+        happening, and confirms a start that already finished. That is
+        deliberately accepted: the ``cleared`` short-circuit is evaluated FIRST,
+        so a leader that has actually vacated releases through the real
+        predicate; and a leader stalled mid-travel while still claiming to move
+        is no worse than the delta path's own stale-reading exposure, both
+        bounded by the gate's budget.
+
         The start reference lives in this closure, so it is scoped to ONE
         invocation of the gate: a single-shot ``wait=False`` pass takes one
-        reading, records it as the reference, and returns ``False``, exactly as
-        the un-wrapped predicate would have. Nothing survives to the next pass,
-        so a delta can never be accumulated across cycles.
+        reading, and signal 1 can only record it as the reference and return
+        ``False``, exactly as the un-wrapped predicate would have. Nothing
+        survives to the next pass, so a delta can never be accumulated across
+        cycles. Signal 2 is different by design — it carries no cross-reading
+        state, so a single ``wait=False`` read CAN confirm through it. That is
+        intended: one look at a rail that says ``closing`` is the whole
+        observation, and there is no second sample that would make it more true.
         """
+        seq = self._sequencer
         start_open: int | None = None
 
         def _done(wire: int) -> bool:
             nonlocal start_open
             if cleared(wire):
+                return True
+            sign = (
+                transit_wire_sign(seq._get_state(leading_rail))
+                if seq._get_state
+                else None
+            )
+            if sign is not None and (-sign if inverse else sign) == direction:
                 return True
             live_open = flip_if(wire, inverted=inverse)
             if start_open is None:
@@ -1622,17 +1675,22 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
            the reading it sees. Branch selection is untouched by the option:
            ``is_middle`` and :meth:`_dual_entity_middle_leads` are evaluated
            before the predicate is ever wrapped.
-        2. On the FIRST reading the concurrent disjunct is structurally
-           ``False`` — there is no start reference yet, so
-           :meth:`_start_confirmation` records one and returns. The very first
-           verdict is therefore pointwise identical to ``_cleared``'s, which is
-           the only verdict the single-read ``wait=False`` path ever produces
-           and the only one the grid the theorem quantifies over ever asks for.
-        3. The wrapper is a monotone WEAKENING: ``cleared(w) or delta(w)``
-           accepts a superset of what ``cleared(w)`` accepts. It can only
-           release an armed gate EARLIER; it can never arm one that was not
-           already armed, so no pair of block conditions it produces was
-           unreachable before.
+        2. On the FIRST reading the DELTA disjunct is structurally ``False`` —
+           there is no start reference yet, so :meth:`_start_confirmation`
+           records one and returns. Against that disjunct alone the very first
+           verdict is pointwise identical to ``_cleared``'s, which is the only
+           verdict the single-read ``wait=False`` path ever produces and the
+           only one the grid the theorem quantifies over ever asks for. The
+           TRANSIT disjunct (#1145) carries no cross-reading state, so it CAN
+           fire on a first read and that pointwise identity does not extend to
+           it — only point 3 does, which is all the theorem needs.
+        3. The wrapper is a monotone WEAKENING:
+           ``cleared(w) or transit() or delta(w)`` accepts a superset of what
+           ``cleared(w)`` accepts. It can only release an armed gate EARLIER; it
+           can never arm one that was not already armed, so no pair of block
+           conditions it produces was unreachable before. The two-stage budget
+           below is a weakening of the same kind, in time rather than in the
+           predicate: it only adds chances to release.
 
         The option therefore changes how long a follower waits and what
         threshold ends that wait — never which rail is the follower.
@@ -1731,10 +1789,28 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         Serialized, it is a whole travel, so it takes the sequencer's settle cap
         (``timeout_seconds=None``). Confirming a START only has to outlast the
         actuator's command latency plus one state publish, so it takes the far
-        shorter :data:`DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS` — which
-        also bounds the cost of a rail that has gone silent, since expiry lands
-        on the same fail-closed path either way. Both are still hard-capped by
-        the settle cap inside ``wait_until_position``.
+        shorter :data:`DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS`.
+
+        **Concurrent travel therefore waits in TWO stages** (issue #1145). The
+        short budget buys a chance at an EARLY release and nothing else; failing
+        to take it must not cost the follower more than switching the option OFF
+        would have. So an unconfirmed start falls back onto the clearance
+        budget — the settle cap MINUS what confirming already spent, because the
+        seconds spent watching for a start are part of the same physical wait
+        for the same rail. The per-gate total stays exactly the serialized
+        bound rather than becoming cap-plus-confirmation, which keeps
+        ``wait_until_position``'s promise that the settle cap "bounds every wait
+        this class can perform" true of the gate and not merely of each call.
+        Without that second stage a rail that publishes NO intermediate
+        ``current_position`` while travelling — it reports ``closing`` and holds
+        its pre-move number until arrival — could satisfy neither disjunct
+        inside the short budget and got latched pending until whatever fired the
+        coordinator next, making the default-on option a strict regression on
+        that hardware. Both stages are still hard-capped by the settle cap
+        inside ``wait_until_position``, so the ~19 tests that shrink the cap keep
+        bounding the whole gate. ``wait=False`` takes neither stage: it is a
+        single read with ``timeout_seconds=0`` and no fallback, byte-identical
+        to what it was.
 
         Returns ``True`` to let the command through, ``False`` to withhold it.
         Withholding latches the entity pending so the coordinator keeps
@@ -1792,11 +1868,31 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         done = _cleared
         budget: float | None = None if wait else 0
         if self._dual_entity_concurrent_travel:
-            done = self._start_confirmation(_cleared, direction, inverse, tolerance)
+            done = self._start_confirmation(
+                _cleared, direction, inverse, tolerance, leading_rail
+            )
             if wait:
                 budget = DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS
 
-        if await seq.wait_until_position(leading_rail, done, timeout_seconds=budget):
+        released = await seq.wait_until_position(
+            leading_rail, done, timeout_seconds=budget
+        )
+        if not released and wait and self._dual_entity_concurrent_travel:
+            # The confirmation budget bought a chance at an EARLY release and
+            # did not get one. Fall back onto the clearance budget the option
+            # OFF would have spent, minus what confirming already spent, so the
+            # follower never waits LONGER than the serialized path for the same
+            # rail (issue #1145).
+            released = await seq.wait_until_position(
+                leading_rail,
+                done,
+                timeout_seconds=max(
+                    0.0,
+                    VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
+                    - DAY_NIGHT_RAIL_START_CONFIRM_TIMEOUT_SECONDS,
+                ),
+            )
+        if released:
             self._pending_rail_command.discard(entity_id)
             return True
         self._pending_rail_command.add(entity_id)
@@ -1807,7 +1903,11 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             position,
             reason,
             leading_rail,
-            "started clearing" if self._dual_entity_concurrent_travel else "cleared",
+            (
+                "confirmed a start toward, nor cleared,"
+                if self._dual_entity_concurrent_travel
+                else "cleared"
+            ),
         )
         return False
 
