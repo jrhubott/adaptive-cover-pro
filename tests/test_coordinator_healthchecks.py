@@ -355,6 +355,15 @@ def _envelope_call(create_mock):
     return None
 
 
+def _custom_position_call(create_mock):
+    """Return the create-issue call that raised the custom-position Repair."""
+    key = f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}"
+    for call in create_mock.call_args_list:
+        if call.args[2] == key:
+            return call
+    return None
+
+
 async def test_b1_placeholders_render_as_int():
     """min/max placeholders render as plain ints even when HA stores floats."""
     coord = _make_coord(entities=[])
@@ -364,6 +373,7 @@ async def test_b1_placeholders_render_as_int():
     )
     call = _envelope_call(create)
     assert call is not None
+    assert call.kwargs["translation_key"] == ISSUE_CONFIG_POSITION_ENVELOPE
     placeholders = call.kwargs["translation_placeholders"]
     assert placeholders["min"] == "80"
     assert placeholders["max"] == "20"
@@ -386,6 +396,9 @@ async def test_b1_pinned_slot_outside_envelope_raises():
     raised = _raised_keys(create)
     assert f"{ISSUE_CUSTOM_POSITION_OUT_OF_RANGE}_{_ENTRY}" in raised
     assert f"{ISSUE_CONFIG_POSITION_ENVELOPE}_{_ENTRY}" not in raised
+    call = _custom_position_call(create)
+    assert call is not None
+    assert call.kwargs["translation_key"] == ISSUE_CUSTOM_POSITION_OUT_OF_RANGE
 
 
 async def test_b1_min_exceeds_max_does_not_raise_custom_position_key():

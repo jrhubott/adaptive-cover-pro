@@ -2069,20 +2069,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> bool:
         """Whether a fixed custom-position slot is pinned outside the envelope.
 
-        (issue #975/#1146, B1.) False immediately when ``min > max`` — that is
-        ``_min_exceeds_max``'s condition to report, and short-circuiting here
-        keeps the two Repairs mutually exclusive so they never double-fire for
-        one underlying breakage. Otherwise True when an enabled, non-safety slot
-        that would deliver an exact (FIXED) cover position pins it outside
-        ``[min, max]``. Slots that never deliver a fixed position claim —
-        ``use_my``, tilt-only, or a non-FIXED constraint mode (floor / ceiling /
-        range) — are exempt: they compose as constraints the envelope clamps and
-        cannot conflict with it. Cover-type-agnostic: loops the slots generically
-        and delegates the fixed-position determination to the shared helper
-        (same seam the pipeline handler uses), with no branching on cover type
-        or capabilities.
+        (issue #975/#1146, B1.) False immediately when ``_min_exceeds_max``
+        reports the envelope itself inverted — that is the sibling predicate's
+        condition to report, and delegating to the single seam (rather than
+        re-testing ``min > max`` here) keeps the two Repairs mutually exclusive
+        so they never double-fire for one underlying breakage, and keeps the
+        inversion definition in exactly one place. Otherwise True when an
+        enabled, non-safety slot that would deliver an exact (FIXED) cover
+        position pins it outside ``[min, max]``. Slots that never deliver a
+        fixed position claim — ``use_my``, tilt-only, or a non-FIXED constraint
+        mode (floor / ceiling / range) — are exempt: they compose as
+        constraints the envelope clamps and cannot conflict with it.
+        Cover-type-agnostic: loops the slots generically and delegates the
+        fixed-position determination to the shared helper (same seam the
+        pipeline handler uses), with no branching on cover type or
+        capabilities.
         """
-        if min_pos > max_pos:
+        if AdaptiveDataUpdateCoordinator._min_exceeds_max(min_pos, max_pos):
             return False
         for slot_keys in CUSTOM_POSITION_SLOTS.values():
             if not options.get(slot_keys["enabled"], DEFAULT_CUSTOM_POSITION_ENABLED):
