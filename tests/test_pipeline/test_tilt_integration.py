@@ -44,7 +44,6 @@ def _cps(
     priority: int = 77,
     *,
     tilt: int | None = None,
-    slot: int = 1,
 ) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_ids=(entity_id,),
@@ -54,7 +53,7 @@ def _cps(
         min_mode=False,
         use_my=False,
         tilt=tilt,
-        slot=slot,
+        slot=1,
         active_entity_ids=(entity_id,) if is_on else (),
     )
 

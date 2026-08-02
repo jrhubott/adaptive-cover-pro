@@ -255,6 +255,16 @@ class TestPostPipelineResolveTiltOnlyMode:
         DEFAULT exemption must hold regardless of which of the three
         fallback options (default_percentage / sunset_position /
         return_sunset) supplied the value.
+
+        This is an intent-documenting test, not independent coverage: it
+        rides the exact same code path as
+        ``test_tilt_only_does_not_pin_default_winner_at_default_percentage``
+        above — ``_pin_tilt_only_carriage`` never reads ``is_sunset_active``,
+        so nothing here can fail in a way that test wouldn't already catch.
+        It stays because ``sunset_position`` / ``return_sunset`` are exactly
+        the fallback options the DEFAULT exemption was written to rescue,
+        and a future reader should not have to re-derive that from the
+        production code.
         """
         from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
 
@@ -270,6 +280,40 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.position == 45
         assert out.tilt is None
         assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_does_not_pin_default_winner_with_handler_tilt(self):
+        """Issue #1153 audit finding 1: the DEFAULT exemption on the OTHER exit path.
+
+        The two tests above both exercise the *engine-suppressed* branch
+        (``result.tilt is None`` going in). This test drives
+        ``default_tilt`` being configured, so ``DefaultHandler`` stamps a
+        non-``None`` tilt directly onto its own winning result — that routes
+        ``post_pipeline_resolve`` through the *handler-tilt* branch instead
+        (``result.tilt is not None`` at the top of the method), a different
+        call site of ``_pin_tilt_only_carriage``. Before this issue's fix
+        that branch had no DEFAULT exemption at all: the develop code pinned
+        the carriage shut here, silently disabling ``default_tilt`` on every
+        tilt-only install. It is safe today only because one shared helper
+        now serves all three call sites — this test locks that coverage
+        down instead of leaving it to depend on that fact.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=100,
+            tilt=55,
+            control_method=ControlMethod.DEFAULT,
+            reason="test",
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        handler_names = [s.handler for s in out.decision_trace]
+        # Prove the handler-tilt branch ran, not the engine-suppressed one.
+        assert "venetian_handler_tilt" in handler_names
+        assert out.position == 100
+        assert out.tilt == 55
+        assert "venetian_mode" not in handler_names
 
 
 class TestPostPipelineResolveCoverageSteps:

@@ -581,7 +581,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         manual/custom-position carriage move is intentional) and while a
         tilt-only Custom Position slot's own FIXED contribution is already
         driving the carriage (``tilt_only_contribution_active``), matching
-        the original per-branch guards this replaces.
+        the original per-branch guards this replaces — except on the engine
+        branch, whose original guard carried no
+        ``_EXPLICIT_USER_POSITION_METHODS`` check at all; adding one there is
+        harmless only because ``SOLAR`` is the sole control method that ever
+        reaches that branch, so the guard has nothing else to exclude.
 
         Also skipped for ``ControlMethod.DEFAULT`` (issue #1153 finding 2).
         Tilt-only is a sun-tracking-*window* behavior; ``DEFAULT`` is by

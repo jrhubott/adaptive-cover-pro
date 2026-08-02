@@ -1038,7 +1038,7 @@
       },
       "custom_position_tilt_defaults": {
         "title": "Default & Sunset Tilt",
-        "description": "Slat-tilt defaults applied only when no other handler wins control — the same fallback as Default Position. A custom-position slot's own Tilt, or the automatic solar calculation, takes over whenever that slot or any other handler is active.",
+        "description": "Slat-tilt defaults applied only when no other handler wins control — the same fallback as Default Position. When a custom-position slot wins, its own Tilt takes over; when solar tracking wins, the automatic solar calculation takes over; any other handler leaves the slats holding their current angle.",
         "data": {
           "default_tilt": "Default Tilt",
           "sunset_tilt": "Sunset Tilt"

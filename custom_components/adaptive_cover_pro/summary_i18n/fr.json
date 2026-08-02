@@ -190,8 +190,8 @@
     "elevation_above": "au-dessus de {elev}° élévation"
   },
   "default": {
-    "tilt": "  ↳ Inclinaison par défaut : {tilt}% (explicite ; remplace calculé solaire)",
-    "sunset_tilt": "  ↳ Inclinaison coucher : {tilt}% (explicite ; remplace calculé solaire)"
+    "tilt": "  ↳ Inclinaison par défaut : {tilt}% (utilisée quand aucun gestionnaire ne prend le contrôle)",
+    "sunset_tilt": "  ↳ Inclinaison coucher : {tilt}% (utilisée au coucher du soleil, quand aucun gestionnaire ne prend le contrôle)"
   },
   "limits": {
     "range": "Plage : {lo}–{hi}{qualifier}",

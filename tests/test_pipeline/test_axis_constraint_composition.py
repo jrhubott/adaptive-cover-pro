@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import DefaultHandle
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
@@ -101,12 +102,11 @@ def _evaluate(
     sensors,
     *,
     winner: _StubWinner | None = None,
-    extra: list[OverrideHandler] | None = None,
     default_tilt: int | None = None,
 ):
     """Run a registry with a stub winner plus one handler per slot."""
     win = winner or _StubWinner()
-    handlers: list[OverrideHandler] = [win, DefaultHandler(), *(extra or [])]
+    handlers: list[OverrideHandler] = [win, DefaultHandler()]
     for s in sensors:
         handlers.append(
             CustomPositionHandler(
@@ -435,26 +435,35 @@ class TestLosingHandlerTiltDoesNotLeak:
     def test_losing_custom_position_tilt_does_not_leak(self) -> None:
         """A losing CustomPositionHandler's tilt does not reach the winner.
 
-        Mirrors the reporter's exact scenario: solar (priority 40) wins the
-        position with tilt=None (the venetian engine resolves it later);
-        custom_position_1 (priority 1) is triggered and loses, but its
-        tilt=100 must not leak onto the winner.
+        Mirrors the reporter's exact scenario: solar (``SolarHandler.priority``)
+        wins the position with tilt=None (the venetian engine resolves it
+        later); custom_position_1 (priority 1) is triggered and loses, but
+        its tilt=100 must not leak onto the winner.
         """
         res = _evaluate(
             [_slot(1, position=0, tilt=100, priority=1)],
-            winner=_StubWinner(0, priority=40),
+            winner=_StubWinner(0, priority=SolarHandler.priority),
         )
         assert res.tilt is None
 
     def test_losing_custom_position_stays_outprioritized_in_trace(self) -> None:
-        """The trace still records the loser as outprioritized, not merged."""
+        """The trace records the loser as outprioritized, AND its tilt is gone.
+
+        Trace-shape alone (``matched is False`` / ``REGISTRY_OUTPRIORITIZED``)
+        passes identically whether or not the #1153 leak is present — the
+        leak never touched the trace, only ``result.tilt``. The
+        ``res.tilt is None`` assertion is what actually depends on the fix:
+        drop it and this test would keep passing against the pre-fix
+        ``_MERGEABLE`` that included ``"tilt"``.
+        """
         res = _evaluate(
             [_slot(1, position=0, tilt=100, priority=1)],
-            winner=_StubWinner(0, priority=40),
+            winner=_StubWinner(0, priority=SolarHandler.priority),
         )
         step = next(s for s in res.decision_trace if s.handler == "custom_position_1")
         assert step.matched is False
         assert step.reason_payload.code is ReasonCode.REGISTRY_OUTPRIORITIZED
+        assert res.tilt is None
 
     def test_default_tilt_does_not_leak_onto_a_winning_handler(self) -> None:
         """DefaultHandler's default_tilt must not reach a result it did not win.
@@ -464,7 +473,9 @@ class TestLosingHandlerTiltDoesNotLeak:
         any other handler wins — and its ``default_tilt`` used to leak in
         exactly the same way.
         """
-        res = _evaluate([], winner=_StubWinner(0, priority=40), default_tilt=42)
+        res = _evaluate(
+            [], winner=_StubWinner(0, priority=SolarHandler.priority), default_tilt=42
+        )
         assert res.tilt is None
 
     def test_winning_custom_position_slot_with_no_tilt_stays_untilted(self) -> None:
