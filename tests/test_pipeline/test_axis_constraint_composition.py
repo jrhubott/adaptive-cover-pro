@@ -12,6 +12,7 @@ way they compose with the floors that were already there.
 from __future__ import annotations
 
 from custom_components.adaptive_cover_pro.const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     ControlMethod,
     ReasonCode,
@@ -1006,3 +1007,64 @@ class TestYieldedBoundIsTracedHonestly:
         text = _step(self._res(), ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD).reason
         assert "inactive" not in text
         assert "77" in text and "80" in text
+
+
+class TestAuditFindingsOnTheHoldGate:
+    """Cases the #1170 audit proved the first cut of the gate got wrong."""
+
+    def test_safety_floor_still_clamps_a_hold_at_the_same_priority(self) -> None:
+        """A 100 floor vs a 100 hold (group lock) — the safety slot wins the tie.
+
+        Strictly-greater alone let a room lock suppress a storm/wind floor,
+        inverting the tie rule const.py states.
+        """
+        res = _evaluate(
+            [
+                _slot(
+                    1,
+                    position=40,
+                    min_mode=True,
+                    priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                )
+            ],
+            winner=_StubWinner(
+                50,
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                held_position=27,
+                skip_command=True,
+            ),
+        )
+        assert res.position == 40
+        assert res.position_constraint_applied is True
+        assert res.skip_command is False
+
+    def test_a_tilt_bound_forcing_dispatch_sends_the_held_position(self) -> None:
+        """A tilt clamp clears skip_command; the position sent must be the held
+        one, not the shadow the hold is merely reporting.
+
+        With the position axis yielded, this used to dispatch the winner's
+        would-be 50 while the cover sat at 27 — moving a cover the user had
+        just placed by hand.
+        """
+        res = _evaluate(
+            [_slot(1, position=40, min_mode=True, priority=77, tilt_min=60)],
+            winner=_StubWinner(
+                50, tilt=10, priority=80, held_position=27, skip_command=True
+            ),
+        )
+        assert res.skip_command is False  # the tilt bound legitimately commands
+        assert res.position == 27  # …but the position is where the cover IS
+
+    def test_yielded_step_survives_when_the_slot_also_bounds_tilt(self) -> None:
+        """The tilt pass's deferral sweep runs after the position pass, and the
+        slot is in its source set — so the yielded step was dropped and the slot
+        vanished from the trace entirely.
+        """
+        res = _evaluate(
+            [_slot(1, position=40, min_mode=True, priority=77, tilt_min=30)],
+            winner=_StubWinner(
+                50, tilt=50, priority=80, held_position=27, skip_command=True
+            ),
+        )
+        assert ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD in _codes(res)
+        assert any(s.handler == "custom_position_1" for s in res.decision_trace)

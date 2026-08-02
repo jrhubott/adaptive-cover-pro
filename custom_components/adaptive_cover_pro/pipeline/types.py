@@ -350,6 +350,15 @@ class PipelineSnapshot:
     # the handler returns max(configured, raw_calculated) instead of always returning configured.
     weather_override_min_mode: bool = False
 
+    # WeatherOverrideHandler's EFFECTIVE priority, resolved from the 🔀 Handler
+    # Priorities step at snapshot build. Carried on the snapshot because the
+    # weather floor is composed by the pure `axis_constraints` pass, which has no
+    # options to resolve from — and since #1170 that priority decides whether the
+    # floor may move a position a handler is holding, so the class default is no
+    # longer good enough. None = unresolved; the gather falls back to the class
+    # default (test snapshots that predate this field).
+    weather_override_priority: int | None = None
+
     # True when current time is within the configured start/end operational window.
     # Handlers that should only run during the active window (e.g. SolarHandler,
     # GlareZoneHandler) check this field and return None when it is False.

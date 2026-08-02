@@ -59,6 +59,61 @@ def _drop_trace_steps(
     return [step for step in trace if step.matched or step.handler not in sources]
 
 
+def _split_bounds_against_hold(
+    constraints: list, winner, holder_priority: int
+) -> tuple[list, list]:
+    """Split constraints into those allowed to move this winner, and those not.
+
+    A winner carrying ``held_position`` is not proposing a computed target — it
+    is holding the cover where something authoritative already put it (a manual
+    move, a group lock). A bound may move that position only when it outranks
+    the handler doing the holding, which is the same question
+    ``Coordinator._clamp_to_active_floor`` asks about the user's command at the
+    moment it is issued (#472). Asking it in only one of the two places was the
+    reported defect: the manual close dispatched correctly, and this pass raised
+    it straight back on the next cycle (#1170).
+
+    An ordinary winner (``held_position is None``) is unaffected — its position
+    is a value this pipeline computed, and clamping it regardless of priority is
+    #463's whole point, so every constraint is returned as binding.
+
+    The second element is the **position-axis** claims that yielded, for the
+    trace. Membership is tested by identity, matching
+    :func:`_iter_nonbinding_bounds`: two slots can carry equal bounds and each
+    must stay individually visible.
+    """
+    if winner.held_position is None:
+        return constraints, []
+    binding = outranking(constraints, holder_priority)
+    binding_ids = {id(c) for c in binding}
+    yielded = [
+        c
+        for c in constraints
+        if c.axis == AXIS_NAME_POSITION and id(c) not in binding_ids
+    ]
+    return binding, yielded
+
+
+def _release_hold_for_tilt_clamp(
+    winner, *, position_clamped: bool, effective_winner_pos: int
+):
+    """Let a tilt clamp command the cover without misplacing it.
+
+    A tilt clamp is a command, not a no-op, so it clears ``skip_command`` the
+    same way a position clamp does — but the position that then goes out has to
+    be where the cover actually IS. When the winner is a hold, ``position`` is
+    the shadow value it merely reports (``manual_override``'s "solar would-be"),
+    and the position axis only overwrites it when something clamped there. A
+    tilt bound forcing the dispatch while the position axis stayed inert — or
+    yielded to the hold (#1170) — would otherwise send that shadow and move a
+    cover the user had just placed by hand.
+    """
+    winner = dataclasses.replace(winner, skip_command=False)
+    if not position_clamped and winner.held_position is not None:
+        winner = dataclasses.replace(winner, position=effective_winner_pos)
+    return winner
+
+
 def _iter_nonbinding_bounds(constraints: list, axis: str, binding):
     """Yield the active bounded constraints on ``axis`` that did not bind.
 
@@ -328,7 +383,8 @@ class PipelineRegistry:
 
         # ── Axis-constraint composition (issues #463 / #514 / #943) ─────────
         # Custom-position slots and the weather override contribute *constraints*
-        # — per-axis claims that must clamp the winner regardless of priority.
+        # — per-axis claims that clamp the winner regardless of priority, unless
+        # the winner is holding a physical position (see the position pass).
         # The handlers themselves defer (return None); the registry composes
         # here so the arithmetic lives in exactly one place
         # (pipeline/axis_constraints.py). One gather serves both axes; the rules
@@ -336,32 +392,9 @@ class PipelineRegistry:
         constraints = gather_axis_constraints(snapshot)
 
         # --- Position axis: bounded kinds ---
-        # A winner carrying ``held_position`` is not proposing a computed
-        # target — it is holding the cover where something authoritative
-        # already put it (a manual move, a group lock). A bound may move that
-        # position only when it strictly outranks the handler doing the
-        # holding, which is the same question ``_clamp_to_active_floor`` asks
-        # about the user's command at the moment it is issued (#472). Asking it
-        # in only one of the two places was the reported defect: the manual
-        # close dispatched correctly and this pass raised it straight back on
-        # the next cycle (#1170).
-        #
-        # An ordinary winner (``held_position is None``) is unaffected: its
-        # position is a value this pipeline computed, and clamping it
-        # regardless of priority is #463's whole point.
-        position_constraints = (
-            outranking(constraints, winning_handler.priority)
-            if winner.held_position is not None
-            else constraints
+        position_constraints, yielded_to_hold = _split_bounds_against_hold(
+            constraints, winner, winning_handler.priority
         )
-        # By identity, matching ``_iter_nonbinding_bounds``: two slots can
-        # carry equal bounds and both must stay individually visible.
-        _binding_ids = {id(c) for c in position_constraints}
-        yielded_to_hold = [
-            c
-            for c in constraints
-            if c.axis == AXIS_NAME_POSITION and id(c) not in _binding_ids
-        ]
         floor_pos, ceiling_pos = compose_bounds(
             position_constraints, AXIS_NAME_POSITION
         )
@@ -481,7 +514,12 @@ class PipelineRegistry:
         # bound would have bound, and priority is the only reason it did not.
         # It still needs a step of its own, because the deferral sweep already
         # removed the handler's ``describe_skip`` entry (#1170).
-        trace.extend(
+        #
+        # Built here, appended AFTER the tilt pass: a slot carrying both a
+        # position floor and a tilt bound is in the tilt sweep's source set, so
+        # appending now would have this step dropped again a few lines below and
+        # leave that slot with no trace entry at all.
+        yielded_steps = [
             DecisionStep(
                 handler=c.source,
                 matched=False,
@@ -499,7 +537,7 @@ class PipelineRegistry:
                 position=None,
             )
             for c in yielded_to_hold
-        )
+        ]
 
         # --- Tilt axis ---
         # FIXED (tilt-only, issue #514) fills the tilt when the winner left it
@@ -572,6 +610,9 @@ class PipelineRegistry:
                 if c.axis == AXIS_NAME_TILT and c.kind is not AxisConstraintMode.FIXED
             },
         )
+        # Past every sweep now — safe to state why a position bound yielded
+        # even when the same slot also bounds the tilt (#1170).
+        trace.extend(yielded_steps)
         # The tilt to clamp is, in precedence order: the FIXED overlay we just
         # filled, or the winner's own tilt (see ``_tilt_to_clamp``). #943's
         # audit finding 2 — a configured minimum silently violated by a tilt
@@ -671,8 +712,11 @@ class PipelineRegistry:
                 skip_command=False,
             )
         if tilt_clamped:
-            # Same rule on the tilt axis: a clamp is a command, not a no-op.
-            winner = dataclasses.replace(winner, skip_command=False)
+            winner = _release_hold_for_tilt_clamp(
+                winner,
+                position_clamped=position_clamped,
+                effective_winner_pos=effective_winner_pos,
+            )
         # The tilt-axis overlay (issue #514) is how a FIXED contribution
         # reaches the result's tilt field. It can never collide with the
         # bound-clamp write above (the ``else: merged["tilt"] = bounded_tilt``

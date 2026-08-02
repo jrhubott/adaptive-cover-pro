@@ -1178,3 +1178,51 @@ def test_group_lock_hold_is_immune_to_a_sub_safety_floor() -> None:
     assert winner_step.handler == "group_lock"
     assert result.position_constraint_applied is False
     assert result.skip_command is True
+
+
+def test_demoted_weather_floor_yields_to_a_manual_hold() -> None:
+    """The weather floor claims its EFFECTIVE priority, not the class default.
+
+    ``weather_priority`` is user-configurable and the translations tell people to
+    lower it "to let Manual or Custom Positions win". The floor kept claiming 90
+    regardless, so a weather override demoted below manual override still raised
+    a position the user had just set by hand — the claimant-side mirror of the
+    threshold bug #1170 fixes.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=40,
+        weather_override_priority=60,  # demoted below manual override (80)
+    )
+    result = _registry_with_custom([ManualOverrideHandler()]).evaluate(snap)
+
+    assert result.position_constraint_applied is False
+    assert result.skip_command is True
+
+
+def test_weather_floor_above_manual_still_clamps_a_hold() -> None:
+    """Left at its 90 default the weather floor keeps outranking a manual hold."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=40,
+        weather_override_priority=WeatherOverrideHandler.priority,
+    )
+    result = _registry_with_custom([ManualOverrideHandler()]).evaluate(snap)
+
+    assert result.position == 40
+    assert result.position_constraint_applied is True
+    assert result.skip_command is False

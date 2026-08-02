@@ -3908,7 +3908,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ASKING what a command would dispatch (:meth:`user_dispatch_position`)
         omit it: same arithmetic, but one press should not log its clamp twice.
         """
-        effective_floor_pos, floor_info = effective_floor(
+        effective_floor_pos, _binding_floor = effective_floor(
             outranking(
                 gather_active_floors(snapshot),
                 resolve_handler_priority(options, ManualOverrideHandler.name),
@@ -4012,9 +4012,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Default behavior (``force=False``): engages manual override and
         consults the pipeline. When a handler with priority strictly greater
-        than :class:`ManualOverrideHandler` priority (force_override 100,
-        weather 90, custom-position slots configured > 80) wins, the move is
-        dropped and recorded via ``CoverCommandService.record_preempted_skip``.
+        than manual override's **effective** priority (safety slots and group
+        locks at 100, weather at its default 90, custom-position slots
+        configured above it) wins, the move is dropped and recorded via
+        ``CoverCommandService.record_preempted_skip``. Effective, not the class
+        default: the 🔀 Handler Priorities step can move manual override
+        anywhere in 1–99, and comparing against a hardcoded 80 ignores it
+        (#1170).
 
         ``force=True``: legacy programmatic behavior — skip the pipeline
         preemption check and skip manual-override engagement. Used by the
