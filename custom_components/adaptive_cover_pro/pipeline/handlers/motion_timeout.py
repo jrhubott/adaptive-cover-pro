@@ -59,6 +59,15 @@ class MotionTimeoutHandler(OverrideHandler):
                 # The raw read stays in the reason payload / diagnostics.
                 reason_payload=Reason(ReasonCode.OCCUPANCY_HOLDING, {"held": held}),
                 skip_command=True,
+                # The RAW read, same as manual override and group lock publish
+                # (#1028's one-frame rule). Value-neutral — the registry flips
+                # it back to exactly the logical ``position`` above, and the
+                # coordinator's hold-skip extra already derived this number by
+                # flipping ``position`` when the field was absent. What it
+                # changes is that a motion hold is now a hold the axis-constraint
+                # gate can see, so a bound must outrank motion_timeout before it
+                # may move a cover being held for occupancy (#1170).
+                held_position=held,
                 raw_calculated_position=compute_raw_calculated_position(snapshot),
             )
 

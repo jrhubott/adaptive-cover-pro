@@ -302,6 +302,12 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         "outrank manual_override (80)",
     ),
     (
+        ReasonCode.REGISTRY_HOLD_POSITION_CARRIED,
+        {"position": 27, "shadow_pos": 50},
+        "tilt clamp commands the cover — position held at 27% "
+        "(not the would-be 50%)",
+    ),
+    (
         ReasonCode.FRAGMENT_AXIS_POSITION,
         {},
         "position",

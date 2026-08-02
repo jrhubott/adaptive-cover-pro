@@ -159,6 +159,10 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
         "bound {low_label}–{high_label} ({axis}) from {label} yielded — priority "
         "{priority} does not outrank {holder} ({holder_priority})"
     ),
+    ReasonCode.REGISTRY_HOLD_POSITION_CARRIED: (
+        "tilt clamp commands the cover — position held at {position}% "
+        "(not the would-be {shadow_pos}%)"
+    ),
     ReasonCode.REGISTRY_TILT_BOUND_ACTIVE: (
         "tilt bound {low_label}–{high_label} active by {label}; "
         "awaiting the resolved tilt"

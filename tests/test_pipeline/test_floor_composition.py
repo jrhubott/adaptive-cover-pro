@@ -134,13 +134,10 @@ def _cp_handler(
     )
 
 
-# A floor may only move a position a handler is HOLDING when it strictly
-# outranks that handler (#1170). The hold tests below pin mechanisms that have
-# nothing to do with priority — #534's held-vs-would-be comparison and its inert
-# mirror, #809's alignment edge, #1036's frame conversion — so they are anchored
-# above manual override, where the bound is allowed to act and the mechanism is
-# what is actually under test.
-_ABOVE_MANUAL_PRIORITY = ABOVE_HOLDER
+# The hold tests below pin mechanisms that have nothing to do with priority —
+# #534's held-vs-would-be comparison and its inert mirror, #809's alignment
+# edge, #1036's frame conversion — so they use ABOVE_HOLDER, where the bound is
+# allowed to act and the mechanism is what is actually under test (#1170).
 
 
 def _registry_with_custom(handlers: list) -> PipelineRegistry:
@@ -725,12 +722,12 @@ def test_floor_raises_manual_override_held_below_floor() -> None:
                 position=80,
                 min_mode=True,
                 sensor_name="Table",
-                priority=_ABOVE_MANUAL_PRIORITY,
+                priority=ABOVE_HOLDER,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 80, priority=_ABOVE_MANUAL_PRIORITY),
+        _cp_handler(1, 80, priority=ABOVE_HOLDER),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -774,12 +771,12 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
                 position=80,
                 min_mode=True,
                 sensor_name="Table",
-                priority=_ABOVE_MANUAL_PRIORITY,
+                priority=ABOVE_HOLDER,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 80, priority=_ABOVE_MANUAL_PRIORITY),
+        _cp_handler(1, 80, priority=ABOVE_HOLDER),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -826,12 +823,12 @@ def test_floor_equal_to_would_be_but_above_held_still_raises() -> None:
                 position=100,
                 min_mode=True,
                 sensor_name="Table",
-                priority=_ABOVE_MANUAL_PRIORITY,
+                priority=ABOVE_HOLDER,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 100, priority=_ABOVE_MANUAL_PRIORITY),
+        _cp_handler(1, 100, priority=ABOVE_HOLDER),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -1053,7 +1050,7 @@ class TestFloorComparesInLogicalFrame:
         return PipelineRegistry(
             [
                 ManualOverrideHandler(),
-                _cp_handler(1, 25, priority=_ABOVE_MANUAL_PRIORITY),
+                _cp_handler(1, 25, priority=ABOVE_HOLDER),
                 ClimateHandler(),
                 SolarHandler(),
                 DefaultHandler(),
@@ -1074,7 +1071,7 @@ class TestFloorComparesInLogicalFrame:
                     position=25,
                     min_mode=True,
                     slot=1,
-                    priority=_ABOVE_MANUAL_PRIORITY,
+                    priority=ABOVE_HOLDER,
                 )
             ],
         )

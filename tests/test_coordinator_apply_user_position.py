@@ -29,11 +29,15 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
     ManualOverrideHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
+    WeatherOverrideHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
     DecisionStep,
     PipelineResult,
 )
+from tests._helpers.priorities import ABOVE_HOLDER
 from tests.ha_helpers import (
     bind_user_position_seam,
     make_mock_policy,
@@ -169,7 +173,9 @@ async def test_async_apply_user_position_clamps_to_min_mode_floor() -> None:
     """Requested < highest active min-mode floor → clamped up to floor."""
     # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
     # to clamp a user move.
-    coord, ctx = _make_coord([_slot(40, is_on=True, min_mode=True, priority=82)])
+    coord, ctx = _make_coord(
+        [_slot(40, is_on=True, min_mode=True, priority=ABOVE_HOLDER)]
+    )
 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 
@@ -901,7 +907,9 @@ async def test_outranking_floor_applies_even_when_a_lower_one_is_higher() -> Non
     coord, ctx = _make_coord(
         [
             _slot(60, is_on=True, min_mode=True),  # 77 — yields to the user
-            _slot(50, is_on=True, min_mode=True, priority=90),  # 90 — outranks
+            _slot(
+                50, is_on=True, min_mode=True, priority=WeatherOverrideHandler.priority
+            ),  # 90 — outranks
         ]
     )
 
@@ -922,13 +930,14 @@ async def test_clamp_respects_a_reconfigured_manual_override_priority() -> None:
     silently ignores that setting.
     """
     coord, ctx = _make_coord(
-        [_slot(40, is_on=True, min_mode=True, priority=82)],
-        default_options={CONF_MANUAL_OVERRIDE_PRIORITY: 85},
+        [_slot(40, is_on=True, min_mode=True, priority=ABOVE_HOLDER)],
+        default_options={CONF_MANUAL_OVERRIDE_PRIORITY: ABOVE_HOLDER + 3},
     )
 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
 
-    # 82 <= 85, so the floor yields and the user's 10 passes through untouched.
+    # The floor no longer outranks the raised threshold, so it yields and the
+    # user's 10 passes through untouched.
     coord._cmd_svc.apply_position.assert_awaited_once_with(
         "cover.test", 10, "set_position", ctx
     )

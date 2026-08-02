@@ -107,7 +107,11 @@ def _split_bounds_against_hold(
 
 
 def _release_hold_for_tilt_clamp(
-    winner, *, position_clamped: bool, effective_winner_pos: int
+    winner,
+    trace: list[DecisionStep],
+    *,
+    position_clamped: bool,
+    effective_winner_pos: int,
 ):
     """Let a tilt clamp command the cover without misplacing it.
 
@@ -121,9 +125,22 @@ def _release_hold_for_tilt_clamp(
     cover the user had just placed by hand.
     """
     winner = dataclasses.replace(winner, skip_command=False)
-    if not position_clamped and winner.held_position is not None:
-        winner = dataclasses.replace(winner, position=effective_winner_pos)
-    return winner
+    if position_clamped or winner.held_position is None:
+        return winner
+    # Appended here rather than returned, so the caller stays one statement —
+    # the dispatch and its explanation are the same event.
+    trace.append(
+        DecisionStep(
+            handler="hold_position_carried",
+            matched=True,
+            reason_payload=Reason(
+                ReasonCode.REGISTRY_HOLD_POSITION_CARRIED,
+                {"position": effective_winner_pos, "shadow_pos": winner.position},
+            ),
+            position=effective_winner_pos,
+        )
+    )
+    return dataclasses.replace(winner, position=effective_winner_pos)
 
 
 def _iter_nonbinding_bounds(constraints: list, axis: str, binding):
@@ -558,7 +575,15 @@ class PipelineRegistry:
                         ),
                     },
                 ),
-                position=None,
+                # Same column ``_inactive_position_steps`` fills for the same
+                # kind of claim — a yielded floor must not blank the card's
+                # position where an inert one shows its value. Tilt-axis claims
+                # leave it None, as the tilt pass does.
+                position=(
+                    (c.low if c.low is not None else c.high)
+                    if c.axis == AXIS_NAME_POSITION
+                    else None
+                ),
             )
             for c in yielded_to_hold
         ]
@@ -742,6 +767,7 @@ class PipelineRegistry:
         if tilt_clamped:
             winner = _release_hold_for_tilt_clamp(
                 winner,
+                trace,
                 position_clamped=position_clamped,
                 effective_winner_pos=effective_winner_pos,
             )
