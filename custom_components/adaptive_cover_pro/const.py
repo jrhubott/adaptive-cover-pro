@@ -1111,8 +1111,11 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         #                  most this (the mirror of `min_mode`'s clamp-up).
         #   tilt_min     — clamps the final tilt UP to at least this.
         #   tilt_max     — clamps the final tilt DOWN to at most this.
-        # These are priority-independent clamps: the pipeline resolves normally
-        # and the clamp composes on top (pipeline/axis_constraints.py).
+        # The pipeline resolves normally and the clamp composes on top
+        # (pipeline/axis_constraints.py). Priority-independent against an
+        # ordinary computed winner (#463); against one HOLDING a physical
+        # position — manual override, a group lock — the clamp must outrank
+        # that handler to apply, on either axis (#1170).
         "position_max": f"custom_position_position_max_{n}",
         "tilt_min": f"custom_position_tilt_min_{n}",
         "tilt_max": f"custom_position_tilt_max_{n}",

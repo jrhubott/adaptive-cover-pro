@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     GroupIntentKind,
+    ReasonCode,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
@@ -43,6 +44,7 @@ from custom_components.adaptive_cover_pro.state.climate_provider import (
     ClimateReadings,
 )
 
+from tests._helpers.priorities import ABOVE_HOLDER
 from tests.test_pipeline.conftest import make_snapshot
 
 # ---------------------------------------------------------------------------
@@ -133,13 +135,12 @@ def _cp_handler(
 
 
 # A floor may only move a position a handler is HOLDING when it strictly
-# outranks that handler (#1170). The three hold tests below pin mechanisms that
-# have nothing to do with priority — #534's held-vs-would-be comparison, #809's
-# alignment edge, #1036's frame conversion — so they are anchored above manual
-# override, where the bound is allowed to act and the mechanism is what is
-# actually under test. Derived from the handler, not written as 82, so a
-# re-prioritized default cannot silently make them vacuous.
-_ABOVE_MANUAL_PRIORITY = ManualOverrideHandler.priority + 2
+# outranks that handler (#1170). The hold tests below pin mechanisms that have
+# nothing to do with priority — #534's held-vs-would-be comparison and its inert
+# mirror, #809's alignment edge, #1036's frame conversion — so they are anchored
+# above manual override, where the bound is allowed to act and the mechanism is
+# what is actually under test.
+_ABOVE_MANUAL_PRIORITY = ABOVE_HOLDER
 
 
 def _registry_with_custom(handlers: list) -> PipelineRegistry:
@@ -754,6 +755,10 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
 
     Manual override holds the cover at 85% (physical), floor is 80% — the cover
     already sits above the floor, so no clamp is applied.
+
+    Anchored above manual override like its three siblings: at the default 77
+    the floor yields on priority (#1170) before inertness is ever evaluated, so
+    the test would still pass while proving nothing about the branch it names.
     """
     cover = _climate_cover(direct_sun_valid=False)
     snap = make_snapshot(
@@ -769,11 +774,12 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
                 position=80,
                 min_mode=True,
                 sensor_name="Table",
+                priority=_ABOVE_MANUAL_PRIORITY,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 80),
+        _cp_handler(1, 80, priority=_ABOVE_MANUAL_PRIORITY),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -784,6 +790,12 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
     assert winner_step.handler == "manual_override"
     # No clamp: the held physical position (85) is already above the floor (80).
     assert result.position_constraint_applied is False
+    # Inert on VALUE, not on priority — the distinction the anchor protects.
+    assert ReasonCode.REGISTRY_FLOOR_INACTIVE in [
+        s.reason_payload.code
+        for s in result.decision_trace
+        if s.reason_payload is not None
+    ]
     # The manual-override hold is inert-floor: it genuinely holds the cover, so
     # skip_command stays set (no floor raise to clear it)  (#809).
     assert result.skip_command is True

@@ -64,8 +64,8 @@ class FloorClampInfo:
                 position a handler is *holding* gate on it through the shared
                 :func:`~.axis_constraints.outranking` predicate: the user-move
                 clamp at the moment of the command (issue #472), and the
-                registry's position pass one cycle later, when that same
-                command arrives as ``held_position`` (issue #1170). Composition
+                registry's position *and tilt* passes one cycle later, when
+                that same command arrives as ``held_position`` (issue #1170). Composition
                 onto an ordinary computed winner still ignores it — auto-rule
                 composition stays unconditional (issue #463).
 

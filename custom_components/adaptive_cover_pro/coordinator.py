@@ -3918,32 +3918,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         clamped = max(int(requested), effective_floor_pos)
         if trigger is None:
             return clamped
+        # Reported on BOTH branches, not just the no-clamp one: the mixed case
+        # — one floor yields while a higher-priority one still binds — is
+        # exactly where "why did it stop at 50 and not 60?" gets asked, and an
+        # `elif` would never answer it (#1170).
+        yielded_count = len(active_floors) - len(binding_floors)
+        yielded_note = (
+            f" ({yielded_count} floor(s) yielded to manual override "
+            f"at priority {manual_priority})"
+            if yielded_count
+            else ""
+        )
         if clamped != requested:
             _LOGGER.info(
-                "%s: requested %d clamped to %d (active min-mode floor)",
+                "%s: requested %d clamped to %d (active min-mode floor)%s",
                 trigger,
                 requested,
                 clamped,
-            )
-        elif len(binding_floors) < len(active_floors):
-            # Distinguish "no floor" from "a floor was active and yielded" —
-            # the post-filter number alone reads as floor 0 and hides the very
-            # decision this method now makes (#1170).
-            _LOGGER.debug(
-                "%s: requested %d, %d floor(s) yielded to manual override (%d) — "
-                "highest binding floor %d",
-                trigger,
-                requested,
-                len(active_floors) - len(binding_floors),
-                manual_priority,
-                effective_floor_pos,
+                yielded_note,
             )
         else:
+            # Without the note the post-filter number reads as "floor 0", which
+            # cannot be told apart from "no floor configured at all".
             _LOGGER.debug(
-                "%s: requested %d, floor %d — no clamping needed",
+                "%s: requested %d, floor %d — no clamping needed%s",
                 trigger,
                 requested,
                 effective_floor_pos,
+                yielded_note,
             )
         return clamped
 

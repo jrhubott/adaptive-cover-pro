@@ -129,8 +129,9 @@ def outranking[ClaimT: _Prioritized](
 
     * ``Coordinator._clamp_to_active_floor`` — the user's command, judged
       before dispatch (#472).
-    * ``PipelineRegistry.evaluate``'s position pass — the same command one
-      cycle later, arriving as ``manual_override``'s ``held_position`` (#1170).
+    * ``PipelineRegistry.evaluate`` — the same command one cycle later,
+      arriving as ``manual_override``'s ``held_position``. Both axes consume
+      it: a tilt bound forces a dispatch just as a position floor does (#1170).
 
     Splitting those two produced the reported defect: the user's close was
     dispatched correctly, then the identical floor raised it straight back

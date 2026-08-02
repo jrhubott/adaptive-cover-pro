@@ -372,8 +372,9 @@ class PipelineRegistry:
         # output, not diagnostic metadata — a handler the pipeline explicitly
         # outprioritized must never drive the tilt axis. Tilt is owned by
         # exactly two sources: the winner's own ``PipelineResult.tilt``, and
-        # the priority-independent tilt-axis pass below (the #514 FIXED
-        # overlay and #943 bounds composition; see ``_tilt_to_clamp``).
+        # the tilt-axis pass below (the #514 FIXED overlay, still
+        # priority-blind, and the #943 bounds composition, which since #1170
+        # yields to a higher-priority hold; see ``_tilt_to_clamp``).
         _MERGEABLE = ("climate_state", "climate_strategy", "climate_data")
         contributions: list[dict[str, object]] = [
             h.contribute(snapshot) for h, _ in evaluated
@@ -396,7 +397,8 @@ class PipelineRegistry:
         # ── Axis-constraint composition (issues #463 / #514 / #943) ─────────
         # Custom-position slots and the weather override contribute *constraints*
         # — per-axis claims that clamp the winner regardless of priority, unless
-        # the winner is holding a physical position (see the position pass).
+        # the winner is holding a physical position (``_split_bounds_against_hold``,
+        # which governs both axes).
         # The handlers themselves defer (return None); the registry composes
         # here so the arithmetic lives in exactly one place
         # (pipeline/axis_constraints.py). One gather serves both axes; the rules
@@ -621,7 +623,11 @@ class PipelineRegistry:
             trace,
             {
                 c.source
-                for c in bound_constraints
+                # UNFILTERED, mirroring the position sweep: a slot whose bound
+                # yielded to a hold still deferred, so its ``describe_skip``
+                # step must go — otherwise a stale "not active" entry survives
+                # beside the yielded step and contradicts it (#1170).
+                for c in constraints
                 if c.axis == AXIS_NAME_TILT and c.kind is not AxisConstraintMode.FIXED
             },
         )

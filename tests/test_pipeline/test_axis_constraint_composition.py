@@ -22,9 +22,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import DefaultHandle
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
-from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
-    ManualOverrideHandler,
-)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
@@ -32,6 +29,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     PipelineResult,
 )
 
+from tests._helpers.priorities import ABOVE_HOLDER, BELOW_HOLDER, HOLDER_PRIORITY
 from tests.test_pipeline.conftest import make_snapshot
 
 
@@ -69,11 +67,12 @@ class _StubWinner(OverrideHandler):
         return "stub skip"
 
 
-# Derived from the handler, never written as integers: § Handler Priorities
-# makes the class the source of truth and bans priority literals in fixtures.
-_HOLDER_PRIORITY = ManualOverrideHandler.priority
-_BELOW_HOLDER = DEFAULT_CUSTOM_POSITION_PRIORITY
-_ABOVE_HOLDER = ManualOverrideHandler.priority + 2
+# Anchors live in tests/_helpers/priorities.py — both files that exercise the
+# #1170 hold gate need them, and § No Magic Numbers puts cross-file test
+# constants there rather than in each file.
+_HOLDER_PRIORITY = HOLDER_PRIORITY
+_BELOW_HOLDER = BELOW_HOLDER
+_ABOVE_HOLDER = ABOVE_HOLDER
 
 
 def _slot(
@@ -1024,16 +1023,16 @@ class TestYieldedBoundIsTracedHonestly:
         params = _step(
             self._res(), ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD
         ).reason_payload.params
-        assert params["priority"] == 77
+        assert params["priority"] == _BELOW_HOLDER
         assert params["holder"] == "stub_winner"
-        assert params["holder_priority"] == 80
+        assert params["holder_priority"] == _HOLDER_PRIORITY
 
     def test_yielded_step_text_does_not_claim_the_winner_cleared_the_bound(
         self,
     ) -> None:
         text = _step(self._res(), ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD).reason
         assert "inactive" not in text
-        assert "77" in text and "80" in text
+        assert str(_BELOW_HOLDER) in text and str(_HOLDER_PRIORITY) in text
 
 
 class TestAuditFindingsOnTheHoldGate:
@@ -1143,3 +1142,28 @@ class TestAuditFindingsOnTheHoldGate:
         )
         assert res.skip_command is False
         assert res.tilt == 60
+
+    def test_a_yielded_tilt_bound_leaves_exactly_one_trace_step(self) -> None:
+        """No stale "not active" skip surviving beside the yielded step.
+
+        The position sweep drops deferral steps using the UNFILTERED constraint
+        list; the tilt sweep briefly used the filtered one, so a slot whose only
+        claim was a bounded tilt fell into neither set — keeping
+        `describe_skip`'s "custom position #1 not active", which is false (the
+        slot IS active), right next to the step saying it yielded.
+        """
+        res = _evaluate(
+            [_slot(1, tilt_min=60, priority=_BELOW_HOLDER, sensor_name="TiltSlot")],
+            winner=_StubWinner(
+                50,
+                tilt=10,
+                priority=_HOLDER_PRIORITY,
+                held_position=27,
+                skip_command=True,
+            ),
+        )
+        steps = [s for s in res.decision_trace if s.handler == "custom_position_1"]
+        assert len(steps) == 1
+        assert steps[0].reason_payload.code is (
+            ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD
+        )
