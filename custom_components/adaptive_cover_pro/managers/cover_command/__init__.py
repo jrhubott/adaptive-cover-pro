@@ -1671,7 +1671,10 @@ class CoverCommandService:
             # one. Always record `_plan.routed_target` — the module's own
             # SSOT definition of "the target" (routing.py's docstring;
             # `_prepare_service_call` records the identical value on a real
-            # dispatch) — never substitute `_current`.
+            # dispatch) — never substitute `_current`. This booking is not
+            # diagnostics-only: it also makes the entity reconciliation-eligible,
+            # so a later drift off the booked value resends it on the next
+            # reconciliation pass exactly as it would for any other target.
             #
             # The one exception: arm 1's endpoint-tolerance sub-arm, where
             # `_current` sits within `_position_tolerance` of a 0/100

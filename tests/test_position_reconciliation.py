@@ -362,6 +362,45 @@ async def test_reconcile_no_dispatch_after_same_position_skip_records_target(
 
 
 @pytest.mark.asyncio
+async def test_reconcile_resends_booked_target_after_skip_then_drift(svc, mock_hass):
+    """Issue #1158 MUST-FIX (round-3 audit): a same_position skip's booked
+    target is a new dispatch path, not just a diagnostics label — it makes
+    a never-dispatched entity reconciliation-eligible, and once eligible a
+    later drift off that target resends it exactly like any other booked
+    target would.
+
+    Before the fix, ``_skip()`` never called ``set_target()``, so this
+    entity had no recorded target at all and ``run_reconciliation_pass``
+    had nothing to compare against — no resend, for the wrong reason (no
+    target, not "at target"). Reproduces the auditor's
+    ``audit5_drift.py``: book 63 via the same_position gate's direct-equality
+    arm (arm 1a), drift the cover off that target without ever engaging
+    manual override, then confirm reconciliation resends the booked value.
+    """
+    _patch_position(svc, 63)
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 63, "solar", context=_ctx()
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 63
+
+    # Cover drifts away from the booked target — no manual override involved.
+    _patch_position(svc, 40)
+    mock_hass.services.async_call.reset_mock()
+
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_called_once()
+    called_service = mock_hass.services.async_call.call_args[0][1]
+    called_data = mock_hass.services.async_call.call_args[0][2]
+    assert called_service == "set_cover_position"
+    assert called_data["entity_id"] == "cover.test"
+    assert called_data["position"] == 63
+
+
+@pytest.mark.asyncio
 async def test_same_position_skip_does_not_stamp_stale_is_safety(svc, mock_hass):
     """Issue #1158 MUST-FIX 2 (round-2 audit): a same_position skip must
     never write ``is_safety`` from ``context.is_safety``.
