@@ -3561,12 +3561,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Since issue #1167 ``enable_sun_tracking`` no longer changes pipeline
         composition — ``SolarHandler`` is unconditional and declines on the
-        snapshot field instead — so the rebuild is a no-op for solar and the
-        refresh is what actually applies the change. The rebuild is now a no-op
-        for this option specifically — no handler factory reads it any more — and
-        is kept only because it is cheap, total, and the single place pipeline
-        composition is derived. Neither entity listeners nor cover geometry are
-        affected, which is why this stays a refresh rather than a reload.
+        snapshot field instead — so the refresh is what actually applies the
+        change. No handler factory reads the option any more, making the rebuild
+        a no-op for it; the rebuild is kept only because it is cheap, total, and
+        the single place composition is derived. Neither entity listeners nor
+        cover geometry are affected, which is why this stays a refresh rather
+        than a reload.
         """
         self._pipeline = self._build_pipeline()
         self._cached_options = dict(self.config_entry.options)
@@ -3849,11 +3849,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # re-evaluate the managers (that would advance latches off-cycle).
             # Two latches it does advance, both arm-on-read and both harmless
             # here: the custom-position per-input hold (#1012), and the
-            # sun-tracking gate's grace window (#1167) — that one sees the same
-            # options object as the cycle, so no config-change reset fires, and
-            # an earlier anchor only shortens the hold, i.e. fails open sooner.
-            # As with the custom-position hold, an ad-hoc build can anchor that
-            # hold
+            # sun-tracking gate's grace window (#1167). That one is harmless
+            # here: ConditionGate.update_config compares by VALUE, so an ad-hoc
+            # build carrying equal options fires no config-change reset, and an
+            # earlier anchor only shortens the hold — it fails open sooner, never
+            # later. As with the custom-position hold, an ad-hoc build anchors
+            # that hold
             # window at the tap rather than at the next regular cycle. That is
             # the documented contract — the window starts at the first
             # indeterminate sighting, and the tap is one — but it also means no

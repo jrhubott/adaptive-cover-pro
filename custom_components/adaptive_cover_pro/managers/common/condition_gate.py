@@ -27,7 +27,7 @@ tri-state answer onto their own policy (the daytime gate reads ``None`` as
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable
 
 from ...const import DEFAULT_TEMPLATE_COMBINE_MODE
 from ...templates import combine_with_mode, is_template_string
@@ -72,7 +72,7 @@ class ConditionGate:
 
     def update_config(
         self,
-        sensors: Iterable[str] | Sequence[str] = (),
+        sensors: Iterable[str] = (),
         template: str | None = None,
         template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
     ) -> None:

@@ -2807,7 +2807,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         )
         if config.get(CONF_MINIMIZE_MOVEMENTS, False):
             steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
-            indent = "\u00a0" * 4
+            indent = _GATE_SUMMARY_INDENT
             if steps <= 1:
                 detail = L["solar.minimize_one_step"]
             else:
@@ -2871,7 +2871,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         timing_str = (
             " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
-        indent = "\u00a0" * 4
+        indent = _GATE_SUMMARY_INDENT
         _sub(L["timing.line"].format(indent=indent, timing=timing_str))
         if sunset_pos is not None:
             # Merge today's effective time (or entity ID) and offset into one parenthetical

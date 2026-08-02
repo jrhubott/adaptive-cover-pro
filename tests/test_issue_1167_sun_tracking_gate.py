@@ -301,40 +301,56 @@ def _solar_handler():
 
 
 def test_a_closed_gate_does_not_suppress_climate():
-    """The distinction from the daytime gate, pinned.
+    """The distinction from the daytime gate, pinned on a climate rule that WINS.
 
     A dark daytime gate closes ``in_time_window``, which suppresses climate,
     glare zones, cloud suppression and motion timeout along with solar. A closed
     sun-tracking gate must suppress solar and nothing else.
+
+    Both snapshots below are configured so ClimateHandler produces a real result.
+    The gated one must still get it; the window-closed one must not. Asserting
+    that climate still *wins* is the point — an earlier version of this test
+    asserted ``gated.in_time_window is True``, which is ``make_snapshot``'s own
+    default and left the headline property unguarded: adding a gate check to
+    ``ClimateHandler.evaluate`` kept the whole suite green.
     """
     from custom_components.adaptive_cover_pro.const import ControlMethod
-    from tests.test_pipeline.conftest import make_snapshot
-
-    registry = _pipeline({})
-
-    # Same snapshot shape, two gates. The climate handler needs its own config to
-    # win, so assert the weaker but sufficient property: with the sun-tracking
-    # gate closed the chain still RESOLVES (falls through), whereas closing the
-    # window suppresses every windowed handler at once.
-    gated = make_snapshot(
-        direct_sun_valid=True, enable_sun_tracking=False, default_position=100
-    )
-    windowed = make_snapshot(
-        direct_sun_valid=True, enable_sun_tracking=True, in_time_window=False
-    )
-
     from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
         ClimateHandler,
     )
+    from tests.test_pipeline.conftest import make_snapshot
+    from tests.test_pipeline.test_climate_handler import (
+        _make_blind_cover,
+        _make_options,
+        _make_readings,
+    )
+
+    def _climate_snapshot(**overrides):
+        return make_snapshot(
+            cover=_make_blind_cover(),
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=10.0),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+            climate_temp_flags=None,
+            **overrides,
+        )
 
     climate = ClimateHandler()
-    # Climate is windowed: it skips outright when the window is closed...
-    assert climate.evaluate(windowed) is None
-    # ...but the sun-tracking gate leaves it evaluating normally (it declines here
-    # only because no climate mode is configured, not because a gate closed it).
-    assert gated.in_time_window is True
 
-    assert registry.evaluate(gated).control_method == ControlMethod.DEFAULT
+    gated = _climate_snapshot(enable_sun_tracking=False, sun_tracking_gate_closed=True)
+    windowed = _climate_snapshot(enable_sun_tracking=True, in_time_window=False)
+
+    # A closed sun-tracking gate leaves climate producing its normal result...
+    result = climate.evaluate(gated)
+    assert result is not None
+    assert result.control_method == ControlMethod.WINTER
+
+    # ...whereas a closed window (what the daytime gate does) suppresses it.
+    assert climate.evaluate(windowed) is None
+
+    # And through the real pipeline, climate — not solar, not default — wins.
+    registry = _pipeline({})
+    assert registry.evaluate(gated).control_method == ControlMethod.WINTER
 
 
 # ---------------------------------------------------------------------------
@@ -484,13 +500,13 @@ def test_the_grace_wake_is_armed_only_while_holding():
 
     with ctx:
         builder._resolve_sun_tracking(options)
-        assert builder.seconds_until_sun_tracking_gate_fallback() is None
+        assert builder.seconds_until_sun_tracking_gate_fallback(options) is None
 
         states["binary_sensor.ac"] = None
         builder._resolve_sun_tracking(options)
-        assert builder.seconds_until_sun_tracking_gate_fallback() == pytest.approx(
-            120.0
-        )
+        assert builder.seconds_until_sun_tracking_gate_fallback(
+            options
+        ) == pytest.approx(120.0)
 
 
 # The option->snapshot binding that composition-gating used to prove is guarded
@@ -552,6 +568,27 @@ def _coord_for_wake(secs, options=None):
     builder.seconds_until_sun_tracking_gate_fallback.return_value = secs
     coord._snapshot_builder = builder
     return coord
+
+
+def test_the_wake_reads_the_live_options():
+    """The coordinator must hand the builder its options, or the toggle guard is dead.
+
+    The guard that stops a disabled cover arming a wake lives in the builder and
+    keys off ``options``; if the coordinator stopped passing them the guard would
+    silently never engage. Asserting the call args on the stub builder is exactly
+    what catches that.
+    """
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.const import CONF_ENABLE_SUN_TRACKING
+
+    opts = {CONF_ENABLE_SUN_TRACKING: True}
+    coord = _coord_for_wake(secs=None, options=opts)
+    with patch("custom_components.adaptive_cover_pro.coordinator.async_call_later"):
+        coord._schedule_sun_tracking_gate_wake()
+    coord._snapshot_builder.seconds_until_sun_tracking_gate_fallback.assert_called_once_with(
+        opts
+    )
 
 
 def test_the_wake_is_scheduled_while_the_gate_is_holding():

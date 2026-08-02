@@ -443,7 +443,7 @@ class PipelineSnapshotBuilder:
         return tracking, not tracking
 
     def seconds_until_sun_tracking_gate_fallback(
-        self, options: Mapping[str, Any] | None = None
+        self, options: Mapping[str, Any]
     ) -> float | None:
         """Seconds until a HELD sun-tracking-gate verdict expires, or ``None``.
 
@@ -456,12 +456,11 @@ class PipelineSnapshotBuilder:
         ``ConditionGate.seconds_until_fallback`` *observes* to answer — so
         without this guard a disabled cover whose gate sensor drops out would
         anchor a grace window and arm a wake that resolves to nothing.
-        ``options`` is optional so an un-passed call keeps the old behaviour
-        rather than silently reporting "no wake" for a cover that needs one.
+        ``options`` is required, not defaulted: a default would let the single
+        production caller stop passing it with nothing failing, which is exactly
+        how this guard would rot.
         """
-        if options is not None and not bool(
-            options.get(CONF_ENABLE_SUN_TRACKING, True)
-        ):
+        if not bool(options.get(CONF_ENABLE_SUN_TRACKING, True)):
             return None
         return self._sun_tracking_gate.seconds_until_fallback()
 
