@@ -343,22 +343,39 @@ def test_get_last_updated_returns_none_when_entity_id_none(mock_hass):
 
 @pytest.mark.unit
 def test_check_time_passed_returns_true_when_passed():
-    """Test check_time_passed returns True when time has passed."""
-    # Create a datetime that's definitely in the past
-    past_time = dt.datetime.now() - dt.timedelta(hours=1)
+    """Test check_time_passed returns True when time has passed.
 
-    result = check_time_passed(past_time)
+    Anchors "now" via a patched dt_util.now() sentinel rather than the host
+    clock (issue #1161) — check_time_passed reads dt_util.now() internally, so
+    building the fixture from the host clock would no longer track it.
+    """
+    past_time = dt.datetime(2030, 1, 1, 0, 0, 0)
+    sentinel = dt.datetime(2035, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.dt_util.now",
+        return_value=sentinel,
+    ):
+        result = check_time_passed(past_time)
 
     assert result is True
 
 
 @pytest.mark.unit
 def test_check_time_passed_returns_false_when_future():
-    """Test check_time_passed returns False when time is in future."""
-    # Create a datetime that's definitely in the future
-    future_time = dt.datetime.now() + dt.timedelta(hours=1)
+    """Test check_time_passed returns False when time is in future.
 
-    result = check_time_passed(future_time)
+    Anchors "now" via a patched dt_util.now() sentinel rather than the host
+    clock (issue #1161) — see test_check_time_passed_returns_true_when_passed.
+    """
+    future_time = dt.datetime(2024, 1, 1, 0, 0, 0)
+    sentinel = dt.datetime(2020, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.dt_util.now",
+        return_value=sentinel,
+    ):
+        result = check_time_passed(future_time)
 
     assert result is False
 
@@ -392,6 +409,29 @@ def test_dt_check_time_passed_returns_true_for_past_date():
     yesterday = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
 
     result = dt_check_time_passed(yesterday)
+
+    assert result is True
+
+
+@pytest.mark.unit
+def test_check_time_passed_uses_dt_util_now_not_host_clock():
+    """check_time_passed must read dt_util.now(), not the naive host clock.
+
+    Issue #1161: a bare ``dt.datetime.now()`` silently reads the host OS
+    timezone instead of HA's configured ``hass.config.time_zone``. Freezing
+    ``dt_util.now()`` to a sentinel far from the real host clock must move
+    the result — proving the code reads dt_util, not the host clock.
+    """
+    fixed_time = dt.datetime(2090, 1, 1, 0, 0, 0)
+    # Sentinel is AFTER fixed_time — only a fix reading dt_util.now() can
+    # make check_time_passed True here (the real host clock is in 2026).
+    sentinel = dt.datetime(2095, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.dt_util.now",
+        return_value=sentinel,
+    ):
+        result = check_time_passed(fixed_time)
 
     assert result is True
 

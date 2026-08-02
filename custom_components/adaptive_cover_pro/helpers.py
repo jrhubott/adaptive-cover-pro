@@ -521,7 +521,7 @@ def get_last_updated(entity_id: str, hass: HomeAssistant):
 
 def check_time_passed(time: dt.datetime):
     """Check if time is passed for datetime."""
-    now = dt.datetime.now()
+    now = dt_util.now().replace(tzinfo=None)
     return now >= time
 
 

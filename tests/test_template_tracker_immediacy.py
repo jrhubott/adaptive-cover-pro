@@ -25,7 +25,6 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.adaptive_cover_pro.const import (
-    BLANK_TIME,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_END_TIME,
     CONF_MOTION_TEMPLATE,
@@ -379,18 +378,19 @@ async def test_self_referencing_gate_template_refresh_is_bounded(
     with one, the *unguarded* loop is unbounded — measured at >9000 refreshes
     before the harness timed out, versus the five below.
 
-    The start/end clock is blanked so ``is_active`` reduces to the gate verdict
-    alone; otherwise the loop's existence would depend on the machine's local
-    timezone (``TimeWindowManager.before_end_time`` reads a naive
-    ``datetime.now()``).
+    A real start/end window is configured (10:00-20:00) around the frozen
+    17:00 UTC instant — safe since #1161 made ``TimeWindowManager`` read
+    ``dt_util.now()`` (frozen along with the rest of ``datetime`` by
+    ``freezer``) instead of the host clock, so the window's openness no
+    longer depends on the machine's local timezone.
     """
     freezer.move_to(dt.datetime(2026, 6, 15, 17, 0, 0, tzinfo=dt.UTC))
     entry = _make_entry(
         hass,
         "tt_loop_01",
         {
-            CONF_START_TIME: BLANK_TIME,
-            CONF_END_TIME: BLANK_TIME,
+            CONF_START_TIME: "10:00:00",
+            CONF_END_TIME: "20:00:00",
             CONF_DAYTIME_GATE_TEMPLATE: _LOOPING_GATE_TEMPLATE,
         },
     )

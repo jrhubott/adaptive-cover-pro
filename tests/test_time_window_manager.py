@@ -87,8 +87,7 @@ def test_after_start_time_entity_returns_false_when_future():
         end_time_entity=None,
     )
 
-    today = dt.date(2024, 6, 15)
-    now = dt.datetime(2024, 6, 15, 10, 0, 0)
+    now = dt.datetime(2024, 6, 15, 10, 0, 0, tzinfo=dt.UTC)
     future_time = dt.datetime(2024, 6, 15, 12, 0, 0)
 
     with (
@@ -101,12 +100,10 @@ def test_after_start_time_entity_returns_false_when_future():
             return_value=future_time,
         ),
         patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.dt"
-        ) as mock_dt,
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=now,
+        ),
     ):
-        mock_dt.date.today.return_value = today
-        mock_dt.datetime.now.return_value = now
-        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is False
@@ -449,6 +446,127 @@ async def test_check_transition_no_callback_on_window_open():
 
 
 # ---------------------------------------------------------------------------
+# HA-configured tz vs. host clock (issue #1161)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_start_has_passed_uses_dt_util_now_not_host_clock():
+    """_start_has_passed must read dt_util.now(), not the naive host clock.
+
+    Issue #1161: a bare ``dt.datetime.now()`` silently reads the host OS
+    timezone instead of HA's configured ``hass.config.time_zone``. Freezing
+    ``dt_util.now()`` to a sentinel far from the real host clock must move
+    the result — proving the code reads dt_util, not the host clock.
+    """
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time="06:00:00",
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+    )
+
+    # Resolved start is far in the future relative to the real host clock, so
+    # a host-clock read would find "now" is still before it (not yet passed).
+    resolved = dt.datetime(2090, 1, 1, 0, 0, 0)
+    # The dt_util sentinel is AFTER the resolved start — only a fix that reads
+    # dt_util.now() can make after_start_time True here.
+    sentinel = dt.datetime(2095, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=resolved,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=sentinel,
+        ),
+    ):
+        result = mgr.after_start_time
+
+    assert result is True
+
+
+@pytest.mark.unit
+def test_before_end_time_uses_dt_util_now_not_host_clock():
+    """before_end_time must read dt_util.now(), not the naive host clock (#1161)."""
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time="05:00:00",
+        end_time_entity=None,
+    )
+
+    # end resolves far in the future relative to the real host clock.
+    end = dt.datetime(2090, 1, 1, 5, 0, 0)
+    # The dt_util sentinel is AFTER end — only a fix that reads dt_util.now()
+    # can make before_end_time False here (a host-clock read would still be
+    # well before `end` and stay True).
+    sentinel = dt.datetime(2095, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=end,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=sentinel,
+        ),
+    ):
+        result = mgr.before_end_time
+
+    assert result is False
+
+
+@pytest.mark.unit
+def test_normalize_to_today_uses_dt_util_now_date_not_host_clock():
+    """_normalize_to_today must anchor "today" on dt_util.now(), not the host clock.
+
+    Exercised via an entity-sourced start time (sun-entity date rollover,
+    #226's mechanism) so the assertion is on the resolved/cached start time —
+    which reveals which "today" was used to normalize — rather than on the
+    True/False comparison, keeping this test independent of wall-clock time-
+    of-day (#1161).
+    """
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="sensor.sun_next_rising",
+        end_time=None,
+        end_time_entity=None,
+    )
+
+    # dt_util sentinel's date is 2090-06-15.
+    sentinel = dt.datetime(2090, 6, 15, 12, 0, 0, tzinfo=dt.UTC)
+    # Entity reports "tomorrow" relative to the sentinel's date.
+    tomorrow_relative_to_sentinel = dt.datetime(2090, 6, 16, 6, 30, 0)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=tomorrow_relative_to_sentinel,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=sentinel,
+        ),
+    ):
+        mgr.after_start_time
+
+    # Normalized onto the dt_util sentinel's date (2090-06-15), not whatever
+    # the real host clock's date happens to be.
+    assert mgr._cached_start_time == dt.datetime(2090, 6, 15, 6, 30, 0)
+
+
+# ---------------------------------------------------------------------------
 # Sun entity rollover normalization (#226)
 # ---------------------------------------------------------------------------
 
@@ -468,11 +586,17 @@ def test_after_start_time_entity_normalizes_tomorrow_to_today():
         end_time_entity=None,
     )
 
-    today = dt.date(2024, 6, 15)
+    # Far-future year + a near-midnight time-of-day: this deliberately makes a
+    # host-clock evaluation land on the opposite side (real "now" is virtually
+    # never past 23:59:00 on whatever day it actually is), so a regression to
+    # the host clock is caught here rather than passing by date-order coincidence.
+    today = dt.date(2090, 6, 15)
     tomorrow = today + dt.timedelta(days=1)
-    now = dt.datetime(2024, 6, 15, 12, 0, 0)
-    # Simulate the sensor reporting tomorrow's sunrise (06:30 tomorrow)
-    tomorrow_sunrise = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 6, 30)
+    now = dt.datetime(2090, 6, 15, 23, 59, 0, tzinfo=dt.UTC)
+    # Simulate the sensor reporting tomorrow's sunrise (23:59 tomorrow)
+    tomorrow_sunrise = dt.datetime(
+        tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 0
+    )
 
     with (
         patch(
@@ -484,15 +608,13 @@ def test_after_start_time_entity_normalizes_tomorrow_to_today():
             return_value=tomorrow_sunrise,
         ),
         patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.dt"
-        ) as mock_dt,
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=now,
+        ),
     ):
-        mock_dt.date.today.return_value = today
-        mock_dt.datetime.now.return_value = now
-        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
-    # Normalized to 2024-06-15 06:30 — which is before noon (now), so True
+    # Normalized to 2090-06-15 23:59 — equal to "now", so True
     assert result is True
 
 
@@ -507,10 +629,12 @@ def test_after_start_time_entity_no_normalize_when_today():
         end_time_entity=None,
     )
 
-    today = dt.date(2024, 6, 15)
-    now = dt.datetime(2024, 6, 15, 12, 0, 0)
+    # Far-future year + a near-midnight time-of-day: see
+    # test_after_start_time_entity_normalizes_tomorrow_to_today for why.
+    today = dt.date(2090, 6, 15)
+    now = dt.datetime(2090, 6, 15, 23, 59, 0, tzinfo=dt.UTC)
     # Sunrise already passed today — entity still shows today's date
-    past_today = dt.datetime(today.year, today.month, today.day, 6, 30)
+    past_today = dt.datetime(today.year, today.month, today.day, 23, 58, 0)
 
     with (
         patch(
@@ -522,12 +646,10 @@ def test_after_start_time_entity_no_normalize_when_today():
             return_value=past_today,
         ),
         patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.dt"
-        ) as mock_dt,
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=now,
+        ),
     ):
-        mock_dt.date.today.return_value = today
-        mock_dt.datetime.now.return_value = now
-        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is True
@@ -544,8 +666,7 @@ def test_after_start_time_entity_future_today_returns_false():
         end_time_entity=None,
     )
 
-    today = dt.date(2024, 6, 15)
-    now = dt.datetime(2024, 6, 15, 10, 0, 0)
+    now = dt.datetime(2024, 6, 15, 10, 0, 0, tzinfo=dt.UTC)
     future_today = dt.datetime(2024, 6, 15, 11, 0, 0)
 
     with (
@@ -558,12 +679,10 @@ def test_after_start_time_entity_future_today_returns_false():
             return_value=future_today,
         ),
         patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.dt"
-        ) as mock_dt,
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=now,
+        ),
     ):
-        mock_dt.date.today.return_value = today
-        mock_dt.datetime.now.return_value = now
-        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is False
@@ -922,9 +1041,13 @@ def test_after_start_time_with_utc_iso_sun_sensor_string():
     Regression: before the fix, "04:46 UTC" was compared as naive 04:46 in a
     non-UTC zone, causing the window to activate hours early.
 
-    Setup: local timezone America/New_York (UTC-4 DST). Sunrise UTC is 04:46,
-    which is 00:46 local. Freeze "now" at 01:00 local (after 00:46 local sunrise)
-    so after_start_time should be True.
+    Setup: local timezone America/New_York (DST). The sensor's UTC instant
+    converts to 23:59:58 local on a far-future date; "now" is frozen one
+    second later on the same local date, so after_start_time should be True.
+    A far-future year + a near-midnight time-of-day deliberately makes a
+    host-clock evaluation land on the opposite side (real "now" is virtually
+    never past 23:59:58 on whatever day it actually is), so a regression to
+    the host clock is caught here rather than passing by date-order coincidence.
     """
 
     mgr = _make_manager()
@@ -936,23 +1059,21 @@ def test_after_start_time_with_utc_iso_sun_sensor_string():
     )
 
     ny = zoneinfo.ZoneInfo("America/New_York")
-    # "now" is 01:00 local NY — after 00:46 local sunrise
-    frozen_now = dt.datetime(2026, 4, 18, 1, 0, 0)
+    # "now" is 23:59:59 local NY on 2090-04-18 — one second after the
+    # 23:59:58 local sunrise (03:59:58 UTC on 2090-04-19 converted).
+    frozen_now = dt.datetime(2090, 4, 18, 23, 59, 59, tzinfo=ny)
 
     with (
         patch(
             "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="2026-04-18T04:46:00+00:00",
+            return_value="2090-04-19T03:59:58+00:00",
         ),
         patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny),
         patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.dt"
-        ) as mock_dt,
+            "custom_components.adaptive_cover_pro.managers.time_window.dt_util.now",
+            return_value=frozen_now,
+        ),
     ):
-        # "now" is 01:00 local NY — after 00:46 local sunrise (04:46 UTC converted)
-        mock_dt.datetime.now.return_value = frozen_now
-        mock_dt.date.today.return_value = dt.date(2026, 4, 18)
-        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is True
