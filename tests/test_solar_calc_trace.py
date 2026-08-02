@@ -104,6 +104,35 @@ class TestVerticalTrace:
         assert details["effective_distance_source"] == "glare_zone"
         assert details["effective_distance_m"] == pytest.approx(1.0)
 
+    def test_lintel_gate_branch(self, vertical_cover_instance):
+        """Lintel gate return (#1169) must share the same key set as every
+        other branch, and window_depth_contribution_m must carry the lintel
+        shadow height (window_depth * tan(elev) / cos(gamma)) in metres.
+        """
+        vertical_cover_instance.sol_elev = 60.0  # gamma stays 0 (win_azi==sol_azi)
+        vertical_cover_instance.vert_config.distance = 0.2
+        vertical_cover_instance.vert_config.h_win = 0.62
+        vertical_cover_instance.vert_config.window_depth = 0.18
+        result = vertical_cover_instance.calculate_position()
+        details = vertical_cover_instance._last_calc_details
+
+        # Pins the branch this test means to exercise: the gate fired.
+        assert result == pytest.approx(0.62)
+        assert set(details) == self._NORMAL_KEYS
+        expected_lintel_shadow = (
+            0.18 * np.tan(np.radians(60.0)) / np.cos(np.radians(0.0))
+        )
+        assert details["window_depth_contribution_m"] == pytest.approx(
+            expected_lintel_shadow, abs=1e-6
+        )
+        # The gate returns before the safety margin is applied, so it must
+        # still uphold the adjusted = base * margin relation every other
+        # branch does. Reverting that broke no test before this line existed.
+        assert details["adjusted_height_m"] == pytest.approx(
+            details["base_height_m"] * details["safety_margin"]
+        )
+        assert not _check_native_types(details)
+
 
 # ---------------------------------------------------------------------------
 # Tilt (cover_tilt)
