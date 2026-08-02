@@ -41,7 +41,7 @@ from custom_components.adaptive_cover_pro.templates import (
     render_condition_or_none,
     uses_acp_namespace,
 )
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError, TemplateError
 from tests._helpers.acp_namespace import make_acp_entry, seed_acp_row
 
 _LOGGER = logging.getLogger(__name__)
@@ -724,6 +724,94 @@ class TestAcpNamespace:
         with pytest.raises(AttributeError):
             ns._not_a_public_key
         assert getattr(ns, "__deepcopy__", "fallback") == "fallback"
+
+    @pytest.mark.parametrize("namespace", ["acp", "acp_state"])
+    @pytest.mark.parametrize("probe", ["jinja_pass_arg", "unsafe_callable"])
+    async def test_capability_probes_take_their_default(
+        self, hass: HomeAssistant, namespace, probe
+    ):
+        """Jinja/HA capability probes must not be answered as bad entity keys.
+
+        ``jinja2.utils._PassArg.from_obj`` does ``hasattr(obj, "jinja_pass_arg")``
+        and ``SandboxedEnvironment.is_safe_callable`` does
+        ``getattr(obj, "unsafe_callable", False)`` — both on the way to calling
+        an object. Neither name starts with an underscore, so both used to reach
+        the resolver and be reported to the user as a key they never wrote.
+        """
+        entry = make_acp_entry(hass, f"acp_ns_cap_{namespace}_{probe}")
+        ctx = build_acp_template_variables(hass, entry.entry_id, include_state=True)
+        ns = ctx[namespace]
+        assert getattr(ns, probe, "fallback") == "fallback"
+        assert hasattr(ns, probe) is False
+
+    async def test_unknown_key_message_survives_the_attribute_error_base(
+        self, hass: HomeAssistant
+    ):
+        """A missing key still raises ``UndefinedError`` with the same message.
+
+        The probe fix gives attribute-access failures an ``AttributeError`` base;
+        this pins that it did not weaken the key error itself, which several
+        tests and the wiki's failure-mode section describe verbatim.
+        """
+        entry = make_acp_entry(hass, "acp_ns_dual_base")
+        ctx = build_acp_template_variables(hass, entry.entry_id)
+        with pytest.raises(UndefinedError) as err:
+            ctx["acp"].nope
+        assert str(err.value) == (
+            "'nope' is not an Adaptive Cover Pro entity key "
+            "(instance Vertical Blind Dining Room Shade)"
+        )
+        with pytest.raises(AttributeError):
+            ctx["acp"].nope
+
+    @pytest.mark.parametrize(
+        ("template_str", "expected_fragment"),
+        [
+            ("{{ acp('sun_infront') }}", "'acp' namespace is not callable"),
+            ("{{ acp_state('sun_infront') }}", "'acp_state' namespace is not callable"),
+            (
+                "{% for k in acp %}{{ k }}{% endfor %}",
+                "'acp' namespace is not iterable",
+            ),
+            ("{{ 'sun_infront' in acp }}", "'acp' namespace is not iterable"),
+            ("{{ acp | list }}", "'acp' namespace is not iterable"),
+        ],
+    )
+    async def test_namespace_misuse_names_the_real_problem(
+        self, hass: HomeAssistant, template_str, expected_fragment
+    ):
+        """Calling or iterating the namespace must not be reported as a bad key.
+
+        Before this, ``{{ acp('x') }}`` failed with ``'jinja_pass_arg' is not an
+        Adaptive Cover Pro entity key`` and both iteration spellings failed with
+        ``'0' is not …`` — Python's legacy ``__getitem__(0)`` iteration protocol.
+        Every one of these is fail-soft either way; the fix is the message.
+        """
+        from homeassistant.helpers.template import Template
+
+        entry = make_acp_entry(hass, "acp_ns_misuse")
+        seed_acp_row(
+            hass, entry, "binary_sensor", "sun_motion", "dining_room_shade_sun_infront"
+        )
+        ctx = build_acp_template_variables(hass, entry.entry_id, include_state=True)
+        with pytest.raises(TemplateError) as err:
+            Template(template_str, hass).async_render(ctx)
+        assert expected_fragment in str(err.value)
+
+    async def test_bracket_form_still_reports_an_unknown_key(self, hass: HomeAssistant):
+        """``acp['nope']`` keeps the key error rather than degrading to undefined.
+
+        ``SandboxedEnvironment.getitem`` swallows ``AttributeError``, so item
+        access must keep raising a plain ``UndefinedError`` — otherwise the
+        bracket spelling the wiki documents would silently render nothing.
+        """
+        from homeassistant.helpers.template import Template
+
+        entry = make_acp_entry(hass, "acp_ns_bracket_miss")
+        ctx = build_acp_template_variables(hass, entry.entry_id)
+        with pytest.raises(TemplateError) as err:
+            Template("{{ acp['nope'] }}", hass).async_render(ctx)
+        assert "'nope' is not an Adaptive Cover Pro entity key" in str(err.value)
 
     async def test_state_namespace_is_withheld_unless_requested(
         self, hass: HomeAssistant

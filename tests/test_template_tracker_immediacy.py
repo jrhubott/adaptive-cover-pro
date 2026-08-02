@@ -34,7 +34,12 @@ from custom_components.adaptive_cover_pro.const import (
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
-from tests._helpers.acp_namespace import make_acp_entry, seed_sun_infront
+from tests._helpers.acp_namespace import (
+    acp_variables,
+    make_acp_entry,
+    seed_acp_row,
+    seed_sun_infront,
+)
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
 pytestmark = pytest.mark.integration
@@ -389,6 +394,17 @@ async def test_self_referencing_gate_template_refresh_is_bounded(
             CONF_DAYTIME_GATE_TEMPLATE: _LOOPING_GATE_TEMPLATE,
         },
     )
+    # Seed the row the gate template references, then ask the *production*
+    # resolver what entity_id that is. The consumer has to be subscribed before
+    # setup — it is what keeps each flip in its own pass — so the id cannot be
+    # read back after the platform registers, and hardcoding it would let an
+    # entity-naming change quietly unsubscribe the consumer. The loop would then
+    # die out and this test would fail as ``per_window == [0, 0, 0, 0, 0]``,
+    # reading as a coalescer regression rather than a broken fixture.
+    control_status = seed_acp_row(
+        hass, entry, "sensor", "control_status", "dining_room_shade_control_status"
+    )
+    assert control_status == acp_variables(hass, entry)["acp_entity"]("control_status")
 
     def _async_consumer(_event) -> None:
         """Stand in for a real install's async consumer of the sensor.
@@ -399,9 +415,7 @@ async def test_self_referencing_gate_template_refresh_is_bounded(
         pairs of them.
         """
 
-    async_track_state_change_event(
-        hass, ["sensor.dining_room_shade_control_status"], _async_consumer
-    )
+    unsub = async_track_state_change_event(hass, [control_status], _async_consumer)
 
     refreshes: list[None] = []
     real_refresh = AdaptiveDataUpdateCoordinator.async_refresh
@@ -412,34 +426,44 @@ async def test_self_referencing_gate_template_refresh_is_bounded(
             return
         await real_refresh(self)
 
-    with patch.object(
-        AdaptiveDataUpdateCoordinator, "async_refresh", _counting_refresh
-    ):
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        settled = len(refreshes)
-        assert settled <= 8, (
-            f"Setup drove {settled} refreshes — the self-referencing gate template "
-            "is spinning instead of being coalesced."
-        )
-
-        per_window: list[int] = []
-        for _ in range(5):
-            before = len(refreshes)
-            freezer.tick(1.2)
-            async_fire_time_changed(hass)
+    try:
+        with patch.object(
+            AdaptiveDataUpdateCoordinator, "async_refresh", _counting_refresh
+        ):
+            await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
-            per_window.append(len(refreshes) - before)
 
-        assert per_window == [1, 1, 1, 1, 1], (
-            "Each cooldown window must yield exactly one refresh: >1 means the "
-            "loop is not bounded, 0 means the deferred flip was dropped instead "
-            f"of deferred. Got {per_window}."
-        )
+            assert hass.states.get(control_status) is not None, (
+                "Precondition: the real control_status sensor must publish under "
+                f"{control_status!r}, the entity_id the stand-in consumer is "
+                "subscribed to. Without that the loop never reaches the consumer "
+                "and every assertion below passes or fails for fixture reasons."
+            )
 
-    await hass.config_entries.async_unload(entry.entry_id)
-    await hass.async_block_till_done()
+            settled = len(refreshes)
+            assert settled <= 8, (
+                f"Setup drove {settled} refreshes — the self-referencing gate "
+                "template is spinning instead of being coalesced."
+            )
+
+            per_window: list[int] = []
+            for _ in range(5):
+                before = len(refreshes)
+                freezer.tick(1.2)
+                async_fire_time_changed(hass)
+                await hass.async_block_till_done()
+                per_window.append(len(refreshes) - before)
+
+            assert per_window == [1, 1, 1, 1, 1], (
+                "Each cooldown window must yield exactly one refresh: >1 means the "
+                "loop is not bounded, 0 means the deferred flip was dropped instead "
+                f"of deferred. Got {per_window}."
+            )
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+    finally:
+        unsub()
 
 
 async def test_namespace_context_is_passed_to_every_tracker(

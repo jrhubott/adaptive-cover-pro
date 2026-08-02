@@ -119,28 +119,97 @@ def uses_acp_namespace(template_str) -> bool:
     )
 
 
+class _AcpMissingKeyAttributeError(UndefinedError, AttributeError):
+    """An unresolvable namespace key, raised from *attribute* access.
+
+    Two bases, deliberately:
+
+    * as an ``UndefinedError`` (a ``TemplateError``) a bad key still fails the
+      render on this module's normal fail-soft path, with the message naming
+      the key and the instance;
+    * as an ``AttributeError`` it also satisfies ``hasattr(obj, name)`` /
+      ``getattr(obj, name, default)``, which is how Jinja and Home Assistant
+      probe an object on the way to calling it — ``jinja_pass_arg``
+      (``jinja2.utils._PassArg.from_obj``), ``unsafe_callable`` and
+      ``alters_data`` (``SandboxedEnvironment.is_safe_callable``). Those probes
+      must take their default. Without the second base they surfaced the
+      probe's own name as the failure, so ``{{ acp('sun_infront') }}`` told the
+      user ``'jinja_pass_arg' is not an Adaptive Cover Pro entity key``.
+
+    One rule instead of a list of probe names, so a future Jinja or HA release
+    inventing another probe cannot reintroduce the misdirection.
+
+    :meth:`_AcpNamespaceBase.__getitem__` raises a plain ``UndefinedError``
+    instead: ``SandboxedEnvironment.getitem`` swallows ``AttributeError``, so
+    ``{{ acp['nope'] }}`` would degrade into a generic undefined if this class
+    were used there too.
+    """
+
+
 class _AcpNamespaceBase:
     """Attribute/item access facade over a single ``_lookup`` implementation.
 
     ``acp.sun_infront`` and ``acp['sun_infront']`` are the same lookup, so the
     access plumbing lives here once and each concrete namespace supplies only
     what a resolved key yields.
+
+    The rest of the class is misuse handling. Anything that is *not* a key
+    lookup — calling the namespace, iterating it, testing membership — used to
+    fall through ``__getattr__``/``__getitem__`` and be reported as a bad entity
+    key, naming a token the user never wrote (``unsafe_callable``, ``0``). Each
+    of those surfaces is answered explicitly below so the error names what the
+    template actually did wrong.
     """
+
+    #: How this namespace is spelled in a template, and how to use it properly.
+    #: Only ever read to build a misuse message.
+    _NAMESPACE = "acp"
+    _USAGE = "reference a key with acp.<key> or acp_entity('<key>')"
 
     def _lookup(self, key: str) -> str:
         # Abstract: every concrete namespace overrides it, so this never runs.
         raise NotImplementedError  # pragma: no cover
 
     def __getattr__(self, name: str) -> str:
-        # Private / dunder probes (the Jinja sandbox's ``unsafe_callable`` and
-        # ``alters_data`` checks, copy, pickle) must read as ordinary missing
-        # attributes — not as a bad template key.
+        """Resolve ``acp.<key>``; report anything unresolvable as missing too.
+
+        Private / dunder probes (copy, pickle, ``__html__``) are ordinary
+        missing attributes. Everything else goes through the one resolve path,
+        and a failure is re-raised as :class:`_AcpMissingKeyAttributeError` so a
+        Jinja/HA capability probe landing here takes its default instead of
+        surfacing the probe's own name to the user. The message is unchanged.
+        """
         if name.startswith("_"):
             raise AttributeError(name)
-        return self._lookup(name)
+        try:
+            return self._lookup(name)
+        except UndefinedError as err:
+            raise _AcpMissingKeyAttributeError(*err.args) from None
 
     def __getitem__(self, key: str) -> str:
         return self._lookup(key)
+
+    def __call__(self, *_args: Any, **_kwargs: Any) -> str:
+        """Reject ``{{ acp('sun_infront') }}``, the natural ``acp_entity`` typo."""
+        raise UndefinedError(self._misuse("is not callable"))
+
+    def __iter__(self):
+        """Reject ``{% for k in acp %}`` and ``'key' in acp``.
+
+        Without this, Python falls back to the legacy ``__getitem__(0)``
+        iteration protocol for both spellings and the user is told ``'0' is not
+        an Adaptive Cover Pro entity key``. The namespace deliberately does not
+        enumerate: which keys an instance publishes depends on its feature
+        gates, and a template that loops over them is not something to encourage.
+        """
+        raise UndefinedError(self._misuse("is not iterable"))
+
+    def _misuse(self, problem: str) -> str:
+        """Build a misuse message that names the namespace and the way out."""
+        return (
+            f"The Adaptive Cover Pro '{self._NAMESPACE}' namespace {problem} — "
+            f"{self._USAGE}"
+        )
 
 
 class _AcpEntityNamespace(_AcpNamespaceBase):
@@ -197,6 +266,9 @@ class _AcpStateNamespace(_AcpNamespaceBase):
     path. Only ever handed to untracked numeric renders — see
     :func:`build_acp_template_variables`.
     """
+
+    _NAMESPACE = "acp_state"
+    _USAGE = "reference a key with acp_state.<key>"
 
     def __init__(self, hass: HomeAssistant, entities: _AcpEntityNamespace) -> None:
         """Bind to *hass* and the entity namespace that does the resolving."""

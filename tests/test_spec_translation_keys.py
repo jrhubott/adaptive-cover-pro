@@ -176,13 +176,22 @@ class TestSensorSpecTranslationKeys:
         )
 
 
-def _registered_translation_keys() -> dict[str, frozenset[str]]:
-    """Every ``(domain → translation_keys)`` pair the platforms really register.
+def _registered_entities() -> dict[str, dict[str, str | None]]:
+    """Every entity the platforms register, as ``domain → {name: translation_key}``.
 
     Read off the same spec tuples and entity classes ``async_setup_entry`` uses,
     so a renamed key shows up here without anyone updating a literal list. The
     glare-zone switches are built dynamically, so they are produced by calling
     the real builder against an entry with every zone slot named.
+
+    *name* is the spec's stable identifier — the sensor spec ``suffix``, the
+    switch / binary-sensor ``key``. *translation_key* is what the ``acp``
+    resolver matches on, and is ``None`` for a spec that sets none. Carrying
+    both is what makes the exposed-or-withheld guard below non-vacuous:
+    enumerating only the specs that *have* a translation_key let the nine
+    sensors that don't (``sun_position``, ``Cover_Position``,
+    ``last_cover_action`` …) escape the forced decision entirely, so a new
+    sensor added without one would have escaped it too.
     """
     glare_entry = MagicMock()
     glare_entry.data = {CONF_SENSOR_TYPE: CoverType.BLIND}
@@ -190,32 +199,54 @@ def _registered_translation_keys() -> dict[str, frozenset[str]]:
         CONF_ENABLE_GLARE_ZONES: True,
         **{f"glare_zone_{idx}_name": f"Zone {idx}" for idx in GLARE_ZONE_SLOT_NUMBERS},
     }
+    mismatch_key = _class_translation_key(AdaptiveCoverPositionMismatchSensor)
 
     return {
-        "binary_sensor": frozenset(
-            {s.key for s in _BINARY_SENSOR_SPECS}
-            | {_class_translation_key(AdaptiveCoverPositionMismatchSensor)}
-        ),
-        "switch": frozenset(
-            {s.key for s in _SWITCH_SPECS}
-            | {s.key for s in _glare_zone_specs(glare_entry)}
-        ),
-        "sensor": frozenset(
-            s.translation_key
+        "binary_sensor": {
+            **{s.key: s.key for s in _BINARY_SENSOR_SPECS},
+            mismatch_key: mismatch_key,
+        },
+        "switch": {
+            **{s.key: s.key for s in _SWITCH_SPECS},
+            **{s.key: s.key for s in _glare_zone_specs(glare_entry)},
+        },
+        "sensor": {
+            s.suffix: getattr(s, "translation_key", None)
             for s in (*_STANDARD_SPECS, *_DIAGNOSTIC_SPECS)
-            if getattr(s, "translation_key", None)
-        ),
+        },
     }
 
 
-# Registered translation_keys deliberately kept OUT of the ``acp`` namespace
-# (issue #1159). All three are continuously-varying: a tracked template reading
-# one would re-render every cycle and drive its own refresh. Adding an entity
-# without deciding either way is what the guard below is for.
+# Registered entities deliberately kept OUT of the ``acp`` namespace (issue
+# #1159), listed by the spec name ``_registered_entities`` reports.
+#
+# Every one is continuously-varying, a timestamp, or an event echo: a tracked
+# template reading one would re-render every cycle and drive its own refresh.
+# The nine with no translation_key at all are additionally unresolvable by a
+# translation_key-keyed resolver, so exposing them would not work even if we
+# wanted to. Adding an entity without deciding either way is what the guard
+# below is for.
 _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
     "binary_sensor": frozenset(),
     "switch": frozenset(),
-    "sensor": frozenset({"solar_calculation", "decision_trace", "position_forecast"}),
+    "sensor": frozenset(
+        {
+            # Have a translation_key, deliberately not exposed.
+            "solar_calculation",
+            "decision_trace",
+            "position_forecast",
+            # No translation_key — unresolvable by the namespace resolver.
+            "Cover_Position",
+            "Cover_Tilt",
+            "Start Sun",
+            "End Sun",
+            "sun_position",
+            "last_skipped_action",
+            "last_cover_action",
+            "manual_override_end_time",
+            "position_verification",
+        }
+    ),
 }
 
 
@@ -230,11 +261,14 @@ class TestAcpNamespaceKeys:
         updating the namespace map turns every template that references it into
         a permanent render failure — with no other test noticing.
         """
-        registered = _registered_translation_keys()
+        resolvable = {
+            domain: {key for key in entities.values() if key}
+            for domain, entities in _registered_entities().items()
+        }
         unresolvable = [
             f"{key!r} → {domain}.{translation_key!r}"
             for key, (domain, translation_key) in ACP_TEMPLATE_ENTITY_KEYS.items()
-            if translation_key not in registered.get(domain, frozenset())
+            if translation_key not in resolvable.get(domain, set())
         ]
         assert not unresolvable, (
             "templates.ACP_TEMPLATE_ENTITY_KEYS names entities no platform "
@@ -244,9 +278,14 @@ class TestAcpNamespaceKeys:
             "namespace map and the wiki page) or the entity was removed."
         )
 
-    def test_every_registered_key_is_exposed_or_explicitly_withheld(self) -> None:
-        """A new entity forces a decision instead of silently missing the namespace."""
-        registered = _registered_translation_keys()
+    def test_every_registered_entity_is_exposed_or_explicitly_withheld(self) -> None:
+        """A new entity forces a decision instead of silently missing the namespace.
+
+        Every spec counts, including one that sets no ``translation_key``. Such a
+        spec can never be reached by the resolver, so it must be listed as
+        withheld — which is the moment somebody notices that adding a
+        translation_key is what it would take to expose it.
+        """
         exposed: dict[str, set[str]] = {
             "binary_sensor": set(),
             "switch": set(),
@@ -255,17 +294,23 @@ class TestAcpNamespaceKeys:
         for domain, translation_key in ACP_TEMPLATE_ENTITY_KEYS.values():
             exposed[domain].add(translation_key)
 
-        undecided = {
-            domain: sorted(keys - exposed[domain] - _WITHHELD_FROM_NAMESPACE[domain])
-            for domain, keys in registered.items()
-        }
-        undecided = {domain: keys for domain, keys in undecided.items() if keys}
+        undecided = {}
+        for domain, entities in _registered_entities().items():
+            withheld = _WITHHELD_FROM_NAMESPACE[domain]
+            names = sorted(
+                name
+                for name, translation_key in entities.items()
+                if translation_key not in exposed[domain] and name not in withheld
+            )
+            if names:
+                undecided[domain] = names
         assert not undecided, (
             f"These registered entities are neither in the acp namespace nor "
             f"listed as deliberately withheld: {undecided}\n"
             "Add them to templates.ACP_TEMPLATE_ENTITY_KEYS (and the "
             "Template-Self-References wiki page), or to _WITHHELD_FROM_NAMESPACE "
-            "here with the reason."
+            "here with the reason. A spec with no translation_key cannot be "
+            "resolved by the namespace at all, so it can only be withheld."
         )
 
 

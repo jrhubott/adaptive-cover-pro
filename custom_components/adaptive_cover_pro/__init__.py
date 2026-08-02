@@ -166,24 +166,22 @@ def _coalesce_namespace_refreshes(
     ACP's own output, and its unthrottled immediacy is the contract shipped
     across #577/#563/#639/#632/#974.
 
-    The trailing run replays the *newest* ``(event, updates)`` pair, not the one
-    that opened the window — the tracked result only signals *that* a template
-    changed and every action re-reads live state, so the freshest signal is the
-    only one worth keeping.
+    Both tracker arguments are dropped rather than queued for replay. Every one
+    of the five actions this wraps ignores ``event`` and ``updates`` and re-reads
+    live state instead — the tracked result only signals *that* a template
+    changed — so a coalesced run has nothing to carry forward and calls the
+    action with the same empty signal a fresh render would give it.
     """
-    latest: list[tuple[Any, Any]] = []
 
-    async def _run_latest() -> None:
-        event, updates = latest[-1]
-        latest.clear()
-        await action(event, updates)
+    async def _run_action() -> None:
+        await action(None, [])
 
     debouncer = Debouncer(
         hass,
         _LOGGER,
         cooldown=ACP_NAMESPACE_REFRESH_COOLDOWN,
         immediate=True,
-        function=_run_latest,
+        function=_run_action,
     )
     # Cancels the pending trailing timer, so an unload can never leave one
     # scheduled against a torn-down coordinator. Guarded by
@@ -197,8 +195,7 @@ def _coalesce_namespace_refreshes(
         ACP_NAMESPACE_REFRESH_COOLDOWN,
     )
 
-    async def _coalesced(event, updates) -> None:
-        latest.append((event, updates))
+    async def _coalesced(_event, _updates) -> None:
         await debouncer.async_call()
 
     return _coalesced
