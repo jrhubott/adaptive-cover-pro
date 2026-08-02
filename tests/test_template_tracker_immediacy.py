@@ -12,15 +12,23 @@ same context.
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.helpers.event import async_track_state_change_event
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.adaptive_cover_pro.const import (
+    BLANK_TIME,
     CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_END_TIME,
     CONF_MOTION_TEMPLATE,
+    CONF_START_TIME,
 )
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
@@ -128,12 +136,16 @@ async def test_acp_namespace_template_tracker_fires_on_own_entity_change(
         )
 
 
-async def test_rate_limit_only_on_namespace_templates(hass: HomeAssistant) -> None:
-    """Only namespace templates carry the loop-guard rate limit.
+async def test_track_template_never_carries_a_rate_limit(hass: HomeAssistant) -> None:
+    """``TrackTemplate.rate_limit`` stays unset — it cannot guard a self-reference.
 
-    A self-reference can drive its own input and the coordinator has no
-    debouncer, so those get a 1 s trailing-render cap. Everything else keeps the
-    existing byte-for-byte behaviour: no rate limit at all.
+    HA's ``_rate_limit_for_event`` (``homeassistant/helpers/event.py``) opens with
+    *"Specifically referenced entities are excluded from the rate limit"* and
+    returns ``None`` whenever the entity that changed is in
+    ``RenderInfo.entities``. ``is_state(acp.sun_infront, …)`` puts exactly that
+    entity_id there, so a ``rate_limit`` on these trackers would be inert — it
+    would read as protection while providing none. The real guard is the refresh
+    coalescer; this test exists so nobody re-adds the decoration.
     """
     acp_template = "{{ is_state(acp.sun_infront, 'on') }}"
     plain_template = "{{ states('sensor.lux') | int > 100 }}"
@@ -168,13 +180,182 @@ async def test_rate_limit_only_on_namespace_templates(hass: HomeAssistant) -> No
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    assert (
-        captured[acp_template] == 1.0
-    ), "A template using the acp namespace must carry the loop-guard rate limit."
+    assert captured[acp_template] is None, (
+        "HA bypasses TrackTemplate.rate_limit for a specifically-referenced "
+        "entity, which is exactly what acp.<key> resolves to — do not set it."
+    )
     assert captured[plain_template] is None, (
         "A template that does not use the acp namespace must keep its unthrottled "
         "immediacy — no rate limit."
     )
+
+
+async def test_only_namespace_templates_have_their_refreshes_coalesced(
+    hass: HomeAssistant, freezer
+) -> None:
+    """A namespace template's action is throttled; a plain one's is not.
+
+    The leading edge is immediate for both — that is the whole immediacy
+    contract. The difference is what happens to the *second* and *third* flip
+    inside one cooldown: the plain template still runs its action once per flip,
+    while the namespace template collapses them into a single trailing run once
+    the window closes. Nothing is dropped; the trailing run is asserted.
+    """
+    acp_template = "{{ is_state(acp.sun_infront, 'on') }}"
+    plain_template = "{{ is_state('input_boolean.guests', 'on') }}"
+    entry = _make_entry(
+        hass,
+        "tt_coalesce_01",
+        {
+            CONF_MOTION_TEMPLATE: acp_template,
+            CONF_DAYTIME_GATE_TEMPLATE: plain_template,
+        },
+    )
+    sun_infront = _preseed_sun_infront(hass, entry)
+    hass.states.async_set(sun_infront, "off")
+    hass.states.async_set("input_boolean.guests", "off")
+
+    with (
+        patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "async_check_motion_template_change",
+            new_callable=AsyncMock,
+        ) as acp_fired,
+        patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "async_check_daytime_gate_template_change",
+            new_callable=AsyncMock,
+        ) as plain_fired,
+        _patch_coordinator_refresh(),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        acp_fired.reset_mock()
+        plain_fired.reset_mock()
+
+        # Three rendered-result flips each, all inside one cooldown window.
+        for state in ("on", "off", "on"):
+            hass.states.async_set(sun_infront, state)
+            hass.states.async_set("input_boolean.guests", state)
+            await hass.async_block_till_done()
+
+        assert plain_fired.call_count == 3, (
+            "A plain template keeps one action per flip — the immediacy contract "
+            "shipped across #577/#563/#639/#632/#974 is untouched."
+        )
+        assert acp_fired.call_count == 1, (
+            "A namespace template runs its leading flip immediately and coalesces "
+            "the rest of the window into one deferred run."
+        )
+
+        freezer.tick(1.2)
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+        assert acp_fired.call_count == 2, (
+            "The coalesced flips must still produce a trailing run when the "
+            "window closes — coalescing drops nothing."
+        )
+
+
+#: The canonical reachable self-reference loop (issue #1159 review). The gate
+#: template reads ``control_status``; a True verdict opens the time window,
+#: which makes ``control_status`` stop reporting ``outside_time_window``, which
+#: renders the template False, which closes the window again. A true 2-cycle
+#: with no fixed point.
+_LOOPING_GATE_TEMPLATE = "{{ is_state(acp.control_status, 'outside_time_window') }}"
+
+#: Refreshes past this many mean the loop is running away. The counting stub
+#: stops calling through at the cap instead of letting an unguarded regression
+#: hang the suite.
+_REFRESH_CAP = 60
+
+
+async def test_self_referencing_gate_template_refresh_is_bounded(
+    hass: HomeAssistant, freezer
+) -> None:
+    """The real control_status feedback loop settles at one refresh per window.
+
+    Everything here is production wiring: the real daytime-gate template, the
+    real tracker, the real ``sensor.…_control_status``, the real coordinator
+    refresh. Only two things are instrumented — a counter around
+    ``async_refresh`` (which stops calling through at ``_REFRESH_CAP`` so a
+    regression fails fast instead of hanging), and one asynchronously-dispatched
+    consumer of the control-status sensor.
+
+    That consumer matters. A real install always has one (the recorder, a
+    template sensor, an automation), and it is what keeps every flip visible to
+    the tracker. With only synchronous callbacks on the bus the loop happens to
+    die out after a handful of iterations and the test would pass vacuously;
+    with one, the *unguarded* loop is unbounded — measured at >9000 refreshes
+    before the harness timed out, versus the five below.
+
+    The start/end clock is blanked so ``is_active`` reduces to the gate verdict
+    alone; otherwise the loop's existence would depend on the machine's local
+    timezone (``TimeWindowManager.before_end_time`` reads a naive
+    ``datetime.now()``).
+    """
+    freezer.move_to(dt.datetime(2026, 6, 15, 17, 0, 0, tzinfo=dt.UTC))
+    entry = _make_entry(
+        hass,
+        "tt_loop_01",
+        {
+            CONF_START_TIME: BLANK_TIME,
+            CONF_END_TIME: BLANK_TIME,
+            CONF_DAYTIME_GATE_TEMPLATE: _LOOPING_GATE_TEMPLATE,
+        },
+    )
+
+    def _async_consumer(_event) -> None:
+        """Stand in for a real install's async consumer of the sensor.
+
+        Deliberately *not* ``@callback``-decorated — HA dispatches an
+        undecorated listener off the event loop, and that extra hop is what
+        keeps each flip in its own pass instead of letting the bus collapse
+        pairs of them.
+        """
+
+    async_track_state_change_event(
+        hass, ["sensor.dining_room_shade_control_status"], _async_consumer
+    )
+
+    refreshes: list[None] = []
+    real_refresh = AdaptiveDataUpdateCoordinator.async_refresh
+
+    async def _counting_refresh(self) -> None:
+        refreshes.append(None)
+        if len(refreshes) > _REFRESH_CAP:
+            return
+        await real_refresh(self)
+
+    with patch.object(
+        AdaptiveDataUpdateCoordinator, "async_refresh", _counting_refresh
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        settled = len(refreshes)
+        assert settled <= 8, (
+            f"Setup drove {settled} refreshes — the self-referencing gate template "
+            "is spinning instead of being coalesced."
+        )
+
+        per_window: list[int] = []
+        for _ in range(5):
+            before = len(refreshes)
+            freezer.tick(1.2)
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+            per_window.append(len(refreshes) - before)
+
+        assert per_window == [1, 1, 1, 1, 1], (
+            "Each cooldown window must yield exactly one refresh: >1 means the "
+            "loop is not bounded, 0 means the deferred flip was dropped instead "
+            f"of deferred. Got {per_window}."
+        )
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
 
 async def test_namespace_context_is_passed_to_every_tracker(

@@ -1434,10 +1434,19 @@ class TestMotionTemplate:
         await hass.async_block_till_done()
         assert mgr.template_active is False
 
-    async def test_occupancy_template_without_context_is_no_opinion(self, hass):
-        """No context threaded in → the namespace is undefined → falsy, never a crash."""
+    async def test_occupancy_template_without_context_reads_as_unoccupied(self, hass):
+        """No context threaded in → the namespace is undefined → *not occupied*.
+
+        Emphatically NOT "no opinion". ``template_active`` goes through
+        ``render_condition(default=False)``, so a failed render is a substantive
+        verdict: with no companion sensors ``is_motion_detected`` is False and
+        the motion-timeout handler can take the cover. The tri-state
+        ``render_condition_or_none`` / ``fold_condition_template`` path is the
+        one that abstains; this field does not use it.
+        """
         mgr = self._mgr(hass, template="{{ is_state(acp.sun_infront, 'on') }}")
         assert mgr.template_active is False
+        assert mgr.is_motion_detected is False
 
 
 @pytest.mark.asyncio

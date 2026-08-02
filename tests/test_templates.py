@@ -773,7 +773,15 @@ class TestAcpNamespace:
             ), f"alias {alias!r} shadows a canonical key"
 
     def test_key_map_records_its_own_translation_key(self):
-        """Canonical key == translation_key for every platform (the #1159 premise)."""
+        """Canonical key == translation_key, on a domain some platform serves.
+
+        Only the map's internal shape — deliberately, because it is checked
+        against the platforms themselves in
+        ``test_spec_translation_keys.TestAcpNamespaceKeys``. That is the canary
+        that catches a key renamed in ``switch.py`` / ``sensor.py`` /
+        ``binary_sensor.py``; this one only keeps the map's two columns from
+        drifting apart.
+        """
         for key, (domain, translation_key) in ACP_TEMPLATE_ENTITY_KEYS.items():
             assert translation_key == key
             assert domain in ("binary_sensor", "switch", "sensor")

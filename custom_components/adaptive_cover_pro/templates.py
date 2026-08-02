@@ -99,24 +99,20 @@ ACP_TEMPLATE_KEY_ALIASES: dict[str, str] = {
     "irradiance": "irradiance_toggle",
 }
 
-#: Seconds. Applied to a tracked template that uses the namespace, and only to
-#: those — a self-reference can drive its own input (gate on ``control_status``,
-#: invert ``motion_status``) and the coordinator has no debouncer. HA's
-#: ``KeyedRateLimit`` fires the first change after a quiet window immediately
-#: and defers only within-window re-renders to a trailing render, so a single
-#: flip keeps full immediacy. Templates that do not use the namespace get no
-#: rate limit at all, leaving the existing immediacy contract untouched.
-ACP_NAMESPACE_RATE_LIMIT: float = 1.0
-
 _ACP_NAMESPACE_RE = re.compile(r"\bacp(?:_entity|_state)?\b")
 
 
 def uses_acp_namespace(template_str) -> bool:
     """Return True when *template_str* references the ``acp`` namespace.
 
-    Deliberately a cheap textual test rather than a Jinja parse: it only drives
-    the tracked-template rate limit, where a false positive costs at most a 1 s
-    trailing render and a false negative is what we must not have.
+    Selects which tracked templates get the refresh coalescer in
+    ``__init__._coalesce_namespace_refreshes`` — a self-reference is the one
+    shape that can drive its own input, so it is the one shape whose refreshes
+    need bounding. Everything else keeps its untouched immediacy.
+
+    Deliberately a cheap textual test rather than a Jinja parse: a false
+    positive costs at most a one-second trailing refresh on a template that
+    never needed it, and a false negative is what we must not have.
     """
     return isinstance(template_str, str) and bool(
         _ACP_NAMESPACE_RE.search(template_str)

@@ -10,6 +10,7 @@ from homeassistant.const import EVENT_CALL_SERVICE, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import (
     TrackTemplate,
     async_track_state_change_event,
@@ -86,7 +87,6 @@ from .helpers import (
 )
 from .profile_link import _copy_profile_to_cover, _covers_linked_to
 from .templates import (
-    ACP_NAMESPACE_RATE_LIMIT,
     build_acp_template_variables,
     is_template_string,
     uses_acp_namespace,
@@ -129,6 +129,78 @@ async def async_initialize_integration(
     return True
 
 
+#: Seconds. The floor on how often one tracked template that references the
+#: ``acp`` namespace may drive a coordinator refresh (issue #1159).
+ACP_NAMESPACE_REFRESH_COOLDOWN: float = 1.0
+
+
+def _coalesce_namespace_refreshes(
+    hass: HomeAssistant,
+    entry: AdaptiveConfigEntry,
+    action: Callable,
+    description: str,
+) -> Callable:
+    """Wrap a self-referencing template's tracker action in a leading throttle.
+
+    **Do not "simplify" this back to ``TrackTemplate.rate_limit``.** That field
+    cannot do this job: HA's ``_rate_limit_for_event``
+    (``homeassistant/helpers/event.py``) starts with *"Specifically referenced
+    entities are excluded from the rate limit"* and returns ``None`` whenever
+    the entity that changed is in ``RenderInfo.entities`` — and
+    ``is_state(acp.control_status, …)`` puts exactly that entity_id there. A
+    ``rate_limit`` on these trackers is dead weight; six flips inside one second
+    still invoke the action six times.
+
+    So the guard sits one step later, on the action the tracker invokes — which
+    is where the unbounded work actually is, because every one of these actions
+    ends in ``coordinator.async_refresh()`` and the coordinator has no
+    debouncer. HA's :class:`~homeassistant.helpers.debounce.Debouncer` with
+    ``immediate=True`` is a leading-edge throttle: the first flip after a quiet
+    ``ACP_NAMESPACE_REFRESH_COOLDOWN`` runs straight away, so a self-reference
+    keeps the same sensor-grade immediacy as any other template; flips inside
+    that window collapse into a single **trailing** run once it closes, so
+    nothing is lost and the ``template → refresh → ACP entity writes → template``
+    cycle settles to one refresh per second instead of spinning.
+
+    Only namespace templates are wrapped. A plain template cannot be driven by
+    ACP's own output, and its unthrottled immediacy is the contract shipped
+    across #577/#563/#639/#632/#974.
+
+    The trailing run replays the *newest* ``(event, updates)`` pair, not the one
+    that opened the window — the tracked result only signals *that* a template
+    changed and every action re-reads live state, so the freshest signal is the
+    only one worth keeping.
+    """
+    latest: list[tuple[Any, Any]] = []
+
+    async def _run_latest() -> None:
+        event, updates = latest[-1]
+        latest.clear()
+        await action(event, updates)
+
+    debouncer = Debouncer(
+        hass,
+        _LOGGER,
+        cooldown=ACP_NAMESPACE_REFRESH_COOLDOWN,
+        immediate=True,
+        function=_run_latest,
+    )
+    # Cancels the pending trailing timer, so an unload can never leave one
+    # scheduled against a torn-down coordinator.
+    entry.async_on_unload(debouncer.async_shutdown)
+    _LOGGER.debug(
+        "%s references the acp namespace — coalescing its refreshes to %ss",
+        description,
+        ACP_NAMESPACE_REFRESH_COOLDOWN,
+    )
+
+    async def _coalesced(event, updates) -> None:
+        latest.append((event, updates))
+        await debouncer.async_call()
+
+    return _coalesced
+
+
 def _register_template_tracker(
     hass: HomeAssistant,
     entry: AdaptiveConfigEntry,
@@ -146,11 +218,14 @@ def _register_template_tracker(
 
     Every tracker gets the same ``acp`` render context the managers use (#1159),
     built from the one factory so the tracker's render and the cycle render can
-    never disagree. A template that actually uses the namespace additionally
-    gets the loop-guard rate limit; everything else stays unthrottled.
+    never disagree. A template that actually *uses* the namespace additionally
+    gets its refreshes coalesced — see :func:`_coalesce_namespace_refreshes` for
+    why the guard lives on the action and not on ``TrackTemplate.rate_limit``.
     """
     if not is_template_string(template_str):
         return
+    if uses_acp_namespace(template_str):
+        action = _coalesce_namespace_refreshes(hass, entry, action, description)
     try:
         _track_info = async_track_template_result(
             hass,
@@ -158,11 +233,6 @@ def _register_template_tracker(
                 TrackTemplate(
                     Template(template_str, hass),
                     build_acp_template_variables(hass, entry.entry_id),
-                    (
-                        ACP_NAMESPACE_RATE_LIMIT
-                        if uses_acp_namespace(template_str)
-                        else None
-                    ),
                 )
             ],
             action,
