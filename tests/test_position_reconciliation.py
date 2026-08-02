@@ -353,6 +353,11 @@ async def test_reconcile_no_dispatch_after_same_position_skip_records_target(
     await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
 
     mock_hass.services.async_call.assert_not_called()
+    # Strengthen beyond "no service call": prove reconciliation actually
+    # reached step 7's match branch (target == actual), not merely that it
+    # bailed out early for an unrelated reason. retry_count == 0 alone is
+    # vacuous — that's its default value, never perturbed in this test.
+    assert svc.get_diagnostics("cover.test")["at_target"] is True
     assert svc.state("cover.test").retry_count == 0
 
 

@@ -1665,22 +1665,49 @@ class CoverCommandService:
                 )
             )
         ):
+            # Book the target even though nothing is dispatched (issue #1158),
+            # so get_diagnostics()["at_target"] and the Lovelace rails see a
+            # value instead of a permanent None. Record `_current` rather than
+            # `_plan.routed_target` whenever they diverge — only possible in
+            # this gate's endpoint-tolerance arm (`_current` within
+            # `_position_tolerance` of 0/100 but not exactly on it). Recording
+            # the routed value there would leave target != actual, which the
+            # manual-override detector's narrower, POSITION_TOLERANCE_PERCENT-
+            # floored threshold can then read as a user touch on a cover ACP
+            # never dispatched to (#546/#654). Every other arm already has
+            # `_current == _plan.routed_target`, or `_current` is unusable
+            # (None / a synthetic open-close mapping) and this collapses to
+            # `_plan.routed_target` — the #1095 arm-2 value.
+            _skip_target = (
+                _current
+                if (
+                    _current is not None
+                    and not _current_is_assumed_mapping
+                    and _current != _plan.routed_target
+                )
+                else _plan.routed_target
+            )
+            # Write only on a genuine change: a repeat same_position skip that
+            # re-confirms an already-booked target must not clobber the
+            # dispatch_token a prior real dispatch stamped it with (#1115) —
+            # set_target(dispatch_token=None) would erase that provenance.
+            # is_safety travels with the same guard so the two writers of
+            # `target` (this one and _prepare_service_call) agree on who owns
+            # its sibling fields.
+            if self.get_target(entity_id) != _skip_target:
+                self.set_target(entity_id, _skip_target, dispatch_token=None)
+                self.state(entity_id).is_safety = context.is_safety
+            # Secondary axis LAST: on a venetian this may rebase the target
+            # via set_commanded_position (== set_target) after a tilt-only
+            # send back-drives the carriage (#33/#187), and that rebase must
+            # have the last word over the booking above, not be clobbered by
+            # it (reopens #33 otherwise).
             await self._service_secondary_axis(
                 entity_id,
                 current_position=_current,
                 context=context,
                 trigger=_trigger,
             )
-            # Book the target even though nothing is dispatched (issue #1158):
-            # otherwise a cover that lands on its computed position without
-            # ACP ever sending a command keeps PerEntityState.target at None
-            # forever, and get_diagnostics()["at_target"] reads False despite
-            # the cover genuinely being at rest. Record _plan.routed_target,
-            # not the raw `position` argument — the two diverge on
-            # threshold-routed covers (issue #1095's arm-2 broadening), and
-            # writing raw `position` there would recreate a target != actual
-            # mismatch and make the entity wrongly reconciliation-eligible.
-            self.set_target(entity_id, _plan.routed_target, dispatch_token=None)
             return self._skip(
                 entity_id,
                 "same_position",
