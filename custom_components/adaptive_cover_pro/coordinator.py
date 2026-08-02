@@ -778,6 +778,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # the next state-change/periodic refresh" gap #742 closed for the
         # daytime gate.
         self._custom_position_hold_unsub: Callable[[], None] | None = None
+        self._sun_tracking_gate_unsub: Callable[[], None] | None = None
 
         # Issue #1138: in-flight external-command interlock corrections, keyed
         # by the entity whose command is being re-issued. One per follower —
@@ -1700,6 +1701,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = True
         await self.async_refresh()
 
+    async def async_check_sun_tracking_gate_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Handle the sun-tracking-gate template's rendered result changing (#1167).
+
+        The daytime-gate counterpart above, for the gate that suppresses solar
+        positioning rather than the day/night boundary. Same contract: the
+        tracked result only signals *that* the template changed, and the
+        subsequent refresh re-reads live sensor/template state through
+        ``PipelineSnapshotBuilder._resolve_sun_tracking`` so the OR/AND combine
+        mode and the grace hold are both honoured.
+        """
+        self.state_change = True
+        await self.async_refresh()
+
     async def _handle_occupancy_change(self, *, source: str) -> None:
         """Apply an occupancy-source transition shared by sensors and the template.
 
@@ -2534,6 +2550,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # single wake at the soonest active hold's expiry, now that this cycle's
         # reads have resolved every slot's GracefulSource state.
         self._schedule_custom_position_hold_wake()
+
+        # Issue #1167: and for the sun-tracking gate, so a HELD verdict fails
+        # open to tracking at the exact grace expiry rather than whenever the
+        # next incidental update happens to land.
+        self._schedule_sun_tracking_gate_wake()
 
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
@@ -3538,9 +3559,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_apply_sun_tracking_update(self) -> None:
         """Rebuild the pipeline after Sun Tracking changes without a reload.
 
-        ``enable_sun_tracking`` changes only pipeline composition; they do not
-        alter entity listeners or cover geometry. The refresh evaluates the new
-        winner immediately while the command path keeps its normal gates.
+        Since issue #1167 ``enable_sun_tracking`` no longer changes pipeline
+        composition — ``SolarHandler`` is unconditional and declines on the
+        snapshot field instead — so the refresh is what actually applies the
+        change. No handler factory reads the option any more, making the rebuild
+        a no-op for it; the rebuild is kept only because it is cheap, total, and
+        the single place composition is derived. Neither entity listeners nor
+        cover geometry are affected, which is why this stays a refresh rather
+        than a reload.
         """
         self._pipeline = self._build_pipeline()
         self._cached_options = dict(self.config_entry.options)
@@ -3821,8 +3847,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             weather_override_active=self.is_weather_override_active,
             # Pure property read — the ad-hoc/preemption build must NOT
             # re-evaluate the managers (that would advance latches off-cycle).
-            # One latch it does advance: the custom-position per-input hold
-            # (#1012) arms on any read, so an ad-hoc build can anchor the hold
+            # Two latches it does advance, both arm-on-read and both harmless
+            # here: the custom-position per-input hold (#1012), and the
+            # sun-tracking gate's grace window (#1167). That one is harmless
+            # here: ConditionGate.update_config compares by VALUE, so an ad-hoc
+            # build carrying equal options fires no config-change reset, and an
+            # earlier anchor only shortens the hold — it fails open sooner, never
+            # later. As with the custom-position hold, an ad-hoc build anchors
+            # that hold
             # window at the tap rather than at the next regular cycle. That is
             # the documented contract — the window starts at the first
             # indeterminate sighting, and the tap is one — but it also means no
@@ -5106,6 +5138,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         await self.async_request_refresh()
 
     @callback
+    def _schedule_sun_tracking_gate_wake(self) -> None:
+        """Schedule one refresh at sun-tracking-gate grace expiry (issue #1167).
+
+        The third instance of the pattern established by
+        :meth:`_schedule_gate_fallback_wake` (#742) and
+        :meth:`_schedule_custom_position_hold_wake` (#1012): while the gate is
+        HOLDING a last-known verdict, nothing else would trigger its fail-open
+        back to tracking until the next state-change or periodic refresh. Arming
+        one wake at the exact expiry keeps the hold window honest — it is a
+        precision improvement, not an outage fix, since ``sun.sun`` is
+        unconditionally tracked and already provides a de-facto heartbeat.
+        """
+        self._sun_tracking_gate_unsub = self._schedule_optional_wake(
+            self._sun_tracking_gate_unsub,
+            self._snapshot_builder.seconds_until_sun_tracking_gate_fallback(
+                self.config_entry.options
+            ),
+            self._on_sun_tracking_gate_due,
+        )
+
+    async def _on_sun_tracking_gate_due(self, _now: dt.datetime) -> None:
+        """Fire when the sun-tracking-gate grace window expires: request a refresh."""
+        self._sun_tracking_gate_unsub = None
+        await self.async_request_refresh()
+
+    @callback
     def _schedule_refresh_after(self, secs: float) -> None:
         """Schedule one refresh ``secs`` from now (issue #756).
 
@@ -5231,6 +5289,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._custom_position_hold_unsub is not None:
             self._custom_position_hold_unsub()
             self._custom_position_hold_unsub = None
+
+        # Cancel the sun-tracking-gate fallback wake (issue #1167).
+        if self._sun_tracking_gate_unsub is not None:
+            self._sun_tracking_gate_unsub()
+            self._sun_tracking_gate_unsub = None
 
         # Cancel any in-flight external-command interlock correction (#1138).
         # Each is a config-entry task, so HA would wait on it during unload;

@@ -566,6 +566,20 @@ POSITION_OPEN = 100  # canonical fully-open position
 
 # Master switch — disable to run on overrides only.
 CONF_ENABLE_SUN_TRACKING = "enable_sun_tracking"
+# Optional "sun-tracking gate" (issue #1167): a binary-sensor list and/or a Jinja
+# condition that answers "should ACP sun-track right now?" — e.g. only while the
+# AC is calling for cooling. ANDs with CONF_ENABLE_SUN_TRACKING; unconfigured =
+# no opinion = track, so this is zero-regression for every existing entry.
+#
+# Distinct from the daytime gate (§8) on purpose. That one owns the day/night
+# boundary and closes the operating window, which suppresses climate, glare
+# zones, cloud suppression and motion timeout along with solar. This one
+# suppresses ONLY the solar handler, which then declines and lets the chain fall
+# through to whatever is below it. Clones the daytime gate's shape (sensors +
+# template + combine mode) and shares its evaluator via ConditionGate.
+CONF_SUN_TRACKING_GATE_SENSORS = "sun_tracking_gate_sensors"  # on/active = track
+CONF_SUN_TRACKING_GATE_TEMPLATE = "sun_tracking_gate_template"  # truthy = track
+CONF_SUN_TRACKING_GATE_TEMPLATE_MODE = "sun_tracking_gate_template_mode"
 CONF_MIN_ELEVATION = "min_elevation"  # sun must be at least this high, deg 0-90
 CONF_MAX_ELEVATION = "max_elevation"  # tracking off above this elevation, 0-90
 # Opt-in movement minimization: quantize the sun-tracked position into at most
@@ -607,12 +621,17 @@ CONF_SUNRISE_TIME_ENTITY = "sunrise_time_entity"
 CONF_DAYTIME_GATE_SENSORS = "daytime_gate_sensors"  # on/active = daytime/track
 CONF_DAYTIME_GATE_TEMPLATE = "daytime_gate_template"  # truthy = daytime/track
 CONF_DAYTIME_GATE_TEMPLATE_MODE = "daytime_gate_template_mode"  # TemplateCombineMode
-# Grace window (seconds) for which the gate holds its last-known daytime/dark
-# verdict when every gate source goes indeterminate (sensors unavailable/unknown/
-# missing, template unrenderable) — issue #742. After this elapses with no usable
-# source the gate falls back to the astronomical sunset/sunrise window (resolves to
-# ``daytime_gate=None``). Fixed, not user-configurable.
-DEFAULT_DAYTIME_GATE_GRACE_SECONDS = 120.0
+# Grace window (seconds) for which ANY ``ConditionGate`` holds its last-known
+# verdict once every source goes indeterminate (sensors unavailable/unknown/
+# missing, template unrenderable) — issue #742. After it elapses with no usable
+# source the gate reports "no opinion" and each caller applies its own fallback:
+# the daytime gate reverts to the astronomical sunset/sunrise window, the
+# sun-tracking gate (#1167) reverts to tracking. Fixed, not user-configurable.
+#
+# One constant, not one per gate: both gates mean the same thing by it, and
+# per-gate copies of the same value drift the moment one is tuned. A gate that
+# genuinely needs its own window takes it as a constructor argument.
+DEFAULT_CONDITION_GATE_GRACE_SECONDS = 120.0
 # Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
 CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
 CONF_SUNSET_TILT = (
@@ -1942,6 +1961,8 @@ class ReasonCode(StrEnum):
     # -- describe_skip / inactive-reason prose
     SKIP_OUTSIDE_WINDOW = "skip.outside_window"
     SKIP_SUN_OUTSIDE = "skip.sun_outside"
+    SKIP_SUN_TRACKING_GATE = "skip.sun_tracking_gate"
+    SKIP_SUN_TRACKING_OFF = "skip.sun_tracking_off"
     SKIP_MANUAL_NOT_ACTIVE = "skip.manual_not_active"
     SKIP_OCCUPANCY_DISABLED = "skip.occupancy_disabled"
     SKIP_OCCUPANCY_NOT_ACTIVE = "skip.occupancy_not_active"
@@ -2540,6 +2561,13 @@ BUILDING_PROFILE_SENSOR_KEYS = (
             CONF_DAYTIME_GATE_SENSORS,
             CONF_DAYTIME_GATE_TEMPLATE,
             CONF_DAYTIME_GATE_TEMPLATE_MODE,
+            # The sun-tracking gate (issue #1167) is building-level for the same
+            # reason the daytime gate is: "is the AC calling for cooling?" is one
+            # answer for the whole house, not a per-window measurement. A cover
+            # that needs its own answer still overrides it locally.
+            CONF_SUN_TRACKING_GATE_SENSORS,
+            CONF_SUN_TRACKING_GATE_TEMPLATE,
+            CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
             CONF_SUNSET_TIME_ENTITY,
             CONF_SUNRISE_TIME_ENTITY,
         }

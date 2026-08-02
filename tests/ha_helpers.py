@@ -264,9 +264,10 @@ def _bare_coordinator(**overrides: Any) -> Any:
     which handle a given test cares about: ``_grace_mgr.cancel_all()``,
     ``_cancel_motion_timeout()``, ``_cancel_weather_timeout()``,
     ``_sensor_health.shutdown()``, ``_repair.shutdown()``, ``_cmd_svc.stop()``,
-    five ``if self._X_unsub is not None: ...`` cancel blocks
+    six ``if self._X_unsub is not None: ...`` cancel blocks
     (``_forecast_unsub``, ``_forecast_max_unsub``, ``_gate_fallback_unsub``,
-    ``_refresh_after_unsub``, ``_custom_position_hold_unsub``), and the
+    ``_refresh_after_unsub``, ``_custom_position_hold_unsub``,
+    ``_sun_tracking_gate_unsub``), and the
     ``_external_interlock_tasks`` map (#1138). Every test
     that exercises ``async_shutdown`` against a from-scratch stub needs all of
     these stubbed or it raises ``AttributeError`` — this was hand-mirrored
@@ -294,6 +295,7 @@ def _bare_coordinator(**overrides: Any) -> Any:
     coord._gate_fallback_unsub = None
     coord._refresh_after_unsub = None
     coord._custom_position_hold_unsub = None
+    coord._sun_tracking_gate_unsub = None
     coord._external_interlock_tasks = {}
     for name, value in overrides.items():
         setattr(coord, f"_{name}", value)

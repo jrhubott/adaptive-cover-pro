@@ -50,6 +50,10 @@ from ..const import (
     CONF_DELTA_TIME,
     CONF_DEVICE_ID,
     CONF_ENABLE_SUN_TRACKING,
+    CONF_SUN_TRACKING_GATE_SENSORS,
+    CONF_SUN_TRACKING_GATE_TEMPLATE,
+    CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+    DEFAULT_CONDITION_GATE_GRACE_SECONDS,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
@@ -119,6 +123,7 @@ from ..helpers import (
     get_safe_state,
 )
 from ..managers.common.graceful_source import GracefulSource, SourceResolution
+from ..managers.common.condition_gate import ConditionGate
 from ..templates import combine_with_mode, is_template_string, render_condition_or_none
 from .types import (
     ClimateOptions,
@@ -210,6 +215,21 @@ class PipelineSnapshotBuilder:
         self._time_mgr = time_mgr
         self._clock = clock
         self._template_variables = template_variables
+        # The sun-tracking gate (issue #1167). Lives here rather than on the
+        # coordinator because both ``build()`` call sites — the update cycle and
+        # the off-cycle user-command build — must judge tracking by the same
+        # verdict; a gate the ad-hoc build could not see would let a user command
+        # be evaluated against a different tracking state than the cycle that
+        # follows it. Readers are closures over this module's globals, matching
+        # TimeWindowManager's daytime gate, so the kernel stays HA-free.
+        self._sun_tracking_gate = ConditionGate(
+            DEFAULT_CONDITION_GATE_GRACE_SECONDS,
+            read_state=lambda entity_id: get_safe_state(self._hass, entity_id),
+            render_condition=lambda template: render_condition_or_none(
+                self._hass, template, variables=self._template_variables
+            ),
+            clock=clock,
+        )
         # Last VALID per-slot read, keyed by slot number (issue #1005). Written
         # only on a valid read; on an invalid read (transient unavailable /
         # unknown / missing sensor) the slot's activation is held to this so a
@@ -384,6 +404,65 @@ class PipelineSnapshotBuilder:
             if (r := source.remaining()) is not None
         ]
         return min(remainings) if remainings else None
+
+    def _resolve_sun_tracking(self, options: Mapping[str, Any]) -> tuple[bool, bool]:
+        """Whether sun tracking is live this cycle, and whether a gate closed it.
+
+        Returns ``(enable_sun_tracking, gate_closed)``. The single place the
+        master toggle and the gate combine (issue #1167). Everything downstream —
+        ``SolarHandler``, and the glare-zone handler's sun-only limits, which
+        already read the first value as "the live tracking state" — sees one
+        answer. ``gate_closed`` exists only so the decision trace can name the
+        real cause; it is never True when the master toggle is what stopped
+        tracking.
+
+        An unconfigured gate has no opinion and resolves to the toggle alone, so
+        every existing entry is bit-identical to before the gate existed. A
+        configured gate whose sources all go indeterminate holds its last verdict
+        for the grace window and then fails **OPEN** to tracking (#742), never
+        closed: a thermostat blinking to ``unavailable`` must not silently
+        disable sun tracking, which is the #1012/#1014 failure mode.
+
+        ``update_config`` runs before the master-toggle early-out so a config
+        change is never missed while the toggle is off — otherwise the gate would
+        hold a stale sensor list and apply it the instant tracking came back. The
+        grace machine is kept inert in that state by
+        :meth:`seconds_until_sun_tracking_gate_fallback`, which the coordinator
+        calls every cycle regardless; see its own note.
+        """
+        self._sun_tracking_gate.update_config(
+            options.get(CONF_SUN_TRACKING_GATE_SENSORS, []),
+            options.get(CONF_SUN_TRACKING_GATE_TEMPLATE),
+            options.get(
+                CONF_SUN_TRACKING_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+            ),
+        )
+        if not bool(options.get(CONF_ENABLE_SUN_TRACKING, True)):
+            return False, False
+        tracking = self._sun_tracking_gate.resolved(default=True)
+        return tracking, not tracking
+
+    def seconds_until_sun_tracking_gate_fallback(
+        self, options: Mapping[str, Any]
+    ) -> float | None:
+        """Seconds until a HELD sun-tracking-gate verdict expires, or ``None``.
+
+        The coordinator schedules one prompt refresh on this so the fail-open
+        engages at grace expiry rather than at the next incidental update —
+        matching ``TimeWindowManager.seconds_until_gate_fallback``.
+
+        Returns ``None`` outright while the master toggle is off. The gate's
+        verdict cannot change what the cover does in that state, and
+        ``ConditionGate.seconds_until_fallback`` *observes* to answer — so
+        without this guard a disabled cover whose gate sensor drops out would
+        anchor a grace window and arm a wake that resolves to nothing.
+        ``options`` is required, not defaulted: a default would let the single
+        production caller stop passing it with nothing failing, which is exactly
+        how this guard would rot.
+        """
+        if not bool(options.get(CONF_ENABLE_SUN_TRACKING, True)):
+            return None
+        return self._sun_tracking_gate.seconds_until_fallback()
 
     def read_custom_position_sensors(
         self, options: dict
@@ -690,6 +769,7 @@ class PipelineSnapshotBuilder:
                 self._hass, options, cover_data.sun_data, self._time_mgr
             )
 
+        _sun_tracking, _gate_closed = self._resolve_sun_tracking(options)
         glare_zones_cfg = self._policy.glare_zones_config(self._config_service, options)
         active_zone_names: set[str] = set()
         if glare_zones_cfg is not None:
@@ -737,7 +817,8 @@ class PipelineSnapshotBuilder:
             custom_position_sensors=self.read_custom_position_sensors(options),
             my_position_value=options.get(CONF_MY_POSITION_VALUE),
             sunset_use_my=bool(options.get(CONF_SUNSET_USE_MY, False)),
-            enable_sun_tracking=bool(options.get(CONF_ENABLE_SUN_TRACKING, True)),
+            enable_sun_tracking=_sun_tracking,
+            sun_tracking_gate_closed=_gate_closed,
             motion_timeout_mode=options.get(
                 CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
             ),

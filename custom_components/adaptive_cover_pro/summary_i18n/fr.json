@@ -155,7 +155,11 @@
     "today_no_window": " (aujourd'hui : le soleil n'entre pas dans la fenêtre)",
     "minimize_one_step": "se déplace directement à la couverture complète et se maintient (1 étape)",
     "minimize_steps": "atteint la couverture complète en jusqu'à {steps} étapes",
-    "minimize": "{indent}🪟 Minimiser les mouvements — {detail}, arrondi vers plus de couverture pour réduire les mouvements moteur."
+    "minimize": "{indent}🪟 Minimiser les mouvements — {detail}, arrondi vers plus de couverture pour réduire les mouvements moteur.",
+    "gate_sensors": "{indent}🚦 Filtre de suivi du soleil : {sensors} décident s'il faut suivre le soleil.",
+    "gate_template": "{indent}🚦 Filtre de suivi du soleil : un modèle décide s'il faut suivre le soleil.",
+    "gate_both": "{indent}🚦 Filtre de suivi du soleil : {sensors} et un modèle ({mode}) décident s'il faut suivre le soleil.",
+    "gate_explainer": "{indent}Tant que le filtre est faux, le positionnement solaire est ignoré et le volet revient à la position par défaut. Le mode climatique, le mouvement et la dérogation manuelle ne sont pas affectés, et la fenêtre de fonctionnement reste ouverte — contrairement au filtre de jour, qui ferme la fenêtre et les supprime tous. Les zones d'éblouissement continuent de fonctionner mais perdent leurs limites réservées au suivi du soleil, celles-ci ne s'appliquant que lorsque le suivi est actif."
   },
   "timing": {
     "from_entity": "de {entity}",

@@ -50,6 +50,9 @@ from .const import (
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    CONF_SUN_TRACKING_GATE_SENSORS,
+    CONF_SUN_TRACKING_GATE_TEMPLATE,
+    CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
@@ -395,6 +398,60 @@ _BEHAVIOR_PROFILE_KEYS = frozenset(
         CONF_DAYTIME_GATE_TEMPLATE_MODE,
     }
 )
+
+
+# Sub-bullet indent for a gate block in the config summary. Non-breaking on
+# purpose: a plain leading space collapses in the rendered markdown.
+_GATE_SUMMARY_INDENT = "\u00a0" * 4
+
+
+def _render_condition_gate_summary(
+    config: dict[str, Any],
+    emit,
+    labels,
+    *,
+    prefix: str,
+    indent: str,
+    sensors_key: str,
+    template_key: str,
+    mode_key: str,
+) -> bool:
+    """Render one condition gate's summary lines; return whether it rendered.
+
+    ACP has two of these (the daytime gate, #632, and the sun-tracking gate,
+    #1167) and they render identically — sensors / template / both, then an
+    explainer — differing only in their option keys and label prefix. One
+    renderer, two callers, per CODING_GUIDELINES § "No Code Duplication".
+
+    ``prefix`` selects the label family (``timing.gate`` / ``solar.gate``); each
+    must define ``<prefix>_sensors``, ``<prefix>_template``, ``<prefix>_both``
+    and ``<prefix>_explainer``. Caller-specific extras — the daytime gate's
+    offset-ignored footgun warning — stay at the call site, which is why this
+    returns whether anything was emitted.
+    """
+    from .templates import is_template_string
+
+    sensors = config.get(sensors_key) or []
+    template = config.get(template_key)
+    has_template = is_template_string(template)
+    if not sensors and not has_template:
+        return False
+
+    sensors_str = ", ".join(sensors)
+    if sensors and has_template:
+        emit(
+            labels[f"{prefix}_both"].format(
+                indent=indent,
+                sensors=sensors_str,
+                mode=config.get(mode_key, DEFAULT_TEMPLATE_COMBINE_MODE),
+            )
+        )
+    elif sensors:
+        emit(labels[f"{prefix}_sensors"].format(indent=indent, sensors=sensors_str))
+    else:
+        emit(labels[f"{prefix}_template"].format(indent=indent))
+    emit(labels[f"{prefix}_explainer"].format(indent=indent))
+    return True
 
 
 def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
@@ -772,6 +829,28 @@ _BEHAVIOR_OPTIONAL_KEYS: list[str] = [
     # The sensor list carries default=[] so it round-trips on its own (NOT here).
     CONF_DAYTIME_GATE_TEMPLATE,
 ]
+
+# Keys on the sun-tracking step that voluptuous omits when the user clears them,
+# for the same reason as the behavior list above: no schema default means a
+# cleared field is absent from user_input, and without this the previous value
+# silently survives the clear (issue #439; same class as #323).
+_SUN_TRACKING_OPTIONAL_KEYS: list[str] = [
+    CONF_MIN_ELEVATION,
+    CONF_MAX_ELEVATION,
+    # Sun-tracking gate template (issue #1167). Its sensor list carries
+    # default=[] and so round-trips on its own — deliberately NOT here.
+    CONF_SUN_TRACKING_GATE_TEMPLATE,
+]
+
+# Profile-owned keys shown on the sun-tracking step, for the inherit/override
+# note — the counterpart to _BEHAVIOR_PROFILE_KEYS one step over.
+_SUN_TRACKING_PROFILE_KEYS = frozenset(
+    {
+        CONF_SUN_TRACKING_GATE_SENSORS,
+        CONF_SUN_TRACKING_GATE_TEMPLATE,
+        CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+    }
+)
 
 # ── Layer 4: global motion constraints ──────────────────────────────────────
 # Applied after the pipeline picks a position, regardless of which handler won:
@@ -1561,6 +1640,24 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "solar.minimize": (
         "{indent}🪟 Minimize movements — {detail}, rounding toward more "
         "coverage to reduce motor movements."
+    ),
+    "solar.gate_sensors": (
+        "{indent}🚦 Sun tracking gate: {sensors} decide whether to sun-track."
+    ),
+    "solar.gate_template": (
+        "{indent}🚦 Sun tracking gate: a template decides whether to sun-track."
+    ),
+    "solar.gate_both": (
+        "{indent}🚦 Sun tracking gate: {sensors} and a template ({mode}) decide "
+        "whether to sun-track."
+    ),
+    "solar.gate_explainer": (
+        "{indent}While the gate reads false, solar positioning is skipped and the "
+        "cover falls through to the default position. Climate mode, motion and "
+        "manual override are unaffected, and the operating window stays open — "
+        "unlike the daytime gate, which closes the window and suppresses all of "
+        "them. Glare zones keep running but drop their sun-tracking-only limits, "
+        "since those apply only while tracking is live."
     ),
     # --- Timing window ---
     "timing.from_entity": "from {entity}",
@@ -2710,12 +2807,26 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         )
         if config.get(CONF_MINIMIZE_MOVEMENTS, False):
             steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
-            indent = "\u00a0" * 4
+            indent = _GATE_SUMMARY_INDENT
             if steps <= 1:
                 detail = L["solar.minimize_one_step"]
             else:
                 detail = L["solar.minimize_steps"].format(steps=steps)
             _sub(L["solar.minimize"].format(indent=indent, detail=detail))
+        # Sun-tracking gate (issue #1167) — suppresses solar positioning while it
+        # reads false, letting the chain fall through to the default position.
+        # Only rendered under the enabled branch: with the master toggle off the
+        # gate cannot change anything, and showing it there would imply it might.
+        _render_condition_gate_summary(
+            config,
+            _sub,
+            L,
+            prefix="solar.gate",
+            indent=_GATE_SUMMARY_INDENT,
+            sensors_key=CONF_SUN_TRACKING_GATE_SENSORS,
+            template_key=CONF_SUN_TRACKING_GATE_TEMPLATE,
+            mode_key=CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+        )
     else:
         _open(
             _prio["solar"],
@@ -2760,7 +2871,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         timing_str = (
             " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
-        indent = "\u00a0" * 4
+        indent = _GATE_SUMMARY_INDENT
         _sub(L["timing.line"].format(indent=indent, timing=timing_str))
         if sunset_pos is not None:
             # Merge today's effective time (or entity ID) and offset into one parenthetical
@@ -2835,30 +2946,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
     # replacing the astronomical sunset/sunrise calc. Rendered independently of the
     # timing window so it shows even with no sunset_pos / schedule configured.
-    gate_sensors = config.get(CONF_DAYTIME_GATE_SENSORS) or []
-    gate_template = config.get(CONF_DAYTIME_GATE_TEMPLATE)
-    gate_has_template = is_template_string(gate_template)
-    gate_mode = config.get(
-        CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
-    )
-    if gate_sensors or gate_has_template:
-        indent = " " * 4
-        sensors_str = ", ".join(gate_sensors)
-        if gate_sensors and gate_has_template:
-            _sub(
-                L["timing.gate_both"].format(
-                    indent=indent, sensors=sensors_str, mode=gate_mode
-                )
-            )
-        elif gate_sensors:
-            _sub(L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str))
-        else:
-            _sub(L["timing.gate_template"].format(indent=indent))
-        _sub(L["timing.gate_explainer"].format(indent=indent))
+    if _render_condition_gate_summary(
+        config,
+        _sub,
+        L,
+        prefix="timing.gate",
+        indent=_GATE_SUMMARY_INDENT,
+        sensors_key=CONF_DAYTIME_GATE_SENSORS,
+        template_key=CONF_DAYTIME_GATE_TEMPLATE,
+        mode_key=CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    ) and (sunset_off or sunrise_off):
         # Footgun: sunset/sunrise offsets are no-ops once the gate owns the
         # boundary. Only warn when an offset is actually set (avoid noise).
-        if sunset_off or sunrise_off:
-            _sub(L["timing.gate_offset_ignored"].format(indent=indent))
+        # Daytime-gate-specific, so it stays outside the shared renderer.
+        _sub(L["timing.gate_offset_ignored"].format(indent=_GATE_SUMMARY_INDENT))
 
     # Blind spot (sub-bullet / informational, no priority of its own). One line
     # per active slot — a slot is active when its left & right are both set
@@ -3196,6 +3297,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MIN_ELEVATION,
             CONF_MAX_ELEVATION,
             CONF_ENABLE_BLIND_SPOT,
+            # The gate rides with the toggle it ANDs with (issue #1167) — copying
+            # sun-tracking settings to a sibling window that omitted the gate
+            # would otherwise leave that sibling tracking unconditionally.
+            CONF_SUN_TRACKING_GATE_SENSORS,
+            CONF_SUN_TRACKING_GATE_TEMPLATE,
+            CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
         }
     ),
     "blind_spot": frozenset(
@@ -4167,7 +4274,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # 3.15 (issue #1138): the same shape again for the additive
     # day_night_external_command_interlock option — absent reads as "on", so the
     # v3.14→v3.15 block is a no-op bump and nothing else.
-    MINOR_VERSION = 15
+    MINOR_VERSION = 16
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -5514,7 +5621,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
         """Adjust sun tracking parameters."""
         if user_input is not None:
-            self.optional_entities([CONF_MIN_ELEVATION, CONF_MAX_ELEVATION], user_input)
+            self.optional_entities(_SUN_TRACKING_OPTIONAL_KEYS, user_input)
             # The FOV button + shaded distance moved to the geometry step (#778);
             # this step now carries only behavioural fields, so nothing here is
             # unit-dependent.
@@ -5549,9 +5656,15 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="sun_tracking",
             data_schema=self.add_suggested_values_to_schema(schema, values),
             errors=errors,
-            description_placeholders=_sun_tracking_placeholders(
-                self.sensor_type, self.options
-            ),
+            description_placeholders={
+                **_sun_tracking_placeholders(self.sensor_type, self.options),
+                # The gate is profile-owned (issue #1167), so a linked cover gets
+                # the same inherit/override breakdown the behavior step shows for
+                # the daytime gate. Empty string when the cover is unlinked.
+                "profile_inherit": self._profile_inherit_note(
+                    _SUN_TRACKING_PROFILE_KEYS
+                ),
+            },
         )
 
     async def async_step_position(self, user_input: dict[str, Any] | None = None):

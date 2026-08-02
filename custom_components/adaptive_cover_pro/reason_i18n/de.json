@@ -97,6 +97,8 @@
   "skip": {
     "outside_window": "außerhalb des Zeitfensters",
     "sun_outside": "Sonne außerhalb des Akzeptanzwinkels oder Höhenlimits",
+    "sun_tracking_gate": "Sonnenverfolgungs-Gate ist geschlossen",
+    "sun_tracking_off": "Sonnenverfolgung ist ausgeschaltet",
     "manual_not_active": "manuelle Übersteuerung nicht aktiv",
     "occupancy_disabled": "Anwesenheitserkennung deaktiviert",
     "occupancy_not_active": "Anwesenheits-Timeout nicht aktiv",

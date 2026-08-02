@@ -155,7 +155,11 @@
     "today_no_window": " (today: sun does not enter window)",
     "minimize_one_step": "moves straight to full coverage and holds (1 step)",
     "minimize_steps": "reaches full coverage in up to {steps} steps",
-    "minimize": "{indent}🪟 Minimize movements — {detail}, rounding toward more coverage to reduce motor movements."
+    "minimize": "{indent}🪟 Minimize movements — {detail}, rounding toward more coverage to reduce motor movements.",
+    "gate_sensors": "{indent}🚦 Sun tracking gate: {sensors} decide whether to sun-track.",
+    "gate_template": "{indent}🚦 Sun tracking gate: a template decides whether to sun-track.",
+    "gate_both": "{indent}🚦 Sun tracking gate: {sensors} and a template ({mode}) decide whether to sun-track.",
+    "gate_explainer": "{indent}While the gate reads false, solar positioning is skipped and the cover falls through to the default position. Climate mode, motion and manual override are unaffected, and the operating window stays open — unlike the daytime gate, which closes the window and suppresses all of them. Glare zones keep running but drop their sun-tracking-only limits, since those apply only while tracking is live."
   },
   "timing": {
     "from_entity": "from {entity}",

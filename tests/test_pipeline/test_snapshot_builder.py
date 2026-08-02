@@ -1411,3 +1411,83 @@ async def test_custom_position_slot_template_resolves_the_acp_namespace(hass):
     hass.states.async_set(entity_id, "off")
     await hass.async_block_till_done()
     assert builder.read_custom_position_sensors(opts)[0].is_on is False
+
+
+# ---------------------------------------------------------------------------
+# Sun tracking reaches the snapshot (issue #1167)
+# ---------------------------------------------------------------------------
+
+
+def _build_minimal(builder, opts):
+    """Run builder.build() with the minimum kwargs and return the snapshot."""
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    cover_data.sun_data.astral_sunset = None
+    cover_data.sun_data.astral_sunrise = None
+    cover_data.sun_data.now = None
+    return builder.build(
+        opts,
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: True,
+    )
+
+
+@pytest.mark.unit
+def test_build_carries_sun_tracking_onto_the_snapshot():
+    """The option→snapshot binding, asserted at the seam that actually does it.
+
+    Before issue #1167 the sun-tracking option reached the pipeline by REMOVING
+    SolarHandler from it, and the composition tests proved that end to end. The
+    handler is now unconditional and declines on ``snapshot.enable_sun_tracking``
+    instead, so without this test both fields could be dropped from the
+    ``PipelineSnapshot(...)`` call and the entire suite would still pass —
+    every other test sets them on a hand-built snapshot.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_ENABLE_SUN_TRACKING
+
+    builder, _, _ = _make_builder()
+    assert _build_minimal(builder, {}).enable_sun_tracking is True
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {CONF_ENABLE_SUN_TRACKING: False})
+    assert snapshot.enable_sun_tracking is False
+    # The toggle is not a gate — the trace must not blame one.
+    assert snapshot.sun_tracking_gate_closed is False
+
+
+@pytest.mark.unit
+def test_build_carries_a_closed_gate_onto_the_snapshot():
+    """A configured gate reading off closes tracking and is named as the cause."""
+    from unittest.mock import patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_SENSORS,
+    )
+
+    builder, _, _ = _make_builder()
+    opts = {CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac"]}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.get_safe_state",
+        return_value="off",
+    ):
+        snapshot = _build_minimal(builder, opts)
+    assert snapshot.enable_sun_tracking is False
+    assert snapshot.sun_tracking_gate_closed is True
+
+    builder, _, _ = _make_builder()
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.get_safe_state",
+        return_value="on",
+    ):
+        snapshot = _build_minimal(builder, opts)
+    assert snapshot.enable_sun_tracking is True
+    assert snapshot.sun_tracking_gate_closed is False

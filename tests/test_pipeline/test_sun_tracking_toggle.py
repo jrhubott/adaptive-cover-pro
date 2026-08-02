@@ -1,8 +1,18 @@
 """Tests for the enable_sun_tracking config toggle.
 
-When CONF_ENABLE_SUN_TRACKING is False, only SolarHandler must be absent.
+When CONF_ENABLE_SUN_TRACKING is False, only solar positioning must stop.
 GlareZoneHandler is governed by its own CONF_ENABLE_GLARE_ZONES switch and
-must remain in the pipeline regardless of the sun-tracking flag.
+must keep running regardless of the sun-tracking flag.
+
+Since issue #1167 the toggle no longer removes ``SolarHandler`` from the
+pipeline: it folds into ``snapshot.enable_sun_tracking`` alongside the
+sun-tracking gate, and the handler declines on that field. Composition-gating
+could not express the gate, which is a per-cycle verdict rather than a
+build-time value. The observable behaviour — solar does not win, the chain falls
+through — is unchanged, and the tests below assert that rather than the
+mechanism. The snapshots must therefore carry ``enable_sun_tracking=False``
+alongside the option, which is exactly what ``PipelineSnapshotBuilder`` does in
+production.
 """
 
 from __future__ import annotations
@@ -53,12 +63,23 @@ def test_sun_tracking_enabled_explicitly():
 
 
 @pytest.mark.unit
-def test_sun_tracking_disabled_removes_solar_handler():
-    """SolarHandler absent when CONF_ENABLE_SUN_TRACKING is False."""
+def test_sun_tracking_disabled_makes_solar_decline():
+    """Solar produces nothing when tracking is off — it stays in the chain and skips.
+
+    Pre-#1167 this asserted the handler was absent from the pipeline. The
+    behaviour under test is "solar does not position the cover", which is what is
+    asserted now; the handler's presence is an implementation detail, and keeping
+    it present is what gives the decision trace a reason to show.
+    """
+    from tests.test_pipeline.conftest import make_snapshot
+
     coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
     registry = coord._build_pipeline()
     handler_types = {type(h) for h in registry._handlers}
-    assert SolarHandler not in handler_types
+    assert SolarHandler in handler_types
+
+    snap = make_snapshot(direct_sun_valid=True, enable_sun_tracking=False)
+    assert SolarHandler().evaluate(snap) is None
 
 
 @pytest.mark.unit
@@ -85,14 +106,19 @@ def test_sun_tracking_disabled_preserves_glare_zone_handler():
     """GlareZoneHandler stays in the pipeline when sun tracking is off.
 
     Regression test for issue #238: CONF_ENABLE_SUN_TRACKING must gate only
-    SolarHandler. GlareZoneHandler is governed by CONF_ENABLE_GLARE_ZONES
+    solar positioning. GlareZoneHandler is governed by CONF_ENABLE_GLARE_ZONES
     and self-gates on cover type / time window / zone presence.
     """
+    from tests.test_pipeline.conftest import make_snapshot
+
     coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
     registry = coord._build_pipeline()
     handler_types = {type(h) for h in registry._handlers}
     assert GlareZoneHandler in handler_types
-    assert SolarHandler not in handler_types
+    # Solar is present but inert — #238's point is that glare zones keep working,
+    # not that a particular handler object is missing from the list.
+    snap = make_snapshot(direct_sun_valid=True, enable_sun_tracking=False)
+    assert SolarHandler().evaluate(snap) is None
 
 
 @pytest.mark.unit
@@ -119,7 +145,14 @@ def test_sun_tracking_disabled_pipeline_falls_through_to_default():
     # Sun is valid — would normally trigger SolarHandler. GlareZoneHandler is
     # still present (issue #238) but self-gates on glare-zone config, so with
     # none configured it returns None and control falls through to DefaultHandler.
-    snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0)
+    # enable_sun_tracking mirrors the option onto the snapshot the way
+    # PipelineSnapshotBuilder._resolve_sun_tracking does in production (#1167);
+    # before that the option reached the pipeline by composition alone.
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        calculate_percentage_return=60.0,
+        enable_sun_tracking=False,
+    )
     result = registry.evaluate(snap)
 
     assert result is not None

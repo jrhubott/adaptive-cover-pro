@@ -155,7 +155,11 @@
     "today_no_window": " (heute: Sonne betritt Fenster nicht)",
     "minimize_one_step": "bewegt sich direkt zu voller Abdeckung und hält an (1 Schritt)",
     "minimize_steps": "erreicht volle Abdeckung in bis zu {steps} Schritten",
-    "minimize": "{indent}🪟 Bewegungen minimieren — {detail}, auf mehr Abdeckung gerundet, um Motorbewegungen zu reduzieren."
+    "minimize": "{indent}🪟 Bewegungen minimieren — {detail}, auf mehr Abdeckung gerundet, um Motorbewegungen zu reduzieren.",
+    "gate_sensors": "{indent}🚦 Sonnenverfolgungs-Gate: {sensors} entscheiden, ob der Sonne gefolgt wird.",
+    "gate_template": "{indent}🚦 Sonnenverfolgungs-Gate: eine Vorlage entscheidet, ob der Sonne gefolgt wird.",
+    "gate_both": "{indent}🚦 Sonnenverfolgungs-Gate: {sensors} und eine Vorlage ({mode}) entscheiden, ob der Sonne gefolgt wird.",
+    "gate_explainer": "{indent}Solange das Gate falsch meldet, wird die Sonnenpositionierung übersprungen und die Abdeckung fällt auf die Standardposition zurück. Klimamodus, Bewegung und manuelle Übersteuerung bleiben unberührt, und das Betriebsfenster bleibt offen — anders als beim Tageslicht-Gate, das das Fenster schließt und alle davon unterdrückt. Blendungszonen laufen weiter, verlieren aber ihre nur-bei-Sonnenverfolgung-Grenzwerte, da diese nur bei aktiver Verfolgung gelten."
   },
   "timing": {
     "from_entity": "von {entity}",
