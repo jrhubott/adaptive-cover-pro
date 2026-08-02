@@ -18,7 +18,9 @@
     "trigger_cloud_above": "couverture nuageuse au-dessus du seuil",
     "trigger_smoothing_hold": "maintien de lissage",
     "trigger_template": "modèle",
-    "trigger_fallback": "déclencheur"
+    "trigger_fallback": "déclencheur",
+    "axis_position": "position",
+    "axis_tilt": "inclinaison"
   },
   "solar": {
     "tracking": "soleil dans l'angle d'acceptation — position {position}%{suffix}"
@@ -69,7 +71,7 @@
     "ceiling_inactive": "maximum {ceiling_pos}% inactif (position résolue {to_pos}% au niveau ou en dessous du maximum)",
     "ceiling_overridden": "maximum {ceiling_pos}% ignoré — un minimum a relevé le volet à {to_pos}%",
     "floor_overrides_ceiling": "minimum relevé à {to_pos}% au-dessus du maximum {ceiling_pos}% par {label} (gagnant était {from_pos}%)",
-    "bound_yielded_to_hold": "limite {low_label}–{high_label} de {label} écartée — la priorité {priority} ne dépasse pas {holder} ({holder_priority})",
+    "bound_yielded_to_hold": "limite {low_label}–{high_label} ({axis}) de {label} écartée — la priorité {priority} ne dépasse pas {holder} ({holder_priority})",
     "tilt_bound_active": "limite d'inclinaison {low_label}–{high_label} active par {label} ; en attente de l'inclinaison résolue",
     "tilt_bound_inactive": "limite d'inclinaison {low_label}–{high_label} inactive par {label} ; inclinaison résolue {tilt}% déjà dans la plage",
     "tilt_clamped": "inclinaison limitée de {from_tilt}% à {to_tilt}% par {label}"

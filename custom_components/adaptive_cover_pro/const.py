@@ -1871,6 +1871,12 @@ class ReasonCode(StrEnum):
     FRAGMENT_TRIGGER_SMOOTHING_HOLD = "fragment.trigger_smoothing_hold"
     FRAGMENT_TRIGGER_TEMPLATE = "fragment.trigger_template"
     FRAGMENT_TRIGGER_FALLBACK = "fragment.trigger_fallback"
+    # Axis names for the yielded-bound reason (#1170). A slot can bound BOTH
+    # axes and yield on both, which without this renders two identical trace
+    # lines. Fragments rather than a raw English word so DE/FR localize them,
+    # matching how ``pos_label`` is threaded.
+    FRAGMENT_AXIS_POSITION = "fragment.axis_position"
+    FRAGMENT_AXIS_TILT = "fragment.axis_tilt"
 
     # -- solar handler
     SOLAR_TRACKING = "solar.tracking"

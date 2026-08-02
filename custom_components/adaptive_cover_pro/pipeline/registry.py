@@ -549,6 +549,13 @@ class PipelineRegistry:
                         "priority": c.priority,
                         "holder": winning_handler.name,
                         "holder_priority": winning_handler.priority,
+                        # A slot can bound BOTH axes and yield on both; without
+                        # the axis the two steps render identically (#1170).
+                        "axis": Reason(
+                            ReasonCode.FRAGMENT_AXIS_POSITION
+                            if c.axis == AXIS_NAME_POSITION
+                            else ReasonCode.FRAGMENT_AXIS_TILT
+                        ),
                     },
                 ),
                 position=None,

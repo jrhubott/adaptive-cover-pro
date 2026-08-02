@@ -292,13 +292,24 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {
             "low_label": "40%",
             "high_label": "—",
+            "axis": Reason(ReasonCode.FRAGMENT_AXIS_POSITION),
             "label": "Default",
             "priority": 77,
             "holder": "manual_override",
             "holder_priority": 80,
         },
-        "bound 40%–— from Default yielded — priority 77 does not outrank "
-        "manual_override (80)",
+        "bound 40%–— (position) from Default yielded — priority 77 does not "
+        "outrank manual_override (80)",
+    ),
+    (
+        ReasonCode.FRAGMENT_AXIS_POSITION,
+        {},
+        "position",
+    ),
+    (
+        ReasonCode.FRAGMENT_AXIS_TILT,
+        {},
+        "tilt",
     ),
     (
         ReasonCode.REGISTRY_TILT_BOUND_ACTIVE,
