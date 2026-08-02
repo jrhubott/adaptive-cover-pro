@@ -361,6 +361,67 @@ async def test_reconcile_no_dispatch_after_same_position_skip_records_target(
     assert svc.state("cover.test").retry_count == 0
 
 
+@pytest.mark.asyncio
+async def test_same_position_skip_does_not_stamp_stale_is_safety(svc, mock_hass):
+    """Issue #1158 MUST-FIX 2 (round-2 audit): a same_position skip must
+    never write ``is_safety`` from ``context.is_safety``.
+
+    The two writers of ``PerEntityState.target`` are NOT symmetrical:
+    ``_prepare_service_call`` stamps ``is_safety`` unconditionally on every
+    REAL dispatch, but the same_position skip's booking only writes when the
+    value CHANGES (the #1115 value-change guard). Mirroring the ``is_safety``
+    write under that narrower guard would let a since-cleared safety
+    condition freeze ``is_safety=True`` forever: a later skip that
+    re-confirms the same unchanged value has the guard suppress the write
+    entirely, so a stale True can never clear. A frozen True then survives
+    ``clear_non_safety_targets()`` and makes ``run_reconciliation_pass``
+    resend it with auto_control off or outside the time window — precisely
+    what steps 3/4 exist to prevent. Reproduces the auditor's
+    ``repro_is_safety_stale.py``.
+    """
+    # Cycle 1: a weather-safety cycle skips because the cover is already at
+    # the safety position (50) — nothing is dispatched, so
+    # ``_prepare_service_call`` (the one REAL is_safety writer) never runs.
+    # The skip must NOT record is_safety=True on its own.
+    _patch_position(svc, 50)
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(is_safety=True)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 50
+    assert svc.state("cover.test").is_safety is False
+
+    # Cycle 2: weather clears; an ordinary cycle re-confirms the same 50.
+    # The value-change guard suppresses the write entirely (booked value
+    # unchanged) — is_safety stays exactly what it already was (False).
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "solar", context=_ctx(is_safety=False)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.state("cover.test").is_safety is False
+
+    # Window closes: clear_non_safety_targets() must sweep this target —
+    # proof is_safety never latched True. Under the old bug this assertion
+    # fails: the frozen is_safety=True would have protected it from the
+    # sweep.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+    # With auto_control off AND outside the time window, reconciliation must
+    # not resend anything for this entity — exactly what steps 3/4 exist to
+    # guarantee for a non-safety (or, as here, no longer recorded) target.
+    svc._auto_control_enabled = False
+    svc._in_time_window = False
+    _patch_position(svc, 90)  # cover drifted / was moved since
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+
+
 # ------------------------------------------------------------------ #
 # _reconcile — cover reached target
 # ------------------------------------------------------------------ #

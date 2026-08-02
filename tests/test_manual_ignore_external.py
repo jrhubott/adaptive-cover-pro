@@ -63,6 +63,11 @@ def _make_coordinator(
     coordinator._cover_type = "cover_awning"
     coordinator.manual_reset = False
     coordinator.manual_threshold = None
+    # Issue #1158 MUST-FIX 2: the detection-threshold computation now floors
+    # unconditionally at `_position_tolerance`; a real coordinator always has
+    # this set as an int (coordinator.py's `_update_options`), so give the
+    # mock the same shape rather than leaving it an unconfigured MagicMock.
+    coordinator._position_tolerance = 3
     coordinator.logger = MagicMock()
     coordinator.manager = MagicMock()
     coordinator.manager.is_cover_manual = MagicMock(return_value=False)

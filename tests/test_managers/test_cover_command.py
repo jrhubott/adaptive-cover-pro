@@ -2194,18 +2194,24 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_records_targ
     ``_position_tolerance`` of a hard endpoint (but not exactly on it) must
     also have its target recorded when the gate skips it.
 
-    Finding 3 (audit follow-up, #546/#654): the recorded value must be the
-    cover's genuine actual position (98), NOT the routed endpoint (100).
-    ``_position_tolerance`` (the same_position gate's "close enough" band)
-    and the manual-override detector's threshold are different numbers; if
-    this arm booked 100 while the cover physically rests at 98, the very
-    next state republish at that same resting position would read as a 2%
-    delta against a target ACP never actually dispatched — harmless here,
-    but a wide-enough tolerance/threshold gap (see the dedicated
-    endpoint-tolerance manual-override test below) turns that same bridging
-    into a false ``manual_override_set``. Recording the actual keeps
-    target == actual so both diagnostics and manual-override detection stay
-    consistent.
+    Round-2 audit (MUST-FIX 1): the recorded value must be
+    ``_plan.routed_target`` (100), NOT the cover's raw actual position (98).
+    An earlier attempt at this fix booked the actual instead, reasoning that
+    it would keep ``target == actual`` byte-for-byte — but ``_at_target()``
+    is already tolerance-aware, so every consumer that matters
+    (``get_diagnostics()["at_target"]``, reconciliation's step-7 match) reads
+    a `_position_tolerance`-sized gap as "arrived" regardless of which of the
+    two values is recorded. Booking the actual instead corrupted a
+    *different* invariant: it stops being "the value ACP's routing decided
+    to command" (routing.py's own SSOT definition), silently clobbers a
+    prior real dispatch's ``(target, dispatch_token)`` pair when the two
+    differ (see the dedicated dispatch-token regression test below), and
+    reconciliation would then resend the raw actual instead of the routed
+    open_cover/close_cover, unable to ever finish driving the cover to its
+    mechanical stop. The manual-override false-positive this arm originally
+    tried to dodge is fixed at its real source instead: coordinator.py
+    floors the detector's threshold at `_position_tolerance` (see the
+    dedicated manual-override test below).
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
     _stub_state(mock_hass, current_position=98, state="open")
@@ -2230,7 +2236,7 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_records_targ
 
     assert (outcome, reason) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
-    assert svc.get_target("cover.test") == 98
+    assert svc.get_target("cover.test") == 100
     assert svc.get_diagnostics("cover.test")["at_target"] is True
 
 
@@ -2298,21 +2304,103 @@ async def test_apply_position_same_position_skip_preserves_dispatch_token_when_u
 
 
 @pytest.mark.asyncio
+async def test_apply_position_same_position_skip_endpoint_tolerance_preserves_prior_dispatch_token(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #1158 MUST-FIX 1 (round-2 audit): a same_position skip landing in
+    the endpoint-tolerance sub-arm must not clobber a REAL dispatch's
+    ``(target, dispatch_token)`` pair with a value that dispatch never
+    produced.
+
+    Cycle 1: a genuine dispatch to the 100 endpoint, stamped with a token —
+    ``_prepare_service_call`` books ``(100, "TOKEN-FROM-DISPATCH")``. Cycle
+    2: the motor settles 2% short (98, the #507 population) — same computed
+    position (100), so the gate skips via the endpoint-tolerance sub-arm
+    (``|98-100|=2 <= tolerance 3``).
+
+    The round-1 fix recorded ``_current`` (98) here — a *different* value
+    than the dispatch produced — which erased the #1115 token stamp
+    (``dispatch_token=None``) and, on a later reconciliation resend, would
+    reissue as ``set_cover_position(98)`` instead of ``open_cover``, unable
+    to ever finish driving the cover to its mechanical stop (weakening
+    #755/#697). Recording ``_plan.routed_target`` (100, unchanged from cycle
+    1) instead means the value-change guard correctly recognises "no
+    change" and leaves the token alone — mirrors the auditor's
+    ``repro_token_clobber.py``.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    # Cycle 1: a real dispatch to the endpoint, stamped with a token.
+    _stub_state(mock_hass, current_position=40, state="open")
+    with (
+        patch.object(svc, "_get_current_position", return_value=40),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            100,
+            "solar",
+            _ctx_with_special(),
+            dispatch_token="TOKEN-FROM-DISPATCH",
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 100
+    assert svc.state("cover.test").dispatch_token == "TOKEN-FROM-DISPATCH"
+
+    # Cycle 2: the motor settled 2% short of the endpoint — same_position
+    # skips via the endpoint-tolerance sub-arm instead of a real dispatch.
+    _stub_state(mock_hass, current_position=98, state="open")
+    svc.state("cover.test").forced_endpoint = 100  # anti-relay latch (#897)
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 100
+    assert svc.state("cover.test").dispatch_token == "TOKEN-FROM-DISPATCH"
+
+
+@pytest.mark.asyncio
 async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_trip_manual_override(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #1158 finding 3 (#546/#654 regression): booking the routed
-    target in the endpoint-tolerance sub-arm bridges two unrelated
-    tolerances that were never meant to interact.
+    """Issue #1158 (#546/#654 regression): the endpoint-tolerance sub-arm's
+    target booking must not bridge into a false manual-override detection.
 
     ``position_tolerance=20`` is the same_position gate's "close enough"
     band; ``manual_threshold`` is the override detector's, narrower and
     unrelated. A cover resting at 82 with a computed target of 100 clears
     the same_position gate's endpoint band (|82-100|=18 <= 20) and is
-    correctly skipped — but recording the routed value (100) as ``target``
-    would leave |100-82|=18 > manual_threshold(5), so the very next state
-    republish at that SAME resting position (no user touch at all) reads as
-    a manual override on a cover ACP never dispatched to.
+    correctly skipped and booked at the routed value (100, per MUST-FIX 1 —
+    NOT a distorted 82).
+
+    Round-2 audit (MUST-FIX 1): the fix is NOT to distort the booked target
+    away from 100. It is coordinator.py's own detection-threshold
+    computation flooring at ``_position_tolerance`` before it ever reaches
+    ``handle_state_change`` (see the manual-override detection-threshold
+    block in ``async_handle_cover_state_change``) — so a delta the
+    same_position gate itself treats as "already there" can never
+    simultaneously read as "the user moved it" here. This test calls the
+    manager directly (bypassing coordinator.py), so it mirrors that floor
+    explicitly: ``max(configured manual_threshold, position_tolerance)``.
     """
     from custom_components.adaptive_cover_pro.managers.manual_override import (
         AdaptiveCoverManager,
@@ -2342,6 +2430,7 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
     assert (outcome, reason) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
     recorded_target = svc.get_target("cover.test")
+    assert recorded_target == 100  # MUST-FIX 1: the routed value, not 82.
 
     mgr = AdaptiveCoverManager(
         hass=MagicMock(), reset_duration={"hours": 2}, logger=MagicMock()
@@ -2355,13 +2444,18 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
     event.new_state.attributes = {"current_position": 82}
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
+    # Issue #1158 MUST-FIX 2: mirrors coordinator.py's floor — the
+    # configured manual_threshold (5) is narrower than position_tolerance
+    # (20); the floor, not a distorted target, is what protects this cover
+    # from a false positive.
+    floored_manual_threshold = max(5, svc._position_tolerance)
     mgr.handle_state_change(
         states_data=event,
         our_state=recorded_target,
         policy=get_policy("cover_blind"),
         allow_reset=True,
         is_waiting=lambda _eid: False,
-        manual_threshold=5,
+        manual_threshold=floored_manual_threshold,
         has_recorded_target=recorded_target is not None,
     )
 
