@@ -138,8 +138,6 @@ def _cp_handler(
 # #534's held-vs-would-be comparison and its inert mirror, #809's alignment
 # edge, #1036's frame conversion — so they use ABOVE_HOLDER, where the bound is
 # allowed to act and the mechanism is what is actually under test (#1170).
-
-
 def _registry_with_custom(handlers: list) -> PipelineRegistry:
     return PipelineRegistry(
         [*handlers, ClimateHandler(), SolarHandler(), DefaultHandler()]

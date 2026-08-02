@@ -36,3 +36,13 @@ assert ABOVE_HOLDER < CUSTOM_POSITION_SAFETY_PRIORITY, (  # noqa: S101
     f"ABOVE_HOLDER ({ABOVE_HOLDER}) collides with the safety carve-out; "
     "the #1170 clamp tests would pass for the wrong reason"
 )
+
+#: Manual override re-prioritized ABOVE a bound that would otherwise clamp — the
+#: 🔀 Handler Priorities case. Strictly greater than ABOVE_HOLDER so a slot
+#: anchored there loses to it, which is the whole point of the test using this.
+RAISED_HOLDER_PRIORITY = ABOVE_HOLDER + 1
+
+assert RAISED_HOLDER_PRIORITY < CUSTOM_POSITION_SAFETY_PRIORITY, (  # noqa: S101
+    f"RAISED_HOLDER_PRIORITY ({RAISED_HOLDER_PRIORITY}) reaches the safety "
+    "priority, which outranking exempts"
+)

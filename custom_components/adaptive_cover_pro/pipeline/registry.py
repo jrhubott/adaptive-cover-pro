@@ -127,6 +127,12 @@ def _release_hold_for_tilt_clamp(
     winner = dataclasses.replace(winner, skip_command=False)
     if position_clamped or winner.held_position is None:
         return winner
+    if effective_winner_pos == winner.position:
+        # ``group_lock`` sets ``position`` FROM the held read, so the two agree
+        # by construction and "held at 27% (not the would-be 27%)" is noise.
+        # Same guard ``diagnostics/builder.py`` puts on BUILDER_MANUAL_DIVERGENCE,
+        # and it also silences a manual hold sitting on its own shadow.
+        return dataclasses.replace(winner, position=effective_winner_pos)
     # Appended here rather than returned, so the caller stays one statement —
     # the dispatch and its explanation are the same event.
     trace.append(
@@ -436,8 +442,8 @@ class PipelineRegistry:
         # up.  manual_override holds the cover at held_position (its physical
         # position), not winner.position (the theoretical default it shadows),
         # so a bound must clamp against held_position when present (#534).
-        # Every other handler leaves held_position=None, so this preserves the
-        # existing behaviour exactly.
+        # ``group_lock`` sets it too; every other handler leaves it None, so
+        # this preserves the existing behaviour exactly for computed winners.
         #
         # ``held_position`` is a RAW cover-frame read, deliberately so — the
         # coordinator publishes it as a cover-frame diagnostic extra, "one
@@ -578,7 +584,10 @@ class PipelineRegistry:
                 # Same column ``_inactive_position_steps`` fills for the same
                 # kind of claim — a yielded floor must not blank the card's
                 # position where an inert one shows its value. Tilt-axis claims
-                # leave it None, as the tilt pass does.
+                # leave it None, as the tilt pass does. A RANGE claim shows its
+                # floor; both edges are spelled out in the reason text, which is
+                # where ``_inactive_position_steps`` splits into two steps and
+                # this one deliberately does not.
                 position=(
                     (c.low if c.low is not None else c.high)
                     if c.axis == AXIS_NAME_POSITION

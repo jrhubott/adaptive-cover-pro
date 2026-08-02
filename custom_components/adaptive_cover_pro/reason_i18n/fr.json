@@ -72,7 +72,7 @@
     "ceiling_overridden": "maximum {ceiling_pos}% ignoré — un minimum a relevé le volet à {to_pos}%",
     "floor_overrides_ceiling": "minimum relevé à {to_pos}% au-dessus du maximum {ceiling_pos}% par {label} (gagnant était {from_pos}%)",
     "bound_yielded_to_hold": "limite {low_label}–{high_label} ({axis}) de {label} écartée — la priorité {priority} ne dépasse pas {holder} ({holder_priority})",
-    "hold_position_carried": "la limite d'inclinaison commande le store — position maintenue à {position}% (et non la valeur théorique de {shadow_pos}%)",
+    "hold_position_carried": "la limite d'inclinaison commande la couverture — position maintenue à {position}% (et non la valeur théorique de {shadow_pos}%)",
     "tilt_bound_active": "limite d'inclinaison {low_label}–{high_label} active par {label} ; en attente de l'inclinaison résolue",
     "tilt_bound_inactive": "limite d'inclinaison {low_label}–{high_label} inactive par {label} ; inclinaison résolue {tilt}% déjà dans la plage",
     "tilt_clamped": "inclinaison limitée de {from_tilt}% à {to_tilt}% par {label}"

@@ -37,7 +37,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
-from tests._helpers.priorities import ABOVE_HOLDER
+from tests._helpers.priorities import ABOVE_HOLDER, RAISED_HOLDER_PRIORITY
 from tests.ha_helpers import (
     bind_user_position_seam,
     make_mock_policy,
@@ -931,7 +931,7 @@ async def test_clamp_respects_a_reconfigured_manual_override_priority() -> None:
     """
     coord, ctx = _make_coord(
         [_slot(40, is_on=True, min_mode=True, priority=ABOVE_HOLDER)],
-        default_options={CONF_MANUAL_OVERRIDE_PRIORITY: ABOVE_HOLDER + 3},
+        default_options={CONF_MANUAL_OVERRIDE_PRIORITY: RAISED_HOLDER_PRIORITY},
     )
 
     await coord.async_apply_user_position("cover.test", 10, trigger="set_position")

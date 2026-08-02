@@ -105,6 +105,7 @@ def _evaluate(
     *,
     winner: _StubWinner | None = None,
     default_tilt: int | None = None,
+    position_axis_inverted: bool = False,
 ):
     """Run a registry with a stub winner plus one handler per slot."""
     win = winner or _StubWinner()
@@ -119,7 +120,10 @@ def _evaluate(
             )
         )
     snap = make_snapshot(
-        custom_position_sensors=sensors, default_position=0, default_tilt=default_tilt
+        custom_position_sensors=sensors,
+        default_position=0,
+        default_tilt=default_tilt,
+        position_axis_inverted=position_axis_inverted,
     )
     return PipelineRegistry(handlers).evaluate(snap)
 
@@ -1168,32 +1172,20 @@ class TestAuditFindingsOnTheHoldGate:
         here would invert a second time downstream and drive the cover to the
         opposite end of its travel.
         """
-        snap = make_snapshot(
-            custom_position_sensors=[
+        res = _evaluate(
+            [
                 _slot(1, position=40, min_mode=True, priority=BELOW_HOLDER),
                 _slot(2, tilt_min=60, priority=ABOVE_HOLDER),
             ],
-            default_position=0,
+            winner=_StubWinner(
+                50,
+                tilt=10,
+                priority=HOLDER_PRIORITY,
+                held_position=27,
+                skip_command=True,
+            ),
             position_axis_inverted=True,
         )
-        win = _StubWinner(
-            50,
-            tilt=10,
-            priority=HOLDER_PRIORITY,
-            held_position=27,
-            skip_command=True,
-        )
-        handlers = [win, DefaultHandler()]
-        for s in snap.custom_position_sensors:
-            handlers.append(
-                CustomPositionHandler(
-                    slot=s.slot,
-                    position=s.position if s.position is not None else 0,
-                    priority=s.priority,
-                    tilt=s.tilt,
-                )
-            )
-        res = PipelineRegistry(handlers).evaluate(snap)
 
         assert res.skip_command is False
         assert res.position == 73  # flip_if(27), not 27
