@@ -139,6 +139,12 @@ _VENETIAN_EXTRA_KEYS = (
 # Control methods that carry an explicit, user-specified position.
 # The tilt-only carriage-close rewrite does not apply to these — the
 # user's position wins over "close carriage, let tilt filter".
+# GROUP_SCENE and GROUP_LOCK carry the same "explicit user intent" semantics
+# as CUSTOM_POSITION and MANUAL (issue #1153 finding 1): both handlers set
+# ``bypass_auto_control=True`` for exactly that reason (see their own
+# docstrings in pipeline/handlers/group_scene.py and group_lock.py), and
+# GROUP_LOCK's held position must not contradict itself by being reported as
+# force-closed while skip_command=True holds the carriage where it is.
 _EXPLICIT_USER_POSITION_METHODS = frozenset(
     {
         ControlMethod.CUSTOM_POSITION,
@@ -146,6 +152,8 @@ _EXPLICIT_USER_POSITION_METHODS = frozenset(
         ControlMethod.WEATHER,
         ControlMethod.MANUAL,
         ControlMethod.MOTION,
+        ControlMethod.GROUP_SCENE,
+        ControlMethod.GROUP_LOCK,
     }
 )
 
@@ -552,6 +560,64 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return True
         return cover is None or not cover.direct_sun_valid
 
+    def _pin_tilt_only_carriage(
+        self,
+        result: PipelineResult,
+        position: int,
+        tilt: int | None,
+        trace: list[DecisionStep],
+    ) -> int:
+        """Pin the carriage closed in tilt-only mode; append the trace step in place.
+
+        Tilt-only mode's defining behavior (issue #514) is that the carriage
+        stays closed and only the slats move — that must hold on EVERY exit
+        path out of ``post_pipeline_resolve``, not just the ones that happen
+        to produce a tilt. Before issue #1153's fix this pin only ran as a
+        side effect of the "handler tilt" and "engine tilt" branches; the
+        engine-suppressed no-tilt branch (a non-SOLAR winner, or SOLAR
+        without direct sun) returned early and skipped it entirely, so a
+        tilt-only install's carriage opened whenever no tilt happened to be
+        available. Skipped for explicit user position methods (a
+        manual/custom-position carriage move is intentional) and while a
+        tilt-only Custom Position slot's own FIXED contribution is already
+        driving the carriage (``tilt_only_contribution_active``), matching
+        the original per-branch guards this replaces — except on the engine
+        branch, whose original guard carried no
+        ``_EXPLICIT_USER_POSITION_METHODS`` check at all; adding one there is
+        harmless only because ``SOLAR`` is the sole control method that ever
+        reaches that branch, so the guard has nothing else to exclude.
+
+        Also skipped for ``ControlMethod.DEFAULT`` (issue #1153 finding 2).
+        Tilt-only is a sun-tracking-*window* behavior; ``DEFAULT`` is by
+        definition the no-handler-fired fallback that wins precisely OUTSIDE
+        that window, and it is the carrier for ``sunset_position`` /
+        ``return_sunset`` / ``default_percentage`` — pinning it would
+        silently disable all three documented carriage-movement options on a
+        tilt-only install. This is deliberately a separate condition rather
+        than a member of ``_EXPLICIT_USER_POSITION_METHODS``: DEFAULT is not
+        explicit user intent, it is the absence of any handler intent.
+        """
+        if (
+            self._venetian_mode != VENETIAN_MODE_TILT_ONLY
+            or result.control_method in _EXPLICIT_USER_POSITION_METHODS
+            or result.control_method == ControlMethod.DEFAULT
+            or result.tilt_only_contribution_active
+        ):
+            return position
+        trace.append(
+            DecisionStep(
+                handler="venetian_mode",
+                matched=True,
+                reason=(
+                    f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
+                    "(closed); tilt drives the slats"
+                ),
+                position=POSITION_CLOSED,
+                tilt=tilt,
+            )
+        )
+        return POSITION_CLOSED
+
     def _compose_tilt(
         self,
         position: int,
@@ -670,24 +736,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             handler_tilt = result.tilt
             position = result.position
             trace = list(result.decision_trace)
-            if (
-                self._venetian_mode == VENETIAN_MODE_TILT_ONLY
-                and result.control_method not in _EXPLICIT_USER_POSITION_METHODS
-                and not result.tilt_only_contribution_active
-            ):
-                trace.append(
-                    DecisionStep(
-                        handler="venetian_mode",
-                        matched=True,
-                        reason=(
-                            f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
-                            "(closed); tilt drives the slats"
-                        ),
-                        position=POSITION_CLOSED,
-                        tilt=handler_tilt,
-                    )
-                )
-                position = POSITION_CLOSED
+            position = self._pin_tilt_only_carriage(
+                result, position, handler_tilt, trace
+            )
             trace.append(
                 DecisionStep(
                     handler="venetian_handler_tilt",
@@ -705,7 +756,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         # No handler tilt: engine fallback runs only when SOLAR + direct sun.
         if self._engine_tilt_suppressed(result, cover):
             self._clear_last_tilt()
-            return replace(result, tilt=None)
+            position = result.position
+            trace = list(result.decision_trace)
+            position = self._pin_tilt_only_carriage(result, position, None, trace)
+            return replace(result, position=position, tilt=None, decision_trace=trace)
 
         # Compose the engine slat angle (+ movement-minimization quantize) via
         # the shared seam the forecast hook also uses, so the projected tilt
@@ -759,23 +813,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             )
             tilt = bounded
 
-        if (
-            self._venetian_mode == VENETIAN_MODE_TILT_ONLY
-            and not result.tilt_only_contribution_active
-        ):
-            trace.append(
-                DecisionStep(
-                    handler="venetian_mode",
-                    matched=True,
-                    reason=(
-                        f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
-                        "(closed); tilt drives the slats"
-                    ),
-                    position=POSITION_CLOSED,
-                    tilt=tilt,
-                )
-            )
-            position = POSITION_CLOSED
+        position = self._pin_tilt_only_carriage(result, position, tilt, trace)
 
         trace.append(
             DecisionStep(

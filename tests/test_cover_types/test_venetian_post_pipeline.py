@@ -152,6 +152,169 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.position == 80
         assert out.tilt is None
 
+    def test_tilt_only_pins_carriage_for_non_solar_non_explicit_winner(self):
+        """Issue #1153 finding 2: the pin must not depend on a leaked tilt.
+
+        A non-SOLAR, non-explicit-user-position winner (e.g. a climate SUMMER
+        decision) reaches the engine-suppressed early-return branch with
+        ``result.tilt`` genuinely ``None`` — no handler and no engine ever
+        supply one. Before the fix, that branch returned early and skipped
+        the tilt-only carriage pin entirely, so the carriage opened to the
+        winner's raw position instead of staying closed — the pin only
+        worked when a (possibly leaked) tilt happened to route through the
+        handler-tilt branch instead. ``ControlMethod.WEATHER`` above is
+        exempt (an explicit user position, see ``_EXPLICIT_USER_POSITION_METHODS``);
+        SUMMER is not, so the pin must apply here.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SUMMER, position=70), **_non_solar_kwargs()
+        )
+        assert out.position == 0
+        assert out.tilt is None
+        assert "venetian_mode" in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_does_not_pin_group_scene_winner(self):
+        """Issue #1153 round-2 finding 1: GROUP_SCENE is explicit user intent.
+
+        ``GroupSceneHandler`` sets ``bypass_auto_control=True`` with the
+        comment "Explicit user intent: runs even with automatic control off
+        — same semantics as custom-position slots"
+        (pipeline/handlers/group_scene.py) and never supplies a tilt, so this
+        exercises the engine-suppressed exit path (finding 1's probe:
+        ``engine_suppressed contrib=0 group_scene out_pos=100 -> out_pos=0``
+        before this fix). A user picking a scene like "All open" must not
+        have the venetian tilt-only pin silently rewrite the carriage back
+        to closed.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.GROUP_SCENE, position=100),
+            **_non_solar_kwargs(),
+        )
+        assert out.position == 100
+        assert out.tilt is None
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_does_not_pin_group_lock_winner(self):
+        """Issue #1153 round-2 finding 1: GROUP_LOCK holds the current position.
+
+        ``GroupLockHandler`` carries ``skip_command=True`` — nothing
+        physically moves — but the published target must still agree with
+        its own ``held_position`` rather than being rewritten to
+        ``POSITION_CLOSED``. It is the third member of the hold family;
+        ``MANUAL`` and ``MOTION`` are both already exempt.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.GROUP_LOCK, position=65),
+            **_non_solar_kwargs(),
+        )
+        assert out.position == 65
+        assert out.tilt is None
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_does_not_pin_default_winner_at_default_percentage(self):
+        """Issue #1153 round-2 finding 2: DEFAULT is not a tilt-only-pinned method.
+
+        Tilt-only mode is a sun-tracking-*window* behavior; ``DEFAULT`` is by
+        definition the no-handler-fired fallback that wins OUTSIDE that
+        window and carries ``default_percentage``. Pinning it would silently
+        disable the option's documented carriage movement for every
+        tilt-only install (probe:
+        ``engine_suppressed contrib=0 default out_pos=100 -> out_pos=0``
+        before this fix — including the reporter's own diagnostics:
+        ``default_percentage = 100``, ``venetian_mode = tilt_only``).
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.DEFAULT, position=100), **_non_solar_kwargs()
+        )
+        assert out.position == 100
+        assert out.tilt is None
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_does_not_pin_default_winner_during_sunset(self):
+        """Issue #1153 round-2 finding 2: DEFAULT carries sunset_position too.
+
+        ``post_pipeline_resolve`` only sees the resolved ``PipelineResult`` —
+        ``is_sunset_active`` is upstream state ``DefaultHandler`` consulted
+        when it picked ``sunset_position`` for ``position`` — but the same
+        DEFAULT exemption must hold regardless of which of the three
+        fallback options (default_percentage / sunset_position /
+        return_sunset) supplied the value.
+
+        This is an intent-documenting test, not independent coverage: it
+        rides the exact same code path as
+        ``test_tilt_only_does_not_pin_default_winner_at_default_percentage``
+        above — ``_pin_tilt_only_carriage`` never reads ``is_sunset_active``,
+        so nothing here can fail in a way that test wouldn't already catch.
+        It stays because ``sunset_position`` / ``return_sunset`` are exactly
+        the fallback options the DEFAULT exemption was written to rescue,
+        and a future reader should not have to re-derive that from the
+        production code.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=45,
+            control_method=ControlMethod.DEFAULT,
+            reason="test",
+            is_sunset_active=True,
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        assert out.position == 45
+        assert out.tilt is None
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_tilt_only_does_not_pin_default_winner_with_handler_tilt(self):
+        """Issue #1153 audit finding 1: the DEFAULT exemption on the OTHER exit path.
+
+        The two tests above both exercise the *engine-suppressed* branch
+        (``result.tilt is None`` going in). This test drives
+        ``default_tilt`` being configured, so ``DefaultHandler`` stamps a
+        non-``None`` tilt directly onto its own winning result — that routes
+        ``post_pipeline_resolve`` through the *handler-tilt* branch instead
+        (``result.tilt is not None`` at the top of the method), a different
+        call site of ``_pin_tilt_only_carriage``. Before this issue's fix
+        that branch had no DEFAULT exemption at all: the develop code pinned
+        the carriage shut here, silently disabling ``default_tilt`` on every
+        tilt-only install. It is safe today only because one shared helper
+        now serves all three call sites — this test locks that coverage
+        down instead of leaving it to depend on that fact.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=100,
+            tilt=55,
+            control_method=ControlMethod.DEFAULT,
+            reason="test",
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        handler_names = [s.handler for s in out.decision_trace]
+        # Prove the handler-tilt branch ran, not the engine-suppressed one.
+        assert "venetian_handler_tilt" in handler_names
+        assert out.position == 100
+        assert out.tilt == 55
+        assert "venetian_mode" not in handler_names
+
 
 class TestPostPipelineResolveCoverageSteps:
     """Movement minimization quantizes the slat tilt toward full coverage."""

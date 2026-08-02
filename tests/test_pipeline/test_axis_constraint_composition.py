@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import DefaultHandle
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
@@ -97,40 +98,15 @@ def _slot(
     )
 
 
-class _StubTiltContributor(OverrideHandler):
-    """A lower-priority handler that matches and supplies only a tilt.
-
-    Reproduces the ``_MERGEABLE`` fill path: the winner leaves ``tilt`` unset
-    and this handler's tilt is merged onto the result.
-    """
-
-    name = "stub_tilt"
-
-    def __init__(self, tilt: int, *, priority: int = 50) -> None:
-        self._tilt = tilt
-        self.priority = priority
-
-    def evaluate(self, snapshot) -> PipelineResult:  # noqa: ARG002
-        return PipelineResult(
-            position=99,
-            tilt=self._tilt,
-            control_method=ControlMethod.SOLAR,
-            reason="stub tilt",
-        )
-
-    def describe_skip(self, snapshot):  # noqa: ARG002
-        return "stub tilt skip"
-
-
 def _evaluate(
     sensors,
     *,
     winner: _StubWinner | None = None,
-    extra: list[OverrideHandler] | None = None,
+    default_tilt: int | None = None,
 ):
     """Run a registry with a stub winner plus one handler per slot."""
     win = winner or _StubWinner()
-    handlers: list[OverrideHandler] = [win, DefaultHandler(), *(extra or [])]
+    handlers: list[OverrideHandler] = [win, DefaultHandler()]
     for s in sensors:
         handlers.append(
             CustomPositionHandler(
@@ -140,7 +116,9 @@ def _evaluate(
                 tilt=s.tilt,
             )
         )
-    snap = make_snapshot(custom_position_sensors=sensors, default_position=0)
+    snap = make_snapshot(
+        custom_position_sensors=sensors, default_position=0, default_tilt=default_tilt
+    )
     return PipelineRegistry(handlers).evaluate(snap)
 
 
@@ -337,6 +315,15 @@ class TestTiltBounds:
         res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(80, tilt=20))
         assert res.position == 80
 
+    def test_bounds_are_not_also_carried(self) -> None:
+        """Once a tilt is clamped there is exactly one clamp site — not two.
+
+        Carrying the bounds as well would let the venetian policy clamp the
+        already-clamped tilt a second time.
+        """
+        res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(50, tilt=20))
+        assert (res.tilt_low, res.tilt_high) == (None, None)
+
 
 class TestTiltOnlyOverlayThenClamp:
     """FIXED fills when unset; bounds then clamp the filled value."""
@@ -422,41 +409,99 @@ class TestWinnerTraceStepSurvivesItsOwnConstraint:
         assert [s.handler for s in matched] == ["custom_position_1"]
 
 
-class TestMergedTiltIsClamped:
-    """A tilt reaching the result via the _MERGEABLE fill must be clamped.
+class TestLosingHandlerTiltDoesNotLeak:
+    """A losing (outprioritized) handler's tilt must NOT reach the result.
 
-    Audit finding 2 — the headline feature failing at its own job: the registry
-    clamped only ``winner.tilt`` / the FIXED overlay, so a tilt merged from a
-    lower-priority handler (or a ``contribute()``) sailed past the bound.
+    Issue #1153 — ``_MERGEABLE`` used to include ``"tilt"``, so a handler the
+    pipeline explicitly outprioritized could still supply the tilt that
+    reached ``PipelineResult.tilt``. ``VenetianPolicy.post_pipeline_resolve``
+    treats any non-None ``result.tilt`` as explicit user intent and honors it
+    unconditionally, skipping its own solar tilt engine — so the leaked tilt
+    from a *loser* silently disabled solar tilt tracking. Tilt is an
+    actuation output, not diagnostic metadata like climate_state /
+    climate_strategy / climate_data (which legitimately still merge from a
+    deferred/outprioritized handler): it is owned by exactly two sources, the
+    winner's own tilt and the priority-independent tilt-axis pass (#514 /
+    #943) — never a lower-priority loser.
+
+    This replaces the old ``TestMergedTiltIsClamped`` — that class pinned the
+    contract this issue found wrong (a merged tilt gets clamped) rather than
+    the correct one (a losing handler's tilt never reaches the result at
+    all). Coverage that a *winner's own* tilt still gets clamped by #943
+    bounds survives in ``TestTiltBounds`` above, which exercises
+    ``_StubWinner(..., tilt=...)`` directly — unaffected by this change.
     """
 
-    def _res(self, tilt_min=50):
-        return _evaluate(
-            [_slot(3, tilt_min=tilt_min)],
-            winner=_StubWinner(70, priority=80),
-            extra=[_StubTiltContributor(30, priority=50)],
-        )
+    def test_losing_custom_position_tilt_does_not_leak(self) -> None:
+        """A losing CustomPositionHandler's tilt does not reach the winner.
 
-    def test_merged_tilt_is_raised_to_the_bound(self) -> None:
-        """Merged tilt 30 under a minimum of 50 → 50."""
-        assert self._res().tilt == 50
-
-    def test_bounds_are_not_also_carried(self) -> None:
-        """Once a tilt is clamped there is exactly one clamp site — not two.
-
-        Carrying the bounds as well would let the venetian policy clamp the
-        already-clamped tilt a second time.
+        Mirrors the reporter's exact scenario: solar (``SolarHandler.priority``)
+        wins the position with tilt=None (the venetian engine resolves it
+        later); custom_position_1 (priority 1) is triggered and loses, but
+        its tilt=100 must not leak onto the winner.
         """
-        res = self._res()
-        assert (res.tilt_low, res.tilt_high) == (None, None)
+        res = _evaluate(
+            [_slot(1, position=0, tilt=100, priority=1)],
+            winner=_StubWinner(0, priority=SolarHandler.priority),
+        )
+        assert res.tilt is None
 
-    def test_merged_tilt_within_bounds_survives(self) -> None:
-        """A merged tilt already inside the bound is untouched."""
-        assert self._res(tilt_min=20).tilt == 30
+    def test_losing_custom_position_stays_outprioritized_in_trace(self) -> None:
+        """The trace records the loser as outprioritized, AND its tilt is gone.
 
-    def test_clamped_merge_emits_the_trace_step(self) -> None:
-        """The clamp is visible rather than a silent value change."""
-        assert ReasonCode.REGISTRY_TILT_CLAMPED in _codes(self._res())
+        Trace-shape alone (``matched is False`` / ``REGISTRY_OUTPRIORITIZED``)
+        passes identically whether or not the #1153 leak is present — the
+        leak never touched the trace, only ``result.tilt``. The
+        ``res.tilt is None`` assertion is what actually depends on the fix:
+        drop it and this test would keep passing against the pre-fix
+        ``_MERGEABLE`` that included ``"tilt"``.
+        """
+        res = _evaluate(
+            [_slot(1, position=0, tilt=100, priority=1)],
+            winner=_StubWinner(0, priority=SolarHandler.priority),
+        )
+        step = next(s for s in res.decision_trace if s.handler == "custom_position_1")
+        assert step.matched is False
+        assert step.reason_payload.code is ReasonCode.REGISTRY_OUTPRIORITIZED
+        assert res.tilt is None
+
+    def test_default_tilt_does_not_leak_onto_a_winning_handler(self) -> None:
+        """DefaultHandler's default_tilt must not reach a result it did not win.
+
+        The second manifestation of the same root cause: DefaultHandler
+        always matches (priority 0), so it is always among the "losers" when
+        any other handler wins — and its ``default_tilt`` used to leak in
+        exactly the same way.
+        """
+        res = _evaluate(
+            [], winner=_StubWinner(0, priority=SolarHandler.priority), default_tilt=42
+        )
+        assert res.tilt is None
+
+    def test_winning_custom_position_slot_with_no_tilt_stays_untilted(self) -> None:
+        """A WINNING custom-position slot with no tilt of its own stays tilt=None.
+
+        Makes the approved #1153 behavior change explicit rather than
+        incidental: unlike the two tests above (a synthetic ``_StubWinner``),
+        here the WINNER itself is a real ``CustomPositionHandler`` slot that
+        simply never configured a tilt. ``default_tilt`` must not fill the
+        hole via the (now-removed) merge just because ``DefaultHandler``
+        lost and left a value on the table.
+        """
+        res = _evaluate(
+            [
+                _slot(
+                    1,
+                    position=30,
+                    tilt=None,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                )
+            ],
+            default_tilt=42,
+        )
+        assert res.control_method == ControlMethod.CUSTOM_POSITION
+        assert res.position == 30
+        assert res.tilt is None
 
 
 class TestBindingBoundIsNamed:

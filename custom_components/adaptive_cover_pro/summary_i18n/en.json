@@ -190,8 +190,8 @@
     "elevation_above": "above {elev}° elevation"
   },
   "default": {
-    "tilt": "  ↳ Default tilt: {tilt}% (explicit; overrides solar-computed)",
-    "sunset_tilt": "  ↳ Sunset tilt: {tilt}% (explicit; overrides solar-computed)"
+    "tilt": "  ↳ Default tilt: {tilt}% (used when no handler wins control)",
+    "sunset_tilt": "  ↳ Sunset tilt: {tilt}% (used when no handler wins control, during sunset)"
   },
   "limits": {
     "range": "Range: {lo}–{hi}{qualifier}",

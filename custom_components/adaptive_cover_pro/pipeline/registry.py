@@ -185,22 +185,19 @@ def _inactive_tilt_steps(
 def _tilt_to_clamp(
     tilt_overlay: int | None,
     winner_tilt: int | None,
-    merged: dict[str, object],
 ) -> int | None:
     """Return the tilt a bound should clamp, in precedence order.
 
-    The FIXED overlay we just filled wins; then the winner's own tilt; then a
-    tilt merged onto the result from a lower-priority handler or ``contribute()``
-    (the ``_MERGEABLE`` fill). The merged case is the one the pre-audit code
-    skipped, letting a configured minimum be silently violated (audit finding
-    2). Returns None when nothing has set a tilt yet (the venetian engine will).
+    The FIXED overlay (issue #514) we just filled wins; otherwise the
+    winner's own tilt. There is no third, merged-from-a-loser source: a
+    handler the pipeline outprioritized never contributes a tilt (issue
+    #1153) — ``_MERGEABLE`` no longer includes ``"tilt"``, so nothing else
+    could have set one by this point. Returns None when nothing has set a
+    tilt yet (the venetian engine will, post-pipeline).
     """
     if tilt_overlay is not None:
         return tilt_overlay
-    if winner_tilt is not None:
-        return winner_tilt
-    merged_tilt = merged.get("tilt")
-    return int(merged_tilt) if merged_tilt is not None else None  # type: ignore[arg-type]
+    return winner_tilt
 
 
 class PipelineRegistry:
@@ -301,7 +298,15 @@ class PipelineRegistry:
         #      from evaluate() (e.g. ClimateHandler deferring GLARE_CONTROL) can
         #      still surface metadata this way (Issue #240).
         # Winner's non-None values are never overwritten.
-        _MERGEABLE = ("climate_state", "climate_strategy", "climate_data", "tilt")
+        #
+        # ``tilt`` is deliberately NOT in this tuple (issue #1153). Unlike
+        # climate_state/climate_strategy/climate_data, tilt is an actuation
+        # output, not diagnostic metadata — a handler the pipeline explicitly
+        # outprioritized must never drive the tilt axis. Tilt is owned by
+        # exactly two sources: the winner's own ``PipelineResult.tilt``, and
+        # the priority-independent tilt-axis pass below (the #514 FIXED
+        # overlay and #943 bounds composition; see ``_tilt_to_clamp``).
+        _MERGEABLE = ("climate_state", "climate_strategy", "climate_data")
         contributions: list[dict[str, object]] = [
             h.contribute(snapshot) for h, _ in evaluated
         ]
@@ -515,12 +520,12 @@ class PipelineRegistry:
             },
         )
         # The tilt to clamp is, in precedence order: the FIXED overlay we just
-        # filled, the winner's own tilt, or a tilt merged from a lower-priority
-        # handler / contribute() (the ``_MERGEABLE`` fill). The merged case is
-        # the one the pre-audit code missed — a configured minimum was silently
-        # violated whenever a handler-supplied tilt reached the result by merge
-        # (audit finding 2). One clamp site covers all three.
-        resolved_tilt = _tilt_to_clamp(tilt_overlay, winner.tilt, merged)
+        # filled, or the winner's own tilt (see ``_tilt_to_clamp``). #943's
+        # audit finding 2 — a configured minimum silently violated by a tilt
+        # that reached the result via merge from a lower-priority handler —
+        # no longer applies: issue #1153 removed that merge path entirely, so
+        # there is nothing left for a bound to miss.
+        resolved_tilt = _tilt_to_clamp(tilt_overlay, winner.tilt)
         tilt_clamped = False
         carried_low: int | None = None
         carried_high: int | None = None
@@ -615,9 +620,11 @@ class PipelineRegistry:
         if tilt_clamped:
             # Same rule on the tilt axis: a clamp is a command, not a no-op.
             winner = dataclasses.replace(winner, skip_command=False)
-        # The dedicated tilt-axis overlay (issue #514) wins the tilt field over
-        # the generic _MERGEABLE tilt fill — both only fire when the winner's
-        # own tilt is None, but a tilt-only contribution is explicit user intent.
+        # The tilt-axis overlay (issue #514) is how a FIXED contribution
+        # reaches the result's tilt field. It can never collide with the
+        # bound-clamp write above (the ``else: merged["tilt"] = bounded_tilt``
+        # branch only fires when ``tilt_overlay`` is None) — this is simply
+        # the transport for a (possibly bound-clamped) tilt-only contribution.
         if tilt_overlay is not None:
             merged["tilt"] = tilt_overlay
         result = dataclasses.replace(
