@@ -27,6 +27,8 @@ from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_SUN_TRACKING_GATE_SENSORS,
+    CONF_SUN_TRACKING_GATE_TEMPLATE,
     CONF_DEFAULT_HEIGHT,
     CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
@@ -329,6 +331,16 @@ def _register_option_template_trackers(
         "Daytime gate template",
     )
 
+    # The optional sun-tracking gate template (issue #1167). Same immediacy
+    # contract as the daytime gate above.
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_SUN_TRACKING_GATE_TEMPLATE),
+        coordinator.async_check_sun_tracking_gate_template_change,
+        "Sun tracking gate template",
+    )
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Set up Adaptive Cover Pro from a config entry."""
@@ -397,6 +409,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     # Add daytime gate sensors (issue #632) so flipping the gate OFF (dark)
     # triggers an immediate positioning cycle — same immediacy as lux/irradiance.
     _entities.extend(entry.options.get(CONF_DAYTIME_GATE_SENSORS, []))
+
+    # Add sun-tracking gate sensors (issue #1167) for the same reason: flipping
+    # the gate closed must suppress solar on the next cycle, not whenever some
+    # other entity happens to change.
+    _entities.extend(entry.options.get(CONF_SUN_TRACKING_GATE_SENSORS, []))
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 
@@ -1005,6 +1022,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # every restart (the v3.13 → v3.14 precedent). Rollback-safe: an older build
     # finds every key exactly as it left it and ignores the one it doesn't know.
     new_minor = _advance_noop_minor(new_version, new_minor, 15)
+
+    # v3.15 → v3.16: added the additive sun-tracking gate options —
+    # sun_tracking_gate_sensors / _template / _template_mode (issue #1167). An
+    # absent key already reads as "no gate configured", which resolves to the
+    # master toggle alone, so nothing needs seeding; this is a no-op minor bump
+    # kept only to advance entries sitting at minor 15 to 16 so they stop
+    # re-triggering migration every restart (the v3.14 → v3.15 precedent).
+    # Rollback-safe: an older build finds every key exactly as it left it and
+    # ignores the three it does not know, reverting to the plain bool toggle.
+    new_minor = _advance_noop_minor(new_version, new_minor, 16)
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

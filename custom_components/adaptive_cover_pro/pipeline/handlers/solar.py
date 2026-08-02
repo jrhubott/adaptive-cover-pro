@@ -25,6 +25,14 @@ class SolarHandler(OverrideHandler):
         """Return calculated position when direct sun is valid."""
         if not snapshot.in_time_window:
             return None
+        # Sun tracking off — the static toggle, the sun-tracking gate, or both
+        # (issue #1167). They fold into this one field at snapshot-build time, so
+        # there is exactly one place that means "tracking is not live right now"
+        # and exactly one place that reads it. Declining here (rather than
+        # omitting the handler from the pipeline) is what lets the chain fall
+        # through with a decision-trace entry explaining why.
+        if not snapshot.enable_sun_tracking:
+            return None
         if not snapshot.cover.direct_sun_valid:
             return None
 
@@ -43,7 +51,14 @@ class SolarHandler(OverrideHandler):
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
-        """Reason when solar handler does not match."""
+        """Reason when solar handler does not match.
+
+        Ordered to match ``evaluate``: the first gate that actually stopped it is
+        the one reported, so "outside the window" outranks "the gate is closed",
+        which in turn outranks "the sun is not on this face".
+        """
         if not snapshot.in_time_window:
             return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
+        if not snapshot.enable_sun_tracking:
+            return Reason(ReasonCode.SKIP_SUN_TRACKING_GATE)
         return Reason(ReasonCode.SKIP_SUN_OUTSIDE)

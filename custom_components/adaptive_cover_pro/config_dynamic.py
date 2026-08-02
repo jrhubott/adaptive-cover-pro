@@ -45,6 +45,9 @@ from .const import (
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    CONF_SUN_TRACKING_GATE_SENSORS,
+    CONF_SUN_TRACKING_GATE_TEMPLATE,
+    CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_SUN_TRACKING,
@@ -298,6 +301,20 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_ENABLE_BLIND_SPOT, default=False
             ): selector.BooleanSelector(),
+            # The sun-tracking gate (issue #1167): sensors and/or a Jinja
+            # condition that suppress solar positioning while they read false,
+            # letting the chain fall through to the default position. Sits beside
+            # the master toggle it ANDs with. Profile-owned — a linked cover
+            # renders it pre-filled with the inherited value under the
+            # inherit/override model, same as the daytime gate on the behavior step.
+            vol.Optional(
+                CONF_SUN_TRACKING_GATE_SENSORS, default=[]
+            ): binary_on_selector(multiple=True),
+            vol.Optional(CONF_SUN_TRACKING_GATE_TEMPLATE): selector.TemplateSelector(),
+            vol.Optional(
+                CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+                default=DEFAULT_TEMPLATE_COMBINE_MODE,
+            ): _template_combine_mode_selector(),
             # minimize_movements / max_coverage_steps moved to the L4 global
             # motion-constraints (automation) step — see config_flow.AUTOMATION_SCHEMA (#613).
         }
@@ -669,6 +686,10 @@ def building_profile_sensors_schema() -> vol.Schema:
         CONF_DAYTIME_GATE_SENSORS: binary_on_selector(multiple=True),
         CONF_DAYTIME_GATE_TEMPLATE: selector.TemplateSelector(),
         CONF_DAYTIME_GATE_TEMPLATE_MODE: _template_combine_mode_selector(),
+        # Sun-tracking gate (issue #1167)
+        CONF_SUN_TRACKING_GATE_SENSORS: binary_on_selector(multiple=True),
+        CONF_SUN_TRACKING_GATE_TEMPLATE: selector.TemplateSelector(),
+        CONF_SUN_TRACKING_GATE_TEMPLATE_MODE: _template_combine_mode_selector(),
         # Sunrise / sunset time entities (offsets stay per-cover)
         CONF_SUNSET_TIME_ENTITY: selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])

@@ -1144,11 +1144,22 @@ async def test_entity_ids_survive_a_cover_type_switch(hass: HomeAssistant) -> No
 
 
 def test_config_entry_version_unchanged() -> None:
-    """No new option key → no migration, no version bump (rollback safety)."""
+    """Changing cover type introduces no migration — the MAJOR version stays 3.
+
+    The major-version lock is the rollback contract (CLAUDE.md § "Rollback-Safe
+    Config Migrations"): HA refuses to load an entry whose stored major exceeds
+    the running integration's, so a bump would hard-fail a downgrade.
+
+    This deliberately does NOT pin MINOR_VERSION. Minor advances whenever *any*
+    feature adds an additive option (issue #1167's sun-tracking gate was the
+    first to trip this), and asserting a literal here coupled an unrelated
+    feature's migration to this test. The canonical minor lock lives with the
+    migrations it describes:
+    ``test_config_entry_migration.py::test_config_flow_minor_version_reaches_highest_migration_target``.
+    """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
     assert ConfigFlowHandler.VERSION == 3
-    assert ConfigFlowHandler.MINOR_VERSION == 15
 
 
 # ---------------------------------------------------------------------------

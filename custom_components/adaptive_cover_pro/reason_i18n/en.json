@@ -97,6 +97,7 @@
   "skip": {
     "outside_window": "outside time window",
     "sun_outside": "sun outside acceptance angle or elevation limits",
+    "sun_tracking_gate": "sun tracking gate is closed",
     "manual_not_active": "manual override not active",
     "occupancy_disabled": "occupancy detection disabled",
     "occupancy_not_active": "occupancy timeout not active",

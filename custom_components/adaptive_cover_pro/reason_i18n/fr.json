@@ -97,6 +97,7 @@
   "skip": {
     "outside_window": "en dehors de la plage horaire",
     "sun_outside": "soleil en dehors de l'angle d'acceptation ou des limites d'élévation",
+    "sun_tracking_gate": "le filtre de suivi du soleil est fermé",
     "manual_not_active": "dérogation manuelle non active",
     "occupancy_disabled": "détection de présence désactivée",
     "occupancy_not_active": "délai d'absence non actif",

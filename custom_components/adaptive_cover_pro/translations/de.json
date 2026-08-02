@@ -236,7 +236,9 @@
           "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
-          "weather_severe_template": "Unwetter-Vorlage (optional)"
+          "weather_severe_template": "Unwetter-Vorlage (optional)",
+          "sun_tracking_gate_sensors": "Sonnenverfolgungs-Gate Sensoren",
+          "sun_tracking_gate_template": "Sonnenverfolgungs-Gate-Vorlage (optional)"
         },
         "data_description": {
           "name": "Ein sprechender Name für dieses Gebäudeprofil.",
@@ -259,7 +261,9 @@
           "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
           "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
-          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Wenn sie wahr (on/true/1) erbracht wird, wird die Übersteuerung aktiviert. Sie kombiniert mit den Unwetter-Sensoren oben (OR oder AND) über die Einstellung „Unwetter-Vorlage-Logik“ auf dem Bildschirm „Weather Override“ pro Beschattung; sie kann eigenständig ohne Sensoren funktionieren und reagiert sofort, wenn sich die Vorlage ändert. Eine Vorlage, die leer ist oder nicht erbracht werden kann, gibt keine Meinung ab (kein Rückzug). Leer lassen zum Deaktivieren."
+          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Wenn sie wahr (on/true/1) erbracht wird, wird die Übersteuerung aktiviert. Sie kombiniert mit den Unwetter-Sensoren oben (OR oder AND) über die Einstellung „Unwetter-Vorlage-Logik“ auf dem Bildschirm „Weather Override“ pro Beschattung; sie kann eigenständig ohne Sensoren funktionieren und reagiert sofort, wenn sich die Vorlage ändert. Eine Vorlage, die leer ist oder nicht erbracht werden kann, gibt keine Meinung ab (kein Rückzug). Leer lassen zum Deaktivieren.",
+          "sun_tracking_gate_sensors": "Optionale binäre Sensoren (oder input_boolean / Schalter / Zeitplan), die entscheiden, ob die Beschattung gerade Sonnenverfolgung aktiv hat – zum Beispiel nur während die Klimaanlage Kühlung anfordert. AN bedeutet Verfolgung. Es reicht, wenn ein Sensor AN ist. Während das Gate geschlossen ist, wird die Sonnenpositionierung übersprungen und die Beschattung fällt auf ihre Standardposition zurück; Klimamodus, Blendungszonen, Bewegung und manuelle Übersteuerung sind nicht betroffen. Leer lassen, um immer zu verfolgen.",
+          "sun_tracking_gate_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob die Sonnenverfolgung aktiv ist. Beispiel: {{ is_state('climate.upstairs', 'cool') }}. Leer lassen zum Deaktivieren."
         }
       },
       "create_group": {
@@ -480,20 +484,26 @@
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Wählen Sie, ob der Behang der Sonne folgt, und stellen Sie die Höhengrenzen für das Tracking ein. Die Integration hält den Behang in seiner Standardposition, wenn die Sonne außerhalb des verfolgten Bereichs liegt.\n\n**Höhengrenzen** filtern sehr flache Winkel (Aufgangblendung) oder sehr hohe Winkel (Zenit) heraus, wo Blockade möglicherweise nicht erforderlich ist. Die Fensterorientierung und der Sonnen-Akzeptanzwinkel werden auf der Seite \"Fenstergeometrie\" eingestellt.\n\n[Weitere Informationen]({learn_more})",
+        "description": "Wähle aus, ob die Beschattung die Sonne verfolgt und stelle die Höhengrenzen für die Verfolgung ein. Die Integration hält die Beschattung in ihrer Standardposition, wenn die Sonne außerhalb des verfolgten Bereichs liegt.\n\n**Höhengrenzen** filtern sehr niedrige Winkel (Sonnenaufgang-Blendung) oder sehr hohe Winkel (Zenit) heraus, wo Abschattung möglicherweise nicht erforderlich ist. Die Orientierung des Fensters und der Sonnenakzeptanzwinkel werden auf der Seite Fenstergeometrie eingestellt.\n\n[Weitere Informationen]({learn_more})\n\n{profile_inherit}",
         "data": {
           "enable_sun_tracking": "Sonnenverfolgung aktivieren",
           "min_elevation": "Minimale Sonnenhöhe",
           "max_elevation": "Maximale Sonnenhöhe",
           "blind_spot": "Blindfleck einrichten",
-          "enable_glare_zones": "Blendungszonen aktivieren"
+          "enable_glare_zones": "Blendungszonen aktivieren",
+          "sun_tracking_gate_sensors": "Sonnenverfolgungs-Gate Sensoren",
+          "sun_tracking_gate_template": "Sonnenverfolgungs-Gate-Vorlage (optional)",
+          "sun_tracking_gate_template_mode": "Sonnenverfolgungs-Gate-Vorlagenlogik"
         },
         "data_description": {
           "enable_sun_tracking": "Bei Aktivierung folgen Behänge der Sonne innerhalb des konfigurierten Sonnen-Akzeptanzwinkels und der Höhengrenzen (Solarpositionierung). Bei Deaktivierung werden Behänge nur durch Wetter, Wettervorhersage und Zeitfenster (z. B. \"nur während der Arbeit\") gesteuert.",
           "min_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe ÜBER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt über Kopf. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 15° einstellen, um die niedrige Morgen-/Abendsonne zu ignorieren. Lassen Sie leer, um die Sonne auf allen Höhen zu verfolgen.",
           "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt über Kopf. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° einstellen, um die hohe Mittagssonne zu ignorieren. Lassen Sie leer, um die Sonne auf allen Höhen zu verfolgen.",
           "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die die Sonne in einem Teil des Verfolgungsbereichs blockieren (Bäume, nahegelegene Gebäude, Dachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem Sonne blockiert ist. Die Beschattung ignoriert die Sonnenposition, wenn sie sich in diesem 'Blindfleck' befindet. Lassen Sie deaktiviert, wenn Sie den ganzen Tag über freie Sicht zur Sonne haben.",
-          "enable_glare_zones": "Schützen Sie bestimmte Bodenbereiche vor direkter Sonnenblendung (nur vertikale Beschattungen)"
+          "enable_glare_zones": "Schützen Sie bestimmte Bodenbereiche vor direkter Sonnenblendung (nur vertikale Beschattungen)",
+          "sun_tracking_gate_sensors": "Optionale binäre Sensoren (oder input_boolean / Schalter / Zeitplan), die entscheiden, ob die Beschattung gerade Sonnenverfolgung aktiv hat – zum Beispiel nur während die Klimaanlage Kühlung anfordert. AN bedeutet Verfolgung. Es reicht, wenn ein Sensor AN ist. Während das Gate geschlossen ist, wird die Sonnenpositionierung übersprungen und die Beschattung fällt auf ihre Standardposition zurück; Klimamodus, Blendungszonen, Bewegung und manuelle Übersteuerung sind nicht betroffen. Leer lassen, um immer zu verfolgen.",
+          "sun_tracking_gate_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob die Sonnenverfolgung aktiv ist. Wenn sie als wahr (an/true/1) ausgewertet wird, verfolgt die Beschattung die Sonne; falsy überspringt die Sonnenpositionierung und fällt zur Standardposition zurück. Beispiel: {{ is_state('climate.upstairs', 'cool') }}. Wenn jede Quelle nicht verfügbar wird, wird die letzte bekannte Antwort kurz beibehalten, dann wird die Verfolgung wiederaufgenommen – ein nicht verfügbarer Sensor deaktiviert die Verfolgung niemals stillschweigend. Leer lassen zum Deaktivieren.",
+          "sun_tracking_gate_template_mode": "Wie die Sonnenverfolgungs-Gate-Vorlage mit den Gate-Sensoren oben kombiniert wird. \"OR\" (Standard) – verfolge, wenn die Vorlage ODER ein Sensor zustimmt. \"AND\" – die Vorlage muss auch zustimmen, daher wirkt sie als zusätzliches Gate. Mit nur einer konfigurierten Quelle verhalten sich beide Modi gleich."
         }
       },
       "position": {
@@ -906,7 +916,10 @@
           "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
-          "weather_severe_template": "Unwetter-Vorlage (optional)"
+          "weather_severe_template": "Unwetter-Vorlage (optional)",
+          "sun_tracking_gate_sensors": "Sonnenverfolgungs-Gate Sensoren",
+          "sun_tracking_gate_template": "Sonnenverfolgungs-Gate-Vorlage (optional)",
+          "sun_tracking_gate_template_mode": "Sonnenverfolgungs-Gate-Vorlagenlogik"
         },
         "data_description": {
           "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100 % meldet (z. B. von einer Wetterintegrationen). Wenn der Wert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
@@ -928,7 +941,10 @@
           "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
           "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
-          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Leer lassen zum Deaktivieren."
+          "weather_severe_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob schwerwiegendes Unwetter vorhanden ist (Hagel, Frost, Gewitter usw.). Leer lassen zum Deaktivieren.",
+          "sun_tracking_gate_sensors": "Optionale binäre Sensoren (oder input_boolean / Schalter / Zeitplan), die entscheiden, ob die Beschattung gerade Sonnenverfolgung aktiv hat – zum Beispiel nur während die Klimaanlage Kühlung anfordert. AN bedeutet Verfolgung. Es reicht, wenn ein Sensor AN ist. Während das Gate geschlossen ist, wird die Sonnenpositionierung übersprungen und die Beschattung fällt auf ihre Standardposition zurück; Klimamodus, Blendungszonen, Bewegung und manuelle Übersteuerung sind nicht betroffen. Leer lassen, um immer zu verfolgen.",
+          "sun_tracking_gate_template": "Optionale Home Assistant Jinja2-Vorlage, die entscheidet, ob die Sonnenverfolgung aktiv ist. Beispiel: {{ is_state('climate.upstairs', 'cool') }}. Leer lassen zum Deaktivieren.",
+          "sun_tracking_gate_template_mode": "Wie die Sonnenverfolgungs-Gate-Vorlage mit den Gate-Sensoren oben kombiniert wird. \"OR\" (Standard) – verfolge, wenn die Vorlage ODER ein Sensor zustimmt. \"AND\" – die Vorlage muss auch zustimmen, daher wirkt sie als zusätzliches Gate. Mit nur einer konfigurierten Quelle verhalten sich beide Modi gleich."
         }
       },
       "profile_overview": {

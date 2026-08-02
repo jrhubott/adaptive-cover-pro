@@ -14,17 +14,13 @@ if TYPE_CHECKING:
 
 from ..const import (
     BLANK_TIME,
-    DEFAULT_DAYTIME_GATE_GRACE_SECONDS,
+    DEFAULT_CONDITION_GATE_GRACE_SECONDS,
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
 from ..helpers import get_datetime_from_str, get_safe_state, local_now_naive
-from ..templates import (
-    combine_with_mode,
-    is_template_string,
-    render_condition_or_none,
-)
+from ..templates import render_condition_or_none
 from .common import EventRecorder
-from .common.graceful_source import GracefulSource, Resolution, SourceResolution
+from .common.condition_gate import ConditionGate
 
 
 class TimeWindowManager:
@@ -69,15 +65,25 @@ class TimeWindowManager:
         self._end_time_config: str | None = None
         self._end_time_entity: str | None = None
 
-        # Daytime-gate config (issue #632) — set via update_config()
-        self._gate_sensors: list[str] = []
-        self._gate_template: str | None = None
-        self._gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
-
-        # Daytime-gate graceful-fallback state machine (issue #742): holds the
-        # last-known daytime/dark verdict for a grace window when every gate
-        # source goes indeterminate, then falls back to the astronomical window.
-        self._graceful = GracefulSource(DEFAULT_DAYTIME_GATE_GRACE_SECONDS, clock=clock)
+        # The daytime gate (issue #632) — sensors and/or a Jinja condition folded
+        # into one tri-state verdict, holding its last-known answer for a grace
+        # window when every source goes indeterminate (issue #742) before falling
+        # back to the astronomical window. The fold, the grace wiring, and the
+        # reset-on-config-change rule live in the shared ConditionGate kernel so
+        # the sun-tracking gate (issue #1167) reuses them rather than mirroring.
+        #
+        # The readers are injected as closures over THIS module's globals on
+        # purpose: it keeps the kernel HA-free, and it keeps
+        # ``managers.time_window.get_safe_state`` / ``.render_condition_or_none``
+        # the patch surface every existing daytime-gate test already targets.
+        self._gate = ConditionGate(
+            DEFAULT_CONDITION_GATE_GRACE_SECONDS,
+            read_state=lambda entity_id: get_safe_state(self._hass, entity_id),
+            render_condition=lambda template: render_condition_or_none(
+                self._hass, template, variables=self._template_variables
+            ),
+            clock=clock,
+        )
 
         # Cached start time from last evaluation (for diagnostics)
         self._cached_start_time: dt.datetime | None = None
@@ -109,19 +115,9 @@ class TimeWindowManager:
         self._start_time_entity = start_time_entity
         self._end_time_config = end_time
         self._end_time_entity = end_time_entity
-        # update_config runs every cycle, so only forget the held verdict when the
-        # gate config actually changed (issue #742) — otherwise a steady config
-        # would reset the grace machine each cycle and never hold anything.
-        new_sensors = list(gate_sensors)
-        if (
-            new_sensors != self._gate_sensors
-            or gate_template != self._gate_template
-            or gate_template_mode != self._gate_template_mode
-        ):
-            self._graceful.reset()
-        self._gate_sensors = new_sensors
-        self._gate_template = gate_template
-        self._gate_template_mode = gate_template_mode
+        # Runs every cycle; the kernel forgets a held verdict only when the gate
+        # config actually changed (issue #742).
+        self._gate.update_config(gate_sensors, gate_template, gate_template_mode)
 
     @property
     def is_active(self) -> bool:
@@ -165,50 +161,7 @@ class TimeWindowManager:
         Single source for "does the gate own the day/night boundary?". When False
         the coordinator uses the astronomical sunset/sunrise calc (issue #632).
         """
-        return bool(self._gate_sensors) or is_template_string(self._gate_template)
-
-    def _gate_verdict(self) -> bool | None:
-        """Read the gate's *live* daytime verdict, or ``None`` when indeterminate.
-
-        Tri-state — isolates the "is the gate indeterminate?" rule so the global
-        fail-open contract of :func:`is_entity_active` (other features depend on
-        it) stays untouched (issue #742):
-
-        * **sensor opinion** — ``None`` when there are no sensors or every
-          configured sensor reads invalid (``get_safe_state`` is ``None`` —
-          unavailable/unknown/missing); otherwise ``any`` valid sensor is ``"on"``.
-        * **template opinion** — :func:`render_condition_or_none` gives ``None``
-          when the template is absent or unrenderable, else its boolean.
-        * **combine** — both ``None`` → ``None`` (fully indeterminate); exactly
-          one ``None`` → the other; both present → folded via the configured
-          OR/AND mode (matching the pre-#742 gate evaluation).
-        """
-        sensor_states = [get_safe_state(self._hass, sid) for sid in self._gate_sensors]
-        valid_states = [s for s in sensor_states if s is not None]
-        sensor_opinion: bool | None = (
-            None if not valid_states else any(s == "on" for s in valid_states)
-        )
-        template_opinion = render_condition_or_none(
-            self._hass, self._gate_template, variables=self._template_variables
-        )
-
-        if sensor_opinion is None and template_opinion is None:
-            return None
-        if sensor_opinion is None:
-            return template_opinion
-        if template_opinion is None:
-            return sensor_opinion
-        return combine_with_mode(
-            template_opinion,
-            sensor_opinion,
-            self._gate_template_mode,
-            has_template=True,
-            has_others=True,
-        )
-
-    def _resolve(self) -> Resolution:
-        """Feed this cycle's gate verdict to the grace machine (idempotent)."""
-        return self._graceful.observe(self._gate_verdict())
+        return self._gate.is_configured
 
     @property
     def effective_daytime_gate(self) -> bool | None:
@@ -222,12 +175,7 @@ class TimeWindowManager:
         determinate it is the live verdict; within the grace window it is the
         held last-known verdict (HOLDING).
         """
-        if not self.gate_is_configured:
-            return None
-        resolution = self._resolve()
-        if resolution.state is SourceResolution.FELL_BACK:
-            return None
-        return resolution.value
+        return self._gate.effective
 
     @property
     def gate_is_daytime(self) -> bool:
@@ -237,8 +185,7 @@ class TimeWindowManager:
         grace-expired fallback) reads as daytime so the clock factor of
         :pyattr:`is_active` collapses to the pre-gate astronomical behaviour.
         """
-        eff = self.effective_daytime_gate
-        return True if eff is None else eff
+        return self._gate.resolved(default=True)
 
     @property
     def gate_is_dark(self) -> bool:
@@ -258,8 +205,7 @@ class TimeWindowManager:
         a single ``async_call_later`` refresh so the fallback engages promptly at
         grace expiry instead of waiting for the next state-change/periodic cycle.
         """
-        self._resolve()
-        return self._graceful.remaining()
+        return self._gate.seconds_until_fallback()
 
     def _normalize_to_today(self, time: dt.datetime) -> dt.datetime:
         """Normalize a future-dated entity time to today's date.

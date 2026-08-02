@@ -14,7 +14,6 @@ from typing import Any
 from ...const import (
     CONF_CLIMATE_PRIORITY,
     CONF_CLOUD_SUPPRESSION_PRIORITY,
-    CONF_ENABLE_SUN_TRACKING,
     CONF_GLARE_ZONE_PRIORITY,
     CONF_MANUAL_OVERRIDE_PRIORITY,
     CONF_MOTION_TIMEOUT_PRIORITY,
@@ -133,13 +132,6 @@ def _custom_position_handlers(options: Mapping[str, Any]) -> list[OverrideHandle
     return handlers
 
 
-def _solar_handler(options: Mapping[str, Any]) -> list[OverrideHandler]:
-    """Emit the ``SolarHandler`` only when sun tracking is enabled."""
-    if options.get(CONF_ENABLE_SUN_TRACKING, True):
-        return [SolarHandler()]
-    return []
-
-
 # The registry. Order here is for readability only — PipelineRegistry sorts by
 # each handler's declared priority. Add a new handler with one entry.
 HANDLER_FACTORIES: tuple[HandlerFactory, ...] = (
@@ -150,7 +142,14 @@ HANDLER_FACTORIES: tuple[HandlerFactory, ...] = (
     _single(CloudSuppressionHandler),
     _single(ClimateHandler),
     _single(GlareZoneHandler),
-    _solar_handler,
+    # Unconditional since issue #1167. Sun tracking used to be gated by pipeline
+    # composition, but ``CONF_ENABLE_SUN_TRACKING`` is a build-time value while
+    # the sun-tracking gate is a per-cycle verdict, so composition cannot express
+    # it. Both fold into ``snapshot.enable_sun_tracking`` and
+    # ``SolarHandler.evaluate`` declines on it — one mechanism instead of two,
+    # and the handler stays in the decision trace with a reason rather than
+    # vanishing from it.
+    _single(SolarHandler),
     _single(DefaultHandler),
     # Group handlers LAST (issue #790 Phase 2): the registry's priority sort
     # is stable, so on a 100-tie a member's own custom-position safety slot

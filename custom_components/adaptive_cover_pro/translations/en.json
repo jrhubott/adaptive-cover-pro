@@ -236,7 +236,9 @@
           "weather_severe_template": "Severe weather template (optional)",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
-          "weather_wind_speed_sensor": "Wind speed sensor"
+          "weather_wind_speed_sensor": "Wind speed sensor",
+          "sun_tracking_gate_sensors": "Sun tracking gate sensors",
+          "sun_tracking_gate_template": "Sun tracking gate template (optional)"
         },
         "data_description": {
           "name": "A friendly name for this building profile.",
@@ -259,7 +261,9 @@
           "weather_severe_template": "Optional Home Assistant Jinja2 template that decides whether severe weather is present (hail, frost, thunderstorm, etc.). When it renders truthy (on/true/1) the override engages. It combines with the severe weather sensors above (OR or AND) via the 'Severe weather template logic' setting on the per-cover Weather Override screen; it can stand alone with no sensors and reacts the instant the template flips. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
-          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed."
+          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
+          "sun_tracking_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide whether the cover sun-tracks right now — for example, only while the air conditioning is calling for cooling. ON means track. Any one sensor being ON is enough. While the gate is closed, solar positioning is skipped and the cover falls back to its default position; climate mode, glare zones, motion and manual override are unaffected. Leave empty to always track.",
+          "sun_tracking_gate_template": "Optional Home Assistant Jinja2 template that decides whether to sun-track. Example: {{ is_state('climate.upstairs', 'cool') }}. Leave empty to disable."
         }
       },
       "create_group": {
@@ -519,20 +523,26 @@
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Choose whether the cover tracks the sun and set the elevation limits for tracking. The integration holds the cover at its default position when the sun is outside the tracked range.\n\n**Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed. The window's orientation and sun acceptance angle are set on the Cover Geometry page.\n\n[Learn more]({learn_more})",
+        "description": "Choose whether the cover tracks the sun and set the elevation limits for tracking. The integration holds the cover at its default position when the sun is outside the tracked range.\n\n**Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed. The window's orientation and sun acceptance angle are set on the Cover Geometry page.\n\n[Learn more]({learn_more})\n\n{profile_inherit}",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
           "blind_spot": "Setup Blindspot",
-          "enable_glare_zones": "Enable Glare Zones"
+          "enable_glare_zones": "Enable Glare Zones",
+          "sun_tracking_gate_sensors": "Sun tracking gate sensors",
+          "sun_tracking_gate_template": "Sun tracking gate template (optional)",
+          "sun_tracking_gate_template_mode": "Sun tracking gate template logic"
         },
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured sun acceptance angle and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)"
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
+          "sun_tracking_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide whether the cover sun-tracks right now — for example, only while the air conditioning is calling for cooling. ON means track. Any one sensor being ON is enough. While the gate is closed, solar positioning is skipped and the cover falls back to its default position; climate mode, glare zones, motion and manual override are unaffected. Leave empty to always track.",
+          "sun_tracking_gate_template": "Optional Home Assistant Jinja2 template that decides whether to sun-track. When it renders truthy (on/true/1) the cover tracks the sun; falsy skips solar positioning and falls back to the default position. Example: {{ is_state('climate.upstairs', 'cool') }}. If every source becomes unavailable the last known answer is held briefly, then tracking resumes — an unavailable sensor never silently disables tracking. Leave empty to disable.",
+          "sun_tracking_gate_template_mode": "How the sun tracking gate template combines with the gate sensors above. 'OR' (default) — track when the template OR any sensor says so. 'AND' — the template must also agree, so it acts as an extra gate. With only one source configured both modes behave the same."
         }
       },
       "position": {
@@ -927,7 +937,10 @@
           "weather_severe_template": "Severe weather template (optional)",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
-          "weather_wind_speed_sensor": "Wind speed sensor"
+          "weather_wind_speed_sensor": "Wind speed sensor",
+          "sun_tracking_gate_sensors": "Sun tracking gate sensors",
+          "sun_tracking_gate_template": "Sun tracking gate template (optional)",
+          "sun_tracking_gate_template_mode": "Sun tracking gate template logic"
         },
         "data_description": {
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
@@ -949,7 +962,10 @@
           "weather_severe_template": "Optional Home Assistant Jinja2 template that decides whether severe weather is present (hail, frost, thunderstorm, etc.). Leave empty to disable.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth. Leave empty to trigger on wind speed alone.",
-          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed."
+          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
+          "sun_tracking_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide whether the cover sun-tracks right now — for example, only while the air conditioning is calling for cooling. ON means track. Any one sensor being ON is enough. While the gate is closed, solar positioning is skipped and the cover falls back to its default position; climate mode, glare zones, motion and manual override are unaffected. Leave empty to always track.",
+          "sun_tracking_gate_template": "Optional Home Assistant Jinja2 template that decides whether to sun-track. Example: {{ is_state('climate.upstairs', 'cool') }}. Leave empty to disable.",
+          "sun_tracking_gate_template_mode": "How the sun tracking gate template combines with the gate sensors above. 'OR' (default) — track when the template OR any sensor says so. 'AND' — the template must also agree, so it acts as an extra gate. With only one source configured both modes behave the same."
         }
       },
       "profile_overview": {
