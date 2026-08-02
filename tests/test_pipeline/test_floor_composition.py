@@ -14,6 +14,8 @@ from unittest.mock import MagicMock
 from custom_components.adaptive_cover_pro.const import (
     CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    GroupIntentKind,
+    ReasonCode,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
@@ -22,6 +24,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.group_lock import (
+    GroupLockHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
     ManualOverrideHandler,
@@ -33,11 +38,13 @@ from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegis
 from custom_components.adaptive_cover_pro.pipeline.types import (
     ClimateOptions,
     CustomPositionSensorState,
+    GroupIntent,
 )
 from custom_components.adaptive_cover_pro.state.climate_provider import (
     ClimateReadings,
 )
 
+from tests._helpers.priorities import ABOVE_HOLDER
 from tests.test_pipeline.conftest import make_snapshot
 
 # ---------------------------------------------------------------------------
@@ -127,6 +134,10 @@ def _cp_handler(
     )
 
 
+# The hold tests below pin mechanisms that have nothing to do with priority —
+# #534's held-vs-would-be comparison and its inert mirror, #809's alignment
+# edge, #1036's frame conversion — so they use ABOVE_HOLDER, where the bound is
+# allowed to act and the mechanism is what is actually under test (#1170).
 def _registry_with_custom(handlers: list) -> PipelineRegistry:
     return PipelineRegistry(
         [*handlers, ClimateHandler(), SolarHandler(), DefaultHandler()]
@@ -709,11 +720,12 @@ def test_floor_raises_manual_override_held_below_floor() -> None:
                 position=80,
                 min_mode=True,
                 sensor_name="Table",
+                priority=ABOVE_HOLDER,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 80),
+        _cp_handler(1, 80, priority=ABOVE_HOLDER),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -738,6 +750,10 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
 
     Manual override holds the cover at 85% (physical), floor is 80% — the cover
     already sits above the floor, so no clamp is applied.
+
+    Anchored above manual override like its three siblings: at the default 77
+    the floor yields on priority (#1170) before inertness is ever evaluated, so
+    the test would still pass while proving nothing about the branch it names.
     """
     cover = _climate_cover(direct_sun_valid=False)
     snap = make_snapshot(
@@ -753,11 +769,12 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
                 position=80,
                 min_mode=True,
                 sensor_name="Table",
+                priority=ABOVE_HOLDER,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 80),
+        _cp_handler(1, 80, priority=ABOVE_HOLDER),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -768,6 +785,12 @@ def test_floor_above_held_position_is_inert_under_manual_override() -> None:
     assert winner_step.handler == "manual_override"
     # No clamp: the held physical position (85) is already above the floor (80).
     assert result.position_constraint_applied is False
+    # Inert on VALUE, not on priority — the distinction the anchor protects.
+    assert ReasonCode.REGISTRY_FLOOR_INACTIVE in [
+        s.reason_payload.code
+        for s in result.decision_trace
+        if s.reason_payload is not None
+    ]
     # The manual-override hold is inert-floor: it genuinely holds the cover, so
     # skip_command stays set (no floor raise to clear it)  (#809).
     assert result.skip_command is True
@@ -798,11 +821,12 @@ def test_floor_equal_to_would_be_but_above_held_still_raises() -> None:
                 position=100,
                 min_mode=True,
                 sensor_name="Table",
+                priority=ABOVE_HOLDER,
             )
         ],
     )
     handlers = [
-        _cp_handler(1, 100),
+        _cp_handler(1, 100, priority=ABOVE_HOLDER),
         ManualOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -1024,7 +1048,7 @@ class TestFloorComparesInLogicalFrame:
         return PipelineRegistry(
             [
                 ManualOverrideHandler(),
-                _cp_handler(1, 25),
+                _cp_handler(1, 25, priority=ABOVE_HOLDER),
                 ClimateHandler(),
                 SolarHandler(),
                 DefaultHandler(),
@@ -1045,6 +1069,7 @@ class TestFloorComparesInLogicalFrame:
                     position=25,
                     min_mode=True,
                     slot=1,
+                    priority=ABOVE_HOLDER,
                 )
             ],
         )
@@ -1071,3 +1096,207 @@ class TestFloorComparesInLogicalFrame:
 
         assert result.position == 25
         assert result.position_constraint_applied is True
+
+
+# ---------------------------------------------------------------------------
+# Issue #1170 — a sub-priority floor must not raise a manual hold
+# ---------------------------------------------------------------------------
+
+
+def test_floor_below_manual_priority_yields_to_the_manual_hold() -> None:
+    """The live #1170 numbers: floor 40% at the default 77 vs a manual close.
+
+    ``_clamp_to_active_floor`` already refuses to let a 77-priority floor clamp
+    the user's command (#472), and the close is dispatched. One cycle later the
+    manual-override hold carries the user's position as ``held_position`` and
+    the registry's composition pass clamped it straight back up — defeating
+    #472 through a seam that never asked the priority question.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "input_boolean.living_room_shades_default",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                sensor_name="Default",
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            )
+        ],
+    )
+    registry = _registry_with_custom([_cp_handler(1, 40), ManualOverrideHandler()])
+    result = registry.evaluate(snap)
+
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "manual_override"
+    assert result.position_constraint_applied is False
+    # The hold survives: nothing is dispatched, so the cover stays where the
+    # user put it until the override expires.
+    assert result.skip_command is True
+    assert not any(
+        s.handler == "floor_clamp" and s.matched for s in result.decision_trace
+    )
+
+
+def test_group_lock_hold_is_immune_to_a_sub_safety_floor() -> None:
+    """A group lock holds at priority 100 and outranks every floor below it.
+
+    ``GroupLockHandler`` documents itself as outranking everything including
+    weather, and emits no command. A 77-priority floor clamped its hold and
+    cleared ``skip_command``, contradicting both claims — the same defect as
+    #1170's manual case, reached through the same unconditional pass.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        group_intent=GroupIntent(
+            kind=GroupIntentKind.LOCK,
+            scene=None,
+            priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            group_id="living_room",
+        ),
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    registry = _registry_with_custom([_cp_handler(1, 40), GroupLockHandler()])
+    result = registry.evaluate(snap)
+
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "group_lock"
+    assert result.position_constraint_applied is False
+    assert result.skip_command is True
+
+
+def test_demoted_weather_floor_yields_to_a_manual_hold() -> None:
+    """The weather floor claims its EFFECTIVE priority, not the class default.
+
+    ``weather_priority`` is user-configurable and the translations tell people to
+    lower it "to let Manual or Custom Positions win". The floor kept claiming 90
+    regardless, so a weather override demoted below manual override still raised
+    a position the user had just set by hand — the claimant-side mirror of the
+    threshold bug #1170 fixes.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=40,
+        weather_override_priority=60,  # demoted below manual override (80)
+    )
+    result = _registry_with_custom([ManualOverrideHandler()]).evaluate(snap)
+
+    assert result.position_constraint_applied is False
+    assert result.skip_command is True
+
+
+def test_weather_floor_above_manual_still_clamps_a_hold() -> None:
+    """Left at its 90 default the weather floor keeps outranking a manual hold."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=40,
+        weather_override_priority=WeatherOverrideHandler.priority,
+    )
+    result = _registry_with_custom([ManualOverrideHandler()]).evaluate(snap)
+
+    assert result.position == 40
+    assert result.position_constraint_applied is True
+    assert result.skip_command is False
+
+
+def test_group_lock_outranks_even_the_weather_floor() -> None:
+    """A group lock at 100 beats the weather floor at its 90 default.
+
+    ``GroupLockHandler`` documents itself as outranking everything "including
+    weather", and a non-min-mode weather override already loses the pipeline to
+    it. Pinned because the hold gate is what now makes it true on the min-mode
+    path too: pre-#1170 the weather floor clamped the lock and dispatched.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        group_intent=GroupIntent(
+            kind=GroupIntentKind.LOCK,
+            scene=None,
+            priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            group_id="living_room",
+        ),
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=40,
+        weather_override_priority=WeatherOverrideHandler.priority,
+    )
+    result = _registry_with_custom([GroupLockHandler()]).evaluate(snap)
+
+    assert result.position_constraint_applied is False
+    assert result.skip_command is True
+
+
+def test_a_safety_floor_still_reaches_a_group_lock() -> None:
+    """…but a safety-priority slot does not lose that tie (const.py's rule)."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        group_intent=GroupIntent(
+            kind=GroupIntentKind.LOCK,
+            scene=None,
+            priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            group_id="living_room",
+        ),
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.storm",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                sensor_name="Storm",
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            )
+        ],
+    )
+    result = _registry_with_custom(
+        [
+            _cp_handler(1, 40, priority=CUSTOM_POSITION_SAFETY_PRIORITY),
+            GroupLockHandler(),
+        ]
+    ).evaluate(snap)
+
+    assert result.position == 40
+    assert result.position_constraint_applied is True

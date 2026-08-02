@@ -10,6 +10,7 @@ pytest-homeassistant-custom-component.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Mapping
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -376,6 +377,19 @@ def bind_user_position_seam(coord: Any, *, interlock_plan: Any = None) -> Any:
     ):
         setattr(
             coord, name, getattr(AdaptiveDataUpdateCoordinator, name).__get__(coord)
+        )
+
+    # An unset `_resolved_options` is a bare MagicMock, and the seam reads
+    # options through it. That is not an inert default: `MagicMock.get(...)`
+    # returns a MagicMock, `int()` of which is 1, so
+    # `resolve_handler_priority` silently answers 1 instead of 80 and every
+    # floor suddenly outranks manual override. Production always has a real
+    # dict (`Coordinator.__init__`), so mirror that rather than letting the
+    # mock invent a priority.
+    if isinstance(getattr(coord, "_resolved_options", None), MagicMock):  # noqa: SLF001
+        entry_opts = getattr(getattr(coord, "config_entry", None), "options", None)
+        coord._resolved_options = (  # noqa: SLF001
+            entry_opts if isinstance(entry_opts, Mapping) else {}
         )
 
     hook = getattr(

@@ -764,6 +764,16 @@ class PipelineSnapshotBuilder:
         mixed-instance rule), so positionable covers reach a true 0 %.  ``None``
         / empty leaves the floor active.
         """
+        # Local import: ``pipeline.handlers`` pulls in cover-type policies, so a
+        # module-level import here would form a circular chain — the same reason
+        # ``axis_constraints.gather_axis_constraints`` imports the handler
+        # locally. Both remain the single source of the weather priority; never
+        # inline the number.
+        from .handlers import (  # noqa: PLC0415
+            WeatherOverrideHandler,
+            resolve_handler_priority,
+        )
+
         if effective_default is None or is_sunset_active is None:
             effective_default, is_sunset_active = _read_current_effective_default(
                 self._hass, options, cover_data.sun_data, self._time_mgr
@@ -806,6 +816,9 @@ class PipelineSnapshotBuilder:
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
             weather_override_min_mode=bool(
                 options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
+            ),
+            weather_override_priority=resolve_handler_priority(
+                options, WeatherOverrideHandler.name
             ),
             weather_bypass_auto_control=options.get(
                 CONF_WEATHER_BYPASS_AUTO_CONTROL, True

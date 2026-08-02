@@ -115,7 +115,9 @@ class CustomPositionHandler(OverrideHandler):
         a floor (``min_mode``, issue #463), a ceiling or range, or no position
         claim at all (issue #943) — defers by returning ``None`` so the
         registry can compose the constraint onto whichever handler actually
-        wins. That is what makes a constraint priority-independent.
+        wins. That is what makes a constraint priority-independent — against a
+        computed winner. Against one *holding* a physical position the slot's
+        priority decides whether it may move the cover at all (#1170).
 
         The ``use_my`` path is the exception: it is hardware-pinned, ignores
         constraint semantics entirely, and always claims.

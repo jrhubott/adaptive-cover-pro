@@ -7,7 +7,7 @@ import datetime as dt
 import dataclasses
 import json
 import pathlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
@@ -152,8 +152,9 @@ from .position_utils import flip_if, interpolate_position, inverse_state
 from .pipeline.handlers import (
     ManualOverrideHandler,
     build_handlers,
+    resolve_handler_priority,
 )
-from .pipeline.floors import effective_floor, gather_active_floors
+from .pipeline.floors import effective_floor, gather_active_floors, outranking
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
 from .pipeline.types import CustomPositionSensorState, GroupIntent, PipelineSnapshot
@@ -3875,49 +3876,76 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         requested: int,
         snapshot: PipelineSnapshot,
         *,
+        options: Mapping[str, Any],
         trigger: str | None = None,
     ) -> int:
         """Raise a user request to the highest floor that outranks manual override.
 
         Priority-aware user-move clamp (issue #472): a floor only clamps a
         manual/user command when it strictly outranks manual override — the same
-        predicate the preemption check in :meth:`async_apply_user_position` uses.
-        A default-priority (77) floor yields to the manual move; a floor above 80
-        clamps it up *before* dispatch. The pipeline-winner clamp
-        (``registry.py``) stays unconditional so auto-rule composition is
-        unaffected (issue #463).
+        predicate the preemption check in :meth:`async_apply_user_position` uses,
+        and, since #1170, the same one the registry applies to that command's
+        ``held_position`` on every later cycle. A default-priority (77) floor
+        yields to the manual move; a floor above 80 clamps it up *before*
+        dispatch. Composition onto an ordinary computed winner (``registry.py``)
+        stays unconditional so auto-rule composition is unaffected (issue #463).
+
+        **Filter, then compose** — not compose, then gate. ``effective_floor``
+        takes the max across every active floor, so gating afterwards on the
+        winning floor's priority let a sub-priority slot with the higher
+        position discard a legitimately-outranking lower one, and no clamp
+        applied at all (#1170).
+
+        The threshold is manual override's **effective** priority, resolved
+        from ``options`` by the same ``resolve_handler_priority`` the pipeline
+        build and the config-flow ladder use. Reading
+        ``ManualOverrideHandler.priority`` off the class returns the 80 default
+        and silently ignores the 🔀 Handler Priorities step, so a cover with
+        manual override raised to 85 had an 82-priority floor clamp a user move
+        it should have lost to (#1170).
 
         ``trigger`` names the command for the log line. Callers that are only
         ASKING what a command would dispatch (:meth:`user_dispatch_position`)
         omit it: same arithmetic, but one press should not log its clamp twice.
         """
-        effective_floor_pos, floor_info = effective_floor(
-            gather_active_floors(snapshot)
-        )
-        floor_applies = (
-            floor_info is not None
-            and floor_info.priority > ManualOverrideHandler.priority
-        )
-        clamped = (
-            max(int(requested), effective_floor_pos)
-            if floor_applies
-            else int(requested)
-        )
+        active_floors = gather_active_floors(snapshot)
+        manual_priority = resolve_handler_priority(options, ManualOverrideHandler.name)
+        binding_floors = outranking(active_floors, manual_priority)
+        effective_floor_pos, _binding_floor = effective_floor(binding_floors)
+        # ``effective_floor`` returns 0 for an empty set, and 0 is the bottom of
+        # the position range, so the max() below is a no-op when every floor
+        # yielded — no separate "does a floor apply?" branch is needed.
+        clamped = max(int(requested), effective_floor_pos)
         if trigger is None:
             return clamped
+        # Reported on BOTH branches, not just the no-clamp one: the mixed case
+        # — one floor yields while a higher-priority one still binds — is
+        # exactly where "why did it stop at 50 and not 60?" gets asked, and an
+        # `elif` would never answer it (#1170).
+        yielded_count = len(active_floors) - len(binding_floors)
+        yielded_note = (
+            f" ({yielded_count} floor(s) yielded to manual override "
+            f"at priority {manual_priority})"
+            if yielded_count
+            else ""
+        )
         if clamped != requested:
             _LOGGER.info(
-                "%s: requested %d clamped to %d (active min-mode floor)",
+                "%s: requested %d clamped to %d (active min-mode floor)%s",
                 trigger,
                 requested,
                 clamped,
+                yielded_note,
             )
         else:
+            # Without the note the post-filter number reads as "floor 0", which
+            # cannot be told apart from "no floor configured at all".
             _LOGGER.debug(
-                "%s: requested %d, floor %d — no clamping needed",
+                "%s: requested %d, floor %d — no clamping needed%s",
                 trigger,
                 requested,
                 effective_floor_pos,
+                yielded_note,
             )
         return clamped
 
@@ -3951,7 +3979,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         opts = options if options is not None else self._resolved_options
         return self._to_cover_frame(
             self._clamp_to_active_floor(
-                int(requested), self._build_user_command_snapshot(opts)
+                int(requested),
+                self._build_user_command_snapshot(opts),
+                options=opts,
             )
         )
 
@@ -3995,9 +4025,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Default behavior (``force=False``): engages manual override and
         consults the pipeline. When a handler with priority strictly greater
-        than :class:`ManualOverrideHandler` priority (force_override 100,
-        weather 90, custom-position slots configured > 80) wins, the move is
-        dropped and recorded via ``CoverCommandService.record_preempted_skip``.
+        than manual override's **effective** priority (safety slots and group
+        locks at 100, weather at its default 90, custom-position slots
+        configured above it) wins, the move is dropped and recorded via
+        ``CoverCommandService.record_preempted_skip``. Effective, not the class
+        default: the 🔀 Handler Priorities step can move manual override
+        anywhere in 1–99, and comparing against a hardcoded 80 ignores it
+        (#1170).
 
         ``force=True``: legacy programmatic behavior — skip the pipeline
         preemption check and skip manual-override engagement. Used by the
@@ -4009,7 +4043,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Shared with ``user_dispatch_position``, which is how the fan-out seams
         # name the number this dispatch will really use rather than the one the
         # user asked for (issue #1118).
-        clamped = self._clamp_to_active_floor(int(requested), snapshot, trigger=trigger)
+        clamped = self._clamp_to_active_floor(
+            int(requested), snapshot, options=opts, trigger=trigger
+        )
+        manual_priority = resolve_handler_priority(opts, ManualOverrideHandler.name)
 
         if not force:
             result = self._pipeline.evaluate(snapshot)
@@ -4027,13 +4064,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 winner_priority = (
                     winner_handler.priority if winner_handler is not None else 0
                 )
-                if winner_priority > ManualOverrideHandler.priority:
+                if winner_priority > manual_priority:
                     _LOGGER.info(
                         "user move on %s preempted by %s (priority %d > %d)",
                         entity_id,
                         winner_name,
                         winner_priority,
-                        ManualOverrideHandler.priority,
+                        manual_priority,
                     )
                     self._cmd_svc.record_preempted_skip(
                         entity_id,

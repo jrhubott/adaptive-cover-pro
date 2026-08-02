@@ -1111,8 +1111,11 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         #                  most this (the mirror of `min_mode`'s clamp-up).
         #   tilt_min     — clamps the final tilt UP to at least this.
         #   tilt_max     — clamps the final tilt DOWN to at most this.
-        # These are priority-independent clamps: the pipeline resolves normally
-        # and the clamp composes on top (pipeline/axis_constraints.py).
+        # The pipeline resolves normally and the clamp composes on top
+        # (pipeline/axis_constraints.py). Priority-independent against an
+        # ordinary computed winner (#463); against one HOLDING a physical
+        # position — manual override, a group lock — the clamp must outrank
+        # that handler to apply, on either axis (#1170).
         "position_max": f"custom_position_position_max_{n}",
         "tilt_min": f"custom_position_tilt_min_{n}",
         "tilt_max": f"custom_position_tilt_max_{n}",
@@ -1868,6 +1871,12 @@ class ReasonCode(StrEnum):
     FRAGMENT_TRIGGER_SMOOTHING_HOLD = "fragment.trigger_smoothing_hold"
     FRAGMENT_TRIGGER_TEMPLATE = "fragment.trigger_template"
     FRAGMENT_TRIGGER_FALLBACK = "fragment.trigger_fallback"
+    # Axis names for the yielded-bound reason (#1170). A slot can bound BOTH
+    # axes and yield on both, which without this renders two identical trace
+    # lines. Fragments rather than a raw English word so DE/FR localize them,
+    # matching how ``pos_label`` is threaded.
+    FRAGMENT_AXIS_POSITION = "fragment.axis_position"
+    FRAGMENT_AXIS_TILT = "fragment.axis_tilt"
 
     # -- solar handler
     SOLAR_TRACKING = "solar.tracking"
@@ -1929,6 +1938,18 @@ class ReasonCode(StrEnum):
     # the floor as the determining bound without implying a direction from the
     # winner (audit finding C).
     REGISTRY_FLOOR_OVERRIDES_CEILING = "registry.floor_overrides_ceiling"
+    # A bound that was active but was not allowed to move a HELD position,
+    # because it does not outrank the handler doing the holding (issue #1170).
+    # Distinct from floor_inactive / ceiling_inactive on purpose: those claim
+    # the winner was already on the satisfied side of the bound, which is false
+    # here — the bound would have bound, and priority is the only reason it did
+    # not. Reusing them would put a falsehood in the decision trace.
+    REGISTRY_BOUND_YIELDED_TO_HOLD = "registry.bound_yielded_to_hold"
+    # A tilt clamp forced the dispatch while the position axis stayed inert or
+    # yielded, so the position riding along is the cover's held one rather than
+    # the shadow the hold reports. Without a step the trace's winner row shows
+    # the shadow while a different number goes to the cover (#1170).
+    REGISTRY_HOLD_POSITION_CARRIED = "registry.hold_position_carried"
     REGISTRY_TILT_BOUND_ACTIVE = "registry.tilt_bound_active"
     # A tilt bound that was active but did not bind — the tilt-axis analog of
     # floor_inactive / ceiling_inactive. Emitted so an out-composed or

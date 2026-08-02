@@ -288,6 +288,36 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         "floor raised to 60% over ceiling 40% by Floor sensor (winner was 80%)",
     ),
     (
+        ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD,
+        {
+            "low_label": "40%",
+            "high_label": "—",
+            "axis": Reason(ReasonCode.FRAGMENT_AXIS_POSITION),
+            "label": "Default",
+            "priority": 77,
+            "holder": "manual_override",
+            "holder_priority": 80,
+        },
+        "bound 40%–— (position) from Default yielded — priority 77 does not "
+        "outrank manual_override (80)",
+    ),
+    (
+        ReasonCode.REGISTRY_HOLD_POSITION_CARRIED,
+        {"position": 27, "shadow_pos": 50},
+        "tilt clamp commands the cover — position held at 27% "
+        "(not the would-be 50%)",
+    ),
+    (
+        ReasonCode.FRAGMENT_AXIS_POSITION,
+        {},
+        "position",
+    ),
+    (
+        ReasonCode.FRAGMENT_AXIS_TILT,
+        {},
+        "tilt",
+    ),
+    (
         ReasonCode.REGISTRY_TILT_BOUND_ACTIVE,
         {"low_label": "50%", "high_label": "—", "label": "Door sensor"},
         "tilt bound 50%–— active by Door sensor; awaiting the resolved tilt",

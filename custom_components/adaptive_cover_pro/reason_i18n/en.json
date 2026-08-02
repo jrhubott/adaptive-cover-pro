@@ -18,7 +18,9 @@
     "trigger_cloud_above": "cloud coverage above threshold",
     "trigger_smoothing_hold": "smoothing hold",
     "trigger_template": "template",
-    "trigger_fallback": "trigger"
+    "trigger_fallback": "trigger",
+    "axis_position": "position",
+    "axis_tilt": "tilt"
   },
   "solar": {
     "tracking": "sun within acceptance angle — position {position}%{suffix}"
@@ -69,6 +71,8 @@
     "ceiling_inactive": "ceiling {ceiling_pos}% inactive (resolved {to_pos}% at or below ceiling)",
     "ceiling_overridden": "ceiling {ceiling_pos}% overridden — a floor raised the cover to {to_pos}%",
     "floor_overrides_ceiling": "floor raised to {to_pos}% over ceiling {ceiling_pos}% by {label} (winner was {from_pos}%)",
+    "bound_yielded_to_hold": "bound {low_label}–{high_label} ({axis}) from {label} yielded — priority {priority} does not outrank {holder} ({holder_priority})",
+    "hold_position_carried": "tilt clamp commands the cover — position held at {position}% (not the would-be {shadow_pos}%)",
     "tilt_bound_active": "tilt bound {low_label}–{high_label} active by {label}; awaiting the resolved tilt",
     "tilt_bound_inactive": "tilt bound {low_label}–{high_label} inactive by {label}; resolved tilt {tilt}% already within",
     "tilt_clamped": "tilt clamped from {from_tilt}% to {to_tilt}% by {label}"

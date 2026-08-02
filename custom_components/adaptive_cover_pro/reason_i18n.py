@@ -86,6 +86,8 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.FRAGMENT_TRIGGER_SMOOTHING_HOLD: "smoothing hold",
     ReasonCode.FRAGMENT_TRIGGER_TEMPLATE: "template",
     ReasonCode.FRAGMENT_TRIGGER_FALLBACK: "trigger",
+    ReasonCode.FRAGMENT_AXIS_POSITION: "position",
+    ReasonCode.FRAGMENT_AXIS_TILT: "tilt",
     # -- solar
     ReasonCode.SOLAR_TRACKING: "sun within acceptance angle — position {position}%{suffix}",
     # -- manual override
@@ -152,6 +154,14 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING: (
         "floor raised to {to_pos}% over ceiling {ceiling_pos}% by {label} "
         "(winner was {from_pos}%)"
+    ),
+    ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD: (
+        "bound {low_label}–{high_label} ({axis}) from {label} yielded — priority "
+        "{priority} does not outrank {holder} ({holder_priority})"
+    ),
+    ReasonCode.REGISTRY_HOLD_POSITION_CARRIED: (
+        "tilt clamp commands the cover — position held at {position}% "
+        "(not the would-be {shadow_pos}%)"
     ),
     ReasonCode.REGISTRY_TILT_BOUND_ACTIVE: (
         "tilt bound {low_label}–{high_label} active by {label}; "

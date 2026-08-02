@@ -3,8 +3,14 @@
 A *constraint* is one active override's claim on one axis of the cover. The
 handler that owns the claim defers (returns ``None`` from ``evaluate``); the
 pipeline resolves normally and this module composes the claims onto whatever
-won. That is priority-independent by construction — a constraint clamps the
-winner regardless of who the winner is.
+won. Composition onto an *ordinary* winner is priority-independent by
+construction — a constraint clamps a computed position regardless of who
+computed it (#463).
+
+The one exception is a winner that is **holding** a physical position rather
+than proposing a computed one (``held_position`` — manual override, a group
+lock). There a constraint must outrank the holder before it may move the cover;
+see :func:`outranking` (#1170).
 
 **This module is the generalization of two single-purpose passes.** Before
 #943 the same shape was written twice:
@@ -44,8 +50,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
-from ..const import AxisConstraintMode, ReasonCode, custom_position_handler_name
+from ..const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    AxisConstraintMode,
+    ReasonCode,
+    custom_position_handler_name,
+)
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
 from ..reason_i18n import Reason
 from .types import DecisionStep, PipelineSnapshot
@@ -73,10 +85,11 @@ class AxisConstraint:
         label: Human-readable name for the trace reason — the bound sensor's
                friendly name, or a fixed string for the weather override.
         priority: The contributing override's pipeline priority. ``FIXED``
-               resolution sorts on this; the user-move clamp gates on it so a
-               floor only clamps a manual command when it outranks manual
-               override (#472). The pipeline-winner clamp ignores it — auto-rule
-               composition stays unconditional (#463).
+               resolution sorts on this, and :func:`outranking` gates on it
+               wherever a bound is asked to move a position a handler is
+               *holding* (#472/#1170). Composition onto an ordinary computed
+               winner ignores it — auto-rule composition stays unconditional
+               (#463).
         slot:  1-based custom-position slot number, or 0 for non-slot sources
                (the weather floor). Surfaced in the Control Status string
                (#667).
@@ -96,6 +109,57 @@ class AxisConstraint:
     def value(self) -> int | None:
         """The exact value of a ``FIXED`` claim (``low`` and ``high`` agree)."""
         return self.low
+
+
+class _Prioritized(Protocol):
+    """Anything carrying a pipeline priority — the only field :func:`outranking` reads."""
+
+    priority: int
+
+
+def outranking[ClaimT: _Prioritized](
+    claims: Iterable[ClaimT], holder_priority: int
+) -> list[ClaimT]:
+    """Keep only the claims that strictly outrank a handler holding a position.
+
+    **The one place the "may this bound move a held position?" rule is
+    stated.** Both seams that can move a position a handler is already holding
+    consume it, so they cannot drift apart (CODING_GUIDELINES § No
+    Duplication):
+
+    * ``Coordinator._clamp_to_active_floor`` — the user's command, judged
+      before dispatch (#472).
+    * ``PipelineRegistry.evaluate`` — the same command one cycle later,
+      arriving as ``manual_override``'s ``held_position``. Both axes consume
+      it: a tilt bound forces a dispatch just as a position floor does (#1170).
+
+    Splitting those two produced the reported defect: the user's close was
+    dispatched correctly, then the identical floor raised it straight back
+    because only the first seam asked about priority.
+
+    Strictly-greater, matching the pipeline's own tie rule: a bound *equal* to
+    the holder does not outrank it. ``holder_priority`` is the holding
+    handler's **effective** priority — resolved by ``resolve_handler_priority``
+    from the 🔀 Handler Priorities step, never the class default, which ignores
+    that setting.
+
+    **A safety claim never yields**, even on a tie. ``CUSTOM_POSITION_SAFETY_PRIORITY``
+    is documented to act outside the time window, past the auto-control switch
+    and past manual override, and ``GroupLockHandler`` holds at that same 100 —
+    so plain strictly-greater would let a room lock suppress a storm or wind
+    floor, inverting the tie rule ``const.py`` states (the member's own safety
+    slot wins a 100-tie). Built-in handlers cap at 99, so this tie is reachable
+    only between a safety slot and a group lock.
+
+    Deliberately duck-typed on ``.priority`` so the registry's
+    :class:`AxisConstraint` and the coordinator's
+    :class:`~.floors.FloorClampInfo` share one implementation.
+    """
+    return [
+        c
+        for c in claims
+        if c.priority > holder_priority or c.priority == CUSTOM_POSITION_SAFETY_PRIORITY
+    ]
 
 
 def clamp_to_bounds(value: int, low: int | None, high: int | None) -> int:
@@ -304,7 +368,17 @@ def gather_axis_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
                 high=None,
                 source="weather",
                 label="weather override",
-                priority=WeatherOverrideHandler.priority,
+                # The EFFECTIVE priority, resolved at snapshot build from
+                # ``weather_priority``. The class default is only the fallback:
+                # a user who demotes weather below manual override must not have
+                # its floor keep claiming 90 and outranking a hold it was just
+                # told to lose to (#1170). None means "no resolution available"
+                # — every production snapshot carries one.
+                priority=(
+                    snapshot.weather_override_priority
+                    if snapshot.weather_override_priority is not None
+                    else WeatherOverrideHandler.priority
+                ),
                 slot=0,
             )
         )
