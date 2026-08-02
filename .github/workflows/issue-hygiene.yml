@@ -1,0 +1,160 @@
+name: "Issue Hygiene"
+
+on:
+  issues:
+    types: [opened, edited]
+  schedule:
+    # Daily at 13:00 UTC — sweep stale needs-template / needs-diagnostics issues
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: issue-hygiene-${{ github.event.issue.number || 'schedule' }}
+  cancel-in-progress: false
+
+jobs:
+  check-issue:
+    name: "Check Template Use and Diagnostics Attachment"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const issue_number = issue.number;
+            const { owner, repo } = context.repo;
+            const labels = (issue.labels || []).map(l => l.name);
+
+            // Add/remove a hygiene label, commenting exactly once when it goes on.
+            const syncLabel = async (name, needed, comment) => {
+              const has = labels.includes(name);
+              if (!needed) {
+                if (has) {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number, name,
+                  }).catch(() => {});
+                  console.log(`Removed ${name} from #${issue_number}`);
+                }
+                return;
+              }
+              if (has) {
+                console.log(`#${issue_number} already labeled ${name}, skipping comment`);
+                return;
+              }
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number, labels: [name],
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body: comment,
+              });
+              console.log(`Labeled #${issue_number} with ${name}`);
+            };
+
+            // Maintainers file defects freeform on purpose: no form, no diagnostics upload.
+            // Clear any hygiene label that got applied before this exemption existed.
+            const MAINTAINER_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (MAINTAINER_ASSOCIATIONS.includes(issue.author_association)) {
+              console.log(
+                `#${issue_number} authored by ${issue.user.login} ` +
+                `(${issue.author_association}) — exempt from hygiene checks`
+              );
+              await syncLabel('needs-template', false);
+              await syncLabel('needs-diagnostics', false);
+              return;
+            }
+
+            // --- Template check ---------------------------------------------
+            // All four issue forms carry an "Adaptive Cover Pro version" input, and
+            // issue forms render each field as "### <label>". A body without that
+            // heading never went through the chooser: blank_issues_enabled only
+            // governs the web UI, so the REST API and `gh issue create` bypass it.
+            const usedTemplate = /^### Adaptive Cover Pro version\s*$/m.test(body);
+
+            await syncLabel('needs-template', !usedTemplate, [
+              `Thanks for the writeup. This issue was opened without one of the issue forms, so it's missing the fields I triage from: integration version, Home Assistant version, cover type and brand, and the diagnostics file.`,
+              ``,
+              `Please refile it from the [issue chooser](https://github.com/${owner}/${repo}/issues/new/choose) and paste what you wrote into the form's description field. The text carries over and the form collects the rest. Once the new issue is up I'll close this one as a duplicate.`,
+              ``,
+              `Worth knowing if this was scripted: opening an issue through the REST API or \`gh issue create\` skips the form entirely, which is why this one arrived with no labels.`,
+              ``,
+              `This issue will auto-close in 7 days if it isn't refiled.`,
+            ].join('\n'));
+
+            // A freeform issue is already missing every field, including the
+            // diagnostics upload. Don't stack a second complaint on top of it.
+            if (!usedTemplate) return;
+
+            // --- Diagnostics attachment check (bug reports only) -------------
+            if (!labels.includes('bug')) {
+              console.log(`#${issue_number} is not labeled bug, skipping diagnostics check`);
+              return;
+            }
+
+            // Pull the Diagnostics section by heading.
+            const headingRe = /^### Diagnostics file \(attachment\)\s*$/m;
+            const match = body.match(headingRe);
+            let section = '';
+            if (match) {
+              const start = match.index + match[0].length;
+              const rest = body.slice(start);
+              const next = rest.match(/^### /m);
+              section = (next ? rest.slice(0, next.index) : rest).trim();
+            }
+
+            const hasAttachment = /https:\/\/github\.com\/user-attachments\/(files|assets)\//i.test(section)
+              || /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/files\//i.test(section);
+
+            // Treat the placeholder "_No response_" (issue forms emit this for empty optional textareas) as missing.
+            const isEmpty = section === '' || /^_no response_$/i.test(section);
+
+            const reason = isEmpty
+              ? "the diagnostics field is empty"
+              : "the diagnostics field looks like pasted text, not an uploaded file";
+
+            await syncLabel('needs-diagnostics', !hasAttachment, [
+              `Thanks for the report — ${reason}.`,
+              ``,
+              `Please **edit this issue** and drag the diagnostics JSON file into the "Diagnostics file (attachment)" field instead of pasting its contents. An attachment shows up as a link like \`https://github.com/user-attachments/files/...\`.`,
+              ``,
+              `Steps: **Settings → Devices & Services → Adaptive Cover Pro** → select the affected cover → **⋮ → Download diagnostics**, then drag the JSON file into the issue. If GitHub refuses the \`.json\` file, zip it or rename to \`.txt\` first. Full instructions: [Downloading Diagnostics](https://github.com/${owner}/${repo}/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics).`,
+              ``,
+              `This issue will auto-close in 7 days if no attachment is added — just edit the issue with the file and the \`needs-diagnostics\` label will be removed automatically.`,
+            ].join('\n'));
+
+  sweep-stale:
+    name: "Close Stale Hygiene Issues"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: "Close stale needs-diagnostics"
+        uses: actions/stale@v10
+        with:
+          only-issue-labels: "needs-diagnostics"
+          days-before-issue-stale: 7
+          days-before-issue-close: 0
+          stale-issue-label: "stale-needs-diagnostics"
+          close-issue-message: >
+            Closing this issue as a diagnostics file was not attached within 7 days.
+            Feel free to reopen and attach the diagnostics JSON file (drag-and-drop into the issue) — happy to take another look.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          operations-per-run: 50
+
+      - name: "Close stale needs-template"
+        uses: actions/stale@v10
+        with:
+          only-issue-labels: "needs-template"
+          days-before-issue-stale: 7
+          days-before-issue-close: 0
+          stale-issue-label: "stale-needs-template"
+          close-issue-message: >
+            Closing this issue as it was not refiled through an issue form within 7 days.
+            Open a fresh one from the issue chooser and I'll pick it up there.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          operations-per-run: 50
