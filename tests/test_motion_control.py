@@ -1464,11 +1464,14 @@ class TestMotionTemplate:
     async def test_and_mode_failed_render_reaches_the_timeout_gate(self, hass):
         """AND mode *with sensors* is the shape where a bad template parks the cover.
 
-        The failed render folds to False through the AND, which overrides an
-        active sensor (``test_and_mode_template_falsy_blocks_active_sensor``),
-        and because sensors are configured the ``is_motion_timeout_active``
-        gate is open — so once the no-motion timeout completes the snapshot
-        carries True and ``MotionTimeoutHandler`` returns the default position.
+        Pins the two manager-level facts that make that shape reachable: the
+        failed render folds to False through the AND, overriding an active
+        sensor (``test_and_mode_template_falsy_blocks_active_sensor``), and
+        because sensors are configured the ``is_motion_timeout_active`` gate is
+        open rather than short-circuited off. ``set_no_motion()`` stands in for
+        a completed timeout, so what is asserted is that the gate would be open
+        — the expiry path and ``MotionTimeoutHandler`` itself are covered
+        elsewhere.
         """
         hass.states.async_set("binary_sensor.motion", "on")
         await hass.async_block_till_done()

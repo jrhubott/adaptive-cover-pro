@@ -67,9 +67,8 @@ async def test_plain_template_tracker_fires_on_dependency_change(
 ) -> None:
     """A template over an ordinary entity still reaches the coordinator callback.
 
-    The invariant guard for the whole #1159 change: passing a render context and
-    a rate limit to ``TrackTemplate`` must not cost an ordinary template its
-    immediacy.
+    The invariant guard for the whole #1159 change: passing a render context to
+    ``TrackTemplate`` must not cost an ordinary template its immediacy.
     """
     entry = _make_entry(
         hass,
