@@ -400,6 +400,60 @@ _BEHAVIOR_PROFILE_KEYS = frozenset(
 )
 
 
+# Sub-bullet indent for a gate block in the config summary. Non-breaking on
+# purpose: a plain leading space collapses in the rendered markdown.
+_GATE_SUMMARY_INDENT = "\u00a0" * 4
+
+
+def _render_condition_gate_summary(
+    config: dict[str, Any],
+    emit,
+    labels,
+    *,
+    prefix: str,
+    indent: str,
+    sensors_key: str,
+    template_key: str,
+    mode_key: str,
+) -> bool:
+    """Render one condition gate's summary lines; return whether it rendered.
+
+    ACP has two of these (the daytime gate, #632, and the sun-tracking gate,
+    #1167) and they render identically — sensors / template / both, then an
+    explainer — differing only in their option keys and label prefix. One
+    renderer, two callers, per CODING_GUIDELINES § "No Code Duplication".
+
+    ``prefix`` selects the label family (``timing.gate`` / ``solar.gate``); each
+    must define ``<prefix>_sensors``, ``<prefix>_template``, ``<prefix>_both``
+    and ``<prefix>_explainer``. Caller-specific extras — the daytime gate's
+    offset-ignored footgun warning — stay at the call site, which is why this
+    returns whether anything was emitted.
+    """
+    from .templates import is_template_string
+
+    sensors = config.get(sensors_key) or []
+    template = config.get(template_key)
+    has_template = is_template_string(template)
+    if not sensors and not has_template:
+        return False
+
+    sensors_str = ", ".join(sensors)
+    if sensors and has_template:
+        emit(
+            labels[f"{prefix}_both"].format(
+                indent=indent,
+                sensors=sensors_str,
+                mode=config.get(mode_key, DEFAULT_TEMPLATE_COMBINE_MODE),
+            )
+        )
+    elif sensors:
+        emit(labels[f"{prefix}_sensors"].format(indent=indent, sensors=sensors_str))
+    else:
+        emit(labels[f"{prefix}_template"].format(indent=indent))
+    emit(labels[f"{prefix}_explainer"].format(indent=indent))
+    return True
+
+
 def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
     """Effective built-in handler priorities for *config* (override or default).
 
@@ -1598,10 +1652,12 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "whether to sun-track."
     ),
     "solar.gate_explainer": (
-        "{indent}While the gate reads false, solar positioning is skipped and "
-        "the cover falls through to the default position. Climate, glare zones, "
-        "motion and manual override keep working — unlike the daytime gate, "
-        "this one suppresses solar only."
+        "{indent}While the gate reads false, solar positioning is skipped and the "
+        "cover falls through to the default position. Climate mode, motion and "
+        "manual override are unaffected, and the operating window stays open — "
+        "unlike the daytime gate, which closes the window and suppresses all of "
+        "them. Glare zones keep running but drop their sun-tracking-only limits, "
+        "since those apply only while tracking is live."
     ),
     # --- Timing window ---
     "timing.from_entity": "from {entity}",
@@ -2761,32 +2817,16 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         # reads false, letting the chain fall through to the default position.
         # Only rendered under the enabled branch: with the master toggle off the
         # gate cannot change anything, and showing it there would imply it might.
-        st_gate_sensors = config.get(CONF_SUN_TRACKING_GATE_SENSORS) or []
-        st_gate_template = config.get(CONF_SUN_TRACKING_GATE_TEMPLATE)
-        st_gate_has_template = is_template_string(st_gate_template)
-        if st_gate_sensors or st_gate_has_template:
-            indent = " " * 4
-            st_sensors_str = ", ".join(st_gate_sensors)
-            if st_gate_sensors and st_gate_has_template:
-                _sub(
-                    L["solar.gate_both"].format(
-                        indent=indent,
-                        sensors=st_sensors_str,
-                        mode=config.get(
-                            CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
-                            DEFAULT_TEMPLATE_COMBINE_MODE,
-                        ),
-                    )
-                )
-            elif st_gate_sensors:
-                _sub(
-                    L["solar.gate_sensors"].format(
-                        indent=indent, sensors=st_sensors_str
-                    )
-                )
-            else:
-                _sub(L["solar.gate_template"].format(indent=indent))
-            _sub(L["solar.gate_explainer"].format(indent=indent))
+        _render_condition_gate_summary(
+            config,
+            _sub,
+            L,
+            prefix="solar.gate",
+            indent=_GATE_SUMMARY_INDENT,
+            sensors_key=CONF_SUN_TRACKING_GATE_SENSORS,
+            template_key=CONF_SUN_TRACKING_GATE_TEMPLATE,
+            mode_key=CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+        )
     else:
         _open(
             _prio["solar"],
@@ -2906,30 +2946,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
     # replacing the astronomical sunset/sunrise calc. Rendered independently of the
     # timing window so it shows even with no sunset_pos / schedule configured.
-    gate_sensors = config.get(CONF_DAYTIME_GATE_SENSORS) or []
-    gate_template = config.get(CONF_DAYTIME_GATE_TEMPLATE)
-    gate_has_template = is_template_string(gate_template)
-    gate_mode = config.get(
-        CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
-    )
-    if gate_sensors or gate_has_template:
-        indent = " " * 4
-        sensors_str = ", ".join(gate_sensors)
-        if gate_sensors and gate_has_template:
-            _sub(
-                L["timing.gate_both"].format(
-                    indent=indent, sensors=sensors_str, mode=gate_mode
-                )
-            )
-        elif gate_sensors:
-            _sub(L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str))
-        else:
-            _sub(L["timing.gate_template"].format(indent=indent))
-        _sub(L["timing.gate_explainer"].format(indent=indent))
+    if _render_condition_gate_summary(
+        config,
+        _sub,
+        L,
+        prefix="timing.gate",
+        indent=_GATE_SUMMARY_INDENT,
+        sensors_key=CONF_DAYTIME_GATE_SENSORS,
+        template_key=CONF_DAYTIME_GATE_TEMPLATE,
+        mode_key=CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    ) and (sunset_off or sunrise_off):
         # Footgun: sunset/sunrise offsets are no-ops once the gate owns the
         # boundary. Only warn when an offset is actually set (avoid noise).
-        if sunset_off or sunrise_off:
-            _sub(L["timing.gate_offset_ignored"].format(indent=indent))
+        # Daytime-gate-specific, so it stays outside the shared renderer.
+        _sub(L["timing.gate_offset_ignored"].format(indent=_GATE_SUMMARY_INDENT))
 
     # Blind spot (sub-bullet / informational, no priority of its own). One line
     # per active slot — a slot is active when its left & right are both set

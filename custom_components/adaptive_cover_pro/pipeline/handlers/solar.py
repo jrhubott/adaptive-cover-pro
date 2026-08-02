@@ -54,11 +54,20 @@ class SolarHandler(OverrideHandler):
         """Reason when solar handler does not match.
 
         Ordered to match ``evaluate``: the first gate that actually stopped it is
-        the one reported, so "outside the window" outranks "the gate is closed",
-        which in turn outranks "the sun is not on this face".
+        the one reported, so "outside the window" outranks "tracking is not
+        live", which in turn outranks "the sun is not on this face".
+
+        Tracking-not-live splits by cause. Reporting a closed gate to a user who
+        simply switched sun tracking off — and never configured a gate — would
+        send them looking for a setting that does not exist, so the gate reason
+        is used only when a gate is what actually closed it.
         """
         if not snapshot.in_time_window:
             return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
         if not snapshot.enable_sun_tracking:
-            return Reason(ReasonCode.SKIP_SUN_TRACKING_GATE)
+            return Reason(
+                ReasonCode.SKIP_SUN_TRACKING_GATE
+                if snapshot.sun_tracking_gate_closed
+                else ReasonCode.SKIP_SUN_TRACKING_OFF
+            )
         return Reason(ReasonCode.SKIP_SUN_OUTSIDE)

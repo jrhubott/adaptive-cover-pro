@@ -159,7 +159,7 @@
     "gate_sensors": "{indent}🚦 Sonnenverfolgungs-Gate: {sensors} entscheiden, ob der Sonne gefolgt wird.",
     "gate_template": "{indent}🚦 Sonnenverfolgungs-Gate: eine Vorlage entscheidet, ob der Sonne gefolgt wird.",
     "gate_both": "{indent}🚦 Sonnenverfolgungs-Gate: {sensors} und eine Vorlage ({mode}) entscheiden, ob der Sonne gefolgt wird.",
-    "gate_explainer": "{indent}Solange das Gate falsch meldet, wird die Sonnenpositionierung übersprungen und die Abdeckung fällt auf die Standardposition zurück. Klima, Blendzonen, Bewegung und manuelle Übersteuerung funktionieren weiter — anders als beim Tageslicht-Gate unterdrückt dieses nur die Sonnenverfolgung."
+    "gate_explainer": "{indent}Solange das Gate falsch meldet, wird die Sonnenpositionierung übersprungen und die Abdeckung fällt auf die Standardposition zurück. Klimamodus, Bewegung und manuelle Übersteuerung bleiben unberührt, und das Betriebsfenster bleibt offen — anders als beim Tageslicht-Gate, das das Fenster schließt und alle davon unterdrückt. Blendungszonen laufen weiter, verlieren aber ihre nur-bei-Sonnenverfolgung-Grenzwerte, da diese nur bei aktiver Verfolgung gelten."
   },
   "timing": {
     "from_entity": "von {entity}",

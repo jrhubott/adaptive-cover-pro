@@ -658,6 +658,82 @@ def test_service_field_descriptions_icu_safe(lang_file: Path) -> None:
     )
 
 
+def _data_descriptions(bundle: dict) -> list[tuple[str, str]]:
+    """Every ``*.data_description.*`` leaf in the bundle, as (dotpath, text)."""
+    out: list[tuple[str, str]] = []
+
+    def walk(node, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(value, f"{path}.{key}" if path else key)
+        elif isinstance(node, str) and ".data_description." in path:
+            out.append((path, node))
+
+    walk(bundle, "")
+    return out
+
+
+def _has_unescaped_double_brace(text: str) -> bool:
+    """Return True if ``text`` has a literal ``{{``/``}}`` outside ICU quoting.
+
+    Narrower than :func:`_has_unescaped_brace` on purpose. Config-flow help text
+    legitimately carries single-brace ICU arguments the frontend substitutes
+    (``{computed_fov}``, ``{wind_unit}``), so flagging every brace here would be
+    all false positives. A DOUBLED brace is never a valid ICU argument — it is
+    always a literal Jinja example that must be quoted as ``'{{'`` … ``'}}'`` or
+    the whole string renders as MALFORMED_ARGUMENT (issue #793).
+    """
+    i, n = 0, len(text)
+    in_quote = False
+    while i < n:
+        c = text[i]
+        if c == "'":
+            nxt = text[i + 1] if i + 1 < n else ""
+            if in_quote:
+                if nxt == "'":
+                    i += 2
+                    continue
+                in_quote = False
+                i += 1
+                continue
+            if nxt in "{}#|":
+                in_quote = True
+                i += 1
+                continue
+            if nxt == "'":
+                i += 2
+                continue
+            i += 1
+            continue
+        if not in_quote and c in "{}" and text[i : i + 2] in ("{{", "}}"):
+            return True
+        i += 1
+    return False
+
+
+@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
+def test_data_descriptions_icu_safe(lang_file: Path) -> None:
+    """Config-flow help text must not carry an unescaped Jinja ``{{`` (#793/#1167).
+
+    The sibling guard above covers service field descriptions. This one covers
+    ``data_description`` leaves, where issue #1167's sun-tracking-gate help text
+    shipped a raw ``{{ is_state(...) }}`` example in three steps x three
+    languages — nine strings that would each have rendered as
+    "Translation error: MALFORMED_ARGUMENT" with the whole description lost.
+    """
+    offending = [
+        path
+        for path, desc in _data_descriptions(_load(lang_file))
+        if _has_unescaped_double_brace(desc)
+    ]
+    assert not offending, (
+        f"{lang_file.name}: {len(offending)} data_description(s) contain an "
+        f"unescaped Jinja '{{{{'/'}}}}' — quote literal braces ICU-style as "
+        f"'{{{{' ... '}}}}' so the frontend does not raise MALFORMED_ARGUMENT. "
+        f"Offenders: {offending}"
+    )
+
+
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_get_diagnostics_and_get_troubleshooting_config_entry_id_descriptions_match(
     lang_file: Path,

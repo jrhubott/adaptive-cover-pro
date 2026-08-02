@@ -159,7 +159,7 @@
     "gate_sensors": "{indent}🚦 Filtre de suivi du soleil : {sensors} décident s'il faut suivre le soleil.",
     "gate_template": "{indent}🚦 Filtre de suivi du soleil : un modèle décide s'il faut suivre le soleil.",
     "gate_both": "{indent}🚦 Filtre de suivi du soleil : {sensors} et un modèle ({mode}) décident s'il faut suivre le soleil.",
-    "gate_explainer": "{indent}Tant que le filtre est faux, le positionnement solaire est ignoré et le volet revient à la position par défaut. Le climat, les zones d'éblouissement, le mouvement et la commande manuelle continuent de fonctionner — contrairement au filtre de jour, celui-ci ne supprime que le suivi solaire."
+    "gate_explainer": "{indent}Tant que le filtre est faux, le positionnement solaire est ignoré et le volet revient à la position par défaut. Le mode climatique, le mouvement et la dérogation manuelle ne sont pas affectés, et la fenêtre de fonctionnement reste ouverte — contrairement au filtre de jour, qui ferme la fenêtre et les supprime tous. Les zones d'éblouissement continuent de fonctionner mais perdent leurs limites réservées au suivi du soleil, celles-ci ne s'appliquant que lorsque le suivi est actif."
   },
   "timing": {
     "from_entity": "de {entity}",

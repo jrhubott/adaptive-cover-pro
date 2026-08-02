@@ -191,6 +191,7 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.SKIP_OUTSIDE_WINDOW: "outside time window",
     ReasonCode.SKIP_SUN_OUTSIDE: "sun outside acceptance angle or elevation limits",
     ReasonCode.SKIP_SUN_TRACKING_GATE: "sun tracking gate is closed",
+    ReasonCode.SKIP_SUN_TRACKING_OFF: "sun tracking is turned off",
     ReasonCode.SKIP_MANUAL_NOT_ACTIVE: "manual override not active",
     ReasonCode.SKIP_OCCUPANCY_DISABLED: "occupancy detection disabled",
     ReasonCode.SKIP_OCCUPANCY_NOT_ACTIVE: "occupancy timeout not active",

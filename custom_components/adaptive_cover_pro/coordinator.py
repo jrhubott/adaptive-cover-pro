@@ -3559,9 +3559,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_apply_sun_tracking_update(self) -> None:
         """Rebuild the pipeline after Sun Tracking changes without a reload.
 
-        ``enable_sun_tracking`` changes only pipeline composition; they do not
-        alter entity listeners or cover geometry. The refresh evaluates the new
-        winner immediately while the command path keeps its normal gates.
+        Since issue #1167 ``enable_sun_tracking`` no longer changes pipeline
+        composition — ``SolarHandler`` is unconditional and declines on the
+        snapshot field instead — so the rebuild is a no-op for solar and the
+        refresh is what actually applies the change. The rebuild is kept because
+        the option still reaches other composition inputs and re-running it is
+        cheap and total. Neither entity listeners nor cover geometry are
+        affected, which is why this stays a refresh rather than a reload.
         """
         self._pipeline = self._build_pipeline()
         self._cached_options = dict(self.config_entry.options)
@@ -3842,8 +3846,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             weather_override_active=self.is_weather_override_active,
             # Pure property read — the ad-hoc/preemption build must NOT
             # re-evaluate the managers (that would advance latches off-cycle).
-            # One latch it does advance: the custom-position per-input hold
-            # (#1012) arms on any read, so an ad-hoc build can anchor the hold
+            # Two latches it does advance, both arm-on-read and both harmless
+            # here: the custom-position per-input hold (#1012), and the
+            # sun-tracking gate's grace window (#1167) — that one sees the same
+            # options object as the cycle, so no config-change reset fires, and
+            # an earlier anchor only shortens the hold, i.e. fails open sooner.
+            # An ad-hoc build can anchor the hold
             # window at the tap rather than at the next regular cycle. That is
             # the documented contract — the window starts at the first
             # indeterminate sighting, and the tap is one — but it also means no

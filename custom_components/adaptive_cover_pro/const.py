@@ -1962,6 +1962,7 @@ class ReasonCode(StrEnum):
     SKIP_OUTSIDE_WINDOW = "skip.outside_window"
     SKIP_SUN_OUTSIDE = "skip.sun_outside"
     SKIP_SUN_TRACKING_GATE = "skip.sun_tracking_gate"
+    SKIP_SUN_TRACKING_OFF = "skip.sun_tracking_off"
     SKIP_MANUAL_NOT_ACTIVE = "skip.manual_not_active"
     SKIP_OCCUPANCY_DISABLED = "skip.occupancy_disabled"
     SKIP_OCCUPANCY_NOT_ACTIVE = "skip.occupancy_not_active"

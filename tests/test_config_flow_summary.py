@@ -4110,3 +4110,102 @@ async def test_summary_renders_incoming_type_after_switch(hass) -> None:
     assert outgoing.display_label() not in summary
     for line in incoming.summary_geometry_lines(dict(entry.options)):
         assert line in summary
+
+
+# ---------------------------------------------------------------------------
+# Section: Sun-tracking gate in summary (issue #1167)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_sun_tracking_gate_sensors_only():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_SENSORS,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_SUN_TRACKING_GATE_SENSORS] = ["binary_sensor.ac_running"]
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "sun tracking gate" in summary.lower()
+    assert "binary_sensor.ac_running" in summary
+
+
+def test_summary_sun_tracking_gate_template_only():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_TEMPLATE,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_SUN_TRACKING_GATE_TEMPLATE] = "{{ true }}"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "sun tracking gate" in summary.lower()
+    assert "a template decides" in summary.lower()
+
+
+def test_summary_sun_tracking_gate_both_shows_the_combine_mode():
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_SENSORS,
+        CONF_SUN_TRACKING_GATE_TEMPLATE,
+        CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_SUN_TRACKING_GATE_SENSORS] = ["binary_sensor.ac_running"]
+    cfg[CONF_SUN_TRACKING_GATE_TEMPLATE] = "{{ true }}"
+    cfg[CONF_SUN_TRACKING_GATE_TEMPLATE_MODE] = "and"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "sun tracking gate" in summary.lower()
+    assert "and" in summary.lower()
+
+
+def test_summary_omits_the_sun_tracking_gate_when_unconfigured():
+    cfg = _minimal_vertical()
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "sun tracking gate" not in summary.lower()
+
+
+def test_summary_omits_the_sun_tracking_gate_when_tracking_is_off():
+    """With the master toggle off the gate cannot change anything.
+
+    Rendering it there would imply it might, sending the user to configure a
+    control that is inert.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_SUN_TRACKING,
+        CONF_SUN_TRACKING_GATE_SENSORS,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_ENABLE_SUN_TRACKING] = False
+    cfg[CONF_SUN_TRACKING_GATE_SENSORS] = ["binary_sensor.ac_running"]
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "sun tracking gate" not in summary.lower()
+
+
+def test_summary_explainer_does_not_claim_glare_zones_are_untouched():
+    """The glare-zone handler reads the same enable_sun_tracking field.
+
+    An earlier draft of this copy said glare zones "keep working" full stop,
+    which is false: they keep running but drop their sun-tracking-only limits.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUN_TRACKING_GATE_SENSORS,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_SUN_TRACKING_GATE_SENSORS] = ["binary_sensor.ac_running"]
+    summary = _build_config_summary(cfg, CoverType.BLIND).lower()
+    assert "sun-tracking-only limits" in summary
+    assert "climate, glare zones, motion" not in summary
+
+
+def test_both_gates_render_through_the_one_shared_helper():
+    """Daytime and sun-tracking gates share _render_condition_gate_summary.
+
+    Pins the dedup: if either call site is re-inlined, this fails.
+    """
+    import inspect
+
+    from custom_components.adaptive_cover_pro import config_flow as cf
+
+    src = inspect.getsource(cf._build_config_summary)
+    assert src.count("_render_condition_gate_summary(") == 2
