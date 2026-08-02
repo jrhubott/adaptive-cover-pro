@@ -260,13 +260,15 @@ _MANUAL_OVERRIDE_SKIP_LABEL = "manual_override"
 #
 # The mean hazard is unchanged for MOTION: that handler publishes its hold
 # through ``PipelineResult.position``, sets no ``held_position``, and is
-# therefore never judged per cover.  For a GROUP_LOCK or MANUAL hold, issue
-# #1174 moved the whole dispatch decision off the mean and onto
-# ``PipelineResult.hold_clamp_verdicts``: each bound cover is judged on its own
-# position, commanded (or held) on its own verdict, sent to its own resolved
-# target, and its skip record written with its own position.  ``position``
-# remains the shared summary the trace and the singular surfaces carry — it is
-# no longer what reaches a judged cover.
+# therefore never judged per cover.  For a GROUP_LOCK or MANUAL hold on a cover
+# type whose entities move independently, issue #1174 moved the whole dispatch
+# decision off the mean and onto ``PipelineResult.hold_clamp_verdicts``: each
+# bound cover is judged on its own position, commanded (or held) on its own
+# verdict, sent to its own resolved target, and its skip record written with its
+# own position.  ``position`` remains the shared summary the trace and the
+# singular surfaces carry — it is no longer what reaches a judged cover.  A
+# coupled cover type (its rails are one geometry, not N opinions) produces no
+# verdicts and keeps the shared target, mean hazard and all.
 #
 # ``ControlMethod.MANUAL`` is deliberately NOT a member and must not be added.
 # The manual-override handler's position is ``compute_solar_position`` /
@@ -2755,8 +2757,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         means the skip record is written — with the cover's own position, not
         the instance mean the singular ``held_position`` carries. Without a
         verdict (a computed winner, a motion hold, a legacy snapshot, a cover
-        absent from the dict) the singular ``skip_command`` and ``state`` answer
-        for every cover, exactly as before.
+        absent from the dict, or a cover type whose entities do not move
+        independently) the singular ``skip_command`` and ``state`` answer for
+        every cover, exactly as before.
         """
         result = self._pipeline_result
         verdict = (result.hold_clamp_verdicts or {}).get(cover) if result else None
@@ -2824,17 +2827,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> int:
         """Per-entity dispatch target for this cover (identity for most types).
 
-        The pipeline resolves ONE position per cycle and it is sent to every
-        bound entity, EXCEPT under a hold that was judged per cover — there each
-        cover is commanded (or not) on its own verdict, and to that verdict's
-        own target, which need not be the shared one (#1174). Either way the
-        number reaching this hook is already resolved for the entity being
-        dispatched. A cover type that drives several physical entities
+        The pipeline resolves ONE position per cycle, which is then sent to
+        every bound entity. A cover type that drives several physical entities
         to different positions from that one value — the Model C day/night
         shade with a separate middle-rail entity, the dual panel's blackout
         panel — remaps here via its polymorphic ``resolve_entity_target`` hook.
         Every other cover type's hook is identity, so this seam never branches
         on the cover type.
+
+        A hold judged per cover (#1174) hands this hook that cover's OWN target
+        rather than the shared one — which is safe precisely because overriding
+        ``resolve_entity_target`` is one of the three signals
+        ``CoverTypePolicy.entities_move_independently`` reads: a remapping
+        policy is never judged per cover, so the value arriving here is a shared
+        position for exactly the types that transform it, and already
+        entity-resolved for the identity ones.
 
         ``inverted`` and ``interpolated`` name the dispatch frame of ``state``
         so a remapping policy reproduces or undoes it correctly. The main
@@ -3411,8 +3418,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 else "solar"
             )
         # Name the number and frame this loop fans out so the ordering view can
-        # tell a raise from a lower (issue #1118) — the same pair
-        # ``_entity_target`` gets below.
+        # tell a raise from a lower (issue #1118). A per-cover hold verdict can
+        # send an individual cover somewhere else (#1174), but only for a policy
+        # whose ``dispatch_order_key`` is the constant default — overriding that
+        # hook is one of the signals which switch per-cover judging off — so for
+        # every cover type that actually reads this argument, ``state`` is still
+        # exactly what each entity receives.
         for cover in self._policy.order_for_dispatch(self.entities, position=state):
             ctx = self._build_position_context(
                 cover,
@@ -3606,8 +3617,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         sun_just_appeared = self._check_sun_validity_transition()
         # Name the number and frame this loop fans out so the ordering view can
-        # tell a raise from a lower (issue #1118) — the same pair
-        # ``_entity_target`` gets below.
+        # tell a raise from a lower (issue #1118). A per-cover hold verdict can
+        # send an individual cover somewhere else (#1174), but only for a policy
+        # whose ``dispatch_order_key`` is the constant default — overriding that
+        # hook is one of the signals which switch per-cover judging off — so for
+        # every cover type that actually reads this argument, ``state`` is still
+        # exactly what each entity receives.
         for cover in self._policy.order_for_dispatch(self.entities, position=state):
             if self.manager.is_cover_manual(cover):
                 self.logger.debug(

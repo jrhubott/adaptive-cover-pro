@@ -427,8 +427,10 @@ class PipelineSnapshot:
     # Per-entity RAW cover-frame positions — the same frame and the same source
     # as ``current_cover_position``, which is the summary mean of these. The
     # registry judges a hold's per-cover clamp verdicts against this dict
-    # (#1174). ``None`` in legacy / test snapshots that predate the field: the
-    # registry then judges holds on the summary scalar exactly as before.
+    # (#1174) — but only for a cover type whose entities move independently; a
+    # coupled type's covers are judged as one, off the summary scalar. ``None``
+    # in legacy / test snapshots that predate the field: the registry then
+    # judges holds on the summary scalar exactly as before.
     cover_positions: Mapping[str, int | None] | None = None
 
     # Whether the position axis is effectively inverted for this install
@@ -554,6 +556,12 @@ class HoldClampVerdict:
       in *opposite* directions, so the released covers do not share one target;
     * a TILT clamp commands every held cover while the position axis released
       nobody, so "is a command going out" is not "did a bound move me".
+
+    Only built for a cover type whose entities move independently
+    (``CoverTypePolicy.entities_move_independently``). That is what makes
+    ``target`` safe to hand straight to ``coordinator._entity_target``: a policy
+    that would remap it per entity, or rewrite it after the pipeline, produces
+    no verdicts at all and keeps its shared-target path.
     """
 
     #: This cover's own position, a RAW cover-frame read (matching the frame
@@ -598,9 +606,19 @@ class PositionAxisJudgment:
     raised: bool
     #: A ceiling lowered at least one judged position.
     lowered: bool
-    #: Per-cover dispatch verdicts, or ``None`` for a computed winner and for a
-    #: snapshot carrying no per-entity positions — both of which keep the cycle
-    #: on the singular pre-#1174 path.
+    #: The LOWEST judged position when ``raised``, else ``None`` — the cover the
+    #: floor actually lifted, and the honest ``from_pos`` for a floor's clamp
+    #: step. Equals ``effective_winner_pos`` unless a ceiling bound a different
+    #: cover in the same cycle.
+    raise_from: int | None
+    #: The HIGHEST judged position when ``lowered``, else ``None`` — the mirror,
+    #: and the only starting point a ceiling's own clamp step can honestly name
+    #: once a floor has taken ``effective_winner_pos``.
+    lower_from: int | None
+    #: Per-cover dispatch verdicts, or ``None`` for a computed winner, for a
+    #: snapshot carrying no per-entity positions, and for a cover type whose
+    #: entities do not move independently — all of which keep the cycle on the
+    #: singular pre-#1174 path.
     verdicts: Mapping[str, HoldClampVerdict] | None
 
 
@@ -723,10 +741,15 @@ class PipelineResult:
 
     # Per-cover dispatch verdicts for a hold winner (#1174): the sole authority
     # on which bound covers are commanded this cycle and where each one is sent.
-    # Populated when ``held_position is not None`` AND the snapshot carried
-    # per-entity positions; ``None`` for every computed (non-hold) winner and
-    # for legacy snapshots without the dict, both of which keep the cycle on the
-    # singular ``skip_command`` / ``position`` path unchanged.
+    # Populated when ``held_position is not None``, the snapshot carried
+    # per-entity positions, AND this cover type's entities move independently
+    # (``CoverTypePolicy.entities_move_independently`` — a type that remaps its
+    # entities' targets, rewrites the position after the pipeline, or orders
+    # physically coupled rails expresses ONE geometry and has no per-cover
+    # question to answer). ``None`` otherwise — for every computed (non-hold)
+    # winner, for legacy snapshots without the dict, and for those coupled types
+    # — all of which keep the cycle on the singular ``skip_command`` /
+    # ``position`` path unchanged.
     #
     # A cover absent from the dict is likewise unjudged and falls back to that
     # singular path. ``position`` stays the shared summary the trace and the

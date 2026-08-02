@@ -37,10 +37,12 @@ class ManualOverrideHandler(OverrideHandler):
         #
         # On a multi-cover instance this is a SUMMARY: the mean of the covers
         # that reported a position, because the sensor is one entity per config
-        # entry. No decision consumes it — the registry judges each held cover
-        # against its own entry in ``snapshot.cover_positions`` (#1174), and its
-        # only other job here is the presence marker the #1170 priority gate
-        # and ``skip_command`` key on.
+        # entry. On a cover type whose entities move independently no decision
+        # consumes it — the registry judges each held cover against its own
+        # entry in ``snapshot.cover_positions`` (#1174). A coupled type is still
+        # judged on this scalar, because its entities describe one geometry. In
+        # both cases its other job here is the presence marker the #1170
+        # priority gate and ``skip_command`` key on.
         held_position: int | None = snapshot.current_cover_position
 
         if snapshot.cover.direct_sun_valid:

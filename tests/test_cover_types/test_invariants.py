@@ -453,3 +453,75 @@ def test_stub_policy_passes_capability_warning_with_stub_registered() -> None:
     with register_stub_policy(StubSingleAxisPolicy):
         policy = get_policy("cover_stub")
         assert policy.cover_capability_warnings(known={}) == []
+
+
+# ---- Per-entity hold dispatch is gated on entity independence (#1174) ----- #
+#
+# A hold's floor/ceiling verdict is decided per cover only where each bound
+# entity's position is genuinely its own. Three hooks say otherwise — a
+# per-entity remap, a post-pipeline position rewrite, and a mandated dispatch
+# order for physically coupled entities — and the base predicate derives its
+# answer from all three so that a NEW cover type is excluded automatically
+# rather than by someone remembering to say so.
+
+
+@pytest.mark.unit
+def test_entities_move_independently_is_true_for_an_untouched_policy(
+    policy: CoverTypePolicy,
+) -> None:
+    """Leave the three dispatch hooks alone and the per-cover path stays on."""
+    cls = type(policy)
+    untouched = (
+        cls.resolve_entity_target is CoverTypePolicy.resolve_entity_target
+        and cls.post_pipeline_resolve is CoverTypePolicy.post_pipeline_resolve
+        and cls.dispatch_order_key is CoverTypePolicy.dispatch_order_key
+    )
+    if untouched:
+        assert policy.entities_move_independently() is True
+
+
+@pytest.mark.unit
+def test_a_policy_that_overrides_a_dispatch_hook_opts_out_or_says_why() -> None:
+    """Overriding any of the three hooks turns per-cover judging off by default.
+
+    A policy may override the predicate back to ``True``, but then it owes the
+    argument in its own docstring — so this test demands one rather than
+    letting an opt-in be silent. ``VenetianPolicy`` is the shipped example: its
+    ``post_pipeline_resolve`` never rewrites the position under a hold.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY
+
+    for cover_type, policy_cls in POLICY_REGISTRY.items():
+        overrides = (
+            policy_cls.resolve_entity_target
+            is not CoverTypePolicy.resolve_entity_target
+            or policy_cls.post_pipeline_resolve
+            is not CoverTypePolicy.post_pipeline_resolve
+            or policy_cls.dispatch_order_key is not CoverTypePolicy.dispatch_order_key
+        )
+        if not overrides:
+            continue
+        if policy_cls().entities_move_independently():
+            own = policy_cls.entities_move_independently
+            assert own is not CoverTypePolicy.entities_move_independently, (
+                f"{cover_type} overrides a per-entity dispatch hook but still "
+                "reports independent entities via the derived default"
+            )
+            assert own.__doc__, (
+                f"{cover_type} opts back into per-cover hold dispatch — its "
+                "override must document why that is safe"
+            )
+
+
+@pytest.mark.unit
+def test_the_coupled_cover_types_are_judged_as_one_unit() -> None:
+    """The shipped answers, pinned: day/night and dual panel are coupled.
+
+    Both derive one entity's target from another's (or fold a second axis into
+    the position wire), so a floor that moves one of their entities moves the
+    whole geometry. Naming them explicitly keeps the derived predicate honest —
+    a refactor that made either look "untouched" would flip this.
+    """
+    assert get_policy("cover_day_night_shade").entities_move_independently() is False
+    assert get_policy("cover_dual_panel").entities_move_independently() is False
+    assert get_policy("cover_blind").entities_move_independently() is True

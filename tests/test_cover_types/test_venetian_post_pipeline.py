@@ -809,3 +809,48 @@ class TestEngineTiltBounds:
         _, low = self._resolve(monkeypatch, 10, tilt_low=40, tilt_high=80)
         _, high = self._resolve(monkeypatch, 95, tilt_low=40, tilt_high=80)
         assert (low.tilt, high.tilt) == (40, 80)
+
+
+class TestPerCoverHoldDispatchPremise:
+    """The proof behind ``VenetianPolicy.entities_move_independently`` (#1174).
+
+    Venetian is the one shipped policy that overrides a per-entity dispatch
+    hook and still opts INTO per-cover hold judging. It is allowed to because
+    its ``post_pipeline_resolve`` never touches ``PipelineResult.position``
+    under a hold — the only winner kind that is ever judged per cover. If that
+    ever stops being true, the per-cover targets would silently bypass a
+    position rewrite, which is the day/night Model B failure this gate exists
+    to prevent. So the premise is pinned here rather than left to a docstring.
+    """
+
+    #: Winners that carry ``held_position`` and therefore produce verdicts —
+    #: ``ManualOverrideHandler`` and ``GroupLockHandler`` are the only two
+    #: handlers that set it.
+    HOLD_METHODS = (ControlMethod.MANUAL, ControlMethod.GROUP_LOCK)
+
+    @pytest.mark.parametrize("method", HOLD_METHODS)
+    def test_tilt_only_pin_never_fires_under_a_hold(self, method):
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(method, position=80), **_non_solar_kwargs()
+        )
+        assert out.position == 80
+
+    @pytest.mark.parametrize("method", HOLD_METHODS)
+    def test_a_hold_with_a_handler_tilt_keeps_its_position(self, method):
+        """The handler-tilt branch is the one a clamped tilt bound arrives on."""
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+        from dataclasses import replace
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        held = replace(_make_result(method, position=35), tilt=60)
+        out = policy.post_pipeline_resolve(held, **_non_solar_kwargs())
+        assert out.position == 35
+        assert out.tilt == 60
+
+    def test_venetian_opts_into_per_cover_hold_dispatch(self):
+        assert _make_policy().entities_move_independently() is True

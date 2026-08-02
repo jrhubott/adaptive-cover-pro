@@ -641,11 +641,8 @@ class CoverTypePolicy(ABC):
     ) -> int:
         """Adjust the dispatched position for one specific entity.
 
-        The coordinator resolves a single ``position`` per update cycle and
-        sends it to every bound entity — except under a hold judged per cover,
-        where each cover is dispatched on its own verdict and to that verdict's
-        own target (#1174). Either way ``position`` is already resolved for
-        ``entity_id`` by the time it arrives. A cover type that drives *several*
+        The coordinator resolves a single ``position`` per update cycle, then
+        sends it to every bound entity. A cover type that drives *several*
         physical entities to *different* positions from that one resolved value
         overrides this hook (the Model C day/night shade remaps its middle-rail
         entity while the bottom rail passes through unchanged). The Liskov-safe
@@ -727,8 +724,57 @@ class CoverTypePolicy(ABC):
         The Liskov-safe default is a constant, which makes ``sorted(...)`` a
         stable-sort no-op: the user's config-flow pick order survives verbatim
         for every cover type with independent entities.
+
+        The ``position`` a seam names is the one number that cycle fans out, and
+        that stays true for every policy which actually overrides this hook:
+        overriding it is one of the three signals
+        :meth:`entities_move_independently` reads, so such a policy is never
+        dispatched per entity in the first place (#1174).
         """
         return 0
+
+    def entities_move_independently(self) -> bool:
+        """Whether each bound entity's position may be decided on its own (#1174).
+
+        A hold (manual override, group lock) keeps every bound cover where
+        something authoritative already put it, and a composed floor/ceiling
+        then asks "does this cover still satisfy the bound?". On an instance of
+        N unrelated covers that question has N answers, and collapsing them into
+        one — the arithmetic mean of every cover's position — dragged compliant
+        covers to a floor they already satisfied and hid a lone violator behind
+        its siblings. So the registry judges and dispatches each cover
+        separately, but ONLY where doing so is meaningful.
+
+        It is not meaningful whenever this cover type's entities are not
+        independent, and the three hooks that express non-independence are
+        exactly the ones consulted here:
+
+        * :meth:`resolve_entity_target` — a per-entity REMAP. The value handed to
+          it is a shared position that the policy turns into this entity's own;
+          feeding it a value already resolved for that entity applies the remap
+          twice (the Model C middle rail derived from a middle-rail number).
+        * :meth:`post_pipeline_resolve` — a rewrite of ``PipelineResult.position``
+          that runs AFTER the registry. A per-cover target is computed before it
+          and therefore bypasses it: the Model B day/night shade folds coverage
+          and fabric into one wire there, so a cover released to its own raw
+          read carries neither.
+        * :meth:`dispatch_order_key` — physical COUPLING. Entities that have to
+          be commanded in a mandated order share a track; a bound that moves one
+          of them moves the geometry, not one opinion out of several.
+
+        Derived rather than declared, so a new cover type is safe by
+        construction: touch any of the three and the per-entity path switches
+        itself off, leaving that type on the shared-target behaviour it had
+        before #1174. A policy that overrides one of them harmlessly may say so
+        by overriding this predicate — and owes the argument for why, in its own
+        docstring, because nothing else here can check it.
+        """
+        cls = type(self)
+        return (
+            cls.resolve_entity_target is CoverTypePolicy.resolve_entity_target
+            and cls.post_pipeline_resolve is CoverTypePolicy.post_pipeline_resolve
+            and cls.dispatch_order_key is CoverTypePolicy.dispatch_order_key
+        )
 
     def order_for_dispatch(
         self,
