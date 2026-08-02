@@ -2091,9 +2091,6 @@ SAFETY_MARGIN_USER_SLACK_MAX = SAFETY_MARGIN_GAMMA_MAX + max(
     SAFETY_MARGIN_LOW_ELEV_MAX, SAFETY_MARGIN_HIGH_ELEV_MAX
 )  # 0.35
 
-# Window depth calculation threshold.
-WINDOW_DEPTH_GAMMA_THRESHOLD = 10  # deg — min gamma for depth contribution
-
 
 # =============================================================================
 # Solar-calculation trace keys (issue #682)

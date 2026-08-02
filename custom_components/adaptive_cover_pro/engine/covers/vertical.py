@@ -13,7 +13,6 @@ from ...const import (
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
-    WINDOW_DEPTH_GAMMA_THRESHOLD,
 )
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
@@ -230,7 +229,8 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         - Safety margins: Angle-dependent multipliers (1.0-1.45x)
 
         Phase 2 (Optional):
-        - Window depth: Accounts for window reveals/frames (0.0-0.5m)
+        - Window depth: a binary full-open gate for window reveals/frames
+          (0.0-5.0m) — see the lintel-gate comment below (#1169)
         - Sill height: Accounts for windows not starting at floor level (0.0-3.0m)
 
         Args:
@@ -278,12 +278,6 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 
         effective_distance = effective_distance_base
 
-        # Account for window depth at angles (creates additional shadow)
-        depth_contribution = 0.0
-        if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
-            depth_contribution = self.window_depth * float(sin(rad(abs(self.gamma))))
-            effective_distance += depth_contribution
-
         # Account for window sill height (window not starting at floor)
         sill_offset = 0.0
         if self.sill_height > 0:
@@ -323,6 +317,56 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             effective_distance
         )
 
+        # ── Lintel gate — window depth is a full-open threshold, not a continuous
+        # term (#1169) ───────────────────────────────────────────────────────────
+        # The reveal soffit shadows the TOP window_depth·tan(elev)/cos(gamma) of
+        # the glass — the same band ``position`` already covers from the top. That
+        # shadow can never license a PARTIAL opening (it never protects territory
+        # the blind wasn't already covering); it can only ever push the blind to
+        # FULLY open, once the reveal shadow and the blind's own coverage together
+        # span the whole pane. Re-projecting ``effective_distance + window_depth``
+        # gives exactly ``base_height + lintel_shadow`` (the identity holds
+        # exactly, no separate trig): if that reaches h_win, every ray is either
+        # stopped by the blind or by the reveal, so open fully. Routed through
+        # ``_project_drop`` (never a hand-rolled ``cos(rad(gamma))``) so pitched
+        # glass (#212 roof-window) gets the right answer through its own override,
+        # and so the one-sided ``clamped_cos_gamma`` guard (#1030) still applies.
+        depth_contribution = 0.0
+        if self.window_depth > 0:
+            gated_height, *_ = self._project_drop(
+                effective_distance + self.window_depth
+            )
+            depth_contribution = gated_height - base_height  # lintel shadow, metres
+            if gated_height >= self.h_win:
+                result = float(np.clip(gated_height, 0, self.h_win))
+                clamped_to_window = bool(gated_height > self.h_win)
+                self.logger.debug(
+                    "Vertical calc: elev=%.1f°, gamma=%.1f°, effective_distance=%.3f "
+                    "(sill=%.3f) → lintel shadow %.3fm reaches h_win=%.3fm → fully open",
+                    self.sol_elev,
+                    self.gamma,
+                    effective_distance,
+                    sill_offset,
+                    depth_contribution,
+                    self.h_win,
+                )
+                self._last_calc_details = self._build_vertical_trace(
+                    edge_case_detected=False,
+                    safety_margin=1.0,
+                    effective_distance=float(effective_distance),
+                    effective_distance_source=effective_distance_source,
+                    window_depth_contribution=float(depth_contribution),
+                    sill_height_offset=float(sill_offset),
+                    cos_gamma=float(cos_gamma),
+                    cos_gamma_clamped=float(cos_gamma_clamped),
+                    path_length=float(path_length),
+                    base_height=float(base_height),
+                    adjusted_height=float(gated_height),
+                    result=result,
+                    clamped_to_window=clamped_to_window,
+                )
+                return result
+
         # Apply safety margin for extreme angles
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
         adjusted_height = base_height * safety_margin
@@ -330,16 +374,16 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         clamped_to_window = bool(adjusted_height > self.h_win)
 
         self.logger.debug(
-            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f "
-            "(depth=%.3f, sill=%.3f), base=%.3f, margin=%.3f, adjusted=%.3f, "
+            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (sill=%.3f), "
+            "base=%.3f, lintel_shadow=%.3f (below gate), margin=%.3f, adjusted=%.3f, "
             "clipped=%.3f, source=%s",
             self.sol_elev,
             self.gamma,
             self.distance,
             effective_distance,
-            depth_contribution,
             sill_offset,
             base_height,
+            depth_contribution,
             safety_margin,
             adjusted_height,
             result,
