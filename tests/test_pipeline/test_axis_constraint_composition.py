@@ -864,3 +864,145 @@ class TestOutComposedCeilingInactivePayload:
         text = _step(self._res(), ReasonCode.REGISTRY_CEILING_INACTIVE).reason
         assert "80" not in text
         assert "40" in text
+
+
+# ---------------------------------------------------------------------------
+# A hold outranks a bound that does not outrank it (issue #1170)
+# ---------------------------------------------------------------------------
+#
+# ``held_position`` means the winner is holding the cover's *physical* position
+# because something authoritative put it there — a manual move, a group lock.
+# A bound may only move that position when it strictly outranks the handler
+# doing the holding. An ordinary winner (``held_position is None``) carries a
+# *computed* target and stays unconditionally clamped, which is #463 and is
+# unaffected by any of this.
+
+
+class TestFloorVersusAHold:
+    """A position floor against a winner that is holding a physical position."""
+
+    @staticmethod
+    def _res(*, floor_priority: int):
+        # Holder at 80 (manual override's default), physically at 27, shadowing
+        # a would-be 50. Floor at 40 sits above the held position, so it binds
+        # unless priority stops it.
+        return _evaluate(
+            [_slot(1, position=40, min_mode=True, priority=floor_priority)],
+            winner=_StubWinner(50, priority=80, held_position=27, skip_command=True),
+        )
+
+    def test_floor_below_the_holder_yields(self) -> None:
+        """77 <= 80: the floor must not move the held position (#1170)."""
+        res = self._res(floor_priority=77)
+        assert res.position == 50  # the winner's own value, unclamped
+        assert res.position_constraint_applied is False
+
+    def test_floor_below_the_holder_leaves_the_hold_intact(self) -> None:
+        """A yielded floor must not clear skip_command and force a dispatch."""
+        assert self._res(floor_priority=77).skip_command is True
+
+    def test_floor_equal_to_the_holder_yields(self) -> None:
+        """The predicate is strictly-greater, matching the user-move clamp."""
+        assert self._res(floor_priority=80).position_constraint_applied is False
+
+    def test_floor_above_the_holder_still_clamps(self) -> None:
+        """82 > 80: unchanged from today — this is #534 and must keep working."""
+        res = self._res(floor_priority=82)
+        assert res.position == 40
+        assert res.position_constraint_applied is True
+
+    def test_floor_above_the_holder_still_forces_the_dispatch(self) -> None:
+        """An outranking floor still clears the hold so the raise reaches the cover."""
+        assert self._res(floor_priority=82).skip_command is False
+
+
+class TestCeilingVersusAHold:
+    """The ceiling mirror — same predicate, same reasoning (#943 + #1170)."""
+
+    @staticmethod
+    def _res(*, ceiling_priority: int):
+        # Held at 80, ceiling at 60 sits below it, so it binds unless priority
+        # stops it.
+        return _evaluate(
+            [_slot(1, position_max=60, priority=ceiling_priority)],
+            winner=_StubWinner(50, priority=80, held_position=80, skip_command=True),
+        )
+
+    def test_ceiling_below_the_holder_yields(self) -> None:
+        """A floor that respects a manual position and a ceiling that does not
+        would be indefensible: same rule, both directions.
+        """
+        res = self._res(ceiling_priority=77)
+        assert res.position == 50
+        assert res.position_constraint_applied is False
+        assert res.skip_command is True
+
+    def test_ceiling_above_the_holder_still_clamps(self) -> None:
+        """An outranking ceiling lowers the hold, exactly as before."""
+        res = self._res(ceiling_priority=82)
+        assert res.position == 60
+        assert res.position_constraint_applied is True
+
+
+class TestOrdinaryWinnerIsUnaffected:
+    """#463 is untouched: no hold, no priority question."""
+
+    def test_lowest_possible_priority_floor_still_clamps_a_computed_winner(
+        self,
+    ) -> None:
+        """A priority-1 floor still raises a solar/climate/default winner."""
+        res = _evaluate(
+            [_slot(1, position=40, min_mode=True, priority=1)],
+            winner=_StubWinner(10, priority=80),  # held_position=None
+        )
+        assert res.position == 40
+        assert res.position_constraint_applied is True
+
+    def test_lowest_possible_priority_ceiling_still_clamps_a_computed_winner(
+        self,
+    ) -> None:
+        res = _evaluate(
+            [_slot(1, position_max=60, priority=1)],
+            winner=_StubWinner(90, priority=80),
+        )
+        assert res.position == 60
+        assert res.position_constraint_applied is True
+
+
+class TestYieldedBoundIsTracedHonestly:
+    """A yielded bound explains itself, and does not claim to be inactive."""
+
+    @staticmethod
+    def _res():
+        return _evaluate(
+            [_slot(1, position=40, min_mode=True, priority=77, sensor_name="Default")],
+            winner=_StubWinner(50, priority=80, held_position=27, skip_command=True),
+        )
+
+    def test_yielded_bound_gets_its_own_step(self) -> None:
+        """The deferral sweep removed the handler's describe_skip step, so
+        without this the slot vanishes from the trace entirely.
+        """
+        assert ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD in _codes(self._res())
+
+    def test_yielded_bound_is_not_reported_as_inactive(self) -> None:
+        """'floor 40% inactive (winner 27% above floor)' would be false: 27 is
+        BELOW 40. The bound would have bound; priority is why it did not.
+        """
+        assert ReasonCode.REGISTRY_FLOOR_INACTIVE not in _codes(self._res())
+
+    def test_yielded_step_names_both_priorities(self) -> None:
+        """The trace has to answer 'why didn't my floor apply?' on its own."""
+        params = _step(
+            self._res(), ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD
+        ).reason_payload.params
+        assert params["priority"] == 77
+        assert params["holder"] == "stub_winner"
+        assert params["holder_priority"] == 80
+
+    def test_yielded_step_text_does_not_claim_the_winner_cleared_the_bound(
+        self,
+    ) -> None:
+        text = _step(self._res(), ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD).reason
+        assert "inactive" not in text
+        assert "77" in text and "80" in text

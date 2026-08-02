@@ -44,6 +44,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
 from ..const import AxisConstraintMode, ReasonCode, custom_position_handler_name
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
@@ -73,10 +74,11 @@ class AxisConstraint:
         label: Human-readable name for the trace reason — the bound sensor's
                friendly name, or a fixed string for the weather override.
         priority: The contributing override's pipeline priority. ``FIXED``
-               resolution sorts on this; the user-move clamp gates on it so a
-               floor only clamps a manual command when it outranks manual
-               override (#472). The pipeline-winner clamp ignores it — auto-rule
-               composition stays unconditional (#463).
+               resolution sorts on this, and :func:`outranking` gates on it
+               wherever a bound is asked to move a position a handler is
+               *holding* (#472/#1170). Composition onto an ordinary computed
+               winner ignores it — auto-rule composition stays unconditional
+               (#463).
         slot:  1-based custom-position slot number, or 0 for non-slot sources
                (the weather floor). Surfaced in the Control Status string
                (#667).
@@ -96,6 +98,44 @@ class AxisConstraint:
     def value(self) -> int | None:
         """The exact value of a ``FIXED`` claim (``low`` and ``high`` agree)."""
         return self.low
+
+
+class _Prioritized(Protocol):
+    """Anything carrying a pipeline priority — the only field :func:`outranking` reads."""
+
+    priority: int
+
+
+def outranking[ClaimT: _Prioritized](
+    claims: Iterable[ClaimT], holder_priority: int
+) -> list[ClaimT]:
+    """Keep only the claims that strictly outrank a handler holding a position.
+
+    **The one place the "may this bound move a held position?" rule is
+    stated.** Both seams that can move a position a handler is already holding
+    consume it, so they cannot drift apart (CODING_GUIDELINES § No
+    Duplication):
+
+    * ``Coordinator._clamp_to_active_floor`` — the user's command, judged
+      before dispatch (#472).
+    * ``PipelineRegistry.evaluate``'s position pass — the same command one
+      cycle later, arriving as ``manual_override``'s ``held_position`` (#1170).
+
+    Splitting those two produced the reported defect: the user's close was
+    dispatched correctly, then the identical floor raised it straight back
+    because only the first seam asked about priority.
+
+    Strictly-greater, matching the pipeline's own tie rule: a bound *equal* to
+    the holder does not outrank it. ``holder_priority`` is the holding
+    handler's **effective** priority — the instance attribute
+    ``resolve_handler_priority`` assigns from the 🔀 Handler Priorities step,
+    never the class default, which ignores that setting.
+
+    Deliberately duck-typed on ``.priority`` so the registry's
+    :class:`AxisConstraint` and the coordinator's
+    :class:`~.floors.FloorClampInfo` share one implementation.
+    """
+    return [c for c in claims if c.priority > holder_priority]
 
 
 def clamp_to_bounds(value: int, low: int | None, high: int | None) -> int:

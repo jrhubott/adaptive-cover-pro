@@ -18,6 +18,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INTERP_LIST,
     CONF_INTERP_LIST_NEW,
     CONF_INVERSE_STATE,
+    CONF_MANUAL_OVERRIDE_PRIORITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -879,4 +880,55 @@ async def test_user_position_entity_target_frame_names_both_halves_after_a_floor
 
     policy.resolve_entity_target.assert_called_once_with(
         "cover.test", 45, inverted=False, interpolated=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issue #1170 — one predicate, sourced from the live handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_outranking_floor_applies_even_when_a_lower_one_is_higher() -> None:
+    """Filter by priority BEFORE composing, not after (#1170).
+
+    ``effective_floor`` takes the max across every active floor and the gate
+    then asked whether *that* floor outranks manual override. A sub-priority
+    slot with the higher position therefore won the max, failed the gate, and
+    took a legitimately-outranking lower floor down with it — so no clamp
+    applied at all.
+    """
+    coord, ctx = _make_coord(
+        [
+            _slot(60, is_on=True, min_mode=True),  # 77 — yields to the user
+            _slot(50, is_on=True, min_mode=True, priority=90),  # 90 — outranks
+        ]
+    )
+
+    await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 50, "set_position", ctx
+    )
+
+
+@pytest.mark.asyncio
+async def test_clamp_respects_a_reconfigured_manual_override_priority() -> None:
+    """The threshold is the handler's EFFECTIVE priority, not the class default.
+
+    Manual Override's priority is configurable per cover — the 🔀 Handler
+    Priorities step writes ``manual_override_priority``. Reading
+    ``ManualOverrideHandler.priority`` off the class always returns 80 and
+    silently ignores that setting.
+    """
+    coord, ctx = _make_coord(
+        [_slot(40, is_on=True, min_mode=True, priority=82)],
+        default_options={CONF_MANUAL_OVERRIDE_PRIORITY: 85},
+    )
+
+    await coord.async_apply_user_position("cover.test", 10, trigger="set_position")
+
+    # 82 <= 85, so the floor yields and the user's 10 passes through untouched.
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 10, "set_position", ctx
     )

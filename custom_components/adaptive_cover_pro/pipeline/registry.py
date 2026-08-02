@@ -17,6 +17,7 @@ from .axis_constraints import (
     compose_bounds,
     constraint_label,
     gather_axis_constraints,
+    outranking,
     tilt_clamp_step,
 )
 from .handler import OverrideHandler
@@ -334,8 +335,36 @@ class PipelineRegistry:
         # differ by constraint *kind*, not by axis.
         constraints = gather_axis_constraints(snapshot)
 
-        # --- Position axis: bounded kinds, always-clamp ---
-        floor_pos, ceiling_pos = compose_bounds(constraints, AXIS_NAME_POSITION)
+        # --- Position axis: bounded kinds ---
+        # A winner carrying ``held_position`` is not proposing a computed
+        # target — it is holding the cover where something authoritative
+        # already put it (a manual move, a group lock). A bound may move that
+        # position only when it strictly outranks the handler doing the
+        # holding, which is the same question ``_clamp_to_active_floor`` asks
+        # about the user's command at the moment it is issued (#472). Asking it
+        # in only one of the two places was the reported defect: the manual
+        # close dispatched correctly and this pass raised it straight back on
+        # the next cycle (#1170).
+        #
+        # An ordinary winner (``held_position is None``) is unaffected: its
+        # position is a value this pipeline computed, and clamping it
+        # regardless of priority is #463's whole point.
+        position_constraints = (
+            outranking(constraints, winning_handler.priority)
+            if winner.held_position is not None
+            else constraints
+        )
+        # By identity, matching ``_iter_nonbinding_bounds``: two slots can
+        # carry equal bounds and both must stay individually visible.
+        _binding_ids = {id(c) for c in position_constraints}
+        yielded_to_hold = [
+            c
+            for c in constraints
+            if c.axis == AXIS_NAME_POSITION and id(c) not in _binding_ids
+        ]
+        floor_pos, ceiling_pos = compose_bounds(
+            position_constraints, AXIS_NAME_POSITION
+        )
         # The position the bounds act on: where the cover will actually end
         # up.  manual_override holds the cover at held_position (its physical
         # position), not winner.position (the theoretical default it shadows),
@@ -390,7 +419,7 @@ class PipelineRegistry:
         # move, not the join of every active bound (audit finding 4a).
         position_binding = (
             bounding_constraint(
-                constraints, AXIS_NAME_POSITION, final_pos, low=floor_wins
+                position_constraints, AXIS_NAME_POSITION, final_pos, low=floor_wins
             )
             if position_clamped
             else None
@@ -400,7 +429,7 @@ class PipelineRegistry:
             label = (
                 position_binding.label
                 if position_binding is not None
-                else constraint_label(constraints, AXIS_NAME_POSITION)
+                else constraint_label(position_constraints, AXIS_NAME_POSITION)
             )
             # Both endpoints are logical now that ``effective_winner_pos`` is
             # converted above, so "floor raised from X% to Y%" no longer mixes a
@@ -440,12 +469,36 @@ class PipelineRegistry:
         )
         trace.extend(
             _inactive_position_steps(
-                constraints,
+                position_constraints,
                 winner_pos=effective_winner_pos,
                 final_pos=final_pos,
                 floor_wins=floor_wins,
                 binding=position_binding,
             )
+        )
+        # A yielded bound must NOT fall through to the inactive steps above:
+        # "floor 40% inactive (winner 27% above floor)" is simply false — the
+        # bound would have bound, and priority is the only reason it did not.
+        # It still needs a step of its own, because the deferral sweep already
+        # removed the handler's ``describe_skip`` entry (#1170).
+        trace.extend(
+            DecisionStep(
+                handler=c.source,
+                matched=False,
+                reason_payload=Reason(
+                    ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD,
+                    {
+                        "low_label": bound_label(c.low),
+                        "high_label": bound_label(c.high),
+                        "label": c.label,
+                        "priority": c.priority,
+                        "holder": winning_handler.name,
+                        "holder_priority": winning_handler.priority,
+                    },
+                ),
+                position=None,
+            )
+            for c in yielded_to_hold
         )
 
         # --- Tilt axis ---

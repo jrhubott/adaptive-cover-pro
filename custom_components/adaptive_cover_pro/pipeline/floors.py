@@ -24,8 +24,22 @@ from dataclasses import dataclass
 
 from ..const import AxisConstraintMode
 from ..cover_types.base import AXIS_NAME_POSITION
-from .axis_constraints import AxisConstraint, compose_bounds, gather_axis_constraints
+from .axis_constraints import (
+    AxisConstraint,
+    compose_bounds,
+    gather_axis_constraints,
+    outranking,
+)
 from .types import PipelineSnapshot
+
+# Re-exported so the coordinator's user-move clamp reaches the shared predicate
+# through the same adapter it already uses for the rest of this model (#1170).
+__all__ = [
+    "FloorClampInfo",
+    "effective_floor",
+    "gather_active_floors",
+    "outranking",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,10 +60,14 @@ class FloorClampInfo:
                 space (0 = closed, 100 = open).
         priority: The contributing override's pipeline priority — the custom
                 slot's configured priority, or the weather handler's declared
-                priority for the weather floor. The user-move clamp gates on
-                this so a floor only clamps a manual command when it outranks
-                manual override (issue #472); the pipeline-winner clamp ignores
-                it (auto-rule composition stays unconditional, issue #463).
+                priority for the weather floor. Both seams that can move a
+                position a handler is *holding* gate on it through the shared
+                :func:`~.axis_constraints.outranking` predicate: the user-move
+                clamp at the moment of the command (issue #472), and the
+                registry's position pass one cycle later, when that same
+                command arrives as ``held_position`` (issue #1170). Composition
+                onto an ordinary computed winner still ignores it — auto-rule
+                composition stays unconditional (issue #463).
 
     """
 

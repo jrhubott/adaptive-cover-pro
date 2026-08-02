@@ -1929,6 +1929,13 @@ class ReasonCode(StrEnum):
     # the floor as the determining bound without implying a direction from the
     # winner (audit finding C).
     REGISTRY_FLOOR_OVERRIDES_CEILING = "registry.floor_overrides_ceiling"
+    # A bound that was active but was not allowed to move a HELD position,
+    # because it does not outrank the handler doing the holding (issue #1170).
+    # Distinct from floor_inactive / ceiling_inactive on purpose: those claim
+    # the winner was already on the satisfied side of the bound, which is false
+    # here — the bound would have bound, and priority is the only reason it did
+    # not. Reusing them would put a falsehood in the decision trace.
+    REGISTRY_BOUND_YIELDED_TO_HOLD = "registry.bound_yielded_to_hold"
     REGISTRY_TILT_BOUND_ACTIVE = "registry.tilt_bound_active"
     # A tilt bound that was active but did not bind — the tilt-axis analog of
     # floor_inactive / ceiling_inactive. Emitted so an out-composed or

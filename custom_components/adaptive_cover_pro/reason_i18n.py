@@ -153,6 +153,10 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
         "floor raised to {to_pos}% over ceiling {ceiling_pos}% by {label} "
         "(winner was {from_pos}%)"
     ),
+    ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD: (
+        "bound {low_label}–{high_label} from {label} yielded — priority "
+        "{priority} does not outrank {holder} ({holder_priority})"
+    ),
     ReasonCode.REGISTRY_TILT_BOUND_ACTIVE: (
         "tilt bound {low_label}–{high_label} active by {label}; "
         "awaiting the resolved tilt"
