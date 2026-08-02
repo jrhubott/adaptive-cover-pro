@@ -3406,11 +3406,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # reconciliation) and new sun-driven targets — instead of being
             # retried. When matching is enabled the user manual_threshold is
             # used unchanged (no regression to the slow-actuator reconciliation
-            # behaviour). This value feeds BOTH the secondary/tilt-axis check
-            # (via ``secondary_axis_check.evaluate`` inside
-            # ``handle_state_change``) and, as a baseline, the position-axis
-            # detector — see the ``position_tolerance`` kwarg below for the
-            # position-axis-only extra floor.
+            # behaviour).
             detection_threshold = self.manual_threshold
             if not self._cmd_svc.enable_position_matching:
                 detection_threshold = (
@@ -3445,15 +3441,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 secondary_axis_check=secondary_axis_check,
                 is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
                 is_in_transit=self._cmd_svc._is_cover_in_transit,
-                # Issue #1158 (round-3 audit MUST-FIX 1/3): the position-axis
-                # detector floors ITS OWN threshold at this value via
-                # effective_manual_threshold (see position_delta.py) so a
-                # delta the same_position gate treats as "already there"
-                # can't also read as a manual move. Passed separately from
-                # ``detection_threshold`` above so the secondary/tilt-axis
-                # check — which has no notion of "position tolerance" — is
-                # never widened by it.
-                position_tolerance=self._position_tolerance,
             )
 
         self.cover_state_change = False

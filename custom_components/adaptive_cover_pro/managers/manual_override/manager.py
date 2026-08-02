@@ -403,7 +403,6 @@ class AdaptiveCoverManager:
         secondary_axis_check: SecondaryAxisCheck | None = None,
         is_in_command_grace: Callable[[str], bool] | None = None,
         is_in_transit: Callable[[str], bool] | None = None,
-        position_tolerance: int | None = None,
     ):
         """Process state change for manual override.
 
@@ -437,15 +436,6 @@ class AdaptiveCoverManager:
             is_in_transit: Optional callable ``(entity_id) -> bool`` returning
                 True when HA reports the cover state as ``opening``/``closing``;
                 passed through to the detector via the context (issue #271).
-            position_tolerance: The configurable ``CONF_POSITION_TOLERANCE``
-                (issue #1158). Consumed ONLY by the position-axis detector
-                (via ``DetectionContext.position_tolerance`` ->
-                ``effective_manual_threshold``) to floor its threshold at the
-                same band the same_position gate treats as "already there".
-                Deliberately NOT forwarded to ``secondary_axis_check`` — a
-                slat angle is not a carriage position, so widening the
-                tilt-axis threshold to a position tolerance would fail open
-                on tilt manual-override detection.
 
         """
         event = states_data
@@ -550,7 +540,6 @@ class AdaptiveCoverManager:
             is_in_command_grace=is_in_command_grace or _never,
             is_in_transit=is_in_transit or _never,
             now=now,
-            position_tolerance=position_tolerance,
         )
         decision = self._detector.detect(context)
         resolved_allow_reset = (

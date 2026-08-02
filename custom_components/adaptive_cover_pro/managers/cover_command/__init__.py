@@ -1667,45 +1667,73 @@ class CoverCommandService:
         ):
             # Book the target even though nothing is dispatched (issue #1158),
             # so get_diagnostics()["at_target"] and the Lovelace rails see a
-            # value instead of a permanent None. Always record
-            # `_plan.routed_target` — the module's own SSOT definition of
-            # "the target" (routing.py's docstring; `_prepare_service_call`
-            # records the identical value on a real dispatch). Do NOT
-            # substitute `_current` in the endpoint-tolerance sub-arm (round-1
-            # of this fix tried that): `_at_target()` is tolerance-aware, so
-            # every consumer that matters — get_diagnostics()["at_target"],
-            # run_reconciliation_pass's step-7 match — already treats a
-            # `_position_tolerance`-sized gap between target and actual as
-            # "arrived", exactly like this gate itself does. The one consumer
-            # that does NOT go through `_at_target()` is manual-override's raw
-            # delta check; that disagreement is fixed at its own source by
-            # flooring its detection threshold at `_position_tolerance`
-            # (coordinator.py, issue #1158 MUST-FIX 2 round-2), not by
-            # smuggling a second, distorted notion of "target" in here.
+            # value instead of a permanent None — for every sub-arm except
+            # one. Always record `_plan.routed_target` — the module's own
+            # SSOT definition of "the target" (routing.py's docstring;
+            # `_prepare_service_call` records the identical value on a real
+            # dispatch) — never substitute `_current`.
+            #
+            # The one exception: arm 1's endpoint-tolerance sub-arm, where
+            # `_current` sits within `_position_tolerance` of a 0/100
+            # endpoint but is not exactly on it (e.g. `_current=98`,
+            # `position=100`). There `route_service_call` forces
+            # `_plan.routed_target` to the literal endpoint (100), which does
+            # NOT equal `_current` — booking it would record a target the
+            # cover has not actually reached. That target/actual mismatch is
+            # exactly what flipped `has_recorded_target` to True and let
+            # manual-override's narrower detection threshold misread the same
+            # small gap as a user touch (#546/#654). Two earlier audit rounds
+            # tried to fix that by widening the manual-override detector
+            # instead, and both times the widening leaked into comparisons
+            # that have nothing to do with this gate. The narrower fix scopes
+            # down to just this one sub-arm: it simply does not book. ACP
+            # never dispatched anything to this cover this cycle, so
+            # `target: null` is the honest answer — every other arm books
+            # normally, which covers the case issue #1158 actually reports.
+            #
+            # Verified against `route_service_call` (routing.py) that this is
+            # the ONLY sub-arm where the mismatch can occur: arm 1's
+            # direct-equality sub-arm (`_current == position`) always yields
+            # `_plan.routed_target == _current` by construction (both the
+            # endpoint-routing and plain set_position branches echo `state`
+            # back unchanged when `state == _current`, and the threshold
+            # branch picks the endpoint matching `state`'s own side whenever
+            # `state` is already 0 or 100); arm 2 requires
+            # `_current == _plan.routed_target` as its own gate condition;
+            # arm 3 only fires when `_current` is None or a synthetic
+            # open/close mapping, so the mismatch check's leading
+            # `_current is not None and not _current_is_assumed_mapping`
+            # guard is already False there.
             #
             # Write only on a genuine change: a repeat same_position skip that
             # re-confirms an already-booked target must not clobber the
             # dispatch_token a prior real dispatch stamped it with (#1115) —
             # set_target(dispatch_token=None) would erase that provenance.
             #
-            # Deliberately do NOT write `is_safety` here (issue #1158
-            # MUST-FIX 2, round-2 audit). The two writers of `target` are NOT
-            # symmetrical: `_prepare_service_call` stamps `is_safety`
-            # unconditionally on every REAL dispatch, but this branch only
-            # writes when the booked value CHANGES. Mirroring that write
-            # under this narrower guard would let a since-cleared safety
-            # condition (context.is_safety flips back to False) freeze
-            # `is_safety=True` forever the moment a later skip re-confirms
-            # the same unchanged value (the guard suppresses the write
-            # entirely, so the stale True can never clear). A frozen True
-            # then survives `clear_non_safety_targets()` and makes
-            # `run_reconciliation_pass` resend it with auto_control off or
-            # outside the time window — precisely what its steps 3/4 exist to
-            # prevent. Leaving `is_safety` at its default (False) means a
-            # skip-booked target is swept like any other non-safety target at
-            # window close, matching the merge-base behaviour (no booking at
-            # all) for the one axis that matters here.
-            if self.get_target(entity_id) != _plan.routed_target:
+            # Deliberately do NOT write `is_safety` here. The two writers of
+            # `target` are NOT symmetrical: `_prepare_service_call` stamps
+            # `is_safety` unconditionally on every REAL dispatch, but this
+            # branch only writes when booking is allowed at all (above) AND
+            # the value changes. Mirroring that write under this narrower
+            # guard would let a since-cleared safety condition
+            # (context.is_safety flips back to False) freeze `is_safety=True`
+            # forever the moment a later skip re-confirms the same unchanged
+            # value (the guard suppresses the write entirely, so the stale
+            # True can never clear). A frozen True then survives
+            # `clear_non_safety_targets()` and makes `run_reconciliation_pass`
+            # resend it with auto_control off or outside the time window —
+            # precisely what its steps 3/4 exist to prevent. Leaving
+            # `is_safety` at its default (False) matches merge-base behaviour
+            # (no booking at all) for the one axis that matters here.
+            _target_would_mismatch_actual = (
+                _current is not None
+                and not _current_is_assumed_mapping
+                and _current != _plan.routed_target
+            )
+            if (
+                not _target_would_mismatch_actual
+                and self.get_target(entity_id) != _plan.routed_target
+            ):
                 self.set_target(entity_id, _plan.routed_target, dispatch_token=None)
             # Secondary axis LAST: on a venetian this may rebase the target
             # via set_commanded_position (== set_target) after a tilt-only

@@ -169,40 +169,6 @@ def test_tilt_drift_outside_suppression_trips_override() -> None:
     assert mgr.is_cover_manual(entity_id)
 
 
-def test_tilt_drift_between_manual_threshold_and_position_tolerance_trips_override() -> (
-    None
-):
-    """Issue #1158 (round-3 audit MUST-FIX 1): a delta the same_position gate's
-    endpoint tolerance would call "already there" on the POSITION axis must
-    still be detected as manual on the TILT axis.
-
-    ``manual_threshold=5`` (narrow, as the coordinator forwards it — see
-    ``test_position_tolerance_floors_position_axis_without_widening_tilt_axis``
-    in ``tests/test_false_manual_override_on_automation.py``), a hypothetical
-    ``position_tolerance=20`` (never reaches this call — the secondary/tilt
-    axis has no notion of it), tilt delta 11% (70 -> 81, between the two
-    figures). A regression that widened the tilt threshold to
-    ``position_tolerance`` (as round-3's first attempt did) would make this
-    11% delta read as "within threshold" and silently swallow the override —
-    a slat angle is not a carriage position, so the widening must never
-    reach here.
-    """
-    entity_id = "cover.venetian_den"
-    mgr = _make_manager(entity_id)
-
-    mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=50, tilt=81),
-        our_state=50,
-        policy=get_policy("cover_venetian"),
-        allow_reset=True,
-        is_waiting=lambda _eid: False,
-        manual_threshold=5,
-        secondary_axis_check=_tilt_check(expected=70, suppressed=False),
-    )
-
-    assert mgr.is_cover_manual(entity_id)
-
-
 def test_tilt_drift_within_threshold_is_ignored_even_outside_window() -> None:
     """Tilt deltas under the threshold floor are ignored regardless of suppression."""
     entity_id = "cover.venetian_lounge"

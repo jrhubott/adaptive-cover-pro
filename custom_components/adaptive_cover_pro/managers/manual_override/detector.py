@@ -54,16 +54,6 @@ class DetectionContext:
     is_in_command_grace: Callable[[str], bool]
     is_in_transit: Callable[[str], bool]
     now: dt.datetime
-    # Issue #1158: the configurable CONF_POSITION_TOLERANCE, threaded through
-    # so the position-axis detector (PositionDeltaDetector) can floor its
-    # threshold at the same band the same_position gate treats as "already
-    # there" (see effective_manual_threshold). ``None`` for callers that
-    # construct a context without a coordinator in scope — the position-axis
-    # floor then falls back to POSITION_TOLERANCE_PERCENT alone, matching
-    # pre-#1158 behavior. Deliberately NOT read by the secondary/tilt-axis
-    # check (SecondaryAxisCheck.evaluate is called before this context
-    # exists) — a slat angle is not a carriage position.
-    position_tolerance: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

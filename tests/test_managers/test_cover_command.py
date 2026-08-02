@@ -2187,31 +2187,26 @@ async def test_apply_position_same_position_skip_records_routed_target_not_raw_p
 
 
 @pytest.mark.asyncio
-async def test_apply_position_same_position_skip_endpoint_tolerance_records_target(
+async def test_apply_position_same_position_skip_endpoint_tolerance_leaves_target_unbooked(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #1158 arm 1's endpoint-tolerance sub-arm: a cover resting within
-    ``_position_tolerance`` of a hard endpoint (but not exactly on it) must
-    also have its target recorded when the gate skips it.
+    """Issue #1158 (narrowed scope): arm 1's endpoint-tolerance sub-arm must
+    NOT book a target when the gate skips it.
 
-    Round-2 audit (MUST-FIX 1): the recorded value must be
-    ``_plan.routed_target`` (100), NOT the cover's raw actual position (98).
-    An earlier attempt at this fix booked the actual instead, reasoning that
-    it would keep ``target == actual`` byte-for-byte — but ``_at_target()``
-    is already tolerance-aware, so every consumer that matters
-    (``get_diagnostics()["at_target"]``, reconciliation's step-7 match) reads
-    a `_position_tolerance`-sized gap as "arrived" regardless of which of the
-    two values is recorded. Booking the actual instead corrupted a
-    *different* invariant: it stops being "the value ACP's routing decided
-    to command" (routing.py's own SSOT definition), silently clobbers a
-    prior real dispatch's ``(target, dispatch_token)`` pair when the two
-    differ (see the dedicated dispatch-token regression test below), and
-    reconciliation would then resend the raw actual instead of the routed
-    open_cover/close_cover, unable to ever finish driving the cover to its
-    mechanical stop. The manual-override false-positive this arm originally
-    tried to dodge is fixed at its real source instead: coordinator.py
-    floors the detector's threshold at `_position_tolerance` (see the
-    dedicated manual-override test below).
+    A cover resting within ``_position_tolerance`` of a hard endpoint (98,
+    tolerance 3) but not exactly on it (100) routes, via
+    ``route_service_call``, to ``_plan.routed_target == 100`` — the literal
+    endpoint, not ``_current``. Booking that value would record
+    ``target=100`` while the cover is genuinely at 98: a target/actual
+    mismatch. That mismatch is exactly what flipped
+    ``has_recorded_target`` to True and let manual-override's narrower
+    detection threshold misread the same gap as a user touch (#546/#654) —
+    two earlier audit rounds tried fixing that by widening the
+    manual-override detector instead, and both times the widening leaked
+    into unrelated comparisons. The narrower fix scopes down to this one
+    sub-arm: it simply does not book. ACP never dispatched anything to this
+    cover this cycle, so ``target: null`` is the honest answer, and
+    ``at_target`` stays False rather than lying about arrival.
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
     _stub_state(mock_hass, current_position=98, state="open")
@@ -2236,8 +2231,8 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_records_targ
 
     assert (outcome, reason) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
-    assert svc.get_target("cover.test") == 100
-    assert svc.get_diagnostics("cover.test")["at_target"] is True
+    assert svc.get_target("cover.test") is None
+    assert svc.get_diagnostics("cover.test")["at_target"] is False
 
 
 @pytest.mark.asyncio
@@ -2304,11 +2299,11 @@ async def test_apply_position_same_position_skip_preserves_dispatch_token_when_u
 
 
 @pytest.mark.asyncio
-async def test_apply_position_same_position_skip_endpoint_tolerance_preserves_prior_dispatch_token(
+async def test_apply_position_same_position_skip_endpoint_tolerance_leaves_prior_dispatch_untouched(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #1158 MUST-FIX 1 (round-2 audit): a same_position skip landing in
-    the endpoint-tolerance sub-arm must not clobber a REAL dispatch's
+    """Issue #1158 (narrowed scope, #1115 guard): a same_position skip landing
+    in the endpoint-tolerance sub-arm must not clobber a REAL dispatch's
     ``(target, dispatch_token)`` pair with a value that dispatch never
     produced.
 
@@ -2318,15 +2313,11 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_preserves_pr
     position (100), so the gate skips via the endpoint-tolerance sub-arm
     (``|98-100|=2 <= tolerance 3``).
 
-    The round-1 fix recorded ``_current`` (98) here — a *different* value
-    than the dispatch produced — which erased the #1115 token stamp
-    (``dispatch_token=None``) and, on a later reconciliation resend, would
-    reissue as ``set_cover_position(98)`` instead of ``open_cover``, unable
-    to ever finish driving the cover to its mechanical stop (weakening
-    #755/#697). Recording ``_plan.routed_target`` (100, unchanged from cycle
-    1) instead means the value-change guard correctly recognises "no
-    change" and leaves the token alone — mirrors the auditor's
-    ``repro_token_clobber.py``.
+    Since the narrowing, this sub-arm never books at all (see the sibling
+    test above), so the pair from cycle 1 is left completely untouched by
+    construction — the suppression check fires before the value-change guard
+    is even consulted, not because the routed value happens to be unchanged.
+    Mirrors the auditor's ``repro_token_clobber.py``.
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
     caps = {
@@ -2382,25 +2373,26 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_preserves_pr
 async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_trip_manual_override(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #1158 (#546/#654 regression): the endpoint-tolerance sub-arm's
-    target booking must not bridge into a false manual-override detection.
+    """Issue #1158 (#546/#654 regression, narrowed scope): the
+    endpoint-tolerance sub-arm's *lack* of a target booking must not open a
+    false manual-override detection on the entity's next state change.
 
-    ``position_tolerance=20`` is the same_position gate's "close enough"
-    band; ``manual_threshold`` is the override detector's, narrower and
-    unrelated. A cover resting at 82 with a computed target of 100 clears
-    the same_position gate's endpoint band (|82-100|=18 <= 20) and is
-    correctly skipped and booked at the routed value (100, per MUST-FIX 1 —
-    NOT a distorted 82).
+    A cover resting at 82 with a computed target of 100 clears the
+    same_position gate's endpoint band (``tolerance=20``, ``|82-100|=18 <=
+    20``) and is correctly skipped — but per the narrowing above, this
+    sub-arm never books a target, so ``get_target()`` stays ``None``.
 
-    Round-2 audit (MUST-FIX 1): the fix is NOT to distort the booked target
-    away from 100. It is coordinator.py's own detection-threshold
-    computation flooring at ``_position_tolerance`` before it ever reaches
-    ``handle_state_change`` (see the manual-override detection-threshold
-    block in ``async_handle_cover_state_change``) — so a delta the
-    same_position gate itself treats as "already there" can never
-    simultaneously read as "the user moved it" here. This test calls the
-    manager directly (bypassing coordinator.py), so it mirrors that floor
-    explicitly: ``max(configured manual_threshold, position_tolerance)``.
+    That is the fix, not a gap to patch around: with no target recorded,
+    ``has_recorded_target`` is False, which routes
+    ``PositionDeltaDetector.detect`` into the #546 branch
+    (``position_delta.py``) instead of the ordinary threshold comparison.
+    That branch only marks manual on a genuine *move* (``old_position`` vs
+    ``new_position`` diverging by more than the effective threshold) — a
+    resting-position republish with no prior position on record is
+    unconditionally rejected. This test drives that branch directly: no
+    ``old_state`` is available (mirrors an entity ACP has never tracked a
+    move for), so ``is_real_move`` is False regardless of the reported
+    position, and override detection must reject it.
     """
     from custom_components.adaptive_cover_pro.managers.manual_override import (
         AdaptiveCoverManager,
@@ -2430,7 +2422,7 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
     assert (outcome, reason) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
     recorded_target = svc.get_target("cover.test")
-    assert recorded_target == 100  # MUST-FIX 1: the routed value, not 82.
+    assert recorded_target is None  # narrowed fix: this sub-arm never books.
 
     mgr = AdaptiveCoverManager(
         hass=MagicMock(), reset_duration={"hours": 2}, logger=MagicMock()
@@ -2439,18 +2431,12 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
 
     event = MagicMock()
     event.entity_id = "cover.test"
+    event.old_state = None
     event.new_state = MagicMock()
     event.new_state.state = "open"
     event.new_state.attributes = {"current_position": 82}
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
-    # Issue #1158 MUST-FIX 2 (round-3 audit): pass the RAW configured values
-    # — manual_threshold (5) narrower than position_tolerance (20) — and let
-    # production code (effective_manual_threshold, via the position-axis
-    # detector) do the flooring, instead of hand-mirroring the arithmetic
-    # here. A hand-mirrored `max()` passes even when the production floor is
-    # absent entirely (round-3's regression), because it never exercises the
-    # real formula.
     mgr.handle_state_change(
         states_data=event,
         our_state=recorded_target,
@@ -2458,7 +2444,6 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
         allow_reset=True,
         is_waiting=lambda _eid: False,
         manual_threshold=5,
-        position_tolerance=svc._position_tolerance,
         has_recorded_target=recorded_target is not None,
     )
 
