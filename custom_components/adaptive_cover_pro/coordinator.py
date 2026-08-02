@@ -3908,12 +3908,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ASKING what a command would dispatch (:meth:`user_dispatch_position`)
         omit it: same arithmetic, but one press should not log its clamp twice.
         """
-        effective_floor_pos, _binding_floor = effective_floor(
-            outranking(
-                gather_active_floors(snapshot),
-                resolve_handler_priority(options, ManualOverrideHandler.name),
-            )
-        )
+        active_floors = gather_active_floors(snapshot)
+        manual_priority = resolve_handler_priority(options, ManualOverrideHandler.name)
+        binding_floors = outranking(active_floors, manual_priority)
+        effective_floor_pos, _binding_floor = effective_floor(binding_floors)
         # ``effective_floor`` returns 0 for an empty set, and 0 is the bottom of
         # the position range, so the max() below is a no-op when every floor
         # yielded — no separate "does a floor apply?" branch is needed.
@@ -3926,6 +3924,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 trigger,
                 requested,
                 clamped,
+            )
+        elif len(binding_floors) < len(active_floors):
+            # Distinguish "no floor" from "a floor was active and yielded" —
+            # the post-filter number alone reads as floor 0 and hides the very
+            # decision this method now makes (#1170).
+            _LOGGER.debug(
+                "%s: requested %d, %d floor(s) yielded to manual override (%d) — "
+                "highest binding floor %d",
+                trigger,
+                requested,
+                len(active_floors) - len(binding_floors),
+                manual_priority,
+                effective_floor_pos,
             )
         else:
             _LOGGER.debug(

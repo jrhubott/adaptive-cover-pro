@@ -66,21 +66,33 @@ def _split_bounds_against_hold(
 
     A winner carrying ``held_position`` is not proposing a computed target — it
     is holding the cover where something authoritative already put it (a manual
-    move, a group lock). A bound may move that position only when it outranks
-    the handler doing the holding, which is the same question
+    move, a group lock). A bound may move that cover only when it outranks the
+    handler doing the holding, which is the same question
     ``Coordinator._clamp_to_active_floor`` asks about the user's command at the
     moment it is issued (#472). Asking it in only one of the two places was the
     reported defect: the manual close dispatched correctly, and this pass raised
     it straight back on the next cycle (#1170).
 
+    ⚠️ ``held_position`` is the marker, not "is this a hold". ``motion_timeout``
+    also holds a cover in place but publishes the position through
+    ``PipelineResult.position`` and leaves ``held_position`` unset, so it is NOT
+    gated here and a low-priority bound still clamps a motion hold. That is
+    unchanged, pre-existing behaviour, called out because the asymmetry is
+    invisible from this function.
+
+    Applies to **both axes**: a tilt bound that does not outrank the holder
+    forces a dispatch just as surely as a position floor does, and a rule that
+    protected one axis and not the other would be the original defect again.
+    ``FIXED`` tilt-only claims are exempt at the call site — they fill an unset
+    tilt (#514) rather than moving a held one.
+
     An ordinary winner (``held_position is None``) is unaffected — its position
     is a value this pipeline computed, and clamping it regardless of priority is
     #463's whole point, so every constraint is returned as binding.
 
-    The second element is the **position-axis** claims that yielded, for the
-    trace. Membership is tested by identity, matching
-    :func:`_iter_nonbinding_bounds`: two slots can carry equal bounds and each
-    must stay individually visible.
+    The second element is the bounded claims that yielded, for the trace.
+    Membership is tested by identity, matching :func:`_iter_nonbinding_bounds`:
+    two slots can carry equal bounds and each must stay individually visible.
     """
     if winner.held_position is None:
         return constraints, []
@@ -89,7 +101,7 @@ def _split_bounds_against_hold(
     yielded = [
         c
         for c in constraints
-        if c.axis == AXIS_NAME_POSITION and id(c) not in binding_ids
+        if id(c) not in binding_ids and c.kind is not AxisConstraintMode.FIXED
     ]
     return binding, yielded
 
@@ -391,13 +403,16 @@ class PipelineRegistry:
         # differ by constraint *kind*, not by axis.
         constraints = gather_axis_constraints(snapshot)
 
-        # --- Position axis: bounded kinds ---
-        position_constraints, yielded_to_hold = _split_bounds_against_hold(
+        # Bounds allowed to move THIS winner. Identical to ``constraints``
+        # unless the winner is holding a physical position, in which case a
+        # bound must outrank the holder (#1170). Consumed by both axes; the
+        # FIXED tilt overlay below deliberately reads the unfiltered list.
+        bound_constraints, yielded_to_hold = _split_bounds_against_hold(
             constraints, winner, winning_handler.priority
         )
-        floor_pos, ceiling_pos = compose_bounds(
-            position_constraints, AXIS_NAME_POSITION
-        )
+
+        # --- Position axis: bounded kinds ---
+        floor_pos, ceiling_pos = compose_bounds(bound_constraints, AXIS_NAME_POSITION)
         # The position the bounds act on: where the cover will actually end
         # up.  manual_override holds the cover at held_position (its physical
         # position), not winner.position (the theoretical default it shadows),
@@ -452,7 +467,7 @@ class PipelineRegistry:
         # move, not the join of every active bound (audit finding 4a).
         position_binding = (
             bounding_constraint(
-                position_constraints, AXIS_NAME_POSITION, final_pos, low=floor_wins
+                bound_constraints, AXIS_NAME_POSITION, final_pos, low=floor_wins
             )
             if position_clamped
             else None
@@ -462,7 +477,7 @@ class PipelineRegistry:
             label = (
                 position_binding.label
                 if position_binding is not None
-                else constraint_label(position_constraints, AXIS_NAME_POSITION)
+                else constraint_label(bound_constraints, AXIS_NAME_POSITION)
             )
             # Both endpoints are logical now that ``effective_winner_pos`` is
             # converted above, so "floor raised from X% to Y%" no longer mixes a
@@ -502,7 +517,7 @@ class PipelineRegistry:
         )
         trace.extend(
             _inactive_position_steps(
-                position_constraints,
+                bound_constraints,
                 winner_pos=effective_winner_pos,
                 final_pos=final_pos,
                 floor_wins=floor_wins,
@@ -597,7 +612,7 @@ class PipelineRegistry:
         # Bounded tilt constraints (issue #943). Unlike the FIXED overlay above,
         # a bound clamps a tilt that is already set — the exact case the
         # fill-when-unset branch skips.
-        tilt_low, tilt_high = compose_bounds(constraints, AXIS_NAME_TILT)
+        tilt_low, tilt_high = compose_bounds(bound_constraints, AXIS_NAME_TILT)
         # Replace the deferral skips of the bounded tilt sources — they are
         # re-explained by the clamp / bound-active step below (a losing FIXED
         # tilt-only slot is deliberately left out of this set so its step
@@ -606,7 +621,7 @@ class PipelineRegistry:
             trace,
             {
                 c.source
-                for c in constraints
+                for c in bound_constraints
                 if c.axis == AXIS_NAME_TILT and c.kind is not AxisConstraintMode.FIXED
             },
         )
@@ -625,14 +640,14 @@ class PipelineRegistry:
         carried_high: int | None = None
         carried_label: str | None = None
         if tilt_low is not None or tilt_high is not None:
-            tilt_label = constraint_label(constraints, AXIS_NAME_TILT)
+            tilt_label = constraint_label(bound_constraints, AXIS_NAME_TILT)
             if resolved_tilt is not None:
                 bounded_tilt = clamp_to_bounds(resolved_tilt, tilt_low, tilt_high)
                 tilt_binding = None
                 if bounded_tilt != resolved_tilt:
                     tilt_clamped = True
                     tilt_binding = bounding_constraint(
-                        constraints,
+                        bound_constraints,
                         AXIS_NAME_TILT,
                         bounded_tilt,
                         low=bounded_tilt > resolved_tilt,
@@ -661,7 +676,7 @@ class PipelineRegistry:
                 # both clamped and inactive (audit findings A / B).
                 trace.extend(
                     _inactive_tilt_steps(
-                        constraints,
+                        bound_constraints,
                         final_tilt=bounded_tilt,
                         binding=tilt_binding,
                     )

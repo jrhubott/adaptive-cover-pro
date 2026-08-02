@@ -1226,3 +1226,70 @@ def test_weather_floor_above_manual_still_clamps_a_hold() -> None:
     assert result.position == 40
     assert result.position_constraint_applied is True
     assert result.skip_command is False
+
+
+def test_group_lock_outranks_even_the_weather_floor() -> None:
+    """A group lock at 100 beats the weather floor at its 90 default.
+
+    ``GroupLockHandler`` documents itself as outranking everything "including
+    weather", and a non-min-mode weather override already loses the pipeline to
+    it. Pinned because the hold gate is what now makes it true on the min-mode
+    path too: pre-#1170 the weather floor clamped the lock and dispatched.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        group_intent=GroupIntent(
+            kind=GroupIntentKind.LOCK,
+            scene=None,
+            priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            group_id="living_room",
+        ),
+        weather_override_active=True,
+        weather_override_min_mode=True,
+        weather_override_position=40,
+        weather_override_priority=WeatherOverrideHandler.priority,
+    )
+    result = _registry_with_custom([GroupLockHandler()]).evaluate(snap)
+
+    assert result.position_constraint_applied is False
+    assert result.skip_command is True
+
+
+def test_a_safety_floor_still_reaches_a_group_lock() -> None:
+    """…but a safety-priority slot does not lose that tie (const.py's rule)."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        current_cover_position=27,
+        default_position=100,
+        direct_sun_valid=False,
+        group_intent=GroupIntent(
+            kind=GroupIntentKind.LOCK,
+            scene=None,
+            priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            group_id="living_room",
+        ),
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.storm",
+                is_on=True,
+                position=40,
+                min_mode=True,
+                sensor_name="Storm",
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            )
+        ],
+    )
+    result = _registry_with_custom(
+        [
+            _cp_handler(1, 40, priority=CUSTOM_POSITION_SAFETY_PRIORITY),
+            GroupLockHandler(),
+        ]
+    ).evaluate(snap)
+
+    assert result.position == 40
+    assert result.position_constraint_applied is True

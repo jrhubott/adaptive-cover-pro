@@ -22,6 +22,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import DefaultHandle
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
+    ManualOverrideHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
@@ -64,6 +67,13 @@ class _StubWinner(OverrideHandler):
 
     def describe_skip(self, snapshot):  # noqa: ARG002
         return "stub skip"
+
+
+# Derived from the handler, never written as integers: § Handler Priorities
+# makes the class the source of truth and bans priority literals in fixtures.
+_HOLDER_PRIORITY = ManualOverrideHandler.priority
+_BELOW_HOLDER = DEFAULT_CUSTOM_POSITION_PRIORITY
+_ABOVE_HOLDER = ManualOverrideHandler.priority + 2
 
 
 def _slot(
@@ -889,32 +899,37 @@ class TestFloorVersusAHold:
         # unless priority stops it.
         return _evaluate(
             [_slot(1, position=40, min_mode=True, priority=floor_priority)],
-            winner=_StubWinner(50, priority=80, held_position=27, skip_command=True),
+            winner=_StubWinner(
+                50, priority=_HOLDER_PRIORITY, held_position=27, skip_command=True
+            ),
         )
 
     def test_floor_below_the_holder_yields(self) -> None:
         """77 <= 80: the floor must not move the held position (#1170)."""
-        res = self._res(floor_priority=77)
+        res = self._res(floor_priority=_BELOW_HOLDER)
         assert res.position == 50  # the winner's own value, unclamped
         assert res.position_constraint_applied is False
 
     def test_floor_below_the_holder_leaves_the_hold_intact(self) -> None:
         """A yielded floor must not clear skip_command and force a dispatch."""
-        assert self._res(floor_priority=77).skip_command is True
+        assert self._res(floor_priority=_BELOW_HOLDER).skip_command is True
 
     def test_floor_equal_to_the_holder_yields(self) -> None:
         """The predicate is strictly-greater, matching the user-move clamp."""
-        assert self._res(floor_priority=80).position_constraint_applied is False
+        assert (
+            self._res(floor_priority=_HOLDER_PRIORITY).position_constraint_applied
+            is False
+        )
 
     def test_floor_above_the_holder_still_clamps(self) -> None:
         """82 > 80: unchanged from today — this is #534 and must keep working."""
-        res = self._res(floor_priority=82)
+        res = self._res(floor_priority=_ABOVE_HOLDER)
         assert res.position == 40
         assert res.position_constraint_applied is True
 
     def test_floor_above_the_holder_still_forces_the_dispatch(self) -> None:
         """An outranking floor still clears the hold so the raise reaches the cover."""
-        assert self._res(floor_priority=82).skip_command is False
+        assert self._res(floor_priority=_ABOVE_HOLDER).skip_command is False
 
 
 class TestCeilingVersusAHold:
@@ -926,21 +941,23 @@ class TestCeilingVersusAHold:
         # stops it.
         return _evaluate(
             [_slot(1, position_max=60, priority=ceiling_priority)],
-            winner=_StubWinner(50, priority=80, held_position=80, skip_command=True),
+            winner=_StubWinner(
+                50, priority=_HOLDER_PRIORITY, held_position=80, skip_command=True
+            ),
         )
 
     def test_ceiling_below_the_holder_yields(self) -> None:
         """A floor that respects a manual position and a ceiling that does not
         would be indefensible: same rule, both directions.
         """
-        res = self._res(ceiling_priority=77)
+        res = self._res(ceiling_priority=_BELOW_HOLDER)
         assert res.position == 50
         assert res.position_constraint_applied is False
         assert res.skip_command is True
 
     def test_ceiling_above_the_holder_still_clamps(self) -> None:
         """An outranking ceiling lowers the hold, exactly as before."""
-        res = self._res(ceiling_priority=82)
+        res = self._res(ceiling_priority=_ABOVE_HOLDER)
         assert res.position == 60
         assert res.position_constraint_applied is True
 
@@ -954,7 +971,7 @@ class TestOrdinaryWinnerIsUnaffected:
         """A priority-1 floor still raises a solar/climate/default winner."""
         res = _evaluate(
             [_slot(1, position=40, min_mode=True, priority=1)],
-            winner=_StubWinner(10, priority=80),  # held_position=None
+            winner=_StubWinner(10, priority=_HOLDER_PRIORITY),  # held_position=None
         )
         assert res.position == 40
         assert res.position_constraint_applied is True
@@ -964,7 +981,7 @@ class TestOrdinaryWinnerIsUnaffected:
     ) -> None:
         res = _evaluate(
             [_slot(1, position_max=60, priority=1)],
-            winner=_StubWinner(90, priority=80),
+            winner=_StubWinner(90, priority=_HOLDER_PRIORITY),
         )
         assert res.position == 60
         assert res.position_constraint_applied is True
@@ -976,8 +993,18 @@ class TestYieldedBoundIsTracedHonestly:
     @staticmethod
     def _res():
         return _evaluate(
-            [_slot(1, position=40, min_mode=True, priority=77, sensor_name="Default")],
-            winner=_StubWinner(50, priority=80, held_position=27, skip_command=True),
+            [
+                _slot(
+                    1,
+                    position=40,
+                    min_mode=True,
+                    priority=_BELOW_HOLDER,
+                    sensor_name="Default",
+                )
+            ],
+            winner=_StubWinner(
+                50, priority=_HOLDER_PRIORITY, held_position=27, skip_command=True
+            ),
         )
 
     def test_yielded_bound_gets_its_own_step(self) -> None:
@@ -1042,18 +1069,29 @@ class TestAuditFindingsOnTheHoldGate:
         """A tilt clamp clears skip_command; the position sent must be the held
         one, not the shadow the hold is merely reporting.
 
-        With the position axis yielded, this used to dispatch the winner's
-        would-be 50 while the cover sat at 27 — moving a cover the user had
-        just placed by hand.
+        The two axes are gated independently, which is what makes this state
+        reachable: slot 1's floor at 77 yields to the hold, slot 2's tilt bound
+        at 82 outranks it and legitimately commands the tilt. The position that
+        rides along used to be the winner's would-be 50 while the cover sat at
+        27 — moving a cover the user had just placed by hand.
         """
         res = _evaluate(
-            [_slot(1, position=40, min_mode=True, priority=77, tilt_min=60)],
+            [
+                _slot(1, position=40, min_mode=True, priority=_BELOW_HOLDER),
+                _slot(2, tilt_min=60, priority=_ABOVE_HOLDER),
+            ],
             winner=_StubWinner(
-                50, tilt=10, priority=80, held_position=27, skip_command=True
+                50,
+                tilt=10,
+                priority=_HOLDER_PRIORITY,
+                held_position=27,
+                skip_command=True,
             ),
         )
         assert res.skip_command is False  # the tilt bound legitimately commands
+        assert res.tilt == 60
         assert res.position == 27  # …but the position is where the cover IS
+        assert res.position_constraint_applied is False  # the floor still yielded
 
     def test_yielded_step_survives_when_the_slot_also_bounds_tilt(self) -> None:
         """The tilt pass's deferral sweep runs after the position pass, and the
@@ -1061,10 +1099,47 @@ class TestAuditFindingsOnTheHoldGate:
         vanished from the trace entirely.
         """
         res = _evaluate(
-            [_slot(1, position=40, min_mode=True, priority=77, tilt_min=30)],
+            [_slot(1, position=40, min_mode=True, priority=_BELOW_HOLDER, tilt_min=30)],
             winner=_StubWinner(
-                50, tilt=50, priority=80, held_position=27, skip_command=True
+                50,
+                tilt=50,
+                priority=_HOLDER_PRIORITY,
+                held_position=27,
+                skip_command=True,
             ),
         )
         assert ReasonCode.REGISTRY_BOUND_YIELDED_TO_HOLD in _codes(res)
         assert any(s.handler == "custom_position_1" for s in res.decision_trace)
+
+    def test_a_tilt_bound_below_the_holder_does_not_command_the_cover(self) -> None:
+        """The tilt axis is gated by the same predicate as the position axis.
+
+        Gating only position left the exact defect #1170 is about reachable
+        through the other axis: a FIXED tilt-only slot fills the tilt, a tilt
+        bound then clamps it, `skip_command` clears, and a cover the user just
+        placed by hand gets a command.
+        """
+        res = _evaluate(
+            [
+                _slot(1, tilt=10, tilt_only=True, priority=_BELOW_HOLDER),
+                _slot(2, tilt_min=60, priority=_BELOW_HOLDER),
+            ],
+            winner=_StubWinner(
+                50, priority=_HOLDER_PRIORITY, held_position=27, skip_command=True
+            ),
+        )
+        assert res.skip_command is True
+
+    def test_a_tilt_bound_above_the_holder_still_clamps(self) -> None:
+        """An outranking tilt bound keeps commanding, exactly as before."""
+        res = _evaluate(
+            [
+                _slot(1, tilt=10, tilt_only=True, priority=_BELOW_HOLDER),
+                _slot(2, tilt_min=60, priority=_ABOVE_HOLDER),
+            ],
+            winner=_StubWinner(
+                50, priority=_HOLDER_PRIORITY, held_position=27, skip_command=True
+            ),
+        )
+        assert res.skip_command is False
+        assert res.tilt == 60

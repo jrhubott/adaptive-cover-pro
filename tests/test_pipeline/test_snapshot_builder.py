@@ -41,6 +41,9 @@ from custom_components.adaptive_cover_pro.const import (
     AxisConstraintMode,
     TrackingSeason,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
+    WeatherOverrideHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
     PipelineSnapshotBuilder,
 )
@@ -1491,3 +1494,27 @@ def test_build_carries_a_closed_gate_onto_the_snapshot():
         snapshot = _build_minimal(builder, opts)
     assert snapshot.enable_sun_tracking is True
     assert snapshot.sun_tracking_gate_closed is False
+
+
+@pytest.mark.unit
+def test_build_carries_the_effective_weather_priority_onto_the_snapshot():
+    """The weather floor's own priority must be the user-configured one (#1170).
+
+    `axis_constraints` is pure and has no options to resolve from, so the
+    resolved value rides on the snapshot. Without it the floor claims the class
+    default 90 forever, and a weather override the user demoted below manual
+    override still raises a position they just set by hand.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_PRIORITY
+
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {CONF_WEATHER_PRIORITY: 60})
+    assert snapshot.weather_override_priority == 60
+
+
+@pytest.mark.unit
+def test_build_falls_back_to_the_weather_class_default_priority():
+    """Unset means the handler's declared default, not None."""
+    builder, _, _ = _make_builder()
+    snapshot = _build_minimal(builder, {})
+    assert snapshot.weather_override_priority == WeatherOverrideHandler.priority
