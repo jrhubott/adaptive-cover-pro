@@ -537,14 +537,23 @@ class DecisionStep:
             object.__setattr__(self, "reason", render_en(self.reason_payload))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HoldClampVerdict:
-    """Whether ONE held cover is released to this cycle's clamp target (#1174).
+    """What happens to ONE held cover this cycle — moved, and where to (#1174).
 
     A hold winner keeps every bound cover where something authoritative already
-    put it. When a bound outranks the holder, the cover is released to the
-    bound's edge — but only the covers that actually violate the bound: judging
-    the group's mean dragged compliant covers along and hid lone violators.
+    put it. Whether that stops being true, and what replaces it, is a question
+    per cover and not per instance: ``PipelineResult.held_position`` is the
+    group's arithmetic MEAN, so judging it dragged compliant covers to a bound
+    they already satisfied and hid a lone violator behind its siblings.
+
+    The two fields answer the two halves of the dispatch question, and no single
+    instance-wide number can answer either:
+
+    * a floor and a ceiling that both outrank the holder bind *different* covers
+      in *opposite* directions, so the released covers do not share one target;
+    * a TILT clamp commands every held cover while the position axis released
+      nobody, so "is a command going out" is not "did a bound move me".
     """
 
     #: This cover's own position, a RAW cover-frame read (matching the frame
@@ -552,9 +561,47 @@ class HoldClampVerdict:
     #: diagnostic extras speak, #1028). Falls back to the summary
     #: ``PipelineResult.held_position`` when this cover reports no position.
     held_position: int | None
-    #: True when this cover's own position violates the surviving bounds, so it
-    #: receives the clamp target; False when it stays held where it is.
+    #: True when a command goes out to this cover this cycle: a composed
+    #: position bound moved it, or another axis forced a dispatch the whole
+    #: group has to carry. False means the hold stands and the coordinator
+    #: writes a hold-skip record instead.
     released: bool
+    #: Where that command sends this cover, as a LOGICAL (pre-inversion,
+    #: pre-interpolation) position — the same frame ``PipelineResult.position``
+    #: speaks, so the coordinator maps it through the one ``_to_cover_frame``
+    #: seam. Equals the bound edge that bound THIS cover when a position bound
+    #: moved it, and this cover's own position when none did — which is what
+    #: makes a tilt-forced command a positional no-op. Always resolved, and
+    #: read only while ``released``.
+    target: int
+
+
+@dataclass(frozen=True, slots=True)
+class PositionAxisJudgment:
+    """What the composed position bounds did to this cycle's winner (#1174).
+
+    One return value for :func:`pipeline.registry._judge_position_axis`, which
+    answers "where does the winner actually end up, did a bound move it, and —
+    for a hold — what happens to each cover individually" in a single pass so
+    those answers cannot drift apart.
+    """
+
+    #: The position the bounds were judged against, LOGICAL frame. A computed
+    #: winner's own ``position``; for a hold, the *violating* cover's position
+    #: (lowest when a floor raised, highest when a ceiling lowered) so the
+    #: clamp trace step reads as a real cover rather than a mean nobody sits at.
+    effective_winner_pos: int
+    #: ``effective_winner_pos`` after the composed bounds, i.e. the shared
+    #: clamp target the trace and ``PipelineResult.position`` carry.
+    final_pos: int
+    #: A floor lifted at least one judged position.
+    raised: bool
+    #: A ceiling lowered at least one judged position.
+    lowered: bool
+    #: Per-cover dispatch verdicts, or ``None`` for a computed winner and for a
+    #: snapshot carrying no per-entity positions — both of which keep the cycle
+    #: on the singular pre-#1174 path.
+    verdicts: Mapping[str, HoldClampVerdict] | None
 
 
 @dataclass(frozen=True)
@@ -674,14 +721,18 @@ class PipelineResult:
     # presence marker the #1170 priority gate keys on.
     held_position: int | None = None
 
-    # Per-cover release verdicts for a hold winner (#1174), and the skip
-    # authority for the POSITION axis ONLY. Populated when
-    # ``held_position is not None`` AND the snapshot carried per-entity
-    # positions; ``None`` for every computed (non-hold) winner, for legacy
-    # snapshots without the dict, and whenever a TILT clamp forced the command
-    # instead — a tilt bound is its own reason to command every held cover, so
-    # position verdicts must not veto it. Each ``None`` case keeps the cycle on
-    # the singular ``skip_command`` / ``held_position`` path unchanged.
+    # Per-cover dispatch verdicts for a hold winner (#1174): the sole authority
+    # on which bound covers are commanded this cycle and where each one is sent.
+    # Populated when ``held_position is not None`` AND the snapshot carried
+    # per-entity positions; ``None`` for every computed (non-hold) winner and
+    # for legacy snapshots without the dict, both of which keep the cycle on the
+    # singular ``skip_command`` / ``position`` path unchanged.
+    #
+    # A cover absent from the dict is likewise unjudged and falls back to that
+    # singular path. ``position`` stays the shared summary the trace and the
+    # singular surfaces carry; where a released cover actually goes is
+    # ``HoldClampVerdict.target``, which diverges from it whenever a floor and a
+    # ceiling bind different covers.
     hold_clamp_verdicts: Mapping[str, HoldClampVerdict] | None = None
 
     # Custom position slot diagnostics — populated only when CustomPositionHandler wins.

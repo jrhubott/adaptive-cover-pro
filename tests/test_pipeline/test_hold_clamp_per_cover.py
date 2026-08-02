@@ -9,11 +9,13 @@ shades at 40/40/0 mean 27, and the whole group was judged against 27: the two
 compliant shades were dragged to a 40 floor they already satisfied, and the
 mirror case (100/100/0 → mean 67) hid a genuine violation entirely.
 
-Only the *release verdict* is per cover. The clamp target, the priority gate
-(#1170), the trace and every singular ``PipelineResult`` field stay shared — a
-clamped cover always lands exactly on the bound edge, so the dispatched value is
-still one instance-wide number; only *whether each cover receives it* is judged
-against that cover's own position.
+Both halves of the dispatch question are per cover: whether a command goes out
+to this cover, and where it sends it. One shared number could not answer either
+— a floor and a ceiling that both outrank the hold bind different covers in
+opposite directions, and a tilt clamp commands covers the position axis never
+released. The priority gate (#1170), the trace and every singular
+``PipelineResult`` field stay shared; ``hold_clamp_verdicts`` is the dispatch
+authority.
 """
 
 from __future__ import annotations
@@ -110,6 +112,38 @@ def _ceiling_vs_hold(
             default_position=100,
             direct_sun_valid=False,
             custom_position_sensors=[slot],
+        )
+    )
+
+
+def _floor_and_ceiling_vs_hold(
+    *,
+    cover_positions,
+    current_cover_position: int,
+    floor: int,
+    ceiling: int,
+):
+    """Evaluate a manual hold against a floor AND a ceiling, both outranking it."""
+    sensors = [
+        _slot(1, position=floor, min_mode=True, priority=ABOVE_HOLDER),
+        _slot(2, position_max=ceiling, priority=ABOVE_HOLDER),
+    ]
+    registry = _registry_with_custom(
+        [
+            _cp_handler(1, floor, priority=ABOVE_HOLDER),
+            CustomPositionHandler(slot=2, position=None, priority=ABOVE_HOLDER),
+            ManualOverrideHandler(),
+        ]
+    )
+    return registry.evaluate(
+        make_snapshot(
+            cover=_climate_cover(direct_sun_valid=False),
+            manual_override_active=True,
+            current_cover_position=current_cover_position,
+            cover_positions=cover_positions,
+            default_position=100,
+            direct_sun_valid=False,
+            custom_position_sensors=sensors,
         )
     )
 
@@ -320,21 +354,24 @@ async def test_a_cover_absent_from_the_dict_takes_the_instance_wide_answer() -> 
 
 
 # ---------------------------------------------------------------------------
-# A tilt clamp is a command, not a no-op (#1170 audit) — the position axis's
-# per-cover verdicts must not veto it
+# A tilt clamp is a command, not a no-op (#1170 audit) — and the command it
+# forces must not move the covers the position axis left alone
 # ---------------------------------------------------------------------------
 #
-# ``hold_clamp_verdicts`` answers ONE question — did a composed *position*
-# bound release this cover — so it is the skip authority for the position axis
-# alone. A tilt bound that outranks the holder is an independent reason to
-# command every held cover (``_release_hold_for_tilt_clamp``), and with the
-# position axis inert every verdict reads ``released=False``. Letting those
-# verdicts answer for the tilt axis re-skipped the whole group and the tilt
-# bound never reached the hardware, while the trace still reported a carried
-# hold position for a dispatch that never happened.
+# A tilt bound that outranks the holder clears ``skip_command`` for the whole
+# group: every held cover has to receive a command so the slats reach the
+# hardware. There is no single position that means "hold where you are AND take
+# this tilt", which is why each verdict carries its own target — a released
+# cover gets the bound edge, a held one gets its own position, a value the
+# same-position gate turns into a pure tilt service call.
 
 _TILT_FILL = 10
 _TILT_FLOOR = 60
+
+# Compliant covers parked well ABOVE the floor, so "held where it is" and
+# "commanded to the floor" are two different numbers. Judging with covers that
+# sit exactly ON the bound cannot tell the two apart.
+_ABOVE_FLOOR_POSITIONS = {"cover.a": 80, "cover.b": 80, "cover.c": 0}
 
 
 def _dispatch_coordinator(result):
@@ -342,6 +379,7 @@ def _dispatch_coordinator(result):
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._inverse_state = False
+    coord._use_interpolation = False
     coord.config_entry = MagicMock()
     coord.config_entry.options = {CONF_INVERSE_STATE: False}
     coord._policy = get_policy("cover_venetian")
@@ -351,6 +389,26 @@ def _dispatch_coordinator(result):
     cmd_svc.record_skipped_action = MagicMock()
     coord._cmd_svc = cmd_svc
     return coord
+
+
+async def _dispatch_targets(result, covers, reason) -> dict[str, int | None]:
+    """Fan ``result`` out over ``covers`` and report what each one received.
+
+    The value is the position actually commanded, or ``None`` when the seam
+    wrote a hold-skip record instead — the two outcomes ``_dispatch_to_cover``
+    chooses between. Every cover is offered the same ``state`` the real cycle
+    computes (``coordinator.state``), so any divergence in the result comes
+    from the per-cover verdict and nothing else.
+    """
+    coord = _dispatch_coordinator(result)
+    state = coord._to_cover_frame(result.position)
+    for cover in covers:
+        await coord._dispatch_to_cover(cover, state, reason, None)
+    sent = {c.args[0]: c.args[1] for c in coord._cmd_svc.apply_position.call_args_list}
+    skipped = {c.args[0] for c in coord._cmd_svc.record_skipped_action.call_args_list}
+    assert sent.keys() | skipped == set(covers)
+    assert not sent.keys() & skipped
+    return {cover: sent.get(cover) for cover in covers}
 
 
 def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = False):
@@ -402,66 +460,97 @@ def test_tilt_clamp_releases_the_hold_on_a_legacy_snapshot() -> None:
     assert result.hold_clamp_verdicts is None
 
 
-def test_tilt_clamp_leaves_no_position_verdicts_to_veto_it() -> None:
+def test_a_tilt_clamp_commands_every_held_cover() -> None:
     """The production snapshot shape: ``cover_positions`` present, tilt clamped.
 
     Every real cycle after the first carries the dict, and with the position
-    axis inert every verdict is ``released=False``. They must not survive as the
-    skip authority for a dispatch the *tilt* axis forced.
+    axis inert nothing there released anybody. The tilt bound releases the
+    group on its own, so every verdict has to say so — dropping the dict
+    instead put the whole group back on one instance-wide number.
     """
     result = _tilt_clamp_vs_hold(cover_positions=_ISSUE_POSITIONS)
 
     assert result.tilt == _TILT_FLOOR
     assert result.skip_command is False
     assert result.position_constraint_applied is False
-    assert result.hold_clamp_verdicts is None
+    verdicts = result.hold_clamp_verdicts
+    assert verdicts is not None
+    assert all(v.released for v in verdicts.values())
 
 
 @pytest.mark.asyncio
-async def test_tilt_clamp_reaches_every_cover_on_a_production_snapshot() -> None:
-    """End to end: the tilt bound commands all three covers, skipping none.
+async def test_a_tilt_only_clamp_sends_each_cover_its_own_position() -> None:
+    """Nothing claimed the position axis, so nobody's position may change.
 
-    The registry-only assertion above cannot see the regression this pins —
-    the verdicts only bite at the dispatch seam, where a ``released=False``
-    entry turns the forced command back into a hold skip.
+    The command exists only to carry the slats, so each cover's target is its
+    own current position — a positional no-op the same-position gate turns into
+    a pure tilt service call. Sending one shared number instead drove all three
+    shades to the instance mean, 27, which is the literal number in the issue
+    title and nobody's position.
     """
     result = _tilt_clamp_vs_hold(cover_positions=_ISSUE_POSITIONS)
-    coord = _dispatch_coordinator(result)
 
-    for cover in _ISSUE_POSITIONS:
-        await coord._dispatch_to_cover(cover, result.position, "manual_override", None)
+    targets = await _dispatch_targets(result, _ISSUE_POSITIONS, "manual_override")
 
-    coord._cmd_svc.record_skipped_action.assert_not_called()
-    assert [c.args[0] for c in coord._cmd_svc.apply_position.call_args_list] == list(
-        _ISSUE_POSITIONS
-    )
+    assert targets == dict(_ISSUE_POSITIONS)
+    assert _ISSUE_MEAN not in targets.values()
 
 
 @pytest.mark.asyncio
-async def test_tilt_clamp_outranks_verdicts_when_position_clamps_too() -> None:
-    """Both axes clamp: the tilt bound still reaches the covers the floor spared.
+async def test_a_tilt_clamp_does_not_drag_a_compliant_cover_to_the_floor() -> None:
+    """Both axes clamp: the floor moves only the cover that violates it.
 
-    The narrower guard — drop the verdicts only when the position axis stayed
-    inert — leaves this case broken: ``cover.a`` and ``cover.b`` already satisfy
-    the floor, so their verdicts read ``released=False`` and the tilt bound that
-    outranks the hold never reaches them. A tilt clamp is a command for every
-    held cover or it is not a command at all.
+    ``cover.a`` and ``cover.b`` are held at 80, well above the 40 floor, and a
+    *tilt* bound is the only reason a command goes out to them at all. Letting
+    that tilt command carry the position axis's clamp target closed them by 40
+    points — worse than the mean-based behaviour #1174 set out to fix, which at
+    least sent 53.
     """
     result = _tilt_clamp_vs_hold(
-        cover_positions=_ISSUE_POSITIONS, with_position_floor=True
+        cover_positions=_ABOVE_FLOOR_POSITIONS, with_position_floor=True
     )
 
     assert result.tilt == _TILT_FLOOR
     assert result.position == _FLOOR
     assert result.position_constraint_applied is True
     assert result.skip_command is False
-    assert result.hold_clamp_verdicts is None
 
-    coord = _dispatch_coordinator(result)
-    for cover in _ISSUE_POSITIONS:
-        await coord._dispatch_to_cover(
-            cover, result.position, "custom_position_3", None
-        )
+    targets = await _dispatch_targets(
+        result, _ABOVE_FLOOR_POSITIONS, "custom_position_3"
+    )
 
-    coord._cmd_svc.record_skipped_action.assert_not_called()
-    assert coord._cmd_svc.apply_position.call_count == len(_ISSUE_POSITIONS)
+    assert targets == {"cover.a": 80, "cover.b": 80, "cover.c": _FLOOR}
+
+
+# ---------------------------------------------------------------------------
+# A floor and a ceiling bind different covers in opposite directions
+# ---------------------------------------------------------------------------
+#
+# ``PipelineResult.position`` can only carry one of the two edges — ``clamp_to_bounds``
+# applies the floor last, so the floor wins the shared field. Dispatching that
+# to every released cover sent the one the *ceiling* bound to the floor instead,
+# a move in the wrong direction and one the pre-#1174 code never made (the mean
+# sat between the bounds, so nothing clamped and the hold survived).
+
+
+@pytest.mark.asyncio
+async def test_a_ceiling_bound_cover_is_lowered_to_the_ceiling_not_the_floor() -> None:
+    """Floor 40 + ceiling 70, covers at 20 and 90: each goes to its own bound."""
+    covers = {"cover.low": 20, "cover.high": 90}
+    result = _floor_and_ceiling_vs_hold(
+        cover_positions=covers,
+        # The mean, 55, sits inside [40, 70] — the scalar comparison saw no
+        # violation at all and left the hold alone.
+        current_cover_position=55,
+        floor=_FLOOR,
+        ceiling=70,
+    )
+
+    verdicts = result.hold_clamp_verdicts
+    assert verdicts is not None
+    assert verdicts["cover.low"].released is True
+    assert verdicts["cover.high"].released is True
+
+    targets = await _dispatch_targets(result, covers, "custom_position_1")
+
+    assert targets == {"cover.low": _FLOOR, "cover.high": 70}

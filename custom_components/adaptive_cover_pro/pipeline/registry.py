@@ -28,6 +28,7 @@ from .types import (
     HoldClampVerdict,
     PipelineResult,
     PipelineSnapshot,
+    PositionAxisJudgment,
 )
 
 
@@ -117,8 +118,8 @@ def _judge_position_axis(
     snapshot: PipelineSnapshot,
     floor_pos: int | None,
     ceiling_pos: int | None,
-) -> tuple[int, bool, bool, dict[str, HoldClampVerdict] | None]:
-    """Return ``(effective_winner_pos, raised, lowered, verdicts)``.
+) -> PositionAxisJudgment:
+    """Resolve what the composed position bounds do to this cycle's winner.
 
     The single site that asks "where will the cover actually end up, and did a
     composed bound move it?" — for both kinds of winner, so the two answers
@@ -132,9 +133,12 @@ def _judge_position_axis(
     one, and on a multi-cover instance ``winner.held_position`` is the group's
     *mean* — nobody's position. Judging the bounds against that mean dragged
     compliant covers to a floor they already satisfied and hid a lone violator
-    behind its compliant siblings (#1174). So the release question is asked per
-    cover, while the answer stays one shared target: a released cover always
-    lands exactly on the bound edge.
+    behind its compliant siblings (#1174). So each cover is judged on its own
+    position and carries its own resolved target, because one shared number
+    cannot serve them all: a floor and a ceiling that both outrank the holder
+    bind different covers in opposite directions, and ``clamp_to_bounds``
+    applies the floor last, so the shared ``final_pos`` can only ever name one
+    of the two edges.
 
     **Judged set** (holds only). ``snapshot.cover_positions`` when it carries
     entries — a cover with an unknown position falls back to the summary
@@ -146,12 +150,10 @@ def _judge_position_axis(
 
     **Frames.** Held positions are RAW cover-frame reads and the bounds are
     logical user values, so each is converted before comparing — the #1036
-    conversion, now applied per cover instead of once to the mean.
-
-    **Mixed violations.** ``clamp_to_bounds`` applies the floor last, so a
-    floor above a ceiling still determines the target: a cover above the
-    ceiling is then released to the floor value. Today every cover receives
-    that same value regardless, so this is parity or better.
+    conversion, now applied per cover instead of once to the mean. Every
+    ``target`` is on the logical side of that conversion, matching
+    ``PipelineResult.position``, so the coordinator maps it to the wire through
+    the same ``_to_cover_frame`` seam it already uses for the shared value.
 
     For a hold, ``effective_winner_pos`` names the *violating* cover — the
     lowest judged position when a floor raised, the highest when a ceiling
@@ -160,11 +162,12 @@ def _judge_position_axis(
     """
     if winner.held_position is None:
         final = clamp_to_bounds(winner.position, floor_pos, ceiling_pos)
-        return (
-            winner.position,
-            final > winner.position,
-            final < winner.position,
-            None,
+        return PositionAxisJudgment(
+            effective_winner_pos=winner.position,
+            final_pos=final,
+            raised=final > winner.position,
+            lowered=final < winner.position,
+            verdicts=None,
         )
     per_entity = snapshot.cover_positions or None
     judged: Mapping[str | None, int | None] = (
@@ -177,13 +180,17 @@ def _judge_position_axis(
     for entity_id, position in judged.items():
         raw = position if position is not None else winner.held_position
         eff = flip_if(raw, inverted=snapshot.position_axis_inverted)
+        # This cover's own answer, and the only one that can be right for it:
+        # the edge that binds IT when a bound does, and where it already sits
+        # when none does — which is what a command forced by the other axis
+        # has to carry so the hold survives it.
         fin = clamp_to_bounds(eff, floor_pos, ceiling_pos)
         effective_positions.append(eff)
         raised = raised or fin > eff
         lowered = lowered or fin < eff
         if entity_id is not None:
             verdicts[entity_id] = HoldClampVerdict(
-                held_position=raw, released=fin != eff
+                held_position=raw, released=fin != eff, target=fin
             )
     if raised:
         effective_winner_pos = min(effective_positions)
@@ -193,12 +200,40 @@ def _judge_position_axis(
         effective_winner_pos = flip_if(
             winner.held_position, inverted=snapshot.position_axis_inverted
         )
-    return (
-        effective_winner_pos,
-        raised,
-        lowered,
-        verdicts if per_entity is not None else None,
+    return PositionAxisJudgment(
+        effective_winner_pos=effective_winner_pos,
+        final_pos=clamp_to_bounds(effective_winner_pos, floor_pos, ceiling_pos),
+        raised=raised,
+        lowered=lowered,
+        verdicts=verdicts if per_entity is not None else None,
     )
+
+
+def _command_every_held_cover(
+    verdicts: Mapping[str, HoldClampVerdict] | None,
+) -> Mapping[str, HoldClampVerdict] | None:
+    """Release every verdict, each to the target it already resolved (#1174).
+
+    A tilt clamp is a command, not a no-op (#1170 audit): it clears
+    ``skip_command`` for the whole group because the slats have to reach the
+    hardware, and a cover the position axis never released still has to receive
+    that command. What it must NOT receive is the position axis's clamp target
+    — a cover held above a floor is not a reason to close it 40 points, and
+    that is exactly what a shared value does here. Each verdict already carries
+    its own target: the bound edge for a cover a bound moved, and its own
+    position for one nothing moved, which the same-position gate turns into a
+    pure secondary-axis service call (#954).
+
+    ``None`` (a computed winner, or a snapshot with no per-entity positions)
+    passes straight through — those cycles are already on the singular path
+    ``_release_hold_for_tilt_clamp`` cleared.
+    """
+    if verdicts is None:
+        return None
+    return {
+        entity_id: dataclasses.replace(verdict, released=True)
+        for entity_id, verdict in verdicts.items()
+    }
 
 
 def _release_hold_for_tilt_clamp(
@@ -540,15 +575,16 @@ class PipelineRegistry:
         # ``group_lock`` sets it too; every other handler leaves it None, so
         # this preserves the existing behaviour exactly for computed winners.
         #
-        # ONE evaluation per cycle still produces ONE shared result with ONE
-        # target value. What ``_judge_position_axis`` makes per-cover is only
-        # the *release verdict* — whether each held cover violates the surviving
-        # bounds and so receives that target (#1174) — because
-        # ``held_position`` is the instance MEAN and judging it clamped
-        # compliant covers while hiding lone violators. It also owns the #1036
-        # cover→logical frame conversion, now applied per cover rather than
-        # once to the mean. A computed winner keeps its own position and no
-        # verdicts, exactly as before.
+        # ONE evaluation per cycle still produces ONE shared result, and every
+        # singular field below keeps the value it always had. What
+        # ``_judge_position_axis`` adds is a per-cover verdict for a hold
+        # (#1174) — whether each bound cover is moved at all, and to where —
+        # because ``held_position`` is the instance MEAN, and no single number
+        # can stand in for the group once a floor and a ceiling bind different
+        # covers in opposite directions. It also owns the #1036 cover→logical
+        # frame conversion, now applied per cover rather than once to the mean.
+        # A computed winner keeps its own position and no verdicts, exactly as
+        # before.
         #
         # A floor "raises" when it lifts a cover above where it would actually
         # end up.  Key on the *effective* position — NOT on
@@ -558,13 +594,12 @@ class PipelineRegistry:
         # held below it must still be lifted; issue #809).  Because
         # ``clamp_to_bounds`` applies the floor last, a floor above a ceiling
         # still reads as a raise — the deliberate conflict rule.
-        (
-            effective_winner_pos,
-            raised,
-            lowered,
-            hold_clamp_verdicts,
-        ) = _judge_position_axis(winner, snapshot, floor_pos, ceiling_pos)
-        final_pos = clamp_to_bounds(effective_winner_pos, floor_pos, ceiling_pos)
+        judgment = _judge_position_axis(winner, snapshot, floor_pos, ceiling_pos)
+        effective_winner_pos = judgment.effective_winner_pos
+        final_pos = judgment.final_pos
+        raised = judgment.raised
+        lowered = judgment.lowered
+        hold_clamp_verdicts = judgment.verdicts
         position_clamped = raised or lowered
         # In a floor/ceiling conflict ``clamp_to_bounds`` applies the floor last,
         # so the floor always determines the final value (== floor_pos) no matter
@@ -875,19 +910,11 @@ class PipelineRegistry:
                 position_clamped=position_clamped,
                 effective_winner_pos=effective_winner_pos,
             )
-            # ``hold_clamp_verdicts`` is the skip authority for the POSITION
-            # axis ONLY: it answers "did a composed position bound release this
-            # cover", nothing else. A tilt clamp is a command, not a no-op
-            # (#1170 audit) — an independent reason to command every held cover
-            # — so the position axis's per-cover verdicts must not veto it.
-            # Dropping them puts this cycle back on the singular
-            # ``skip_command`` the tilt release just cleared, which is what
-            # every cover needs and exactly the pre-#1174 route. Without this a
-            # tilt-only release found every verdict at ``released=False`` (the
-            # position axis was inert, so nothing was released) and re-skipped
-            # the whole group, leaving the trace claiming a carried hold
-            # position for a dispatch that never happened.
-            hold_clamp_verdicts = None
+            # The tilt clamp commands the whole group, so every verdict says so
+            # — each still to its OWN target, which is the only thing that
+            # keeps a cover the position axis never released where the user put
+            # it (#1174).
+            hold_clamp_verdicts = _command_every_held_cover(hold_clamp_verdicts)
         # The tilt-axis overlay (issue #514) is how a FIXED contribution
         # reaches the result's tilt field. It can never collide with the
         # bound-clamp write above (the ``else: merged["tilt"] = bounded_tilt``
@@ -898,10 +925,10 @@ class PipelineRegistry:
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
-            # Per-cover release verdicts for a hold (#1174) — the POSITION
-            # axis's skip authority. None for a computed winner, for a snapshot
-            # without per-entity positions, and for a tilt-forced command, each
-            # of which keeps that cycle on the singular path.
+            # Per-cover dispatch verdicts for a hold (#1174) — which covers are
+            # commanded and where each one goes. None for a computed winner and
+            # for a snapshot without per-entity positions, both of which keep
+            # that cycle on the singular path.
             hold_clamp_verdicts=hold_clamp_verdicts,
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,

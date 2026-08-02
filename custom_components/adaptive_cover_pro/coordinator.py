@@ -260,12 +260,13 @@ _MANUAL_OVERRIDE_SKIP_LABEL = "manual_override"
 #
 # The mean hazard is unchanged for MOTION: that handler publishes its hold
 # through ``PipelineResult.position``, sets no ``held_position``, and is
-# therefore never judged per cover.  What issue #1174 changed is narrower —
-# for a GROUP_LOCK or MANUAL hold the registry now decides *per cover* whether
-# each one is released to a clamping bound (``PipelineResult.hold_clamp_verdicts``,
-# judged on that cover's own position), and ``_dispatch_to_cover`` records each
-# skip with that cover's own position rather than the mean.  The dispatched
-# target is still ONE instance-wide value; only the release verdict is plural.
+# therefore never judged per cover.  For a GROUP_LOCK or MANUAL hold, issue
+# #1174 moved the whole dispatch decision off the mean and onto
+# ``PipelineResult.hold_clamp_verdicts``: each bound cover is judged on its own
+# position, commanded (or held) on its own verdict, sent to its own resolved
+# target, and its skip record written with its own position.  ``position``
+# remains the shared summary the trace and the singular surfaces carry — it is
+# no longer what reaches a judged cover.
 #
 # ``ControlMethod.MANUAL`` is deliberately NOT a member and must not be added.
 # The manual-override handler's position is ``compute_solar_position`` /
@@ -2745,16 +2746,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         When the winner is a hold and the registry judged each bound cover
         individually (``hold_clamp_verdicts``, issue #1174), *this* cover's
-        verdict decides: released means the clamp target reaches it, held means
-        the skip record is written — and written with the cover's own position,
-        not the instance mean the singular ``held_position`` carries. Without
-        verdicts (a computed winner, a motion hold, a legacy snapshot, or a
-        command the TILT axis forced) the singular ``skip_command`` answers for
-        every cover, exactly as before.
-
-        Those verdicts are the skip authority for the POSITION axis only — a
-        tilt clamp is a separate reason to command and the registry publishes no
-        verdicts on that path, so nothing here can veto it.
+        verdict is the whole answer — both halves of it. Released means a
+        command goes out, and it goes to the verdict's own resolved target
+        rather than the shared ``state``: the two diverge whenever a floor and a
+        ceiling bind different covers, and whenever the TILT axis is what forced
+        the dispatch, in which case every cover is commanded to where it already
+        is so the slats reach the hardware without moving the carriage. Held
+        means the skip record is written — with the cover's own position, not
+        the instance mean the singular ``held_position`` carries. Without a
+        verdict (a computed winner, a motion hold, a legacy snapshot, a cover
+        absent from the dict) the singular ``skip_command`` and ``state`` answer
+        for every cover, exactly as before.
         """
         result = self._pipeline_result
         verdict = (result.hold_clamp_verdicts or {}).get(cover) if result else None
@@ -2803,8 +2805,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 },
             )
             return None
+        # ``verdict.target`` is logical, exactly like the ``PipelineResult.position``
+        # that produced ``state``, so it crosses to the wire through the same
+        # single seam — no second frame rule, and a cover with no verdict keeps
+        # the value the caller already resolved.
+        target = self._to_cover_frame(verdict.target) if verdict is not None else state
         return await self._cmd_svc.apply_position(
-            cover, self._entity_target(cover, state), reason, context=ctx
+            cover, self._entity_target(cover, target), reason, context=ctx
         )
 
     def _entity_target(
@@ -2817,11 +2824,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> int:
         """Per-entity dispatch target for this cover (identity for most types).
 
-        The pipeline resolves ONE position per cycle, which is then sent to
-        every bound entity *the cycle's hold verdict releases* (#1174: a hold
-        judges each cover's release against its own position, but a released
-        cover always lands on the same bound edge, so there is still exactly
-        one target value). A cover type that drives several physical entities
+        The pipeline resolves ONE position per cycle and it is sent to every
+        bound entity, EXCEPT under a hold that was judged per cover — there each
+        cover is commanded (or not) on its own verdict, and to that verdict's
+        own target, which need not be the shared one (#1174). Either way the
+        number reaching this hook is already resolved for the entity being
+        dispatched. A cover type that drives several physical entities
         to different positions from that one value — the Model C day/night
         shade with a separate middle-rail entity, the dual panel's blackout
         panel — remaps here via its polymorphic ``resolve_entity_target`` hook.

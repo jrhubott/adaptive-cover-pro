@@ -39,6 +39,7 @@ def _coordinator_with(result: PipelineResult):
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._inverse_state = False
+    coord._use_interpolation = False
     # The real coordinator always has a config entry and a policy;
     # ``position_axis_inverted`` derives from the options and the dispatch seam
     # delegates to the policy, so give the fixture the same inputs rather than
@@ -112,12 +113,28 @@ async def test_dispatch_manual_override_hold_does_not_mislabel_as_motion():
 _MEAN_HELD = 27
 _A_HELD = 40
 _C_HELD = 0
+#: The bound edge a released cover is sent to in these fixtures.
+_CLAMP_TARGET = 40
 
 
 def _verdicts(*, a_released: bool, c_released: bool):
+    """Verdicts shaped the way the registry builds them (#1174).
+
+    A released cover carries the bound edge it was released to; a held one
+    carries its own position, which is dispatched only if another axis forces
+    the command.
+    """
     return {
-        "cover.a": HoldClampVerdict(_A_HELD, released=a_released),
-        "cover.c": HoldClampVerdict(_C_HELD, released=c_released),
+        "cover.a": HoldClampVerdict(
+            _A_HELD,
+            released=a_released,
+            target=_CLAMP_TARGET if a_released else _A_HELD,
+        ),
+        "cover.c": HoldClampVerdict(
+            _C_HELD,
+            released=c_released,
+            target=_CLAMP_TARGET if c_released else _C_HELD,
+        ),
     }
 
 

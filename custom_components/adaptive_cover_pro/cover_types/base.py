@@ -641,8 +641,11 @@ class CoverTypePolicy(ABC):
     ) -> int:
         """Adjust the dispatched position for one specific entity.
 
-        The coordinator resolves a single ``position`` per update cycle, then
-        sends it to every bound entity. A cover type that drives *several*
+        The coordinator resolves a single ``position`` per update cycle and
+        sends it to every bound entity — except under a hold judged per cover,
+        where each cover is dispatched on its own verdict and to that verdict's
+        own target (#1174). Either way ``position`` is already resolved for
+        ``entity_id`` by the time it arrives. A cover type that drives *several*
         physical entities to *different* positions from that one resolved value
         overrides this hook (the Model C day/night shade remaps its middle-rail
         entity while the bottom rail passes through unchanged). The Liskov-safe
