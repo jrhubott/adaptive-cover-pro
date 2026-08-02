@@ -152,6 +152,31 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.position == 80
         assert out.tilt is None
 
+    def test_tilt_only_pins_carriage_for_non_solar_non_explicit_winner(self):
+        """Issue #1153 finding 2: the pin must not depend on a leaked tilt.
+
+        A non-SOLAR, non-explicit-user-position winner (e.g. a climate SUMMER
+        decision) reaches the engine-suppressed early-return branch with
+        ``result.tilt`` genuinely ``None`` — no handler and no engine ever
+        supply one. Before the fix, that branch returned early and skipped
+        the tilt-only carriage pin entirely, so the carriage opened to the
+        winner's raw position instead of staying closed — the pin only
+        worked when a (possibly leaked) tilt happened to route through the
+        handler-tilt branch instead. ``ControlMethod.WEATHER`` above is
+        exempt (an explicit user position, see ``_EXPLICIT_USER_POSITION_METHODS``);
+        SUMMER is not, so the pin must apply here.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        out = policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SUMMER, position=70), **_non_solar_kwargs()
+        )
+        assert out.position == 0
+        assert out.tilt is None
+        assert "venetian_mode" in [s.handler for s in out.decision_trace]
+
 
 class TestPostPipelineResolveCoverageSteps:
     """Movement minimization quantizes the slat tilt toward full coverage."""

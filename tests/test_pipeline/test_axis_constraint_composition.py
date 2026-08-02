@@ -315,6 +315,15 @@ class TestTiltBounds:
         res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(80, tilt=20))
         assert res.position == 80
 
+    def test_bounds_are_not_also_carried(self) -> None:
+        """Once a tilt is clamped there is exactly one clamp site — not two.
+
+        Carrying the bounds as well would let the venetian policy clamp the
+        already-clamped tilt a second time.
+        """
+        res = _evaluate([_slot(1, tilt_min=50)], winner=_StubWinner(50, tilt=20))
+        assert (res.tilt_low, res.tilt_high) == (None, None)
+
 
 class TestTiltOnlyOverlayThenClamp:
     """FIXED fills when unset; bounds then clamp the filled value."""
@@ -456,6 +465,31 @@ class TestLosingHandlerTiltDoesNotLeak:
         exactly the same way.
         """
         res = _evaluate([], winner=_StubWinner(0, priority=40), default_tilt=42)
+        assert res.tilt is None
+
+    def test_winning_custom_position_slot_with_no_tilt_stays_untilted(self) -> None:
+        """A WINNING custom-position slot with no tilt of its own stays tilt=None.
+
+        Makes the approved #1153 behavior change explicit rather than
+        incidental: unlike the two tests above (a synthetic ``_StubWinner``),
+        here the WINNER itself is a real ``CustomPositionHandler`` slot that
+        simply never configured a tilt. ``default_tilt`` must not fill the
+        hole via the (now-removed) merge just because ``DefaultHandler``
+        lost and left a value on the table.
+        """
+        res = _evaluate(
+            [
+                _slot(
+                    1,
+                    position=30,
+                    tilt=None,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                )
+            ],
+            default_tilt=42,
+        )
+        assert res.control_method == ControlMethod.CUSTOM_POSITION
+        assert res.position == 30
         assert res.tilt is None
 
 
