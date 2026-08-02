@@ -439,6 +439,69 @@ async def test_reconciliation_would_loop_without_rebase(svc, hass, attached_poli
 
 
 @pytest.mark.asyncio
+async def test_same_position_skip_tilt_rebase_survives_target_booking(
+    svc, hass, attached_policy
+):
+    """Issue #1158 finding 1 (reopens #33/#187): the same_position skip's
+    target booking must not clobber the sequencer's post-tilt rebase.
+
+    A tilt-only send inside the same_position skip can mechanically
+    back-drive the carriage (issue #33's own premise). Booking
+    ``_plan.routed_target`` AFTER ``_service_secondary_axis`` runs would
+    overwrite the rebase's ``set_commanded_position`` call with the stale
+    pre-tilt value — reopening the #33 resend loop #187 closed. The booking
+    must happen BEFORE the secondary-axis await so the rebase, which reads
+    the actuator's real post-tilt position, has the last word.
+    """
+    import datetime as dt
+
+    entity_id = "cover.venetian_rebase"
+    position_holder = {"value": 60}
+
+    def _state(_entity_id=None):
+        return _state_with_position(position_holder["value"])
+
+    hass.states.get.side_effect = _state
+
+    async def _service_side_effect(_domain, service, _data, **_kwargs):
+        # Model the motor's mechanical back-drive of the vertical axis
+        # (issue #33): sending tilt alone moves the carriage too.
+        if service == "set_cover_tilt_position":
+            position_holder["value"] = 68
+
+    hass.services.async_call = AsyncMock(side_effect=_service_side_effect)
+
+    # A tilt resolution already ran this cycle (post_pipeline_resolve),
+    # independent of whether cmd_svc has ever booked a target for this
+    # entity — seeded directly, matching the tilt-only tests above.
+    attached_policy._last_tilt = 70
+
+    with _patch_caps_dual_axis():
+        outcome, reason = await svc.apply_position(
+            entity_id, 60, "solar", _ctx_venetian(attached_policy, tilt=85)
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    # Only the tilt-only send fired — no position command.
+    assert hass.services.async_call.call_count == 1
+    assert (
+        hass.services.async_call.call_args_list[0].args[1] == "set_cover_tilt_position"
+    )
+    # The rebase must have the last word: the booked target reflects the
+    # back-driven actual (68), not the pre-tilt routed_target (60).
+    assert svc.get_target(entity_id) == 68
+
+    # Reconciliation must see target == actual immediately — no resend.
+    hass.services.async_call.reset_mock()
+    svc._auto_control_enabled = True
+    svc._in_time_window = True
+    with _patch_caps_dual_axis():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_tilt_on_target_plus_position_back_drive_does_not_trip_manual_override(
     svc, hass, attached_policy
 ):
