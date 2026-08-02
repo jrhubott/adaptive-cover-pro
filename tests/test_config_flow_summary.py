@@ -4154,7 +4154,11 @@ def test_summary_sun_tracking_gate_both_shows_the_combine_mode():
     cfg[CONF_SUN_TRACKING_GATE_TEMPLATE_MODE] = "and"
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "sun tracking gate" in summary.lower()
-    assert "and" in summary.lower()
+    # Assert the rendered mode token, not a bare "and" — the baseline summary
+    # already contains the word "and" in unrelated prose, so the loose form
+    # passed even with the mode set to "or".
+    assert "(and)" in summary.lower()
+    assert "(or)" not in summary.lower()
 
 
 def test_summary_omits_the_sun_tracking_gate_when_unconfigured():

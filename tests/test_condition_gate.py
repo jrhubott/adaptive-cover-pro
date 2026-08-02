@@ -16,25 +16,13 @@ from custom_components.adaptive_cover_pro.const import TemplateCombineMode
 from custom_components.adaptive_cover_pro.managers.common.condition_gate import (
     ConditionGate,
 )
-
-
-class _Clock:
-    """Monotonic clock stub driven by the test."""
-
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
+from tests._helpers.fake_clock import FakeClock
 
 
 def _make_gate(grace=120.0, states=None, template_result=None):
     """Build a gate over an in-memory state map and a fixed template verdict."""
     states = states if states is not None else {}
-    clock = _Clock()
+    clock = FakeClock()
     gate = ConditionGate(
         grace_seconds=grace,
         read_state=lambda entity_id: states.get(entity_id),

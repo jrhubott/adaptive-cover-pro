@@ -3562,9 +3562,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         Since issue #1167 ``enable_sun_tracking`` no longer changes pipeline
         composition — ``SolarHandler`` is unconditional and declines on the
         snapshot field instead — so the rebuild is a no-op for solar and the
-        refresh is what actually applies the change. The rebuild is kept because
-        the option still reaches other composition inputs and re-running it is
-        cheap and total. Neither entity listeners nor cover geometry are
+        refresh is what actually applies the change. The rebuild is now a no-op
+        for this option specifically — no handler factory reads it any more — and
+        is kept only because it is cheap, total, and the single place pipeline
+        composition is derived. Neither entity listeners nor cover geometry are
         affected, which is why this stays a refresh rather than a reload.
         """
         self._pipeline = self._build_pipeline()
@@ -3851,7 +3852,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # sun-tracking gate's grace window (#1167) — that one sees the same
             # options object as the cycle, so no config-change reset fires, and
             # an earlier anchor only shortens the hold, i.e. fails open sooner.
-            # An ad-hoc build can anchor the hold
+            # As with the custom-position hold, an ad-hoc build can anchor that
+            # hold
             # window at the tap rather than at the next regular cycle. That is
             # the documented contract — the window starts at the first
             # indeterminate sighting, and the tap is one — but it also means no
@@ -5149,7 +5151,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         self._sun_tracking_gate_unsub = self._schedule_optional_wake(
             self._sun_tracking_gate_unsub,
-            self._snapshot_builder.seconds_until_sun_tracking_gate_fallback(),
+            self._snapshot_builder.seconds_until_sun_tracking_gate_fallback(
+                self.config_entry.options
+            ),
             self._on_sun_tracking_gate_due,
         )
 

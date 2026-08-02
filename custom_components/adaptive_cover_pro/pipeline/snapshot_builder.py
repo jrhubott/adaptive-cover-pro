@@ -423,11 +423,12 @@ class PipelineSnapshotBuilder:
         closed: a thermostat blinking to ``unavailable`` must not silently
         disable sun tracking, which is the #1012/#1014 failure mode.
 
-        ``update_config`` runs before the master-toggle early-out so the gate
-        keeps tracking live config while the toggle is off — otherwise it would
-        hold a stale sensor list and arm pointless grace wakes from
-        ``seconds_until_sun_tracking_gate_fallback``, which the coordinator calls
-        every cycle regardless.
+        ``update_config`` runs before the master-toggle early-out so a config
+        change is never missed while the toggle is off — otherwise the gate would
+        hold a stale sensor list and apply it the instant tracking came back. The
+        grace machine is kept inert in that state by
+        :meth:`seconds_until_sun_tracking_gate_fallback`, which the coordinator
+        calls every cycle regardless; see its own note.
         """
         self._sun_tracking_gate.update_config(
             options.get(CONF_SUN_TRACKING_GATE_SENSORS, []),
@@ -441,13 +442,27 @@ class PipelineSnapshotBuilder:
         tracking = self._sun_tracking_gate.resolved(default=True)
         return tracking, not tracking
 
-    def seconds_until_sun_tracking_gate_fallback(self) -> float | None:
+    def seconds_until_sun_tracking_gate_fallback(
+        self, options: Mapping[str, Any] | None = None
+    ) -> float | None:
         """Seconds until a HELD sun-tracking-gate verdict expires, or ``None``.
 
         The coordinator schedules one prompt refresh on this so the fail-open
         engages at grace expiry rather than at the next incidental update —
         matching ``TimeWindowManager.seconds_until_gate_fallback``.
+
+        Returns ``None`` outright while the master toggle is off. The gate's
+        verdict cannot change what the cover does in that state, and
+        ``ConditionGate.seconds_until_fallback`` *observes* to answer — so
+        without this guard a disabled cover whose gate sensor drops out would
+        anchor a grace window and arm a wake that resolves to nothing.
+        ``options`` is optional so an un-passed call keeps the old behaviour
+        rather than silently reporting "no wake" for a cover that needs one.
         """
+        if options is not None and not bool(
+            options.get(CONF_ENABLE_SUN_TRACKING, True)
+        ):
+            return None
         return self._sun_tracking_gate.seconds_until_fallback()
 
     def read_custom_position_sensors(

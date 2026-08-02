@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
     ReasonCode,
 )
+from tests._helpers.fake_clock import FakeClock
 
 
 def _schema_keys(schema) -> set[str]:
@@ -345,17 +346,6 @@ def test_a_closed_gate_does_not_suppress_climate():
 # ---------------------------------------------------------------------------
 
 
-class _Clock:
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
-
-
 def _builder(states: dict, clock=None, template_result=None):
     """Build a PipelineSnapshotBuilder whose HA reads come from an in-memory map."""
     from unittest.mock import MagicMock, patch
@@ -371,7 +361,7 @@ def _builder(states: dict, clock=None, template_result=None):
         toggles=MagicMock(),
         policy=MagicMock(),
         config_service=MagicMock(),
-        clock=clock or _Clock(),
+        clock=clock or FakeClock(),
     )
     # Patch the module globals the gate's injected readers close over — the same
     # seam managers.time_window exposes for the daytime gate.
@@ -470,7 +460,7 @@ def test_a_dropout_holds_the_last_verdict_then_fails_open():
     """Closed → source dies → held closed through the grace window → opens."""
     options = {CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac"]}
     states = {"binary_sensor.ac": "off"}
-    clock = _Clock()
+    clock = FakeClock()
     builder, ctx = _builder(states, clock=clock)
 
     with ctx:
@@ -489,7 +479,7 @@ def test_a_dropout_holds_the_last_verdict_then_fails_open():
 def test_the_grace_wake_is_armed_only_while_holding():
     options = {CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac"]}
     states = {"binary_sensor.ac": "off"}
-    clock = _Clock()
+    clock = FakeClock()
     builder, ctx = _builder(states, clock=clock)
 
     with ctx:
@@ -503,17 +493,12 @@ def test_the_grace_wake_is_armed_only_while_holding():
         )
 
 
-def test_the_option_reaches_the_snapshot_end_to_end():
-    """The binding composition-gating used to prove (issue #1167 audit, finding 4).
-
-    Without this, ``CONF_ENABLE_SUN_TRACKING`` could stop reaching the pipeline
-    entirely and every handler-level test would still pass, because they set
-    ``enable_sun_tracking`` on the snapshot by hand.
-    """
-    from custom_components.adaptive_cover_pro.const import CONF_ENABLE_SUN_TRACKING
-
-    assert _resolve({CONF_ENABLE_SUN_TRACKING: False}, {})[0] is False
-    assert _resolve({CONF_ENABLE_SUN_TRACKING: True}, {})[0] is True
+# The option->snapshot binding that composition-gating used to prove is guarded
+# at the seam that actually performs it — ``builder.build()`` — in
+# tests/test_pipeline/test_snapshot_builder.py::
+# test_build_carries_sun_tracking_onto_the_snapshot. Asserting it here against
+# ``_resolve_sun_tracking`` would look like an end-to-end guard while stopping
+# one call short of the thing that can actually break.
 
 
 # ---------------------------------------------------------------------------
@@ -548,7 +533,7 @@ def test_the_toggle_and_the_gate_report_different_skip_reasons():
 # ---------------------------------------------------------------------------
 
 
-def _coord_for_wake(secs):
+def _coord_for_wake(secs, options=None):
     """Build a minimal coordinator stub for the sun-tracking-gate wake scheduler."""
     from unittest.mock import MagicMock
 
@@ -560,6 +545,9 @@ def _coord_for_wake(secs):
     coord.logger = MagicMock()
     coord.hass = MagicMock()
     coord._sun_tracking_gate_unsub = None
+    entry = MagicMock()
+    entry.options = options if options is not None else {}
+    coord.config_entry = entry
     builder = MagicMock()
     builder.seconds_until_sun_tracking_gate_fallback.return_value = secs
     coord._snapshot_builder = builder
@@ -642,3 +630,28 @@ async def test_a_template_flip_triggers_a_refresh():
     await coord.async_check_sun_tracking_gate_template_change(None, [])
     assert coord.state_change is True
     coord.async_refresh.assert_awaited_once()
+
+
+def test_no_wake_is_armed_while_the_master_toggle_is_off():
+    """A disabled cover must not anchor a grace window it can never act on.
+
+    ``ConditionGate.seconds_until_fallback`` *observes* in order to answer, so an
+    unguarded call would arm a wake for a gate whose verdict cannot change what
+    the cover does. The guard lives in the builder rather than at the coordinator
+    call site so it holds for every caller.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_ENABLE_SUN_TRACKING
+
+    options = {CONF_SUN_TRACKING_GATE_SENSORS: ["binary_sensor.ac"]}
+    states = {"binary_sensor.ac": "off"}
+    builder, ctx = _builder(states)
+
+    with ctx:
+        builder._resolve_sun_tracking(options)
+        states["binary_sensor.ac"] = None
+        builder._resolve_sun_tracking(options)
+        # Tracking on: a held verdict arms a wake.
+        assert builder.seconds_until_sun_tracking_gate_fallback(options) is not None
+        # Tracking off: nothing to wake for.
+        off = {**options, CONF_ENABLE_SUN_TRACKING: False}
+        assert builder.seconds_until_sun_tracking_gate_fallback(off) is None
