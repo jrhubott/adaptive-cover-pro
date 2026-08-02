@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import zoneinfo
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,6 +22,45 @@ def _make_manager(mock_hass=None):
     logger.info = MagicMock()
     logger.error = MagicMock()
     return TimeWindowManager(hass=hass, logger=logger)
+
+
+_TIME_WINDOW = "custom_components.adaptive_cover_pro.managers.time_window"
+
+# The fixed HA-local "now" every date-sensitive fixture in this module is built
+# from. Production anchors on ``local_now_naive()`` (HA's configured zone), so a
+# fixture built from ``dt.datetime.now()`` / ``dt.date.today()`` sits in the HOST
+# frame instead and the two dates diverge by the zone offset for part of every
+# day. While they diverge, a "tomorrow" fixture is really HA-today: normalization
+# never runs and the test quietly stops guarding rather than failing (#1161).
+_HA_NOW = dt.datetime(2090, 6, 15, 12, 0, 0)
+
+
+@contextmanager
+def _patch_time_window(parsed, *, now=_HA_NOW, safe_state="irrelevant-raw-state"):
+    """Patch time_window's entity reads and its clock to a fixed HA-local ``now``.
+
+    Args:
+        parsed: What ``get_datetime_from_str`` yields — a single datetime, or an
+            iterable of datetimes handed out in call order.
+        now: The value ``local_now_naive`` returns (defaults to ``_HA_NOW``).
+        safe_state: The raw entity state ``get_safe_state`` returns.
+
+    """
+    if isinstance(parsed, dt.datetime):
+        parsed_patch = patch(
+            f"{_TIME_WINDOW}.get_datetime_from_str", return_value=parsed
+        )
+    else:
+        values = iter(parsed)
+        parsed_patch = patch(
+            f"{_TIME_WINDOW}.get_datetime_from_str", side_effect=lambda _: next(values)
+        )
+    with (
+        patch(f"{_TIME_WINDOW}.get_safe_state", return_value=safe_state),
+        parsed_patch,
+        patch(f"{_TIME_WINDOW}.local_now_naive", return_value=now),
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -59,27 +99,13 @@ def test_after_start_time_entity_evaluates_correctly():
         end_time_entity=None,
     )
 
-    # Pin "now" to a fixed HA-local sentinel and build the fixture from it, so
-    # both sides of the comparison sit in the same frame on any host zone
-    # (#1161) — a host-clock fixture drifts out of frame by the zone offset.
-    now = dt.datetime(2090, 6, 15, 12, 0, 0)
+    # "now" is pinned to the fixed HA-local sentinel and the fixture is built
+    # from it, so both sides of the comparison sit in the same frame on any host
+    # zone (#1161) — a host-clock fixture drifts out of frame by the zone offset.
     # An hour before that sentinel, so now >= time is True.
-    past_time = now - dt.timedelta(hours=1)
+    past_time = _HA_NOW - dt.timedelta(hours=1)
 
-    with (
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="2024-01-01T07:00:00",
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-            return_value=past_time,
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
-            return_value=now,
-        ),
-    ):
+    with _patch_time_window(past_time, safe_state="2024-01-01T07:00:00"):
         result = mgr.after_start_time
 
     assert result is True
@@ -551,25 +577,13 @@ def test_normalize_to_today_uses_ha_local_date_not_host_clock():
         end_time_entity=None,
     )
 
-    # The HA-local sentinel's date is 2090-06-15.
-    sentinel = dt.datetime(2090, 6, 15, 12, 0, 0)
-    # Entity reports "tomorrow" relative to the sentinel's date.
-    tomorrow_relative_to_sentinel = dt.datetime(2090, 6, 16, 6, 30, 0)
+    # The HA-local sentinel's date is 2090-06-15; the entity reports "tomorrow"
+    # relative to it.
+    tomorrow_relative_to_sentinel = dt.datetime.combine(
+        _HA_NOW.date() + dt.timedelta(days=1), dt.time(6, 30)
+    )
 
-    with (
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="irrelevant-raw-state",
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-            return_value=tomorrow_relative_to_sentinel,
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
-            return_value=sentinel,
-        ),
-    ):
+    with _patch_time_window(tomorrow_relative_to_sentinel):
         mgr.after_start_time
 
     # Normalized onto the HA-local sentinel's date (2090-06-15), not whatever
@@ -780,31 +794,17 @@ def test_end_time_entity_normalizes_tomorrow_to_today():
         end_time_entity="sensor.sun_next_setting",
     )
 
-    # "Today" is pinned to a fixed HA-local sentinel rather than the host date,
+    # "Today" is pinned to the fixed HA-local sentinel rather than the host date,
     # so the entity value below is tomorrow *in the frame _normalize_to_today
     # anchors on* and normalization is exercised on every host zone. Deriving
     # it from dt.date.today() lets the two dates diverge, at which point the
     # value stops looking like "tomorrow" and this #226 guard silently stops
     # guarding instead of failing (#1161).
-    now = dt.datetime(2090, 6, 15, 12, 0, 0)
-    today = now.date()
+    today = _HA_NOW.date()
     tomorrow = today + dt.timedelta(days=1)
     tomorrow_sunset = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 20, 30)
 
-    with (
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="irrelevant-raw-state",
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-            return_value=tomorrow_sunset,
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
-            return_value=now,
-        ),
-    ):
+    with _patch_time_window(tomorrow_sunset):
         result = mgr.end_time
 
     expected = dt.datetime(today.year, today.month, today.day, 20, 30)
@@ -825,24 +825,10 @@ def test_end_time_entity_no_normalize_when_today():
     # "Today" comes from the same fixed HA-local sentinel _normalize_to_today
     # anchors on; a dt.date.today() fixture sits in the host frame and the two
     # dates diverge by the zone offset for part of every day (#1161).
-    now = dt.datetime(2090, 6, 15, 12, 0, 0)
-    today = now.date()
+    today = _HA_NOW.date()
     today_sunset = dt.datetime(today.year, today.month, today.day, 20, 30)
 
-    with (
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="irrelevant-raw-state",
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-            return_value=today_sunset,
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
-            return_value=now,
-        ),
-    ):
+    with _patch_time_window(today_sunset):
         result = mgr.end_time
 
     assert result == today_sunset
@@ -852,8 +838,17 @@ def test_end_time_entity_no_normalize_when_today():
 def test_is_active_with_sun_entities_after_rollover():
     """Both sun entities rolled to tomorrow — is_active returns True, no error logged.
 
-    Uses sunrise=00:01 and sunset=23:59 so the window is always active regardless
-    of when the test runs. Verifies normalization integrates correctly end-to-end.
+    "Today" is pinned to the fixed HA-local sentinel rather than
+    ``dt.date.today()``: production anchors ``_normalize_to_today`` on HA's
+    configured zone, so a host-clock fixture is only really "tomorrow" while the
+    two dates agree. Wherever HA's date leads the host's, the fixture's tomorrow
+    IS HA-today, normalization never runs, and the 00:01/23:59 extremes keep the
+    window open anyway — so this #226 guard passed vacuously instead of failing
+    (#1161).
+
+    Sunrise=00:01 and sunset=23:59 straddle the pinned midday "now"; the
+    assertions on the resolved start/end prove normalization actually fired
+    rather than letting the window extremes carry a skipped normalize.
     """
     mgr = _make_manager()
     mgr.update_config(
@@ -863,30 +858,25 @@ def test_is_active_with_sun_entities_after_rollover():
         end_time_entity="sensor.sun_next_setting",
     )
 
-    today = dt.date.today()
+    today = _HA_NOW.date()
     tomorrow = today + dt.timedelta(days=1)
-    # Use extreme times so the window is active regardless of when the test runs
     tomorrow_sunrise = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 1)
     tomorrow_sunset = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 59)
 
     # is_active evaluates before_end_time first (calls end_time → get_datetime_from_str),
-    # then after_start_time (calls get_datetime_from_str again). Iterator must match that order.
-    parsed_values = iter([tomorrow_sunset, tomorrow_sunrise])
-
-    with (
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="irrelevant-raw-state",
-        ),
-        patch(
-            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-            side_effect=lambda _: next(parsed_values),
-        ),
-    ):
+    # then after_start_time (calls get_datetime_from_str again); the trailing value
+    # serves the explicit end_time re-read below. Iterator must match that order.
+    with _patch_time_window([tomorrow_sunset, tomorrow_sunrise, tomorrow_sunset]):
         result = mgr.is_active
+        resolved_end = mgr.end_time
 
     assert result is True
     mgr.logger.error.assert_not_called()
+    # Both entity values were pinned back onto the HA-local date. A skipped
+    # normalize leaves them on `tomorrow` and fails here loudly, instead of
+    # riding the window extremes to a silent pass.
+    assert mgr.start_time_value == dt.datetime(today.year, today.month, today.day, 0, 1)
+    assert resolved_end == dt.datetime(today.year, today.month, today.day, 23, 59)
 
 
 # ---------------------------------------------------------------------------
