@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -29,18 +29,29 @@ class MotionManager:
 
     """
 
-    def __init__(self, hass: HomeAssistant, logger, *, event_buffer=None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        logger,
+        *,
+        event_buffer=None,
+        template_variables: Mapping[str, Any] | None = None,
+    ) -> None:
         """Initialize the MotionManager.
 
         Args:
             hass: Home Assistant instance used to read sensor states
             logger: Logger instance for debug/info output
             event_buffer: Shared diagnostic ring buffer (optional, reserved for future events).
+            template_variables: Opaque render context threaded into the occupancy
+                template — the ``acp`` self-reference namespace built once by the
+                coordinator (issue #1159). The manager never inspects it.
 
         """
         self._hass = hass
         self._logger = logger
         self._event_buffer = event_buffer
+        self._template_variables = template_variables
         self._events = EventRecorder(event_buffer, now_fn=self._now)
 
         self._sensors: list[str] = []
@@ -112,7 +123,9 @@ class MotionManager:
     @property
     def template_active(self) -> bool:
         """Return True when the occupancy template is set and renders truthy."""
-        return render_condition(self._hass, self._template)
+        return render_condition(
+            self._hass, self._template, variables=self._template_variables
+        )
 
     @property
     def template_mode(self) -> str:

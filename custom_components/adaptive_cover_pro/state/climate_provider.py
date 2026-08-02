@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from operator import ge, le
-from typing import TYPE_CHECKING
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping
 
 from ..const import DEFAULT_TEMPLATE_COMBINE_MODE
 from ..engine.climate_crossings import (
@@ -80,10 +80,22 @@ class ClimateReadings:
 class ClimateProvider:
     """Reads climate-related HA entities and returns a ClimateReadings snapshot."""
 
-    def __init__(self, hass: HomeAssistant, logger: ConfigContextAdapter) -> None:
-        """Initialize with HA instance and logger."""
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        logger: ConfigContextAdapter,
+        *,
+        template_variables: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Initialize with HA instance, logger, and the shared render context.
+
+        ``template_variables`` is the ``acp`` self-reference namespace built once
+        by the coordinator (issue #1159), threaded into the is_sunny / presence
+        condition templates. Opaque here — the provider never inspects it.
+        """
         self._hass = hass
         self._logger = logger
+        self._template_variables = template_variables
         self._area_resolver = AreaSensorResolver(hass)
         # Last authoritative is_sunny opinion, held across a transient invalid
         # sensor/template read so a blip cannot substitute a lower-authority
@@ -341,6 +353,7 @@ class ClimateProvider:
             presence_template_mode,
             others_truthy=is_entity_active(self._hass, presence_entity),
             has_others=bool(presence_entity),
+            variables=self._template_variables,
         )
         if combined is not None:
             return combined
@@ -380,6 +393,7 @@ class ClimateProvider:
             is_sunny_template_mode,
             others_truthy=sensor_state == "on",
             has_others=has_sensor,
+            variables=self._template_variables,
         )
         if combined is not None:
             self._logger.debug(

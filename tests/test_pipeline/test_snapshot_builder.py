@@ -1366,3 +1366,48 @@ def test_tilt_only_wins_over_tilt_bounds():
     assert state.tilt_mode is AxisConstraintMode.FIXED
     assert state.tilt_min is None
     assert state.tilt_max is None
+
+
+# ---------------------------------------------------------------------------
+# acp self-reference namespace in custom-position slot templates (issue #1159)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_custom_position_slot_template_resolves_the_acp_namespace(hass):
+    """A slot's condition template can name this instance's own entity (#1159)."""
+    from tests._helpers.acp_namespace import (
+        acp_variables,
+        make_acp_entry,
+        seed_sun_infront,
+    )
+
+    entry = make_acp_entry(hass, "slot_acp_01")
+    entity_id = seed_sun_infront(hass, entry, "on")
+    await hass.async_block_till_done()
+
+    climate_provider = MagicMock(spec=ClimateProvider)
+    climate_provider.read.return_value = _dummy_readings()
+    policy = MagicMock()
+    policy.glare_zones_config.return_value = None
+
+    builder = PipelineSnapshotBuilder(
+        hass=hass,
+        logger=MagicMock(),
+        climate_provider=climate_provider,
+        toggles=MagicMock(),
+        policy=policy,
+        config_service=MagicMock(),
+        template_variables=acp_variables(hass, entry),
+    )
+
+    slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        slot_keys["template"]: "{{ is_state(acp.sun_infront, 'on') }}",
+        slot_keys["position"]: 42,
+    }
+    assert builder.read_custom_position_sensors(opts)[0].is_on is True
+
+    hass.states.async_set(entity_id, "off")
+    await hass.async_block_till_done()
+    assert builder.read_custom_position_sensors(opts)[0].is_on is False

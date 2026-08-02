@@ -691,3 +691,64 @@ def test_severe_template_in_building_profile_schema():
     keys = _schema_keys(building_profile_sensors_schema())
     assert CONF_WEATHER_SEVERE_TEMPLATE in keys
     assert CONF_WEATHER_SEVERE_TEMPLATE_MODE in keys
+
+
+# --- acp self-reference namespace in weather condition templates (issue #1159) ---
+
+
+def _make_weather_mgr_with_ctx(
+    hass,
+    entry,
+    *,
+    is_raining_template=None,
+    is_windy_template=None,
+    severe_template=None,
+):
+    """Build a real WeatherManager wired to *entry*'s acp render context."""
+    from tests._helpers.acp_namespace import acp_variables
+
+    mgr = WeatherManager(
+        hass=hass,
+        logger=MagicMock(),
+        template_variables=acp_variables(hass, entry),
+    )
+    mgr.update_config(
+        wind_speed_sensor=None,
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+        is_raining_template=is_raining_template,
+        is_windy_template=is_windy_template,
+        severe_template=severe_template,
+        enabled=True,
+    )
+    return mgr
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field", ["is_raining_template", "is_windy_template", "severe_template"]
+)
+async def test_weather_templates_resolve_the_acp_namespace(hass, field):
+    """All three weather fold sites thread the same render context (#1159)."""
+    from tests._helpers.acp_namespace import make_acp_entry, seed_sun_infront
+
+    entry = make_acp_entry(hass, f"weather_acp_{field}")
+    entity_id = seed_sun_infront(hass, entry, "on")
+    await hass.async_block_till_done()
+
+    mgr = _make_weather_mgr_with_ctx(
+        hass, entry, **{field: "{{ is_state(acp.sun_infront, 'on') }}"}
+    )
+    assert mgr.is_any_condition_active is True
+
+    hass.states.async_set(entity_id, "off")
+    await hass.async_block_till_done()
+    assert mgr.is_any_condition_active is False

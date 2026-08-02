@@ -34,8 +34,8 @@ the same composed-class pattern that Phase B established with
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping
 
 from homeassistant.const import ATTR_FRIENDLY_NAME, STATE_ON
 
@@ -188,6 +188,7 @@ class PipelineSnapshotBuilder:
         config_service: ConfigurationService,
         time_mgr: TimeWindowManager | None = None,
         clock: Callable[[], float] = time.monotonic,
+        template_variables: Mapping[str, Any] | None = None,
     ) -> None:
         """Bind the builder to its long-lived collaborators.
 
@@ -195,6 +196,10 @@ class PipelineSnapshotBuilder:
         custom-position hold window (issue #1012) — injected so tests can
         advance it deterministically, matching the convention already used by
         ``TimeWindowManager`` / ``GracefulSource`` for their grace windows.
+
+        ``template_variables`` is the ``acp`` self-reference render context
+        built once by the coordinator (issue #1159), threaded into each
+        custom-position slot's condition template. Opaque here.
         """
         self._hass = hass
         self._logger = logger
@@ -204,6 +209,7 @@ class PipelineSnapshotBuilder:
         self._config_service = config_service
         self._time_mgr = time_mgr
         self._clock = clock
+        self._template_variables = template_variables
         # Last VALID per-slot read, keyed by slot number (issue #1005). Written
         # only on a valid read; on an invalid read (transient unavailable /
         # unknown / missing sensor) the slot's activation is held to this so a
@@ -460,7 +466,11 @@ class PipelineSnapshotBuilder:
             # render (no opinion). A rendered opinion is both the activation
             # signal and a valid input for the slot.
             template_opinion = (
-                render_condition_or_none(self._hass, template) if has_template else None
+                render_condition_or_none(
+                    self._hass, template, variables=self._template_variables
+                )
+                if has_template
+                else None
             )
             template_active = bool(template_opinion) if has_template else None
             template_valid = template_opinion is not None
