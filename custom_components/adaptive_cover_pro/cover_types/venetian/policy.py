@@ -707,6 +707,34 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         )
         return {self.axes[1].name: tilt}
 
+    def entities_move_independently(self) -> bool:
+        """Venetian blinds on one instance are unrelated covers (#1174).
+
+        The base predicate derives its answer from three hooks, and this policy
+        trips one of them: it overrides ``post_pipeline_resolve``. That hook's
+        only write to ``PipelineResult.position`` is
+        :meth:`_pin_tilt_only_carriage`, and that pin is skipped for every
+        control method in ``_EXPLICIT_USER_POSITION_METHODS`` — which contains
+        both ``MANUAL`` and ``GROUP_LOCK``, the only two winners that ever set
+        ``held_position`` and so the only two the registry ever judges per
+        cover. Under a hold this hook resolves a tilt and leaves the position
+        exactly as the registry left it, which is the condition the base
+        predicate is really asking about.
+
+        Nothing else here is per-entity: ``resolve_entity_target`` is the
+        identity default (one slat angle and one carriage position per cover),
+        and ``dispatch_order_key`` is the constant default because two venetian
+        blinds share no track. That makes the per-cover path both safe and
+        worth having: a tilt bound that outranks a hold has to reach every
+        cover's slats without moving anybody's carriage, which is precisely
+        what one shared position cannot express.
+
+        ``tests/test_cover_types/test_venetian_post_pipeline.py`` locks the
+        premise — if the pin ever starts firing under a hold, that test fails
+        rather than this silently becoming wrong.
+        """
+        return True
+
     def post_pipeline_resolve(
         self,
         result: PipelineResult,

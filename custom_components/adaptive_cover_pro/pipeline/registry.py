@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+from collections.abc import Mapping
 
 from ..const import AxisConstraintMode, ReasonCode
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
@@ -22,7 +23,13 @@ from .axis_constraints import (
 )
 from .handler import OverrideHandler
 from .tilt_axis import resolve_tilt_axis_from
-from .types import DecisionStep, PipelineResult, PipelineSnapshot
+from .types import (
+    DecisionStep,
+    HoldClampVerdict,
+    PipelineResult,
+    PipelineSnapshot,
+    PositionAxisJudgment,
+)
 
 
 def _normalize_reason(value: str | Reason) -> tuple[str, Reason | None]:
@@ -106,6 +113,170 @@ def _split_bounds_against_hold(
     return binding, yielded
 
 
+def _judges_per_cover(snapshot: PipelineSnapshot) -> bool:
+    """Whether this instance's covers may be judged one at a time (#1174).
+
+    Delegated whole to ``CoverTypePolicy.entities_move_independently`` — the
+    registry asks the polymorphic hook and never inspects a cover-type string
+    (CODING_GUIDELINES § "Cover Type Abstraction"). ``snapshot.policy or
+    get_policy(snapshot.cover_type)`` is the same resolution the glare-zone,
+    group-scene and climate handlers already use, so a snapshot built without a
+    policy object still gets its own cover type's answer rather than a default.
+
+    Local import: ``cover_types`` pulls in policies that import from
+    ``pipeline``, so a module-level import here would close the cycle — the same
+    reason ``axis_constraints.gather_axis_constraints`` imports its handler
+    locally.
+    """
+    from ..cover_types import get_policy
+
+    policy = snapshot.policy or get_policy(snapshot.cover_type)
+    return policy.entities_move_independently()
+
+
+def _judge_position_axis(
+    winner,
+    snapshot: PipelineSnapshot,
+    floor_pos: int | None,
+    ceiling_pos: int | None,
+) -> PositionAxisJudgment:
+    """Resolve what the composed position bounds do to this cycle's winner.
+
+    The single site that asks "where will the cover actually end up, and did a
+    composed bound move it?" — for both kinds of winner, so the two answers
+    cannot drift apart.
+
+    **A computed winner** proposes ``winner.position``, already in the logical
+    frame, and is clamped unconditionally (#463). One position, no verdicts:
+    unchanged from before #1174, and the only path a non-hold winner takes.
+
+    **A hold winner** keeps physical positions rather than proposing a computed
+    one, and on a multi-cover instance ``winner.held_position`` is the group's
+    *mean* — nobody's position. Judging the bounds against that mean dragged
+    compliant covers to a floor they already satisfied and hid a lone violator
+    behind its compliant siblings (#1174). So each cover is judged on its own
+    position and carries its own resolved target, because one shared number
+    cannot serve them all: a floor and a ceiling that both outrank the holder
+    bind different covers in opposite directions, and ``clamp_to_bounds``
+    applies the floor last, so the shared ``final_pos`` can only ever name one
+    of the two edges.
+
+    **Judged set** (holds only). ``snapshot.cover_positions`` when it carries
+    entries AND this cover type's entities move independently — a cover with an
+    unknown position falls back to the summary ``winner.held_position``, which
+    is today's judgment kept exactly for the covers where per-entity data is
+    missing. Otherwise a single pseudo-entry ``{None: winner.held_position}``,
+    reproducing the legacy singular comparison byte-for-byte; ``verdicts`` is
+    ``None`` on that path so every pre-#1174 consumer stays on the singular
+    ``skip_command`` route.
+
+    **The independence gate** is the policy's own
+    ``entities_move_independently`` (``cover_types/base.py``), never a
+    cover-type test here — CODING_GUIDELINES § "Cover Type Abstraction". A type
+    that remaps a shared position per entity, rewrites it after the pipeline, or
+    orders physically coupled entities has no per-cover question to answer: its
+    entities express ONE geometry, and judging them apart both double-applies
+    the remap and bypasses the rewrite. Those instances keep the shared target
+    they had before #1174.
+
+    **Frames.** Held positions are RAW cover-frame reads and the bounds are
+    logical user values, so each is converted before comparing — the #1036
+    conversion, now applied per cover instead of once to the mean. Every
+    ``target`` is on the logical side of that conversion, matching
+    ``PipelineResult.position``, so the coordinator maps it to the wire through
+    the same ``_to_cover_frame`` seam it already uses for the shared value.
+
+    For a hold, ``effective_winner_pos`` names the *violating* cover — the
+    lowest judged position when a floor raised, the highest when a ceiling
+    lowered — so the clamp step's ``from_pos`` reads as a real cover's position
+    rather than a mean nobody sits at. ``raise_from`` / ``lower_from`` keep both
+    of those, because a floor and a ceiling can bind different covers in the
+    same cycle and each clamp step then owes its own honest starting point.
+    """
+    if winner.held_position is None:
+        final = clamp_to_bounds(winner.position, floor_pos, ceiling_pos)
+        raised = final > winner.position
+        lowered = final < winner.position
+        return PositionAxisJudgment(
+            effective_winner_pos=winner.position,
+            final_pos=final,
+            raised=raised,
+            lowered=lowered,
+            raise_from=winner.position if raised else None,
+            lower_from=winner.position if lowered else None,
+            verdicts=None,
+        )
+    per_entity = snapshot.cover_positions or None
+    if per_entity is not None and not _judges_per_cover(snapshot):
+        per_entity = None
+    judged: Mapping[str | None, int | None] = (
+        per_entity if per_entity is not None else {None: winner.held_position}
+    )
+    verdicts: dict[str, HoldClampVerdict] = {}
+    effective_positions: list[int] = []
+    raised = False
+    lowered = False
+    for entity_id, position in judged.items():
+        raw = position if position is not None else winner.held_position
+        eff = flip_if(raw, inverted=snapshot.position_axis_inverted)
+        # This cover's own answer, and the only one that can be right for it:
+        # the edge that binds IT when a bound does, and where it already sits
+        # when none does — which is what a command forced by the other axis
+        # has to carry so the hold survives it.
+        fin = clamp_to_bounds(eff, floor_pos, ceiling_pos)
+        effective_positions.append(eff)
+        raised = raised or fin > eff
+        lowered = lowered or fin < eff
+        if entity_id is not None:
+            verdicts[entity_id] = HoldClampVerdict(
+                held_position=raw, released=fin != eff, target=fin
+            )
+    if raised:
+        effective_winner_pos = min(effective_positions)
+    elif lowered:
+        effective_winner_pos = max(effective_positions)
+    else:
+        effective_winner_pos = flip_if(
+            winner.held_position, inverted=snapshot.position_axis_inverted
+        )
+    return PositionAxisJudgment(
+        effective_winner_pos=effective_winner_pos,
+        final_pos=clamp_to_bounds(effective_winner_pos, floor_pos, ceiling_pos),
+        raised=raised,
+        lowered=lowered,
+        raise_from=min(effective_positions) if raised else None,
+        lower_from=max(effective_positions) if lowered else None,
+        verdicts=verdicts if per_entity is not None else None,
+    )
+
+
+def _command_every_held_cover(
+    verdicts: Mapping[str, HoldClampVerdict] | None,
+) -> Mapping[str, HoldClampVerdict] | None:
+    """Release every verdict, each to the target it already resolved (#1174).
+
+    A tilt clamp is a command, not a no-op (#1170 audit): it clears
+    ``skip_command`` for the whole group because the slats have to reach the
+    hardware, and a cover the position axis never released still has to receive
+    that command. What it must NOT receive is the position axis's clamp target
+    — a cover held above a floor is not a reason to close it 40 points, and
+    that is exactly what a shared value does here. Each verdict already carries
+    its own target: the bound edge for a cover a bound moved, and its own
+    position for one nothing moved, which the same-position gate turns into a
+    pure secondary-axis service call (#954).
+
+    ``None`` (a computed winner, or a snapshot with no per-entity positions)
+    passes straight through — those cycles are already on the singular path
+    ``_release_hold_for_tilt_clamp`` cleared.
+    """
+    if verdicts is None:
+        return None
+    return {
+        entity_id: dataclasses.replace(verdict, released=True)
+        for entity_id, verdict in verdicts.items()
+    }
+
+
 def _release_hold_for_tilt_clamp(
     winner,
     trace: list[DecisionStep],
@@ -149,20 +320,126 @@ def _release_hold_for_tilt_clamp(
     return dataclasses.replace(winner, position=effective_winner_pos)
 
 
-def _iter_nonbinding_bounds(constraints: list, axis: str, binding):
+def _clamp_step(
+    constraints: list,
+    *,
+    low: bool,
+    from_pos: int,
+    to_pos: int,
+    code: ReasonCode,
+    extra: dict | None = None,
+):
+    """Build one matched position-clamp step, plus the bound that produced it.
+
+    ``low`` selects the direction — the floor edge (True) or the ceiling edge
+    (False) — and drives BOTH the ``bounding_constraint`` lookup and the step's
+    handler name, so the trace can never credit one slot while the inactive
+    sweep treats a different one as binding. Returning the constraint alongside
+    the step is what lets a two-sided clamp (#1174: a floor and a ceiling
+    binding different covers) hand the sweep both bounds without restating the
+    lookup (CODING_GUIDELINES § No Duplication).
+    """
+    binding = bounding_constraint(constraints, AXIS_NAME_POSITION, to_pos, low=low)
+    label = (
+        binding.label
+        if binding is not None
+        else constraint_label(constraints, AXIS_NAME_POSITION)
+    )
+    # Both endpoints are logical now that the judged positions are converted
+    # up front, so "floor raised from X% to Y%" no longer mixes a motor reading
+    # with a user-typed bound (#1036).
+    params: dict = {"from_pos": from_pos, "to_pos": to_pos, "label": label}
+    if extra:
+        params.update(extra)
+    step = DecisionStep(
+        handler="floor_clamp" if low else "ceiling_clamp",
+        matched=True,
+        reason_payload=Reason(code, params),
+        position=to_pos,
+    )
+    return step, binding
+
+
+def _position_clamp_steps(
+    constraints: list,
+    judgment: PositionAxisJudgment,
+    *,
+    floor_pos: int | None,
+    ceiling_pos: int | None,
+    floor_wins: bool,
+    two_sided: bool,
+) -> tuple[list[DecisionStep], list]:
+    """Emit the matched position-clamp step(s), plus the bound(s) behind them.
+
+    One step for the ordinary single-direction clamp, and TWO when a floor and
+    a ceiling each bound a different cover in the same cycle (#1174) — a shape
+    only per-cover judging can produce, and one the shared ``final_pos`` cannot
+    describe on its own. Returns an empty pair when nothing clamped.
+
+    The bounds come back with the steps because the inactive-bound sweep has to
+    skip exactly the ones that bound; resolving them twice is how a bound ends
+    up both credited with a clamp and reported as having done nothing.
+    """
+    if two_sided:
+        floor_step, floor_binding = _clamp_step(
+            constraints,
+            low=True,
+            from_pos=judgment.raise_from,
+            to_pos=floor_pos,
+            code=ReasonCode.REGISTRY_FLOOR_RAISED,
+        )
+        ceiling_step, ceiling_binding = _clamp_step(
+            constraints,
+            low=False,
+            from_pos=judgment.lower_from,
+            to_pos=ceiling_pos,
+            code=ReasonCode.REGISTRY_CEILING_LOWERED,
+        )
+        return [floor_step, ceiling_step], [floor_binding, ceiling_binding]
+    if not (judgment.raised or judgment.lowered):
+        return [], []
+    extra: dict | None = None
+    if not floor_wins:
+        code = ReasonCode.REGISTRY_CEILING_LOWERED
+    elif judgment.raised:
+        code = ReasonCode.REGISTRY_FLOOR_RAISED
+    else:
+        # The floor won a conflict but the winner started above it: the net
+        # move is a lowering, so "floor raised from 80% to 60%" would
+        # contradict itself. A floor-wins step names the floor as the
+        # determining bound without implying a direction (audit finding C).
+        code = ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING
+        extra = {"ceiling_pos": ceiling_pos}
+    step, binding = _clamp_step(
+        constraints,
+        low=floor_wins,
+        from_pos=judgment.effective_winner_pos,
+        to_pos=judgment.final_pos,
+        code=code,
+        extra=extra,
+    )
+    return [step], [binding]
+
+
+def _iter_nonbinding_bounds(constraints: list, axis: str, bindings):
     """Yield the active bounded constraints on ``axis`` that did not bind.
 
     Shared by the position and tilt inactive-step passes so the axis filter,
-    the FIXED skip, and the ``binding``-by-identity skip live in one place
+    the FIXED skip, and the ``bindings``-by-identity skip live in one place
     (CODING_GUIDELINES § No Duplication). Skipping by *identity* rather than by
     value keeps a losing tie-bound visible — two slots at the same floor no
     longer collapse into one trace entry (audit finding 4b).
+
+    ``bindings`` is a collection because the position axis can have TWO bounds
+    bind in one cycle once covers are judged individually (#1174) — a floor on
+    one cover and a ceiling on another. Either of them left out of this set
+    would be re-reported as having done nothing, which is the opposite of true.
     """
     for c in constraints:
         if c.axis != axis or c.kind is AxisConstraintMode.FIXED:
             continue
-        if c is binding:
-            continue  # this bound *did* bind — already emitted as the clamp
+        if any(c is b for b in bindings):
+            continue  # this bound *did* bind — already emitted as a clamp
         yield c
 
 
@@ -172,7 +449,7 @@ def _inactive_position_steps(
     winner_pos: int,
     final_pos: int,
     floor_wins: bool,
-    binding,
+    bindings,
 ) -> list[DecisionStep]:
     """Explain every position bound that was active but did not bind.
 
@@ -180,9 +457,10 @@ def _inactive_position_steps(
     unhelpful ``describe_skip`` step (the registry drops those). Give each
     non-binding bound a step saying it was evaluated and why it did nothing.
 
-    ``binding`` is the single constraint that produced this cycle's clamp (None
-    when nothing clamped); it is skipped, since it was already emitted as the
-    matched clamp step.
+    ``bindings`` holds the constraints that produced this cycle's clamps (empty
+    when nothing clamped, two when a floor and a ceiling bound different
+    covers); each is skipped, since it was already emitted as a matched clamp
+    step.
 
     A ceiling the floor beat is reported as *overridden*, not *inactive*: when
     the floor won the conflict (``floor_wins``) it sits above that ceiling, so
@@ -198,7 +476,7 @@ def _inactive_position_steps(
     resolved position equals the winner's (audit finding ii).
     """
     steps: list[DecisionStep] = []
-    for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_POSITION, binding):
+    for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_POSITION, bindings):
         if c.low is not None:
             steps.append(
                 DecisionStep(
@@ -252,7 +530,7 @@ def _inactive_tilt_steps(
     claim when the tilt was really clamped elsewhere (audit finding i).
     """
     steps: list[DecisionStep] = []
-    for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_TILT, binding):
+    for c in _iter_nonbinding_bounds(constraints, AXIS_NAME_TILT, (binding,)):
         steps.append(
             DecisionStep(
                 handler=c.source,
@@ -445,22 +723,18 @@ class PipelineRegistry:
         # ``group_lock`` sets it too; every other handler leaves it None, so
         # this preserves the existing behaviour exactly for computed winners.
         #
-        # ``held_position`` is a RAW cover-frame read, deliberately so — the
-        # coordinator publishes it as a cover-frame diagnostic extra, "one
-        # frame for every hold type" (#1028). The bounds it is compared against
-        # are logical (pre-inversion canonical) user values, so convert HERE,
-        # at the one site that does the comparing, rather than re-framing the
-        # field itself. Without this the registry asks "is 25%-open above
-        # 75%-open?" on an inverse install and answers wrong in both
-        # directions: a compliant cover held at logical 80 gets *lowered* to a
-        # logical-25 floor (#1036). A no-op on non-inverse installs.
-        effective_winner_pos = (
-            flip_if(winner.held_position, inverted=snapshot.position_axis_inverted)
-            if winner.held_position is not None
-            else winner.position
-        )
-        final_pos = clamp_to_bounds(effective_winner_pos, floor_pos, ceiling_pos)
-        # A floor "raises" when it lifts the cover above where it would actually
+        # ONE evaluation per cycle still produces ONE shared result, and every
+        # singular field below keeps the value it always had. What
+        # ``_judge_position_axis`` adds is a per-cover verdict for a hold
+        # (#1174) — whether each bound cover is moved at all, and to where —
+        # because ``held_position`` is the instance MEAN, and no single number
+        # can stand in for the group once a floor and a ceiling bind different
+        # covers in opposite directions. It also owns the #1036 cover→logical
+        # frame conversion, now applied per cover rather than once to the mean.
+        # A computed winner keeps its own position and no verdicts, exactly as
+        # before.
+        #
+        # A floor "raises" when it lifts a cover above where it would actually
         # end up.  Key on the *effective* position — NOT on
         # ``clamped_position != winner.position`` — so the raise still fires on
         # the alignment edge where the floor equals the would-be ``position`` but
@@ -468,8 +742,12 @@ class PipelineRegistry:
         # held below it must still be lifted; issue #809).  Because
         # ``clamp_to_bounds`` applies the floor last, a floor above a ceiling
         # still reads as a raise — the deliberate conflict rule.
-        raised = final_pos > effective_winner_pos
-        lowered = final_pos < effective_winner_pos
+        judgment = _judge_position_axis(winner, snapshot, floor_pos, ceiling_pos)
+        effective_winner_pos = judgment.effective_winner_pos
+        final_pos = judgment.final_pos
+        raised = judgment.raised
+        lowered = judgment.lowered
+        hold_clamp_verdicts = judgment.verdicts
         position_clamped = raised or lowered
         # In a floor/ceiling conflict ``clamp_to_bounds`` applies the floor last,
         # so the floor always determines the final value (== floor_pos) no matter
@@ -487,50 +765,28 @@ class PipelineRegistry:
         # Unchanged position keeps the winner's own value (today's behaviour:
         # an inert bound must not overwrite ``position`` with ``held_position``).
         clamped_position = final_pos if position_clamped else winner.position
-        # The single constraint that actually bound — resolved back from the
-        # composed value so the trace credits the one slot that produced the
-        # move, not the join of every active bound (audit finding 4a).
-        position_binding = (
-            bounding_constraint(
-                bound_constraints, AXIS_NAME_POSITION, final_pos, low=floor_wins
-            )
-            if position_clamped
-            else None
+        # Two bounds can bind in ONE cycle once each cover is judged on its own
+        # position (#1174): a floor lifting the low cover while a ceiling lowers
+        # the high one. ``final_pos`` is a single number and ``clamp_to_bounds``
+        # applies the floor last, so the shared field can only ever name the
+        # floor's edge — leaving the ceiling to fall through to the "did
+        # nothing" sweep and be reported as inactive while it was busy moving a
+        # cover to 70. So each side that really bound states itself. Excluded in
+        # a floor/ceiling CONFLICT, where the floor alone produced both
+        # directions and the ceiling bound nobody.
+        two_sided = raised and lowered and not floor_conflict
+        # The constraints that actually bound — resolved back from the composed
+        # values so the trace credits the slots that produced the moves, not the
+        # join of every active bound (audit finding 4a).
+        clamp_steps, position_bindings = _position_clamp_steps(
+            bound_constraints,
+            judgment,
+            floor_pos=floor_pos,
+            ceiling_pos=ceiling_pos,
+            floor_wins=floor_wins,
+            two_sided=two_sided,
         )
-        if position_clamped:
-            source = "floor_clamp" if floor_wins else "ceiling_clamp"
-            label = (
-                position_binding.label
-                if position_binding is not None
-                else constraint_label(bound_constraints, AXIS_NAME_POSITION)
-            )
-            # Both endpoints are logical now that ``effective_winner_pos`` is
-            # converted above, so "floor raised from X% to Y%" no longer mixes a
-            # motor reading with a user-typed bound (#1036).
-            params = {
-                "from_pos": effective_winner_pos,
-                "to_pos": final_pos,
-                "label": label,
-            }
-            if not floor_wins:
-                code = ReasonCode.REGISTRY_CEILING_LOWERED
-            elif raised:
-                code = ReasonCode.REGISTRY_FLOOR_RAISED
-            else:
-                # The floor won a conflict but the winner started above it: the
-                # net move is a lowering, so "floor raised from 80% to 60%" would
-                # contradict itself. A floor-wins step names the floor as the
-                # determining bound without implying a direction (finding C).
-                code = ReasonCode.REGISTRY_FLOOR_OVERRIDES_CEILING
-                params["ceiling_pos"] = ceiling_pos
-            trace.append(
-                DecisionStep(
-                    handler=source,
-                    matched=True,
-                    reason_payload=Reason(code, params),
-                    position=final_pos,
-                )
-            )
+        trace.extend(clamp_steps)
         # Replace the deferral steps of the position-bound sources — those
         # steps came from the deferral path and carry an unhelpful describe_skip
         # reason. Only position sources are swept here so a tilt-only / tilt-
@@ -546,7 +802,7 @@ class PipelineRegistry:
                 winner_pos=effective_winner_pos,
                 final_pos=final_pos,
                 floor_wins=floor_wins,
-                binding=position_binding,
+                bindings=position_bindings,
             )
         )
         # A yielded bound must NOT fall through to the inactive steps above:
@@ -780,6 +1036,11 @@ class PipelineRegistry:
                 position_clamped=position_clamped,
                 effective_winner_pos=effective_winner_pos,
             )
+            # The tilt clamp commands the whole group, so every verdict says so
+            # — each still to its OWN target, which is the only thing that
+            # keeps a cover the position axis never released where the user put
+            # it (#1174).
+            hold_clamp_verdicts = _command_every_held_cover(hold_clamp_verdicts)
         # The tilt-axis overlay (issue #514) is how a FIXED contribution
         # reaches the result's tilt field. It can never collide with the
         # bound-clamp write above (the ``else: merged["tilt"] = bounded_tilt``
@@ -790,6 +1051,11 @@ class PipelineRegistry:
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
+            # Per-cover dispatch verdicts for a hold (#1174) — which covers are
+            # commanded and where each one goes. None for a computed winner and
+            # for a snapshot without per-entity positions, both of which keep
+            # that cycle on the singular path.
+            hold_clamp_verdicts=hold_clamp_verdicts,
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,
             tilt_only_contribution_active=tilt_only_active,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -414,10 +415,23 @@ class PipelineSnapshot:
     #     the sun is active; falls through to default when sun leaves FOV or window closes.
     motion_timeout_mode: str = "return_to_default"
 
-    # Mean of current entity positions (int-rounded). None when no entity reports a
-    # numeric position. Read by MotionTimeoutHandler in hold_position mode only.
+    # Summary of the current entity positions: their int-rounded mean. None when
+    # no entity reports a numeric position. Read by MotionTimeoutHandler in
+    # hold_position mode, and copied into ``PipelineResult.held_position`` by the
+    # manual-override / group-lock holds as a presentation value. It is a
+    # *summary*: no per-cover decision consumes it — the registry judges each
+    # held cover against its own entry in ``cover_positions`` below (#1174).
     # This is a RAW cover-frame read — see position_axis_inverted below.
     current_cover_position: int | None = None
+
+    # Per-entity RAW cover-frame positions — the same frame and the same source
+    # as ``current_cover_position``, which is the summary mean of these. The
+    # registry judges a hold's per-cover clamp verdicts against this dict
+    # (#1174) — but only for a cover type whose entities move independently; a
+    # coupled type's covers are judged as one, off the summary scalar. ``None``
+    # in legacy / test snapshots that predate the field: the registry then
+    # judges holds on the summary scalar exactly as before.
+    cover_positions: Mapping[str, int | None] | None = None
 
     # Whether the position axis is effectively inverted for this install
     # (inverse-state configured and not suppressed by interpolation, per
@@ -523,6 +537,89 @@ class DecisionStep:
         """Derive the English ``reason`` from ``reason_payload`` when unset."""
         if self.reason_payload is not None and not self.reason:
             object.__setattr__(self, "reason", render_en(self.reason_payload))
+
+
+@dataclass(frozen=True, slots=True)
+class HoldClampVerdict:
+    """What happens to ONE held cover this cycle — moved, and where to (#1174).
+
+    A hold winner keeps every bound cover where something authoritative already
+    put it. Whether that stops being true, and what replaces it, is a question
+    per cover and not per instance: ``PipelineResult.held_position`` is the
+    group's arithmetic MEAN, so judging it dragged compliant covers to a bound
+    they already satisfied and hid a lone violator behind its siblings.
+
+    The two fields answer the two halves of the dispatch question, and no single
+    instance-wide number can answer either:
+
+    * a floor and a ceiling that both outrank the holder bind *different* covers
+      in *opposite* directions, so the released covers do not share one target;
+    * a TILT clamp commands every held cover while the position axis released
+      nobody, so "is a command going out" is not "did a bound move me".
+
+    Only built for a cover type whose entities move independently
+    (``CoverTypePolicy.entities_move_independently``). That is what makes
+    ``target`` safe to hand straight to ``coordinator._entity_target``: a policy
+    that would remap it per entity, or rewrite it after the pipeline, produces
+    no verdicts at all and keeps its shared-target path.
+    """
+
+    #: This cover's own position, a RAW cover-frame read (matching the frame
+    #: ``PipelineSnapshot.cover_positions`` and the coordinator's held-position
+    #: diagnostic extras speak, #1028). Falls back to the summary
+    #: ``PipelineResult.held_position`` when this cover reports no position.
+    held_position: int | None
+    #: True when a command goes out to this cover this cycle: a composed
+    #: position bound moved it, or another axis forced a dispatch the whole
+    #: group has to carry. False means the hold stands and the coordinator
+    #: writes a hold-skip record instead.
+    released: bool
+    #: Where that command sends this cover, as a LOGICAL (pre-inversion,
+    #: pre-interpolation) position — the same frame ``PipelineResult.position``
+    #: speaks, so the coordinator maps it through the one ``_to_cover_frame``
+    #: seam. Equals the bound edge that bound THIS cover when a position bound
+    #: moved it, and this cover's own position when none did — which is what
+    #: makes a tilt-forced command a positional no-op. Always resolved, and
+    #: read only while ``released``.
+    target: int
+
+
+@dataclass(frozen=True, slots=True)
+class PositionAxisJudgment:
+    """What the composed position bounds did to this cycle's winner (#1174).
+
+    One return value for :func:`pipeline.registry._judge_position_axis`, which
+    answers "where does the winner actually end up, did a bound move it, and —
+    for a hold — what happens to each cover individually" in a single pass so
+    those answers cannot drift apart.
+    """
+
+    #: The position the bounds were judged against, LOGICAL frame. A computed
+    #: winner's own ``position``; for a hold, the *violating* cover's position
+    #: (lowest when a floor raised, highest when a ceiling lowered) so the
+    #: clamp trace step reads as a real cover rather than a mean nobody sits at.
+    effective_winner_pos: int
+    #: ``effective_winner_pos`` after the composed bounds, i.e. the shared
+    #: clamp target the trace and ``PipelineResult.position`` carry.
+    final_pos: int
+    #: A floor lifted at least one judged position.
+    raised: bool
+    #: A ceiling lowered at least one judged position.
+    lowered: bool
+    #: The LOWEST judged position when ``raised``, else ``None`` — the cover the
+    #: floor actually lifted, and the honest ``from_pos`` for a floor's clamp
+    #: step. Equals ``effective_winner_pos`` unless a ceiling bound a different
+    #: cover in the same cycle.
+    raise_from: int | None
+    #: The HIGHEST judged position when ``lowered``, else ``None`` — the mirror,
+    #: and the only starting point a ceiling's own clamp step can honestly name
+    #: once a floor has taken ``effective_winner_pos``.
+    lower_from: int | None
+    #: Per-cover dispatch verdicts, or ``None`` for a computed winner, for a
+    #: snapshot carrying no per-entity positions, and for a cover type whose
+    #: entities do not move independently — all of which keep the cycle on the
+    #: singular pre-#1174 path.
+    verdicts: Mapping[str, HoldClampVerdict] | None
 
 
 @dataclass(frozen=True)
@@ -633,7 +730,33 @@ class PipelineResult:
     # None when override is inactive, when current position is unknown, or for
     # all other handlers.  Consumers must use explicit `is not None` checks
     # because 0% (fully closed) is a valid held position.
+    #
+    # On a multi-cover instance this is a SUMMARY — the mean of the covers that
+    # reported a position — because the "Target Position" sensor is one entity
+    # per config entry and a scalar has to stand for the group. No decision
+    # consumes it: the per-cover truth is ``hold_clamp_verdicts`` below (and the
+    # sensor's own ``actual_positions`` attribute). It also remains the
+    # presence marker the #1170 priority gate keys on.
     held_position: int | None = None
+
+    # Per-cover dispatch verdicts for a hold winner (#1174): the sole authority
+    # on which bound covers are commanded this cycle and where each one is sent.
+    # Populated when ``held_position is not None``, the snapshot carried
+    # per-entity positions, AND this cover type's entities move independently
+    # (``CoverTypePolicy.entities_move_independently`` — a type that remaps its
+    # entities' targets, rewrites the position after the pipeline, or orders
+    # physically coupled rails expresses ONE geometry and has no per-cover
+    # question to answer). ``None`` otherwise — for every computed (non-hold)
+    # winner, for legacy snapshots without the dict, and for those coupled types
+    # — all of which keep the cycle on the singular ``skip_command`` /
+    # ``position`` path unchanged.
+    #
+    # A cover absent from the dict is likewise unjudged and falls back to that
+    # singular path. ``position`` stays the shared summary the trace and the
+    # singular surfaces carry; where a released cover actually goes is
+    # ``HoldClampVerdict.target``, which diverges from it whenever a floor and a
+    # ceiling bind different covers.
+    hold_clamp_verdicts: Mapping[str, HoldClampVerdict] | None = None
 
     # Custom position slot diagnostics — populated only when CustomPositionHandler wins.
     # custom_position_active_slot: 1-based slot number of the winning custom position handler; None otherwise.

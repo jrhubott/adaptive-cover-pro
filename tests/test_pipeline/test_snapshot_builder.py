@@ -1421,7 +1421,7 @@ async def test_custom_position_slot_template_resolves_the_acp_namespace(hass):
 # ---------------------------------------------------------------------------
 
 
-def _build_minimal(builder, opts):
+def _build_minimal(builder, opts, **extra):
     """Run builder.build() with the minimum kwargs and return the snapshot."""
     cover_data = MagicMock()
     cover_data.config = MagicMock()
@@ -1440,6 +1440,7 @@ def _build_minimal(builder, opts):
         in_time_window=True,
         current_cover_position=None,
         is_glare_zone_enabled=lambda idx: True,
+        **extra,
     )
 
 
@@ -1518,3 +1519,59 @@ def test_build_falls_back_to_the_weather_class_default_priority():
     builder, _, _ = _make_builder()
     snapshot = _build_minimal(builder, {})
     assert snapshot.weather_override_priority == WeatherOverrideHandler.priority
+
+
+# ---------------------------------------------------------------------------
+# Per-entity cover positions reach the snapshot (issue #1174)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_snapshot_builder_threads_cover_positions():
+    """The per-entity dict the registry judges holds against must reach it.
+
+    ``current_cover_position`` is the mean of these; without the dict itself the
+    registry falls back to judging that scalar, which is the #1174 defect.
+    """
+    builder, _, _ = _make_builder()
+    positions = {"cover.a": 40, "cover.b": None}
+    snapshot = _build_minimal(builder, {}, cover_positions=positions)
+    assert snapshot.cover_positions == positions
+
+
+@pytest.mark.unit
+def test_snapshot_builder_defaults_cover_positions_to_none():
+    """Omitting the kwarg leaves the legacy scalar-only judgment in place."""
+    builder, _, _ = _make_builder()
+    assert _build_minimal(builder, {}).cover_positions is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_update_cycle_threads_cover_positions_into_build(hass):
+    """A full update cycle passes the live per-entity dict into build().
+
+    The scalar and the dict must come from the same read: the coordinator's
+    ``CoverStateSnapshot``. Asserting only the builder kwarg would leave the
+    coordinator free to never pass it.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, setup_integration
+
+    entry = await setup_integration(
+        hass, options=dict(VERTICAL_OPTIONS), entry_id="cover_positions_thread_01"
+    )
+    coord = entry.runtime_data
+
+    captured: dict = {}
+    real_build = coord._snapshot_builder.build
+
+    def _spy(*args, **kwargs):
+        captured["cover_positions"] = kwargs.get("cover_positions")
+        captured["live"] = dict(coord._snapshot.cover_positions)
+        return real_build(*args, **kwargs)
+
+    coord._snapshot_builder.build = _spy
+    await coord.async_refresh()
+
+    assert captured["cover_positions"] == captured["live"]
+    assert captured["cover_positions"]
