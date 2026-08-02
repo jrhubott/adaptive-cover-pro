@@ -75,7 +75,9 @@ def resolve_dispatched_secondary_expected(
     return result.tilt
 
 
-def effective_manual_threshold(user_threshold: int | None) -> int:
+def effective_manual_threshold(
+    user_threshold: int | None, position_tolerance: int | None = None
+) -> int:
     """Resolve the effective manual-override threshold for a delta comparison.
 
     Floored at ``POSITION_TOLERANCE_PERCENT`` so motor rounding and reporting
@@ -85,10 +87,23 @@ def effective_manual_threshold(user_threshold: int | None) -> int:
     ``SecondaryAxisCheck.evaluate`` delegate here; keeping the two in sync
     via a single helper prevents the formula from drifting (e.g. the day
     ``POSITION_TOLERANCE_PERCENT`` changes).
+
+    ``position_tolerance`` (issue #1158) is an OPTIONAL extra floor term,
+    used only by the primary/position-axis caller. ``CoverCommandService``'s
+    same_position gate treats any delta inside the configurable
+    ``CONF_POSITION_TOLERANCE`` as "already there" and skips dispatch
+    (booking that same value as the recorded target); a position-axis
+    manual-override threshold narrower than that tolerance would then flag
+    the identical delta as a user move. Passing ``position_tolerance``
+    reconciles the two bands for the axis where that gate applies. The
+    secondary/tilt axis has no analogous relationship — a slat angle is not
+    a carriage position — so ``SecondaryAxisCheck.evaluate`` omits this
+    argument and keeps the fixed ``POSITION_TOLERANCE_PERCENT`` floor only.
     """
-    return max(
-        user_threshold if user_threshold is not None else 0, POSITION_TOLERANCE_PERCENT
-    )
+    floor = POSITION_TOLERANCE_PERCENT
+    if position_tolerance is not None:
+        floor = max(floor, position_tolerance)
+    return max(user_threshold if user_threshold is not None else 0, floor)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

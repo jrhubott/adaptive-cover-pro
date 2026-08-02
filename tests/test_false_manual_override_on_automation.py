@@ -252,7 +252,20 @@ async def test_matching_off_lowers_detection_threshold_to_tolerance():
 
 @pytest.mark.asyncio
 async def test_matching_on_passes_manual_threshold_unchanged():
-    """Matching on (opt-in) → the user manual_threshold is passed unchanged (#591)."""
+    """Matching on (opt-in) → the user manual_threshold is passed unchanged (#591).
+
+    Issue #1158 (round-3 audit finding 5): ``position_tolerance`` here is
+    deliberately larger than ``manual_threshold`` (20 vs 10) so this test
+    actually discriminates — with the fixture's old ``position_tolerance=3``
+    the assertion held regardless of whether the coordinator widened the
+    value, since 3 < 10 made any floor a no-op. The positional value
+    ``handle_state_change`` receives (args[5], what ``secondary_axis_check``
+    reads) must stay the raw ``manual_threshold`` even when
+    ``position_tolerance`` is wider — the position-axis-only floor is
+    threaded separately via the ``position_tolerance`` keyword (see
+    ``test_position_tolerance_floors_position_axis_without_widening_tilt_axis``
+    below).
+    """
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -263,7 +276,7 @@ async def test_matching_on_passes_manual_threshold_unchanged():
         target=72,
         manual_threshold=10,
         enable_position_matching=True,
-        position_tolerance=3,
+        position_tolerance=20,
     )
     event_data = _make_state_change_data(entity_id, position=65)
     coordinator._pending_cover_events = [event_data]
@@ -274,6 +287,52 @@ async def test_matching_on_passes_manual_threshold_unchanged():
     coordinator.manager.handle_state_change.assert_called_once()
     passed_threshold = coordinator.manager.handle_state_change.call_args.args[5]
     assert passed_threshold == 10  # unchanged — matching-on path untouched
+
+
+@pytest.mark.asyncio
+async def test_position_tolerance_floors_position_axis_without_widening_tilt_axis():
+    """Issue #1158 round-3 audit MUST-FIX 1/2: manual_threshold(5) < position_tolerance(20).
+
+    The coordinator must make the wider position_tolerance available to the
+    POSITION-axis detector (so a delta the same_position gate treats as
+    "already there" can't double as a manual override) WITHOUT widening the
+    value fed to the secondary/tilt-axis check — a slat angle is not a
+    carriage position, so "position tolerance" has no meaning there.
+    ``manual_threshold`` (positional arg 5, what ``secondary_axis_check.evaluate``
+    reads) must stay the raw configured value; ``position_tolerance`` (the new
+    keyword, what the position-axis detector floors against via
+    ``effective_manual_threshold``) carries the wider figure separately.
+
+    This is the coordinator-boundary regression for MUST-FIX 1's verified
+    scenario: at the pre-#1158-fix-round-3 coordinator, a 10% tilt delta with
+    manual_threshold=5 would have been evaluated against a widened threshold
+    of 20 (missed detection); this test pins that the value reaching
+    ``secondary_axis_check.evaluate`` never widens.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entity_id = "cover.test"
+    coordinator = _make_coordinator(
+        entity_id=entity_id,
+        target=72,
+        manual_threshold=5,
+        enable_position_matching=True,
+        position_tolerance=20,
+    )
+    event_data = _make_state_change_data(entity_id, position=65)
+    coordinator._pending_cover_events = [event_data]
+    coordinator._target_just_reached = set()
+
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 72)
+
+    coordinator.manager.handle_state_change.assert_called_once()
+    call = coordinator.manager.handle_state_change.call_args
+    # Tilt/secondary-axis consumer must see the RAW threshold, never widened.
+    assert call.args[5] == 5
+    # Position-axis floor input must reach the manager as a separate value.
+    assert call.kwargs["position_tolerance"] == 20
 
 
 # ===========================================================================

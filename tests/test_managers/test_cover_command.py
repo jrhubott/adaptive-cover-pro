@@ -2444,18 +2444,21 @@ async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_tri
     event.new_state.attributes = {"current_position": 82}
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
-    # Issue #1158 MUST-FIX 2: mirrors coordinator.py's floor — the
-    # configured manual_threshold (5) is narrower than position_tolerance
-    # (20); the floor, not a distorted target, is what protects this cover
-    # from a false positive.
-    floored_manual_threshold = max(5, svc._position_tolerance)
+    # Issue #1158 MUST-FIX 2 (round-3 audit): pass the RAW configured values
+    # — manual_threshold (5) narrower than position_tolerance (20) — and let
+    # production code (effective_manual_threshold, via the position-axis
+    # detector) do the flooring, instead of hand-mirroring the arithmetic
+    # here. A hand-mirrored `max()` passes even when the production floor is
+    # absent entirely (round-3's regression), because it never exercises the
+    # real formula.
     mgr.handle_state_change(
         states_data=event,
         our_state=recorded_target,
         policy=get_policy("cover_blind"),
         allow_reset=True,
         is_waiting=lambda _eid: False,
-        manual_threshold=floored_manual_threshold,
+        manual_threshold=5,
+        position_tolerance=svc._position_tolerance,
         has_recorded_target=recorded_target is not None,
     )
 

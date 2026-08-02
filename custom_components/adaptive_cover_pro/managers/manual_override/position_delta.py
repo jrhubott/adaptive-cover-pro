@@ -28,13 +28,19 @@ class PositionDeltaDetector(OverrideDetector):
         our_state = context.our_state
         new_position = context.new_position
 
-        # Floor the threshold at POSITION_TOLERANCE_PERCENT so motor rounding /
-        # position-reporting imprecision can't trip false positives even when
-        # the user leaves manual_threshold unset. Computed once and reused by
-        # both the no-target move check (#654) and the recorded-target delta
-        # comparison below. See ``effective_manual_threshold`` for the
-        # single-source-of-truth.
-        effective_threshold = effective_manual_threshold(context.manual_threshold)
+        # Floor the threshold at POSITION_TOLERANCE_PERCENT (and, when known,
+        # the configurable CONF_POSITION_TOLERANCE — issue #1158) so motor
+        # rounding / position-reporting imprecision can't trip false
+        # positives even when the user leaves manual_threshold unset.
+        # Computed once and reused by both the no-target move check (#654)
+        # and the recorded-target delta comparison below. See
+        # ``effective_manual_threshold`` for the single-source-of-truth —
+        # this is the ONLY call site that passes ``position_tolerance``; the
+        # secondary/tilt-axis check omits it (a slat angle is not a carriage
+        # position).
+        effective_threshold = effective_manual_threshold(
+            context.manual_threshold, context.position_tolerance
+        )
 
         # Issue #546: no command was ever sent for this entity, so ``our_state``
         # is the pipeline's theoretical default rather than a commanded

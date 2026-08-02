@@ -1506,8 +1506,14 @@ DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN  # default mode
 
 POSITION_CHECK_INTERVAL_MINUTES = 1  # minutes — recheck cadence
 # Default for the now-configurable CONF_POSITION_TOLERANCE (issue #507). Still
-# the fixed floor for the manual-override threshold (effective_manual_threshold
-# in managers/manual_override.py reads this constant directly, NOT the option).
+# the fixed baseline floor for the manual-override threshold —
+# effective_manual_threshold() in managers/manual_override/secondary_axis.py
+# always reads this constant directly. For the POSITION axis only (issue
+# #1158), it ALSO floors at the CONF_POSITION_TOLERANCE option, passed via
+# its optional ``position_tolerance`` argument, so the same_position gate's
+# "already there" band and the manual-override "not manual" band agree. The
+# secondary/tilt axis never passes that argument, so it keeps this fixed
+# constant as its only floor — a slat angle is not a carriage position.
 POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance (default)
 MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 # Default for CONF_ENABLE_POSITION_MATCHING (issue #591). False = matching off:

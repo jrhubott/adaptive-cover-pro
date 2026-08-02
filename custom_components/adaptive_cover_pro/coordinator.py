@@ -3400,36 +3400,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Issue #591: when position matching is disabled (the default), a
             # settle beyond the position-match tolerance is the cover's final
             # resting position (a remote stop, or a cover that won't reach
-            # target) — engage manual override at that tolerance rather than
-            # waiting for a (possibly larger) user manual_threshold, so it
-            # isn't endlessly retried. When matching is enabled the user
-            # manual_threshold applies instead (no regression to the
-            # slow-actuator reconciliation behaviour).
-            detection_threshold = (
-                self._position_tolerance
-                if not self._cmd_svc.enable_position_matching
-                else self.manual_threshold
-            )
-            # Issue #1158 MUST-FIX 2 (round-2 audit): floor the result at
-            # `_position_tolerance` regardless of which branch above set it.
-            # That is the same band `CoverCommandService._at_target` treats
-            # as "already there" — the same_position gate's endpoint-
-            # tolerance arm skips dispatch (and, since #1158, books its
-            # routed target as PerEntityState.target) over exactly that gap.
-            # A detection_threshold narrower than `_position_tolerance` (only
-            # possible in the ``enable_position_matching`` branch, with a
-            # user-configured manual_threshold smaller than the tolerance —
-            # the disabled branch above already equals `_position_tolerance`
-            # directly) would let a delta this detector alone treats as
-            # "moved" fire `manual_override_set` on a resting-position
-            # republish nothing dispatched — no user touch involved. This can
-            # only WIDEN the not-manual band, never narrow it, so a user's
-            # own larger manual_threshold still wins when matching is
-            # enabled.
-            detection_threshold = max(
-                detection_threshold if detection_threshold is not None else 0,
-                self._position_tolerance,
-            )
+            # target). Lower the detection threshold to the tolerance so any
+            # "not arrived" settle engages a full manual override for the
+            # configured duration — suppressing both resends (handled in
+            # reconciliation) and new sun-driven targets — instead of being
+            # retried. When matching is enabled the user manual_threshold is
+            # used unchanged (no regression to the slow-actuator reconciliation
+            # behaviour). This value feeds BOTH the secondary/tilt-axis check
+            # (via ``secondary_axis_check.evaluate`` inside
+            # ``handle_state_change``) and, as a baseline, the position-axis
+            # detector — see the ``position_tolerance`` kwarg below for the
+            # position-axis-only extra floor.
+            detection_threshold = self.manual_threshold
+            if not self._cmd_svc.enable_position_matching:
+                detection_threshold = (
+                    self._position_tolerance
+                    if self.manual_threshold is None
+                    else min(self.manual_threshold, self._position_tolerance)
+                )
 
             # Issue #1006: pass entity_id so a multi-axis policy can anchor the
             # secondary-axis expected value to what ACP last DISPATCHED for THIS
@@ -3457,6 +3445,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 secondary_axis_check=secondary_axis_check,
                 is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
                 is_in_transit=self._cmd_svc._is_cover_in_transit,
+                # Issue #1158 (round-3 audit MUST-FIX 1/3): the position-axis
+                # detector floors ITS OWN threshold at this value via
+                # effective_manual_threshold (see position_delta.py) so a
+                # delta the same_position gate treats as "already there"
+                # can't also read as a manual move. Passed separately from
+                # ``detection_threshold`` above so the secondary/tilt-axis
+                # check — which has no notion of "position tolerance" — is
+                # never widened by it.
+                position_tolerance=self._position_tolerance,
             )
 
         self.cover_state_change = False

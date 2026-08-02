@@ -57,9 +57,13 @@ class TestEffectiveManualThreshold:
         CONF_POSITION_TOLERANCE makes the *reconciliation* tolerance configurable,
         but the manual-override false-positive floor must NOT follow it — a wide
         arrival tolerance (e.g. 15) must not silently swallow a genuine 14% manual
-        nudge. effective_manual_threshold reads POSITION_TOLERANCE_PERCENT directly
-        and takes no position-tolerance input, so a RuntimeConfig with a widened
-        tolerance leaves the floor untouched.
+        nudge. When called with ONLY ``user_threshold`` (the secondary/tilt-axis
+        call shape — see ``SecondaryAxisCheck.evaluate``), effective_manual_threshold
+        reads POSITION_TOLERANCE_PERCENT directly and ignores the configurable
+        tolerance entirely, so a RuntimeConfig with a widened tolerance leaves the
+        floor untouched. (The position axis opts in to the tolerance explicitly via
+        the ``position_tolerance`` argument — see ``TestEffectiveManualThresholdPositionAxis``
+        below, issue #1158.)
         """
         from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
         from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
@@ -70,6 +74,44 @@ class TestEffectiveManualThreshold:
         assert effective_manual_threshold(None) == POSITION_TOLERANCE_PERCENT
         assert effective_manual_threshold(0) == POSITION_TOLERANCE_PERCENT
         assert POSITION_TOLERANCE_PERCENT == 3
+
+
+@pytest.mark.unit
+class TestEffectiveManualThresholdPositionAxis:
+    """Issue #1158 (round-3 audit MUST-FIX 1/3): the OPTIONAL ``position_tolerance``
+    argument, used only by the position-axis caller (``PositionDeltaDetector.detect``).
+
+    The same_position gate treats any delta inside the configurable
+    ``CONF_POSITION_TOLERANCE`` as "already there" and skips dispatch, booking
+    that value as the recorded target. A position-axis manual-override
+    threshold narrower than that tolerance would then flag the identical
+    delta as a user move — passing ``position_tolerance`` reconciles the two
+    bands. This is the single formula location (SSOT) for that floor; nothing
+    outside this function may reimplement ``max(user, position_tolerance)``.
+    """
+
+    def test_position_tolerance_wider_than_user_threshold_wins(self):
+        assert effective_manual_threshold(5, 20) == 20
+
+    def test_user_threshold_wider_than_position_tolerance_wins(self):
+        assert effective_manual_threshold(30, 20) == 30
+
+    def test_none_user_threshold_floors_at_position_tolerance(self):
+        assert effective_manual_threshold(None, 20) == 20
+
+    def test_position_tolerance_below_constant_floor_still_uses_constant(self):
+        # A configured tolerance narrower than the fixed constant must not
+        # narrow the floor below POSITION_TOLERANCE_PERCENT.
+        assert effective_manual_threshold(0, 1) == POSITION_TOLERANCE_PERCENT
+
+    def test_omitting_position_tolerance_matches_single_arg_behavior(self):
+        # The default (None) must reproduce the pre-#1158 one-argument
+        # contract exactly — this is what SecondaryAxisCheck.evaluate relies
+        # on to stay unaffected by this extension.
+        for user in (None, 0, 5, 30):
+            assert effective_manual_threshold(user, None) == effective_manual_threshold(
+                user
+            )
 
 
 def _state(attrs: dict):
