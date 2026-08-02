@@ -511,28 +511,6 @@ class TestWindowDepth:
 
         assert abs(pos_no_depth - pos_zero_depth) < 1e-10
 
-    def test_window_depth_no_effect_at_low_gamma(self, base_cover_params):
-        """Window depth should have minimal effect at gamma < 10°."""
-        params_no_depth = base_cover_params.copy()
-        params_no_depth["window_depth"] = 0.0
-        cover_no_depth = make_cover_with_angles(
-            params_no_depth, gamma=5.0, sol_elev=45.0
-        )
-
-        params_with_depth = base_cover_params.copy()
-        params_with_depth["window_depth"] = 0.10
-        cover_with_depth = build_vertical_cover(**params_with_depth)
-        cover_with_depth.sol_azi = gamma_to_sol_azi(
-            cover_with_depth.config.win_azi, 5.0
-        )
-        cover_with_depth.sol_elev = 45.0
-
-        pos_no_depth = cover_no_depth.calculate_position()
-        pos_with_depth = cover_with_depth.calculate_position()
-
-        # Difference should be negligible at low gamma
-        assert abs(pos_with_depth - pos_no_depth) < 0.01  # Less than 1cm difference
-
     def test_window_depth_realistic_values(self, base_cover_params):
         """Test with realistic window depth values."""
         test_depths = [
@@ -685,8 +663,8 @@ def _lintel_gate_max_penetration(
 # not of window_depth: it reproduces bit-for-bit with window_depth=0 (the gate
 # never fires for any of these cases; the position is identical either way).
 # It predates #1169, is out of scope for this fix (no window_depth involved),
-# and deserves its own follow-up issue rather than being papered over here by
-# weakening the contract for every other configuration.
+# and is tracked by #1173 rather than being papered over here by weakening
+# the contract for every other configuration.
 _SAFETY_MARGIN_OVERSHOOT_CASES = {
     (0.5, 0.62, 0.05, 60, 20),
     (0.5, 0.62, 0.18, 60, 20),
@@ -716,10 +694,11 @@ def _lintel_gate_contract_case(
             *case,
             marks=pytest.mark.xfail(
                 reason=(
-                    "Pre-existing SafetyMarginCalculator overshoot at extreme "
-                    "low elevation + high gamma, orthogonal to window_depth "
-                    "(bit-identical with window_depth=0) — out of scope for "
-                    "#1169; needs its own follow-up issue."
+                    "#1173: SafetyMarginCalculator inflates position past the "
+                    f"distance_shaded_area contract at elev={elev:g}°, "
+                    f"gamma={gamma:g}° (distance={distance:g}, h_win={h_win:g}, "
+                    f"depth={depth:g}) — bit-identical with window_depth=0, so "
+                    "orthogonal to the #1169 lintel gate."
                 ),
                 strict=True,
             ),

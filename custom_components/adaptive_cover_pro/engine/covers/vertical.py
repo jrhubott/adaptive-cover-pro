@@ -342,12 +342,15 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                 clamped_to_window = bool(gated_height > self.h_win)
                 self.logger.debug(
                     "Vertical calc: elev=%.1f°, gamma=%.1f°, effective_distance=%.3f "
-                    "(sill=%.3f) → lintel shadow %.3fm reaches h_win=%.3fm → fully open",
+                    "(sill=%.3f) → base=%.3fm + lintel shadow=%.3fm = %.3fm reaches "
+                    "h_win=%.3fm → fully open",
                     self.sol_elev,
                     self.gamma,
                     effective_distance,
                     sill_offset,
+                    base_height,
                     depth_contribution,
+                    gated_height,
                     self.h_win,
                 )
                 self._last_calc_details = self._build_vertical_trace(
