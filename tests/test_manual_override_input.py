@@ -379,3 +379,66 @@ async def test_options_flow_manual_override_clears_input_template(hass) -> None:
     )
     assert result["type"] == "create_entry"
     assert result["data"].get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE) is None
+
+
+# ---------------------------------------------------------------------------
+# acp self-reference namespace in the input template (issue #1159)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_input_template_resolves_the_acp_namespace(hass) -> None:
+    """The input template can name this instance's own entity, end to end (#1159).
+
+    Exercises the real coordinator render site with the context the coordinator
+    builds for itself — no patched renderer.
+    """
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+        CONF_SENSOR_TYPE,
+        DOMAIN,
+        CoverType,
+    )
+    from tests._helpers.acp_namespace import seed_sun_infront
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Dining Room Shade", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={
+            **VERTICAL_OPTIONS,
+            CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: (
+                "{{ is_state(acp.sun_infront, 'on') }}"
+            ),
+        },
+        entry_id="mo_input_acp_01",
+        title="Vertical Dining Room Shade",
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set(
+        "sun.sun", "above_horizon", {"azimuth": 180.0, "elevation": 45.0}
+    )
+    hass.states.async_set(
+        "cover.test_blind", "open", {"current_position": 100, "supported_features": 143}
+    )
+    seed_sun_infront(hass, entry, "off")
+
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data
+    with patch.object(coordinator, "async_refresh", new=AsyncMock()):
+        # Falsy render → no engagement.
+        await coordinator.async_check_manual_override_input_template_change(None, [])
+        assert coordinator.manager.binary_cover_manual is False
+
+        hass.states.async_set("binary_sensor.dining_room_shade_sun_infront", "on")
+        await hass.async_block_till_done()
+        await coordinator.async_check_manual_override_input_template_change(None, [])
+
+    assert coordinator.manager.binary_cover_manual is True

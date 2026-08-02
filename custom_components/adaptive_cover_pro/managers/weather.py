@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any
 
 from ..const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
@@ -53,18 +53,29 @@ class WeatherManager:
     retract covers on sensor failure).
     """
 
-    def __init__(self, hass: HomeAssistant, logger, *, event_buffer=None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        logger,
+        *,
+        event_buffer=None,
+        template_variables: Mapping[str, Any] | None = None,
+    ) -> None:
         """Initialize the WeatherManager.
 
         Args:
             hass: Home Assistant instance used to read sensor states
             logger: Logger instance for debug/info output
             event_buffer: Shared diagnostic ring buffer (optional).
+            template_variables: Opaque render context threaded into every
+                condition-template fold — the ``acp`` self-reference namespace
+                built once by the coordinator (issue #1159).
 
         """
         self._hass = hass
         self._logger = logger
         self._event_buffer = event_buffer
+        self._template_variables = template_variables
         self._events = EventRecorder(event_buffer)
 
         # Config (updated via update_config)
@@ -324,6 +335,7 @@ class WeatherManager:
             mode,
             others_truthy=self._is_binary_on(entity_id),
             has_others=bool(entity_id),
+            variables=self._template_variables,
         )
         return bool(result)
 
@@ -360,6 +372,7 @@ class WeatherManager:
                 self._is_binary_on(entity_id) for entity_id in self._severe_sensors
             ),
             has_others=bool(self._severe_sensors),
+            variables=self._template_variables,
         )
         return bool(result)
 

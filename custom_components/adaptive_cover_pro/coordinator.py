@@ -157,7 +157,11 @@ from .pipeline.floors import effective_floor, gather_active_floors
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
 from .pipeline.types import CustomPositionSensorState, GroupIntent, PipelineSnapshot
-from .templates import TemplateResolver, render_condition_or_none
+from .templates import (
+    TemplateResolver,
+    build_acp_template_variables,
+    render_condition_or_none,
+)
 from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -348,6 +352,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cover engine object — populated at start of each update cycle
         self._cover_data = None
 
+        # The ``acp`` self-reference render context (issue #1159), built once
+        # here — before every collaborator that renders an option template — and
+        # threaded into all of them, so every render site shares one context.
+        # Nothing is cached inside it: each key access re-reads the entity
+        # registry, so a rename lands on the next render.
+        #
+        # Two shapes. Condition/tracked fields get the entity_id forms only:
+        # ``acp_state``'s value reads are invisible to ``RenderInfo``, so a
+        # tracked template written against them would register no state
+        # listeners and silently lose its sensor-grade immediacy. The untracked
+        # numeric threshold renders are the one flavour that also gets it.
+        self._template_variables = build_acp_template_variables(
+            self.hass, self.config_entry.entry_id
+        )
+        self._template_variables_with_state = build_acp_template_variables(
+            self.hass, self.config_entry.entry_id, include_state=True
+        )
+
         # Shared diagnostic ring buffer — owned here, injected into all writers
         self._event_buffer = EventBuffer(
             maxlen=self.config_entry.options.get(
@@ -382,11 +404,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         # Motion control tracking
         self._motion_mgr = MotionManager(
-            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+            hass=self.hass,
+            logger=self.logger,
+            event_buffer=self._event_buffer,
+            template_variables=self._template_variables,
         )
         # Weather override tracking
         self._weather_mgr = WeatherManager(
-            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+            hass=self.hass,
+            logger=self.logger,
+            event_buffer=self._event_buffer,
+            template_variables=self._template_variables,
         )
         # Cloud-suppression smoothing — hysteresis latch + hold-time debounce
         # (issue #864). Consumes provider booleans; never reads HA directly.
@@ -475,10 +503,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
         # Climate state provider
-        self._climate_provider = ClimateProvider(hass=self.hass, logger=self.logger)
+        self._climate_provider = ClimateProvider(
+            hass=self.hass,
+            logger=self.logger,
+            template_variables=self._template_variables,
+        )
 
         # Renders templated threshold options to numbers once per cycle (#577).
-        self._template_resolver = TemplateResolver(self.hass)
+        self._template_resolver = TemplateResolver(
+            self.hass, self._template_variables_with_state
+        )
         # Current cycle's options after template resolution (for diagnostics).
         # Resolved at construction so apply_user_position sees float thresholds
         # even before the first _async_update_data cycle runs (#643).
@@ -496,7 +530,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # snapshot builder, because the builder's effective-default fallback
         # reads the live window state off it (issue #1055).
         self._time_mgr = TimeWindowManager(
-            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+            hass=self.hass,
+            logger=self.logger,
+            event_buffer=self._event_buffer,
+            template_variables=self._template_variables,
         )
 
         # Pipeline snapshot builder — owns the HA reads + assembly for each
@@ -511,6 +548,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             policy=self._policy,
             config_service=self._config_service,
             time_mgr=self._time_mgr,
+            template_variables=self._template_variables,
         )
 
         # Current state snapshot (built at start of each update cycle)
@@ -1557,7 +1595,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         the template is re-rendered here rather than trusting the tracked value.
         """
         if (
-            render_condition_or_none(self.hass, self.manual_override_input_template)
+            render_condition_or_none(
+                self.hass,
+                self.manual_override_input_template,
+                variables=self._template_variables,
+            )
             is not True
         ):
             return

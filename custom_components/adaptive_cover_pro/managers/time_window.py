@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime as dt
 import time
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -41,6 +41,7 @@ class TimeWindowManager:
         *,
         event_buffer=None,
         clock: Callable[[], float] = time.monotonic,
+        template_variables: Mapping[str, Any] | None = None,
     ) -> None:
         """Initialize time window manager.
 
@@ -50,11 +51,15 @@ class TimeWindowManager:
             event_buffer: Shared diagnostic ring buffer (optional).
             clock: Monotonic time source (seconds) for the daytime-gate grace
                 window. Injected so tests drive the grace timer deterministically.
+            template_variables: Opaque render context threaded into the
+                daytime-gate template — the ``acp`` self-reference namespace
+                built once by the coordinator (issue #1159).
 
         """
         self._hass = hass
         self.logger = logger
         self._event_buffer = event_buffer
+        self._template_variables = template_variables
         self._events = EventRecorder(event_buffer)
         self._last_time_window_state: bool | None = None
 
@@ -183,7 +188,9 @@ class TimeWindowManager:
         sensor_opinion: bool | None = (
             None if not valid_states else any(s == "on" for s in valid_states)
         )
-        template_opinion = render_condition_or_none(self._hass, self._gate_template)
+        template_opinion = render_condition_or_none(
+            self._hass, self._gate_template, variables=self._template_variables
+        )
 
         if sensor_opinion is None and template_opinion is None:
             return None

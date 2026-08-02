@@ -85,7 +85,12 @@ from .helpers import (
     normalize_time_string,
 )
 from .profile_link import _copy_profile_to_cover, _covers_linked_to
-from .templates import is_template_string
+from .templates import (
+    ACP_NAMESPACE_RATE_LIMIT,
+    build_acp_template_variables,
+    is_template_string,
+    uses_acp_namespace,
+)
 from .migrations import (
     async_prune_legacy_entities,
     async_prune_legacy_sensor_entities,
@@ -138,13 +143,28 @@ def _register_template_tracker(
     a template-only override sensor-grade immediacy — the cover reacts the
     instant the template flips, with no companion binary sensor and no polling.
     Non-templates are skipped; render/parse failures are logged and skipped.
+
+    Every tracker gets the same ``acp`` render context the managers use (#1159),
+    built from the one factory so the tracker's render and the cycle render can
+    never disagree. A template that actually uses the namespace additionally
+    gets the loop-guard rate limit; everything else stays unthrottled.
     """
     if not is_template_string(template_str):
         return
     try:
         _track_info = async_track_template_result(
             hass,
-            [TrackTemplate(Template(template_str, hass), None)],
+            [
+                TrackTemplate(
+                    Template(template_str, hass),
+                    build_acp_template_variables(hass, entry.entry_id),
+                    (
+                        ACP_NAMESPACE_RATE_LIMIT
+                        if uses_acp_namespace(template_str)
+                        else None
+                    ),
+                )
+            ],
             action,
         )
     except (TemplateError, ValueError) as err:
@@ -153,6 +173,91 @@ def _register_template_tracker(
         )
     else:
         entry.async_on_unload(_track_info.async_remove)
+
+
+def _register_option_template_trackers(
+    hass: HomeAssistant,
+    entry: AdaptiveConfigEntry,
+    coordinator: AdaptiveDataUpdateCoordinator,
+) -> None:
+    """Register every option-template result tracker for this entry.
+
+    Called *after* ``async_forward_entry_setups`` on purpose (issue #1159). HA
+    blocks entry setup on entity addition, so by this point this instance's own
+    entities have entity-registry rows and a template written against the
+    ``acp`` namespace resolves to a real entity_id on its **first** render —
+    the render whose ``RenderInfo`` fixes the tracker's listener set for the
+    life of the setup (HA ``helpers/event.py``). Registering before platform
+    forwarding left a self-reference with no listeners at all on a first-ever
+    setup, until the next reload.
+
+    Teardown is unchanged: each ``_register_template_tracker`` call wires its
+    own ``entry.async_on_unload``.
+    """
+    # The optional manual-override input template (issue #974). The template
+    # counterpart to the input sensors: tracking the rendered result engages
+    # manual override the instant the template flips truthy, with sensor-grade
+    # immediacy and no polling.
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
+        coordinator.async_check_manual_override_input_template_change,
+        "Manual override input template",
+    )
+
+    # The optional occupancy template (issue #577 follow-up). Tracking the
+    # rendered result means the cover reacts the instant the template flips
+    # truthy — same immediacy as a motion sensor, no polling. Re-registered on
+    # every reload (options changes trigger a full reload).
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_MOTION_TEMPLATE),
+        coordinator.async_check_motion_template_change,
+        "Motion occupancy template",
+    )
+
+    # Each custom-position slot's optional condition template (issue #563).
+    # Same pattern as the occupancy template above: tracking the rendered
+    # result gives sensor-grade immediacy when a template flips.
+    for _slot_keys in CUSTOM_POSITION_SLOTS.values():
+        _register_template_tracker(
+            hass,
+            entry,
+            entry.options.get(_slot_keys["template"]),
+            coordinator.async_check_custom_position_template_change,
+            "Custom position template",
+        )
+
+    # The optional is-raining / is-windy / severe condition templates (issue
+    # #639). Tracking the rendered result lets a template-only weather override
+    # engage and react the instant the template flips, with no companion binary
+    # sensor.
+    for _weather_template in [
+        entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
+        entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+        entry.options.get(CONF_WEATHER_SEVERE_TEMPLATE),
+    ]:
+        _register_template_tracker(
+            hass,
+            entry,
+            _weather_template,
+            coordinator.async_check_weather_template_change,
+            "Weather condition template",
+        )
+
+    # The optional daytime-gate template (issue #632). Tracking the rendered
+    # result gives the gate the same sensor-grade immediacy as the occupancy and
+    # weather templates — the cover repositions the instant the template flips
+    # dark, with no polling.
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_DAYTIME_GATE_TEMPLATE),
+        coordinator.async_check_daytime_gate_template_change,
+        "Daytime gate template",
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
@@ -274,42 +379,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
             )
         )
 
-    # Register the optional manual-override input template (issue #974). The
-    # template counterpart to the input sensors above: tracking the rendered
-    # result engages manual override the instant the template flips truthy, with
-    # sensor-grade immediacy and no polling.
-    _register_template_tracker(
-        hass,
-        entry,
-        entry.options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
-        coordinator.async_check_manual_override_input_template_change,
-        "Manual override input template",
-    )
-
-    # Register the optional occupancy template (issue #577 follow-up). Tracking
-    # the rendered result means the cover reacts the instant the template flips
-    # truthy — same immediacy as a motion sensor, no polling. Re-registered on
-    # every reload (options changes trigger a full reload).
-    _register_template_tracker(
-        hass,
-        entry,
-        entry.options.get(CONF_MOTION_TEMPLATE),
-        coordinator.async_check_motion_template_change,
-        "Motion occupancy template",
-    )
-
-    # Register each custom-position slot's optional condition template (issue
-    # #563). Same pattern as the occupancy template above: tracking the
-    # rendered result gives sensor-grade immediacy when a template flips.
-    for _slot_keys in CUSTOM_POSITION_SLOTS.values():
-        _register_template_tracker(
-            hass,
-            entry,
-            entry.options.get(_slot_keys["template"]),
-            coordinator.async_check_custom_position_template_change,
-            "Custom position template",
-        )
-
     # Register weather sensor listeners separately (need custom handler for clear-delay)
     _weather_sensor_ids: list[str] = []
     for _key in [
@@ -332,35 +401,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
                 coordinator.async_check_weather_state_change,
             )
         )
-
-    # Register the optional is-raining / is-windy condition templates (issue
-    # #639). Same pattern as the occupancy/custom-position templates above:
-    # tracking the rendered result lets a template-only weather override engage
-    # and react the instant the template flips, with no companion binary sensor.
-    for _weather_template in [
-        entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
-        entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
-        entry.options.get(CONF_WEATHER_SEVERE_TEMPLATE),
-    ]:
-        _register_template_tracker(
-            hass,
-            entry,
-            _weather_template,
-            coordinator.async_check_weather_template_change,
-            "Weather condition template",
-        )
-
-    # Register the optional daytime-gate template (issue #632). Tracking the
-    # rendered result gives the gate the same sensor-grade immediacy as the
-    # occupancy and weather templates — the cover repositions the instant the
-    # template flips dark, with no polling.
-    _register_template_tracker(
-        hass,
-        entry,
-        entry.options.get(CONF_DAYTIME_GATE_TEMPLATE),
-        coordinator.async_check_daytime_gate_template_change,
-        "Daytime gate template",
-    )
 
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
@@ -406,6 +446,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     await async_prune_legacy_sensor_entities_v2(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Option-template result trackers register here, after platform forwarding,
+    # so this instance's own entities are already in the entity registry and an
+    # ``acp`` self-reference resolves on the first render — the render that
+    # fixes the tracker's listener set (issue #1159).
+    _register_option_template_trackers(hass, entry, coordinator)
 
     # First refresh runs after platform setup so that RestoreEntity hooks in
     # async_added_to_hass have already repopulated the manual-override manager

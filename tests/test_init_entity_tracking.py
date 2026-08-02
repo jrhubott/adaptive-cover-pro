@@ -379,3 +379,69 @@ async def test_manual_override_input_template_registered(hass) -> None:
         "async_track_template_result so the override engages the instant the "
         "template flips truthy (issue #974)."
     )
+
+
+async def test_acp_namespace_tracked_on_a_brand_new_entry(hass) -> None:
+    """A self-reference is tracked on the FIRST-EVER setup, not just after a reload.
+
+    ``TrackTemplateResultInfo.async_setup`` fixes the listener set from what the
+    *first* render touched, so a namespace key that resolves to nothing on that
+    render contributes no listener for the life of the setup. Registering the
+    option-template trackers after ``async_forward_entry_setups`` is what makes
+    the registry rows exist by then (issue #1159).
+    """
+    from unittest.mock import AsyncMock, patch as mock_patch
+
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.adaptive_cover_pro.const import CONF_MOTION_TEMPLATE
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Brand New Shade", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={
+            **VERTICAL_OPTIONS,
+            CONF_MOTION_TEMPLATE: "{{ is_state(acp.sun_infront, 'on') }}",
+        },
+        entry_id="track_acp_bootstrap_01",
+        title="Vertical Brand New Shade",
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set(
+        "sun.sun", "above_horizon", {"azimuth": 180.0, "elevation": 45.0}
+    )
+    hass.states.async_set(
+        "cover.test_blind", "open", {"current_position": 100, "supported_features": 143}
+    )
+
+    with (
+        mock_patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "async_check_motion_template_change",
+            new_callable=AsyncMock,
+        ) as fired,
+        _patch_coordinator_refresh(),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        sun_infront = next(
+            e.entity_id
+            for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+            if e.domain == "binary_sensor" and e.translation_key == "sun_motion"
+        )
+
+        fired.reset_mock()
+        hass.states.async_set(sun_infront, "on")
+        await hass.async_block_till_done()
+
+    assert fired.called, (
+        "On a first-ever setup the entity registry is empty when trackers are "
+        "registered before platform forwarding, so acp.sun_infront resolves to "
+        "nothing and the template records no listener. Register the option "
+        "template trackers after async_forward_entry_setups (issue #1159)."
+    )

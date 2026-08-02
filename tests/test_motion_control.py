@@ -1403,6 +1403,42 @@ class TestMotionTemplate:
         mgr_off = self._mgr(hass, template="{{ false }}", template_mode="and")
         assert mgr_off.is_motion_detected is False
 
+    async def test_occupancy_template_can_reference_this_instances_own_entity(
+        self, hass
+    ):
+        """The occupancy template resolves the ``acp`` namespace (issue #1159)."""
+        from tests._helpers.acp_namespace import (
+            acp_variables,
+            make_acp_entry,
+            seed_sun_infront,
+        )
+
+        entry = make_acp_entry(hass, "motion_acp_01")
+        entity_id = seed_sun_infront(hass, entry, "on")
+        await hass.async_block_till_done()
+
+        mgr = MotionManager(
+            hass=hass,
+            logger=MagicMock(),
+            template_variables=acp_variables(hass, entry),
+        )
+        mgr.update_config(
+            sensors=[],
+            timeout_seconds=300,
+            template="{{ is_state(acp.sun_infront, 'on') }}",
+        )
+        assert mgr.template_active is True
+        assert mgr.is_motion_detected is True
+
+        hass.states.async_set(entity_id, "off")
+        await hass.async_block_till_done()
+        assert mgr.template_active is False
+
+    async def test_occupancy_template_without_context_is_no_opinion(self, hass):
+        """No context threaded in → the namespace is undefined → falsy, never a crash."""
+        mgr = self._mgr(hass, template="{{ is_state(acp.sun_infront, 'on') }}")
+        assert mgr.template_active is False
+
 
 @pytest.mark.asyncio
 async def test_async_check_motion_template_change_truthy_refreshes():

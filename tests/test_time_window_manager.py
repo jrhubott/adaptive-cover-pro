@@ -956,3 +956,45 @@ def test_after_start_time_with_utc_iso_sun_sensor_string():
         result = mgr.after_start_time
 
     assert result is True
+
+
+# ---------------------------------------------------------------------------
+# acp self-reference namespace in the daytime-gate template (issue #1159)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_gate_template_resolves_the_acp_namespace(hass):
+    """The daytime-gate template can name this instance's own entity (#1159)."""
+    from tests._helpers.acp_namespace import (
+        acp_variables,
+        make_acp_entry,
+        seed_acp_row,
+    )
+
+    entry = make_acp_entry(hass, "gate_acp_01")
+    entity_id = seed_acp_row(
+        hass, entry, "switch", "sun_tracking", "dining_room_shade_sun_tracking"
+    )
+    hass.states.async_set(entity_id, "on")
+    await hass.async_block_till_done()
+
+    mgr = TimeWindowManager(
+        hass=hass,
+        logger=MagicMock(),
+        template_variables=acp_variables(hass, entry),
+    )
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity=None,
+        gate_sensors=[],
+        gate_template="{{ is_state(acp.sun_tracking, 'on') }}",
+        gate_template_mode="or",
+    )
+    assert mgr.effective_daytime_gate is True
+
+    hass.states.async_set(entity_id, "off")
+    await hass.async_block_till_done()
+    assert mgr.effective_daytime_gate is False

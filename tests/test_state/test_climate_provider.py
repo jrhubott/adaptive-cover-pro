@@ -772,7 +772,7 @@ class TestSunnyTemplateTransientHold:
         sunny_template = "{{ states('sensor.elev') | float > 10 }}"
         render_results = iter([True, None, True])
 
-        def fake_render(_hass, template_str):
+        def fake_render(_hass, template_str, **_kwargs):
             # Only intercept the is_sunny template read; a bare call also
             # runs for the (unused) presence template each cycle and must
             # keep returning None like the real function does for "no
@@ -1234,3 +1234,42 @@ class TestReleaseClearedHysteresis:
         readings = provider.read(use_lux=False, use_irradiance=False)
         assert readings.lux_release_cleared is True
         assert readings.irradiance_release_cleared is True
+
+
+# ---------------------------------------------------------------------------
+# acp self-reference namespace in is_sunny / presence templates (issue #1159)
+# ---------------------------------------------------------------------------
+
+
+class TestAcpNamespaceInClimateTemplates:
+    """Both climate condition-template fold sites thread the render context."""
+
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("field", "reading"),
+        [("is_sunny_template", "is_sunny"), ("presence_template", "is_presence")],
+    )
+    async def test_condition_template_resolves_the_acp_namespace(
+        self, hass, field, reading
+    ):
+        from tests._helpers.acp_namespace import (
+            acp_variables,
+            make_acp_entry,
+            seed_sun_infront,
+        )
+
+        entry = make_acp_entry(hass, f"climate_acp_{field}")
+        entity_id = seed_sun_infront(hass, entry, "on")
+        await hass.async_block_till_done()
+
+        provider = ClimateProvider(
+            hass=hass,
+            logger=MagicMock(),
+            template_variables=acp_variables(hass, entry),
+        )
+        tmpl = "{{ is_state(acp.sun_infront, 'on') }}"
+        assert getattr(provider.read(**{field: tmpl}), reading) is True
+
+        hass.states.async_set(entity_id, "off")
+        await hass.async_block_till_done()
+        assert getattr(provider.read(**{field: tmpl}), reading) is False
