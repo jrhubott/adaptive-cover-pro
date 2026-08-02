@@ -140,9 +140,11 @@ class _AcpMissingKeyAttributeError(UndefinedError, AttributeError):
     inventing another probe cannot reintroduce the misdirection.
 
     :meth:`_AcpNamespaceBase.__getitem__` raises a plain ``UndefinedError``
-    instead: ``SandboxedEnvironment.getitem`` swallows ``AttributeError``, so
-    ``{{ acp['nope'] }}`` would degrade into a generic undefined if this class
-    were used there too.
+    instead, simply because it has no probe surface to defend against:
+    ``SandboxedEnvironment.getitem`` catches only ``(TypeError, LookupError)``
+    around ``obj[argument]``, so nothing reaches this class by way of a
+    ``hasattr`` check there. The second base would propagate unchanged; it just
+    buys nothing.
     """
 
 
