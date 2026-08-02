@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+from collections.abc import Mapping
 
 from ..const import AxisConstraintMode, ReasonCode
 from ..cover_types.base import AXIS_NAME_POSITION, AXIS_NAME_TILT
@@ -22,7 +23,12 @@ from .axis_constraints import (
 )
 from .handler import OverrideHandler
 from .tilt_axis import resolve_tilt_axis_from
-from .types import DecisionStep, PipelineResult, PipelineSnapshot
+from .types import (
+    DecisionStep,
+    HoldClampVerdict,
+    PipelineResult,
+    PipelineSnapshot,
+)
 
 
 def _normalize_reason(value: str | Reason) -> tuple[str, Reason | None]:
@@ -104,6 +110,95 @@ def _split_bounds_against_hold(
         if id(c) not in binding_ids and c.kind is not AxisConstraintMode.FIXED
     ]
     return binding, yielded
+
+
+def _judge_position_axis(
+    winner,
+    snapshot: PipelineSnapshot,
+    floor_pos: int | None,
+    ceiling_pos: int | None,
+) -> tuple[int, bool, bool, dict[str, HoldClampVerdict] | None]:
+    """Return ``(effective_winner_pos, raised, lowered, verdicts)``.
+
+    The single site that asks "where will the cover actually end up, and did a
+    composed bound move it?" — for both kinds of winner, so the two answers
+    cannot drift apart.
+
+    **A computed winner** proposes ``winner.position``, already in the logical
+    frame, and is clamped unconditionally (#463). One position, no verdicts:
+    unchanged from before #1174, and the only path a non-hold winner takes.
+
+    **A hold winner** keeps physical positions rather than proposing a computed
+    one, and on a multi-cover instance ``winner.held_position`` is the group's
+    *mean* — nobody's position. Judging the bounds against that mean dragged
+    compliant covers to a floor they already satisfied and hid a lone violator
+    behind its compliant siblings (#1174). So the release question is asked per
+    cover, while the answer stays one shared target: a released cover always
+    lands exactly on the bound edge.
+
+    **Judged set** (holds only). ``snapshot.cover_positions`` when it carries
+    entries — a cover with an unknown position falls back to the summary
+    ``winner.held_position``, which is today's judgment kept exactly for the
+    covers where per-entity data is missing. Otherwise a single pseudo-entry
+    ``{None: winner.held_position}``, reproducing the legacy singular
+    comparison byte-for-byte; ``verdicts`` is ``None`` on that path so every
+    pre-#1174 consumer stays on the singular ``skip_command`` route.
+
+    **Frames.** Held positions are RAW cover-frame reads and the bounds are
+    logical user values, so each is converted before comparing — the #1036
+    conversion, now applied per cover instead of once to the mean.
+
+    **Mixed violations.** ``clamp_to_bounds`` applies the floor last, so a
+    floor above a ceiling still determines the target: a cover above the
+    ceiling is then released to the floor value. Today every cover receives
+    that same value regardless, so this is parity or better.
+
+    For a hold, ``effective_winner_pos`` names the *violating* cover — the
+    lowest judged position when a floor raised, the highest when a ceiling
+    lowered — so the clamp step's ``from_pos`` reads as a real cover's position
+    rather than a mean nobody sits at. Same ReasonCodes, same trace shape.
+    """
+    if winner.held_position is None:
+        final = clamp_to_bounds(winner.position, floor_pos, ceiling_pos)
+        return (
+            winner.position,
+            final > winner.position,
+            final < winner.position,
+            None,
+        )
+    per_entity = snapshot.cover_positions or None
+    judged: Mapping[str | None, int | None] = (
+        per_entity if per_entity is not None else {None: winner.held_position}
+    )
+    verdicts: dict[str, HoldClampVerdict] = {}
+    effective_positions: list[int] = []
+    raised = False
+    lowered = False
+    for entity_id, position in judged.items():
+        raw = position if position is not None else winner.held_position
+        eff = flip_if(raw, inverted=snapshot.position_axis_inverted)
+        fin = clamp_to_bounds(eff, floor_pos, ceiling_pos)
+        effective_positions.append(eff)
+        raised = raised or fin > eff
+        lowered = lowered or fin < eff
+        if entity_id is not None:
+            verdicts[entity_id] = HoldClampVerdict(
+                held_position=raw, released=fin != eff
+            )
+    if raised:
+        effective_winner_pos = min(effective_positions)
+    elif lowered:
+        effective_winner_pos = max(effective_positions)
+    else:
+        effective_winner_pos = flip_if(
+            winner.held_position, inverted=snapshot.position_axis_inverted
+        )
+    return (
+        effective_winner_pos,
+        raised,
+        lowered,
+        verdicts if per_entity is not None else None,
+    )
 
 
 def _release_hold_for_tilt_clamp(
@@ -445,22 +540,17 @@ class PipelineRegistry:
         # ``group_lock`` sets it too; every other handler leaves it None, so
         # this preserves the existing behaviour exactly for computed winners.
         #
-        # ``held_position`` is a RAW cover-frame read, deliberately so — the
-        # coordinator publishes it as a cover-frame diagnostic extra, "one
-        # frame for every hold type" (#1028). The bounds it is compared against
-        # are logical (pre-inversion canonical) user values, so convert HERE,
-        # at the one site that does the comparing, rather than re-framing the
-        # field itself. Without this the registry asks "is 25%-open above
-        # 75%-open?" on an inverse install and answers wrong in both
-        # directions: a compliant cover held at logical 80 gets *lowered* to a
-        # logical-25 floor (#1036). A no-op on non-inverse installs.
-        effective_winner_pos = (
-            flip_if(winner.held_position, inverted=snapshot.position_axis_inverted)
-            if winner.held_position is not None
-            else winner.position
-        )
-        final_pos = clamp_to_bounds(effective_winner_pos, floor_pos, ceiling_pos)
-        # A floor "raises" when it lifts the cover above where it would actually
+        # ONE evaluation per cycle still produces ONE shared result with ONE
+        # target value. What ``_judge_position_axis`` makes per-cover is only
+        # the *release verdict* — whether each held cover violates the surviving
+        # bounds and so receives that target (#1174) — because
+        # ``held_position`` is the instance MEAN and judging it clamped
+        # compliant covers while hiding lone violators. It also owns the #1036
+        # cover→logical frame conversion, now applied per cover rather than
+        # once to the mean. A computed winner keeps its own position and no
+        # verdicts, exactly as before.
+        #
+        # A floor "raises" when it lifts a cover above where it would actually
         # end up.  Key on the *effective* position — NOT on
         # ``clamped_position != winner.position`` — so the raise still fires on
         # the alignment edge where the floor equals the would-be ``position`` but
@@ -468,8 +558,13 @@ class PipelineRegistry:
         # held below it must still be lifted; issue #809).  Because
         # ``clamp_to_bounds`` applies the floor last, a floor above a ceiling
         # still reads as a raise — the deliberate conflict rule.
-        raised = final_pos > effective_winner_pos
-        lowered = final_pos < effective_winner_pos
+        (
+            effective_winner_pos,
+            raised,
+            lowered,
+            hold_clamp_verdicts,
+        ) = _judge_position_axis(winner, snapshot, floor_pos, ceiling_pos)
+        final_pos = clamp_to_bounds(effective_winner_pos, floor_pos, ceiling_pos)
         position_clamped = raised or lowered
         # In a floor/ceiling conflict ``clamp_to_bounds`` applies the floor last,
         # so the floor always determines the final value (== floor_pos) no matter
@@ -790,6 +885,10 @@ class PipelineRegistry:
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
+            # Per-cover release verdicts for a hold (#1174); None for a computed
+            # winner and for a snapshot without per-entity positions, which is
+            # what keeps every pre-#1174 consumer on the singular path.
+            hold_clamp_verdicts=hold_clamp_verdicts,
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,
             tilt_only_contribution_active=tilt_only_active,

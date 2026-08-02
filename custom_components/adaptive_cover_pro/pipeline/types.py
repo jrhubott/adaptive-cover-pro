@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -414,10 +415,21 @@ class PipelineSnapshot:
     #     the sun is active; falls through to default when sun leaves FOV or window closes.
     motion_timeout_mode: str = "return_to_default"
 
-    # Mean of current entity positions (int-rounded). None when no entity reports a
-    # numeric position. Read by MotionTimeoutHandler in hold_position mode only.
+    # Summary of the current entity positions: their int-rounded mean. None when
+    # no entity reports a numeric position. Read by MotionTimeoutHandler in
+    # hold_position mode, and copied into ``PipelineResult.held_position`` by the
+    # manual-override / group-lock holds as a presentation value. It is a
+    # *summary*: no per-cover decision consumes it — the registry judges each
+    # held cover against its own entry in ``cover_positions`` below (#1174).
     # This is a RAW cover-frame read — see position_axis_inverted below.
     current_cover_position: int | None = None
+
+    # Per-entity RAW cover-frame positions — the same frame and the same source
+    # as ``current_cover_position``, which is the summary mean of these. The
+    # registry judges a hold's per-cover clamp verdicts against this dict
+    # (#1174). ``None`` in legacy / test snapshots that predate the field: the
+    # registry then judges holds on the summary scalar exactly as before.
+    cover_positions: Mapping[str, int | None] | None = None
 
     # Whether the position axis is effectively inverted for this install
     # (inverse-state configured and not suppressed by interpolation, per
@@ -523,6 +535,26 @@ class DecisionStep:
         """Derive the English ``reason`` from ``reason_payload`` when unset."""
         if self.reason_payload is not None and not self.reason:
             object.__setattr__(self, "reason", render_en(self.reason_payload))
+
+
+@dataclass(frozen=True)
+class HoldClampVerdict:
+    """Whether ONE held cover is released to this cycle's clamp target (#1174).
+
+    A hold winner keeps every bound cover where something authoritative already
+    put it. When a bound outranks the holder, the cover is released to the
+    bound's edge — but only the covers that actually violate the bound: judging
+    the group's mean dragged compliant covers along and hid lone violators.
+    """
+
+    #: This cover's own position, a RAW cover-frame read (matching the frame
+    #: ``PipelineSnapshot.cover_positions`` and the coordinator's held-position
+    #: diagnostic extras speak, #1028). Falls back to the summary
+    #: ``PipelineResult.held_position`` when this cover reports no position.
+    held_position: int | None
+    #: True when this cover's own position violates the surviving bounds, so it
+    #: receives the clamp target; False when it stays held where it is.
+    released: bool
 
 
 @dataclass(frozen=True)
@@ -633,7 +665,21 @@ class PipelineResult:
     # None when override is inactive, when current position is unknown, or for
     # all other handlers.  Consumers must use explicit `is not None` checks
     # because 0% (fully closed) is a valid held position.
+    #
+    # On a multi-cover instance this is a SUMMARY — the mean of the covers that
+    # reported a position — because the "Target Position" sensor is one entity
+    # per config entry and a scalar has to stand for the group. No decision
+    # consumes it: the per-cover truth is ``hold_clamp_verdicts`` below (and the
+    # sensor's own ``actual_positions`` attribute). It also remains the
+    # presence marker the #1170 priority gate keys on.
     held_position: int | None = None
+
+    # Per-cover release verdicts for a hold winner (#1174). Populated only when
+    # ``held_position is not None`` AND the snapshot carried per-entity
+    # positions; ``None`` for every computed (non-hold) winner and for legacy
+    # snapshots without the dict, which keeps every pre-#1174 caller on the
+    # singular ``skip_command`` / ``held_position`` path unchanged.
+    hold_clamp_verdicts: Mapping[str, HoldClampVerdict] | None = None
 
     # Custom position slot diagnostics — populated only when CustomPositionHandler wins.
     # custom_position_active_slot: 1-based slot number of the winning custom position handler; None otherwise.

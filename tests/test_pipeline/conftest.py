@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.pipeline.types import (
@@ -88,6 +89,7 @@ def make_snapshot(
     sun_tracking_gate_closed: bool = False,
     motion_timeout_mode: str = "return_to_default",
     current_cover_position: int | None = None,
+    cover_positions: Mapping[str, int | None] | None = None,
     position_axis_inverted: bool = False,
     default_tilt: int | None = None,
     sunset_tilt: int | None = None,
@@ -161,6 +163,7 @@ def make_snapshot(
         sun_tracking_gate_closed=sun_tracking_gate_closed,
         motion_timeout_mode=motion_timeout_mode,
         current_cover_position=current_cover_position,
+        cover_positions=cover_positions,
         position_axis_inverted=position_axis_inverted,
         default_tilt=default_tilt,
         sunset_tilt=sunset_tilt,

@@ -34,6 +34,13 @@ class ManualOverrideHandler(OverrideHandler):
         # has not reported a numeric position yet.  Used to populate held_position
         # so the "Target Position" sensor shows where the cover physically sits
         # rather than the solar value the override is shadowing.
+        #
+        # On a multi-cover instance this is a SUMMARY: the mean of the covers
+        # that reported a position, because the sensor is one entity per config
+        # entry. No decision consumes it — the registry judges each held cover
+        # against its own entry in ``snapshot.cover_positions`` (#1174), and its
+        # only other job here is the presence marker the #1170 priority gate
+        # and ``skip_command`` key on.
         held_position: int | None = snapshot.current_cover_position
 
         if snapshot.cover.direct_sun_valid:

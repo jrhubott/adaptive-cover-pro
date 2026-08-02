@@ -724,6 +724,7 @@ class PipelineSnapshotBuilder:
         in_time_window: bool,
         current_cover_position: int | None,
         is_glare_zone_enabled: Callable[[int], bool],
+        cover_positions: Mapping[str, int | None] | None = None,
         cloud_suppression_active: bool = False,
         climate_temp_flags: ClimateTempFlags | None = None,
         effective_default: int | None = None,
@@ -756,6 +757,12 @@ class PipelineSnapshotBuilder:
         owns those switch attributes (``glare_zone_0``, ``glare_zone_1`` …);
         the builder reads them through this callable so it never reaches back
         into ``coordinator.self``.
+
+        ``cover_positions`` maps each bound entity_id to its current RAW
+        cover-frame position (``None`` when the entity reports none) — the
+        per-entity source ``current_cover_position`` is the mean of. The
+        registry judges each held cover's clamp verdict against its own entry
+        (issue #1174); omitting it leaves the pre-#1174 judgment on the scalar.
 
         ``cover_capabilities`` maps each bound entity_id to its
         ``CoverCapabilities``.  It drives the sun-tracking floor rollup
@@ -836,6 +843,7 @@ class PipelineSnapshotBuilder:
                 CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
             ),
             current_cover_position=current_cover_position,
+            cover_positions=cover_positions,
             position_axis_inverted=axis_inverted(self._policy.axes[0], options),
             policy=self._policy,
             group_intent=group_intent,
