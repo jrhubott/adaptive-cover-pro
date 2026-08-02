@@ -5,6 +5,7 @@ import zoneinfo
 from unittest.mock import MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
@@ -296,6 +297,28 @@ def test_get_datetime_from_str_preserves_naive_static_time():
 
     assert result.hour == 6
     assert result.minute == 30
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
+def test_get_datetime_from_str_anchors_missing_date_on_ha_local_date():
+    """A bare "HH:MM:SS" gets HA's local date, not the host clock's (#1161).
+
+    ``dateutil`` fills components the string omits from its own
+    ``datetime.now()`` — the host clock. Here HA is in Pacific/Auckland while
+    the frozen instant is 2026-08-02 14:06 UTC, so the host is still on 08-02
+    and HA-local has already rolled to 08-03. The boundary must land on the
+    HA-local date, because that is the frame the "now" it gets compared
+    against comes from.
+    """
+    auckland = zoneinfo.ZoneInfo("Pacific/Auckland")
+    with (
+        freeze_time("2026-08-02 14:06:00"),
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", auckland),
+    ):
+        result = get_datetime_from_str("08:00:00")
+
+    assert result == dt.datetime(2026, 8, 3, 8, 0, 0)
     assert result.tzinfo is None
 
 

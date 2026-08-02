@@ -7,8 +7,6 @@ import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.util import dt as dt_util
-
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
@@ -19,7 +17,7 @@ from ..const import (
     DEFAULT_DAYTIME_GATE_GRACE_SECONDS,
     DEFAULT_TEMPLATE_COMBINE_MODE,
 )
-from ..helpers import get_datetime_from_str, get_safe_state
+from ..helpers import get_datetime_from_str, get_safe_state, local_now_naive
 from ..templates import (
     combine_with_mode,
     is_template_string,
@@ -279,7 +277,7 @@ class TimeWindowManager:
             otherwise unchanged.
 
         """
-        today = dt_util.now().date()
+        today = local_now_naive().date()
         if time.date() > today:
             return time.replace(year=today.year, month=today.month, day=today.day)
         return time
@@ -342,7 +340,7 @@ class TimeWindowManager:
         resolved = self._resolve_start_datetime()
         if resolved is None:
             return None
-        now = dt_util.now().replace(tzinfo=None)
+        now = local_now_naive()
         self.logger.debug(
             "Start time: %s, now: %s, now >= time: %s", resolved, now, now >= resolved
         )
@@ -412,7 +410,7 @@ class TimeWindowManager:
         """
         end = self.end_time
         if end is not None:
-            now = dt_util.now().replace(tzinfo=None)
+            now = local_now_naive()
             self.logger.debug(
                 "End time: %s, now: %s, now < time: %s",
                 end,
