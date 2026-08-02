@@ -59,8 +59,12 @@ def test_after_start_time_entity_evaluates_correctly():
         end_time_entity=None,
     )
 
-    # Use a time far in the past so now >= time is True
-    past_time = dt.datetime.now() - dt.timedelta(hours=1)
+    # Pin "now" to a fixed HA-local sentinel and build the fixture from it, so
+    # both sides of the comparison sit in the same frame on any host zone
+    # (#1161) — a host-clock fixture drifts out of frame by the zone offset.
+    now = dt.datetime(2090, 6, 15, 12, 0, 0)
+    # An hour before that sentinel, so now >= time is True.
+    past_time = now - dt.timedelta(hours=1)
 
     with (
         patch(
@@ -70,6 +74,10 @@ def test_after_start_time_entity_evaluates_correctly():
         patch(
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=past_time,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
+            return_value=now,
         ),
     ):
         result = mgr.after_start_time
@@ -772,7 +780,14 @@ def test_end_time_entity_normalizes_tomorrow_to_today():
         end_time_entity="sensor.sun_next_setting",
     )
 
-    today = dt.date.today()
+    # "Today" is pinned to a fixed HA-local sentinel rather than the host date,
+    # so the entity value below is tomorrow *in the frame _normalize_to_today
+    # anchors on* and normalization is exercised on every host zone. Deriving
+    # it from dt.date.today() lets the two dates diverge, at which point the
+    # value stops looking like "tomorrow" and this #226 guard silently stops
+    # guarding instead of failing (#1161).
+    now = dt.datetime(2090, 6, 15, 12, 0, 0)
+    today = now.date()
     tomorrow = today + dt.timedelta(days=1)
     tomorrow_sunset = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 20, 30)
 
@@ -784,6 +799,10 @@ def test_end_time_entity_normalizes_tomorrow_to_today():
         patch(
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=tomorrow_sunset,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
+            return_value=now,
         ),
     ):
         result = mgr.end_time
@@ -803,7 +822,11 @@ def test_end_time_entity_no_normalize_when_today():
         end_time_entity="sensor.sun_next_setting",
     )
 
-    today = dt.date.today()
+    # "Today" comes from the same fixed HA-local sentinel _normalize_to_today
+    # anchors on; a dt.date.today() fixture sits in the host frame and the two
+    # dates diverge by the zone offset for part of every day (#1161).
+    now = dt.datetime(2090, 6, 15, 12, 0, 0)
+    today = now.date()
     today_sunset = dt.datetime(today.year, today.month, today.day, 20, 30)
 
     with (
@@ -814,6 +837,10 @@ def test_end_time_entity_no_normalize_when_today():
         patch(
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=today_sunset,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.local_now_naive",
+            return_value=now,
         ),
     ):
         result = mgr.end_time
