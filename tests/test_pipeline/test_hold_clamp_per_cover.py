@@ -18,6 +18,15 @@ against that cover's own position.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from custom_components.adaptive_cover_pro.const import CONF_INVERSE_STATE
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
+)
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
@@ -231,3 +240,228 @@ def test_scalar_snapshot_without_cover_positions_is_byte_identical() -> None:
     assert result.position_constraint_applied is True
     assert result.skip_command is False
     assert result.hold_clamp_verdicts is None
+
+
+# ---------------------------------------------------------------------------
+# A cover the per-entity dict cannot speak for
+# ---------------------------------------------------------------------------
+#
+# ``cover_positions`` is ``dict[str, int | None]``: an entity that has not
+# reported a numeric position yet is present with a ``None`` value. That cover
+# still has to be judged — on the summary mean, which is the only thing anyone
+# knows about it — and still has to appear in the verdicts, or the coordinator
+# silently falls back to the instance-wide answer for it.
+
+
+def test_a_cover_with_no_position_is_judged_on_the_summary_mean() -> None:
+    """``None`` position + a violating mean → released, carrying that mean.
+
+    The reporting sibling sits exactly on the floor and is not released, so the
+    two covers diverge: a ``None`` entry is neither dropped from the dict nor
+    given its neighbour's answer.
+    """
+    result = _floor_vs_hold(
+        cover_positions={"cover.reporting": _FLOOR, "cover.silent": None},
+        current_cover_position=_ISSUE_MEAN,
+    )
+
+    verdicts = result.hold_clamp_verdicts
+    assert verdicts is not None
+    assert set(verdicts) == {"cover.reporting", "cover.silent"}
+    assert verdicts["cover.silent"].held_position == _ISSUE_MEAN
+    assert verdicts["cover.silent"].released is True
+    assert verdicts["cover.reporting"].released is False
+
+
+def test_a_cover_with_no_position_rides_a_compliant_mean() -> None:
+    """The mirror: the mean clears the floor, so the silent cover is NOT released.
+
+    A genuine violator is released in the same cycle, so "not released" here is
+    a real judgment on the mean rather than a cycle where nothing clamped.
+    """
+    result = _floor_vs_hold(
+        # 100 and 0 average to 50, which clears the 40 floor.
+        cover_positions={"cover.high": 100, "cover.low": 0, "cover.silent": None},
+        current_cover_position=50,
+    )
+
+    assert result.position_constraint_applied is True
+    verdicts = result.hold_clamp_verdicts
+    assert verdicts is not None
+    assert verdicts["cover.low"].released is True
+    assert verdicts["cover.silent"].held_position == 50
+    assert verdicts["cover.silent"].released is False
+
+
+@pytest.mark.asyncio
+async def test_a_cover_absent_from_the_dict_takes_the_instance_wide_answer() -> None:
+    """A cover with no entry at all is not judged, and must not blow up.
+
+    The registry judges exactly the covers the snapshot lists, so an entity the
+    dict never saw gets no verdict — and ``_dispatch_to_cover`` falls back to
+    the singular ``skip_command`` for it rather than raising ``KeyError``.
+    """
+    result = _floor_vs_hold(
+        cover_positions=_ISSUE_POSITIONS, current_cover_position=_ISSUE_MEAN
+    )
+
+    verdicts = result.hold_clamp_verdicts
+    assert verdicts is not None
+    assert "cover.ghost" not in verdicts
+
+    coord = _dispatch_coordinator(result)
+    await coord._dispatch_to_cover("cover.ghost", _FLOOR, "custom_position_1", ctx=None)
+
+    # skip_command is False (the floor clamped), so the instance-wide answer is
+    # "command it" — the same value every released cover receives.
+    coord._cmd_svc.apply_position.assert_called_once_with(
+        "cover.ghost", _FLOOR, "custom_position_1", context=None
+    )
+
+
+# ---------------------------------------------------------------------------
+# A tilt clamp is a command, not a no-op (#1170 audit) — the position axis's
+# per-cover verdicts must not veto it
+# ---------------------------------------------------------------------------
+#
+# ``hold_clamp_verdicts`` answers ONE question — did a composed *position*
+# bound release this cover — so it is the skip authority for the position axis
+# alone. A tilt bound that outranks the holder is an independent reason to
+# command every held cover (``_release_hold_for_tilt_clamp``), and with the
+# position axis inert every verdict reads ``released=False``. Letting those
+# verdicts answer for the tilt axis re-skipped the whole group and the tilt
+# bound never reached the hardware, while the trace still reported a carried
+# hold position for a dispatch that never happened.
+
+_TILT_FILL = 10
+_TILT_FLOOR = 60
+
+
+def _dispatch_coordinator(result):
+    """Minimal coordinator around a ready-made result, for ``_dispatch_to_cover``."""
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._inverse_state = False
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {CONF_INVERSE_STATE: False}
+    coord._policy = get_policy("cover_venetian")
+    coord._pipeline_result = result
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", None))
+    cmd_svc.record_skipped_action = MagicMock()
+    coord._cmd_svc = cmd_svc
+    return coord
+
+
+def _tilt_clamp_vs_hold(*, cover_positions=None, with_position_floor: bool = False):
+    """Evaluate a manual hold released by an outranking TILT bound.
+
+    A FIXED tilt-only slot below the holder fills the tilt (#514); a tilt floor
+    above the holder then clamps it (#943). By default nothing claims the
+    position axis, so the released command comes entirely from the tilt side —
+    the shape the #1170 audit named when it ruled that a tilt clamp is a
+    command. ``with_position_floor`` adds an outranking position floor so both
+    axes clamp in the same cycle.
+    """
+    sensors = [
+        _slot(1, tilt=_TILT_FILL, tilt_only=True, priority=BELOW_HOLDER),
+        _slot(2, tilt_min=_TILT_FLOOR, priority=ABOVE_HOLDER),
+    ]
+    handlers = [
+        CustomPositionHandler(
+            slot=1, position=None, priority=BELOW_HOLDER, tilt=_TILT_FILL
+        ),
+        CustomPositionHandler(slot=2, position=None, priority=ABOVE_HOLDER),
+        ManualOverrideHandler(),
+    ]
+    if with_position_floor:
+        sensors.append(_slot(3, position=_FLOOR, min_mode=True, priority=ABOVE_HOLDER))
+        handlers.append(_cp_handler(3, _FLOOR, priority=ABOVE_HOLDER))
+    registry = _registry_with_custom(handlers)
+    return registry.evaluate(
+        make_snapshot(
+            cover=_climate_cover(direct_sun_valid=False),
+            cover_type="cover_venetian",
+            manual_override_active=True,
+            current_cover_position=_ISSUE_MEAN,
+            cover_positions=cover_positions,
+            default_position=100,
+            direct_sun_valid=False,
+            custom_position_sensors=sensors,
+        )
+    )
+
+
+def test_tilt_clamp_releases_the_hold_on_a_legacy_snapshot() -> None:
+    """Baseline: no per-entity dict, so nothing has changed here since #1170."""
+    result = _tilt_clamp_vs_hold()
+
+    assert result.tilt == _TILT_FLOOR
+    assert result.skip_command is False
+    assert result.position_constraint_applied is False
+    assert result.hold_clamp_verdicts is None
+
+
+def test_tilt_clamp_leaves_no_position_verdicts_to_veto_it() -> None:
+    """The production snapshot shape: ``cover_positions`` present, tilt clamped.
+
+    Every real cycle after the first carries the dict, and with the position
+    axis inert every verdict is ``released=False``. They must not survive as the
+    skip authority for a dispatch the *tilt* axis forced.
+    """
+    result = _tilt_clamp_vs_hold(cover_positions=_ISSUE_POSITIONS)
+
+    assert result.tilt == _TILT_FLOOR
+    assert result.skip_command is False
+    assert result.position_constraint_applied is False
+    assert result.hold_clamp_verdicts is None
+
+
+@pytest.mark.asyncio
+async def test_tilt_clamp_reaches_every_cover_on_a_production_snapshot() -> None:
+    """End to end: the tilt bound commands all three covers, skipping none.
+
+    The registry-only assertion above cannot see the regression this pins —
+    the verdicts only bite at the dispatch seam, where a ``released=False``
+    entry turns the forced command back into a hold skip.
+    """
+    result = _tilt_clamp_vs_hold(cover_positions=_ISSUE_POSITIONS)
+    coord = _dispatch_coordinator(result)
+
+    for cover in _ISSUE_POSITIONS:
+        await coord._dispatch_to_cover(cover, result.position, "manual_override", None)
+
+    coord._cmd_svc.record_skipped_action.assert_not_called()
+    assert [c.args[0] for c in coord._cmd_svc.apply_position.call_args_list] == list(
+        _ISSUE_POSITIONS
+    )
+
+
+@pytest.mark.asyncio
+async def test_tilt_clamp_outranks_verdicts_when_position_clamps_too() -> None:
+    """Both axes clamp: the tilt bound still reaches the covers the floor spared.
+
+    The narrower guard — drop the verdicts only when the position axis stayed
+    inert — leaves this case broken: ``cover.a`` and ``cover.b`` already satisfy
+    the floor, so their verdicts read ``released=False`` and the tilt bound that
+    outranks the hold never reaches them. A tilt clamp is a command for every
+    held cover or it is not a command at all.
+    """
+    result = _tilt_clamp_vs_hold(
+        cover_positions=_ISSUE_POSITIONS, with_position_floor=True
+    )
+
+    assert result.tilt == _TILT_FLOOR
+    assert result.position == _FLOOR
+    assert result.position_constraint_applied is True
+    assert result.skip_command is False
+    assert result.hold_clamp_verdicts is None
+
+    coord = _dispatch_coordinator(result)
+    for cover in _ISSUE_POSITIONS:
+        await coord._dispatch_to_cover(
+            cover, result.position, "custom_position_3", None
+        )
+
+    coord._cmd_svc.record_skipped_action.assert_not_called()
+    assert coord._cmd_svc.apply_position.call_count == len(_ISSUE_POSITIONS)

@@ -2748,8 +2748,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         verdict decides: released means the clamp target reaches it, held means
         the skip record is written — and written with the cover's own position,
         not the instance mean the singular ``held_position`` carries. Without
-        verdicts (a computed winner, a motion hold, a legacy snapshot) the
-        singular ``skip_command`` answers for every cover, exactly as before.
+        verdicts (a computed winner, a motion hold, a legacy snapshot, or a
+        command the TILT axis forced) the singular ``skip_command`` answers for
+        every cover, exactly as before.
+
+        Those verdicts are the skip authority for the POSITION axis only — a
+        tilt clamp is a separate reason to command and the registry publishes no
+        verdicts on that path, so nothing here can veto it.
         """
         result = self._pipeline_result
         verdict = (result.hold_clamp_verdicts or {}).get(cover) if result else None

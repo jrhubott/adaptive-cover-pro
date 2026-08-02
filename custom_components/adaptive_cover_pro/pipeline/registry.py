@@ -875,6 +875,19 @@ class PipelineRegistry:
                 position_clamped=position_clamped,
                 effective_winner_pos=effective_winner_pos,
             )
+            # ``hold_clamp_verdicts`` is the skip authority for the POSITION
+            # axis ONLY: it answers "did a composed position bound release this
+            # cover", nothing else. A tilt clamp is a command, not a no-op
+            # (#1170 audit) — an independent reason to command every held cover
+            # — so the position axis's per-cover verdicts must not veto it.
+            # Dropping them puts this cycle back on the singular
+            # ``skip_command`` the tilt release just cleared, which is what
+            # every cover needs and exactly the pre-#1174 route. Without this a
+            # tilt-only release found every verdict at ``released=False`` (the
+            # position axis was inert, so nothing was released) and re-skipped
+            # the whole group, leaving the trace claiming a carried hold
+            # position for a dispatch that never happened.
+            hold_clamp_verdicts = None
         # The tilt-axis overlay (issue #514) is how a FIXED contribution
         # reaches the result's tilt field. It can never collide with the
         # bound-clamp write above (the ``else: merged["tilt"] = bounded_tilt``
@@ -885,9 +898,10 @@ class PipelineRegistry:
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
-            # Per-cover release verdicts for a hold (#1174); None for a computed
-            # winner and for a snapshot without per-entity positions, which is
-            # what keeps every pre-#1174 consumer on the singular path.
+            # Per-cover release verdicts for a hold (#1174) — the POSITION
+            # axis's skip authority. None for a computed winner, for a snapshot
+            # without per-entity positions, and for a tilt-forced command, each
+            # of which keeps that cycle on the singular path.
             hold_clamp_verdicts=hold_clamp_verdicts,
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,

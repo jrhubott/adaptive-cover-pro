@@ -674,11 +674,14 @@ class PipelineResult:
     # presence marker the #1170 priority gate keys on.
     held_position: int | None = None
 
-    # Per-cover release verdicts for a hold winner (#1174). Populated only when
+    # Per-cover release verdicts for a hold winner (#1174), and the skip
+    # authority for the POSITION axis ONLY. Populated when
     # ``held_position is not None`` AND the snapshot carried per-entity
-    # positions; ``None`` for every computed (non-hold) winner and for legacy
-    # snapshots without the dict, which keeps every pre-#1174 caller on the
-    # singular ``skip_command`` / ``held_position`` path unchanged.
+    # positions; ``None`` for every computed (non-hold) winner, for legacy
+    # snapshots without the dict, and whenever a TILT clamp forced the command
+    # instead — a tilt bound is its own reason to command every held cover, so
+    # position verdicts must not veto it. Each ``None`` case keeps the cycle on
+    # the singular ``skip_command`` / ``held_position`` path unchanged.
     hold_clamp_verdicts: Mapping[str, HoldClampVerdict] | None = None
 
     # Custom position slot diagnostics — populated only when CustomPositionHandler wins.
