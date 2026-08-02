@@ -2,7 +2,7 @@ name: "Issue Hygiene"
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
   schedule:
     # Daily at 13:00 UTC — sweep stale needs-template / needs-diagnostics issues
     - cron: "0 13 * * *"
@@ -27,6 +27,7 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body || '';
             const issue_number = issue.number;
+            const action = context.payload.action;
             const { owner, repo } = context.repo;
             const labels = (issue.labels || []).map(l => l.name);
 
@@ -55,6 +56,25 @@ jobs:
               console.log(`Labeled #${issue_number} with ${name}`);
             };
 
+            // Manual escape hatch: silences both checks on an issue worth keeping
+            // as-filed. Apply it by hand when a freeform report is good enough.
+            if (labels.includes('triage-exempt')) {
+              console.log(`#${issue_number} is triage-exempt, no hygiene checks`);
+              return;
+            }
+
+            // Label events fire for every bot label too (`released`, `stale`,
+            // `awaiting-release`), and those land long after triage. The only one
+            // that needs a re-check is `bug` arriving late, which is what used to
+            // slip past the diagnostics check entirely.
+            if (action === 'labeled' && context.payload.label?.name !== 'bug') {
+              console.log(
+                `#${issue_number}: label '${context.payload.label?.name}' added, ` +
+                `not 'bug' — nothing to re-check`
+              );
+              return;
+            }
+
             // Maintainers file defects freeform on purpose: no form, no diagnostics upload.
             // Clear any hygiene label that got applied before this exemption existed.
             const MAINTAINER_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
@@ -75,7 +95,10 @@ jobs:
             // governs the web UI, so the REST API and `gh issue create` bypass it.
             const usedTemplate = /^### Adaptive Cover Pro version\s*$/m.test(body);
 
-            await syncLabel('needs-template', !usedTemplate, [
+            // Whether a form was used is settled at creation and no edit can make
+            // it true later, so a label event never reopens this complaint. That
+            // keeps the bot off issues triaged before this workflow existed.
+            if (action !== 'labeled') await syncLabel('needs-template', !usedTemplate, [
               `Thanks for the writeup. This issue was opened without one of the issue forms, so it's missing the fields I triage from: integration version, Home Assistant version, cover type and brand, and the diagnostics file.`,
               ``,
               `Please refile it from the [issue chooser](https://github.com/${owner}/${repo}/issues/new/choose) and paste what you wrote into the form's description field. The text carries over and the form collects the rest. Once the new issue is up I'll close this one as a duplicate.`,
@@ -86,7 +109,8 @@ jobs:
             ].join('\n'));
 
             // A freeform issue is already missing every field, including the
-            // diagnostics upload. Don't stack a second complaint on top of it.
+            // diagnostics upload. Don't stack a second complaint on top of it,
+            // whatever put `bug` on it and whenever that happened.
             if (!usedTemplate) return;
 
             // --- Diagnostics attachment check (bug reports only) -------------
