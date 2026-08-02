@@ -611,8 +611,10 @@ class TestLintelGate:
         permission-budget term) also misses the gate here, projecting a
         shadow-inflated ~1.2071. Both wrong answers happen to differ from the
         correct 1.35, so this test is a genuine discriminator against either
-        regression — unlike the old params, which returned 1.20 under every
-        variant. If this test starts failing after a "simplification" that
+        regression — unlike the old params, which the pre-#1169 formula also
+        passed (it returned 1.20 there, same as the correct answer; only the
+        ``depth * tan(elev)`` variant failed, at ~0.9871). If this test starts
+        failing after a "simplification" that
         removes the ``/cos(gamma)`` term, that removal is the regression.
         """
         params = base_cover_params.copy()

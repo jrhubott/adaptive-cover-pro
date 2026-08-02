@@ -125,6 +125,12 @@ class TestVerticalTrace:
         assert details["window_depth_contribution_m"] == pytest.approx(
             expected_lintel_shadow, abs=1e-6
         )
+        # The gate returns before the safety margin is applied, so it must
+        # still uphold the adjusted = base * margin relation every other
+        # branch does. Reverting that broke no test before this line existed.
+        assert details["adjusted_height_m"] == pytest.approx(
+            details["base_height_m"] * details["safety_margin"]
+        )
         assert not _check_native_types(details)
 
 

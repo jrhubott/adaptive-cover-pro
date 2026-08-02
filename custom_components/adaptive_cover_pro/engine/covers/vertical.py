@@ -371,7 +371,10 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                     # safety_margin (#1169 audit). The gated height that
                     # actually drove the full-open decision is still fully
                     # recoverable as base_height_m + window_depth_contribution_m
-                    # (the lintel shadow) — nothing is lost, only made honest.
+                    # (the lintel shadow), so nothing is lost. The trade is
+                    # that clamped_to_window is now True here while
+                    # adjusted_height_m sits below h_win — on this path the
+                    # flag reports the gated height, not the adjusted one.
                     adjusted_height=float(base_height),
                     result=result,
                     clamped_to_window=clamped_to_window,
