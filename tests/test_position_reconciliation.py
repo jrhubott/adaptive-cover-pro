@@ -320,6 +320,42 @@ def test_check_target_reached_tolerance_boundary(svc):
     assert svc.check_target_reached("cover.test", 47) is True  # delta=3 == tolerance
 
 
+@pytest.mark.asyncio
+async def test_reconcile_no_dispatch_after_same_position_skip_records_target(
+    svc, mock_hass
+):
+    """Issue #1158 / #187 guard: a same_position skip must record the target
+    so reconciliation immediately sees this entity's target == actual and
+    never resends.
+
+    Before the fix, ``_skip()`` never called ``set_target()``, so an entity
+    that landed on its computed position without ever being dispatched had
+    ``PerEntityState.target`` stuck at ``None`` forever — it was simply
+    absent from ``iter_targets()``, and this reconciliation pass would find
+    nothing to do for the wrong reason (no target recorded, not "at
+    target"). This test drives through ``apply_position``'s same_position
+    branch first (mirroring #300's force+same-position invariant) so the
+    target is genuinely recorded, then confirms reconciliation matches
+    immediately and issues no resend.
+    """
+    _patch_position(svc, 60)
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            60,
+            "custom_position",
+            context=_ctx(force=True, auto_control=True),
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 60
+
+    mock_hass.services.async_call.reset_mock()
+    await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.state("cover.test").retry_count == 0
+
+
 # ------------------------------------------------------------------ #
 # _reconcile — cover reached target
 # ------------------------------------------------------------------ #

@@ -1671,6 +1671,16 @@ class CoverCommandService:
                 context=context,
                 trigger=_trigger,
             )
+            # Book the target even though nothing is dispatched (issue #1158):
+            # otherwise a cover that lands on its computed position without
+            # ACP ever sending a command keeps PerEntityState.target at None
+            # forever, and get_diagnostics()["at_target"] reads False despite
+            # the cover genuinely being at rest. Record _plan.routed_target,
+            # not the raw `position` argument — the two diverge on
+            # threshold-routed covers (issue #1095's arm-2 broadening), and
+            # writing raw `position` there would recreate a target != actual
+            # mismatch and make the entity wrongly reconciliation-eligible.
+            self.set_target(entity_id, _plan.routed_target, dispatch_token=None)
             return self._skip(
                 entity_id,
                 "same_position",
