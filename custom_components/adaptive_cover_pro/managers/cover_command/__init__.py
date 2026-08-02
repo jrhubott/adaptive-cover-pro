@@ -1636,14 +1636,17 @@ class CoverCommandService:
             )
             and is_assumed_state(state_obj)
         )
+        # `_current` is a genuine reading (present, not a synthetic
+        # open/close mapping) — the predicate all three same-position
+        # comparisons below share.
+        _current_is_genuine = _current is not None and not _current_is_assumed_mapping
         if (
             not sun_reconfirm
             and not force_endpoint
             and not context.user_command
             and (
                 (
-                    _current is not None
-                    and not _current_is_assumed_mapping
+                    _current_is_genuine
                     and (
                         _current == position
                         or (
@@ -1652,9 +1655,8 @@ class CoverCommandService:
                     )
                 )
                 or (
-                    _current is not None
+                    _current_is_genuine
                     and not _plan.supports_position
-                    and not _current_is_assumed_mapping
                     and _current == _plan.routed_target
                 )
                 or (
@@ -1685,14 +1687,14 @@ class CoverCommandService:
             # cover has not actually reached. That target/actual mismatch is
             # exactly what flipped `has_recorded_target` to True and let
             # manual-override's narrower detection threshold misread the same
-            # small gap as a user touch (#546/#654). Two earlier audit rounds
-            # tried to fix that by widening the manual-override detector
-            # instead, and both times the widening leaked into comparisons
-            # that have nothing to do with this gate. The narrower fix scopes
-            # down to just this one sub-arm: it simply does not book. ACP
-            # never dispatched anything to this cover this cycle, so
-            # `target: null` is the honest answer — every other arm books
-            # normally, which covers the case issue #1158 actually reports.
+            # small gap as a user touch (#546/#654). Widening the
+            # manual-override detector instead was considered and rejected as
+            # a fix: it leaks into comparisons that have nothing to do with
+            # this gate. The narrower fix scopes down to just this one
+            # sub-arm: it simply does not book. ACP never dispatched anything
+            # to this cover this cycle, so `target: null` is the honest
+            # answer — every other arm books normally, which covers the case
+            # issue #1158 actually reports.
             #
             # Verified against `route_service_call` (routing.py) that this is
             # the ONLY sub-arm where the mismatch can occur: arm 1's
@@ -1701,12 +1703,15 @@ class CoverCommandService:
             # endpoint-routing and plain set_position branches echo `state`
             # back unchanged when `state == _current`, and the threshold
             # branch picks the endpoint matching `state`'s own side whenever
-            # `state` is already 0 or 100); arm 2 requires
-            # `_current == _plan.routed_target` as its own gate condition;
-            # arm 3 only fires when `_current` is None or a synthetic
-            # open/close mapping, so the mismatch check's leading
-            # `_current is not None and not _current_is_assumed_mapping`
-            # guard is already False there.
+            # `state` is already 0 or 100). That premise holds here because
+            # the threshold branch runs only when the axis lacks position
+            # capability, and on such an axis `_current` comes from
+            # `get_open_close_state`, which returns only 0, 100, or None — so
+            # `_current == position` already forces `position` into
+            # `{0, 100}` too. Arm 2 requires `_current == _plan.routed_target`
+            # as its own gate condition; arm 3 only fires when `_current` is
+            # None or a synthetic open/close mapping, so the mismatch check's
+            # leading `_current_is_genuine` guard is already False there.
             #
             # Write only on a genuine change: a repeat same_position skip that
             # re-confirms an already-booked target must not clobber the
@@ -1729,9 +1734,7 @@ class CoverCommandService:
             # `is_safety` at its default (False) matches merge-base behaviour
             # (no booking at all) for the one axis that matters here.
             _target_would_mismatch_actual = (
-                _current is not None
-                and not _current_is_assumed_mapping
-                and _current != _plan.routed_target
+                _current_is_genuine and _current != _plan.routed_target
             )
             if (
                 not _target_would_mismatch_actual
