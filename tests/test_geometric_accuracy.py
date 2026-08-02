@@ -604,18 +604,24 @@ class TestLintelGate:
 
         DISCRIMINATOR: a ``depth * tan(elev)`` variant (dropping the
         ``/cos(gamma)`` foreshortening — the reporter's original, numerically
-        wrong proposal) computes a shadow of only ~0.21 m here, leaves the
-        gate unfired, and returns ~0.9871 instead of the correct fully-open
-        1.20. If this test starts failing after a "simplification" that
+        wrong proposal) computes a lintel shadow of only 0.5 m here, leaves the
+        gate unfired (base 0.7071 + 0.5 = 1.2071 < h_win 1.35), and falls
+        through to the normal path returning ~0.7071 instead of the correct
+        fully-open 1.35. The pre-#1169 code (the old ``depth * sin(|gamma|)``
+        permission-budget term) also misses the gate here, projecting a
+        shadow-inflated ~1.2071. Both wrong answers happen to differ from the
+        correct 1.35, so this test is a genuine discriminator against either
+        regression — unlike the old params, which returned 1.20 under every
+        variant. If this test starts failing after a "simplification" that
         removes the ``/cos(gamma)`` term, that removal is the regression.
         """
         params = base_cover_params.copy()
-        params["distance"] = 0.90
-        params["h_win"] = 1.20
-        params["window_depth"] = 0.30
-        cover = make_cover_with_angles(params, gamma=50.0, sol_elev=35.0)
+        params["distance"] = 0.5
+        params["h_win"] = 1.35
+        params["window_depth"] = 0.5
+        cover = make_cover_with_angles(params, gamma=45.0, sol_elev=45.0)
 
-        assert cover.calculate_position() == pytest.approx(1.20)
+        assert cover.calculate_position() == pytest.approx(1.35)
 
     def test_depth_has_no_effect_below_the_gate(self, base_cover_params):
         """Below the full-open threshold, window_depth must be a pure no-op —

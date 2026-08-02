@@ -172,11 +172,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
     ) -> dict:
         """Assemble the raw vertical solar-calculation trace (issue #682).
 
-        Single source for both the edge-case and normal return paths so the key
-        set never drifts between them. Values are raw native floats — rounding
-        happens at the presentation boundary (``DiagnosticsBuilder``), never here.
-        ``glare_zones_active`` is left empty; the GlareZoneHandler populates it
-        downstream via diagnostics.
+        Single source for all three ``calculate_position`` return paths — the
+        edge-case return, the lintel-gate return (#1169), and the normal
+        return — so the key set never drifts between them. Values are raw
+        native floats — rounding happens at the presentation boundary
+        (``DiagnosticsBuilder``), never here. ``glare_zones_active`` is left
+        empty; the GlareZoneHandler populates it downstream via diagnostics.
         """
         return {
             TRACE_KEY_SOL_ELEV_DEG: float(self.sol_elev),
@@ -364,7 +365,14 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                     cos_gamma_clamped=float(cos_gamma_clamped),
                     path_length=float(path_length),
                     base_height=float(base_height),
-                    adjusted_height=float(gated_height),
+                    # No safety margin is applied on the gate path (it returns
+                    # before that step), so report it consistent with every
+                    # other branch: adjusted_height_m == base_height_m *
+                    # safety_margin (#1169 audit). The gated height that
+                    # actually drove the full-open decision is still fully
+                    # recoverable as base_height_m + window_depth_contribution_m
+                    # (the lintel shadow) — nothing is lost, only made honest.
+                    adjusted_height=float(base_height),
                     result=result,
                     clamped_to_window=clamped_to_window,
                 )

@@ -154,7 +154,7 @@ Dedicated tests for the enhanced geometric accuracy calculations added in v2.7.0
 - Edge case handling at thresholds (elevation < 2°, |gamma| > 85°, elevation > 88°)
 - Smooth transitions across ranges (no discontinuities)
 - Regression tests (< 5% deviation at normal angles vs. baseline)
-- Window depth parameter (offset when window_depth > 0 and |gamma| > 10°)
+- Window depth parameter (binary lintel gate: opens fully once the reveal shadow plus the blind's own coverage span the whole pane, never a partial offset — #1169)
 - Backward compatibility (window_depth=0 produces identical results to previous behavior)
 
 ### test_sill_height.py (22 tests)
