@@ -496,17 +496,48 @@ def get_timedelta_str(string: str):
         return pd.to_timedelta(string)
 
 
+def local_now_naive() -> dt.datetime:
+    """Return "now" in HA's configured timezone with tzinfo stripped.
+
+    The single home for this project's naive-**local** clock convention
+    (issue #1161). A bare ``dt.datetime.now()`` reads the *host OS* zone — HA
+    never calls ``time.tzset()`` — so on any install where the host zone
+    differs from ``hass.config.time_zone`` every wall-clock comparison is
+    silently offset by the zone delta, all day, every day.
+
+    Every consumer of :func:`get_datetime_from_str`'s naive-local output must
+    source its "now" (and its implied "today") from here, so both sides of the
+    comparison sit in the same frame. That includes the *implied date* of a
+    bare ``"HH:MM:SS"`` boundary — see :func:`get_datetime_from_str`.
+
+    Not to be confused with the deliberately self-consistent naive-**UTC**
+    convention in :func:`compute_effective_default` / :func:`resolve_sun_boundaries`,
+    which is timezone-safe by construction and does not use this.
+    """
+    return dt_util.now().replace(tzinfo=None)
+
+
 def get_datetime_from_str(string: str):
     """Convert a datetime string to a naive-local datetime.
 
     Tz-aware inputs (e.g., sun-sensor UTC values like "2026-04-18T04:46:00+00:00")
     are converted to HA's configured local timezone and then stripped of tzinfo so
     downstream naive comparisons work correctly in non-UTC installs.
-    Tz-naive inputs (e.g., static "06:30") are returned unchanged.
+    Tz-naive inputs (e.g., static "06:30") keep their wall-clock time.
+
+    Components the string omits — the whole date, for the ``"HH:MM:SS"`` static
+    window bounds — are filled from HA's local date via :func:`local_now_naive`.
+    ``dateutil`` would otherwise default them from its own ``datetime.now()``,
+    i.e. the *host* clock, putting the boundary on a different calendar day
+    from the HA-framed "now" it is compared against for ``|tz-offset|`` hours
+    of every day (issue #1161).
     """
     if string is None:
         return None
-    parsed = parser.parse(string)
+    parsed = parser.parse(
+        string,
+        default=local_now_naive().replace(hour=0, minute=0, second=0, microsecond=0),
+    )
     if parsed.tzinfo is not None:
         parsed = dt_util.as_local(parsed).replace(tzinfo=None)
     return parsed
@@ -521,7 +552,7 @@ def get_last_updated(entity_id: str, hass: HomeAssistant):
 
 def check_time_passed(time: dt.datetime):
     """Check if time is passed for datetime."""
-    now = dt.datetime.now()
+    now = local_now_naive()
     return now >= time
 
 
@@ -890,7 +921,7 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
         return None
     try:
         parsed = get_datetime_from_str(raw)
-        today_local = dt_util.now().date()
+        today_local = local_now_naive().date()
         return parsed.replace(
             year=today_local.year,
             month=today_local.month,

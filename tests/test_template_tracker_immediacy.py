@@ -25,7 +25,6 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.adaptive_cover_pro.const import (
-    BLANK_TIME,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_END_TIME,
     CONF_MOTION_TEMPLATE,
@@ -379,18 +378,27 @@ async def test_self_referencing_gate_template_refresh_is_bounded(
     with one, the *unguarded* loop is unbounded — measured at >9000 refreshes
     before the harness timed out, versus the five below.
 
-    The start/end clock is blanked so ``is_active`` reduces to the gate verdict
-    alone; otherwise the loop's existence would depend on the machine's local
-    timezone (``TimeWindowManager.before_end_time`` reads a naive
-    ``datetime.now()``).
+    A real start/end window is configured, with hours of slack on both sides:
+    the ``hass`` fixture puts HA in US/Pacific, so the frozen 17:00 UTC instant
+    is 10:00 local, two hours past the 08:00 start and ten short of the 20:00
+    end. The slack is the point — an exact boundary tie would leave the window
+    open only by ``>=``, and a fixture that drifts closed collapses the run to
+    ``per_window == [0, 0, 0, 0, 0]``, which reads as a coalescer regression
+    rather than a broken fixture.
+
+    Configuring a real window at all is only safe since #1161 made both sides
+    of the comparison HA-framed — ``TimeWindowManager`` reads HA's configured
+    zone rather than the host clock, and the boundary's implied date comes
+    from the same place — so the window's openness no longer depends on the
+    machine's local timezone.
     """
     freezer.move_to(dt.datetime(2026, 6, 15, 17, 0, 0, tzinfo=dt.UTC))
     entry = _make_entry(
         hass,
         "tt_loop_01",
         {
-            CONF_START_TIME: BLANK_TIME,
-            CONF_END_TIME: BLANK_TIME,
+            CONF_START_TIME: "08:00:00",
+            CONF_END_TIME: "20:00:00",
             CONF_DAYTIME_GATE_TEMPLATE: _LOOPING_GATE_TEMPLATE,
         },
     )
