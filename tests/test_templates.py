@@ -656,7 +656,7 @@ class TestAcpNamespace:
         with pytest.raises(UndefinedError) as err:
             ctx["acp"].not_a_real_key
         assert "not_a_real_key" in str(err.value)
-        assert "Vertical Dining Room Shade" in str(err.value)
+        assert "Vertical Blind Dining Room Shade" in str(err.value)
 
     async def test_known_key_without_an_entity_raises_undefined_error(
         self, hass: HomeAssistant
@@ -670,7 +670,7 @@ class TestAcpNamespace:
         with pytest.raises(UndefinedError) as err:
             ctx["acp"].glare_active
         assert "glare_active" in str(err.value)
-        assert "Vertical Dining Room Shade" in str(err.value)
+        assert "Vertical Blind Dining Room Shade" in str(err.value)
 
     async def test_rename_is_picked_up_on_the_next_access(self, hass: HomeAssistant):
         """No caching: a mid-run entity rename resolves on the very next read."""

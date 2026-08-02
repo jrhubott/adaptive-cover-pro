@@ -20,6 +20,7 @@ from custom_components.adaptive_cover_pro.const import (
     DOMAIN,
     CoverType,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.templates import (
     build_acp_template_variables,
 )
@@ -30,15 +31,22 @@ def make_acp_entry(
     entry_id: str,
     *,
     name: str = "Dining Room Shade",
-    title: str = "Vertical Dining Room Shade",
+    title: str | None = None,
     options: dict | None = None,
 ) -> MockConfigEntry:
     """Register a config entry for seeded namespace rows to hang off.
 
-    ``title`` is deliberately different from ``data["name"]`` — that is the real
-    shape (``config_flow`` builds the title as ``"<type label> <name>"``), and
-    the namespace's error messages name the instance by title.
+    ``title`` is deliberately different from ``data["name"]`` — the namespace's
+    error messages name the instance by title, and getting that difference wrong
+    in a fixture would lock the tests to a shape no real install produces. It is
+    therefore *derived* rather than typed: ``config_flow`` builds the title as
+    ``f"{_cover_type_label(sensor_type)} {name}"``, and ``_cover_type_label``
+    delegates to ``get_policy(sensor_type).display_label()``. For a blind that
+    label is "Vertical Blind", so the default title here is
+    "Vertical Blind Dining Room Shade" — not "Vertical Dining Room Shade".
     """
+    if title is None:
+        title = f"{get_policy(CoverType.BLIND).display_label()} {name}"
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},

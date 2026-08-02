@@ -416,7 +416,7 @@ async def test_input_template_resolves_the_acp_namespace(hass) -> None:
             ),
         },
         entry_id="mo_input_acp_01",
-        title="Vertical Dining Room Shade",
+        title="Vertical Blind Dining Room Shade",
     )
     entry.add_to_hass(hass)
     hass.states.async_set(

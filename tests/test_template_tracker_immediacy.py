@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_track_state_change_event
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -255,6 +256,90 @@ async def test_only_namespace_templates_have_their_refreshes_coalesced(
         assert acp_fired.call_count == 2, (
             "The coalesced flips must still produce a trailing run when the "
             "window closes — coalescing drops nothing."
+        )
+
+
+async def test_unload_cancels_the_coalescer_pending_trailing_run(
+    hass: HomeAssistant, freezer
+) -> None:
+    """Unloading the entry must kill the coalescer's deferred run.
+
+    ``_coalesce_namespace_refreshes`` schedules a trailing timer that outlives
+    the tracker: HA's :class:`~homeassistant.helpers.debounce.Debouncer` owns its
+    own ``loop.call_later`` handle, so removing the template tracker on unload
+    does nothing to it. Without ``entry.async_on_unload(debouncer.async_shutdown)``
+    that timer still fires after teardown and replays the deferred flip into a
+    coordinator that has already been unloaded.
+
+    The suite cannot catch that leak by accident: ``conftest`` returns
+    ``expected_lingering_timers = True`` for every ``@pytest.mark.integration``
+    test, which is every test that reaches ``_register_template_tracker``. So the
+    guard has to be explicit — drive the debouncer into a pending state, unload,
+    then let the window close and assert nothing ran.
+    """
+    entry = _make_entry(
+        hass,
+        "tt_unload_01",
+        {CONF_MOTION_TEMPLATE: "{{ is_state(acp.sun_infront, 'on') }}"},
+    )
+    sun_infront = _preseed_sun_infront(hass, entry)
+    hass.states.async_set(sun_infront, "off")
+
+    debouncers: list[Debouncer] = []
+
+    class _RecordingDebouncer(Debouncer):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            debouncers.append(self)
+
+    with (
+        patch("custom_components.adaptive_cover_pro.Debouncer", _RecordingDebouncer),
+        patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "async_check_motion_template_change",
+            new_callable=AsyncMock,
+        ) as fired,
+        _patch_coordinator_refresh(),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        fired.reset_mock()
+
+        # Two flips inside one cooldown: the first runs on the leading edge, the
+        # second is deferred — which is the state that leaks.
+        for state in ("on", "off"):
+            hass.states.async_set(sun_infront, state)
+            await hass.async_block_till_done()
+
+        assert len(debouncers) == 1, (
+            "Exactly one namespace template is configured, so exactly one "
+            f"coalescing Debouncer should exist. Got {len(debouncers)}."
+        )
+        debouncer = debouncers[0]
+        assert fired.call_count == 1
+        assert debouncer._timer_task is not None, (
+            "Precondition: the second flip must leave a live trailing timer, "
+            "otherwise this test proves nothing about cancelling one."
+        )
+        assert (
+            debouncer._execute_at_end_of_timer is True
+        ), "Precondition: a run must actually be queued for the trailing edge."
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert debouncer._timer_task is None, (
+            "Unload must cancel the coalescer's scheduled trailing timer — the "
+            "entry.async_on_unload(debouncer.async_shutdown) wiring."
+        )
+
+        freezer.tick(1.2)
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+        assert fired.call_count == 1, (
+            "The deferred flip must not be replayed after unload: that runs a "
+            "refresh against a torn-down coordinator."
         )
 
 

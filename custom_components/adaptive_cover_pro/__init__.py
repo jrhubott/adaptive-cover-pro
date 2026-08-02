@@ -186,7 +186,10 @@ def _coalesce_namespace_refreshes(
         function=_run_latest,
     )
     # Cancels the pending trailing timer, so an unload can never leave one
-    # scheduled against a torn-down coordinator.
+    # scheduled against a torn-down coordinator. Guarded by
+    # ``test_unload_cancels_the_coalescer_pending_trailing_run`` — the
+    # integration-marked suite tolerates lingering timers, so nothing else
+    # would notice this line going missing.
     entry.async_on_unload(debouncer.async_shutdown)
     _LOGGER.debug(
         "%s references the acp namespace — coalescing its refreshes to %ss",
