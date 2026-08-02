@@ -139,6 +139,12 @@ _VENETIAN_EXTRA_KEYS = (
 # Control methods that carry an explicit, user-specified position.
 # The tilt-only carriage-close rewrite does not apply to these — the
 # user's position wins over "close carriage, let tilt filter".
+# GROUP_SCENE and GROUP_LOCK carry the same "explicit user intent" semantics
+# as CUSTOM_POSITION and MANUAL (issue #1153 finding 1): both handlers set
+# ``bypass_auto_control=True`` for exactly that reason (see their own
+# docstrings in pipeline/handlers/group_scene.py and group_lock.py), and
+# GROUP_LOCK's held position must not contradict itself by being reported as
+# force-closed while skip_command=True holds the carriage where it is.
 _EXPLICIT_USER_POSITION_METHODS = frozenset(
     {
         ControlMethod.CUSTOM_POSITION,
@@ -146,6 +152,8 @@ _EXPLICIT_USER_POSITION_METHODS = frozenset(
         ControlMethod.WEATHER,
         ControlMethod.MANUAL,
         ControlMethod.MOTION,
+        ControlMethod.GROUP_SCENE,
+        ControlMethod.GROUP_LOCK,
     }
 )
 
@@ -574,10 +582,21 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         tilt-only Custom Position slot's own FIXED contribution is already
         driving the carriage (``tilt_only_contribution_active``), matching
         the original per-branch guards this replaces.
+
+        Also skipped for ``ControlMethod.DEFAULT`` (issue #1153 finding 2).
+        Tilt-only is a sun-tracking-*window* behavior; ``DEFAULT`` is by
+        definition the no-handler-fired fallback that wins precisely OUTSIDE
+        that window, and it is the carrier for ``sunset_position`` /
+        ``return_sunset`` / ``default_percentage`` — pinning it would
+        silently disable all three documented carriage-movement options on a
+        tilt-only install. This is deliberately a separate condition rather
+        than a member of ``_EXPLICIT_USER_POSITION_METHODS``: DEFAULT is not
+        explicit user intent, it is the absence of any handler intent.
         """
         if (
             self._venetian_mode != VENETIAN_MODE_TILT_ONLY
             or result.control_method in _EXPLICIT_USER_POSITION_METHODS
+            or result.control_method == ControlMethod.DEFAULT
             or result.tilt_only_contribution_active
         ):
             return position
