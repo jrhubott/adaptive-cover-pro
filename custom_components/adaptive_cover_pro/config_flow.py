@@ -4985,12 +4985,6 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Layer 2: Where can I go? / how do I behave? ──────────────
         keys.append("position")  # L2a positions (% values)
         keys.append("behavior")  # L2b timing & thresholds
-        # Calibration groups the two "measure the hardware, then store what we
-        # measured" surfaces: the position interpolation curve (conditional on
-        # CONF_INTERP, as it always was) and travel time. The parent owns the
-        # word "calibration" so its children can be told apart — this is why
-        # ``interp`` no longer sits at the top level.
-        keys.append("calibration")
 
         # ── Layer 3: How do I decide? (handlers, priority high → low) ─
         keys.extend(
@@ -5013,6 +5007,16 @@ class OptionsFlowHandler(OptionsFlow):
 
         # ── Layer 4: How do I move? (global motion constraints) ──────
         keys.append("automation")
+        # Calibration groups the two "measure the hardware, then store what we
+        # measured" surfaces: the position interpolation curve (conditional on
+        # CONF_INTERP, as it always was) and travel time. The parent owns the
+        # word "calibration" so its children can be told apart — which is why
+        # ``interp`` no longer sits at the top level.
+        #
+        # Sits with Movement & Schedule rather than in Layer 2: both describe
+        # how a cover physically moves once the position is already decided,
+        # not what position to pick.
+        keys.append("calibration")
 
         # ── Admin ────────────────────────────────────────────────────
         keys.append("sync")  # Multi-cover management
