@@ -665,13 +665,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             get_travel_calibration=lambda eid: (
                 self.config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
             ).get(eid),
-            # A safety target stands a calibration run down rather than being
-            # blocked by it. ``restore=False``: the safety command is about to
-            # move the cover anyway, so sending it home first would be movement
-            # in the wrong direction at the worst moment.
-            on_safety_preempt=lambda: self.async_cancel_travel_calibration(
-                restore=False
-            ),
         )
 
         # Wire the manual-override engine's edge + origin seams once. Any
@@ -4698,6 +4691,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             start_time=self._time_mgr.start_time_value,
             end_time=self._end_time,
             automatic_control=self.automatic_control,
+            calibrating=self._cmd_svc.calibrating,
             last_cover_action=self.last_cover_action,
             last_skipped_action=self.last_skipped_action,
             min_change=self.min_change,

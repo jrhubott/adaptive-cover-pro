@@ -16,7 +16,6 @@ everything the run measured.
 
 from __future__ import annotations
 
-import asyncio
 import re
 
 import pytest
@@ -26,9 +25,6 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.config_flow import _build_config_summary
-from custom_components.adaptive_cover_pro.managers.cover_command import (
-    PositionContext,
-)
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_INTERP,
@@ -539,38 +535,21 @@ async def test_a_manual_entry_saved_mid_run_is_not_erased_when_the_run_ends(
     assert merged[_OTHER] == manual
 
 
-async def test_a_weather_safety_target_stands_a_live_run_down(
+async def test_the_control_status_says_calibrating_while_a_run_holds_the_covers(
     hass: HomeAssistant,
 ) -> None:
-    """End-to-end: the coordinator wires the pre-emption, not just the manager.
+    """The gate blocks everything, so it has to say so.
 
-    A storm reaching the covers matters more than a calibration finishing, and
-    the wiring is the part that could silently be missing — the manager's own
-    test stubs the callback.
+    That visibility is the whole basis on which blocking is acceptable — without
+    it "nothing is moving and I cannot see why" is indistinguishable from a bug.
+    Reported above automatic_control, because while a run holds the covers no
+    other status describes a decision that is actually being acted on.
     """
-    entry = await _setup_entry(hass, entry_id="tt_safety_preempt")
+    entry = await _setup_entry(hass, entry_id="tt_status")
     coordinator = entry.runtime_data
-    calibrator = coordinator.travel_calibration
-    calibrator._state = "running"
-    calibrator._abort = asyncio.Event()
-    calibrator._hard_abort = asyncio.Event()
+
     coordinator._cmd_svc.calibrating = True
+    assert coordinator.build_diagnostic_data()["control_status"] == "calibrating"
 
-    await coordinator._cmd_svc.apply_position(
-        _COVER,
-        0,
-        "weather",
-        PositionContext(
-            auto_control=True,
-            manual_override=False,
-            sun_just_appeared=False,
-            min_change=1,
-            time_threshold=0,
-            special_positions=[],
-            is_safety=True,
-        ),
-    )
-
-    assert calibrator._abort.is_set()
-    # restore=False — the safety command is about to move the cover anyway.
-    assert calibrator._hard_abort.is_set()
+    coordinator._cmd_svc.calibrating = False
+    assert coordinator.build_diagnostic_data()["control_status"] != "calibrating"

@@ -929,28 +929,25 @@ async def test_ordinary_automation_waits_for_a_calibration_run(
 
 
 @pytest.mark.asyncio
-async def test_a_safety_target_pre_empts_the_run_instead_of_being_blocked(
+async def test_even_a_safety_target_waits_for_a_calibration_run(
     hass: HomeAssistant,
 ) -> None:
-    """A storm must never wait for a calibration.
+    """The gate is absolute, safety included.
 
-    The collision this gate exists to prevent — a command landing on a coupled
-    rail mid-sweep — is better answered by standing the run down than by
-    refusing the command: the safety dispatch still goes through the policy's
-    own clearance gating, and cancelling stops the run issuing anything further,
-    so the two never race.
+    A command landing on a coupled rail mid-sweep drives a rail into a rail, and
+    a half-swept cover is somewhere nothing else has reasoned about. What makes
+    blocking acceptable is that the run is neither invisible nor unstoppable:
+    the control status reads ``calibrating`` throughout, the options flow says so
+    and offers Cancel, and the run budget ends it regardless.
     """
     rig = _rig(hass)
-    cancelled: list[bool] = []
-    rig.cmd_svc._on_safety_preempt = lambda: cancelled.append(True)
     rig.cmd_svc.calibrating = True
 
     result = await rig.cmd_svc.apply_position(
         "cover.a", 70, "test", _context(is_safety=True)
     )
 
-    assert cancelled == [True]
-    assert result != ("skipped", "calibration_in_progress")
+    assert result == ("skipped", "calibration_in_progress")
 
 
 @pytest.mark.asyncio

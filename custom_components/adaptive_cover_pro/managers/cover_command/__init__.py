@@ -119,7 +119,6 @@ class CoverCommandService:
         debug_log=None,
         on_command_sent=None,
         get_travel_calibration=None,
-        on_safety_preempt=None,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -171,10 +170,6 @@ class CoverCommandService:
                 per cycle) would serve stale numbers until the next reload.
                 Omitted, no travel plans are recorded and every estimated-position
                 surface stays empty — the pre-calibration behaviour.
-            on_safety_preempt: Optional ``() -> None`` invoked when a safety
-                target is dispatched while a travel-time run holds the covers.
-                The coordinator wires it to cancel the run, so a storm never
-                waits for a calibration.
 
         """
         # Local import: ``cover_types.venetian.sequencer`` imports
@@ -204,11 +199,6 @@ class CoverCommandService:
         self._on_tick = on_tick
         self._on_command_sent = on_command_sent
         self._get_travel_calibration = get_travel_calibration
-        # Called when a safety target arrives while a calibration run holds the
-        # covers. Wired by the coordinator to cancel the run; ``None`` leaves the
-        # gate absolute, which is the right default for a service with no
-        # calibrator behind it.
-        self._on_safety_preempt = on_safety_preempt
 
         # True while a travel-time calibration run owns the covers. Blocks every
         # outbound command from ``apply_position`` and stands the reconciliation
@@ -1586,34 +1576,26 @@ class CoverCommandService:
             )
 
         # Calibration gate — a travel-time run owns the covers while it is
-        # sweeping them to their mechanical stops, so ordinary automation must
-        # not command them. ``force`` does not bypass it: a recurring resend has
-        # nothing to say that cannot wait a few minutes.
+        # sweeping them to their mechanical stops, so nothing else may command
+        # them. Sits alongside the kill switch and shares its absoluteness:
+        # is_safety and force do NOT bypass it, because a command landing on a
+        # coupled rail mid-sweep drives a rail into a rail, and a half-swept
+        # cover is in a position nothing else has reasoned about.
         #
-        # A SAFETY target does bypass it, by standing the run down first. The
-        # collision this gate exists to prevent — a command landing on a Model C
-        # rail mid-sweep — is better answered by stopping the run than by
-        # refusing the command: a safety dispatch still goes through the policy's
-        # own clearance gating, whereas a blocked one means a storm waits for a
-        # calibration. Cancelling with ``restore=False`` also stops the run
-        # issuing any further commands of its own, so the two never race.
+        # What makes that acceptable is that the run is never invisible or
+        # unstoppable: the control status reports ``calibrating`` for its whole
+        # duration, the options flow's Travel Time page says so and offers
+        # Cancel, and the run budget ends it regardless. A user who needs the
+        # covers back takes them back — a decision, rather than a collision.
         if self._calibrating:
-            if not context.is_safety:
-                return self._skip(
-                    entity_id,
-                    "calibration_in_progress",
-                    position,
-                    trigger=_trigger,
-                    inverse_state=_inverse,
-                    current_position=_current,
-                )
-            self._logger.warning(
-                "Safety target for %s pre-empting the travel-time calibration "
-                "run — standing the run down",
+            return self._skip(
                 entity_id,
+                "calibration_in_progress",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
             )
-            if self._on_safety_preempt is not None:
-                self._on_safety_preempt()
 
         # auto_control gate — bypassed only by is_safety or bypass_auto_control,
         # NOT by plain force=True (issue #293).
@@ -2405,9 +2387,7 @@ class CoverCommandService:
         # ``_execute_command``, which books a target like any other dispatch.
         # Left running, this pass would see those targets, judge the mid-sweep
         # cover "off target", and resend — racing the run's own legs and
-        # corrupting the timings it is there to measure. No safety carve-out
-        # here: a safety target reaches the covers through ``apply_position``,
-        # which pre-empts the run, and by the next tick this flag is clear.
+        # corrupting the timings it is there to measure.
         if self._calibrating:
             return
 

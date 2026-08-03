@@ -1584,9 +1584,11 @@ DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 360  # seconds
 # most of an hour. A tighter budget would make the top of that band impossible
 # to measure while still being offered.
 #
-# Affordable because ``calibrating`` is NOT an absolute gate: a safety target
-# stands the run down and proceeds, so a long budget delays ordinary automation
-# — which the user chose when they started the run — and never a storm.
+# The gate a run holds IS absolute — a safety target waits too — so this hour is
+# also the longest anything can be held off. Acceptable only because the run
+# says so the whole time it is happening: the control status reads
+# ``calibrating``, the options flow's Travel Time page shows the state and
+# offers Cancel, and this budget ends the run regardless.
 TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS = 3600  # seconds — 1 hour
 
 # Separate allowance for the go-home pass, granted when it starts rather than
@@ -1913,6 +1915,10 @@ class ControlStatus:
     """
 
     ACTIVE = "active"  # actively tracking the sun / running automation
+    # A travel-time calibration run owns the covers. Reported first, because
+    # while it holds them nothing else commands them — including safety — and
+    # "why is nothing moving?" has exactly one answer for the duration.
+    CALIBRATING = "calibrating"
     OUTSIDE_TIME_WINDOW = "outside_time_window"  # outside start/end window
     POSITION_DELTA_TOO_SMALL = "position_delta_too_small"  # < CONF_DELTA_POSITION
     TIME_DELTA_TOO_SMALL = "time_delta_too_small"  # < CONF_DELTA_TIME
