@@ -88,7 +88,8 @@
     "proxy_no_min": "⚠️ Proxy-Beschattung ist aktiviert, aber kein benutzerdefinierter Positionsslot hat Als Minimum verwenden aktiviert — die verwaltete Beschattung wird nicht begrenzt.",
     "custom_and_no_sensors": "⚠️ Benutzerdefiniert #{slot}: Kombinationsmodus UND ist gesetzt, aber keine Auslösesensoren konfiguriert — das Template allein aktiviert den Slot.",
     "group_empty": "⚠️ Diese Gruppe hat keine Mitglieder – sie wird nichts steuern.",
-    "forecast_source_no_weather_entity": "⚠️ Außentemperaturquelle basiert auf Vorhersage, aber es ist keine Wetter-Entität konfiguriert — die Vorhersage wird stillschweigend auf den Live-Messwert zurückfallen. Konfigurieren Sie eine Wetter-Entität unter Wetter, Licht & Wolken."
+    "forecast_source_no_weather_entity": "⚠️ Außentemperaturquelle basiert auf Vorhersage, aber es ist keine Wetter-Entität konfiguriert — die Vorhersage wird stillschweigend auf den Live-Messwert zurückfallen. Konfigurieren Sie eine Wetter-Entität unter Wetter, Licht & Wolken.",
+    "travel_time_unmeasurable": "⚠️ {entities} melden einen angenommenen Zustand, daher kann ihre Laufzeit nicht gemessen werden und keine wurde eingegeben — Dashboards zeigen keine Bewegung. Geben Sie eine Zeit unter Kalibrierung → Laufzeit ein."
   },
   "motion": {
     "action_hold": "Behänge halten aktuelle Position (zurück zum Standard, wenn Sonne den Sonnen-Akzeptanzwinkel verlässt)",
@@ -213,7 +214,9 @@
     "sun_tracking_min": "Sonnenverfolgung Min: {pos}%",
     "separator": " · ",
     "position_matching_off": "📍 Positionsabgleich aus (Befehl wird einmal gesendet; Abweichung wird als manuelle Übersteuerung behandelt)",
-    "position_matching_on": "📍 Positionsabgleich an (Befehle werden wiederholt bis zum Erreichen der Zielposition)"
+    "position_matching_on": "📍 Positionsabgleich an (Befehle werden wiederholt bis zum Erreichen der Zielposition)",
+    "travel_time": "Laufzeit: {done}/{total} Beschattungen",
+    "travel_time_manual": "Laufzeit: {done}/{total} Beschattungen ({manual} manuell eingegeben)"
   },
   "my": {
     "entities_enabled": "🎛️ My-Preset-Entitäten: aktiviert",

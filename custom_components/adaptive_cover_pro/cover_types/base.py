@@ -16,7 +16,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -1102,6 +1102,41 @@ class CoverTypePolicy(ABC):
         cover type whose entities are physically independent.
         """
         return None
+
+    def travel_calibration_clearance(
+        self,
+        subject: str,  # noqa: ARG002
+        entities: Sequence[str],  # noqa: ARG002
+        options: Mapping[str, Any] | None,  # noqa: ARG002
+    ) -> dict[str, int]:
+        """Where coupled entities must be parked before ``subject`` can sweep.
+
+        The third member of the coupled-entity family, alongside
+        :meth:`await_dispatch_clearance` ("may this move start yet?") and
+        :meth:`plan_external_command_interlock` ("what would unblock this
+        move?"). This one answers a question only travel-time calibration asks:
+        a normal command moves a cover part-way, but calibration must drive it
+        from one mechanical stop to the other and time the result — so anything
+        physically in the way has to be moved out first, once, before the run's
+        legs begin.
+
+        Returns ``{entity_id: wire position}``. **Wire**, not logical: the
+        calibrator hands these straight to
+        ``CoverCommandService._execute_command``, whose contract is "already
+        transformed". A policy that reasons in open-percent must apply
+        :func:`axis_inverted` itself — the calibrator has no frame knowledge and
+        must not acquire any.
+
+        ``options`` is passed rather than read from any per-cycle cache the
+        policy keeps. A calibration run can be started from the options flow
+        before a single update cycle has primed those caches, and a stale prime
+        would park the wrong entity — which, for stacked rails, means driving
+        one into the other.
+
+        Liskov-safe default: ``{}`` — nothing to move, which is every cover type
+        whose entities are physically independent.
+        """
+        return {}
 
     async def after_position_command(
         self,

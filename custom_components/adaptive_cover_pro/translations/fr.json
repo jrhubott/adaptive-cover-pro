@@ -298,7 +298,6 @@
           "behavior": "🎛️ Comportement & minuterie",
           "blind_spot": "🌳 Zone cachée",
           "glare_zones": "🔆 Zones d'éblouissement",
-          "interp": "📊 Étalonnage de position",
           "automation": "⏱️ Mouvement & horaires",
           "weather": "Conditions météorologiques",
           "manual_override": "✋ Dérogation manuelle",
@@ -320,7 +319,8 @@
           "group_membership": "👥 Membres du groupe",
           "group_arbitration": "⚖️ Arbitrage & Synchronisation",
           "group_entities": "🧩 Entités exposées",
-          "change_cover_type": "🔁 Modifier le type de store"
+          "change_cover_type": "🔁 Modifier le type de store",
+          "calibration": "📐 Étalonnage"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1093,6 +1093,30 @@
         },
         "description": "Basculement de **{from_type}** vers **{to_type}**.\n\nLes paramètres que seul l'ancien type utilise restent stockés et ne sont pas supprimés, ainsi revenir en arrière les retrouve intacts. Actuellement inactifs après le basculement :\n\n{stranded_options}\n\nNotes de capacité pour le nouveau type :\n\n{capability_notes}\n\nPolarité des positions :\n\n{position_polarity}\n\nChaque entité conserve son ID d'entité. Les entités spécifiques au type que le nouveau type ne fournit pas restent dans le registre des entités comme indisponibles et reviennent si vous revenez à l'ancien type. Après confirmation, remplissez la géométrie du nouveau type et terminez avec Enregistrer et fermer pour appliquer la modification.",
         "title": "Modifier le type de store — Confirmer"
+      },
+      "calibration": {
+        "description": "Mesurez le comportement réel de ce store et enregistrez les mesures.\n\n**L'étalonnage de position** mappe la position calculée par Adaptive Cover Pro sur le nombre que votre store doit atteindre. **Le temps de course** enregistre la durée d'une ouverture ou fermeture complète, afin que les cartes de tableau de bord puissent animer le mouvement au lieu de sauter.",
+        "menu_options": {
+          "init": "⬅️ Retour",
+          "interp": "📊 Étalonnage de position",
+          "travel_time": "⏱️ Temps de course"
+        },
+        "title": "Étalonnage"
+      },
+      "travel_time": {
+        "description": "La durée que met chaque store pour voyager de complètement fermé à complètement ouvert. Une fois mesurée, Adaptive Cover Pro peut indiquer où se trouve un store *alors qu'il se déplace*, afin que les cartes de tableau de bord animent le mouvement au lieu de sauter à la fin.\n\nLa mesure fait voyager chaque store jusqu'aux deux fins de course et les chronomètre — quelques minutes, pendant lesquelles le contrôle automatique s'arrête et les stores se déplacent d'eux-mêmes. Ils sont remis à leur position de départ ensuite.\n\nLes stores dont Home Assistant ne peut que *supposer* l'état (radio unidirectionnelle, typiquement Somfy RTS) signalent l'arrivée instantanément quand ils sont commandés, il n'y a donc rien à mesurer. Entrez une durée manuellement pour ceux-ci.\n\n{travel_time_status}",
+        "menu_options": {
+          "calibration": "⬅️ Retour",
+          "travel_time_cancel": "⏹️ Annuler la mesure",
+          "travel_time_manual": "✏️ Entrer les durées manuellement",
+          "travel_time_reset": "🗑️ Effacer toutes les durées",
+          "travel_time_run": "▶️ Mesurer maintenant"
+        },
+        "title": "Temps de course"
+      },
+      "travel_time_manual": {
+        "description": "Secondes pour un voyage complet de complètement fermé à complètement ouvert. Mettez un store à **0** pour effacer sa durée.\n\nUne valeur approximative est suffisante : elle n'affecte que la manière dont le mouvement est dessiné, jamais où le store est commandé. Chronométrer une fermeture complète avec un chronomètre est largement suffisant.\n\n{cover_list}",
+        "title": "Temps de course — entrée manuelle"
       }
     },
     "abort": {
@@ -1181,6 +1205,16 @@
           "winter_mode": "Hiver",
           "intermediate": "Intermédiaire",
           "mixed": "Mixte"
+        }
+      },
+      "travel_calibration": {
+        "name": "Étalonnage du temps de course",
+        "state": {
+          "cancelled": "Annulé",
+          "complete": "Terminé",
+          "failed": "Échoué",
+          "idle": "Inactif",
+          "running": "Mesure en cours"
         }
       }
     },

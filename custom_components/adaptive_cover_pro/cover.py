@@ -209,7 +209,24 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         mapped back here — the read side of the same predicate
         ``_to_cover_frame`` uses, which is what keeps the round trip closed
         (#1027 / #1028).
+
+        **While the source is mid-move and its travel time is known**, this
+        reports the modelled position from the travel plan instead of the last
+        mirrored reading. That is the whole reason the proxy is worth animating:
+        the source covers that need it are precisely the ones whose own reading
+        is stale (published once a second at best) or absent (open/close-only
+        hardware), and every generic HA cover card renders from this number.
+
+        The estimate is a model. A source that stalls mid-travel will be
+        reported as continuing, and arriving. That is strictly better than the
+        frozen or missing value it replaces, and it self-corrects the moment the
+        move ends and the plan clears.
         """
+        estimated = self.coordinator.travel_estimated_position(self._source_entity_id)
+        if estimated is not None:
+            # Already logical: the plan's endpoints were captured in the source's
+            # own frame, so it needs the same un-inversion as a live reading.
+            return flip_if(estimated, inverted=self.coordinator.position_axis_inverted)
         return self._logical_axis_value(
             STATE_ATTR_POSITION, inverted=self.coordinator.position_axis_inverted
         )
@@ -247,6 +264,20 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         if pos is None:
             return None
         return pos == 0
+
+    def _acp_render_signature(self) -> object:
+        """Include the position, which the base signature cannot see.
+
+        The base builds its signature from ``state`` plus
+        ``extra_state_attributes``. For a cover, ``state`` is only
+        open/closed/opening/closing and the position is a native property, not
+        an extra attribute — so a pure position change produces an identical
+        signature and the write is suppressed. That is harmless for a mirrored
+        reading (the source event path writes it), but it would swallow every
+        frame of the travel ramp, whose redraws arrive as coordinator updates
+        from the republish tick and change nothing else.
+        """
+        return (*super()._acp_render_signature(), self.current_cover_position)
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to source state changes once mounted."""

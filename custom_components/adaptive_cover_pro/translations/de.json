@@ -298,7 +298,6 @@
           "behavior": "🎛️ Verhalten & Timing",
           "blind_spot": "🌳 Blindfleck",
           "glare_zones": "🔆 Blendungszonen",
-          "interp": "📊 Positionskalibrierung",
           "automation": "⏱️ Bewegung & Zeitplan",
           "weather": "Wetterbedingungen",
           "manual_override": "✋ Manuelle Übersteuerung",
@@ -320,7 +319,8 @@
           "group_membership": "👥 Gruppenmitglieder",
           "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung",
           "group_entities": "🧩 Verfügbar gemachte Entitäten",
-          "change_cover_type": "🔁 Beschattungstyp ändern"
+          "change_cover_type": "🔁 Beschattungstyp ändern",
+          "calibration": "📐 Kalibrierung"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1093,6 +1093,30 @@
         },
         "description": "Wechsel von **{from_type}** zu **{to_type}**.\n\nEinstellungen, die nur der alte Typ verwendet, bleiben gespeichert und werden nicht gelöscht, sodass ein Zurückwechsel sie intakt vorfindet. Nach dem Wechsel derzeit inaktiv:\n\n{stranded_options}\n\nFunktionseigenschaften für den neuen Typ:\n\n{capability_notes}\n\nPositionspolarität:\n\n{position_polarity}\n\nJede Entität behält ihre Entitäts-ID. Typspezifische Entitäten, die der neue Typ nicht bereitstellt, bleiben in der Entitätsregistrierung als nicht verfügbar und werden wiederhergestellt, wenn Sie zurückwechseln. Füllen Sie nach der Bestätigung die Geometrie des neuen Typs aus und beenden Sie mit Speichern und schließen, um die Änderung anzuwenden.",
         "title": "Beschattungstyp ändern – Bestätigung"
+      },
+      "calibration": {
+        "description": "Messen Sie, wie diese Beschattung tatsächlich funktioniert, und speichern Sie die Messergebnisse.\n\n**Positionskalibrierung** ordnet die von Adaptive Cover Pro berechnete Position der Zahl zu, die Ihre Beschattung erreichen muss. **Laufzeit** speichert, wie lange ein vollständiges Öffnen oder Schließen dauert, sodass Dashboards die Bewegung der Beschattung anzeigen können, statt sie zu springen.",
+        "menu_options": {
+          "init": "⬅️ Zurück",
+          "interp": "📊 Positionskalibrierung",
+          "travel_time": "⏱️ Laufzeit"
+        },
+        "title": "Kalibrierung"
+      },
+      "travel_time": {
+        "description": "Wie lange jede Beschattung braucht, um von vollständig geschlossen zu vollständig offen zu fahren. Wenn diese bekannt ist, kann Adaptive Cover Pro berichten, wo sich eine Beschattung *während der Bewegung* befindet, sodass Dashboard-Karten die Bewegung animieren, statt zum Ende zu springen.\n\nDie Messung fährt jede Beschattung zu beiden Endschaltern und misst die Zeit — mehrere Minuten, während derer die automatische Steuerung pausiert und sich die Beschattungen selbst bewegen. Sie werden danach an ihre ursprüngliche Position zurückgebracht.\n\nBeschattungen, deren Status Home Assistant nur *annehmen* kann (One-Way-Funk, typischerweise Somfy RTS), melden die Ankunft sofort nach Befehl, daher gibt es nichts zu messen. Geben Sie für diese manuell eine Zeit ein.\n\n{travel_time_status}",
+        "menu_options": {
+          "calibration": "⬅️ Zurück",
+          "travel_time_cancel": "⏹️ Messung abbrechen",
+          "travel_time_manual": "✏️ Zeiten manuell eingeben",
+          "travel_time_reset": "🗑️ Alle Zeiten löschen",
+          "travel_time_run": "▶️ Jetzt messen"
+        },
+        "title": "Laufzeit"
+      },
+      "travel_time_manual": {
+        "description": "Sekunden für eine vollständige Fahrt von vollständig geschlossen bis vollständig offen. Setzen Sie eine Beschattung auf **0**, um ihre Zeit zu löschen.\n\nEine ungefähre Zahl ist wertvoll: Sie beeinflusst nur, wie die Bewegung angezeigt wird, niemals, wohin die Beschattung geschickt wird. Das Timing eines vollständigen Schließens mit einer Stoppuhr ist ausreichend.\n\n{cover_list}",
+        "title": "Laufzeit — manuelle Eingabe"
       }
     },
     "abort": {
@@ -1181,6 +1205,16 @@
           "winter_mode": "Winter",
           "intermediate": "Zwischenmodus",
           "mixed": "Gemischt"
+        }
+      },
+      "travel_calibration": {
+        "name": "Kalibrierung der Laufzeit",
+        "state": {
+          "cancelled": "Abgebrochen",
+          "complete": "Abgeschlossen",
+          "failed": "Fehlgeschlagen",
+          "idle": "Bereit",
+          "running": "Messung läuft"
         }
       }
     },

@@ -92,6 +92,7 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         "manual_override_end_time",
         "position_verification",
         "motion_status",
+        "travel_calibration",
         "climate_status",
         "position_forecast",
         # --- switch platform (uses display switch_name, not translation key) ---

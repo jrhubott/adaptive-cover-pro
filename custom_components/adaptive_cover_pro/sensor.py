@@ -22,6 +22,12 @@ from homeassistant.util import dt as dt_util
 from .const import (
     BLIND_SPOT_SLOTS,
     CONF_CLIMATE_MODE,
+    CONF_TRAVEL_TIME_CALIBRATION,
+    TRAVEL_CALIBRATION_STATE_CANCELLED,
+    TRAVEL_CALIBRATION_STATE_COMPLETE,
+    TRAVEL_CALIBRATION_STATE_FAILED,
+    TRAVEL_CALIBRATION_STATE_IDLE,
+    TRAVEL_CALIBRATION_STATE_RUNNING,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_SUPPRESSION,
     CONF_ENABLE_GLARE_ZONES,
@@ -437,6 +443,22 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
     if transit:
         attrs["transit_states"] = transit
 
+    # Travel-time ramps for whatever is moving right now, plus the table they
+    # were derived from. The plan is the primary contract — a card interpolates
+    # it locally at display framerate — and ``estimated_positions`` is the same
+    # thing sampled now, for consumers that cannot. All three follow the
+    # ``transit_states`` convention of being emitted only when non-empty, so an
+    # uncalibrated install's attribute set is unchanged.
+    travel_plans = s.coordinator._cmd_svc.travel_plans()  # noqa: SLF001
+    if travel_plans:
+        attrs["travel_plans"] = travel_plans
+        attrs["estimated_positions"] = (
+            s.coordinator._cmd_svc.estimated_positions()
+        )  # noqa: SLF001
+    calibration = s.coordinator.config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION)
+    if calibration:
+        attrs["travel_time_calibration"] = calibration
+
     snapshot = s.coordinator._snapshot  # noqa: SLF001
     if snapshot and snapshot.cover_positions:
         actual_positions = dict(snapshot.cover_positions)
@@ -769,6 +791,27 @@ def _position_verification_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] |
     if recon_times:
         attrs["last_reconcile_time"] = max(recon_times)
     return attrs
+
+
+def _travel_calibration_value(s: _ACPDiagnosticSensor) -> str:
+    return s.coordinator.travel_calibration.state
+
+
+def _travel_calibration_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Per-entity outcomes, plus the stored table the run wrote.
+
+    Carries the skipped rows as well as the measured ones: "this cover reports
+    an assumed state and therefore needs a travel time typed in" is the single
+    most useful thing this sensor can tell someone, and it is invisible if only
+    successes are reported.
+    """
+    diag = s.coordinator.travel_calibration.diagnostics()
+    return {
+        "active_entity": diag["active_entity"],
+        "last_error": diag["last_error"],
+        "results": diag["results"],
+        "calibration": s.config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {},
+    }
 
 
 def _motion_status_value(s: _ACPDiagnosticSensor) -> str:
@@ -1233,6 +1276,12 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
                 "linear_actual_positions",
                 "actual_distances",
                 "position_explanation",
+                # Travel-ramp surfaces change on every move — and, while the
+                # republish tick is running, once a second. Recording them would
+                # be pure churn: they describe a moment, not a history.
+                "travel_plans",
+                "estimated_positions",
+                "travel_time_calibration",
             }
         ),
     ),
@@ -1375,6 +1424,25 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         should_poll=False,
         value_fn=_motion_status_value,
         attrs_fn=_motion_status_attrs,
+    ),
+    _SensorSpec(
+        suffix="travel_calibration",
+        display_name="Travel Time Calibration",
+        icon="mdi:timer-cog-outline",
+        translation_key="travel_calibration",
+        device_class=SensorDeviceClass.ENUM,
+        options=(
+            TRAVEL_CALIBRATION_STATE_IDLE,
+            TRAVEL_CALIBRATION_STATE_RUNNING,
+            TRAVEL_CALIBRATION_STATE_COMPLETE,
+            TRAVEL_CALIBRATION_STATE_FAILED,
+            TRAVEL_CALIBRATION_STATE_CANCELLED,
+        ),
+        value_fn=_travel_calibration_value,
+        attrs_fn=_travel_calibration_attrs,
+        # Per-entity dicts that only change when a run does — recording them
+        # would store the same blob indefinitely between calibrations.
+        unrecorded_attributes=frozenset({"results", "calibration"}),
     ),
     _SensorSpec(
         suffix="climate_status",

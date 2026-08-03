@@ -41,6 +41,7 @@ Section index
 18. Manual Override & Transit
 19. Motion Control
 20. Position Verification
+20a. Travel Time Calibration
 21. Venetian Dual-Axis Sequencing
 22. Debug & Diagnostics
 23. Control Status (diagnostic enum)
@@ -1535,6 +1536,77 @@ MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 # Default for CONF_ENABLE_POSITION_MATCHING (issue #591). False = matching off:
 # command once, no resend; a settle past tolerance becomes a manual override.
 DEFAULT_ENABLE_POSITION_MATCHING = False
+
+
+# =============================================================================
+# 20a. Travel Time Calibration
+# =============================================================================
+# How long a cover takes to traverse its full range, measured once and reused
+# to model where it IS while it is moving.
+#
+# NB the name. "Calibration" already means the position INTERPOLATION curve in
+# this codebase (CONF_INTERP / interp_lo / interp_hi, rendered as
+# "Calibration {lo}→{hi}"). Everything in this section is TRAVEL TIME
+# calibration and says so in its name — the two are unrelated and must stay
+# greppable apart.
+
+# Derived per-entity travel data. NOT a user-authored scalar, so it has no
+# OPTION_RANGES row (that map is keyed by top-level option key) and no
+# config-flow selector of its own. Shape:
+#
+#   {entity_id: {"full_travel_seconds": float,     # headline / manual / fallback
+#                "open_seconds": float | None,     # sweep toward axis value_max
+#                "close_seconds": float | None,    # sweep toward axis value_min
+#                "start_delay_seconds": float,     # command → motion observed
+#                "calibrated_at": "<iso>",
+#                "source": "measured" | "manual"}}
+#
+# One table for both sources so every consumer has a single path; ``source`` is
+# display-only and must never be branched on for behaviour.
+CONF_TRAVEL_TIME_CALIBRATION = "travel_time_calibration"
+
+# Per-move ceiling for one calibration leg. Generous: a slow patio awning can
+# take well over a minute, and the run aborts the ENTITY (not the batch) when
+# this expires, so an over-tight value silently drops covers from the results.
+DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 180  # seconds
+
+# How long the seed leg waits for a no-position cover to publish a transit
+# state before declaring it unobservable. Covers the actuator start-up lag that
+# VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS exists for, with headroom — a
+# cover that has not begun moving by now never will report that it did.
+TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS = 10  # seconds
+
+# Cadence at which a proxy cover republishes its estimated position while a
+# travel plan is live (cover.py). 1 s is what an HA cover card needs to animate
+# visibly; the timer runs ONLY while at least one plan exists, never at idle.
+TRAVEL_CALIBRATION_TICK_SECONDS = 1  # seconds
+
+# Bounds for a manually entered travel time. Consumed by BOTH the options-flow
+# selector and the calibrator's sanity clamp, so a value the UI accepts can
+# never be one the manager rejects. 0 is outside the band on purpose: the
+# options-flow field treats it as "unset", never as a zero-second travel.
+TRAVEL_TIME_MIN_SECONDS = 1.0
+TRAVEL_TIME_MAX_SECONDS = 300.0
+
+# Run lifecycle, as reported by the travel_calibration diagnostic sensor.
+TRAVEL_CALIBRATION_STATE_IDLE = "idle"
+TRAVEL_CALIBRATION_STATE_RUNNING = "running"
+TRAVEL_CALIBRATION_STATE_COMPLETE = "complete"
+TRAVEL_CALIBRATION_STATE_FAILED = "failed"
+TRAVEL_CALIBRATION_STATE_CANCELLED = "cancelled"
+
+# Per-entity outcome within a run.
+TRAVEL_CALIBRATION_STATUS_OK = "ok"
+TRAVEL_CALIBRATION_STATUS_TIMEOUT = "timeout"
+TRAVEL_CALIBRATION_STATUS_UNAVAILABLE = "unavailable"
+# The cover cannot be watched: HA reports assumed_state, or it exposes no
+# position axis and never publishes a transit state. Timing it would measure
+# service-call latency, not travel. Manual entry is the only path for these.
+TRAVEL_CALIBRATION_STATUS_UNOBSERVABLE = "skipped_unobservable"
+
+# Where a table row came from. Display-only (see CONF_TRAVEL_TIME_CALIBRATION).
+TRAVEL_CALIBRATION_SOURCE_MEASURED = "measured"
+TRAVEL_CALIBRATION_SOURCE_MANUAL = "manual"
 
 
 # =============================================================================

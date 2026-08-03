@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import voluptuous as vol
@@ -21,6 +21,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ADAPTIVE_NAME_PREFIX,
@@ -241,6 +242,7 @@ from .const import (
     CONF_DEBUG_MODE,
     CONF_DRY_RUN,
     CONF_TRANSIT_TIMEOUT,
+    CONF_TRAVEL_TIME_CALIBRATION,
     DEBUG_CATEGORIES_ALL,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
@@ -251,13 +253,17 @@ from .const import (
     DOMAIN,
     TIME_OPTION_KEYS,
     TIME_STRING_RE,
+    TRAVEL_CALIBRATION_SOURCE_MANUAL,
+    TRAVEL_TIME_MAX_SECONDS,
     CoverType,
     GroupScene,
     TemplateCombineMode,
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 from .i18n_bundle import flatten_bundle, load_bundle_overlay, merge_labels
+from .managers.cover_command.state_store import TravelCalibration
 from .troubleshoot_i18n import load_troubleshoot_labels
+
 from .helpers import (
     bound_cover_capabilities,
     check_cover_capabilities,
@@ -266,6 +272,7 @@ from .helpers import (
     custom_position_slot_configured,
     custom_position_slot_name,
     custom_position_slot_sensors,
+    is_assumed_state,
     manual_hold_is_unanchored,
     mirror_legacy_slot_sensor_keys,
     normalize_time_string,
@@ -1173,6 +1180,44 @@ WEATHER_OPTIONS = vol.Schema(
     }
 )
 
+
+def _travel_entity_label(hass: HomeAssistant, entity_id: str) -> str:
+    """``Living Room (cover.living_room)``, or the bare id if HA has no name."""
+    state = hass.states.get(entity_id)
+    name = state.attributes.get("friendly_name") if state else None
+    return f"{name} (`{entity_id}`)" if name else f"`{entity_id}`"
+
+
+def _travel_time_manual_schema(entities: Sequence[str]) -> vol.Schema:
+    """One seconds field per configured cover, keyed by entity id.
+
+    Keyed by entity id because the answer has to be mapped back to a cover, and
+    a positional key would silently rebind if the cover list changed between
+    rendering the form and submitting it. HA renders the key as the label; the
+    step's description carries the friendly names alongside, plus which covers
+    cannot be measured and therefore need this page.
+
+    ``0`` means "no travel time" — see ``async_step_travel_time_manual`` for why
+    the field is a BOX. The bounds are the same constants the calibrator clamps
+    its own measurements to, so the UI cannot accept a value the manager would
+    reject.
+    """
+    return vol.Schema(
+        {
+            vol.Optional(entity_id, default=0): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=TRAVEL_TIME_MAX_SECONDS,
+                    step=0.5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="s",
+                )
+            )
+            for entity_id in entities
+        }
+    )
+
+
 INTERPOLATION_OPTIONS = vol.Schema(
     {
         vol.Optional(CONF_INTERP_START): selector.NumberSelector(
@@ -1733,8 +1778,15 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "limits.open_close_threshold": "Open/close threshold: {thresh}%",
     "limits.calibration": "Calibration {lo}→{hi}",
     "limits.calibration_on": "Position calibration on",
+    "limits.travel_time": "Travel time: {done}/{total} covers",
+    "limits.travel_time_manual": "Travel time: {done}/{total} covers ({manual} entered by hand)",
     "limits.sun_tracking_min": "Sun-tracking min: {pos}%",
     "limits.separator": " · ",
+    "warnings.travel_time_unmeasurable": (
+        "⚠️ {entities} report an assumed state, so their travel time cannot be "
+        "measured and none has been entered — dashboards will not show them "
+        "moving. Enter a time under Calibration → Travel Time."
+    ),
     "warnings.sun_track_min_below_floor": (
         "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — "
         "always-on floor dominates; sun-tracking floor will be raised to "
@@ -3070,6 +3122,23 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
         else:
             limit_parts.append(L["limits.calibration_on"])
+    # Travel time sits beside the position curve because both answer "what did
+    # we measure about this hardware" — and because the two are the reason the
+    # options menu now groups them under one Calibration parent.
+    _travel_entities = list(config.get(CONF_ENTITIES) or [])
+    _travel_table = config.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
+    if _travel_entities and _travel_table:
+        _done = sum(1 for eid in _travel_entities if eid in _travel_table)
+        _manual = sum(
+            1
+            for eid in _travel_entities
+            if (_travel_table.get(eid) or {}).get("source")
+            == TRAVEL_CALIBRATION_SOURCE_MANUAL
+        )
+        _key = "limits.travel_time_manual" if _manual else "limits.travel_time"
+        limit_parts.append(
+            L[_key].format(done=_done, total=len(_travel_entities), manual=_manual)
+        )
     min_pos_sun_track = config.get(CONF_MIN_POSITION_SUN_TRACKING)
     if min_pos_sun_track is not None:
         limit_parts.append(L["limits.sun_tracking_min"].format(pos=min_pos_sun_track))
@@ -3077,6 +3146,24 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         lines.append("")
         lines.append(L["headers.position_limits"])
         lines.append(L["limits.separator"].join(limit_parts))
+
+    # Footgun: a cover whose state Home Assistant only assumes can never be
+    # measured, so leaving it without a hand-entered time silently means "this
+    # cover will never animate" — exactly the kind of quiet no-op the summary
+    # exists to surface. Needs hass: assumed_state is a live entity attribute,
+    # not config.
+    if hass is not None:
+        _unmeasurable = [
+            eid
+            for eid in _travel_entities
+            if eid not in _travel_table and is_assumed_state(hass.states.get(eid))
+        ]
+        if _unmeasurable:
+            lines.append(
+                L["warnings.travel_time_unmeasurable"].format(
+                    entities=", ".join(_unmeasurable)
+                )
+            )
 
     # Footgun: sun-tracking floor below always-on floor is a no-op (issue #467).
     # The always-on min_pos dominates, so min_pos_sun_tracking < min_pos is a
@@ -4738,6 +4825,9 @@ class OptionsFlowHandler(OptionsFlow):
         # step id so the translation block is authored once, so the area lives
         # here instead of in the step id.
         self._delete_area: str = ""
+        # Entities whose travel time THIS flow session edited. Everything else
+        # in the table is re-read live at save time — see ``_merge_travel_time``.
+        self._travel_time_edited: set[str] = set()
         # "Change Cover Type" (issue #1132). ``_pending_cover_type`` carries the
         # picked destination from the picker to the confirm screen. A switch is
         # pending whenever ``self.sensor_type`` has moved away from the stored
@@ -4894,8 +4984,12 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Layer 2: Where can I go? / how do I behave? ──────────────
         keys.append("position")  # L2a positions (% values)
         keys.append("behavior")  # L2b timing & thresholds
-        if self.options.get(CONF_INTERP):
-            keys.append("interp")
+        # Calibration groups the two "measure the hardware, then store what we
+        # measured" surfaces: the position interpolation curve (conditional on
+        # CONF_INTERP, as it always was) and travel time. The parent owns the
+        # word "calibration" so its children can be told apart — this is why
+        # ``interp`` no longer sits at the top level.
+        keys.append("calibration")
 
         # ── Layer 3: How do I decide? (handlers, priority high → low) ─
         keys.extend(
@@ -6330,6 +6424,164 @@ class OptionsFlowHandler(OptionsFlow):
             },
         )
 
+    # ---- Calibration ---------------------------------------------------- #
+    #
+    # Two unrelated things are called "calibration" in this integration: the
+    # position INTERPOLATION curve (``interp``) and TRAVEL TIME. Grouping them
+    # under one parent is what lets each keep a name that says which it is.
+
+    def _coordinator(self):
+        """Return this entry's live coordinator, or None if it is not loaded."""
+        return getattr(self._config_entry, "runtime_data", None)
+
+    def _travel_table(self) -> dict[str, dict[str, Any]]:
+        """Return the travel-time table as this flow session currently holds it."""
+        return dict(self.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {})
+
+    def _travel_time_status(self) -> str:
+        """Markdown status block shown on the Travel Time menu.
+
+        Re-rendered every time the menu is entered, which is how a run in
+        progress is watched: back out and back in to see it advance.
+        """
+        entities = list(self.options.get(CONF_ENTITIES) or [])
+        table = self._travel_table()
+        coordinator = self._coordinator()
+        lines: list[str] = []
+        if coordinator is not None:
+            calibrator = coordinator.travel_calibration
+            lines.append(f"State: **{calibrator.state}**")
+            if calibrator.active_entity:
+                lines.append(f"Measuring: `{calibrator.active_entity}`")
+        for entity_id in entities:
+            row = table.get(entity_id)
+            label = _travel_entity_label(self.hass, entity_id)
+            if row:
+                lines.append(
+                    f"- {label}: **{row.get('full_travel_seconds')}s** "
+                    f"({row.get('source')})"
+                )
+            elif is_assumed_state(self.hass.states.get(entity_id)):
+                lines.append(f"- {label}: ⚠️ not measurable — enter a time manually")
+            else:
+                lines.append(f"- {label}: not calibrated")
+        return "\n".join(lines) or "(no covers configured)"
+
+    async def async_step_calibration(self, user_input: dict[str, Any] | None = None):
+        """Group the position-curve and travel-time calibration surfaces."""
+        menu_options = ["travel_time"]
+        # Same condition the top-level menu used before this step existed: the
+        # interpolation page is only meaningful once the feature is switched on.
+        if self.options.get(CONF_INTERP):
+            menu_options.append("interp")
+        menu_options.append("init")
+        return self.async_show_menu(step_id="calibration", menu_options=menu_options)
+
+    async def async_step_travel_time(self, user_input: dict[str, Any] | None = None):
+        """Travel-time calibration: measure, enter by hand, or clear."""
+        coordinator = self._coordinator()
+        running = coordinator is not None and coordinator.travel_calibration.is_running
+        # Never offer both: starting a second run is a no-op, and hiding the
+        # start entry is clearer than letting it be pressed and do nothing.
+        menu_options = ["travel_time_cancel"] if running else ["travel_time_run"]
+        menu_options += ["travel_time_manual", "travel_time_reset", "calibration"]
+        return self.async_show_menu(
+            step_id="travel_time",
+            menu_options=menu_options,
+            description_placeholders={"travel_time_status": self._travel_time_status()},
+        )
+
+    async def async_step_travel_time_run(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Start a measurement run in the background and return to the menu.
+
+        Fire-and-forget on purpose. The run drives every cover stop-to-stop and
+        takes minutes; awaiting it here would hold the config-flow dialog open
+        for the duration. Returning to the menu (rather than aborting the flow)
+        also preserves any edits made earlier in this session.
+        """
+        coordinator = self._coordinator()
+        if coordinator is not None:
+            self.hass.async_create_task(coordinator.async_run_travel_calibration())
+        return await self.async_step_travel_time()
+
+    async def async_step_travel_time_cancel(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Stop an in-flight run and send the covers back where they started."""
+        coordinator = self._coordinator()
+        if coordinator is not None:
+            coordinator.async_cancel_travel_calibration(restore=True)
+        return await self.async_step_travel_time()
+
+    async def async_step_travel_time_reset(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Clear every stored travel time for this instance."""
+        # Mark every affected entity edited so the save-time merge treats this
+        # session as authoritative for them — otherwise the live table would be
+        # merged straight back over the clear.
+        self._travel_time_edited.update(self._travel_table())
+        self._travel_time_edited.update(self.options.get(CONF_ENTITIES) or [])
+        self.options[CONF_TRAVEL_TIME_CALIBRATION] = {}
+        return await self.async_step_travel_time()
+
+    async def async_step_travel_time_manual(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Type a travel time per cover — the only path for unmeasurable covers.
+
+        ``0`` clears an entry. That is why the field is a BOX rather than the
+        SLIDER the guidelines prescribe for optional numerics: the rule exists
+        because BOX turns a cleared field into ``0``, and here ``0`` is *defined*
+        as cleared, so the ambiguity it guards against cannot arise — while a
+        0–300 s slider would make entering a value like 23.5 needlessly fiddly.
+        """
+        entities = list(self.options.get(CONF_ENTITIES) or [])
+        if user_input is not None:
+            table = self._travel_table()
+            for entity_id in entities:
+                submitted = user_input.get(entity_id)
+                submitted = float(submitted) if submitted else None
+                stored = (table.get(entity_id) or {}).get("full_travel_seconds")
+                stored = float(stored) if stored else None
+                # Only a value the user actually CHANGED counts as an edit. The
+                # form carries one field per cover and submits all of them, so
+                # marking every field edited would make opening this page to set
+                # one cover claim authority over the rest — and the save-time
+                # merge would then overwrite a concurrent measurement of a cover
+                # the user never touched, collapsing a per-entity merge into an
+                # all-or-nothing one.
+                if submitted == stored:
+                    continue
+                self._travel_time_edited.add(entity_id)
+                if submitted is None:
+                    table.pop(entity_id, None)
+                    continue
+                table[entity_id] = TravelCalibration(
+                    full_travel_seconds=submitted,
+                    calibrated_at=dt_util.utcnow().isoformat(),
+                    source=TRAVEL_CALIBRATION_SOURCE_MANUAL,
+                ).to_dict()
+            self.options[CONF_TRAVEL_TIME_CALIBRATION] = table
+            return await self.async_step_travel_time()
+
+        table = self._travel_table()
+        suggested = {
+            entity_id: (table.get(entity_id) or {}).get("full_travel_seconds") or 0
+            for entity_id in entities
+        }
+        return self.async_show_form(
+            step_id="travel_time_manual",
+            data_schema=self.add_suggested_values_to_schema(
+                _travel_time_manual_schema(entities), suggested
+            ),
+            description_placeholders={
+                "cover_list": self._travel_time_status(),
+            },
+        )
+
     async def async_step_interp(self, user_input: dict[str, Any] | None = None):
         """Show interpolation options."""
         if user_input is not None:
@@ -6349,7 +6601,7 @@ class OptionsFlowHandler(OptionsFlow):
                     },
                 )
             self.options.update(user_input)
-            return await self.async_step_init()
+            return await self.async_step_calibration()
         return self.async_show_form(
             step_id="interp",
             data_schema=self.add_suggested_values_to_schema(
@@ -6498,10 +6750,45 @@ class OptionsFlowHandler(OptionsFlow):
         """Save and exit the options flow."""
         return await self._update_options()
 
+    def _merge_travel_time(self) -> None:
+        """Rebase the travel-time table on the live entry before saving.
+
+        ``self.options`` is a snapshot taken when this flow opened, and
+        ``async_create_entry`` writes it back wholesale. The travel-time table is
+        the one key that is also written from OUTSIDE the flow: a calibration run
+        started from the Travel Time menu keeps going while the user carries on
+        editing, and finishes by writing its results straight to the entry.
+        Saving the snapshot as-is would silently erase everything it measured.
+
+        So the live table wins by default, and only the entities this session
+        actually touched are re-applied on top. Per-entity, not all-or-nothing:
+        a manual time typed for cover A and a measurement taken for cover B in
+        the same window must both survive.
+
+        Also drops rows for covers this instance no longer controls — the same
+        prune the calibrator does at run start, applied here so removing a cover
+        cleans up even without a run.
+        """
+        live = dict(self._config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {})
+        session = self.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
+        for entity_id in self._travel_time_edited:
+            edited = session.get(entity_id)
+            if edited is None:
+                live.pop(entity_id, None)
+            else:
+                live[entity_id] = edited
+        entities = set(self.options.get(CONF_ENTITIES) or [])
+        merged = {eid: row for eid, row in live.items() if eid in entities}
+        if merged:
+            self.options[CONF_TRAVEL_TIME_CALIBRATION] = merged
+        else:
+            self.options.pop(CONF_TRAVEL_TIME_CALIBRATION, None)
+
     async def _update_options(self) -> FlowResult:
         """Update config entry options."""
         self._recompute_profile_overrides()
         self._propagate_profile_clears()
+        self._merge_travel_time()
         if self._cover_type_changed:
             self._persist_entry(commit_cover_type=True)
         return self.async_create_entry(title="", data=self.options)  # type: ignore[return-value]

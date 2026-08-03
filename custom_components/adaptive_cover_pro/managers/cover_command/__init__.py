@@ -40,7 +40,13 @@ from .diagnostics import DiagnosticsRecorder
 from .position_context import PositionContextTracker
 from .routing import ServiceCallPlan, build_special_positions, route_service_call
 from .state_classifier import StateClassifier
-from .state_store import PerEntityState, PositionContext
+from .state_store import (
+    PerEntityState,
+    PositionContext,
+    TravelCalibration,
+    TravelPlan,
+    build_travel_plan,
+)
 from .stop import StopTracker
 
 __all__ = [
@@ -48,7 +54,10 @@ __all__ = [
     "PerEntityState",
     "PositionContext",
     "ServiceCallPlan",
+    "TravelCalibration",
+    "TravelPlan",
     "build_special_positions",
+    "build_travel_plan",
     "route_service_call",
 ]
 
@@ -109,6 +118,7 @@ class CoverCommandService:
         event_buffer=None,
         debug_log=None,
         on_command_sent=None,
+        get_travel_calibration=None,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -151,6 +161,15 @@ class CoverCommandService:
                 manager asks it silently degrades to the default (issue #1115).
                 Omitted, a fresh instance is built from ``cover_type``, which is
                 still correct for the stateless axis/capability queries.
+            get_travel_calibration: Optional ``(entity_id) -> Mapping | None``
+                returning that entity's row from the ``travel_time_calibration``
+                option table, used to build a ``TravelPlan`` for each dispatched
+                move. A live callable rather than a cached copy: the table is
+                rewritten out-of-band by the calibrator and by the options flow's
+                manual-entry step, so a snapshot taken at construction (or once
+                per cycle) would serve stale numbers until the next reload.
+                Omitted, no travel plans are recorded and every estimated-position
+                surface stays empty — the pre-calibration behaviour.
 
         """
         # Local import: ``cover_types.venetian.sequencer`` imports
@@ -179,6 +198,17 @@ class CoverCommandService:
         self._wait_for_target_timeout_seconds = transit_timeout_seconds
         self._on_tick = on_tick
         self._on_command_sent = on_command_sent
+        self._get_travel_calibration = get_travel_calibration
+
+        # True while a travel-time calibration run owns the covers. Blocks every
+        # outbound command from ``apply_position`` and stands the reconciliation
+        # pass down, so automation cannot fight a run that is deliberately
+        # driving covers to their mechanical stops. Deliberately absolute — it
+        # outranks is_safety and force, because a safety command colliding with
+        # a rail mid-sweep is worse than a safety command deferred by the couple
+        # of minutes a run lasts. The escape hatch is the panic stop service,
+        # which cancels the run outright rather than racing it.
+        self._calibrating: bool = False
 
         # Per-entity positioning state — single source of truth.
         # All previously-parallel dicts/sets (target_call, _sent_at,
@@ -450,14 +480,17 @@ class CoverCommandService:
             self._clear_waiting(s)
 
     def _clear_waiting(self, s: PerEntityState) -> None:
-        """Clear the waiting flag and its synthetic transit direction together.
+        """Clear the waiting flag and every transit-scoped display value with it.
 
         Single funnel for every "no longer in transit" site so the
-        opening/closing indicator (``transit_direction``) never outlives the
-        ``waiting`` window it is gated on.
+        opening/closing indicator (``transit_direction``) and the position ramp
+        (``travel_plan``) never outlive the ``waiting`` window both are gated on.
+        A plan left behind here would keep a settled cover animating, and — via
+        ``has_travel_plans`` — keep the proxy cover's 1 s tick alive forever.
         """
         s.waiting = False
         s.transit_direction = None
+        s.travel_plan = None
 
     def waiting_entities(self) -> list[str]:
         """Return all entities currently in ``waiting=True``."""
@@ -593,6 +626,100 @@ class CoverCommandService:
         else:
             self.clear_transit_direction(entity_id)
 
+    # ------------------------------------------------------------------ #
+    # Travel plans — the position-vs-time model for an in-flight move.
+    # Same lifecycle as transit_direction above (written at the dispatch
+    # chokepoint, cleared by _clear_waiting, surfaced only while ``waiting``),
+    # but where that says only WHICH WAY a cover is going, this says where it
+    # should appear to be. Requires a travel-time calibration; absent one every
+    # surface here is empty and nothing changes.
+    # ------------------------------------------------------------------ #
+
+    def _record_travel_plan(
+        self,
+        entity_id: str,
+        *,
+        routed_target: int | None,
+        from_position: int | None,
+        started_at: dt.datetime,
+        caps: dict[str, bool] | None,
+    ) -> None:
+        """Model this dispatch as a ramp, or clear any stale one.
+
+        Always writes: a cover that loses its calibration, or moves to where it
+        already is, must not keep animating along the previous move's plan.
+        """
+        s = self.state(entity_id)
+        if self._get_travel_calibration is None:
+            s.travel_plan = None
+            return
+        axis = self._policy.select_default_axis(caps or {})
+        s.travel_plan = build_travel_plan(
+            self._get_travel_calibration(entity_id),
+            from_position=from_position,
+            to_position=routed_target,
+            started_at=started_at,
+            span=axis.value_max - axis.value_min,
+        )
+
+    def get_travel_plan(self, entity_id: str) -> TravelPlan | None:
+        """Return the in-flight ramp for ``entity_id``, or None.
+
+        Gated on ``waiting`` for the same reason ``transit_states`` is: a plan
+        recorded on a cover that has since settled describes a move that is over.
+        """
+        s = self._state.get(entity_id)
+        if s is None or not s.waiting:
+            return None
+        return s.travel_plan
+
+    def travel_plans(self) -> dict[str, dict[str, Any]]:
+        """Return ``{entity_id: payload}`` for every cover mid-ramp.
+
+        The companion card's contract — see ``TravelPlan.as_payload``.
+        """
+        return {
+            eid: s.travel_plan.as_payload()
+            for eid, s in self._state.items()
+            if s.waiting and s.travel_plan is not None
+        }
+
+    def has_travel_plans(self) -> bool:
+        """Whether any cover is mid-ramp right now.
+
+        Drives the proxy cover's republish timer (``cover.py``), which exists
+        only while this is True — hence a dedicated predicate rather than
+        ``bool(self.travel_plans())``, which would build and throw away a dict
+        of payloads once a second.
+        """
+        return any(
+            s.waiting and s.travel_plan is not None for s in self._state.values()
+        )
+
+    def estimated_position(
+        self, entity_id: str, now: dt.datetime | None = None
+    ) -> int | None:
+        """Modelled position of ``entity_id`` right now, or None if not moving.
+
+        DISPLAY ONLY. Never consulted by a command gate and never merged into
+        the position read the gates use (§3b): it is derived from a clock, not
+        from the cover, and putting it in front of the delta gates would let a
+        model decide whether to send a command.
+        """
+        plan = self.get_travel_plan(entity_id)
+        if plan is None:
+            return None
+        return plan.position_at(now or dt.datetime.now(dt.UTC))
+
+    def estimated_positions(self, now: dt.datetime | None = None) -> dict[str, int]:
+        """Return ``{entity_id: modelled position}`` for every cover mid-ramp."""
+        stamp = now or dt.datetime.now(dt.UTC)
+        return {
+            eid: s.travel_plan.position_at(stamp)
+            for eid, s in self._state.items()
+            if s.waiting and s.travel_plan is not None
+        }
+
     def begin_transit(self, entity_id: str, direction: str | None) -> None:
         """Open a transit-timeout window with a pre-computed direction.
 
@@ -685,6 +812,21 @@ class CoverCommandService:
         coordinator each update cycle from the Integration Enabled switch.
         """
         self._enabled = value
+
+    @property
+    def calibrating(self) -> bool:
+        """Whether a travel-time calibration run currently owns the covers."""
+        return self._calibrating
+
+    @calibrating.setter
+    def calibrating(self, value: bool) -> None:
+        """Hand the covers to (or back from) a calibration run.
+
+        Set by ``TravelTimeCalibrator`` around a run, and cleared in a ``finally``
+        so neither an exception nor a cancellation can leave automation switched
+        off with no visible cause.
+        """
+        self._calibrating = bool(value)
 
     @property
     def enable_position_matching(self) -> bool:
@@ -1427,6 +1569,24 @@ class CoverCommandService:
             return self._skip(
                 entity_id,
                 "integration_disabled",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+
+        # Calibration gate — a travel-time run owns the covers while it is
+        # sweeping them to their mechanical stops, so nothing else may command
+        # them. Sits alongside the kill switch and shares its absoluteness:
+        # is_safety and force do NOT bypass it, because a safety command landing
+        # on a Model C rail mid-sweep drives a rail into a rail, and the run is
+        # bounded in minutes. A user who genuinely needs the covers back
+        # cancels the run (the panic stop service does exactly that), which is a
+        # decision rather than a collision.
+        if self._calibrating:
+            return self._skip(
+                entity_id,
+                "calibration_in_progress",
                 position,
                 trigger=_trigger,
                 inverse_state=_inverse,
@@ -2219,6 +2379,14 @@ class CoverCommandService:
         if not self._enabled:
             return
 
+        # A travel-time calibration run drives covers to their endpoints through
+        # ``_execute_command``, which books a target like any other dispatch.
+        # Left running, this pass would see those targets, judge the mid-sweep
+        # cover "off target", and resend — racing the run's own legs and
+        # corrupting the timings it is there to measure.
+        if self._calibrating:
+            return
+
         # Same policy-mandated dispatch order as every other fan-out seam
         # (issue #1115): a Model C day/night shade's bottom rail must be resent
         # before its middle rail, which cannot physically travel past it.
@@ -2725,6 +2893,18 @@ class CoverCommandService:
         # routed target. Uses the command-gate read (no assumed fallback) so the
         # comparison stays in the raw display frame.
         prior_position = self._read_position_with_capabilities(entity, caps)
+        # Origin for the travel ramp. Captured HERE, before
+        # ``_record_assumed_if_blind`` below overwrites the assumed store with
+        # THIS command's target — read afterwards it would report the
+        # destination as the starting point and every no-feedback cover would
+        # ramp from nowhere. The assumed fallback is what makes a manual travel
+        # time useful at all: on an open/close-only cover the live read is None,
+        # so without it the covers that most need a ramp would never get one.
+        travel_origin = (
+            prior_position
+            if prior_position is not None
+            else self.get_assumed_position(entity)
+        )
         s = self.state(entity)
         # The booking chokepoint: the target and the dispatch provenance that
         # explains it are recorded by the same call, so a resend can never be
@@ -2743,6 +2923,16 @@ class CoverCommandService:
         # holds. Runs before the dry-run early return so a dry-run cycle keeps
         # the display honest too.
         self._record_assumed_if_blind(entity, plan.routed_target, caps)
+        # Same chokepoint, same window, same clear (``_clear_waiting``) as the
+        # synthetic direction recorded just above — this adds the "how far along"
+        # the direction alone cannot express.
+        self._record_travel_plan(
+            entity,
+            routed_target=plan.routed_target,
+            from_position=travel_origin,
+            started_at=now,
+            caps=caps,
+        )
         s.waiting = True
         s.sent_at = now
         s.last_progress_at = None

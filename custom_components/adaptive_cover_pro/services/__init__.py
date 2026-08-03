@@ -344,6 +344,21 @@ def _set_enabled(
     coord.logger.debug("%s service: %s", service, outcome)
 
 
+def _stand_down_calibration(coord: AdaptiveDataUpdateCoordinator) -> None:
+    """Cancel any travel-time run BEFORE the covers are stopped.
+
+    Ordering is the whole point, which is why this is not folded into
+    ``_disable`` (which runs after the caller's stop pass). A calibration run
+    drives covers through ``_execute_command``, which bypasses the enabled gate
+    — so a run left going would keep issuing commands during and after the stop,
+    quietly undoing it.
+
+    ``restore=False``: both callers are asking for the covers to stop moving, and
+    sending them home is more movement.
+    """
+    coord.async_cancel_travel_calibration(restore=False)
+
+
 def _disable(
     coord: AdaptiveDataUpdateCoordinator,
     service: str,
@@ -415,6 +430,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_integration_disable(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
         for coord, entity_filter in targets.items():
+            _stand_down_calibration(coord)
             # Stop in-flight moves first (before gate closes)
             await coord._cmd_svc.stop_in_flight(entities=entity_filter)  # noqa: SLF001
             _disable(coord, "integration_disable", "disabled")
@@ -422,6 +438,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_emergency_stop(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
         for coord, entity_filter in targets.items():
+            _stand_down_calibration(coord)
             # Blanket stop: all configured covers (not just wait_for_target)
             entity_ids = (
                 list(entity_filter) if entity_filter is not None else coord.entities

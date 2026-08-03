@@ -300,7 +300,7 @@
           "behavior": "🎛️ Behaviour & Timing",
           "blind_spot": "🌳 Blind Spot",
           "glare_zones": "🔆 Glare Zones",
-          "interp": "📊 Position Calibration",
+          "calibration": "📐 Calibration",
           "automation": "⏱️ Movement & Schedule",
           "weather": "Weather Conditions",
           "manual_override": "✋ Manual Override",
@@ -728,6 +728,30 @@
       "blind_spot": {
         "title": "Blind Spots",
         "description": "Up to 3 independent areas where obstacles block the sun (trees, buildings, roof overhangs). Each configured slot is listed below — pick one to edit it, or add a new one.\n\n[Learn more]({learn_more})"
+      },
+      "calibration": {
+        "title": "Calibration",
+        "description": "Measure how this cover actually behaves, and store what was measured.\n\n**Position Calibration** maps the position Adaptive Cover Pro calculates onto the number your cover needs to reach it. **Travel Time** records how long a full open or close takes, so dashboards can show the cover moving instead of jumping.",
+        "menu_options": {
+          "travel_time": "⏱️ Travel Time",
+          "interp": "📊 Position Calibration",
+          "init": "⬅️ Back"
+        }
+      },
+      "travel_time": {
+        "title": "Travel Time",
+        "description": "How long each cover takes to travel from fully closed to fully open. Once known, Adaptive Cover Pro can report where a cover is *while it is moving*, so dashboard cards animate the movement instead of jumping to the end.\n\nMeasuring runs every cover to both end stops and times it — several minutes, during which automatic control pauses and the covers move on their own. They are returned to where they started afterwards.\n\nCovers whose state Home Assistant can only *assume* (one-way radio, typically Somfy RTS) report arrival the instant they are commanded, so there is nothing to time. Enter a time by hand for those.\n\n{travel_time_status}",
+        "menu_options": {
+          "travel_time_run": "▶️ Measure now",
+          "travel_time_cancel": "⏹️ Cancel the run",
+          "travel_time_manual": "✏️ Enter times manually",
+          "travel_time_reset": "🗑️ Clear all times",
+          "calibration": "⬅️ Back"
+        }
+      },
+      "travel_time_manual": {
+        "title": "Travel Time — manual entry",
+        "description": "Seconds for a full travel from fully closed to fully open. Set a cover to **0** to clear its time.\n\nA rough figure is worth having: it only affects how movement is drawn, never where the cover is sent. Timing one full close with a stopwatch is plenty.\n\n{cover_list}"
       },
       "interp": {
         "data": {
@@ -1181,6 +1205,16 @@
           "winter_mode": "Winter",
           "intermediate": "Intermediate",
           "mixed": "Mixed"
+        }
+      },
+      "travel_calibration": {
+        "name": "Travel Time Calibration",
+        "state": {
+          "idle": "Idle",
+          "running": "Measuring",
+          "complete": "Complete",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
         }
       }
     },
