@@ -2847,13 +2847,6 @@ _UNNAMED_TARGET_SEAMS = {
         "sweeps are strictly sequential so two coupled entities are never in "
         "motion together."
     ),
-    ("managers/travel_calibration.py", "_restore"): (
-        "Sends every cover back to ITS OWN pre-run position, so the map has as "
-        "many targets as entities and none of them is the number being ordered "
-        "against. Each restore waits for its cover to land before the next is "
-        "dispatched, which is the guarantee the ordering hint would otherwise "
-        "be buying."
-    ),
 }
 
 

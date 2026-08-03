@@ -20,6 +20,7 @@ import re
 
 import pytest
 from homeassistant.data_entry_flow import InvalidData
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -441,3 +442,94 @@ async def test_cancel_stops_the_run_and_returns_to_the_menu(
 
 async def _noop() -> None:
     return None
+
+
+async def test_a_sub_minimum_time_is_rejected_not_clamped(
+    hass: HomeAssistant,
+) -> None:
+    """The floor the constant advertises is actually enforced.
+
+    Clamping would store a number the user never typed; accepting would let the
+    manual path produce a ramp the measured path discards as implausible.
+    """
+    entry = await _setup_entry(hass, entry_id="tt_too_short")
+    _, flow_id = await _open_calibration(hass, entry)
+    result = await _submit_manual(hass, flow_id, {_COVER: 0.3})
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "travel_time_too_short"}
+    assert CONF_TRAVEL_TIME_CALIBRATION not in entry.options
+
+
+async def test_the_status_block_reflects_a_run_that_finished_mid_dialog(
+    hass: HomeAssistant,
+) -> None:
+    """The page that starts a run must show what the run produced.
+
+    Rendering the flow's opening snapshot would report every freshly-measured
+    cover as "not calibrated" on the very page that just measured it.
+    """
+    entry = await _setup_entry(hass, entry_id="tt_live_status")
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    flow_id = result["flow_id"]
+
+    _write_behind_the_flow(hass, entry, {_COVER: dict(_MEASURED)})
+
+    flow = hass.config_entries.options._progress[flow_id]
+    assert "24.0" in flow._travel_time_status()
+    assert "not calibrated" not in flow._travel_time_status()
+
+
+async def test_a_run_writes_its_results_to_the_config_entry(
+    hass: HomeAssistant,
+) -> None:
+    """The whole persist path: calibrator → apply_options_patch → entry options.
+
+    Also pins that the write does NOT reload the entry — the key is registered
+    as runtime-applicable precisely because a reload would tear down the run
+    that produced the numbers.
+    """
+    from custom_components.adaptive_cover_pro import options_write_reloads
+
+    entry = await _setup_entry(hass, entry_id="tt_persist")
+    coordinator = entry.runtime_data
+    table = {_COVER: dict(_MEASURED)}
+
+    # A live coordinator has run at least one cycle, so it holds a baseline to
+    # diff against. Without one the listener reloads unconditionally, which is
+    # the right conservative default but not the state under test here.
+    coordinator._cached_options = dict(entry.options)
+    new_options = {**entry.options, CONF_TRAVEL_TIME_CALIBRATION: table}
+    assert options_write_reloads(entry, new_options) is False
+
+    await coordinator._async_persist_travel_calibration(table)
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_TRAVEL_TIME_CALIBRATION] == table
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_a_manual_entry_saved_mid_run_is_not_erased_when_the_run_ends(
+    hass: HomeAssistant,
+) -> None:
+    """The mirror of the flow-side merge.
+
+    A run holds the covers for minutes. If it wrote a start-of-run snapshot at
+    the end, a time hand-entered in the meantime — the ONLY way an unmeasurable
+    cover ever gets one — would be silently undone.
+    """
+    entry = await _setup_entry(
+        hass, entry_id="tt_persist_merge", entities=[_COVER, _OTHER]
+    )
+    calibrator = entry.runtime_data.travel_calibration
+    manual = {**_MEASURED, "source": TRAVEL_CALIBRATION_SOURCE_MANUAL}
+
+    # The run began with an empty table…
+    measured = {_COVER: dict(_MEASURED)}
+    # …and the user saved a manual time for the other cover while it ran.
+    _write_behind_the_flow(hass, entry, {_OTHER: manual})
+
+    merged = calibrator._merged_table([_COVER, _OTHER], measured)
+
+    assert merged[_COVER] == _MEASURED
+    assert merged[_OTHER] == manual

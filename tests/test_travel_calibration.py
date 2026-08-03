@@ -548,7 +548,7 @@ async def test_a_second_trigger_while_running_is_a_no_op(hass: HomeAssistant) ->
 
 @pytest.mark.asyncio
 async def test_cancel_with_restore_puts_the_covers_back(hass: HomeAssistant) -> None:
-    rig = _rig(hass, position=42, stalled=True, move_timeout=5)
+    rig = _rig(hass, position=42, stalled=True, move_timeout=0.5)
     task = await _park_in_wait(rig)
     await _partial_move(rig, "cover.a", 10)
 
@@ -565,7 +565,7 @@ async def test_cancel_without_restore_issues_no_further_movement(
     hass: HomeAssistant,
 ) -> None:
     """What the panic stop needs: stand down, do not move anything else."""
-    rig = _rig(hass, position=42, stalled=True, move_timeout=5)
+    rig = _rig(hass, position=42, stalled=True, move_timeout=0.5)
     task = await _park_in_wait(rig)
     await _partial_move(rig, "cover.a", 10)
     before = list(rig.commands("cover.a"))
@@ -786,7 +786,7 @@ async def test_cancel_stops_the_batch_before_the_remaining_covers(
         "cover.a": _FakeCover(hass, "cover.a", stalled=True),
         "cover.b": _FakeCover(hass, "cover.b"),
     }
-    rig = _Rig(hass, covers, move_timeout=5)
+    rig = _Rig(hass, covers, move_timeout=0.5)
     task = await _park_in_wait(rig)
 
     rig.calibrator.async_cancel(restore=False)
@@ -805,7 +805,7 @@ async def test_cancel_during_the_observability_probe_is_not_a_verdict(
     would tell the user their cover is unmeasurable on the strength of having
     pressed Cancel.
     """
-    rig = _rig(hass, features=_OPEN_CLOSE_FEATURES, stalled=True, move_timeout=5)
+    rig = _rig(hass, features=_OPEN_CLOSE_FEATURES, stalled=True, move_timeout=0.5)
     rig.calibrator._probe_seconds = 5.0
     task = await _park_in_wait(rig)
 
@@ -829,3 +829,173 @@ async def test_progress_callback_fires_as_the_run_advances(
 
     assert seen
     assert seen[-1] == TRAVEL_CALIBRATION_STATE_COMPLETE
+
+
+# ------------------------------------------------------------------ #
+# Owning the covers: the gates, and who is allowed past them
+# ------------------------------------------------------------------ #
+
+
+def _context(**kw):
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        PositionContext,
+    )
+
+    defaults = {
+        "auto_control": True,
+        "manual_override": False,
+        "sun_just_appeared": False,
+        "min_change": 1,
+        "time_threshold": 0,
+        "special_positions": [],
+    }
+    return PositionContext(**{**defaults, **kw})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "context_kwargs",
+    [
+        pytest.param({}, id="ordinary"),
+        pytest.param({"force": True}, id="force"),
+        pytest.param({"is_safety": True}, id="safety"),
+        pytest.param({"bypass_auto_control": True}, id="bypass-auto-control"),
+    ],
+)
+async def test_no_command_gets_past_a_calibration_run(
+    hass: HomeAssistant, context_kwargs
+) -> None:
+    """The gate is absolute — deliberately outranking force and safety.
+
+    A safety command landing on a rail mid-sweep drives a rail into a rail, and
+    a run is bounded in minutes. The escape hatch is cancelling the run, which
+    is a decision rather than a collision.
+    """
+    rig = _rig(hass)
+    rig.cmd_svc.calibrating = True
+
+    result = await rig.cmd_svc.apply_position(
+        "cover.a", 70, "test", _context(**context_kwargs)
+    )
+
+    assert result == ("skipped", "calibration_in_progress")
+    assert rig.cmd_svc.last_skipped_action["reason"] == "calibration_in_progress"
+
+
+@pytest.mark.asyncio
+async def test_commands_flow_again_once_the_run_hands_the_covers_back(
+    hass: HomeAssistant,
+) -> None:
+    rig = _rig(hass)
+    rig.cmd_svc.calibrating = True
+    await rig.cmd_svc.apply_position("cover.a", 70, "test", _context())
+    rig.cmd_svc.calibrating = False
+
+    result = await rig.cmd_svc.apply_position("cover.a", 70, "test", _context())
+
+    assert result != ("skipped", "calibration_in_progress")
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_stands_down_during_a_run(hass: HomeAssistant) -> None:
+    """Left running it would see the run's own in-flight targets as unmet and
+    resend, racing the legs whose timings it is there to measure.
+    """
+    rig = _rig(hass)
+    rig.cmd_svc.set_target("cover.a", 100)
+    rig.cmd_svc.state("cover.a").waiting = False
+    rig.cmd_svc.calibrating = True
+
+    before = len(rig.commands("cover.a"))
+    await rig.cmd_svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    assert len(rig.commands("cover.a")) == before
+
+
+# ------------------------------------------------------------------ #
+# Restore ordering — the pass with no clearance plan protecting it
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_the_furthest_traveller_leads_the_restore(hass: HomeAssistant) -> None:
+    """Coupled rails cannot pass each other on the way home either.
+
+    Both rails finish a run parked on the same endpoint and travel the same way
+    out of it, so whoever has furthest to go is the one everyone else would
+    otherwise have to travel through — it must lead. On an upright Model C
+    install that works out to the middle rail, which is what a raise requires;
+    the old fixed "bottom rail first" order had it exactly backwards.
+    """
+    covers = {
+        "cover.bottom": _FakeCover(hass, "cover.bottom", position=30),
+        "cover.middle": _FakeCover(hass, "cover.middle", position=70),
+    }
+    rig = _Rig(
+        hass, covers, cover_type="cover_day_night_shade", options=_model_c_options()
+    )
+    order: list[str] = []
+    for eid, cover in covers.items():
+        original = cover.command
+
+        async def _spy(entity_id, target, _eid=eid, _orig=None, **kw):
+            order.append(f"{_eid}:{target}")
+            await _orig(entity_id, target, **kw)
+
+        cover.command = lambda e, t, _o=original, _i=eid, **k: _spy(
+            e, t, _eid=_i, _orig=_o, **k
+        )
+
+    await rig.calibrator.async_run()
+
+    # The two restore commands are the last pair; the middle rail (origin 70,
+    # the longer haul from 0) goes first.
+    restores = [step for step in order if step.endswith(":30") or step.endswith(":70")]
+    assert restores == ["cover.middle:70", "cover.bottom:30"]
+
+
+@pytest.mark.asyncio
+async def test_the_restore_still_waits_for_each_cover_after_a_cancel(
+    hass: HomeAssistant,
+) -> None:
+    """The restore's one-at-a-time guarantee must survive the cancel path.
+
+    Its waits deliberately ignore the abort event: it runs AFTER a cancel has
+    been signalled, so racing that event would make every wait return on its
+    first scheduling and fan the whole restore out at once — on the one path
+    where coupled entities have no clearance plan protecting them.
+    """
+    covers = {
+        "cover.bottom": _FakeCover(hass, "cover.bottom", position=30),
+        "cover.middle": _FakeCover(hass, "cover.middle", position=70),
+    }
+    rig = _Rig(
+        hass,
+        covers,
+        cover_type="cover_day_night_shade",
+        options=_model_c_options(),
+        move_timeout=0.5,
+    )
+    in_flight: list[int] = []
+    peak = 0
+    for cover in covers.values():
+        original = cover.command
+
+        async def _spy(entity_id, target, _orig=None, **kw):
+            nonlocal peak
+            in_flight.append(1)
+            peak = max(peak, len(in_flight))
+            await _orig(entity_id, target, **kw)
+            in_flight.pop()
+
+        cover.command = lambda e, t, _o=original, **k: _spy(e, t, _orig=_o, **k)
+
+    task = asyncio.ensure_future(rig.calibrator.async_run())
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if rig.covers["cover.middle"].commands:
+            break
+    rig.calibrator.async_cancel(restore=True)
+    await task
+
+    assert peak == 1, "covers must be restored one at a time, never concurrently"

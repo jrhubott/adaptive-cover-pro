@@ -59,6 +59,7 @@ from .cover_command.transit import is_state_in_transit
 REASON_ASSUMED_STATE = "assumed_state"
 REASON_NO_MOTION_OBSERVED = "no_motion_observed"
 REASON_NO_ENTITIES = "no_entities"
+REASON_IMPLAUSIBLE_RESULT = "implausible_result"
 _REASON_CLEARANCE = "clearance_failed"
 
 
@@ -230,10 +231,16 @@ class TravelTimeCalibrator:
         self._cmd_svc.calibrating = True
         self._notify()
 
+        # Only what THIS run measured. Deliberately not a copy of the stored
+        # table: the run is long, and anything else that writes to the table
+        # while it is going (a hand-entered time saved from the options flow)
+        # would be erased when a start-of-run snapshot was written back at the
+        # end. The merge against live options happens at persist time instead.
+        measured: dict[str, dict[str, Any]] = {}
         # Captured before anything moves, so the restore pass can put every
         # cover back exactly where the user left it.
         origins = {eid: self._cmd_svc.get_current_position(eid) for eid in entities}
-        table = self._pruned_table(entities)
+        failed = False
 
         try:
             for subject in self._policy.order_for_dispatch(entities):
@@ -243,7 +250,12 @@ class TravelTimeCalibrator:
                 self._notify()
                 row = await self._calibrate_entity(subject, entities)
                 if row is not None:
-                    table[subject] = row
+                    measured[subject] = row
+        except Exception:
+            # Reported as failed rather than swallowed — the exception still
+            # propagates, but the sensor must not claim the run completed.
+            failed = True
+            raise
         finally:
             self._active = None
             try:
@@ -254,15 +266,16 @@ class TravelTimeCalibrator:
                 # automation off indefinitely with no visible cause.
                 self._cmd_svc.calibrating = False
 
-            self._state = (
-                TRAVEL_CALIBRATION_STATE_CANCELLED
-                if self._aborted
-                else TRAVEL_CALIBRATION_STATE_COMPLETE
-            )
-            # Persist even a cancelled run: the entities that finished produced
-            # real measurements, and throwing them away would mean re-sweeping
-            # covers that were already done.
-            await self._persist(table)
+            if failed:
+                self._state = TRAVEL_CALIBRATION_STATE_FAILED
+            elif self._aborted:
+                self._state = TRAVEL_CALIBRATION_STATE_CANCELLED
+            else:
+                self._state = TRAVEL_CALIBRATION_STATE_COMPLETE
+            # Persist even a cancelled or failed run: the entities that finished
+            # produced real measurements, and throwing them away would mean
+            # re-sweeping covers that were already done.
+            await self._persist(self._merged_table(entities, measured))
             self._notify()
 
     # ------------------------------------------------------------------ #
@@ -345,7 +358,7 @@ class TravelTimeCalibrator:
             self._record(
                 subject,
                 TRAVEL_CALIBRATION_STATUS_TIMEOUT,
-                reason="implausible_result",
+                reason=REASON_IMPLAUSIBLE_RESULT,
                 full_travel_seconds=round(full, 2),
             )
             return None
@@ -385,31 +398,67 @@ class TravelTimeCalibrator:
         return True
 
     async def _restore(self, origins: Mapping[str, int | None]) -> None:
-        """Put every cover back where the run found it.
+        """Put every cover back where the run found it, furthest traveller first.
 
-        Waits for each to land before moving the next, in policy dispatch order:
-        a cover type with coupled entities cannot have both travelling at once,
-        and this pass has no clearance plan protecting it. Outcomes are ignored
-        — a cover that will not go home is a cosmetic annoyance, not a reason to
-        fail a run whose measurements already succeeded.
+        Ordering matters here for the same reason it matters during a sweep:
+        coupled entities cannot pass through each other. But this pass cannot use
+        ``order_for_dispatch`` — that view is keyed on the single number a seam
+        is fanning out, and a restore sends every cover to a DIFFERENT number, so
+        there is none to name. Asked without one it falls back to a fixed order,
+        which is wrong half the time.
+
+        The covers all sit on the same endpoint when a completed run ends, and
+        they all travel the same way out of it, so the safe order follows from
+        distance alone: whoever has furthest to go must lead, because it is the
+        one everyone else would otherwise have to travel through. That holds in
+        both frames without the calibrator knowing which it is in — on an upright
+        Model C install the leader works out to the middle rail (a raise), on an
+        inverse one to the bottom rail (a lower), which is exactly what each
+        direction requires.
+
+        Sorting by distance also degrades sanely after a cancel, where covers can
+        be scattered mid-travel rather than parked together.
+
+        Outcomes are ignored: a cover that will not go home is a cosmetic
+        annoyance, not a reason to fail a run whose measurements succeeded.
         """
         targets = {eid: pos for eid, pos in origins.items() if pos is not None}
-        for entity_id in self._policy.order_for_dispatch(targets):
+        ordered = sorted(
+            targets,
+            key=lambda eid: abs(
+                targets[eid] - (self._cmd_svc.get_current_position(eid) or 0)
+            ),
+            reverse=True,
+        )
+        for entity_id in ordered:
             caps = self._cmd_svc.get_cover_capabilities(entity_id)
-            await self._drive_and_wait(entity_id, targets[entity_id], caps=caps)
+            await self._drive_and_wait(
+                entity_id, targets[entity_id], caps=caps, ignore_abort=True
+            )
 
     # ------------------------------------------------------------------ #
     # Driving and observing one move
     # ------------------------------------------------------------------ #
 
     async def _drive_and_wait(
-        self, entity_id: str, target: int, *, caps: Mapping[str, bool] | None
+        self,
+        entity_id: str,
+        target: int,
+        *,
+        caps: Mapping[str, bool] | None,
+        ignore_abort: bool = False,
     ) -> _Arrival:
         """Command ``entity_id`` to ``target`` and wait for it to land there.
 
         Subscribes BEFORE dispatching: a fast cover can publish its whole
         transit between the service call returning and a later subscription
         taking effect, and a missed arrival is indistinguishable from a stall.
+
+        ``ignore_abort`` is for the restore pass, which runs AFTER a cancel has
+        already been signalled. Without it every wait there would see the abort
+        event already set and return on its first scheduling — turning a
+        deliberately one-at-a-time pass into a simultaneous fan-out, on the one
+        path where coupled entities have no clearance plan protecting them.
         """
         if self._already_at(entity_id, target, caps):
             # Nothing to observe and nothing to time. Skipping the command also
@@ -465,7 +514,10 @@ class TravelTimeCalibrator:
             # detector does not read our own sweep as a user move.
             await self._cmd_svc._execute_command(entity_id, target)  # noqa: SLF001
             return await self._await_outcome(
-                arrived, motion, probe=not position_capable
+                arrived,
+                motion,
+                probe=not position_capable,
+                ignore_abort=ignore_abort,
             )
         finally:
             unsub()
@@ -476,6 +528,7 @@ class TravelTimeCalibrator:
         motion: list[dt.datetime | None],
         *,
         probe: bool,
+        ignore_abort: bool = False,
     ) -> _Arrival:
         """Wait for arrival, giving position-less covers an observability probe.
 
@@ -488,8 +541,10 @@ class TravelTimeCalibrator:
         an instantaneous traverse.
         """
         if probe:
-            stamp = await self._wait_for(arrived, self._probe_seconds)
-            if self._aborted:
+            stamp = await self._wait_for(
+                arrived, self._probe_seconds, ignore_abort=ignore_abort
+            )
+            if self._aborted and not ignore_abort:
                 return _Arrival(None, motion[0])
             if motion[0] is None:
                 # Nothing was seen to move. Note this is checked BEFORE the
@@ -503,27 +558,37 @@ class TravelTimeCalibrator:
         else:
             remaining = self._move_timeout
 
-        stamp = await self._wait_for(arrived, remaining)
+        stamp = await self._wait_for(arrived, remaining, ignore_abort=ignore_abort)
         return _Arrival(stamp, motion[0])
 
     async def _wait_for(
-        self, arrived: asyncio.Future[dt.datetime], timeout: float
+        self,
+        arrived: asyncio.Future[dt.datetime],
+        timeout: float,
+        *,
+        ignore_abort: bool = False,
     ) -> dt.datetime | None:
         """Arrival stamp, or None if the wait timed out or the run was cancelled.
 
         Races the abort event alongside the timeout so Cancel lands at the next
         scheduling point instead of after the full per-move budget.
+
+        ``ignore_abort`` drops that race for the restore pass, which by
+        definition runs with the abort already set and still has to wait for
+        each cover in turn.
         """
-        assert self._abort is not None  # noqa: S101 — set for the whole run
-        abort_task = asyncio.ensure_future(self._abort.wait())
+        waiters: set[asyncio.Future] = {arrived}
+        abort_task: asyncio.Task | None = None
+        if not ignore_abort and self._abort is not None:
+            abort_task = asyncio.ensure_future(self._abort.wait())
+            waiters.add(abort_task)
         try:
             done, _pending = await asyncio.wait(
-                {arrived, abort_task},
-                timeout=timeout,
-                return_when=asyncio.FIRST_COMPLETED,
+                waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
             )
         finally:
-            abort_task.cancel()
+            if abort_task is not None:
+                abort_task.cancel()
         return arrived.result() if arrived in done else None
 
     def _is_arrival(self, state_obj, target: int, caps) -> bool:
@@ -576,16 +641,27 @@ class TravelTimeCalibrator:
         self._results[entity_id] = {"status": status, **extra}
         self._notify()
 
-    def _pruned_table(self, entities: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Return the stored table, minus covers this instance no longer controls.
+    def _merged_table(
+        self, entities: Iterable[str], measured: Mapping[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Rebase this run's measurements onto the table as it stands NOW.
 
-        Swapping a cover out in the options flow would otherwise leave its row
-        behind forever, quietly inflating the "N of M calibrated" count and
-        keeping a dead entity in the diagnostics.
+        Read at persist time, not run start. A sweep takes minutes, and the
+        options flow can write a hand-entered time for an unmeasurable cover in
+        the meantime — that write is the only way such a cover ever gets a time,
+        so overwriting it with a stale snapshot would undo the one thing the
+        user could do for it. This is the mirror of the flow's own save-time
+        merge; between them, neither side can clobber the other.
+
+        Also drops rows for covers this instance no longer controls: swapping a
+        cover out would otherwise leave its row behind forever, inflating the
+        "N of M calibrated" count and keeping a dead entity in diagnostics.
         """
         stored = self._get_options().get(CONF_TRAVEL_TIME_CALIBRATION) or {}
         keep = set(entities)
-        return {eid: dict(row) for eid, row in stored.items() if eid in keep}
+        table = {eid: dict(row) for eid, row in stored.items() if eid in keep}
+        table.update({eid: dict(row) for eid, row in measured.items() if eid in keep})
+        return table
 
     def _notify(self) -> None:
         if self._on_progress is not None:

@@ -1115,7 +1115,7 @@
         "title": "Laufzeit"
       },
       "travel_time_manual": {
-        "description": "Sekunden für eine vollständige Fahrt von vollständig geschlossen bis vollständig offen. Setzen Sie eine Beschattung auf **0**, um ihre Zeit zu löschen.\n\nEine ungefähre Zahl ist wertvoll: Sie beeinflusst nur, wie die Bewegung angezeigt wird, niemals, wohin die Beschattung geschickt wird. Das Timing eines vollständigen Schließens mit einer Stoppuhr ist ausreichend.\n\n{cover_list}",
+        "description": "Sekunden für eine vollständige Fahrt von vollständig geschlossen bis vollständig offen. Setzen Sie eine Beschattung auf **0**, um ihre Zeit zu löschen; alles andere muss mindestens {min_seconds} Sekunden betragen.\n\nEine ungefähre Zahl ist wertvoll: Sie beeinflusst nur, wie die Bewegung angezeigt wird, niemals, wohin die Beschattung geschickt wird. Das Timing eines vollständigen Schließens mit einer Stoppuhr ist ausreichend.\n\n{cover_list}",
         "title": "Laufzeit — manuelle Eingabe"
       }
     },
@@ -1126,6 +1126,9 @@
       "user_cancelled": "Synchronisierung abgebrochen.",
       "sync_complete": "Einstellungen erfolgreich synchronisiert.",
       "no_eligible_cover_types": "Kein anderer Beschattungstyp kann die an diese Instanz gebundenen Beschattungen steuern, daher gibt es nichts zum Wechseln."
+    },
+    "error": {
+      "travel_time_too_short": "Eine Laufzeit muss mindestens {min_seconds} Sekunden betragen, oder 0 zum Löschen. Ein kürzerer Wert ist fast immer ein Tippfehler – und eine Beschattung, die wirklich in unter einer Sekunde fährt, hat nichts Wertvolles zu animieren."
     }
   },
   "entity": {

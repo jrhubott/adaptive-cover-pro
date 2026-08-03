@@ -1115,7 +1115,7 @@
         "title": "Temps de course"
       },
       "travel_time_manual": {
-        "description": "Secondes pour un voyage complet de complètement fermé à complètement ouvert. Mettez un store à **0** pour effacer sa durée.\n\nUne valeur approximative est suffisante : elle n'affecte que la manière dont le mouvement est dessiné, jamais où le store est commandé. Chronométrer une fermeture complète avec un chronomètre est largement suffisant.\n\n{cover_list}",
+        "description": "Secondes pour un voyage complet de complètement fermé à complètement ouvert. Mettez un store à **0** pour effacer sa durée ; tout autre valeur doit être d'au moins {min_seconds} secondes.\n\nUne valeur approximative est suffisante : elle n'affecte que la manière dont le mouvement est dessiné, jamais où le store est commandé. Chronométrer une fermeture complète avec un chronomètre est largement suffisant.\n\n{cover_list}",
         "title": "Temps de course — entrée manuelle"
       }
     },
@@ -1126,6 +1126,9 @@
       "user_cancelled": "Synchronisation annulée.",
       "sync_complete": "Paramètres synchronisés avec succès.",
       "no_eligible_cover_types": "Aucun autre type de store ne peut gérer les protections liées à cette instance, il n'y a donc rien vers quoi basculer."
+    },
+    "error": {
+      "travel_time_too_short": "Un temps de course doit être d'au moins {min_seconds} secondes, ou 0 pour l'effacer. Une valeur plus courte est presque toujours une faute de frappe — et un store qui traverse vraiment en moins d'une seconde n'a rien à animer."
     }
   },
   "entity": {

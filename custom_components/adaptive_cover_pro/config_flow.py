@@ -255,6 +255,7 @@ from .const import (
     TIME_STRING_RE,
     TRAVEL_CALIBRATION_SOURCE_MANUAL,
     TRAVEL_TIME_MAX_SECONDS,
+    TRAVEL_TIME_MIN_SECONDS,
     CoverType,
     GroupScene,
     TemplateCombineMode,
@@ -6435,8 +6436,28 @@ class OptionsFlowHandler(OptionsFlow):
         return getattr(self._config_entry, "runtime_data", None)
 
     def _travel_table(self) -> dict[str, dict[str, Any]]:
-        """Return the travel-time table as this flow session currently holds it."""
-        return dict(self.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {})
+        """Return the LIVE travel-time table with this session's edits on top.
+
+        Deliberately not ``self.options``. That is a snapshot taken when the flow
+        opened, and this is the one key written from outside the flow: a
+        measurement run started from the Travel Time menu keeps going after the
+        user navigates on and writes its results straight to the config entry.
+        Reading the snapshot would show every freshly-measured cover as "not
+        calibrated" on the very page that just ran the measurement, and would
+        pre-fill the manual form with stale numbers.
+
+        One definition serving four callers — the status block, the manual
+        form's suggested values, the manual write, and the save-time merge — so
+        the live-plus-edits rule cannot be applied inconsistently between them.
+        """
+        live = dict(self._config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {})
+        session = self.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
+        for entity_id in self._travel_time_edited:
+            if entity_id in session:
+                live[entity_id] = session[entity_id]
+            else:
+                live.pop(entity_id, None)
+        return live
 
     def _travel_time_status(self) -> str:
         """Markdown status block shown on the Travel Time menu.
@@ -6540,6 +6561,29 @@ class OptionsFlowHandler(OptionsFlow):
         """
         entities = list(self.options.get(CONF_ENTITIES) or [])
         if user_input is not None:
+            # 0 clears; anything between 0 and the floor is a typo, not a
+            # setting. Rejecting rather than clamping keeps the number the user
+            # sees the number that was stored, and holds the promise
+            # TRAVEL_TIME_MIN_SECONDS makes: a value the UI accepts is never one
+            # the calibrator would have discarded as implausible.
+            too_short = [
+                eid
+                for eid in entities
+                if user_input.get(eid)
+                and float(user_input[eid]) < TRAVEL_TIME_MIN_SECONDS
+            ]
+            if too_short:
+                return self.async_show_form(
+                    step_id="travel_time_manual",
+                    data_schema=self.add_suggested_values_to_schema(
+                        _travel_time_manual_schema(entities), user_input
+                    ),
+                    errors={"base": "travel_time_too_short"},
+                    description_placeholders={
+                        "cover_list": self._travel_time_status(),
+                        "min_seconds": f"{TRAVEL_TIME_MIN_SECONDS:g}",
+                    },
+                )
             table = self._travel_table()
             for entity_id in entities:
                 submitted = user_input.get(entity_id)
@@ -6579,6 +6623,7 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "cover_list": self._travel_time_status(),
+                "min_seconds": f"{TRAVEL_TIME_MIN_SECONDS:g}",
             },
         )
 
@@ -6760,25 +6805,17 @@ class OptionsFlowHandler(OptionsFlow):
         editing, and finishes by writing its results straight to the entry.
         Saving the snapshot as-is would silently erase everything it measured.
 
-        So the live table wins by default, and only the entities this session
-        actually touched are re-applied on top. Per-entity, not all-or-nothing:
-        a manual time typed for cover A and a measurement taken for cover B in
-        the same window must both survive.
-
-        Also drops rows for covers this instance no longer controls — the same
-        prune the calibrator does at run start, applied here so removing a cover
-        cleans up even without a run.
+        ``_travel_table`` already resolves live-plus-this-session's-edits, per
+        entity — a manual time typed for cover A and a measurement taken for
+        cover B in the same window both survive. All that is left here is to drop
+        rows for covers the instance no longer controls, the same prune the
+        calibrator applies, done here too so removing a cover cleans up even
+        without a run.
         """
-        live = dict(self._config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {})
-        session = self.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
-        for entity_id in self._travel_time_edited:
-            edited = session.get(entity_id)
-            if edited is None:
-                live.pop(entity_id, None)
-            else:
-                live[entity_id] = edited
         entities = set(self.options.get(CONF_ENTITIES) or [])
-        merged = {eid: row for eid, row in live.items() if eid in entities}
+        merged = {
+            eid: row for eid, row in self._travel_table().items() if eid in entities
+        }
         if merged:
             self.options[CONF_TRAVEL_TIME_CALIBRATION] = merged
         else:

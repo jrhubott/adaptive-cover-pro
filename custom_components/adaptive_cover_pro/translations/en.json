@@ -751,7 +751,7 @@
       },
       "travel_time_manual": {
         "title": "Travel Time — manual entry",
-        "description": "Seconds for a full travel from fully closed to fully open. Set a cover to **0** to clear its time.\n\nA rough figure is worth having: it only affects how movement is drawn, never where the cover is sent. Timing one full close with a stopwatch is plenty.\n\n{cover_list}"
+        "description": "Seconds for a full travel from fully closed to fully open. Set a cover to **0** to clear its time; anything else must be at least {min_seconds} seconds.\n\nA rough figure is worth having: it only affects how movement is drawn, never where the cover is sent. Timing one full close with a stopwatch is plenty.\n\n{cover_list}"
       },
       "interp": {
         "data": {
@@ -1118,6 +1118,9 @@
           "glare_zone_z": "Target height above the floor (e.g. desk surface ≈ 0.75 m, seated eyes ≈ 1.1 m, wall TV ≈ 1.5 m). Default 0 protects the floor. Shown in the unit Home Assistant is configured for."
         }
       }
+    },
+    "error": {
+      "travel_time_too_short": "A travel time must be at least {min_seconds} seconds, or 0 to clear it. A shorter value is almost always a typo — and a cover that really does traverse in under a second has nothing worth animating."
     },
     "abort": {
       "no_eligible_cover_types": "No other cover type can drive the covers bound to this instance, so there is nothing to switch to.",
