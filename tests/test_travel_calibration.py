@@ -46,15 +46,16 @@ from custom_components.adaptive_cover_pro.const import (
     TRAVEL_CALIBRATION_STATUS_TIMEOUT,
     TRAVEL_CALIBRATION_STATUS_UNAVAILABLE,
     TRAVEL_CALIBRATION_STATUS_UNOBSERVABLE,
+    REASON_ASSUMED_STATE,
+    REASON_CLEARANCE_FAILED,
+    REASON_NO_ENTITIES,
+    REASON_NO_MOTION_OBSERVED,
 )
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
 )
 from custom_components.adaptive_cover_pro.managers.travel_calibration import (
-    REASON_ASSUMED_STATE,
-    REASON_NO_ENTITIES,
-    REASON_NO_MOTION_OBSERVED,
     TravelTimeCalibrator,
 )
 
@@ -182,6 +183,24 @@ class _Rig:
             policy=get_policy(cover_type),
         )
         self.cmd_svc._execute_command = AsyncMock(side_effect=self._dispatch)
+        self.policy = get_policy(cover_type)
+        # Attach exactly as the coordinator does at setup. Skipping it leaves a
+        # coupled policy with no sequencer and no entity list, which makes its
+        # clearance gate inert — so the rig would quietly be testing an
+        # UNCOUPLED cover while claiming to test rails.
+        self.policy.attach(
+            hass=hass,
+            logger=MagicMock(),
+            grace_mgr=MagicMock(),
+            entities=list(covers),
+            get_current_position=self.cmd_svc.get_current_position,
+            set_commanded_position=self.cmd_svc.set_target,
+            position_tolerance=3,
+            is_dry_run=lambda: False,
+            get_state=lambda eid: getattr(hass.states.get(eid), "state", None),
+            get_booked_target=lambda _eid: None,
+            cmd_svc=self.cmd_svc,
+        )
 
         async def _persist(table):
             self.persisted = table
@@ -190,7 +209,7 @@ class _Rig:
             hass,
             MagicMock(),
             cmd_svc=self.cmd_svc,
-            policy=get_policy(cover_type),
+            policy=self.policy,
             get_entities=lambda: list(covers),
             get_options=lambda: self.options,
             persist=_persist,
@@ -476,8 +495,14 @@ async def test_no_entities_reports_failure(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stale_rows_are_pruned_at_run_start(hass: HomeAssistant) -> None:
-    """A cover swapped out in the options flow must not linger in the table."""
+async def test_stale_rows_are_pruned_from_the_persisted_table(
+    hass: HomeAssistant,
+) -> None:
+    """A cover swapped out in the options flow must not linger in the table.
+
+    Pruned at persist time rather than run start, so it holds for a run that
+    was cancelled part-way as well as one that completed.
+    """
     rig = _rig(hass)
     rig.options[CONF_TRAVEL_TIME_CALIBRATION] = {
         "cover.gone": {"full_travel_seconds": 12.0}
@@ -770,7 +795,7 @@ async def test_a_partner_that_will_not_park_blocks_its_subject(
 
     result = rig.calibrator.diagnostics()["results"]["cover.bottom"]
     assert result["status"] == TRAVEL_CALIBRATION_STATUS_TIMEOUT
-    assert result["reason"] == "clearance_failed"
+    assert result["reason"] == REASON_CLEARANCE_FAILED
     # Never SWEPT: no command to its far endpoint. It is still driven to 0 later
     # on, but as the middle rail's clearance partner — a parking move, not a
     # timed traverse — which is exactly the distinction being asserted.
@@ -918,14 +943,14 @@ async def test_reconciliation_stands_down_during_a_run(hass: HomeAssistant) -> N
 
 
 @pytest.mark.asyncio
-async def test_the_furthest_traveller_leads_the_restore(hass: HomeAssistant) -> None:
+async def test_the_clearance_gate_orders_the_restore(hass: HomeAssistant) -> None:
     """Coupled rails cannot pass each other on the way home either.
 
-    Both rails finish a run parked on the same endpoint and travel the same way
-    out of it, so whoever has furthest to go is the one everyone else would
-    otherwise have to travel through — it must lead. On an upright Model C
-    install that works out to the middle rail, which is what a raise requires;
-    the old fixed "bottom rail first" order had it exactly backwards.
+    The order is not computed by the calibrator — each candidate is offered to
+    the policy's own clearance gate and only the cleared ones move, so whatever
+    is blocked waits for its blocker to land. Both rails finish a run parked at
+    wire 0 and are restored upward, and the middle rail cannot be passed, so the
+    gate holds the bottom rail back until the middle one is home.
     """
     covers = {
         "cover.bottom": _FakeCover(hass, "cover.bottom", position=30),
@@ -999,3 +1024,67 @@ async def test_the_restore_still_waits_for_each_cover_after_a_cancel(
     await task
 
     assert peak == 1, "covers must be restored one at a time, never concurrently"
+
+
+@pytest.mark.asyncio
+async def test_a_restore_that_raises_still_leaves_a_recoverable_calibrator(
+    hass: HomeAssistant,
+) -> None:
+    """A failed go-home move must not brick the feature.
+
+    Everything that makes a run recoverable happens after the restore: clearing
+    ``calibrating``, settling on a terminal state, and persisting. Letting the
+    restore's exception escape skipped all three — leaving the sensor reading
+    ``running`` forever, after which every later run early-returns at the
+    is_running guard and travel-time calibration is dead for the life of the
+    config entry.
+    """
+    rig = _rig(hass)
+    original = rig.cmd_svc._execute_command
+    calls = {"n": 0}
+
+    async def _fail_on_restore(entity_id, target, **kw):
+        calls["n"] += 1
+        # The three sweep legs succeed; the go-home move blows up.
+        if calls["n"] > 3:
+            raise ValueError("go-home exploded")
+        await original(entity_id, target, **kw)
+
+    rig.cmd_svc._execute_command = AsyncMock(side_effect=_fail_on_restore)
+
+    await rig.calibrator.async_run()
+
+    assert rig.calibrator.state == TRAVEL_CALIBRATION_STATE_FAILED
+    assert rig.calibrator.is_running is False
+    assert rig.cmd_svc.calibrating is False
+    # The measurements it did take are kept, not thrown away with the failure.
+    assert rig.persisted is not None
+    assert "cover.a" in rig.persisted
+
+
+@pytest.mark.asyncio
+async def test_a_hard_cancel_stops_a_restore_already_under_way(
+    hass: HomeAssistant,
+) -> None:
+    """Unload and panic-stop must not sit through a per-move timeout per cover.
+
+    The restore deliberately ignores the ordinary cancel — it runs after one has
+    been raised and still has to wait for each cover in turn — so it needs the
+    stronger signal to remain interruptible at all.
+    """
+    rig = _rig(hass, position=42, stalled=True, move_timeout=30)
+    task = await _park_in_wait(rig)
+    await _partial_move(rig, "cover.a", 10)
+
+    # Ordinary cancel: the restore starts and its wait is abort-immune.
+    rig.calibrator.async_cancel(restore=True)
+    for _ in range(40):
+        await asyncio.sleep(0)
+        if len(rig.commands("cover.a")) > 1:
+            break
+    # The hard signal reaches it anyway.
+    rig.calibrator.async_cancel(restore=False)
+    await asyncio.wait_for(task, timeout=5)
+
+    assert rig.calibrator.state == TRAVEL_CALIBRATION_STATE_CANCELLED
+    assert rig.cmd_svc.calibrating is False

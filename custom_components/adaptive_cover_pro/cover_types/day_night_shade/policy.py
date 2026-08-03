@@ -375,6 +375,13 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         control-model precedent (#1114).
         """
         self._set_control_model(options)
+        # The rail role is a per-instance option like any other, and this is the
+        # seam for those. ``_cache_dual_entity`` also writes it once a pipeline
+        # result exists, but that is per-CYCLE: anything asking the clearance
+        # gate before the first cycle — a travel-time calibration started from
+        # the options flow — would otherwise find no middle rail configured and
+        # be told every rail is free to move.
+        self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
         self._dual_entity_concurrent_travel = bool(
             options.get(
                 CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,

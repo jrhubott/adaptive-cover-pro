@@ -6521,10 +6521,21 @@ class OptionsFlowHandler(OptionsFlow):
         takes minutes; awaiting it here would hold the config-flow dialog open
         for the duration. Returning to the menu (rather than aborting the flow)
         also preserves any edits made earlier in this session.
+
+        Scoped to the config entry, not to ``hass``: the run outlives this
+        dialog, and saving the flow can reload the entry. A bare
+        ``hass.async_create_task`` would survive that reload and keep driving
+        covers through the torn-down coordinator's command service — writing
+        options from a stale object while the new coordinator is already
+        automating. Entry-scoped, the reload cancels it.
         """
         coordinator = self._coordinator()
         if coordinator is not None:
-            self.hass.async_create_task(coordinator.async_run_travel_calibration())
+            self._config_entry.async_create_background_task(
+                self.hass,
+                coordinator.async_run_travel_calibration(),
+                name=f"acp_travel_calibration_{self._config_entry.entry_id}",
+            )
         return await self.async_step_travel_time()
 
     async def async_step_travel_time_cancel(

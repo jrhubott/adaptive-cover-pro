@@ -224,8 +224,9 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         """
         estimated = self.coordinator.travel_estimated_position(self._source_entity_id)
         if estimated is not None:
-            # Already logical: the plan's endpoints were captured in the source's
-            # own frame, so it needs the same un-inversion as a live reading.
+            # The plan's endpoints were captured in the SOURCE's frame — the same
+            # cover-frame numbers the raw attribute carries — so the estimate
+            # owes the reader exactly the same un-inversion a live reading does.
             return flip_if(estimated, inverted=self.coordinator.position_axis_inverted)
         return self._logical_axis_value(
             STATE_ATTR_POSITION, inverted=self.coordinator.position_axis_inverted

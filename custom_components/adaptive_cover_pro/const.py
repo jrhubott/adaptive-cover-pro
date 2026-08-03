@@ -1608,6 +1608,18 @@ TRAVEL_CALIBRATION_STATUS_UNOBSERVABLE = "skipped_unobservable"
 TRAVEL_CALIBRATION_SOURCE_MEASURED = "measured"
 TRAVEL_CALIBRATION_SOURCE_MANUAL = "manual"
 
+# Why an entity ended up with the status it did, as recorded on its result row
+# and rendered by the travel_calibration sensor. Named rather than free text so
+# the sites that write them, the sensor that shows them and the tests that
+# assert on them cannot drift.
+REASON_ASSUMED_STATE = "assumed_state"
+REASON_NO_MOTION_OBSERVED = "no_motion_observed"
+REASON_NO_ENTITIES = "no_entities"
+REASON_IMPLAUSIBLE_RESULT = "implausible_result"
+REASON_CLEARANCE_FAILED = "clearance_failed"
+# Dispatch label the go-home pass carries into the policy's clearance gate.
+REASON_RESTORE = "travel_calibration_restore"
+
 
 # =============================================================================
 # 21. Venetian Dual-Axis Sequencing

@@ -47,20 +47,18 @@ from ..const import (
     TRAVEL_CALIBRATION_STATUS_TIMEOUT,
     TRAVEL_CALIBRATION_STATUS_UNAVAILABLE,
     TRAVEL_CALIBRATION_STATUS_UNOBSERVABLE,
+    REASON_ASSUMED_STATE,
+    REASON_CLEARANCE_FAILED,
+    REASON_IMPLAUSIBLE_RESULT,
+    REASON_NO_ENTITIES,
+    REASON_NO_MOTION_OBSERVED,
+    REASON_RESTORE,
     TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS,
     TRAVEL_TIME_MAX_SECONDS,
     TRAVEL_TIME_MIN_SECONDS,
 )
 from ..helpers import is_assumed_state
 from .cover_command.transit import is_state_in_transit
-
-# Why an entity was skipped, as recorded on its result row. Free text would
-# drift between the three sites that write it and the sensor that renders it.
-REASON_ASSUMED_STATE = "assumed_state"
-REASON_NO_MOTION_OBSERVED = "no_motion_observed"
-REASON_NO_ENTITIES = "no_entities"
-REASON_IMPLAUSIBLE_RESULT = "implausible_result"
-_REASON_CLEARANCE = "clearance_failed"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -157,6 +155,13 @@ class TravelTimeCalibrator:
         # arrival wait, so a cancel takes effect at the next observation rather
         # than sitting behind a 180 s timeout.
         self._abort: asyncio.Event | None = None
+        # A second, stronger signal. The restore pass deliberately ignores
+        # ``_abort`` — it runs after a cancel has already been raised and still
+        # has to wait for each cover in turn — so without this it would be
+        # uncancellable, and an unload would sit through a full per-move timeout
+        # per cover. Set by an unload/panic cancel (``restore=False``), never by
+        # the options-flow Cancel, which is asking for the restore to happen.
+        self._hard_abort: asyncio.Event | None = None
         self._restore_on_cancel: bool = True
 
     # ------------------------------------------------------------------ #
@@ -200,6 +205,10 @@ class TravelTimeCalibrator:
             return False
         self._restore_on_cancel = restore
         self._abort.set()
+        if not restore and self._hard_abort is not None:
+            # "Stop moving" means stop moving, including a restore already under
+            # way — the panic-stop and unload callers want no further commands.
+            self._hard_abort.set()
         return True
 
     async def async_run(self) -> None:
@@ -221,7 +230,15 @@ class TravelTimeCalibrator:
             self._notify()
             return
 
+        # Refresh the policy's option-derived state before anything asks it a
+        # question. A run can be started from the options flow at any time, and
+        # the clearance gate the restore leans on reads role state the
+        # coordinator normally primes per cycle — cold, it would report every
+        # coupled entity free to move.
+        self._policy.sync_runtime_options(dict(self._get_options()))
+
         self._abort = asyncio.Event()
+        self._hard_abort = asyncio.Event()
         self._restore_on_cancel = True
         self._results = {}
         self._last_error = None
@@ -261,6 +278,20 @@ class TravelTimeCalibrator:
             try:
                 if not self._aborted or self._restore_on_cancel:
                     await self._restore(origins)
+            except Exception:  # noqa: BLE001 — see below
+                # Swallowed deliberately, and this is the one place in the module
+                # where that is right. Everything after this point is what makes
+                # the run recoverable: clearing ``calibrating``, leaving a
+                # terminal state, and persisting the measurements. Letting a
+                # failed go-home move escape would skip all three and strand the
+                # calibrator reporting ``running`` forever — after which every
+                # later run early-returns at the is_running guard and the feature
+                # is dead for the life of the config entry.
+                self._logger.exception(
+                    "Travel-time calibration could not return the covers to "
+                    "their original positions"
+                )
+                failed = True
             finally:
                 # Always, on every path: a run that leaves this set has switched
                 # automation off indefinitely with no visible cause.
@@ -307,7 +338,9 @@ class TravelTimeCalibrator:
 
         if not await self._apply_clearance(subject, entities):
             self._record(
-                subject, TRAVEL_CALIBRATION_STATUS_TIMEOUT, reason=_REASON_CLEARANCE
+                subject,
+                TRAVEL_CALIBRATION_STATUS_TIMEOUT,
+                reason=REASON_CLEARANCE_FAILED,
             )
             return None
 
@@ -398,43 +431,54 @@ class TravelTimeCalibrator:
         return True
 
     async def _restore(self, origins: Mapping[str, int | None]) -> None:
-        """Put every cover back where the run found it, furthest traveller first.
+        """Put every cover back where the run found it, one at a time.
 
-        Ordering matters here for the same reason it matters during a sweep:
-        coupled entities cannot pass through each other. But this pass cannot use
-        ``order_for_dispatch`` — that view is keyed on the single number a seam
-        is fanning out, and a restore sends every cover to a DIFFERENT number, so
-        there is none to name. Asked without one it falls back to a fixed order,
-        which is wrong half the time.
+        Ordering matters for the same reason it matters during a sweep: coupled
+        entities cannot pass through each other. But this pass cannot derive an
+        order for itself. ``order_for_dispatch`` is keyed on the single number a
+        seam is fanning out and a restore sends every cover somewhere different;
+        sorting by distance instead looks plausible and is wrong — it ties when
+        two rails share an origin, and after a cancel the covers are scattered
+        mid-travel with no shared starting point to reason from.
 
-        The covers all sit on the same endpoint when a completed run ends, and
-        they all travel the same way out of it, so the safe order follows from
-        distance alone: whoever has furthest to go must lead, because it is the
-        one everyone else would otherwise have to travel through. That holds in
-        both frames without the calibrator knowing which it is in — on an upright
-        Model C install the leader works out to the middle rail (a raise), on an
-        inverse one to the bottom rail (a lower), which is exactly what each
-        direction requires.
+        So the order is not computed here at all. Each candidate is offered to
+        ``await_dispatch_clearance`` — the policy's own "may this entity move
+        there right now?" gate, the same one ``apply_position`` and
+        reconciliation consult — and only the ones it clears are dispatched.
+        Whatever was blocked is re-offered on the next lap, by which point the
+        cover in its way has landed. That is correct in every geometry and both
+        frames without this manager knowing what a rail is.
 
-        Sorting by distance also degrades sanely after a cancel, where covers can
-        be scattered mid-travel rather than parked together.
-
-        Outcomes are ignored: a cover that will not go home is a cosmetic
+        The loop stops as soon as a lap moves nothing: the remainder is either
+        genuinely stuck or its blocker never arrived, and spinning would hold
+        the covers hostage. A cover that will not go home is a cosmetic
         annoyance, not a reason to fail a run whose measurements succeeded.
         """
-        targets = {eid: pos for eid, pos in origins.items() if pos is not None}
-        ordered = sorted(
-            targets,
-            key=lambda eid: abs(
-                targets[eid] - (self._cmd_svc.get_current_position(eid) or 0)
-            ),
-            reverse=True,
-        )
-        for entity_id in ordered:
-            caps = self._cmd_svc.get_cover_capabilities(entity_id)
-            await self._drive_and_wait(
-                entity_id, targets[entity_id], caps=caps, ignore_abort=True
-            )
+        pending = {eid: pos for eid, pos in origins.items() if pos is not None}
+        while pending and not self._hard_aborted:
+            moved = False
+            for entity_id in list(pending):
+                if not await self._policy.await_dispatch_clearance(
+                    entity_id,
+                    position=pending[entity_id],
+                    reason=REASON_RESTORE,
+                    wait=False,
+                ):
+                    continue
+                caps = self._cmd_svc.get_cover_capabilities(entity_id)
+                await self._drive_and_wait(
+                    entity_id, pending.pop(entity_id), caps=caps, ignore_abort=True
+                )
+                moved = True
+                if self._hard_aborted:
+                    return
+            if not moved:
+                self._logger.debug(
+                    "Travel-time calibration: %d cover(s) could not be returned "
+                    "to their original position — nothing left is clear to move",
+                    len(pending),
+                )
+                return
 
     # ------------------------------------------------------------------ #
     # Driving and observing one move
@@ -578,9 +622,13 @@ class TravelTimeCalibrator:
         each cover in turn.
         """
         waiters: set[asyncio.Future] = {arrived}
+        # ``ignore_abort`` drops only the ordinary cancel. The hard abort is
+        # raced either way, so an unload or a panic stop is never left waiting
+        # out a per-move timeout.
+        signal = self._hard_abort if ignore_abort else self._abort
         abort_task: asyncio.Task | None = None
-        if not ignore_abort and self._abort is not None:
-            abort_task = asyncio.ensure_future(self._abort.wait())
+        if signal is not None:
+            abort_task = asyncio.ensure_future(signal.wait())
             waiters.add(abort_task)
         try:
             done, _pending = await asyncio.wait(
@@ -625,6 +673,10 @@ class TravelTimeCalibrator:
     @property
     def _aborted(self) -> bool:
         return self._abort is not None and self._abort.is_set()
+
+    @property
+    def _hard_aborted(self) -> bool:
+        return self._hard_abort is not None and self._hard_abort.is_set()
 
     def _now(self) -> dt.datetime:
         return dt.datetime.now(dt.UTC)
