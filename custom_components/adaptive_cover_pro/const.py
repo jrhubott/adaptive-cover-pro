@@ -1586,6 +1586,15 @@ DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 360  # seconds
 # restore included.
 TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS = 900  # seconds — 15 minutes
 
+# Separate allowance for the go-home pass, granted when it starts rather than
+# taken out of whatever the measurement phase left over. The restore is the pass
+# that puts covers back, and it is the one pass that must never be cut short:
+# starved of time its waits return instantly, so a coupled cover the clearance
+# gate defers is never re-offered and is abandoned at a mechanical stop. It is
+# still bounded — the gate is held for its duration too — just not by the
+# leftovers of a budget the measurement phase may already have spent.
+TRAVEL_CALIBRATION_RESTORE_BUDGET_SECONDS = 300  # seconds — 5 minutes
+
 # How long the seed leg waits for a no-position cover to publish a transit
 # state before declaring it unobservable. Covers the actuator start-up lag that
 # VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS exists for, with headroom — a

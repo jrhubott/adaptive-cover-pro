@@ -1367,3 +1367,84 @@ async def test_a_crash_during_setup_still_hands_the_covers_back(
     assert rig.cmd_svc.calibrating is False
     assert rig.calibrator.is_running is False
     assert rig.calibrator.state == TRAVEL_CALIBRATION_STATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_the_go_home_pass_gets_its_own_budget_not_the_leftovers(
+    hass: HomeAssistant,
+) -> None:
+    """The restore must start with a real window however the sweep ended.
+
+    Every wait in the module is clamped to the remaining budget, and the restore
+    runs last — so on any run that used its time the go-home waits would be
+    clamped to nothing. The leader is then never observed to land, the clearance
+    gate refuses the follower on the next lap, and a coupled rail is left at a
+    mechanical stop with its pre-run position lost.
+
+    Asserted on the budget the pass starts with rather than on the resulting
+    commands: whether a starved wait actually loses a cover depends on scheduling
+    the rig cannot pin down, but the starvation itself is exact.
+    """
+    covers = {
+        "cover.bottom": _FakeCover(hass, "cover.bottom", position=30),
+        "cover.middle": _FakeCover(hass, "cover.middle", position=60),
+    }
+    rig = _Rig(
+        hass, covers, cover_type="cover_day_night_shade", options=_model_c_options()
+    )
+    rig.calibrator._restore_budget = 42.0
+    seen: list[float] = []
+    original = rig.calibrator._restore
+
+    async def _observe(origins):
+        # Arrive with the measurement budget fully spent, as a long run does.
+        rig.calibrator._deadline = rig.calibrator._now() - dt.timedelta(seconds=1)
+        await original(origins)
+        seen.append(rig.calibrator._remaining_budget())
+
+    rig.calibrator._restore = _observe
+    await rig.calibrator.async_run()
+
+    assert seen, "the restore pass did not run"
+    assert seen[0] > 1.0, "the go-home pass was starved by the measurement budget"
+
+
+@pytest.mark.asyncio
+async def test_running_out_of_budget_on_the_only_cover_still_reports_it(
+    hass: HomeAssistant,
+) -> None:
+    """Expiry inside the last subject never reaches the next loop boundary.
+
+    Left to the boundary check alone, a single-cover install reported a
+    successful calibration with an empty results table and no error — every time
+    it ran out of time.
+    """
+    rig = _rig(hass, stalled=True, move_timeout=30)
+    rig.calibrator._run_budget = 0.4
+
+    await rig.calibrator.async_run()
+
+    assert rig.calibrator.state == TRAVEL_CALIBRATION_STATE_CANCELLED
+    assert rig.calibrator.diagnostics()["last_error"] == REASON_RUN_BUDGET_EXCEEDED
+
+
+@pytest.mark.asyncio
+async def test_no_command_goes_out_after_a_stop_was_asked_for(
+    hass: HomeAssistant,
+) -> None:
+    """A leg landing and a cancel arriving together must not dispatch the next.
+
+    Otherwise a cover is sent to a mechanical stop immediately after the panic
+    stop asked for no further movement.
+    """
+    rig = _rig(hass, move_timeout=5)
+    rig.calibrator._abort = asyncio.Event()
+    rig.calibrator._hard_abort = asyncio.Event()
+    rig.calibrator._abort.set()
+
+    arrival = await rig.calibrator._drive_and_wait(
+        "cover.a", 100, caps=rig.cmd_svc.get_cover_capabilities("cover.a")
+    )
+
+    assert arrival.ok is False
+    assert rig.commands("cover.a") == []

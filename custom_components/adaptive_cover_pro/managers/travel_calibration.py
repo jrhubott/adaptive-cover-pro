@@ -25,6 +25,7 @@ any of those would drift.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime as dt
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -54,6 +55,7 @@ from ..const import (
     REASON_NO_MOTION_OBSERVED,
     REASON_RESTORE,
     REASON_RUN_BUDGET_EXCEEDED,
+    TRAVEL_CALIBRATION_RESTORE_BUDGET_SECONDS,
     TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS,
     TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS,
     TRAVEL_TIME_MAX_SECONDS,
@@ -133,6 +135,7 @@ class TravelTimeCalibrator:
         move_timeout_seconds: int = DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS,
         probe_seconds: int = TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS,
         run_budget_seconds: int = TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS,
+        restore_budget_seconds: int = TRAVEL_CALIBRATION_RESTORE_BUDGET_SECONDS,
     ) -> None:
         """Wire the calibrator to its collaborators.
 
@@ -152,6 +155,7 @@ class TravelTimeCalibrator:
         self._move_timeout = float(move_timeout_seconds)
         self._probe_seconds = float(probe_seconds)
         self._run_budget = float(run_budget_seconds)
+        self._restore_budget = float(restore_budget_seconds)
         # Wall-clock deadline for the current run, or None when idle.
         self._deadline: dt.datetime | None = None
 
@@ -261,6 +265,7 @@ class TravelTimeCalibrator:
         measured: dict[str, dict[str, Any]] = {}
         origins: dict[str, int | None] = {}
         failed = False
+        budget_exceeded = False
 
         # EVERYTHING the finally has to undo lives inside this try — the
         # handover, the first notify and the origin capture included. Those
@@ -289,7 +294,7 @@ class TravelTimeCalibrator:
                         self._run_budget,
                         subject,
                     )
-                    self._last_error = REASON_RUN_BUDGET_EXCEEDED
+                    budget_exceeded = True
                     self._abort.set()
                     break
                 self._active = subject
@@ -303,6 +308,9 @@ class TravelTimeCalibrator:
             failed = True
             raise
         finally:
+            # Expiry inside the final subject leaves the loop without ever
+            # re-testing the boundary, so ask once more here.
+            budget_exceeded = budget_exceeded or self._budget_spent()
             self._active = None
             try:
                 if not self._aborted or self._restore_on_cancel:
@@ -328,8 +336,15 @@ class TravelTimeCalibrator:
 
             if failed:
                 self._state = TRAVEL_CALIBRATION_STATE_FAILED
-            elif self._aborted:
+            elif self._aborted or budget_exceeded:
+                # ``budget_exceeded`` is checked separately from ``_aborted``
+                # because expiry during the LAST (or only) subject never reaches
+                # the next loop boundary, so nothing sets the abort — and the run
+                # would settle on "complete" with an empty results table and no
+                # error, which on a single-cover install is every run that runs
+                # out of time.
                 self._state = TRAVEL_CALIBRATION_STATE_CANCELLED
+                self._last_error = REASON_RUN_BUDGET_EXCEEDED
             else:
                 self._state = TRAVEL_CALIBRATION_STATE_COMPLETE
             # A hard abort is an unload or a panic stop. Writing options during
@@ -350,7 +365,11 @@ class TravelTimeCalibrator:
             if not self._hard_aborted:
                 await self._persist(self._merged_table(entities, measured))
             self._deadline = None
-            self._notify()
+            with contextlib.suppress(Exception):
+                # Never let a listener's failure replace the exception already
+                # in flight — on the unload path that is the CancelledError the
+                # branch above is built around.
+                self._notify()
 
     # ------------------------------------------------------------------ #
     # Per-entity run
@@ -507,7 +526,15 @@ class TravelTimeCalibrator:
         the covers hostage. A cover that will not go home is a cosmetic
         annoyance, not a reason to fail a run whose measurements succeeded.
         """
+        # A fresh window. Every wait in this module is clamped to the remaining
+        # budget, and by the time the restore runs the measurement phase may
+        # have spent all of it — leaving each wait to return instantly, the
+        # leader never observed to land, and every cover the clearance gate
+        # defers abandoned at a mechanical stop on the second lap. Granting the
+        # allowance here keeps the pass bounded without letting it be starved.
         pending = {eid: pos for eid, pos in origins.items() if pos is not None}
+        if pending:
+            self._deadline = self._now() + dt.timedelta(seconds=self._restore_budget)
         while pending and not self._hard_aborted:
             moved = False
             for entity_id in list(pending):
@@ -557,6 +584,11 @@ class TravelTimeCalibrator:
         deliberately one-at-a-time pass into a simultaneous fan-out, on the one
         path where coupled entities have no clearance plan protecting them.
         """
+        if not ignore_abort and self._interrupted:
+            # Asked to stop between one leg landing and the next dispatching.
+            # Without this the next command still goes out, sending a cover to a
+            # mechanical stop after a panic stop asked for no further movement.
+            return _Arrival()
         if self._already_at(entity_id, target, caps):
             # Nothing to observe and nothing to time. Skipping the command also
             # spares the motor a relay click it would gain nothing from (#290).
