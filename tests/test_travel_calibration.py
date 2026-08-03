@@ -1305,3 +1305,65 @@ async def test_a_run_stands_down_when_its_whole_run_budget_is_spent(
     assert rig.commands("cover.b") == []
     assert rig.calibrator.diagnostics()["last_error"] == REASON_RUN_BUDGET_EXCEEDED
     assert rig.cmd_svc.calibrating is False
+
+
+@pytest.mark.asyncio
+async def test_no_single_wait_may_outlast_the_run_budget(
+    hass: HomeAssistant,
+) -> None:
+    """The clamp, not the loop check, is what bounds a single-cover install.
+
+    The per-subject boundary check runs once and never again when there is only
+    one cover, so with the clamp gone a stuck shade would hold the covers — and
+    hold off a safety command — for four full per-move timeouts.
+    """
+    rig = _rig(hass, stalled=True, move_timeout=30)
+    rig.calibrator._run_budget = 0.4
+
+    started = time.monotonic()
+    await rig.calibrator.async_run()
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 5, f"run outlasted its budget ({elapsed:.1f}s)"
+    assert rig.cmd_svc.calibrating is False
+
+
+@pytest.mark.asyncio
+async def test_running_out_of_budget_is_not_a_verdict_about_the_cover(
+    hass: HomeAssistant,
+) -> None:
+    """A healthy shade must not be recorded as jammed because the clock ran out.
+
+    Budget expiry is an interruption like a cancel — it says something about the
+    run, not about the cover that happened to be under way.
+    """
+    rig = _rig(hass, stalled=True, move_timeout=30)
+    rig.calibrator._run_budget = 0.4
+
+    await rig.calibrator.async_run()
+
+    results = rig.calibrator.diagnostics()["results"]
+    assert results.get("cover.a", {}).get("status") != TRAVEL_CALIBRATION_STATUS_TIMEOUT
+
+
+@pytest.mark.asyncio
+async def test_a_crash_during_setup_still_hands_the_covers_back(
+    hass: HomeAssistant,
+) -> None:
+    """The handover and the origin capture must be inside the guarded region.
+
+    Left outside it, an exception from either stranded ``calibrating`` set and
+    the state on ``running`` — every command skipped, and every later run
+    refused by the is_running guard, for the life of the config entry.
+    """
+    rig = _rig(hass)
+    rig.calibrator._on_progress = MagicMock(
+        side_effect=RuntimeError("listener blew up")
+    )
+
+    with pytest.raises(RuntimeError):
+        await rig.calibrator.async_run()
+
+    assert rig.cmd_svc.calibrating is False
+    assert rig.calibrator.is_running is False
+    assert rig.calibrator.state == TRAVEL_CALIBRATION_STATE_FAILED

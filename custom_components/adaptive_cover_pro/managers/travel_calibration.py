@@ -252,10 +252,6 @@ class TravelTimeCalibrator:
         self._results = {}
         self._last_error = None
         self._state = TRAVEL_CALIBRATION_STATE_RUNNING
-        # Hand the covers over: automation and reconciliation both stand down
-        # until the finally below gives them back.
-        self._cmd_svc.calibrating = True
-        self._notify()
 
         # Only what THIS run measured. Deliberately not a copy of the stored
         # table: the run is long, and anything else that writes to the table
@@ -263,12 +259,24 @@ class TravelTimeCalibrator:
         # would be erased when a start-of-run snapshot was written back at the
         # end. The merge against live options happens at persist time instead.
         measured: dict[str, dict[str, Any]] = {}
-        # Captured before anything moves, so the restore pass can put every
-        # cover back exactly where the user left it.
-        origins = {eid: self._cmd_svc.get_current_position(eid) for eid in entities}
+        origins: dict[str, int | None] = {}
         failed = False
 
+        # EVERYTHING the finally has to undo lives inside this try — the
+        # handover, the first notify and the origin capture included. Those
+        # three used to sit above it, which meant an exception from any of them
+        # (``_notify`` runs entity callbacks; ``get_current_position`` reads HA)
+        # left ``calibrating`` set and the state on ``running`` forever: every
+        # command skipped as calibration_in_progress, and every later run
+        # refused by the is_running guard, for the life of the config entry.
         try:
+            # Hand the covers over: automation and reconciliation both stand
+            # down until the finally below gives them back.
+            self._cmd_svc.calibrating = True
+            self._notify()
+            # Captured before anything moves, so the restore pass can put every
+            # cover back exactly where the user left it.
+            origins = {eid: self._cmd_svc.get_current_position(eid) for eid in entities}
             for subject in self._policy.order_for_dispatch(entities):
                 if self._aborted:
                     break
@@ -372,7 +380,7 @@ class TravelTimeCalibrator:
         axis = self._policy.select_default_axis(caps)
 
         if not await self._apply_clearance(subject, entities):
-            if not self._aborted:
+            if not self._interrupted:
                 # A cancel is not evidence about the cover. Recording one as a
                 # clearance failure tells the user their shade is jammed on the
                 # strength of them having pressed Cancel — the same rule the
@@ -464,7 +472,7 @@ class TravelTimeCalibrator:
             caps = self._cmd_svc.get_cover_capabilities(partner)
             arrival = await self._drive_and_wait(partner, park_at, caps=caps)
             if not arrival.ok:
-                if not self._aborted:
+                if not self._interrupted:
                     self._logger.warning(
                         "Travel-time calibration: could not park %s at %s%% to "
                         "clear the way for %s",
@@ -636,7 +644,7 @@ class TravelTimeCalibrator:
             stamp = await self._wait_for(
                 arrived, self._probe_seconds, ignore_abort=ignore_abort
             )
-            if self._aborted and not ignore_abort:
+            if self._interrupted and not ignore_abort:
                 return _Arrival(None, motion[0])
             if motion[0] is None:
                 # Nothing was seen to move. Note this is checked BEFORE the
@@ -737,6 +745,18 @@ class TravelTimeCalibrator:
     def _hard_aborted(self) -> bool:
         return self._hard_abort is not None and self._hard_abort.is_set()
 
+    @property
+    def _interrupted(self) -> bool:
+        """Whether the run was stopped from OUTSIDE rather than by the cover.
+
+        A cancel and an exhausted run budget are both interruptions: neither is
+        evidence about whichever cover happened to be under way, so neither may
+        be written up as a verdict about it. One predicate for both, because the
+        three verdict sites were guarded against cancels only and a spent budget
+        went on to record a healthy shade as jammed.
+        """
+        return self._aborted or self._budget_spent()
+
     def _budget_spent(self) -> bool:
         """Whether this run has held the covers for as long as it may."""
         return self._deadline is not None and self._now() >= self._deadline
@@ -753,11 +773,11 @@ class TravelTimeCalibrator:
     def _timeout(self, subject: str) -> None:
         """Record a leg that never landed, and return None for the row.
 
-        Silent when the run was cancelled: the leg did not fail, it was
-        interrupted, and reporting a timeout would blame the cover for the
-        user's own Cancel.
+        Silent when the run was interrupted — cancelled, or out of budget. The
+        leg did not fail, it was cut short, and reporting a timeout would blame
+        the cover for the user's Cancel or for the clock.
         """
-        if self._aborted:
+        if self._interrupted:
             return None
         self._logger.warning(
             "Travel-time calibration timed out for %s — skipping it", subject
