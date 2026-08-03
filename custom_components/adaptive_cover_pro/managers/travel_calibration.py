@@ -53,12 +53,15 @@ from ..const import (
     REASON_NO_ENTITIES,
     REASON_NO_MOTION_OBSERVED,
     REASON_RESTORE,
+    REASON_RUN_BUDGET_EXCEEDED,
+    TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS,
     TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS,
     TRAVEL_TIME_MAX_SECONDS,
     TRAVEL_TIME_MIN_SECONDS,
 )
 from ..cover_types.base import caps_get
 from ..helpers import is_assumed_state
+from .cover_command.state_store import TravelCalibration
 from .cover_command.transit import is_state_in_transit
 
 
@@ -129,6 +132,7 @@ class TravelTimeCalibrator:
         on_progress: Callable[[], None] | None = None,
         move_timeout_seconds: int = DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS,
         probe_seconds: int = TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS,
+        run_budget_seconds: int = TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS,
     ) -> None:
         """Wire the calibrator to its collaborators.
 
@@ -147,6 +151,9 @@ class TravelTimeCalibrator:
         self._on_progress = on_progress
         self._move_timeout = float(move_timeout_seconds)
         self._probe_seconds = float(probe_seconds)
+        self._run_budget = float(run_budget_seconds)
+        # Wall-clock deadline for the current run, or None when idle.
+        self._deadline: dt.datetime | None = None
 
         self._state: str = TRAVEL_CALIBRATION_STATE_IDLE
         self._results: dict[str, dict[str, Any]] = {}
@@ -240,6 +247,7 @@ class TravelTimeCalibrator:
 
         self._abort = asyncio.Event()
         self._hard_abort = asyncio.Event()
+        self._deadline = self._now() + dt.timedelta(seconds=self._run_budget)
         self._restore_on_cancel = True
         self._results = {}
         self._last_error = None
@@ -263,6 +271,18 @@ class TravelTimeCalibrator:
         try:
             for subject in self._policy.order_for_dispatch(entities):
                 if self._aborted:
+                    break
+                if self._budget_spent():
+                    # Stand down rather than keep the covers: every further
+                    # second is a second a safety command cannot reach them.
+                    self._logger.warning(
+                        "Travel-time calibration exceeded its %.0fs budget — "
+                        "standing down with %s and any later covers unmeasured",
+                        self._run_budget,
+                        subject,
+                    )
+                    self._last_error = REASON_RUN_BUDGET_EXCEEDED
+                    self._abort.set()
                     break
                 self._active = subject
                 self._notify()
@@ -321,6 +341,7 @@ class TravelTimeCalibrator:
             # exists to handle.
             if not self._hard_aborted:
                 await self._persist(self._merged_table(entities, measured))
+            self._deadline = None
             self._notify()
 
     # ------------------------------------------------------------------ #
@@ -351,11 +372,16 @@ class TravelTimeCalibrator:
         axis = self._policy.select_default_axis(caps)
 
         if not await self._apply_clearance(subject, entities):
-            self._record(
-                subject,
-                TRAVEL_CALIBRATION_STATUS_TIMEOUT,
-                reason=REASON_CLEARANCE_FAILED,
-            )
+            if not self._aborted:
+                # A cancel is not evidence about the cover. Recording one as a
+                # clearance failure tells the user their shade is jammed on the
+                # strength of them having pressed Cancel — the same rule the
+                # probe and timed-leg paths follow.
+                self._record(
+                    subject,
+                    TRAVEL_CALIBRATION_STATUS_TIMEOUT,
+                    reason=REASON_CLEARANCE_FAILED,
+                )
             return None
 
         # Seed — untimed. Only job is to put the cover on a known endpoint so
@@ -410,16 +436,20 @@ class TravelTimeCalibrator:
             )
             return None
 
-        row = {
-            "full_travel_seconds": round(full, 2),
-            "open_seconds": round(opening.travel_seconds, 2),
-            "close_seconds": round(closing.travel_seconds, 2),
-            "start_delay_seconds": round(
+        # Through the dataclass, not literals: it is the single definition of
+        # these key names, and the manual-entry write already goes through it.
+        # Two hand-written copies is how a new field ships in one row shape and
+        # silently not the other.
+        row = TravelCalibration(
+            full_travel_seconds=round(full, 2),
+            open_seconds=round(opening.travel_seconds, 2),
+            close_seconds=round(closing.travel_seconds, 2),
+            start_delay_seconds=round(
                 (opening.start_delay_seconds + closing.start_delay_seconds) / 2, 2
             ),
-            "calibrated_at": self._now().isoformat(),
-            "source": TRAVEL_CALIBRATION_SOURCE_MEASURED,
-        }
+            calibrated_at=self._now().isoformat(),
+            source=TRAVEL_CALIBRATION_SOURCE_MEASURED,
+        ).to_dict()
         self._record(subject, TRAVEL_CALIBRATION_STATUS_OK, **row)
         return row
 
@@ -434,13 +464,14 @@ class TravelTimeCalibrator:
             caps = self._cmd_svc.get_cover_capabilities(partner)
             arrival = await self._drive_and_wait(partner, park_at, caps=caps)
             if not arrival.ok:
-                self._logger.warning(
-                    "Travel-time calibration: could not park %s at %s%% to clear "
-                    "the way for %s",
-                    partner,
-                    park_at,
-                    subject,
-                )
+                if not self._aborted:
+                    self._logger.warning(
+                        "Travel-time calibration: could not park %s at %s%% to "
+                        "clear the way for %s",
+                        partner,
+                        park_at,
+                        subject,
+                    )
                 return False
         return True
 
@@ -638,6 +669,10 @@ class TravelTimeCalibrator:
         definition runs with the abort already set and still has to wait for
         each cover in turn.
         """
+        # Clamped so one stuck move cannot outlive the whole-run budget: the
+        # per-move timeout bounds a move, the budget bounds the run, and the
+        # gate this run holds is absolute for the duration of both.
+        timeout = min(timeout, self._remaining_budget())
         waiters: set[asyncio.Future] = {arrived}
         # ``ignore_abort`` drops only the ordinary cancel. The hard abort is
         # raced either way, so an unload or a panic stop is never left waiting
@@ -701,6 +736,16 @@ class TravelTimeCalibrator:
     @property
     def _hard_aborted(self) -> bool:
         return self._hard_abort is not None and self._hard_abort.is_set()
+
+    def _budget_spent(self) -> bool:
+        """Whether this run has held the covers for as long as it may."""
+        return self._deadline is not None and self._now() >= self._deadline
+
+    def _remaining_budget(self) -> float:
+        """Seconds left in the run budget, floored at zero."""
+        if self._deadline is None:
+            return self._move_timeout
+        return max(0.0, (self._deadline - self._now()).total_seconds())
 
     def _now(self) -> dt.datetime:
         return dt.datetime.now(dt.UTC)

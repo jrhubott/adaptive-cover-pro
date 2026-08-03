@@ -1572,6 +1572,20 @@ CONF_TRAVEL_TIME_CALIBRATION = "travel_time_calibration"
 # band the manual field advertises would be a range no measurement could reach.
 DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 360  # seconds
 
+# Ceiling on a WHOLE run, across every cover and every leg. The per-move budget
+# above bounds one stuck move; this bounds the run, and the two are not the same
+# number by a wide margin — a Model C pair costs up to eight moves plus a
+# restore, so per-move alone would let a jammed shade hold the covers for the
+# better part of an hour.
+#
+# It exists because ``CoverCommandService.calibrating`` is an ABSOLUTE gate: it
+# outranks is_safety and force, so for as long as a run holds the covers a
+# weather retract cannot reach them. That trade is only defensible while "as
+# long as a run holds the covers" is a short, known quantity — which is what
+# this constant makes it. Expiry stands the run down exactly as a cancel does,
+# restore included.
+TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS = 900  # seconds — 15 minutes
+
 # How long the seed leg waits for a no-position cover to publish a transit
 # state before declaring it unobservable. Covers the actuator start-up lag that
 # VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS exists for, with headroom — a
@@ -1621,6 +1635,7 @@ REASON_IMPLAUSIBLE_RESULT = "implausible_result"
 REASON_CLEARANCE_FAILED = "clearance_failed"
 # Dispatch label the go-home pass carries into the policy's clearance gate.
 REASON_RESTORE = "travel_calibration_restore"
+REASON_RUN_BUDGET_EXCEEDED = "run_budget_exceeded"
 
 
 # =============================================================================
