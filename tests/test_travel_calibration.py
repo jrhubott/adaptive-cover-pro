@@ -910,19 +910,13 @@ def _context(**kw):
     [
         pytest.param({}, id="ordinary"),
         pytest.param({"force": True}, id="force"),
-        pytest.param({"is_safety": True}, id="safety"),
         pytest.param({"bypass_auto_control": True}, id="bypass-auto-control"),
     ],
 )
-async def test_no_command_gets_past_a_calibration_run(
+async def test_ordinary_automation_waits_for_a_calibration_run(
     hass: HomeAssistant, context_kwargs
 ) -> None:
-    """The gate is absolute — deliberately outranking force and safety.
-
-    A safety command landing on a rail mid-sweep drives a rail into a rail, and
-    a run is bounded in minutes. The escape hatch is cancelling the run, which
-    is a decision rather than a collision.
-    """
+    """``force`` does not bypass it: a recurring resend can wait a few minutes."""
     rig = _rig(hass)
     rig.cmd_svc.calibrating = True
 
@@ -932,6 +926,31 @@ async def test_no_command_gets_past_a_calibration_run(
 
     assert result == ("skipped", "calibration_in_progress")
     assert rig.cmd_svc.last_skipped_action["reason"] == "calibration_in_progress"
+
+
+@pytest.mark.asyncio
+async def test_a_safety_target_pre_empts_the_run_instead_of_being_blocked(
+    hass: HomeAssistant,
+) -> None:
+    """A storm must never wait for a calibration.
+
+    The collision this gate exists to prevent — a command landing on a coupled
+    rail mid-sweep — is better answered by standing the run down than by
+    refusing the command: the safety dispatch still goes through the policy's
+    own clearance gating, and cancelling stops the run issuing anything further,
+    so the two never race.
+    """
+    rig = _rig(hass)
+    cancelled: list[bool] = []
+    rig.cmd_svc._on_safety_preempt = lambda: cancelled.append(True)
+    rig.cmd_svc.calibrating = True
+
+    result = await rig.cmd_svc.apply_position(
+        "cover.a", 70, "test", _context(is_safety=True)
+    )
+
+    assert cancelled == [True]
+    assert result != ("skipped", "calibration_in_progress")
 
 
 @pytest.mark.asyncio

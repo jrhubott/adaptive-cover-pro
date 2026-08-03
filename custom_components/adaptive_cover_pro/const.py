@@ -1578,13 +1578,16 @@ DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 360  # seconds
 # restore, so per-move alone would let a jammed shade hold the covers for the
 # better part of an hour.
 #
-# It exists because ``CoverCommandService.calibrating`` is an ABSOLUTE gate: it
-# outranks is_safety and force, so for as long as a run holds the covers a
-# weather retract cannot reach them. That trade is only defensible while "as
-# long as a run holds the covers" is a short, known quantity — which is what
-# this constant makes it. Expiry stands the run down exactly as a cancel does,
-# restore included.
-TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS = 900  # seconds — 15 minutes
+# Sized to fit the band the manual field advertises: a day/night rail pair costs
+# two clearance parks plus six legs, so at TRAVEL_TIME_MAX_SECONDS apiece a
+# legitimate run of the slowest covers this integration claims to support needs
+# most of an hour. A tighter budget would make the top of that band impossible
+# to measure while still being offered.
+#
+# Affordable because ``calibrating`` is NOT an absolute gate: a safety target
+# stands the run down and proceeds, so a long budget delays ordinary automation
+# — which the user chose when they started the run — and never a storm.
+TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS = 3600  # seconds — 1 hour
 
 # Separate allowance for the go-home pass, granted when it starts rather than
 # taken out of whatever the measurement phase left over. The restore is the pass
