@@ -375,13 +375,23 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         control-model precedent (#1114).
         """
         self._set_control_model(options)
-        # The rail role is a per-instance option like any other, and this is the
-        # seam for those. ``_cache_dual_entity`` also writes it once a pipeline
-        # result exists, but that is per-CYCLE: anything asking the clearance
-        # gate before the first cycle — a travel-time calibration started from
-        # the options flow — would otherwise find no middle rail configured and
-        # be told every rail is free to move.
+        # The rail role and the inversion frame are per-instance options like any
+        # other, and this is the seam for those. ``_cache_dual_entity`` also
+        # writes both once a pipeline result exists, but that is per-CYCLE:
+        # anything asking the clearance gate before the first cycle — a
+        # travel-time calibration started from the options flow — would
+        # otherwise find no middle rail configured and be told every rail is
+        # free to move.
+        #
+        # The two MUST be primed together. The role alone turns the gate from
+        # inert to active while leaving the frame at its ``__init__`` default of
+        # upright, and a token-less caller resolves the frame through
+        # ``_dispatch_frame(None)`` — so on an inverse-state install the gate
+        # would answer confidently and backwards, waving the middle rail down
+        # through the bottom rail (the #993 bug class). Identical expression to
+        # the per-cycle write, so priming early can only make it more current.
         self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+        self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_concurrent_travel = bool(
             options.get(
                 CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,

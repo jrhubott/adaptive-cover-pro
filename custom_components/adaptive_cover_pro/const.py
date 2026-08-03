@@ -1568,7 +1568,9 @@ CONF_TRAVEL_TIME_CALIBRATION = "travel_time_calibration"
 # Per-move ceiling for one calibration leg. Generous: a slow patio awning can
 # take well over a minute, and the run aborts the ENTITY (not the batch) when
 # this expires, so an over-tight value silently drops covers from the results.
-DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 180  # seconds
+# Must exceed TRAVEL_TIME_MAX_SECONDS plus actuator dead time, or the top of the
+# band the manual field advertises would be a range no measurement could reach.
+DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 360  # seconds
 
 # How long the seed leg waits for a no-position cover to publish a transit
 # state before declaring it unobservable. Covers the actuator start-up lag that

@@ -57,6 +57,7 @@ from ..const import (
     TRAVEL_TIME_MAX_SECONDS,
     TRAVEL_TIME_MIN_SECONDS,
 )
+from ..cover_types.base import caps_get
 from ..helpers import is_assumed_state
 from .cover_command.transit import is_state_in_transit
 
@@ -303,10 +304,23 @@ class TravelTimeCalibrator:
                 self._state = TRAVEL_CALIBRATION_STATE_CANCELLED
             else:
                 self._state = TRAVEL_CALIBRATION_STATE_COMPLETE
-            # Persist even a cancelled or failed run: the entities that finished
-            # produced real measurements, and throwing them away would mean
-            # re-sweeping covers that were already done.
-            await self._persist(self._merged_table(entities, measured))
+            # A hard abort is an unload or a panic stop. Writing options during
+            # an unload dispatches the entry's update listeners — via a task HA
+            # does NOT scope to the entry — which would run a full refresh on the
+            # coordinator that just shut down. Discarding this run's measurements
+            # is the cheaper loss by a wide margin, and a panic stop discarding a
+            # half-finished sweep is what the button means anyway.
+            #
+            # An ordinary cancel or a failure DOES persist: those entities really
+            # were measured, and dropping them would mean re-sweeping covers that
+            # were already done.
+            #
+            # Expressed as a condition rather than an early return: a ``return``
+            # inside a ``finally`` discards whatever exception is in flight, and
+            # on the unload path that exception is the CancelledError this branch
+            # exists to handle.
+            if not self._hard_aborted:
+                await self._persist(self._merged_table(entities, measured))
             self._notify()
 
     # ------------------------------------------------------------------ #
@@ -510,7 +524,10 @@ class TravelTimeCalibrator:
             return _Arrival(arrived_at=self._now())
 
         axis = self._policy.select_default_axis(caps or {})
-        position_capable = self._policy.position_axis_supported(caps)
+        # Same axis question as _is_arrival — see there for why this is not
+        # ``position_axis_supported``. Getting it wrong here also mis-routes the
+        # wait into the observability probe.
+        position_capable = caps_get(caps, axis.capability_key, default=True)
         origin = self._cmd_svc.get_current_position(entity_id)
         loop = asyncio.get_running_loop()
         arrived: asyncio.Future[dt.datetime] = loop.create_future()
@@ -642,7 +659,14 @@ class TravelTimeCalibrator:
     def _is_arrival(self, state_obj, target: int, caps) -> bool:
         """Whether ``state_obj`` shows the cover parked on the commanded target."""
         axis = self._policy.select_default_axis(caps or {})
-        if self._policy.position_axis_supported(caps):
+        # ``axis.capability_key``, NOT ``position_axis_supported`` — the latter
+        # always asks about ``axes[0]``, while ``select_default_axis`` returns
+        # the TILT axis for a position-primary policy bound to tilt-only
+        # hardware. Pairing the two asks whether the cover supports one axis and
+        # then reads another: the tilt reading is discarded, arrival never
+        # resolves, and the cover burns three full timeouts. This is the same
+        # pairing ``CoverTypePolicy.read_axis_value`` makes.
+        if caps_get(caps, axis.capability_key, default=True):
             value = state_obj.attributes.get(axis.state_attr)
             if value is None:
                 return False
@@ -682,7 +706,14 @@ class TravelTimeCalibrator:
         return dt.datetime.now(dt.UTC)
 
     def _timeout(self, subject: str) -> None:
-        """Record a leg that never landed, and return None for the row."""
+        """Record a leg that never landed, and return None for the row.
+
+        Silent when the run was cancelled: the leg did not fail, it was
+        interrupted, and reporting a timeout would blame the cover for the
+        user's own Cancel.
+        """
+        if self._aborted:
+            return None
         self._logger.warning(
             "Travel-time calibration timed out for %s — skipping it", subject
         )

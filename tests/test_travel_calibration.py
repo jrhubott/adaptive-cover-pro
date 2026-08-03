@@ -624,16 +624,25 @@ def _model_c_options(*, inverse: bool = False) -> dict:
     return opts
 
 
-def _model_c_rig(hass) -> _Rig:
+def _model_c_rig(hass, *, inverse: bool = False) -> _Rig:
+    """Build a Model C pair in a geometrically legal resting position.
+
+    The no-pass invariant is ``middle% >= bottom%`` in OPEN-percent, so the wire
+    numbers that satisfy it depend on the frame: upright the middle rail holds
+    the larger wire value, inverted the smaller. A fixture that ignores that
+    describes a shade whose rails have passed through each other, and the
+    clearance gate rightly refuses to restore it.
+    """
+    bottom, middle = (60, 30) if inverse else (30, 60)
     covers = {
-        "cover.bottom": _FakeCover(hass, "cover.bottom", position=30),
-        "cover.middle": _FakeCover(hass, "cover.middle", position=60),
+        "cover.bottom": _FakeCover(hass, "cover.bottom", position=bottom),
+        "cover.middle": _FakeCover(hass, "cover.middle", position=middle),
     }
     return _Rig(
         hass,
         covers,
         cover_type="cover_day_night_shade",
-        options=_model_c_options(),
+        options=_model_c_options(inverse=inverse),
     )
 
 
@@ -1088,3 +1097,40 @@ async def test_a_hard_cancel_stops_a_restore_already_under_way(
 
     assert rig.calibrator.state == TRAVEL_CALIBRATION_STATE_CANCELLED
     assert rig.cmd_svc.calibrating is False
+
+
+@pytest.mark.asyncio
+async def test_the_restore_order_flips_with_the_inversion_frame(
+    hass: HomeAssistant,
+) -> None:
+    """Which rail may move first depends on the frame, so the frame must be primed.
+
+    The clearance gate resolves a token-less caller's frame through the policy's
+    cached inversion flag. Priming the rail ROLE without it turns the gate from
+    inert into confidently backwards: it would wave the middle rail down through
+    the bottom rail on exactly the installs the inversion exists for.
+
+    Upright the covers restore upward and the middle rail leads; inverted the
+    same wire move is a lower in open-percent, so the bottom rail leads.
+    """
+    upright = _model_c_rig(hass)
+    await upright.calibrator.async_run()
+    assert upright.commands("cover.middle")[-1] == 60
+    assert upright.commands("cover.bottom")[-1] == 30
+
+    inverted = _model_c_rig(hass, inverse=True)
+    order: list[str] = []
+    for eid, cover in inverted.covers.items():
+        original = cover.command
+
+        async def _spy(entity_id, target, _orig=None, _eid="", **kw):
+            order.append(f"{_eid}:{target}")
+            await _orig(entity_id, target, **kw)
+
+        cover.command = lambda e, t, _o=original, _i=eid, **k: _spy(
+            e, t, _orig=_o, _eid=_i, **k
+        )
+    await inverted.calibrator.async_run()
+
+    restores = [step for step in order if step.endswith((":30", ":60"))]
+    assert restores == ["cover.bottom:60", "cover.middle:30"]
