@@ -52,6 +52,7 @@ from .const import (
     CONF_SENSOR_TYPE,
     CONF_TEMP_ENTITY,
     CONF_TILT_SAFETY_MARGIN,
+    CONF_TRAVEL_TIME_CALIBRATION,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_WEATHER_ENABLED,
     CONF_WEATHER_ENTITY,
@@ -1047,6 +1048,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # the option-backed switches only persist the value and rely on the listener.
 _RUNTIME_APPLICABLE_OPTIONS: dict[str, str] = {
     CONF_ENABLE_SUN_TRACKING: "async_apply_sun_tracking_update",
+    # Derived measurement data, not a behaviour switch. It MUST be in this map:
+    # a calibration run rewrites it mid-pass, and a reload there would tear down
+    # the run that produced it.
+    CONF_TRAVEL_TIME_CALIBRATION: "async_apply_travel_calibration_update",
 }
 
 

@@ -80,6 +80,8 @@ class DiagnosticContext:
 
     # Automation
     automatic_control: bool
+    # True while a travel-time calibration run holds the covers.
+    calibrating: bool = False
     last_cover_action: dict = field(default_factory=dict)
     last_skipped_action: dict = field(default_factory=dict)
     min_change: int = 1
@@ -420,6 +422,11 @@ class DiagnosticsBuilder:
     @staticmethod
     def _determine_control_status(ctx: DiagnosticContext) -> str:
         """Determine current control status from pipeline result."""
+        # First, and above automatic_control: a run blocks every command, so
+        # any other answer here would describe a decision that is not being
+        # acted on.
+        if ctx.calibrating:
+            return ControlStatus.CALIBRATING
         if not ctx.automatic_control:
             return ControlStatus.AUTOMATIC_CONTROL_OFF
 

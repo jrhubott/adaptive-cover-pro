@@ -88,7 +88,8 @@
     "proxy_no_min": "⚠️ Store mandataire est activé mais aucun emplacement de position personnalisée n'a Utiliser comme minimum activé — le store géré ne limitera pas.",
     "custom_and_no_sensors": "⚠️ Personnalisé #{slot} : le mode de combinaison ET est défini mais aucun capteur déclencheur n'est configuré — le template seul active le slot.",
     "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien.",
-    "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages."
+    "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages.",
+    "travel_time_unmeasurable": "⚠️ {entities} signalent un état supposé, donc leur temps de course ne peut pas être mesuré et aucun n'a été entré — les tableaux de bord ne les montreront pas en mouvement. Entrez une durée sous Étalonnage → Temps de course."
   },
   "motion": {
     "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'ouverture solaire)",
@@ -213,7 +214,9 @@
     "sun_tracking_min": "Min suivi solaire : {pos}%",
     "separator": " · ",
     "position_matching_off": "📍 Correspondance de position désactivée (commande unique; une stabilisation au-delà de la tolérance devient une dérogation manuelle)",
-    "position_matching_on": "📍 Correspondance de position activée (renvoie jusqu'à ce que la store atteigne la position cible)"
+    "position_matching_on": "📍 Correspondance de position activée (renvoie jusqu'à ce que la store atteigne la position cible)",
+    "travel_time": "Temps de course : {done}/{total} stores",
+    "travel_time_manual": "Temps de course : {done}/{total} stores ({manual} entrées manuellement)"
   },
   "my": {
     "entities_enabled": "🎛️ Entités préréglage My : activées",

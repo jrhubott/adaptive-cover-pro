@@ -2838,6 +2838,15 @@ _UNNAMED_TARGET_SEAMS = {
         "defers for a tick and is re-asked by the next pass — it never enters "
         "a settle budget and the recorded target is still there to resend."
     ),
+    ("managers/travel_calibration.py", "async_run"): (
+        "Orders the SUBJECTS of a calibration pass, not one fanned-out target: "
+        "each cover is then swept to both of its own endpoints in turn, so "
+        "there is no single number to name. Safe regardless of the order it "
+        "gets — every subject is preceded by the policy's clearance parking, "
+        "which leaves the track clear from any starting geometry, and the "
+        "sweeps are strictly sequential so two coupled entities are never in "
+        "motion together."
+    ),
 }
 
 

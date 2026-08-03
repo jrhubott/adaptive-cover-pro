@@ -51,6 +51,13 @@ def _make_coordinator(*, data=None):
     coord.last_update_success = True
     coord.logger = MagicMock()
     coord.hass = _make_hass()
+    # Pinned rather than left as auto-Mocks: the proxy reads both while
+    # rendering a position, and a bare MagicMock answers a truthy object to the
+    # "is anything moving?" question, which would route every read down the
+    # travel-ramp branch and return the same mock every time — freezing the
+    # render signature these tests are written to observe changing.
+    coord.travel_estimated_position = MagicMock(return_value=None)
+    coord.position_axis_inverted = False
     return coord
 
 

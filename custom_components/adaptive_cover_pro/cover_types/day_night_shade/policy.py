@@ -17,7 +17,7 @@ math is replaced by a pure fabric-choice decision keyed on the season.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -375,6 +375,23 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         control-model precedent (#1114).
         """
         self._set_control_model(options)
+        # The rail role and the inversion frame are per-instance options like any
+        # other, and this is the seam for those. ``_cache_dual_entity`` also
+        # writes both once a pipeline result exists, but that is per-CYCLE:
+        # anything asking the clearance gate before the first cycle — a
+        # travel-time calibration started from the options flow — would
+        # otherwise find no middle rail configured and be told every rail is
+        # free to move.
+        #
+        # The two MUST be primed together. The role alone turns the gate from
+        # inert to active while leaving the frame at its ``__init__`` default of
+        # upright, and a token-less caller resolves the frame through
+        # ``_dispatch_frame(None)`` — so on an inverse-state install the gate
+        # would answer confidently and backwards, waving the middle rail down
+        # through the bottom rail (the #993 bug class). Identical expression to
+        # the per-cycle write, so priming early can only make it more current.
+        self._dual_entity_middle_rail = options.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+        self._dual_entity_inverse = axis_inverted(self.axes[0], options)
         self._dual_entity_concurrent_travel = bool(
             options.get(
                 CONF_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
@@ -2103,6 +2120,62 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             dispatch_token=dispatch_token,
             is_middle=is_middle,
         )
+
+    def travel_calibration_clearance(
+        self,
+        subject: str,
+        entities: Sequence[str],
+        options: Mapping[str, Any] | None,
+    ) -> dict[str, int]:
+        """Park the partner rail so ``subject`` can sweep its whole range (Model C).
+
+        Timing a rail means driving it stop-to-stop, and the two rails share one
+        track under the no-pass invariant (``middle% >= bottom%`` in open-percent
+        space). Each rail therefore has exactly one place its partner has to be:
+
+        * the **bottom** rail can only rise to fully-open if the middle rail is
+          already fully open — otherwise it would have to travel through it;
+        * the **middle** rail can only drop to fully-closed if the bottom rail
+          is already fully closed, for the same reason.
+
+        Both parking moves are legal from *any* starting geometry — raising the
+        middle and lowering the bottom each strictly widen the gap between them —
+        so this never has to reason about where the rails currently sit. It also
+        makes the two subjects order-independent: after the bottom rail's
+        closing leg it is already parked where the middle rail needs it.
+
+        Reads the model and the rail role straight out of ``options`` rather than
+        from ``_control_model`` / ``_dual_entity_middle_rail``. Those are primed
+        per update cycle, and a run can be started from the options flow before
+        any cycle has run — a stale prime here would park the wrong rail, which
+        for stacked rails means driving one into the other.
+
+        Returns WIRE positions: the open-percent endpoints above, put through
+        ``axis_inverted`` here, because the calibrator dispatches them verbatim
+        and holds no frame knowledge of its own (the #993 bug class).
+        """
+        opts = options or {}
+        if opts.get(CONF_DAY_NIGHT_CONTROL_MODEL) != DAY_NIGHT_MODEL_DUAL_ENTITY:
+            return {}
+        middle = opts.get(CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY)
+        # An unconfigured or foreign middle rail is the same silent-degradation
+        # case the travel gate declines to act on: without knowing which rail is
+        # which there is no safe parking spot to name.
+        if not middle or middle not in entities:
+            return {}
+        bottom = next((eid for eid in entities if eid != middle), None)
+        if bottom is None:
+            return {}
+
+        axis = self.axes[0]
+        inverted = axis_inverted(axis, opts)
+        fully_open = flip_if(axis.value_max, inverted=inverted)
+        fully_closed = flip_if(axis.value_min, inverted=inverted)
+        if subject == bottom:
+            return {middle: fully_open}
+        if subject == middle:
+            return {bottom: fully_closed}
+        return {}
 
     def plan_external_command_interlock(
         self,

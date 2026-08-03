@@ -38,7 +38,7 @@ except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -99,6 +99,8 @@ from .const import (
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
     CONF_TRANSIT_TIMEOUT,
+    CONF_TRAVEL_TIME_CALIBRATION,
+    TRAVEL_CALIBRATION_TICK_SECONDS,
     CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_ENABLED,
@@ -148,6 +150,7 @@ from .managers.sensor_health import SensorHealthManager
 from .managers.weather import WeatherManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
+from .managers.travel_calibration import TravelTimeCalibrator
 from .position_utils import flip_if, interpolate_position, inverse_state
 from .pipeline.handlers import (
     ManualOverrideHandler,
@@ -650,8 +653,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # coordinator's debug-categories gate (INFO when debug_mode +
             # category enabled, otherwise DEBUG).
             debug_log=self._debug_log,
-            # Clock the post-command window for time-based override detectors.
-            on_command_sent=self.manager.note_command_sent,
+            # Clock the post-command window for time-based override detectors,
+            # and start the travel-ramp republish tick if this dispatch created
+            # a plan.
+            on_command_sent=self._on_command_sent,
+            # Travel-time row for one entity, read live from options at each
+            # dispatch. A per-cycle snapshot would serve stale numbers for a
+            # whole cycle after a calibration run or a manual edit rewrites the
+            # table out-of-band, and the table changes far too rarely to be
+            # worth caching.
+            get_travel_calibration=lambda eid: (
+                self.config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
+            ).get(eid),
         )
 
         # Wire the manual-override engine's edge + origin seams once. Any
@@ -740,6 +753,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             schedule_refresh_after=self._schedule_refresh_after,
         )
 
+        # Travel-time calibration. Built here because it drives covers through
+        # the command service and reads the same policy the dispatch path uses;
+        # it stays idle until something asks it to run.
+        self._travel_calibrator = TravelTimeCalibrator(
+            self.hass,
+            self.logger,
+            cmd_svc=self._cmd_svc,
+            policy=self._policy,
+            # Resolved live, not captured: a run can start long after setup, and
+            # the cover list and rail roles may have changed in between.
+            get_entities=lambda: list(self.entities or []),
+            get_options=lambda: self.config_entry.options,
+            persist=self._async_persist_travel_calibration,
+            on_progress=self.async_update_listeners,
+        )
+
         # Window-transition tracker — owns sun-visibility and astronomical
         # sunset-window transition state (extracted from coordinator in Phase E).
         self._window_tracker = WindowTransitionTracker(
@@ -763,6 +792,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # ``async_track_time_interval`` cancel handle.
         self._position_forecast: Forecast | None = None
         self._forecast_unsub: Callable[[], None] | None = None
+
+        # Cancel handle for the travel-ramp republish tick. Non-None ONLY while
+        # at least one cover has a live travel plan — see ``_sync_travel_tick``.
+        self._travel_tick_unsub: Callable[[], None] | None = None
 
         # Issue #547: cached forecast daily-high (°) for the configured weather
         # entity, refreshed on a slow wall-clock cadence by
@@ -3662,6 +3695,110 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = True
         await self.async_refresh()
 
+    async def async_apply_travel_calibration_update(self) -> None:
+        """Take up a new travel-time table without reloading the entry.
+
+        Registered in ``_RUNTIME_APPLICABLE_OPTIONS``. Without it, every write —
+        and a calibration run writes once per pass — would reload the config
+        entry, tearing down the very run that produced the numbers.
+
+        No pipeline rebuild: the table changes nothing about how a position is
+        decided, only how an in-flight move is rendered. Refreshing
+        ``_cached_options`` is what keeps the listener's next reload/apply
+        comparison honest.
+        """
+        self._cached_options = dict(self.config_entry.options)
+        self.async_update_listeners()
+        await self.async_refresh()
+
+    async def _async_persist_travel_calibration(
+        self, table: dict[str, dict[str, Any]]
+    ) -> None:
+        """Write the finished travel-time table back to the config entry."""
+        from .services.options_service import apply_options_patch  # noqa: PLC0415
+
+        await apply_options_patch(
+            self.hass, self, {CONF_TRAVEL_TIME_CALIBRATION: table or None}
+        )
+
+    async def async_run_travel_calibration(self) -> None:
+        """Measure every configured cover's travel time (Calibration menu).
+
+        Runs the covers to their mechanical stops and back — several minutes of
+        movement — so it is deliberately reachable only from the options flow,
+        never from a dashboard entity that could be pressed by accident.
+        """
+        await self._travel_calibrator.async_run()
+
+    @callback
+    def async_cancel_travel_calibration(self, *, restore: bool = True) -> bool:
+        """Stop a calibration run. Returns whether there was one to stop.
+
+        ``restore=False`` is the panic-stop path: stand down without issuing the
+        go-home moves, because more movement is exactly what that caller is
+        trying to prevent.
+        """
+        return self._travel_calibrator.async_cancel(restore=restore)
+
+    @property
+    def travel_calibration(self) -> TravelTimeCalibrator:
+        """The travel-time calibrator, for the options flow and the sensor."""
+        return self._travel_calibrator
+
+    def travel_estimated_position(self, entity_id: str) -> int | None:
+        """Modelled position of ``entity_id`` mid-move, or None when it is idle.
+
+        Display-only (§3b): never merged into the position the command gates
+        read. Consumed by the proxy cover, which republishes it so ordinary HA
+        cover cards animate.
+        """
+        return self._cmd_svc.estimated_position(entity_id)
+
+    @callback
+    def _on_command_sent(self, entity_id: str) -> None:
+        """React to an outbound command: clock detectors, and start the tick.
+
+        The dispatch chokepoint is also where a travel plan is created, so this
+        is the earliest moment the republish tick can be needed.
+        """
+        self.manager.note_command_sent(entity_id)
+        self._sync_travel_tick()
+
+    @callback
+    def _sync_travel_tick(self) -> None:
+        """Run the 1 s republish timer exactly while some cover is mid-ramp.
+
+        A travel plan is a clock-driven model, so nothing else would prompt a
+        redraw between the command and the arrival — the proxy would show one
+        frozen frame for the whole move. The timer therefore exists only for the
+        duration of actual movement: it must never be left running at idle,
+        where it would be a state write per second per instance forever.
+        """
+        active = self._cmd_svc.has_travel_plans()
+        if active and self._travel_tick_unsub is None:
+            self._travel_tick_unsub = async_track_time_interval(
+                self.hass,
+                self._travel_tick,
+                dt.timedelta(seconds=TRAVEL_CALIBRATION_TICK_SECONDS),
+            )
+        elif not active:
+            self._stop_travel_tick()
+
+    @callback
+    def _stop_travel_tick(self) -> None:
+        """Cancel the republish timer if it is running."""
+        if self._travel_tick_unsub is not None:
+            self._travel_tick_unsub()
+            self._travel_tick_unsub = None
+
+    @callback
+    def _travel_tick(self, _now: dt.datetime) -> None:
+        """Redraw the ramp, then decide whether another tick is warranted."""
+        self.async_update_listeners()
+        # Self-limiting: the tick after the last plan clears is the one that
+        # cancels the timer, so no other code path has to remember to.
+        self._sync_travel_tick()
+
     def _build_pipeline(self) -> PipelineRegistry:
         """Build the override pipeline from the registry of handler factories.
 
@@ -4494,10 +4631,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cover_entities, self._policy, assumed=self._cmd_svc.get_assumed_position
         )
         _caps = self._cover_provider.read_all_capabilities(cover_entities)
+        _travel_plans = self._cmd_svc.travel_plans()
+        _estimated = self._cmd_svc.estimated_positions()
         _covers = {
             eid: {
                 "current_position": _positions.get(eid),
                 "transit_state": self._cmd_svc.get_transit_direction(eid),
+                # Where the travel-time model says the cover is right now, and
+                # the ramp it came from. Display-only siblings of transit_state:
+                # both are present only mid-move, and neither is ever read back
+                # by a command gate.
+                "estimated_position": _estimated.get(eid),
+                "travel_plan": _travel_plans.get(eid),
                 "available": _positions.get(eid) is not None,
                 "ha_state": getattr(self.hass.states.get(eid), "state", None),
                 "capabilities": (
@@ -4546,6 +4691,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             start_time=self._time_mgr.start_time_value,
             end_time=self._end_time,
             automatic_control=self.automatic_control,
+            calibrating=self._cmd_svc.calibrating,
             last_cover_action=self.last_cover_action,
             last_skipped_action=self.last_skipped_action,
             min_change=self.min_change,
@@ -5418,6 +5564,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._sun_tracking_gate_unsub is not None:
             self._sun_tracking_gate_unsub()
             self._sun_tracking_gate_unsub = None
+
+        # Stand down a calibration run and its republish tick. The run holds
+        # ``calibrating`` on the command service, so an unload that left it
+        # going would keep that flag set on an orphaned object.
+        self.async_cancel_travel_calibration(restore=False)
+        self._stop_travel_tick()
 
         # Cancel any in-flight external-command interlock correction (#1138).
         # Each is a config-entry task, so HA would wait on it during unload;

@@ -41,6 +41,7 @@ Section index
 18. Manual Override & Transit
 19. Motion Control
 20. Position Verification
+20a. Travel Time Calibration
 21. Venetian Dual-Axis Sequencing
 22. Debug & Diagnostics
 23. Control Status (diagnostic enum)
@@ -1538,6 +1539,120 @@ DEFAULT_ENABLE_POSITION_MATCHING = False
 
 
 # =============================================================================
+# 20a. Travel Time Calibration
+# =============================================================================
+# How long a cover takes to traverse its full range, measured once and reused
+# to model where it IS while it is moving.
+#
+# NB the name. "Calibration" already means the position INTERPOLATION curve in
+# this codebase (CONF_INTERP / interp_lo / interp_hi, rendered as
+# "Calibration {lo}→{hi}"). Everything in this section is TRAVEL TIME
+# calibration and says so in its name — the two are unrelated and must stay
+# greppable apart.
+
+# Derived per-entity travel data. NOT a user-authored scalar, so it has no
+# OPTION_RANGES row (that map is keyed by top-level option key) and no
+# config-flow selector of its own. Shape:
+#
+#   {entity_id: {"full_travel_seconds": float,     # headline / manual / fallback
+#                "open_seconds": float | None,     # sweep toward axis value_max
+#                "close_seconds": float | None,    # sweep toward axis value_min
+#                "start_delay_seconds": float,     # command → motion observed
+#                "calibrated_at": "<iso>",
+#                "source": "measured" | "manual"}}
+#
+# One table for both sources so every consumer has a single path; ``source`` is
+# display-only and must never be branched on for behaviour.
+CONF_TRAVEL_TIME_CALIBRATION = "travel_time_calibration"
+
+# Per-move ceiling for one calibration leg. Generous: a slow patio awning can
+# take well over a minute, and the run aborts the ENTITY (not the batch) when
+# this expires, so an over-tight value silently drops covers from the results.
+# Must exceed TRAVEL_TIME_MAX_SECONDS plus actuator dead time, or the top of the
+# band the manual field advertises would be a range no measurement could reach.
+DEFAULT_TRAVEL_CALIBRATION_TIMEOUT_SECONDS = 360  # seconds
+
+# Ceiling on a WHOLE run, across every cover and every leg. The per-move budget
+# above bounds one stuck move; this bounds the run, and the two are not the same
+# number by a wide margin — a Model C pair costs up to eight moves plus a
+# restore, so per-move alone would let a jammed shade hold the covers for the
+# better part of an hour.
+#
+# Sized to fit the band the manual field advertises: a day/night rail pair costs
+# two clearance parks plus six legs, so at TRAVEL_TIME_MAX_SECONDS apiece a
+# legitimate run of the slowest covers this integration claims to support needs
+# most of an hour. A tighter budget would make the top of that band impossible
+# to measure while still being offered.
+#
+# The gate a run holds IS absolute — a safety target waits too — so this hour is
+# also the longest anything can be held off. Acceptable only because the run
+# says so the whole time it is happening: the control status reads
+# ``calibrating``, the options flow's Travel Time page shows the state and
+# offers Cancel, and this budget ends the run regardless.
+TRAVEL_CALIBRATION_RUN_BUDGET_SECONDS = 3600  # seconds — 1 hour
+
+# Separate allowance for the go-home pass, granted when it starts rather than
+# taken out of whatever the measurement phase left over. The restore is the pass
+# that puts covers back, and it is the one pass that must never be cut short:
+# starved of time its waits return instantly, so a coupled cover the clearance
+# gate defers is never re-offered and is abandoned at a mechanical stop. It is
+# still bounded — the gate is held for its duration too — just not by the
+# leftovers of a budget the measurement phase may already have spent.
+TRAVEL_CALIBRATION_RESTORE_BUDGET_SECONDS = 300  # seconds — 5 minutes
+
+# How long the seed leg waits for a no-position cover to publish a transit
+# state before declaring it unobservable. Covers the actuator start-up lag that
+# VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS exists for, with headroom — a
+# cover that has not begun moving by now never will report that it did.
+TRAVEL_CALIBRATION_TRANSIT_PROBE_SECONDS = 10  # seconds
+
+# Cadence at which a proxy cover republishes its estimated position while a
+# travel plan is live (cover.py). 1 s is what an HA cover card needs to animate
+# visibly; the timer runs ONLY while at least one plan exists, never at idle.
+TRAVEL_CALIBRATION_TICK_SECONDS = 1  # seconds
+
+# Bounds for a manually entered travel time. Consumed by BOTH the options-flow
+# selector and the calibrator's sanity clamp, so a value the UI accepts can
+# never be one the manager rejects. 0 is outside the band on purpose: the
+# options-flow field treats it as "unset", never as a zero-second travel.
+TRAVEL_TIME_MIN_SECONDS = 1.0
+TRAVEL_TIME_MAX_SECONDS = 300.0
+
+# Run lifecycle, as reported by the travel_calibration diagnostic sensor.
+TRAVEL_CALIBRATION_STATE_IDLE = "idle"
+TRAVEL_CALIBRATION_STATE_RUNNING = "running"
+TRAVEL_CALIBRATION_STATE_COMPLETE = "complete"
+TRAVEL_CALIBRATION_STATE_FAILED = "failed"
+TRAVEL_CALIBRATION_STATE_CANCELLED = "cancelled"
+
+# Per-entity outcome within a run.
+TRAVEL_CALIBRATION_STATUS_OK = "ok"
+TRAVEL_CALIBRATION_STATUS_TIMEOUT = "timeout"
+TRAVEL_CALIBRATION_STATUS_UNAVAILABLE = "unavailable"
+# The cover cannot be watched: HA reports assumed_state, or it exposes no
+# position axis and never publishes a transit state. Timing it would measure
+# service-call latency, not travel. Manual entry is the only path for these.
+TRAVEL_CALIBRATION_STATUS_UNOBSERVABLE = "skipped_unobservable"
+
+# Where a table row came from. Display-only (see CONF_TRAVEL_TIME_CALIBRATION).
+TRAVEL_CALIBRATION_SOURCE_MEASURED = "measured"
+TRAVEL_CALIBRATION_SOURCE_MANUAL = "manual"
+
+# Why an entity ended up with the status it did, as recorded on its result row
+# and rendered by the travel_calibration sensor. Named rather than free text so
+# the sites that write them, the sensor that shows them and the tests that
+# assert on them cannot drift.
+REASON_ASSUMED_STATE = "assumed_state"
+REASON_NO_MOTION_OBSERVED = "no_motion_observed"
+REASON_NO_ENTITIES = "no_entities"
+REASON_IMPLAUSIBLE_RESULT = "implausible_result"
+REASON_CLEARANCE_FAILED = "clearance_failed"
+# Dispatch label the go-home pass carries into the policy's clearance gate.
+REASON_RESTORE = "travel_calibration_restore"
+REASON_RUN_BUDGET_EXCEEDED = "run_budget_exceeded"
+
+
+# =============================================================================
 # 21. Venetian Dual-Axis Sequencing
 # =============================================================================
 # Venetian covers move both vertical position AND tilt. The dual-axis sequencer
@@ -1800,6 +1915,10 @@ class ControlStatus:
     """
 
     ACTIVE = "active"  # actively tracking the sun / running automation
+    # A travel-time calibration run owns the covers. Reported first, because
+    # while it holds them nothing else commands them — including safety — and
+    # "why is nothing moving?" has exactly one answer for the duration.
+    CALIBRATING = "calibrating"
     OUTSIDE_TIME_WINDOW = "outside_time_window"  # outside start/end window
     POSITION_DELTA_TOO_SMALL = "position_delta_too_small"  # < CONF_DELTA_POSITION
     TIME_DELTA_TOO_SMALL = "time_delta_too_small"  # < CONF_DELTA_TIME

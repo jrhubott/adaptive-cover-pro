@@ -77,6 +77,7 @@ _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
         "motion_status",
         "position_forecast",
         "solar_calculation",
+        "travel_calibration",
     }
 )
 
@@ -235,6 +236,10 @@ _WITHHELD_FROM_NAMESPACE: dict[str, frozenset[str]] = {
             "solar_calculation",
             "decision_trace",
             "position_forecast",
+            # Setup-time measurement state. Nothing an automation would branch
+            # on: it reports whether a calibration pass is running, which is a
+            # thing a human does from the options flow once per install.
+            "travel_calibration",
             # No translation_key — unresolvable by the namespace resolver.
             "Cover_Position",
             "Cover_Tilt",
