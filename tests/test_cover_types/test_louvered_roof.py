@@ -67,15 +67,39 @@ def _schema_value_validator(schema: vol.Schema, key: str):
 
 
 def test_tilt_schema_accepts_value_at_raised_slat_cap() -> None:
-    # The shared slat depth/spacing cap was raised to 30 cm globally, so the
-    # interior tilt/venetian schema must validate a value at the new cap too.
+    # The shared slat depth/spacing cap was raised to 50 cm globally (#1184),
+    # so the interior tilt/venetian schema must validate a value at the new
+    # cap too, for both slat depth and slat distance, and reject anything
+    # just above it.
     from custom_components.adaptive_cover_pro.cover_types.tilt import (
         geometry_tilt_schema,
     )
 
     schema = geometry_tilt_schema()
     depth_validator = _schema_value_validator(schema, CONF_TILT_DEPTH)
-    assert depth_validator(30.0) == 30.0
+    distance_validator = _schema_value_validator(schema, CONF_TILT_DISTANCE)
+    assert depth_validator(50.0) == 50.0
+    assert distance_validator(50.0) == 50.0
+    with pytest.raises(vol.MultipleInvalid):
+        schema({CONF_TILT_DEPTH: 50.1})
+    with pytest.raises(vol.MultipleInvalid):
+        schema({CONF_TILT_DISTANCE: 50.1})
+
+
+def test_geometry_tilt_schema_selector_max_matches_option_ranges() -> None:
+    # Regression guard for #1184: the selector bound in geometry_tilt_schema()
+    # must be sourced from OPTION_RANGES, not a hardcoded literal, so the
+    # selector and the options-service validator can never drift apart again.
+    from custom_components.adaptive_cover_pro.const import OPTION_RANGES
+    from custom_components.adaptive_cover_pro.cover_types.tilt import (
+        geometry_tilt_schema,
+    )
+
+    schema = geometry_tilt_schema()
+    depth_validator = _schema_value_validator(schema, CONF_TILT_DEPTH)
+    distance_validator = _schema_value_validator(schema, CONF_TILT_DISTANCE)
+    assert depth_validator.config["max"] == OPTION_RANGES[CONF_TILT_DEPTH][1]
+    assert distance_validator.config["max"] == OPTION_RANGES[CONF_TILT_DISTANCE][1]
 
 
 class TestLouveredRoofPolicy:

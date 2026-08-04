@@ -1696,11 +1696,11 @@
           "name": "Fensterbrett-Höhe"
         },
         "slat_depth": {
-          "description": "Lamellentiefe in Zentimetern (0,1–15 cm, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Neigung.",
+          "description": "Lamellentiefe in Zentimetern (0,1–50 cm, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Neigung.",
           "name": "Lamellen-Tiefe"
         },
         "slat_distance": {
-          "description": "Abstand zwischen Lamellen in Zentimetern (0,1–15 cm, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Neigung.",
+          "description": "Abstand zwischen Lamellen in Zentimetern (0,1–50 cm, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Neigung.",
           "name": "Lamellen-Abstand"
         },
         "tilt_mode": {

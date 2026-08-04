@@ -1696,11 +1696,11 @@
           "name": "Hauteur de l'appui"
         },
         "slat_depth": {
-          "description": "Profondeur de lamelle de vénitienne en centimètres (0,1–15 cm, métrique canonique, indépendamment de la locale HA). Inclinaison uniquement.",
+          "description": "Profondeur de lamelle de vénitienne en centimètres (0,1–50 cm, métrique canonique, indépendamment de la locale HA). Inclinaison uniquement.",
           "name": "Profondeur de la lamelle"
         },
         "slat_distance": {
-          "description": "Distance entre les lamelles en centimètres (0,1–15 cm, métrique canonique, indépendamment de la locale HA). Inclinaison uniquement.",
+          "description": "Distance entre les lamelles en centimètres (0,1–50 cm, métrique canonique, indépendamment de la locale HA). Inclinaison uniquement.",
           "name": "Distance entre les lamelles"
         },
         "tilt_mode": {
