@@ -29,6 +29,7 @@ from ..const import (
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_TILT_SAFETY_MARGIN,
     MIN_TILT_SAFETY_MARGIN,
+    OPTION_RANGES,
     TILT_HORIZONTAL_DEG,
     VENETIAN_TILT_TRANSFORMS,
 )
@@ -105,15 +106,17 @@ def tilt_limits_schema() -> dict:
 
 def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Tilt-only geometry schema. ``hass=None`` → metric labels."""
+    depth_lo, depth_hi = OPTION_RANGES[CONF_TILT_DEPTH]
+    distance_lo, distance_hi = OPTION_RANGES[CONF_TILT_DISTANCE]
     return vol.Schema(
         {
             vol.Required(
                 CONF_TILT_DEPTH, default=slat_default(_DEFAULT_TILT_DEPTH_CM, hass)
-            ): slat_selector(hass, min_cm=0.1, max_cm=30),
+            ): slat_selector(hass, min_cm=depth_lo, max_cm=depth_hi),
             vol.Required(
                 CONF_TILT_DISTANCE,
                 default=slat_default(_DEFAULT_TILT_DISTANCE_CM, hass),
-            ): slat_selector(hass, min_cm=0.1, max_cm=30),
+            ): slat_selector(hass, min_cm=distance_lo, max_cm=distance_hi),
             vol.Required(CONF_TILT_MODE, default="mode2"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=["mode1", "mode2", "specify_angles"],

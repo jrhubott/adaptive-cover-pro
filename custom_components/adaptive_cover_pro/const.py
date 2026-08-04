@@ -436,8 +436,8 @@ OSCILLATING_ARC_SCAN_SAMPLES = 1801
 # =============================================================================
 # Slat dimensions used to compute tilt angle, plus min/max tilt clamps.
 
-CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-30.0)
-CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-30.0)
+CONF_TILT_DEPTH = "slat_depth"  # slat depth, cm (range 0.1-50.0)
+CONF_TILT_DISTANCE = "slat_distance"  # vertical slat spacing, cm (0.1-50.0)
 CONF_TILT_MODE = "tilt_mode"  # tilt strategy identifier
 CONF_TILT_ANGLE_0 = "tilt_angle_0"  # raw slat angle at 0% tilt, degrees
 CONF_TILT_ANGLE_100 = "tilt_angle_100"  # raw slat angle at 100% tilt, degrees
@@ -2322,8 +2322,8 @@ _RANGE_MAX_SLAT_ANGLE = (0, 180)  # CONF_MAX_SLAT_ANGLE, degrees (0 = use tilt m
 MIN_USABLE_SLAT_ANGLE_DEG = 1
 
 # Geometry — tilt / venetian slats.
-_RANGE_TILT_DEPTH = (0.1, 30.0)  # CONF_TILT_DEPTH, cm (raised to 300 mm for #830)
-_RANGE_TILT_DISTANCE = (0.1, 30.0)  # CONF_TILT_DISTANCE, cm (raised to 300 mm, #830)
+_RANGE_TILT_DEPTH = (0.1, 50.0)  # CONF_TILT_DEPTH, cm (raised to 500 mm for #1184)
+_RANGE_TILT_DISTANCE = (0.1, 50.0)  # CONF_TILT_DISTANCE, cm (raised to 500 mm, #1184)
 _RANGE_MAX_TILT = (0, 100)  # CONF_MAX_TILT, percent
 _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
 _RANGE_TILT_SAFETY_MARGIN = (

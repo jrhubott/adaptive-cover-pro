@@ -2046,11 +2046,11 @@
         },
         "slat_depth": {
           "name": "Slat depth",
-          "description": "Venetian slat depth in centimetres (0.1–15 cm, canonical metric regardless of HA locale). Tilt only."
+          "description": "Venetian slat depth in centimetres (0.1–50 cm, canonical metric regardless of HA locale). Tilt only."
         },
         "slat_distance": {
           "name": "Slat distance",
-          "description": "Distance between slats in centimetres (0.1–15 cm, canonical metric regardless of HA locale). Tilt only."
+          "description": "Distance between slats in centimetres (0.1–50 cm, canonical metric regardless of HA locale). Tilt only."
         },
         "tilt_mode": {
           "name": "Tilt mode",
