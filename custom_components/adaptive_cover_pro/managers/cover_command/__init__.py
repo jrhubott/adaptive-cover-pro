@@ -17,6 +17,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
 from ...const import (
+    COMMAND_QUEUE_MAX_WAIT_SECONDS,
     DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     MAX_POSITION_RETRIES,
@@ -38,6 +39,7 @@ from ...helpers import (
 from . import gates
 from .diagnostics import DiagnosticsRecorder
 from .position_context import PositionContextTracker
+from .queue import CommandQueue, QueueGrant
 from .routing import ServiceCallPlan, build_special_positions, route_service_call
 from .state_classifier import StateClassifier
 from .state_store import (
@@ -119,6 +121,7 @@ class CoverCommandService:
         debug_log=None,
         on_command_sent=None,
         get_travel_calibration=None,
+        command_queue: CommandQueue | None = None,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -170,6 +173,14 @@ class CoverCommandService:
                 per cycle) would serve stale numbers until the next reload.
                 Omitted, no travel plans are recorded and every estimated-position
                 surface stays empty — the pre-calibration behaviour.
+            command_queue: The shared :class:`CommandQueue` this entry's cover
+                was assigned to, or ``None`` for the overwhelmingly common
+                unqueued cover (issue #1189). Shared ACROSS config entries —
+                the whole point is that independent instances driving the same
+                one-way radio take turns — so it is looked up in the registry
+                and refcounted by the coordinator, never owned here. ``None``
+                keeps the dispatch path byte-identical to the behaviour before
+                the queue existed: no await, no allocation, no registry touch.
 
         """
         # Local import: ``cover_types.venetian.sequencer`` imports
@@ -199,6 +210,10 @@ class CoverCommandService:
         self._on_tick = on_tick
         self._on_command_sent = on_command_sent
         self._get_travel_calibration = get_travel_calibration
+        # Cross-entry dispatch queue (issue #1189). Set before the StopTracker
+        # below, which reads it through a live lambda so an ACP-issued stop can
+        # tell the queue the air is busy without taking a turn in it.
+        self._queue: CommandQueue | None = command_queue
 
         # True while a travel-time calibration run owns the covers. Blocks every
         # outbound command from ``apply_position`` and stands the reconciliation
@@ -228,6 +243,7 @@ class CoverCommandService:
             logger,
             dry_run_fn=lambda: self._dry_run,
             is_in_transit_fn=self._is_cover_in_transit,
+            queue_fn=lambda: self._queue,
         )
 
         # Position-context tracker mirrors the stop tracker for the
@@ -1750,14 +1766,22 @@ class CoverCommandService:
         # check_cover_features + route_service_call work entirely for a
         # value it would never read (issue #1095 audit finding 4).
         # route_service_call is pure/side-effect-free (routing.py's module
-        # docstring), and nothing between this line and either of its uses
-        # (this gate, and the dispatch call further down that reuses this
-        # same `_plan`/`_caps_for_plan`) can invalidate it. The one await
-        # that can intervene is the physical-clearance gate below, and a
-        # policy with no coupled entities returns from it without ever
-        # suspending; a policy that does suspend is waiting on ANOTHER
-        # entity's travel, not on this one's `supported_features`, which is
-        # all `_plan` is derived from.
+        # docstring), and nothing between this line and its use by this gate
+        # can invalidate it.
+        #
+        # TWO awaits can intervene between here and the dispatch call further
+        # down, and they are treated differently on purpose:
+        #
+        # - The physical-clearance gate below is safe to reuse `_plan` across: a
+        #   policy with no coupled entities returns from it without ever
+        #   suspending, and a policy that does suspend is waiting on ANOTHER
+        #   entity's travel, not on this one's `supported_features`, which is
+        #   all `_plan` is derived from.
+        # - The command-queue wait (issue #1189) is NOT. It can last tens of
+        #   seconds while unrelated covers transmit, which is ample time for
+        #   this entity to reload with different capabilities. So the queued
+        #   path re-derives `_caps_for_plan`/`_plan` immediately after its wait
+        #   rather than reusing what was computed here.
         _caps_for_plan = self.get_cover_capabilities(entity_id)
         _axis_for_plan = self._policy.select_default_axis(_caps_for_plan)
         _plan = route_service_call(
@@ -2072,12 +2096,91 @@ class CoverCommandService:
                 current_position=_current,
             )
 
+        # ----- command-queue gate (issue #1189) -----
+        # Take this cover's turn on its named dispatch queue, so covers sharing
+        # a one-way radio never key a frame at the same moment. Unqueued covers
+        # — the overwhelming majority — return from the helper without
+        # suspending, which is what makes "zero regression for the 99%" a
+        # property of the code rather than an aspiration.
+        #
+        # Placement is load-bearing in BOTH directions, and neither boundary is
+        # a matter of taste:
+        #
+        # - AFTER ``await_dispatch_clearance`` above, or Model C day/night
+        #   DEADLOCKS (issue #1115): the middle rail would hold the queue slot
+        #   while waiting for the bottom rail, and the bottom rail could not
+        #   acquire the slot to transmit. The clearance gate's own timeout would
+        #   eventually break it — after a spurious ``policy_deferred`` skip on
+        #   every raise.
+        # - BEFORE ``_prepare_service_call`` below, because that call BOOKS the
+        #   command: ``sent_at`` (which ``_check_time_delta`` reads — issue
+        #   #853), ``waiting``, and the 5 s command grace window (issue #1139,
+        #   whose reporter measured backend queue waits of 10.6 / 20.9 / 33.7 s
+        #   — 2× to 7× that window). A wait placed after the booking would start
+        #   both clocks at DECISION time, silently shortening the min-interval
+        #   cooldown and landing every queued command outside its own grace
+        #   window. Booking after the wait means both clock from real transmit
+        #   time and #1139 is untouched.
+        #
+        # ``dispatch_token`` was captured above, before either await, for the
+        # documented reason that a policy's per-cycle view can be restated
+        # across one — so #1115's provenance rule holds unchanged with a second
+        # await here (#1138).
+        _proceed, _queue_grant = await self._acquire_queue_slot(
+            entity_id,
+            head_of_line=context.is_safety or context.user_command,
+        )
+        if not _proceed:
+            # A newer decision for this same entity took our place while we
+            # waited. Skipping is the point: transmitting now would put a
+            # 20-second-stale target on the air.
+            return self._skip(
+                entity_id,
+                "superseded_in_queue",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+        if _queue_grant is not None:
+            # Two staleness mitigations, both consequences of the wait above:
+            #
+            # The cover may have gone away while we waited. Nothing has been
+            # booked yet, so this is a clean skip with nothing to unwind — the
+            # same reason the clearance gate sits ahead of the booking.
+            if self.is_entity_unavailable(entity_id):
+                self._release_queue_slot(entity_id, _queue_grant, transmitted=False)
+                return self._skip(
+                    entity_id,
+                    "cover_unavailable",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                )
+            # And the routing decision is re-derived rather than reused. The
+            # comment where `_plan` is first built enumerates the ONE await that
+            # could intervene; the queue wait is a second, and unlike the
+            # clearance gate it can last tens of seconds — long enough for the
+            # entity to reload with a different `supported_features`.
+            _caps_for_plan = self.get_cover_capabilities(entity_id)
+            _axis_for_plan = self._policy.select_default_axis(_caps_for_plan)
+            _plan = route_service_call(
+                entity_id,
+                position,
+                _caps_for_plan,
+                axis=_axis_for_plan,
+                use_my_position=context.use_my_position,
+                open_close_threshold=self._open_close_threshold,
+                endpoint_use_open_close=self._endpoint_use_open_close,
+            )
+
         # ----- send command -----
         # Reuses _caps_for_plan/_plan from the gate above (issue #1095 audit
         # finding 5) instead of a fresh get_cover_capabilities +
         # route_service_call — safe for the reason spelled out where `_plan` is
-        # built: nothing that can intervene between there and here changes this
-        # entity's capabilities.
+        # built, and re-derived just above on the one path (a queue wait) where
+        # that reasoning no longer holds.
         service, service_data, supports_position = self._prepare_service_call(
             entity_id,
             position,
@@ -2089,6 +2192,7 @@ class CoverCommandService:
             dispatch_token=dispatch_token,
         )
         if service is None:
+            self._release_queue_slot(entity_id, _queue_grant, transmitted=False)
             return self._skip(
                 entity_id,
                 "no_capable_service",
@@ -2127,64 +2231,87 @@ class CoverCommandService:
             position,
         )
 
-        # Cover-type policy hook: dual-axis covers (venetian) pre-send tilt
-        # on opening transitions so the actuator's slats are at the target
-        # angle before the carriage starts moving (issue #33). Default
-        # policies are no-ops. Pure SIDE EFFECT — the go/no-go decision was
-        # settled by ``await_dispatch_clearance`` above, before anything about
-        # this command was recorded.
-        if context.policy is not None:
-            await context.policy.before_position_command(
-                self,
-                entity_id,
-                service=service,
-                position=position,
-                context=context,
-                reason=reason,
-            )
-
-        ctx = Context()
-        self._position_context_tracker.record(ctx.id)
+        # Everything from here to the position service call runs INSIDE the
+        # queue slot, and the ``finally`` hands it back the moment that call
+        # returns. Deliberately narrow: the venetian settle+tilt tail in
+        # ``after_position_command`` below can take seconds, and holding the
+        # slot across it would starve every other cover on the queue. Its tilt
+        # frame then transmits inside its OWN cover's gap window, which is not a
+        # cross-cover collision.
         try:
-            await self._hass.services.async_call(
-                COVER_DOMAIN, service, service_data, context=ctx
-            )
-        except HomeAssistantError as err:
-            self._logger.warning(
-                "Service call %s.%s failed for %s: %s",
-                COVER_DOMAIN,
-                service,
-                entity_id,
-                err,
-            )
-            # The target was booked (with ``waiting``) before the call, because
-            # a command normally IS in flight by the time control reaches here.
-            # This one demonstrably is not, and leaving the flag set claims a
-            # motion nobody can observe ending: the transit-timeout backstop
-            # holds it for ~45 s, during which a physically coupled cover type
-            # reads it as "the partner rail is on its way" and releases a
-            # follower into a rail that never moved.
-            #
-            # The TARGET is deliberately kept, but NOT because anything is
-            # guaranteed to resend it — ``run_reconciliation_pass`` is gated on
-            # ``enable_position_matching``, which defaults OFF (#591), so on a
-            # default install nothing does. It is kept because it is still the
-            # honest record of what this entity was last asked for: the delta
-            # gates, the diagnostics and a later resend all read it, and
-            # dropping it would make ACP forget a command the user gave. Only
-            # the CLAIM OF MOTION is false here, so only that is withdrawn.
-            self.set_waiting(entity_id, False)
-            return self._skip(
-                entity_id,
-                "service_call_failed",
-                position,
-                trigger=_trigger,
-                inverse_state=_inverse,
-                current_position=_current,
-            )
+            # Cover-type policy hook: dual-axis covers (venetian) pre-send tilt
+            # on opening transitions so the actuator's slats are at the target
+            # angle before the carriage starts moving (issue #33). Default
+            # policies are no-ops. Pure SIDE EFFECT — the go/no-go decision was
+            # settled by ``await_dispatch_clearance`` above, before anything
+            # about this command was recorded. Inside the slot because on a
+            # venetian it is itself a transmission.
+            if context.policy is not None:
+                await context.policy.before_position_command(
+                    self,
+                    entity_id,
+                    service=service,
+                    position=position,
+                    context=context,
+                    reason=reason,
+                )
+
+            ctx = Context()
+            self._position_context_tracker.record(ctx.id)
+            try:
+                await self._hass.services.async_call(
+                    COVER_DOMAIN, service, service_data, context=ctx
+                )
+            except HomeAssistantError as err:
+                self._logger.warning(
+                    "Service call %s.%s failed for %s: %s",
+                    COVER_DOMAIN,
+                    service,
+                    entity_id,
+                    err,
+                )
+                # The target was booked (with ``waiting``) before the call,
+                # because a command normally IS in flight by the time control
+                # reaches here. This one demonstrably is not, and leaving the
+                # flag set claims a motion nobody can observe ending: the
+                # transit-timeout backstop holds it for ~45 s, during which a
+                # physically coupled cover type reads it as "the partner rail is
+                # on its way" and releases a follower into a rail that never
+                # moved.
+                #
+                # The TARGET is deliberately kept, but NOT because anything is
+                # guaranteed to resend it — ``run_reconciliation_pass`` is gated
+                # on ``enable_position_matching``, which defaults OFF (#591), so
+                # on a default install nothing does. It is kept because it is
+                # still the honest record of what this entity was last asked
+                # for: the delta gates, the diagnostics and a later resend all
+                # read it, and dropping it would make ACP forget a command the
+                # user gave. Only the CLAIM OF MOTION is false here, so only
+                # that is withdrawn.
+                self.set_waiting(entity_id, False)
+                return self._skip(
+                    entity_id,
+                    "service_call_failed",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                )
+        finally:
+            # Released with ``transmitted=True`` even on the failure path: HA
+            # raising does not prove the backend never keyed the radio, and
+            # claiming the air was free when it may not have been is the one
+            # error this feature exists to avoid. The gap is cheap; a collision
+            # is not.
+            self._release_queue_slot(entity_id, _queue_grant, transmitted=True)
 
         self._track_action(
-            entity_id, service, position, supports_position, context.inverse_state
+            entity_id,
+            service,
+            position,
+            supports_position,
+            context.inverse_state,
+            queue_grant=_queue_grant,
         )
 
         # Anti-relay latch bookkeeping (#897/#507). Arm the latch to the forced
@@ -2210,6 +2337,85 @@ class CoverCommandService:
             )
 
         return "sent", service
+
+    # ------------------------------------------------------------------ #
+    # Command-queue slot (issue #1189)
+    #
+    # ONE acquire and ONE release, shared by every seam that transmits a
+    # position: the main dispatch in ``apply_position`` and the reconciliation
+    # resend in ``_execute_command``. Mirroring the acquire/release pair per
+    # call site is exactly how one of them ends up forgetting to release.
+    # ------------------------------------------------------------------ #
+
+    async def _acquire_queue_slot(
+        self, entity_id: str, *, head_of_line: bool
+    ) -> tuple[bool, QueueGrant | None]:
+        """Take this entity's turn on its command queue, if it has one.
+
+        Returns ``(proceed, grant)``.
+
+        ``proceed`` is False in exactly one case — a newer reservation for the
+        SAME entity superseded this one while it waited — and the caller must
+        then record a ``superseded_in_queue`` skip having booked nothing.
+
+        ``grant`` is None both when there is no queue and on the dry-run path,
+        so the release below is a no-op there. A dry run is skipped
+        deliberately: it sends nothing, so taking a turn would make a simulated
+        cycle delay every real one.
+
+        An unqueued cover never suspends here — this coroutine returns without
+        awaiting anything — which is what keeps its dispatch path identical to
+        the behaviour before the queue existed.
+        """
+        if self._queue is None or self._dry_run:
+            return True, None
+        grant = await self._queue.acquire(
+            entity_id,
+            head_of_line=head_of_line,
+            budget=COMMAND_QUEUE_MAX_WAIT_SECONDS,
+        )
+        if grant is None:
+            return False, None
+        return True, grant
+
+    def _queue_diagnostic_fields(self, grant: QueueGrant | None) -> dict:
+        """Return the four per-dispatch queue fields, or ``{}`` when unqueued.
+
+        "Why did this cover move eight seconds late" is the question this
+        feature creates, and it needs an answer in the data rather than in a
+        log guess. ``waited_seconds`` is exactly ``0.0`` when nothing was
+        awaited, which is what makes ``immediate`` a fact rather than a
+        threshold.
+        """
+        if self._queue is None or grant is None:
+            return {}
+        if grant.budget_expired:
+            outcome = "budget_expired"
+        elif grant.waited_seconds > 0.0:
+            outcome = "waited"
+        else:
+            outcome = "immediate"
+        return {
+            "queue_name": self._queue.name,
+            # THIS dispatch's own wait, not the whole gap: the spacing clock
+            # started at the previous transmit, so the sleep taken here is the
+            # remainder of it.
+            "queue_wait_seconds": round(grant.waited_seconds, 3),
+            "queue_outcome": outcome,
+            "queue_depth_at_enqueue": grant.depth_at_enqueue,
+        }
+
+    def _release_queue_slot(
+        self, entity_id: str, grant: QueueGrant | None, *, transmitted: bool
+    ) -> None:
+        """Hand the queue slot back. No-op for an unqueued or dry-run dispatch.
+
+        ``transmitted`` is what starts the gap: a command that never went out
+        owes the next member nothing, so a withheld dispatch must not make
+        everyone else wait for air that was never used.
+        """
+        if grant is not None and self._queue is not None:
+            self._queue.release(entity_id, transmitted=transmitted)
 
     # ------------------------------------------------------------------ #
     # Position-tolerance helpers
@@ -2972,37 +3178,55 @@ class CoverCommandService:
         NB: callers are responsible for entity-loaded-ness. Reconciliation only
         runs for entities that already passed the cover_unavailable gate in
         ``apply_position`` (issue #342), so no duplicate gate is needed here.
+
+        A resend is a transmission like any other, so it takes its turn on the
+        command queue too (issue #1189) — through the SAME acquire/release pair
+        ``apply_position`` uses, and ahead of ``_prepare_service_call`` for the
+        same reason: that call books ``sent_at`` and the grace window, both of
+        which must clock from the real transmit time. It queues in the ROUTINE
+        tier: a retry of a command that already had its chance has no claim on
+        the head of the line ahead of a fresh safety decision.
         """
-        service, service_data, _ = self._prepare_service_call(
-            entity_id,
-            target,
-            reset_retries=False,
-            dispatch_token=dispatch_token,
-        )
-        if service is None:
+        proceed, grant = await self._acquire_queue_slot(entity_id, head_of_line=False)
+        if not proceed:
+            # A live dispatch for this entity replaced our reservation; it
+            # carries a fresher target than this resend does.
             return
-        if self._dry_run:
-            self._logger.info(
-                "[dry_run] reconciliation would send cover.%s %s → %s%%",
-                service,
+        transmitted = False
+        try:
+            service, service_data, _ = self._prepare_service_call(
                 entity_id,
                 target,
+                reset_retries=False,
+                dispatch_token=dispatch_token,
             )
-            return
-        ctx = Context()
-        self._position_context_tracker.record(ctx.id)
-        try:
-            await self._hass.services.async_call(
-                COVER_DOMAIN, service, service_data, context=ctx
-            )
-        except HomeAssistantError as err:
-            self._logger.warning(
-                "Reconciliation service call %s.%s failed for %s: %s",
-                COVER_DOMAIN,
-                service,
-                entity_id,
-                err,
-            )
+            if service is None:
+                return
+            if self._dry_run:
+                self._logger.info(
+                    "[dry_run] reconciliation would send cover.%s %s → %s%%",
+                    service,
+                    entity_id,
+                    target,
+                )
+                return
+            ctx = Context()
+            self._position_context_tracker.record(ctx.id)
+            transmitted = True
+            try:
+                await self._hass.services.async_call(
+                    COVER_DOMAIN, service, service_data, context=ctx
+                )
+            except HomeAssistantError as err:
+                self._logger.warning(
+                    "Reconciliation service call %s.%s failed for %s: %s",
+                    COVER_DOMAIN,
+                    service,
+                    entity_id,
+                    err,
+                )
+        finally:
+            self._release_queue_slot(entity_id, grant, transmitted=transmitted)
 
     def _track_action(
         self,
@@ -3025,6 +3249,7 @@ class CoverCommandService:
         pipeline_bypass_auto_control: bool | None = None,
         decision_trace_at_call: list | None = None,
         gates_evaluated: dict | None = None,
+        queue_grant: QueueGrant | None = None,
     ) -> None:
         """Update last_cover_action diagnostic dict and record to event buffer."""
         self._diag.record_action(
@@ -3050,4 +3275,5 @@ class CoverCommandService:
             pipeline_bypass_auto_control=pipeline_bypass_auto_control,
             decision_trace_at_call=decision_trace_at_call,
             gates_evaluated=gates_evaluated,
+            queue_fields=self._queue_diagnostic_fields(queue_grant),
         )

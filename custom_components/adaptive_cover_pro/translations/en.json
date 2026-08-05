@@ -45,7 +45,8 @@
           "create_new": "Create new cover",
           "create_building_profile": "Create building profile",
           "duplicate_existing": "Duplicate from existing cover",
-          "create_group": "Create cover group"
+          "create_group": "Create cover group",
+          "create_command_queue": "Create command queue"
         }
       },
       "create_new": {
@@ -280,6 +281,18 @@
           "member_covers": "Plain covers are commanded directly with the scene target. A cover already controlled by a selected member is skipped.",
           "group_area": "Optional: covers in this area join the group automatically and membership tracks registry changes. Combined with the lists above."
         }
+      },
+      "create_command_queue": {
+        "title": "Create Command Queue",
+        "description": "A command queue makes covers take turns transmitting, so one-way radio backends (Somfy RTS, RFXtrx) stop losing frames to collisions. Covers join by naming this queue on their Movement & Schedule page. Creating this entry is optional — a named queue already serializes at the default gap; this is where you change that gap and see who joined. [Learn more]({learn_more})",
+        "data": {
+          "name": "Queue name",
+          "command_queue_gap": "Gap between commands"
+        },
+        "data_description": {
+          "name": "Covers reference this queue by name in their Movement & Schedule settings. Matching ignores case and extra spaces.",
+          "command_queue_gap": "Seconds the queue stays busy after any cover on this queue transmits, before the next cover may go. Default: 5 seconds."
+        }
       }
     },
     "abort": {
@@ -321,7 +334,9 @@
           "profile_overrides": "🧹 Local Overrides",
           "group_membership": "👥 Group Members",
           "group_arbitration": "⚖️ Arbitration & Timing",
-          "group_entities": "🧩 Exposed Entities"
+          "group_entities": "🧩 Exposed Entities",
+          "queue_settings": "🚦 Queue Settings",
+          "queue_overview": "🚦 Queue Overview"
         }
       },
       "pipeline_priorities": {
@@ -357,7 +372,8 @@
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
           "minimize_movements": "Minimize movements",
-          "max_coverage_steps": "Maximum coverage steps"
+          "max_coverage_steps": "Maximum coverage steps",
+          "command_queue": "Command queue"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -367,7 +383,8 @@
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
-          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the sun acceptance angle and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
+          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the sun acceptance angle and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
+          "command_queue": "Serialize this cover's commands against other covers assigned to the same queue name. Covers sharing a queue never transmit at the same moment — useful for one-way radio backends (Somfy RTS, RFXtrx) where simultaneous commands collide and are lost. The gap between commands is set on the Command Queue entry with the same name, or defaults to 5 seconds if none exists. Leave blank for no queue (default)."
         }
       },
       "change_cover_type": {
@@ -1117,6 +1134,20 @@
           "glare_zone_radius": "Protection radius around the zone centre. Shown in the unit Home Assistant is configured for.",
           "glare_zone_z": "Target height above the floor (e.g. desk surface ≈ 0.75 m, seated eyes ≈ 1.1 m, wall TV ≈ 1.5 m). Default 0 protects the floor. Shown in the unit Home Assistant is configured for."
         }
+      },
+      "queue_settings": {
+        "title": "Queue Settings",
+        "description": "How long this queue holds the air after one of its covers transmits. Every cover naming this queue picks the new value up on its next command — no reload needed. [Learn more]({learn_more})",
+        "data": {
+          "command_queue_gap": "Gap between commands"
+        },
+        "data_description": {
+          "command_queue_gap": "Seconds the queue stays busy after any cover on this queue transmits, before the next cover may go. Default: 5 seconds."
+        }
+      },
+      "queue_overview": {
+        "title": "Queue Overview",
+        "description": "{overview}"
       }
     },
     "error": {

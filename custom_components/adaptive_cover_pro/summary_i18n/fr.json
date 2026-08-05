@@ -329,5 +329,8 @@
   "axes": {
     "position": "Position",
     "tilt": "Inclinaison"
+  },
+  "movement": {
+    "queue": "🚦 Commandes sérialisées sur la file d'attente « {queue} » (intervalle {gap}s)"
   }
 }

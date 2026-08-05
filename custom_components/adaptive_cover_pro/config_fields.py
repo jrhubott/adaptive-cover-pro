@@ -262,6 +262,9 @@ SECTION_DEBUG = "debug"
 # section never renders in a cover's options flow — it exists so group
 # numeric fields feed OPTION_RANGES / FIELD_VALIDATORS like every other one.
 SECTION_GROUP = "group"
+# Command-queue-only fields (issue #1189). Same arrangement as SECTION_GROUP:
+# out of COMMON_SECTION_ORDER, present so the gap gets its bounds row.
+SECTION_COMMAND_QUEUE = "command_queue"
 
 
 # =============================================================================
@@ -855,6 +858,40 @@ _AUTOMATION_SPECS = _spec(
         SECTION_AUTOMATION,
         ValidatorKind.TIME,
         make_selector=_time(),
+    ),
+    # Named dispatch queue (issue #1189). Lives on Movement & Schedule with the
+    # two sibling rate limiters above: like them it gates an ALREADY-DECIDED
+    # command rather than influencing which position is picked, which is exactly
+    # what that page's own description scopes it to. The selector is built
+    # dynamically in ``async_step_automation`` — its option list is drawn from
+    # the other loaded entries, which a static schema cannot see — so no
+    # ``make_selector`` here; this spec exists to register the key.
+    FieldSpec(
+        const.CONF_COMMAND_QUEUE,
+        SECTION_AUTOMATION,
+        ValidatorKind.NONE,
+        clearable=True,
+    ),
+)
+
+
+# Command-queue entry fields (issue #1189). Not in COMMON_SECTION_ORDER — the
+# section never renders on a cover's options flow — so this mirrors
+# ``_GROUP_SPECS``: it exists so the queue's numeric field feeds OPTION_RANGES
+# and FIELD_VALIDATORS like every other one.
+_COMMAND_QUEUE_SPECS = _spec(
+    FieldSpec(
+        const.CONF_COMMAND_QUEUE_GAP,
+        SECTION_COMMAND_QUEUE,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_COMMAND_QUEUE_GAP,
+        default=const.DEFAULT_COMMAND_QUEUE_GAP,
+        make_selector=_number(
+            minimum=const._RANGE_COMMAND_QUEUE_GAP[0],
+            maximum=const._RANGE_COMMAND_QUEUE_GAP[1],
+            step=0.5,
+            unit="seconds",
+        ),
     ),
 )
 
@@ -2102,6 +2139,7 @@ _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _PIPELINE_PRIORITY_SPECS,
     _DEBUG_SPECS,
     _GROUP_SPECS,
+    _COMMAND_QUEUE_SPECS,
 )
 
 

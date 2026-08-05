@@ -417,11 +417,12 @@ def test_controls_cover_default_true() -> None:
     """``controls_cover`` defaults True; only virtual entry types opt out.
 
     The base default is ``True`` so adding the discriminator didn't require
-    touching every policy. ``cover_building_profile`` is the one shipped
-    virtual entry type that registers no platforms and has no axes, so it is
-    the sole policy allowed to report ``False``. Pinning both directions
-    keeps the cover-contract suites and cover-only menus exercising every
-    real cover type and guards against a real cover accidentally opting out.
+    touching every policy. ``cover_building_profile`` and
+    ``cover_command_queue`` are the shipped virtual entry types that register no
+    platforms and have no axes, so they are the only policies allowed to report
+    ``False``. Pinning both directions keeps the cover-contract suites and
+    cover-only menus exercising every real cover type and guards against a real
+    cover accidentally opting out.
     """
     from custom_components.adaptive_cover_pro.cover_types.base import CoverTypePolicy
 
@@ -429,7 +430,7 @@ def test_controls_cover_default_true() -> None:
 
     from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY
 
-    expected_non_cover = {"cover_building_profile"}
+    expected_non_cover = {"cover_building_profile", "cover_command_queue"}
     for cover_type, policy_cls in POLICY_REGISTRY.items():
         if cover_type in expected_non_cover:
             assert (

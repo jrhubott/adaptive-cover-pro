@@ -76,11 +76,34 @@ def compute_override_keys(cover_options: dict, profile_options: dict) -> list[st
 
 
 def _building_profile_entries(hass: HomeAssistant) -> list[ConfigEntry]:
-    """Return all Building Profile config entries (controls_cover == False)."""
+    """Return all Building Profile config entries.
+
+    ``controls_cover == False`` alone is no longer the discriminator: the
+    Command Queue entry type shares it (issue #1189), and without the second
+    clause a queue would show up in the profile-link dropdown and be handed to
+    the sensor-propagation listener. Both filters are capability checks, never
+    cover-type strings.
+    """
     return [
         e
         for e in hass.config_entries.async_entries(DOMAIN)
         if not get_policy(e.data.get(CONF_SENSOR_TYPE)).controls_cover
+        and not get_policy(e.data.get(CONF_SENSOR_TYPE)).is_command_queue
+    ]
+
+
+def _command_queue_entries(hass: HomeAssistant) -> list[ConfigEntry]:
+    """Return all Command Queue config entries (issue #1189).
+
+    The counterpart to ``_building_profile_entries``. Used to enumerate the
+    queue names a user has actually created, which is one half of the
+    dropdown's option list — the other half being the names already in use on
+    covers, since naming a queue never required creating one.
+    """
+    return [
+        e
+        for e in hass.config_entries.async_entries(DOMAIN)
+        if get_policy(e.data.get(CONF_SENSOR_TYPE)).is_command_queue
     ]
 
 

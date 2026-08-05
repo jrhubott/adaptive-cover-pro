@@ -430,6 +430,15 @@ class CoverTypePolicy(ABC):
     # ``controls_cover`` (issue #790).
     is_orchestrator: ClassVar[bool] = False
 
+    # Whether this policy is a named command queue rather than anything that
+    # moves. Only the Command Queue entry type sets this ``True`` (issue #1189).
+    # It shares ``controls_cover = False`` with the Building Profile, so the
+    # existing "virtual entry type" branches would otherwise treat it as a
+    # profile — propagating sensor keys to nothing and offering it in the
+    # profile-link dropdown. A third capability flag keeps that discrimination
+    # off the cover-type string, exactly as ``is_orchestrator`` does for groups.
+    is_command_queue: ClassVar[bool] = False
+
     def __init_subclass__(cls, *, register: bool = False, **kwargs: Any) -> None:
         """Auto-register a concrete policy by its ``cover_type``.
 

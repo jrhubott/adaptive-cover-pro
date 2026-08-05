@@ -135,6 +135,11 @@ from .managers.cover_command import (
     PositionContext,
     build_special_positions,
 )
+from .managers.cover_command.queue import (
+    CommandQueue,
+    get_command_queue,
+    normalize_queue_name,
+)
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import (
     STARTED_AT_SOURCE_ENGAGED,
@@ -290,6 +295,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
 
     config_entry: AdaptiveConfigEntry
+
+    # The shared dispatch queue this entry belongs to, or None when the cover
+    # names no queue — which is the overwhelmingly common case (issue #1189).
+    # Declared at class level, with the unqueued default, so it is a real
+    # attribute of the type: ``__init__`` only ever narrows it, and every
+    # consumer (diagnostics, the command service) can read it unconditionally.
+    _command_queue: CommandQueue | None = None
 
     # Default capabilities for covers when entity not ready
     _DEFAULT_CAPABILITIES = {
@@ -625,6 +637,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # key — correctly, since none of them has a coordinator to read from.
         self.manual_override_duration_mode = _rc_attach.manual_override.duration_mode
 
+        # Named dispatch queue (issue #1189). Resolved once, at setup: the queue
+        # is cross-entry shared state, so it is looked up in the hass.data
+        # registry and refcounted rather than constructed here. Deliberately
+        # absent from ``_RUNTIME_APPLICABLE_OPTIONS``, so changing the
+        # assignment full-reloads the entry — it is setup wiring (this
+        # constructor argument, this refcount), not a value the running
+        # coordinator can re-read.
+        _queue_name = normalize_queue_name(_rc_attach.tracking.command_queue)
+        if _queue_name:
+            self._command_queue = get_command_queue(self.hass, _queue_name)
+            self._command_queue.attach()
+            self.config_entry.async_on_unload(self._command_queue.detach)
+
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
         # on_tick keeps time window transition checks running on the same 1-min interval
@@ -665,6 +690,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             get_travel_calibration=lambda eid: (
                 self.config_entry.options.get(CONF_TRAVEL_TIME_CALIBRATION) or {}
             ).get(eid),
+            command_queue=self._command_queue,
         )
 
         # Wire the manual-override engine's edge + origin seams once. Any
@@ -4714,6 +4740,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             event_timeline=self._event_buffer.snapshot() or None,
             cover_command_state=self._cmd_svc.get_all_entity_state_snapshots() or None,
+            command_queue=self._command_queue,
             debug_config={
                 "dry_run": self.config_entry.options.get(CONF_DRY_RUN, False),
                 "debug_mode": self.config_entry.options.get(CONF_DEBUG_MODE, False),

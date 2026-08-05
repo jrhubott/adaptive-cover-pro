@@ -45,7 +45,8 @@
           "create_new": "Créer un nouveau store",
           "create_building_profile": "Créer un profil de bâtiment",
           "duplicate_existing": "Dupliquer à partir d'un store existant",
-          "create_group": "Créer un groupe de stores"
+          "create_group": "Créer un groupe de stores",
+          "create_command_queue": "Créer une file d'attente de commandes"
         }
       },
       "create_new": {
@@ -280,6 +281,18 @@
           "member_covers": "Les stores simples sont commandés directement avec la cible de scène. Un store déjà contrôlé par un membre sélectionné est ignoré.",
           "group_area": "Optionnel : les stores de cette zone rejoignent le groupe automatiquement et l'adhésion suit les modifications du registre. Combiné avec les listes ci-dessus."
         }
+      },
+      "create_command_queue": {
+        "title": "Créer une file d'attente de commandes",
+        "description": "Une file d'attente de commandes permet aux protections de prendre tour à tour pour transmettre, de sorte que les backends radio unidirectionnels (Somfy RTS, RFXtrx) cessent de perdre des trames en cas de collision. Les protections s'y joignent en nommant cette file d'attente dans leur page Mouvement & Horaire. La création de cette entrée est facultative — une file d'attente nommée sérialise déjà à l'intervalle par défaut ; c'est ici que vous pouvez modifier cet intervalle et voir qui s'y a jointe. [En savoir plus]({learn_more})",
+        "data": {
+          "name": "Nom de la file d'attente",
+          "command_queue_gap": "Intervalle entre les commandes"
+        },
+        "data_description": {
+          "name": "Les protections référencent cette file d'attente par son nom dans leurs paramètres Mouvement & Horaire. La correspondance ignore la casse et les espaces supplémentaires.",
+          "command_queue_gap": "Secondes pendant lesquelles la file d'attente reste occupée après qu'une protection transmette, avant que la protection suivante puisse agir. Par défaut : 5 secondes."
+        }
       }
     },
     "abort": {
@@ -320,7 +333,9 @@
           "group_arbitration": "⚖️ Arbitrage & Synchronisation",
           "group_entities": "🧩 Entités exposées",
           "change_cover_type": "🔁 Modifier le type de store",
-          "calibration": "📐 Étalonnage"
+          "calibration": "📐 Étalonnage",
+          "queue_settings": "🚦 Paramètres de la file d'attente",
+          "queue_overview": "🚦 Aperçu de la file d'attente"
         },
         "description": "Configuration : **{instance_name}**{profile_line}\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -335,7 +350,8 @@
           "end_time": "Heure de fin",
           "end_entity": "Entité indiquant l'heure de fin",
           "max_coverage_steps": "Étapes de couverture maximale",
-          "minimize_movements": "Minimiser les mouvements"
+          "minimize_movements": "Minimiser les mouvements",
+          "command_queue": "File d'attente de commandes"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -345,7 +361,8 @@
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
           "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
           "max_coverage_steps": "Combien de positions distinctes le store peut utiliser sur son chemin vers une couverture complète lorsque 'Minimiser les mouvements' est activé (1-10). 1 = saut direct vers la couverture complète dès que le soleil entre dans l'angle d'ouverture solaire et maintien jusqu'à ce qu'il le quitte (moins de mouvements). Les valeurs supérieures trackent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
-          "minimize_movements": "Réduisez la fréquence à laquelle le store se repositionne tout en suivant le soleil en accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. L'arrondi se fait vers PLUS de couverture, donc le soleil direct n'est jamais laissé entrer par l'arrondi. Échange un peu de lumière naturelle pour beaucoup moins de mouvements moteur. Par défaut : désactivé."
+          "minimize_movements": "Réduisez la fréquence à laquelle le store se repositionne tout en suivant le soleil en accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. L'arrondi se fait vers PLUS de couverture, donc le soleil direct n'est jamais laissé entrer par l'arrondi. Échange un peu de lumière naturelle pour beaucoup moins de mouvements moteur. Par défaut : désactivé.",
+          "command_queue": "Sérialiser les commandes de cette protection par rapport aux autres protections assignées au même nom de file d'attente. Les protections partageant une file d'attente ne transmettent jamais au même moment — utile pour les backends radio unidirectionnels (Somfy RTS, RFXtrx) où les commandes simultanées entrent en collision et sont perdues. L'intervalle entre les commandes est défini dans l'entrée File d'attente de commandes portant le même nom, ou par défaut 5 secondes si aucune n'existe. Laissez vide pour aucune file d'attente (par défaut)."
         }
       },
       "cover_entities": {
@@ -1117,6 +1134,20 @@
       "travel_time_manual": {
         "description": "Secondes pour un voyage complet de complètement fermé à complètement ouvert. Mettez un store à **0** pour effacer sa durée ; tout autre valeur doit être d'au moins {min_seconds} secondes.\n\nUne valeur approximative est suffisante : elle n'affecte que la manière dont le mouvement est dessiné, jamais où le store est commandé. Chronométrer une fermeture complète avec un chronomètre est largement suffisant.\n\n{cover_list}",
         "title": "Temps de course — entrée manuelle"
+      },
+      "queue_settings": {
+        "title": "Paramètres de la file d'attente",
+        "description": "Combien de temps cette file d'attente occupera l'air après qu'une de ses protections transmette. Chaque protection nommant cette file d'attente reprendra la nouvelle valeur à sa prochaine commande — aucun rechargement n'est nécessaire. [En savoir plus]({learn_more})",
+        "data": {
+          "command_queue_gap": "Intervalle entre les commandes"
+        },
+        "data_description": {
+          "command_queue_gap": "Secondes pendant lesquelles la file d'attente reste occupée après qu'une protection transmette, avant que la protection suivante puisse agir. Par défaut : 5 secondes."
+        }
+      },
+      "queue_overview": {
+        "title": "Aperçu de la file d'attente",
+        "description": "{overview}"
       }
     },
     "abort": {

@@ -4213,3 +4213,50 @@ def test_both_gates_render_through_the_one_shared_helper():
 
     src = inspect.getsource(cf._build_config_summary)
     assert src.count("_render_condition_gate_summary(") == 2
+
+
+# ---------------------------------------------------------------------------
+# Issue #1189 — named command queue
+# ---------------------------------------------------------------------------
+
+
+def test_summary_omits_the_queue_line_when_unassigned():
+    """The overwhelmingly common cover says nothing about queues."""
+    summary = _build_config_summary(_minimal_vertical(), CoverType.BLIND)
+    assert "queue" not in summary.lower()
+
+
+def test_summary_shows_the_queue_and_the_default_gap():
+    from custom_components.adaptive_cover_pro.const import CONF_COMMAND_QUEUE
+
+    cfg = _minimal_vertical()
+    cfg[CONF_COMMAND_QUEUE] = "Facade South"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert 'Commands serialized on queue "Facade South" (5.0s gap)' in summary
+
+
+def test_summary_resolves_the_gap_from_the_owning_entry(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_COMMAND_QUEUE,
+        CONF_COMMAND_QUEUE_GAP,
+        CONF_SENSOR_TYPE,
+        DOMAIN,
+    )
+
+    queue_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Facade South", CONF_SENSOR_TYPE: CoverType.COMMAND_QUEUE},
+        options={CONF_COMMAND_QUEUE_GAP: 12.0},
+        entry_id="queue_1",
+        title="Command Queue Facade South",
+    )
+    queue_entry.add_to_hass(hass)
+
+    cfg = _minimal_vertical()
+    # Different casing on purpose: the summary must resolve the way the runtime
+    # does, by normalized name.
+    cfg[CONF_COMMAND_QUEUE] = "  facade   SOUTH "
+    summary = _build_config_summary(cfg, CoverType.BLIND, hass)
+    assert 'Commands serialized on queue "facade   SOUTH" (12.0s gap)' in summary

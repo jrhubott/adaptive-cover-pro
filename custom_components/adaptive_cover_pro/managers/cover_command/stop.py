@@ -20,6 +20,7 @@ from collections.abc import Callable
 from homeassistant.core import Context, HomeAssistant
 
 from ...cover_types.base import CAP_HAS_STOP, caps_get
+from .queue import CommandQueue
 
 
 class StopTracker:
@@ -38,6 +39,7 @@ class StopTracker:
         *,
         dry_run_fn: Callable[[], bool],
         is_in_transit_fn: Callable[[str], bool] | None = None,
+        queue_fn: Callable[[], CommandQueue | None] | None = None,
     ) -> None:
         """Initialize the StopTracker.
 
@@ -52,11 +54,18 @@ class StopTracker:
                 Defaults to an inline check when omitted (standalone use).
                 ``CoverCommandService`` supplies ``self._is_cover_in_transit``
                 so the transit predicate lives in exactly one place.
+            queue_fn: Optional zero-arg callable returning the entry's
+                :class:`CommandQueue`, or ``None`` when the cover is unqueued
+                (issue #1189). A callable, not a snapshot, for the same reason
+                ``dry_run_fn`` is one — the orchestrator owns the live value.
 
         """
         self._hass = hass
         self._logger = logger
         self._dry_run_fn = dry_run_fn
+        self._queue_fn: Callable[[], CommandQueue | None] = (
+            queue_fn if queue_fn is not None else lambda: None
+        )
         self._is_in_transit_fn: Callable[[str], bool] = (
             is_in_transit_fn
             if is_in_transit_fn is not None
@@ -114,12 +123,23 @@ class StopTracker:
         All ACP-initiated stop_cover calls must go through this helper so that
         the EVENT_CALL_SERVICE listener can identify and ignore them, avoiding
         false manual-override detection.
+
+        A stop deliberately does NOT take a turn in the command queue (issue
+        #1189). Every caller is interactive or urgent — a card button, the
+        My-preset send, an emergency shutdown flush — and making a button press
+        wait out an unrelated cover's gap is a worse outcome than the collision
+        risk of one short frame. It still keys the radio, so the queue is TOLD:
+        the next queued member spaces itself against this transmission instead
+        of assuming the air was free.
         """
         ctx = Context()
         self._acp_stop_contexts.append(ctx.id)
         await self._hass.services.async_call(
             "cover", "stop_cover", {"entity_id": entity_id}, context=ctx
         )
+        queue = self._queue_fn()
+        if queue is not None:
+            queue.mark_external_transmit()
 
     async def try_stop_one(
         self, entity_id: str, caps: dict[str, bool], *, label: str
