@@ -15,6 +15,7 @@ Test classes mirror the implementation steps:
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -320,6 +321,108 @@ class TestQueueMechanics:
         assert queue.busy_for_seconds() == 0.0
         queue.mark_external_transmit()
         assert queue.busy_for_seconds() > 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_frame_reported_mid_wait_pushes_the_grant_out(self):
+        """A report must reach a waiter that is ALREADY inside its spacing sleep.
+
+        This is the only case that matters. ``release`` hands the slot on
+        immediately, so the next member is always spacing by the time the
+        venetian tail reaches ``mark_air_busy`` — the tail first waits out a
+        physical rail. A spacing sleep computed once, from a single reading of
+        ``busy_until``, cannot observe an advance that lands during it, which
+        made the report inert in exactly the contended case it exists for: the
+        waiter keyed while ``busy_for_seconds()`` still said the air was busy.
+        """
+        queue = _queue(gap=0.2)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        queue.release(first, transmitted=True)  # air busy for 0.2 s
+
+        waiter = asyncio.create_task(
+            queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
+        )
+        await asyncio.sleep(0.1)  # cover.b is now inside its spacing sleep
+
+        reported = time.monotonic()
+        queue.mark_external_transmit()  # the tail's own frame
+
+        grant = await asyncio.wait_for(waiter, timeout=_BUDGET)
+        assert grant is not None
+        assert grant.budget_expired is False
+        # A full gap separates the reported frame from this grant...
+        assert time.monotonic() - reported >= 0.19
+        # ...and the queue itself agrees the air was free when it let go.
+        assert queue.busy_for_seconds() == 0.0
+        queue.release(grant, transmitted=False)
+
+    @pytest.mark.asyncio
+    async def test_a_gave_up_members_frame_also_pushes_a_waiter_out(self):
+        """The same re-read covers the other out-of-turn reporter.
+
+        A member whose budget expired transmits anyway and releases
+        ``transmitted=True`` without ever holding the slot. That frame lands
+        while the real next member is already spacing, exactly as the tail's
+        does.
+        """
+        queue = _queue(gap=0.2)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        queue.release(first, transmitted=True)
+
+        waiter = asyncio.create_task(
+            queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
+        )
+        await asyncio.sleep(0)  # cover.b takes the slot and starts spacing
+
+        expired = await queue.acquire("cover.c", head_of_line=False, budget=0.1)
+        assert expired is not None
+        assert expired.budget_expired is True
+        assert expired.holds_slot is False
+        keyed = time.monotonic()
+        queue.release(expired, transmitted=True)
+
+        grant = await asyncio.wait_for(waiter, timeout=_BUDGET)
+        assert grant is not None
+        assert time.monotonic() - keyed >= 0.19
+        assert queue.busy_for_seconds() == 0.0
+        queue.release(grant, transmitted=False)
+
+    @pytest.mark.asyncio
+    async def test_repeated_reports_still_cannot_outlast_the_budget(self):
+        """Re-reading ``busy_until`` must not unbound the wait.
+
+        Every sleep is charged against the same budget, so a stream of
+        out-of-turn frames delays a waiter up to the ceiling and no further:
+        on expiry it is granted anyway, flagged ``budget_expired``, and
+        transmits. No command is ever withheld indefinitely.
+        """
+        queue = _queue(gap=0.1)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        queue.release(first, transmitted=True)
+
+        async def _keep_keying() -> None:
+            while True:
+                await asyncio.sleep(0.02)
+                queue.mark_external_transmit()
+
+        noise = asyncio.create_task(_keep_keying())
+        started = time.monotonic()
+        try:
+            grant = await asyncio.wait_for(
+                queue.acquire("cover.b", head_of_line=False, budget=0.3),
+                timeout=_BUDGET,
+            )
+        finally:
+            noise.cancel()
+        elapsed = time.monotonic() - started
+
+        assert grant is not None
+        assert grant.budget_expired is True
+        assert elapsed >= 0.3
+        assert elapsed < 2.0
+        queue.release(grant, transmitted=True)
 
     @pytest.mark.asyncio
     async def test_depth_reports_waiting_reservations(self):
@@ -909,16 +1012,26 @@ class TestOtherWireSites:
 
     @pytest.mark.asyncio
     async def test_reconciliation_resend_takes_a_routine_turn(self):
+        """Routine tier, and never a waiting one.
+
+        A retry of a command that already had its chance has no claim on the
+        head of the line ahead of a fresh safety decision — and it asks with
+        ``wait=False``, so it can only ever take a slot that is free already.
+        """
         hass = _svc_hass()
         queue = _queue(gap=0.0)
         svc = _svc(hass, command_queue=queue)
-        calls: list[bool] = []
+        calls: list[tuple[bool, bool]] = []
         real_acquire = CommandQueue.acquire
 
-        async def _tracked(self, entity_id, *, head_of_line, budget):
-            calls.append(head_of_line)
+        async def _tracked(self, entity_id, *, head_of_line, budget, wait=True):
+            calls.append((head_of_line, wait))
             return await real_acquire(
-                self, entity_id, head_of_line=head_of_line, budget=budget
+                self,
+                entity_id,
+                head_of_line=head_of_line,
+                budget=budget,
+                wait=wait,
             )
 
         with (
@@ -928,13 +1041,23 @@ class TestOtherWireSites:
         ):
             await svc._execute_command("cover.a", 70)
 
-        assert calls == [False]
+        assert calls == [(False, False)]
         hass.services.async_call.assert_awaited_once()
         assert queue._owner is None
         assert queue.busy_for_seconds() == 0.0
 
     @pytest.mark.asyncio
-    async def test_reconciliation_resend_waits_behind_a_holder(self):
+    async def test_reconciliation_resend_stands_down_rather_than_blocking(self):
+        """A resend takes the slot only if it is free RIGHT NOW.
+
+        The reconciliation pass IS the retry loop, and HA re-arms its interval
+        listener before dispatching each fire as its own background task — so a
+        pass that blocks per entity for the clearance budget (30 s, against a
+        1-minute interval) is still running when the next one starts, and the
+        two mutate the same ``PerEntityState``. That is the same overlap the
+        ``wait=False`` clearance gate above it exists to prevent, reached by a
+        different road. Standing down costs nothing: the next pass re-asks.
+        """
         hass = _svc_hass()
         queue = _queue(gap=0.0)
         svc = _svc(hass, command_queue=queue)
@@ -947,11 +1070,93 @@ class TestOtherWireSites:
         ):
             task = asyncio.create_task(svc._execute_command("cover.a", 70))
             await asyncio.sleep(0)
-            hass.services.async_call.assert_not_awaited()
-            queue.release(holder, transmitted=False)
-            await asyncio.wait_for(task, timeout=2.0)
+            # Returned without ever suspending, and left no reservation behind
+            # for the next pass to trip over.
+            assert task.done()
+            await task
+
+        hass.services.async_call.assert_not_awaited()
+        assert queue.depth == 0
+        queue.release(holder, transmitted=False)
+
+    @pytest.mark.asyncio
+    async def test_reconciliation_resend_stands_down_while_the_air_is_spaced(self):
+        """Spacing owed is a wait too — a free slot alone is not enough.
+
+        With a configured gap anywhere near the clearance budget, waiting out
+        the spacing blocks the pass for just as long as waiting for the slot.
+        """
+        hass = _svc_hass()
+        queue = _queue(gap=30.0)
+        svc = _svc(hass, command_queue=queue)
+        queue.mark_external_transmit()  # slot free, but the air is not
+        assert queue._owner is None
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+        ):
+            task = asyncio.create_task(svc._execute_command("cover.a", 70))
+            await asyncio.sleep(0)
+            assert task.done()
+            await task
+
+        hass.services.async_call.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_stood_down_resend_burns_no_retry(self):
+        """Standing down must not cost one of the pass's three attempts.
+
+        The clearance gate directly above is asked before the counter for
+        exactly this reason. A queue stand-down that counted would reach
+        ``gave_up`` after three passes and warn "max retries exceeded" about a
+        cover that was never resent — and with the resend now non-blocking,
+        standing down is the common case on a busy queue, not a corner one.
+        """
+        hass = _svc_hass()
+        queue = _queue(gap=0.0)
+        svc = _svc(hass, command_queue=queue)
+        svc.enable_position_matching = True
+        svc.set_target("cover.a", 50)
+        svc.set_waiting("cover.a", False)
+
+        holder = await queue.acquire("cover.blocker", head_of_line=False, budget=5.0)
+        assert holder is not None
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+        ):
+            for _ in range(svc._max_retries + 2):
+                await asyncio.wait_for(
+                    svc.run_reconciliation_pass(dt.datetime.now(dt.UTC)), timeout=1.0
+                )
+
+        hass.services.async_call.assert_not_awaited()
+        assert svc.state("cover.a").retry_count == 0
+        assert svc.state("cover.a").gave_up is False
+        queue.release(holder, transmitted=False)
+
+    @pytest.mark.asyncio
+    async def test_a_resend_that_goes_out_still_counts_its_retry(self):
+        """The counter is untouched for a resend that actually transmits."""
+        hass = _svc_hass()
+        queue = _queue(gap=0.0)
+        svc = _svc(hass, command_queue=queue)
+        svc.enable_position_matching = True
+        svc.set_target("cover.a", 50)
+        svc.set_waiting("cover.a", False)
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+        ):
+            await asyncio.wait_for(
+                svc.run_reconciliation_pass(dt.datetime.now(dt.UTC)), timeout=1.0
+            )
 
         hass.services.async_call.assert_awaited_once()
+        assert svc.state("cover.a").retry_count == 1
 
     @pytest.mark.asyncio
     async def test_reconciliation_resend_yields_to_a_waiting_live_dispatch(self):

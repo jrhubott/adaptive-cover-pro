@@ -224,20 +224,49 @@ class CommandQueue:
         """Remaining spacing owed before the next member may transmit."""
         return max(0.0, self._busy_until - monotonic())
 
+    def can_grant_now(self) -> bool:
+        """Whether a slot could be taken this instant with no waiting at all.
+
+        All three conditions, because any one of them is a wait: nobody holds
+        the slot, nobody is queued for it, and the air owes no spacing.
+        """
+        return (
+            self._owner is None
+            and not self._head_waiters
+            and not self._routine_waiters
+            and self._busy_until <= monotonic()
+        )
+
     # ------------------------------------------------------------------ #
     # The slot
     # ------------------------------------------------------------------ #
 
     async def acquire(
-        self, entity_id: str, *, head_of_line: bool, budget: float
+        self,
+        entity_id: str,
+        *,
+        head_of_line: bool,
+        budget: float,
+        wait: bool = True,
     ) -> QueueGrant | None:
         """Take the slot and wait out any spacing still owed.
 
-        Returns ``None`` — and only then — when this reservation was superseded
-        by a newer one for the same entity while it waited. Every other outcome
-        is a grant the caller must transmit on and then :meth:`release`,
-        including the budget-expired one.
+        Returns ``None`` when this reservation was superseded by a newer one
+        for the same entity while it waited, or — with ``wait=False`` — when
+        the slot was not free to begin with. Every other outcome is a grant the
+        caller must transmit on and then :meth:`release`, including the
+        budget-expired one.
+
+        ``wait=False`` is for a caller that cannot afford to suspend at all:
+        the reconciliation resend, whose pass IS the retry loop and which HA
+        re-fires on an interval it re-arms before dispatching. It takes the
+        slot only if :meth:`can_grant_now`, and otherwise stands down having
+        reserved nothing — structurally, so the guarantee survives a later edit
+        to the waiting paths below.
         """
+        if not wait and not self.can_grant_now():
+            return None
+
         started = monotonic()
         depth_at_enqueue = self.depth
         budget_expired = False
@@ -283,20 +312,34 @@ class CommandQueue:
                 self._owner = entity_id
                 holds_slot = True
 
-            # Spacing owed by the PREVIOUS transmission, charged against
-            # whatever is left of the budget. Expiring here still yields a
-            # grant: the caller transmits anyway, because withholding is the
-            # failure mode.
-            remaining = self._busy_until - monotonic()
-            if remaining > 0:
+            # Spacing owed by the air, charged against whatever is left of the
+            # budget. Expiring here still yields a grant: the caller transmits
+            # anyway, because withholding is the failure mode.
+            #
+            # RE-READ each time round. ``busy_until`` is not a constant across
+            # this sleep — three transmissions advance it from outside the slot
+            # and every one of them lands, by construction, while the next
+            # member is ALREADY here: ``release`` hands the slot on in the same
+            # call that starts the gap, so a waiter is spacing before the
+            # venetian tail reaches ``mark_air_busy`` (the tail waits out a
+            # physical rail first), before a stop is keyed, and before a
+            # gave-up member transmits out of turn. A sleep sized once from a
+            # single reading cannot see any of them, which would make the
+            # reports inert in exactly the contended case they exist for.
+            #
+            # Bounded regardless: the loop sleeps the REMAINING interval each
+            # pass (never spins) and stops the moment the budget is gone, so no
+            # stream of out-of-turn frames can withhold a command indefinitely.
+            while True:
+                remaining = self._busy_until - monotonic()
+                if remaining <= 0:
+                    break
                 left = budget - (monotonic() - started)
                 if left <= 0:
                     budget_expired = True
-                else:
-                    awaited = True
-                    await asyncio.sleep(min(remaining, left))
-                    if remaining > left:
-                        budget_expired = True
+                    break
+                awaited = True
+                await asyncio.sleep(min(remaining, left))
         except BaseException:
             # Nothing may leave this method holding the slot except a returned
             # grant. Both awaits above are cancellation points a coordinator
@@ -375,6 +418,30 @@ class CommandQueue:
         behind it exactly as it did before.
         """
         return entity_id in self._pending
+
+    def resend_stands_down(self, entity_id: str) -> bool:
+        """Whether a reconciliation resend must yield its whole turn.
+
+        Two independent reasons:
+
+        * :meth:`defers_to_pending` — a live dispatch for this entity is
+          already waiting and carries the newer decision.
+        * The slot is not free this instant. A resend that queued would hold
+          the reconciliation pass open, per entity, for the whole clearance
+          budget — and HA re-arms the reconciliation interval listener before
+          dispatching each fire as its own background task, so a blocked pass
+          is still running when the next one starts and the two mutate the same
+          per-entity state.
+
+        Exists as a question the PASS can ask before it counts a retry, which
+        is the same reason the clearance gate is asked there: a resend that
+        never goes out must not burn one of the pass's attempts, or repeated
+        stand-downs reach ``gave_up`` and warn "max retries exceeded" about a
+        cover that was never resent. Composed from the same two primitives
+        ``acquire(..., wait=False)`` uses, so the reading taken before the
+        count and the acquisition that follows it cannot disagree.
+        """
+        return self.defers_to_pending(entity_id) or not self.can_grant_now()
 
     def _enqueue(self, entity_id: str, *, head_of_line: bool) -> _Waiter:
         """Queue a reservation, superseding any this entity already had waiting."""
