@@ -297,7 +297,8 @@
     },
     "abort": {
       "user_cancelled": "Action cancelled by user",
-      "source_not_found": "The source cover no longer exists."
+      "source_not_found": "The source cover no longer exists.",
+      "already_configured": "A Command Queue with that name already exists. Covers join a queue by name, so one entry per name — open the existing entry to change its gap."
     }
   },
   "options": {

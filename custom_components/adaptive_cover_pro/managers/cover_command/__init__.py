@@ -2142,110 +2142,126 @@ class CoverCommandService:
                 inverse_state=_inverse,
                 current_position=_current,
             )
-        if _queue_grant is not None:
-            # Two staleness mitigations, both consequences of the wait above:
-            #
-            # The cover may have gone away while we waited. Nothing has been
-            # booked yet, so this is a clean skip with nothing to unwind — the
-            # same reason the clearance gate sits ahead of the booking.
-            if self.is_entity_unavailable(entity_id):
-                self._release_queue_slot(entity_id, _queue_grant, transmitted=False)
+        # Everything from the grant to the position service call runs INSIDE the
+        # queue slot, and the single ``finally`` below hands it back on EVERY
+        # path out — the early skips, an exception, and an outright task
+        # cancellation alike. One acquire, one release: a second release for the
+        # same dispatch would hand the NEXT member's slot away, and a missed one
+        # strands the slot until this entity happens to dispatch again, at which
+        # point every other member burns its whole budget before transmitting —
+        # unspaced and simultaneous, the exact collision this feature prevents.
+        #
+        # Deliberately narrow at the far end: the venetian settle+tilt tail in
+        # ``after_position_command`` below waits for a physical rail (capped at
+        # ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`` = 60 s) before it keys its
+        # tilt frame, so holding the slot across it would starve every other
+        # cover on the queue — and issue #1115's day/night guard depends on the
+        # tail NOT holding it. The tail therefore reports its own frame to the
+        # queue instead (``mark_external_transmit``, from ``_send_tilt_command``)
+        # so the next member spaces against it rather than keying on top of it.
+        _transmitted = False
+        try:
+            if _queue_grant is not None:
+                # Two staleness mitigations, both consequences of the wait above:
+                #
+                # The cover may have gone away while we waited. Nothing has been
+                # booked yet, so this is a clean skip with nothing to unwind —
+                # the same reason the clearance gate sits ahead of the booking.
+                if self.is_entity_unavailable(entity_id):
+                    return self._skip(
+                        entity_id,
+                        "cover_unavailable",
+                        position,
+                        trigger=_trigger,
+                        inverse_state=_inverse,
+                        current_position=_current,
+                    )
+                # And the routing decision is re-derived rather than reused. The
+                # comment where `_plan` is first built enumerates the ONE await
+                # that could intervene; the queue wait is a second, and unlike
+                # the clearance gate it can last tens of seconds — long enough
+                # for the entity to reload with a different `supported_features`.
+                _caps_for_plan = self.get_cover_capabilities(entity_id)
+                _axis_for_plan = self._policy.select_default_axis(_caps_for_plan)
+                _plan = route_service_call(
+                    entity_id,
+                    position,
+                    _caps_for_plan,
+                    axis=_axis_for_plan,
+                    use_my_position=context.use_my_position,
+                    open_close_threshold=self._open_close_threshold,
+                    endpoint_use_open_close=self._endpoint_use_open_close,
+                )
+
+            # ----- send command -----
+            # Reuses _caps_for_plan/_plan from the gate above (issue #1095 audit
+            # finding 5) instead of a fresh get_cover_capabilities +
+            # route_service_call — safe for the reason spelled out where `_plan`
+            # is built, and re-derived just above on the one path (a queue wait)
+            # where that reasoning no longer holds.
+            service, service_data, supports_position = self._prepare_service_call(
+                entity_id,
+                position,
+                context.inverse_state,
+                caps=_caps_for_plan,
+                plan=_plan,
+                is_safety=context.is_safety,
+                use_my_position=context.use_my_position,
+                dispatch_token=dispatch_token,
+            )
+            if service is None:
                 return self._skip(
                     entity_id,
-                    "cover_unavailable",
+                    "no_capable_service",
                     position,
                     trigger=_trigger,
                     inverse_state=_inverse,
                     current_position=_current,
                 )
-            # And the routing decision is re-derived rather than reused. The
-            # comment where `_plan` is first built enumerates the ONE await that
-            # could intervene; the queue wait is a second, and unlike the
-            # clearance gate it can last tens of seconds — long enough for the
-            # entity to reload with a different `supported_features`.
-            _caps_for_plan = self.get_cover_capabilities(entity_id)
-            _axis_for_plan = self._policy.select_default_axis(_caps_for_plan)
-            _plan = route_service_call(
-                entity_id,
-                position,
-                _caps_for_plan,
-                axis=_axis_for_plan,
-                use_my_position=context.use_my_position,
-                open_close_threshold=self._open_close_threshold,
-                endpoint_use_open_close=self._endpoint_use_open_close,
-            )
 
-        # ----- send command -----
-        # Reuses _caps_for_plan/_plan from the gate above (issue #1095 audit
-        # finding 5) instead of a fresh get_cover_capabilities +
-        # route_service_call — safe for the reason spelled out where `_plan` is
-        # built, and re-derived just above on the one path (a queue wait) where
-        # that reasoning no longer holds.
-        service, service_data, supports_position = self._prepare_service_call(
-            entity_id,
-            position,
-            context.inverse_state,
-            caps=_caps_for_plan,
-            plan=_plan,
-            is_safety=context.is_safety,
-            use_my_position=context.use_my_position,
-            dispatch_token=dispatch_token,
-        )
-        if service is None:
-            self._release_queue_slot(entity_id, _queue_grant, transmitted=False)
-            return self._skip(
-                entity_id,
-                "no_capable_service",
-                position,
-                trigger=_trigger,
-                inverse_state=_inverse,
-                current_position=_current,
-            )
+            # ----- dry-run gate -----
+            if self._dry_run:
+                self._logger.info(
+                    "[dry_run] would send cover.%s %s → %s%%",
+                    service,
+                    entity_id,
+                    position,
+                )
+                self._track_action(
+                    entity_id,
+                    service,
+                    position,
+                    supports_position,
+                    context.inverse_state,
+                )
+                self._diag.last_cover_action["dry_run"] = True
+                return self._skip(
+                    entity_id,
+                    "dry_run",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                    extras={"would_send_service": service},
+                )
 
-        # ----- dry-run gate -----
-        if self._dry_run:
             self._logger.info(
-                "[dry_run] would send cover.%s %s → %s%%",
-                service,
+                "[%s] Positioning %s → %s%%",
+                reason,
                 entity_id,
                 position,
             )
-            self._track_action(
-                entity_id, service, position, supports_position, context.inverse_state
-            )
-            self._diag.last_cover_action["dry_run"] = True
-            return self._skip(
-                entity_id,
-                "dry_run",
-                position,
-                trigger=_trigger,
-                inverse_state=_inverse,
-                current_position=_current,
-                extras={"would_send_service": service},
-            )
 
-        self._logger.info(
-            "[%s] Positioning %s → %s%%",
-            reason,
-            entity_id,
-            position,
-        )
-
-        # Everything from here to the position service call runs INSIDE the
-        # queue slot, and the ``finally`` hands it back the moment that call
-        # returns. Deliberately narrow: the venetian settle+tilt tail in
-        # ``after_position_command`` below can take seconds, and holding the
-        # slot across it would starve every other cover on the queue. Its tilt
-        # frame then transmits inside its OWN cover's gap window, which is not a
-        # cross-cover collision.
-        try:
             # Cover-type policy hook: dual-axis covers (venetian) pre-send tilt
             # on opening transitions so the actuator's slats are at the target
             # angle before the carriage starts moving (issue #33). Default
             # policies are no-ops. Pure SIDE EFFECT — the go/no-go decision was
             # settled by ``await_dispatch_clearance`` above, before anything
             # about this command was recorded. Inside the slot because on a
-            # venetian it is itself a transmission.
+            # venetian it is itself a transmission — and that frame reports
+            # itself to the queue, so an exception raised here still leaves the
+            # spacing honest without this dispatch having to claim a position
+            # frame it never sent.
             if context.policy is not None:
                 await context.policy.before_position_command(
                     self,
@@ -2258,6 +2274,13 @@ class CoverCommandService:
 
             ctx = Context()
             self._position_context_tracker.record(ctx.id)
+            # Set BEFORE the await, so the release below reports a transmission
+            # on the failure path too: HA raising — or the task being cancelled
+            # mid-call — does not prove the backend never keyed the radio, and
+            # claiming the air was free when it may not have been is the one
+            # error this feature exists to avoid. The gap is cheap; a collision
+            # is not.
+            _transmitted = True
             try:
                 await self._hass.services.async_call(
                     COVER_DOMAIN, service, service_data, context=ctx
@@ -2298,12 +2321,7 @@ class CoverCommandService:
                     current_position=_current,
                 )
         finally:
-            # Released with ``transmitted=True`` even on the failure path: HA
-            # raising does not prove the backend never keyed the radio, and
-            # claiming the air was free when it may not have been is the one
-            # error this feature exists to avoid. The gap is cheap; a collision
-            # is not.
-            self._release_queue_slot(entity_id, _queue_grant, transmitted=True)
+            self._release_queue_slot(_queue_grant, transmitted=_transmitted)
 
         self._track_action(
             entity_id,
@@ -2348,15 +2366,19 @@ class CoverCommandService:
     # ------------------------------------------------------------------ #
 
     async def _acquire_queue_slot(
-        self, entity_id: str, *, head_of_line: bool
+        self, entity_id: str, *, head_of_line: bool, resend: bool = False
     ) -> tuple[bool, QueueGrant | None]:
         """Take this entity's turn on its command queue, if it has one.
 
         Returns ``(proceed, grant)``.
 
-        ``proceed`` is False in exactly one case — a newer reservation for the
-        SAME entity superseded this one while it waited — and the caller must
-        then record a ``superseded_in_queue`` skip having booked nothing.
+        ``proceed`` is False when this reservation lost its place to a fresher
+        decision for the SAME entity, and the caller must then record a
+        ``superseded_in_queue`` skip having booked nothing. ``resend=True``
+        marks a reconciliation re-booking, which additionally STANDS DOWN for a
+        live dispatch already waiting on this entity rather than displacing it:
+        the resend carries the older number, and evicting the newer one would
+        put a stale frame on a one-way radio.
 
         ``grant`` is None both when there is no queue and on the dry-run path,
         so the release below is a no-op there. A dry run is skipped
@@ -2369,6 +2391,8 @@ class CoverCommandService:
         """
         if self._queue is None or self._dry_run:
             return True, None
+        if resend and self._queue.defers_to_pending(entity_id):
+            return False, None
         grant = await self._queue.acquire(
             entity_id,
             head_of_line=head_of_line,
@@ -2405,17 +2429,37 @@ class CoverCommandService:
             "queue_depth_at_enqueue": grant.depth_at_enqueue,
         }
 
+    def mark_queue_external_transmit(self) -> None:
+        """Tell the command queue about a frame the slot did not gate.
+
+        The counterpart to :meth:`_release_queue_slot` for transmissions that
+        deliberately run outside a slot: a stop (interactive, must not wait out
+        someone else's gap) and the dual-axis tilt tail (waits on a physical
+        rail for up to a minute, so holding the slot across it would starve the
+        queue). Both still key the radio, so both report it and the NEXT queued
+        member spaces against them instead of assuming the air was free.
+
+        No-op for an unqueued instance, which is what lets the transmitting
+        code call it unconditionally.
+        """
+        if self._queue is not None:
+            self._queue.mark_external_transmit()
+
     def _release_queue_slot(
-        self, entity_id: str, grant: QueueGrant | None, *, transmitted: bool
+        self, grant: QueueGrant | None, *, transmitted: bool
     ) -> None:
         """Hand the queue slot back. No-op for an unqueued or dry-run dispatch.
 
         ``transmitted`` is what starts the gap: a command that never went out
         owes the next member nothing, so a withheld dispatch must not make
         everyone else wait for air that was never used.
+
+        Keyed on the GRANT, never on the entity id: two acquisitions for one
+        entity can be live at once, and only the grant knows which of them
+        actually holds the slot.
         """
         if grant is not None and self._queue is not None:
-            self._queue.release(entity_id, transmitted=transmitted)
+            self._queue.release(grant, transmitted=transmitted)
 
     # ------------------------------------------------------------------ #
     # Position-tolerance helpers
@@ -3185,12 +3229,17 @@ class CoverCommandService:
         same reason: that call books ``sent_at`` and the grace window, both of
         which must clock from the real transmit time. It queues in the ROUTINE
         tier: a retry of a command that already had its chance has no claim on
-        the head of the line ahead of a fresh safety decision.
+        the head of the line ahead of a fresh safety decision. It also queues as
+        a ``resend``, which is the direction on the supersede rule: it yields to
+        a live dispatch already waiting on this entity instead of evicting it,
+        because the number it re-books is by definition the older one.
         """
-        proceed, grant = await self._acquire_queue_slot(entity_id, head_of_line=False)
+        proceed, grant = await self._acquire_queue_slot(
+            entity_id, head_of_line=False, resend=True
+        )
         if not proceed:
-            # A live dispatch for this entity replaced our reservation; it
-            # carries a fresher target than this resend does.
+            # A live dispatch for this entity holds — or is waiting for — this
+            # entity's place, and it carries a fresher target than this resend.
             return
         transmitted = False
         try:
@@ -3226,7 +3275,7 @@ class CoverCommandService:
                     err,
                 )
         finally:
-            self._release_queue_slot(entity_id, grant, transmitted=transmitted)
+            self._release_queue_slot(grant, transmitted=transmitted)
 
     def _track_action(
         self,

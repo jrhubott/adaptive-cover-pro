@@ -15,6 +15,7 @@ Test classes mirror the implementation steps:
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -165,9 +166,10 @@ class TestQueueMechanics:
         order: list[tuple[str, float]] = []
 
         async def run(entity: str) -> None:
-            assert await queue.acquire(entity, head_of_line=False, budget=_BUDGET)
+            grant = await queue.acquire(entity, head_of_line=False, budget=_BUDGET)
+            assert grant is not None
             order.append((entity, loop.time()))
-            queue.release(entity, transmitted=True)
+            queue.release(grant, transmitted=True)
 
         await run("cover.a")
         await run("cover.b")
@@ -186,7 +188,7 @@ class TestQueueMechanics:
         await asyncio.sleep(0)
         assert not task.done()
 
-        queue.release("cover.a", transmitted=True)
+        queue.release(first, transmitted=True)
         second = await task
         assert second is not None
         assert second.waited_seconds > 0.0
@@ -195,12 +197,13 @@ class TestQueueMechanics:
     @pytest.mark.asyncio
     async def test_release_untransmitted_grants_next_with_no_spacing(self):
         queue = _queue(gap=10.0)
-        assert await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
         task = asyncio.create_task(
             queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
         )
         await asyncio.sleep(0)
-        queue.release("cover.a", transmitted=False)
+        queue.release(first, transmitted=False)
         second = await asyncio.wait_for(task, timeout=1.0)
         assert second is not None
         assert second.budget_expired is False
@@ -208,13 +211,15 @@ class TestQueueMechanics:
     @pytest.mark.asyncio
     async def test_head_of_line_jumps_ahead_of_routine_waiters(self):
         queue = _queue()
-        assert await queue.acquire("cover.h", head_of_line=False, budget=_BUDGET)
+        holder = await queue.acquire("cover.h", head_of_line=False, budget=_BUDGET)
+        assert holder is not None
         granted: list[str] = []
 
         async def run(entity: str, *, head: bool) -> None:
-            assert await queue.acquire(entity, head_of_line=head, budget=_BUDGET)
+            grant = await queue.acquire(entity, head_of_line=head, budget=_BUDGET)
+            assert grant is not None
             granted.append(entity)
-            queue.release(entity, transmitted=False)
+            queue.release(grant, transmitted=False)
 
         routine_1 = asyncio.create_task(run("cover.r1", head=False))
         await asyncio.sleep(0)
@@ -223,7 +228,7 @@ class TestQueueMechanics:
         safety = asyncio.create_task(run("cover.s", head=True))
         await asyncio.sleep(0)
 
-        queue.release("cover.h", transmitted=False)
+        queue.release(holder, transmitted=False)
         await asyncio.wait_for(
             asyncio.gather(routine_1, routine_2, safety), timeout=2.0
         )
@@ -235,8 +240,9 @@ class TestQueueMechanics:
         """Head-of-line is not bypass — a safety command still waits the gap."""
         queue = _queue()
         loop = asyncio.get_running_loop()
-        assert await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
-        queue.release("cover.a", transmitted=True)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        queue.release(first, transmitted=True)
         started = loop.time()
         safety = await queue.acquire("cover.s", head_of_line=True, budget=_BUDGET)
         assert safety is not None
@@ -245,7 +251,8 @@ class TestQueueMechanics:
     @pytest.mark.asyncio
     async def test_waiting_reservation_is_superseded_by_a_newer_one(self):
         queue = _queue()
-        assert await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        holder = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert holder is not None
 
         stale = asyncio.create_task(
             queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
@@ -258,7 +265,7 @@ class TestQueueMechanics:
 
         assert await asyncio.wait_for(stale, timeout=1.0) is None
 
-        queue.release("cover.a", transmitted=False)
+        queue.release(holder, transmitted=False)
         assert await asyncio.wait_for(fresh, timeout=1.0) is not None
 
     @pytest.mark.asyncio
@@ -272,7 +279,7 @@ class TestQueueMechanics:
         await asyncio.sleep(0)
         # The holder keeps its slot; the newcomer merely queues behind it.
         assert not waiting.done()
-        queue.release("cover.a", transmitted=False)
+        queue.release(holder, transmitted=False)
         assert await asyncio.wait_for(waiting, timeout=1.0) is not None
 
     @pytest.mark.asyncio
@@ -287,14 +294,15 @@ class TestQueueMechanics:
 
         # A budget-expired grant's release must still advance busy_until, and
         # must not hand the stuck holder's slot to anyone else.
-        queue.release("cover.b", transmitted=True)
+        queue.release(grant, transmitted=True)
         assert queue.busy_for_seconds() > 0.0
 
     @pytest.mark.asyncio
     async def test_budget_expiry_during_spacing_still_returns_a_grant(self):
         queue = _queue(gap=10.0)
-        assert await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
-        queue.release("cover.a", transmitted=True)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        queue.release(first, transmitted=True)
         grant = await queue.acquire("cover.b", head_of_line=False, budget=0.02)
         assert grant is not None
         assert grant.budget_expired is True
@@ -316,23 +324,207 @@ class TestQueueMechanics:
     @pytest.mark.asyncio
     async def test_depth_reports_waiting_reservations(self):
         queue = _queue()
-        assert await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
         assert queue.depth == 0
         task = asyncio.create_task(
             queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
         )
         await asyncio.sleep(0)
         assert queue.depth == 1
-        queue.release("cover.a", transmitted=False)
-        assert await asyncio.wait_for(task, timeout=1.0)
+        queue.release(first, transmitted=False)
+        second = await asyncio.wait_for(task, timeout=1.0)
+        assert second is not None
         assert queue.depth == 0
-        queue.release("cover.b", transmitted=False)
+        queue.release(second, transmitted=False)
+
+    @pytest.mark.asyncio
+    async def test_expired_grant_never_frees_the_same_entitys_live_slot(self):
+        """Two grants, one entity: only the one that HOLDS the slot may free it.
+
+        Same-entity concurrency is routine — ``apply_position`` can re-book an
+        entity a reconciliation resend is already transmitting, and at a
+        configured gap above the 30 s budget every wait ends this way. Keying
+        the release on the entity id makes the identity check vacuous: the
+        grant that gave up waiting frees the one that is still on the air, and
+        the next member keys on top of it.
+        """
+        queue = _queue()
+        holder = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert holder is not None
+        assert holder.holds_slot is True
+
+        # A second dispatch for the SAME entity gives up waiting.
+        expired = await queue.acquire("cover.a", head_of_line=False, budget=0.02)
+        assert expired is not None
+        assert expired.budget_expired is True
+        assert expired.holds_slot is False
+
+        waiter = asyncio.create_task(
+            queue.acquire("cover.c", head_of_line=False, budget=_BUDGET)
+        )
+        await asyncio.sleep(0)
+
+        queue.release(expired, transmitted=True)
+        await asyncio.sleep(0)
+        # cover.a is still mid-transmit, so the slot is still cover.a's.
+        assert queue._owner == "cover.a"
+        assert not waiter.done()
+
+        queue.release(holder, transmitted=False)
+        assert await asyncio.wait_for(waiter, timeout=1.0) is not None
 
     def test_grant_is_a_frozen_slotted_dataclass(self):
         grant = QueueGrant(waited_seconds=0.0, budget_expired=False, depth_at_enqueue=0)
         with pytest.raises(Exception):
             grant.waited_seconds = 1.0  # type: ignore[misc]
         assert not hasattr(grant, "__dict__")
+
+
+# ---------------------------------------------------------------------------
+# Step 2b — unwinding an interrupted acquisition
+#
+# A dispatch task really does get torn down mid-acquire: the #1138 external
+# interlock cancels the prior task for a follower when a second external
+# command lands, and unload cancels every one of them. A slot stranded by that
+# teardown never comes back on its own — every other member then enqueues,
+# burns the whole 30 s budget and transmits ``budget_expired``, unspaced and
+# simultaneous, which is the exact collision this feature exists to prevent.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInterruptedAcquire:
+    """Cancellation must never leave the slot held."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_the_spacing_sleep_releases_the_slot(self):
+        queue = _queue(gap=0.2)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        queue.release(first, transmitted=True)  # spacing now owed
+
+        task = asyncio.create_task(
+            queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
+        )
+        await asyncio.sleep(0)
+        # cover.b took the slot and is sleeping out the previous send's gap.
+        assert queue._owner == "cover.b"
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert queue._owner is None
+        # Granted on the remaining spacing, not after the whole budget — the
+        # tell that the slot was really free rather than stranded.
+        grant = await queue.acquire("cover.c", head_of_line=False, budget=0.5)
+        assert grant is not None
+        assert grant.budget_expired is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_after_the_grant_lands_releases_the_slot(self):
+        """``_grant_next`` records the owner and resolves the future together.
+
+        Between those two and the waiting task actually resuming there is a
+        whole scheduler turn, and a cancellation delivered in it used to clean
+        the tiers while leaving ownership behind.
+        """
+        queue = _queue(gap=0.0)
+        first = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert first is not None
+        task = asyncio.create_task(
+            queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
+        )
+        await asyncio.sleep(0)
+
+        queue.release(first, transmitted=False)
+        assert queue._owner == "cover.b"  # granted, but cover.b has not resumed
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert queue._owner is None
+        grant = await queue.acquire("cover.c", head_of_line=False, budget=0.5)
+        assert grant is not None
+        assert grant.budget_expired is False
+
+    @pytest.mark.asyncio
+    async def test_supersede_landing_with_the_budget_expiry_is_not_a_grant(self):
+        """A ``False`` resolved in the expiry iteration is a skip, not a grant.
+
+        The two events can land in one scheduler batch: the supersede resolves
+        the future first, then the deadline callback finds it already done and
+        falls back to ``_must_cancel``, so the wait raises ``TimeoutError`` over
+        a future that says "superseded". Reading only "was it granted" turns
+        that into a budget-expired GRANT, and the caller transmits a target a
+        newer decision has already replaced.
+        """
+        queue = _queue(gap=0.0)
+        loop = asyncio.get_running_loop()
+        holder = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert holder is not None
+
+        task = asyncio.create_task(
+            queue.acquire("cover.b", head_of_line=False, budget=0.05)
+        )
+        await asyncio.sleep(0)
+        # Block the loop past the deadline so the supersede and the deadline
+        # handle are picked up in the SAME batch, supersede first.
+        time.sleep(0.06)
+        loop.call_soon(lambda: queue._enqueue("cover.b", head_of_line=False))
+
+        assert await asyncio.wait_for(task, timeout=1.0) is None
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_dispatch_hands_the_slot_back(self):
+        """The same teardown, seen from ``apply_position``."""
+        hass = _svc_hass()
+        queue = _queue(gap=0.0)
+        svc = _svc(hass, command_queue=queue)
+        gate = asyncio.Event()
+
+        async def _blocked(*_a, **_kw):
+            await gate.wait()
+
+        hass.services.async_call = AsyncMock(side_effect=_blocked)
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+        ):
+            task = asyncio.create_task(
+                svc.apply_position("cover.a", 70, "solar", _ctx())
+            )
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert queue._owner == "cover.a"
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert queue._owner is None
+
+    @pytest.mark.asyncio
+    async def test_an_error_before_the_send_hands_the_slot_back(self):
+        """Nothing between the grant and the send may strand the slot."""
+        hass = _svc_hass()
+        queue = _queue(gap=0.0)
+        svc = _svc(hass, command_queue=queue)
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+            patch.object(
+                svc, "_prepare_service_call", side_effect=RuntimeError("boom")
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await svc.apply_position("cover.a", 70, "solar", _ctx())
+
+        assert queue._owner is None
+        # Nothing went out, so nobody owes the air anything.
+        assert queue.busy_for_seconds() == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +659,7 @@ class TestDispatchGate:
             assert svc.get_target("cover.a") is None
             svc._grace_mgr.start_command_grace_period.assert_not_called()
 
-            queue.release("cover.blocker", transmitted=False)
+            queue.release(blocker, transmitted=False)
             assert await asyncio.wait_for(fresh, timeout=2.0) == (
                 "sent",
                 "set_cover_position",
@@ -660,7 +852,8 @@ class TestOrderingAndGraceWindow:
 
         # Hold the queue so the dispatch below has to wait out a real gap.
         held = await queue.acquire("cover.other", head_of_line=False, budget=5.0)
-        queue.release("cover.other", transmitted=True)
+        assert held is not None
+        queue.release(held, transmitted=True)
         started = loop.time()
 
         with (
@@ -699,7 +892,7 @@ class TestOrderingAndGraceWindow:
             )
             assert second is not None
             assert second.budget_expired is False
-            queue.release("cover.b", transmitted=False)
+            queue.release(second, transmitted=False)
             await asyncio.wait_for(first, timeout=2.0)
 
         assert "after_position_command" in log
@@ -755,10 +948,60 @@ class TestOtherWireSites:
             task = asyncio.create_task(svc._execute_command("cover.a", 70))
             await asyncio.sleep(0)
             hass.services.async_call.assert_not_awaited()
-            queue.release("cover.other", transmitted=False)
+            queue.release(holder, transmitted=False)
             await asyncio.wait_for(task, timeout=2.0)
 
         hass.services.async_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_reconciliation_resend_yields_to_a_waiting_live_dispatch(self):
+        """Supersede has a DIRECTION: a resend never displaces a live decision.
+
+        Both seams acquire under the same one-reservation-per-entity rule, so a
+        resend enqueuing behind a WAITING ``apply_position`` for the same entity
+        used to cancel it. The fresh dispatch then returned
+        ``superseded_in_queue`` having booked nothing, and what went on the air
+        was the previously booked target — the module's own guarantee that the
+        frame that finally goes out carries the most recent decision, inverted.
+        """
+        hass = _svc_hass()
+        queue = _queue(gap=0.0)
+        svc = _svc(hass, command_queue=queue)
+        # Somebody else holds the slot so the live dispatch has to wait.
+        blocker = await queue.acquire("cover.blocker", head_of_line=False, budget=5.0)
+        assert blocker is not None
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+        ):
+            live = asyncio.create_task(
+                svc.apply_position("cover.a", 70, "solar", _ctx())
+            )
+            await asyncio.sleep(0)
+            assert queue.depth == 1
+
+            # The reconciliation pass re-books the OLD target behind it.
+            resend = asyncio.create_task(svc._execute_command("cover.a", 40))
+            await asyncio.sleep(0)
+
+            # It stood down at once instead of taking the live reservation's
+            # place — no reservation of its own, and the live one untouched.
+            assert resend.done()
+            assert not live.done()
+            assert queue.depth == 1
+            hass.services.async_call.assert_not_awaited()
+
+            queue.release(blocker, transmitted=False)
+            assert await asyncio.wait_for(live, timeout=2.0) == (
+                "sent",
+                "set_cover_position",
+            )
+            await asyncio.wait_for(resend, timeout=1.0)
+
+        # One frame, carrying the FRESH target.
+        assert hass.services.async_call.await_count == 1
+        assert hass.services.async_call.await_args[0][2]["position"] == 70
 
     @pytest.mark.asyncio
     async def test_stop_transmits_immediately_and_reports_the_air_as_busy(self):
@@ -790,6 +1033,114 @@ class TestOtherWireSites:
         svc = _svc(hass)
         await svc._stop_tracker.call_stop_cover("cover.a")
         hass.services.async_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_mark_queue_external_transmit_is_a_noop_when_unqueued(self):
+        hass = _svc_hass()
+        svc = _svc(hass)
+        svc.mark_queue_external_transmit()  # must not raise
+        assert COMMAND_QUEUE_REGISTRY_KEY not in hass.data
+
+    @pytest.mark.asyncio
+    async def test_mark_queue_external_transmit_advances_the_spacing(self):
+        hass = _svc_hass()
+        queue = _queue()
+        svc = _svc(hass, command_queue=queue)
+        assert queue.busy_for_seconds() == 0.0
+        svc.mark_queue_external_transmit()
+        assert queue.busy_for_seconds() > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Step 5b — the venetian tail's own frame
+#
+# The settle+tilt tail runs OUTSIDE the slot on purpose (holding it across a
+# settle capped at 60 s would starve the queue, and #1115's day/night guard
+# depends on the tail not holding it). That makes the tilt frame a transmission
+# the queue never gated, exactly like a stop — so, exactly like a stop, it has
+# to tell the queue, or the next member keys on top of it.
+# ---------------------------------------------------------------------------
+
+
+def _tilt_sequencer(queue, *, position: int = 70):
+    """Build a ``DualAxisSequencer`` wired to *queue*, settling instantly."""
+    from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import (
+        DualAxisSequencer,
+    )
+
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    return hass, DualAxisSequencer(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: position,
+        set_commanded_position=lambda *_a: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        post_settle_hold_seconds=0,
+        mark_air_busy=None if queue is None else queue.mark_external_transmit,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("neutralize_venetian_delays")
+class TestVenetianTailReportsItsFrame:
+    """The tail transmits outside the slot, so it reports the air as busy."""
+
+    @pytest.mark.asyncio
+    async def test_the_tail_reports_its_tilt_frame_to_the_queue(self):
+        queue = _queue()
+        hass, seq = _tilt_sequencer(queue)
+        assert queue.busy_for_seconds() == 0.0
+
+        await seq.run_sequence(
+            "cover.a", position_target=70, tilt_target=40, reason="solar"
+        )
+
+        hass.services.async_call.assert_awaited()
+        assert queue.busy_for_seconds() > 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_deduped_tail_reports_nothing(self):
+        """No frame, no spacing — the tail only owes the air what it used."""
+        queue = _queue()
+        _hass_obj, seq = _tilt_sequencer(queue)
+        seq._tilt_targets["cover.a"] = 40
+        seq._tilt_targets_verified.add("cover.a")
+
+        await seq.run_sequence(
+            "cover.a", position_target=70, tilt_target=40, reason="solar"
+        )
+
+        assert queue.busy_for_seconds() == 0.0
+
+    @pytest.mark.asyncio
+    async def test_an_unwired_sequencer_is_untouched(self):
+        _hass_obj, seq = _tilt_sequencer(None)
+        await seq.run_sequence(
+            "cover.a", position_target=70, tilt_target=40, reason="solar"
+        )
+
+    def test_the_policy_wires_the_queue_reporter_onto_its_sequencer(self):
+        """``attach`` is where the tail meets the command service."""
+        from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
+            VenetianPolicy,
+        )
+
+        svc = _svc(_svc_hass(), command_queue=_queue())
+        policy = VenetianPolicy()
+        policy.attach(
+            hass=MagicMock(),
+            logger=MagicMock(),
+            grace_mgr=MagicMock(),
+            get_current_position=lambda _eid: 0,
+            set_commanded_position=lambda *_a: None,
+            position_tolerance=5,
+            is_dry_run=lambda: False,
+            mark_air_busy=svc.mark_queue_external_transmit,
+        )
+        assert policy.sequencer._mark_air_busy == svc.mark_queue_external_transmit
 
 
 # ---------------------------------------------------------------------------
@@ -1133,7 +1484,7 @@ class TestCrossEntrySerialization:
             await asyncio.sleep(0)
             safety = asyncio.create_task(_dispatch(b, "cover.b", 0, is_safety=True))
             await asyncio.sleep(0)
-            queue.release("cover.z", transmitted=True)
+            queue.release(holder, transmitted=True)
             released_at = loop.time()
             await asyncio.wait_for(asyncio.gather(routine, safety), timeout=5.0)
 
@@ -1189,6 +1540,57 @@ class TestCommandQueueConfigFlow:
         assert entry.data[CONF_SENSOR_TYPE] == CoverType.COMMAND_QUEUE
         assert entry.data["name"] == "Facade South"
         assert entry.options[CONF_COMMAND_QUEUE_GAP] == 7.5
+
+    async def test_a_second_queue_with_the_same_name_is_refused(self, hass):
+        """The NAME is the identity here — two entries owning it corrupt the gap.
+
+        Unlike a Building Profile, which links by ``entry_id``, a Command Queue
+        entry binds itself to the shared queue by normalized name. Two entries
+        on one name both ``attach()`` and both ``set_gap()``, so the bound gap
+        is whichever loaded last — and unloading or deleting EITHER runs
+        ``set_gap(None)``, silently reverting the queue to the default while
+        the surviving entry's UI still shows its configured value.
+        """
+        await _add_queue_entry(hass, name="Facade South", gap=7.5)
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_command_queue"}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            # Normalized-equal, not byte-equal: the invisible-typo classes the
+            # matcher folds everywhere else must fold here too.
+            {"name": "  facade   SOUTH ", CONF_COMMAND_QUEUE_GAP: 2.0},
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == "already_configured"
+
+        queue_entries = [
+            entry
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if entry.data.get(CONF_SENSOR_TYPE) == CoverType.COMMAND_QUEUE
+        ]
+        assert len(queue_entries) == 1
+        assert queue_entries[0].options[CONF_COMMAND_QUEUE_GAP] == 7.5
+
+    async def test_a_distinct_queue_name_still_creates(self, hass):
+        await _add_queue_entry(hass, name="Facade South", gap=7.5)
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_command_queue"}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"name": "Facade North", CONF_COMMAND_QUEUE_GAP: 2.0},
+        )
+        assert result["type"] == "create_entry"
+        assert result["result"].data["name"] == "Facade North"
 
     async def test_create_step_defaults_the_gap_to_the_constant(self, hass):
         from custom_components.adaptive_cover_pro.config_flow import (
@@ -1409,8 +1811,8 @@ class TestQueueDiagnostics:
         queue = _queue()
         svc = _svc(hass, command_queue=queue)
         held = await queue.acquire("cover.other", head_of_line=False, budget=5.0)
-        queue.release("cover.other", transmitted=True)
         assert held is not None
+        queue.release(held, transmitted=True)
 
         with (
             _patch_caps(),

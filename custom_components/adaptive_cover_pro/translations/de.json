@@ -297,7 +297,8 @@
     },
     "abort": {
       "user_cancelled": "Aktion vom Benutzer abgebrochen",
-      "source_not_found": "Die Quellbeschattung existiert nicht mehr."
+      "source_not_found": "Die Quellbeschattung existiert nicht mehr.",
+      "already_configured": "Eine Befehlswarteschlange mit diesem Namen existiert bereits. Beschattungen verweisen auf Warteschlangen nach Name, daher ein Eintrag pro Name — öffnen Sie den bestehenden Eintrag, um den Abstand zu ändern."
     }
   },
   "options": {

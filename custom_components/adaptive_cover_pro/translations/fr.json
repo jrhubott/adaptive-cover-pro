@@ -297,7 +297,8 @@
     },
     "abort": {
       "user_cancelled": "Action annulée par l'utilisateur",
-      "source_not_found": "Le store source n'existe plus."
+      "source_not_found": "Le store source n'existe plus.",
+      "already_configured": "Une file d'attente de commandes portant ce nom existe déjà. Les protections s'y joignent en nommant la file d'attente, donc une seule entrée par nom — ouvrez l'entrée existante pour modifier son intervalle."
     }
   },
   "options": {

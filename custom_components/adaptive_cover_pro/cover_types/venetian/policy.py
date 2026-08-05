@@ -917,6 +917,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 "backrotate_publish_lag_seconds",
                 DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             ),
+            mark_air_busy=kwargs.get("mark_air_busy"),
         )
         # Drift-reset scope (issue #808) is a policy-level gate: the policy owns
         # the ControlMethod == SOLAR decision (cover-type knowledge stays inside

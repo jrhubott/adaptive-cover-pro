@@ -4607,8 +4607,22 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         Creating a queue is entirely optional: a cover can name a queue that has
         no entry behind it and still serialize, at the default gap. This entry
         exists to change that gap and to show which covers joined.
+
+        The NAME is the identity, which is why a duplicate is refused outright
+        rather than merely discouraged. A Building Profile links by ``entry_id``
+        and can afford two entries with one title; this entry binds itself to a
+        shared runtime object by normalized name, so two of them both
+        ``attach()`` and both ``set_gap()`` — the bound gap becomes whichever
+        loaded last, and unloading or deleting EITHER reverts the queue to the
+        5 s default while the surviving entry's UI still shows its own value.
         """
         if user_input is not None:
+            key = normalize_queue_name(user_input.get("name"))
+            if key and any(
+                normalize_queue_name(entry.data.get("name")) == key
+                for entry in _command_queue_entries(self.hass)
+            ):
+                return self.async_abort(reason="already_configured")  # type: ignore[return-value]
             self.config = dict(user_input)
             self.type_blind = CoverType.COMMAND_QUEUE
             return await self.async_step_update()

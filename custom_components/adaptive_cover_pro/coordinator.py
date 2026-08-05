@@ -767,6 +767,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             backrotate_publish_lag_seconds=(
                 _rc_attach.venetian.backrotate_publish_lag_seconds
             ),
+            # Lets a dual-axis policy report its own tilt frames to this
+            # instance's command queue (issue #1189). The settle+tilt tail runs
+            # outside the queue slot by design, so without this the queue would
+            # believe the air was free while the tail was still keying it.
+            mark_air_busy=self._cmd_svc.mark_queue_external_transmit,
             invert_tilt=lambda: self._inverse_tilt,
             get_min_change=lambda: self.min_change,
             get_enforce_delta_at_endpoints=lambda: self._enforce_delta_at_endpoints,

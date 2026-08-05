@@ -76,15 +76,20 @@ def normalize_queue_name(name: Any) -> str:
     return " ".join(str(name).split()).casefold()
 
 
-def _resolved_true(future: asyncio.Future) -> bool:
-    """Whether *future* carries a real ``True`` grant (not a cancellation).
+def _resolution(future: asyncio.Future) -> bool | None:
+    """Return the real outcome a waiter's future carries, or ``None`` if it has none.
 
     ``asyncio.wait_for`` cancels the future it was waiting on when the timeout
     fires, so ``done()`` alone is not enough — the future may be done BECAUSE it
-    was cancelled. It may also have been granted in the very loop iteration the
-    timeout landed in, and that grant is real: the slot is ours.
+    was cancelled. It may also have been resolved in the very loop iteration the
+    timeout landed in, and that resolution is real in BOTH directions: a ``True``
+    means the slot is ours, and a ``False`` means a newer reservation for this
+    entity replaced us. Collapsing the second into a budget-expired grant would
+    put the older decision on the air.
     """
-    return future.done() and not future.cancelled() and future.result() is True
+    if not future.done() or future.cancelled():
+        return None
+    return future.result() is True
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,11 +102,22 @@ class QueueGrant:
     caller is transmitting outside its turn; it is a diagnostic, never a
     refusal. ``depth_at_enqueue`` is how many reservations were already waiting
     when this one asked.
+
+    ``holds_slot`` is the release token, and it is NOT the inverse of
+    ``budget_expired``: a grant that took the slot and then overran its budget
+    waiting out the spacing holds it, while a grant that gave up waiting for
+    the slot entirely does not. It exists because the entity id cannot answer
+    the question — two acquisitions for the SAME entity can be live at once
+    (``apply_position`` re-booking an entity a reconciliation resend is already
+    transmitting), and an entity-keyed release would then let the one that
+    never held the slot free the one that does, mid-transmission.
     """
 
     waited_seconds: float
     budget_expired: bool
     depth_at_enqueue: int
+    entity_id: str = ""
+    holds_slot: bool = True
 
 
 @dataclass(slots=True)
@@ -226,78 +242,139 @@ class CommandQueue:
         depth_at_enqueue = self.depth
         budget_expired = False
         awaited = False
+        holds_slot = False
 
-        if self._owner is not None or self.depth:
-            waiter = self._enqueue(entity_id, head_of_line=head_of_line)
-            awaited = True
-            try:
-                granted = await asyncio.wait_for(waiter.future, budget)
-            except TimeoutError:
-                # ``wait_for`` cancels the future on timeout, but it may already
-                # have been resolved in the same loop iteration — honour that.
-                granted = _resolved_true(waiter.future)
-                if not granted:
-                    self._drop(waiter)
-                    budget_expired = True
-            except asyncio.CancelledError:
-                # A genuine outer cancellation (shutdown, a superseding task
-                # being torn down): leave nothing behind and propagate.
-                self._drop(waiter)
-                raise
-            if not budget_expired and not granted:
-                return None  # superseded by a newer reservation for this entity
-
-        if not budget_expired:
-            self._owner = entity_id
-
-        # Spacing owed by the PREVIOUS transmission, charged against whatever is
-        # left of the budget. Expiring here still yields a grant: the caller
-        # transmits anyway, because withholding is the failure mode.
-        remaining = self._busy_until - monotonic()
-        if remaining > 0:
-            left = budget - (monotonic() - started)
-            if left <= 0:
-                budget_expired = True
-            else:
+        try:
+            if self._owner is not None or self.depth:
+                waiter = self._enqueue(entity_id, head_of_line=head_of_line)
                 awaited = True
-                await asyncio.sleep(min(remaining, left))
-                if remaining > left:
+                try:
+                    granted = await asyncio.wait_for(waiter.future, budget)
+                except TimeoutError:
+                    # ``wait_for`` cancels the future on timeout, but it may
+                    # already have been resolved in the same loop iteration —
+                    # honour that, in BOTH directions. A ``False`` resolved in
+                    # the expiry iteration is a supersede, and a supersede is
+                    # never upgradeable into a grant: transmitting on it would
+                    # put a target a newer decision has already replaced on the
+                    # air, which is the one thing budget expiry must not cost.
+                    resolution = _resolution(waiter.future)
+                    granted = resolution is True
+                    if not granted:
+                        self._drop(waiter)
+                        if resolution is False:
+                            return None
+                        budget_expired = True
+                except BaseException:
+                    # A genuine outer cancellation (shutdown, a superseding task
+                    # being torn down). ``_grant_next`` records the owner and
+                    # resolves the future in one step, so the slot may ALREADY
+                    # be ours even though this coroutine never got to resume —
+                    # claim it here so the unwind below gives it back rather
+                    # than stranding it.
+                    if _resolution(waiter.future) is True:
+                        holds_slot = True
+                    self._drop(waiter)
+                    raise
+                if not budget_expired and not granted:
+                    return None  # superseded by a newer reservation for this entity
+
+            if not budget_expired:
+                self._owner = entity_id
+                holds_slot = True
+
+            # Spacing owed by the PREVIOUS transmission, charged against
+            # whatever is left of the budget. Expiring here still yields a
+            # grant: the caller transmits anyway, because withholding is the
+            # failure mode.
+            remaining = self._busy_until - monotonic()
+            if remaining > 0:
+                left = budget - (monotonic() - started)
+                if left <= 0:
                     budget_expired = True
+                else:
+                    awaited = True
+                    await asyncio.sleep(min(remaining, left))
+                    if remaining > left:
+                        budget_expired = True
+        except BaseException:
+            # Nothing may leave this method holding the slot except a returned
+            # grant. Both awaits above are cancellation points a coordinator
+            # really does fire — the #1138 interlock task is cancelled when a
+            # second external command supersedes it, and unload cancels every
+            # one of them — and a slot stranded that way never comes back on
+            # its own: every other member enqueues, burns its whole budget and
+            # transmits ``budget_expired``, unspaced and simultaneous.
+            if holds_slot:
+                self._hand_off()
+            raise
 
         return QueueGrant(
             waited_seconds=(monotonic() - started) if awaited else 0.0,
             budget_expired=budget_expired,
             depth_at_enqueue=depth_at_enqueue,
+            entity_id=entity_id,
+            holds_slot=holds_slot,
         )
 
-    def release(self, entity_id: str, *, transmitted: bool) -> None:
+    def release(self, grant: QueueGrant, *, transmitted: bool) -> None:
         """Give the slot back, starting the gap when something was transmitted.
 
-        Tolerates a release from an entity that never held the slot — that is
-        exactly what a budget-expired grant is. Such a release still advances
+        Tolerates a release from a grant that never held the slot — that is
+        exactly what a gave-up-waiting grant is. Such a release still advances
         ``busy_until`` (a frame did go out, so the air is busy) but must not
         hand the real holder's slot to the next waiter.
+
+        Keyed on ``grant.holds_slot``, never on the entity id. The entity id
+        cannot answer this: two acquisitions for the SAME entity can be live at
+        once, and ``self._owner != entity_id`` is then vacuously False — the
+        grant that gave up waiting would free the one still on the air, and the
+        next member would key on top of a transmission in progress.
         """
         if transmitted:
             self._busy_until = monotonic() + self.gap_seconds
-        if self._owner is not None and self._owner != entity_id:
+        if not grant.holds_slot:
             return
-        self._owner = None
-        self._grant_next()
+        self._hand_off()
 
     def mark_external_transmit(self) -> None:
-        """Record a frame this queue did not gate (a stop command).
+        """Record a frame this queue did not gate.
 
-        A stop is an interactive, latency-critical command — queueing it would
-        make the user wait out someone else's gap for a button press. It still
-        occupies the air, so the queue is told about it and the NEXT queued
-        member spaces itself accordingly.
+        Two transmissions deliberately run outside a slot, for opposite reasons:
+
+        A **stop** is interactive and latency-critical — queueing it would make
+        the user wait out someone else's gap for a button press.
+
+        A **dual-axis tilt tail** waits on a physical rail before it keys (up to
+        ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS``), so holding the slot across
+        it would starve every other member, and issue #1115's day/night guard
+        depends on the tail not holding it.
+
+        Both still occupy the air, so both tell the queue and the NEXT queued
+        member spaces itself accordingly instead of assuming the air was free.
         """
         self._busy_until = monotonic() + self.gap_seconds
 
     # ------------------------------------------------------------------ #
     # Waiter bookkeeping — one place, shared by every grant path
     # ------------------------------------------------------------------ #
+
+    def defers_to_pending(self, entity_id: str) -> bool:
+        """Whether a RESEND must stand down for this entity's pending reservation.
+
+        Supersede has a direction. A live dispatch carries the newest decision,
+        so it displaces whatever this entity had waiting — that is the whole
+        point of the one-reservation-per-entity rule. A reconciliation resend
+        re-books a target that was already decided, so displacing a waiting live
+        dispatch would put the OLDER number on the air and drop the newer one,
+        inverting this module's own guarantee that the frame which finally goes
+        out carries the most recent decision.
+
+        Only the WAITING reservation counts. An entity that currently holds the
+        slot is mid-transmit and has no pending reservation, so a resend queues
+        behind it exactly as it did before.
+        """
+        return entity_id in self._pending
 
     def _enqueue(self, entity_id: str, *, head_of_line: bool) -> _Waiter:
         """Queue a reservation, superseding any this entity already had waiting."""
@@ -329,6 +406,16 @@ class CommandQueue:
             except ValueError:
                 continue
             return
+
+    def _hand_off(self) -> None:
+        """Drop ownership and pass the free slot on.
+
+        The one place ownership is given up, shared by the normal release and
+        by the unwind an interrupted :meth:`acquire` performs — mirroring the
+        two would be how one of them ends up leaving the slot held.
+        """
+        self._owner = None
+        self._grant_next()
 
     def _grant_next(self) -> None:
         """Hand the free slot to the next waiter: head tier first, then FIFO."""
