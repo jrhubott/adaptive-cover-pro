@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Iterable, Iterator
+from time import monotonic
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
@@ -18,6 +19,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from ...const import (
     COMMAND_QUEUE_MAX_WAIT_SECONDS,
+    COMMAND_QUEUE_PASS_BUDGET_FRACTION,
     DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     MAX_POSITION_RETRIES,
@@ -2366,7 +2368,12 @@ class CoverCommandService:
     # ------------------------------------------------------------------ #
 
     async def _acquire_queue_slot(
-        self, entity_id: str, *, head_of_line: bool, resend: bool = False
+        self,
+        entity_id: str,
+        *,
+        head_of_line: bool,
+        resend: bool = False,
+        budget: float = COMMAND_QUEUE_MAX_WAIT_SECONDS,
     ) -> tuple[bool, QueueGrant | None]:
         """Take this entity's turn on its command queue, if it has one.
 
@@ -2376,21 +2383,14 @@ class CoverCommandService:
         decision for the SAME entity, and the caller must then record a
         ``superseded_in_queue`` skip having booked nothing.
 
-        ``resend=True`` marks a reconciliation re-booking, and changes the
-        acquisition in two ways, both because that pass IS the retry loop:
-
-        * It STANDS DOWN for a live dispatch already waiting on this entity
-          rather than displacing it — the resend carries the older number, and
-          evicting the newer one would put a stale frame on a one-way radio.
-        * It never waits (``wait=False``). A resend that blocked would hold the
-          pass open per entity for the full ``COMMAND_QUEUE_MAX_WAIT_SECONDS``
-          against a one-minute interval that HA re-arms before dispatching each
-          fire, so overlapping passes would mutate the same per-entity state —
-          the same overlap the ``wait=False`` clearance gate in
-          ``run_reconciliation_pass`` exists to prevent, reached by a different
-          road. Standing down costs nothing: the next pass re-asks, and it does
-          not burn a retry because the pass reads
-          :meth:`_resend_stands_down` before counting one.
+        ``resend=True`` marks a reconciliation re-booking. It changes the
+        acquisition in one way and one way only: the resend STANDS DOWN for a
+        live dispatch already waiting on this entity rather than displacing it,
+        because the resend carries the older number and evicting the newer one
+        would put a stale frame on a one-way radio. It otherwise queues and
+        waits exactly like a dispatch — what keeps the pass bounded is
+        ``budget``, which the pass sizes from what is left of its OWN
+        allowance, not a refusal to wait at all.
 
         ``grant`` is None both when there is no queue and on the dry-run path,
         so the release below is a no-op there. A dry run is skipped
@@ -2403,39 +2403,64 @@ class CoverCommandService:
         """
         if self._queue is None or self._dry_run:
             return True, None
-        # The SAME predicate the reconciliation pass reads before it counts a
-        # retry, not a second copy of the rule — the two must never disagree
-        # about whether this resend goes out. ``wait=not resend`` below is the
-        # structural backstop that keeps the non-blocking half true even for a
-        # caller that never asked.
-        if resend and self._resend_stands_down(entity_id):
+        # The SAME predicate the reconciliation pass reads, not a second copy of
+        # the rule — the two must never disagree about whether this resend even
+        # attempts its turn. Re-asserted here so the guarantee holds for every
+        # caller of this seam, including one that never asked.
+        if resend and self._resend_stands_down(entity_id, budget=budget):
             return False, None
         grant = await self._queue.acquire(
             entity_id,
             head_of_line=head_of_line,
-            budget=COMMAND_QUEUE_MAX_WAIT_SECONDS,
-            wait=not resend,
+            budget=budget,
         )
         if grant is None:
             return False, None
         return True, grant
 
-    def _resend_stands_down(self, entity_id: str) -> bool:
+    def _resend_stands_down(self, entity_id: str, *, budget: float) -> bool:
         """Whether a reconciliation resend for this entity would yield its turn.
 
-        Asked by the pass BEFORE the retry is counted, for exactly the reason
-        the clearance gate above it is: a resend that is never transmitted must
-        not burn one of the pass's attempts, or repeated stand-downs reach
-        ``gave_up`` and warn "max retries exceeded" about a cover that was
-        never resent. With the resend now non-blocking that is the ordinary
-        case on a busy queue rather than a corner one.
+        ``budget`` is what remains of the pass's own wait allowance. Standing
+        down means "this turn costs more than the pass can still afford", NOT
+        "the queue is not idle this instant" — the spacing a pass's own previous
+        resend started is exactly the wait it should be willing to sit out, and
+        treating it as a refusal is what limited a pass to a single frame.
+
+        Advisory. The pass asks it to avoid entering a wait it cannot pay for;
+        whether a retry was consumed is decided by what ``_execute_command``
+        reports afterwards, so this reading going stale during the wait costs
+        nothing.
 
         Unqueued and dry-run instances never stand down, so the pass behaves
         exactly as it did before the queue existed.
         """
         if self._queue is None or self._dry_run:
             return False
-        return self._queue.resend_stands_down(entity_id)
+        return self._queue.resend_stands_down(entity_id, budget=budget)
+
+    def _reconciliation_queue_budget(self) -> float:
+        """Total seconds one reconciliation pass may spend waiting on the queue.
+
+        A fraction of the pass's OWN interval, so a user who slows reconciliation
+        down gets proportionally more room rather than the same fixed sliver.
+        The remainder of the interval is deliberate slack: the transmissions
+        themselves happen outside this allowance, and a pass must still finish
+        before the next one starts.
+        """
+        return self._check_interval_minutes * 60.0 * COMMAND_QUEUE_PASS_BUDGET_FRACTION
+
+    def _resend_wait_allowance(self, deadline: float) -> float:
+        """Cap one resend's wait at the pass's remainder and the per-command ceiling.
+
+        Two ceilings, because they bound different failures. ``deadline`` is the
+        pass's own overlap guard — the whole pass, summed across every entity it
+        resends. ``COMMAND_QUEUE_MAX_WAIT_SECONDS`` is the per-command bounded-wait
+        invariant, which still applies to each acquisition individually: a pass
+        running on a 30-minute interval must not let one entity sit in the queue
+        for a quarter of an hour just because its allowance would permit it.
+        """
+        return min(max(0.0, deadline - monotonic()), COMMAND_QUEUE_MAX_WAIT_SECONDS)
 
     def _queue_diagnostic_fields(self, grant: QueueGrant | None) -> dict:
         """Return the four per-dispatch queue fields, or ``{}`` when unqueued.
@@ -2681,6 +2706,14 @@ class CoverCommandService:
         # before its middle rail, which cannot physically travel past it.
         # Identity for every cover type whose entities are independent.
         recorded = dict(self.iter_targets())
+        # The pass's own overlap guard (issue #1189). One allowance for the whole
+        # pass, spent across every entity it resends, rather than a fresh
+        # per-entity ceiling: N entities each entitled to
+        # COMMAND_QUEUE_MAX_WAIT_SECONDS is N x 30 s against a 60 s interval, and
+        # HA re-arms that interval listener before dispatching each fire as its
+        # own background task — so an unbounded pass is still running when the
+        # next one starts and the two mutate the same ``PerEntityState``.
+        queue_deadline = monotonic() + self._reconciliation_queue_budget()
         for entity_id in self._policy.order_for_dispatch(recorded):
             target = recorded[entity_id]
             s = self.state(entity_id)
@@ -2893,25 +2926,60 @@ class CoverCommandService:
                 )
                 continue
 
-            # 10. The command queue's stand-down (issue #1189), asked HERE for
-            # the same two reasons the clearance gate above it is.
+            # 10. The command queue (issue #1189). Unlike the clearance gate
+            # above, this is NOT a refusal to wait — a resend takes its turn and
+            # sits out the spacing like any other transmission, which is what
+            # lets one pass reconcile every off-target cover it owns instead of
+            # only the first. What is bounded is the pass, not the entity: each
+            # resend may spend what is left of ``queue_deadline``, so N covers
+            # cost N gaps in total and the pass still finishes inside its own
+            # interval.
             #
-            # Before the count: a resend that never reaches the wire must not
-            # burn one of the pass's three attempts. Repeated stand-downs would
-            # otherwise reach ``gave_up`` and log "max retries exceeded" about a
-            # cover that was never resent — and on a saturated queue standing
-            # down is the ordinary outcome, not a corner case.
-            #
-            # Without waiting: ``_execute_command`` acquires with ``wait=False``,
-            # so the answer here is the answer it will get. A resend that
-            # blocked for the queue's 30 s budget per entity would leave this
-            # pass running into the next one — HA re-arms the interval listener
-            # before dispatching each fire as its own task — and the two would
-            # mutate the same ``PerEntityState``.
-            if self._resend_stands_down(entity_id):
+            # Asked before the acquisition purely to avoid entering a wait the
+            # pass cannot pay for. It is not what protects the retry counter —
+            # that is the ``_execute_command`` return below, which reports what
+            # actually happened rather than what this reading predicted.
+            wait_allowance = self._resend_wait_allowance(queue_deadline)
+            if self._resend_stands_down(entity_id, budget=wait_allowance):
                 self._logger.debug(
-                    "Reconcile: %s stood down for the command queue — the slot "
-                    "is not free and this pass must not block on it",
+                    "Reconcile: %s stood down for the command queue — its turn "
+                    "costs more than the %.1fs this pass has left to spend",
+                    entity_id,
+                    wait_allowance,
+                )
+                if self._event_buffer is not None:
+                    self._event_buffer.record(
+                        {
+                            "ts": dt.datetime.now(dt.UTC).isoformat(),
+                            "event": "reconcile_queue_stood_down",
+                            "entity_id": entity_id,
+                            "actual_position": actual,
+                            "target_position": resend_target,
+                            "queue_wait_allowance": round(wait_allowance, 3),
+                            "queue_projected_wait": (
+                                round(self._queue.projected_wait_seconds(), 3)
+                                if self._queue is not None
+                                else 0.0
+                            ),
+                        }
+                    )
+                continue
+
+            # Counted AFTER the fact, on what the resend reports. It has to be:
+            # the acquisition suspends, so no reading taken before it can promise
+            # the frame goes out, and a stand-down that burned an attempt would
+            # reach ``gave_up`` and warn "max retries exceeded" about a cover
+            # that was never resent. Every outcome except a queue withhold counts
+            # — including a dry run, which would otherwise never give up.
+            if not await self._execute_command(
+                entity_id,
+                resend_target,
+                dispatch_token=resend_token,
+                queue_budget=wait_allowance,
+            ):
+                self._logger.debug(
+                    "Reconcile: %s withheld by the command queue after waiting "
+                    "— no retry counted",
                     entity_id,
                 )
                 continue
@@ -2924,9 +2992,6 @@ class CoverCommandService:
                 resend_target,
                 s.retry_count,
                 self._max_retries,
-            )
-            await self._execute_command(
-                entity_id, resend_target, dispatch_token=resend_token
             )
 
     # ------------------------------------------------------------------ #
@@ -3261,9 +3326,24 @@ class CoverCommandService:
         return plan.service, plan.service_data, plan.supports_position
 
     async def _execute_command(
-        self, entity_id: str, target: int, *, dispatch_token: Any = None
-    ) -> None:
+        self,
+        entity_id: str,
+        target: int,
+        *,
+        dispatch_token: Any = None,
+        queue_budget: float = COMMAND_QUEUE_MAX_WAIT_SECONDS,
+    ) -> bool:
         """Send command directly, bypassing gate checks (reconciliation use only).
+
+        Returns whether this call consumed an ATTEMPT — True for every outcome
+        that reached the send decision (including a dry run and a service call
+        that raised), False only when the command queue withheld the resend
+        before anything was booked. ``run_reconciliation_pass`` counts its retry
+        on that answer rather than on a prediction made before the acquisition,
+        because the acquisition suspends: no reading taken beforehand can promise
+        the frame goes out, and an attempt burned by a withheld resend reaches
+        ``gave_up`` and warns "max retries exceeded" about a cover that was never
+        resent.
 
         Does NOT reset the retry count — the caller
         (``run_reconciliation_pass``) owns that.
@@ -3287,27 +3367,23 @@ class CoverCommandService:
         same reason: that call books ``sent_at`` and the grace window, both of
         which must clock from the real transmit time.
 
-        Unlike a live dispatch it never QUEUES for that turn: it acquires as a
-        ``resend``, which takes the slot only when it is free this instant and
-        otherwise stands down. Two consequences, both deliberate. It yields to a
-        live dispatch already waiting on this entity instead of evicting it,
-        because the number it re-books is by definition the older one. And it
-        cannot hold the reconciliation pass open — a blocking wait here would
-        cost up to ``COMMAND_QUEUE_MAX_WAIT_SECONDS`` per entity against a
-        one-minute interval HA re-arms before dispatching each fire, leaving
-        two passes running over one ``PerEntityState``. The next pass re-asks
-        in a minute; the pass exists to retry.
+        It acquires as a ``resend``, which differs from a live dispatch in one
+        respect: it yields to a live dispatch already WAITING on this entity
+        instead of evicting it, because the number it re-books is by definition
+        the older one. It otherwise queues and waits like any transmission —
+        ``queue_budget`` is what bounds it, and the caller sizes that from what
+        is left of the pass's own allowance so N resends cost N gaps in total
+        rather than N full clearance budgets.
         """
         proceed, grant = await self._acquire_queue_slot(
-            entity_id, head_of_line=False, resend=True
+            entity_id, head_of_line=False, resend=True, budget=queue_budget
         )
         if not proceed:
             # Either a live dispatch for this entity carries a fresher target,
-            # or the slot is not free right now. ``run_reconciliation_pass``
-            # already asked the same question through ``_resend_stands_down``
-            # and skipped without counting a retry; this is the seam that holds
-            # the rule for every caller.
-            return
+            # or the turn costs more than the caller's remaining allowance.
+            # Nothing was booked, so nothing has to be unwound — and the caller
+            # counts no attempt against this entity.
+            return False
         transmitted = False
         try:
             service, service_data, _ = self._prepare_service_call(
@@ -3317,7 +3393,7 @@ class CoverCommandService:
                 dispatch_token=dispatch_token,
             )
             if service is None:
-                return
+                return True
             if self._dry_run:
                 self._logger.info(
                     "[dry_run] reconciliation would send cover.%s %s → %s%%",
@@ -3325,7 +3401,7 @@ class CoverCommandService:
                     entity_id,
                     target,
                 )
-                return
+                return True
             ctx = Context()
             self._position_context_tracker.record(ctx.id)
             transmitted = True
@@ -3343,6 +3419,7 @@ class CoverCommandService:
                 )
         finally:
             self._release_queue_slot(grant, transmitted=transmitted)
+        return True
 
     def _track_action(
         self,

@@ -156,6 +156,24 @@ _RANGE_COMMAND_QUEUE_GAP = (0.0, 60.0)
 # withheld. Wider than the worst backend queue #1139 measured (33.7 s) would be
 # pointless; narrower than it would expire routinely.
 COMMAND_QUEUE_MAX_WAIT_SECONDS = 30.0
+# How much of its OWN interval one reconciliation pass may spend waiting on the
+# queue, in total across every entity it resends. The pass is not a dispatch: it
+# is the retry loop, and HA re-arms the interval listener before dispatching each
+# fire as its own background task, so a pass still running when the next one
+# starts leaves two of them mutating the same ``PerEntityState``.
+#
+# A whole-PASS allowance rather than a per-entity one, because the per-entity
+# ceiling above bounds the wrong thing here: N entities each waiting up to
+# COMMAND_QUEUE_MAX_WAIT_SECONDS is N x 30 s against a 60 s interval. Half the
+# interval leaves the other half as slack for the transmissions themselves —
+# ``async_call`` against a slow backend was measured at 33.7 s in #1139 — and for
+# scheduler jitter, so the bound holds without having to model either.
+#
+# At the shipped 1-minute interval and 5 s gap that is 30 s of spacing per pass,
+# i.e. seven covers resent per minute on one queue. Raising it buys throughput
+# out of the overlap margin; it is not an option because the trade is between two
+# invariants, not two preferences.
+COMMAND_QUEUE_PASS_BUDGET_FRACTION = 0.5
 
 # The scene select's "no scene" option (wire-stable select state). Not a
 # GroupScene member — it is the absence of a scene: choosing it clears the

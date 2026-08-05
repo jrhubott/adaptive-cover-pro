@@ -131,15 +131,21 @@ class StopTracker:
         risk of one short frame. It still keys the radio, so the queue is TOLD:
         the next queued member spaces itself against this transmission instead
         of assuming the air was free.
+
+        Reported BEFORE the await, on the same doctrine the position dispatch
+        states: HA raising — or this task being cancelled mid-call — does not
+        prove the backend never keyed the radio, and claiming the air was free
+        when it may not have been is the one error this feature exists to
+        avoid. The gap is cheap; a collision is not.
         """
         ctx = Context()
         self._acp_stop_contexts.append(ctx.id)
-        await self._hass.services.async_call(
-            "cover", "stop_cover", {"entity_id": entity_id}, context=ctx
-        )
         queue = self._queue_fn()
         if queue is not None:
             queue.mark_external_transmit()
+        await self._hass.services.async_call(
+            "cover", "stop_cover", {"entity_id": entity_id}, context=ctx
+        )
 
     async def try_stop_one(
         self, entity_id: str, caps: dict[str, bool], *, label: str

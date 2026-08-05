@@ -224,18 +224,32 @@ class CommandQueue:
         """Remaining spacing owed before the next member may transmit."""
         return max(0.0, self._busy_until - monotonic())
 
-    def can_grant_now(self) -> bool:
-        """Whether a slot could be taken this instant with no waiting at all.
+    def projected_wait_seconds(self, *, head_of_line: bool = False) -> float:
+        """Seconds a reservation asking RIGHT NOW would wait before transmitting.
 
-        All three conditions, because any one of them is a wait: nobody holds
-        the slot, nobody is queued for it, and the air owes no spacing.
+        Zero means the slot is free, unqueued and the air owes nothing — the
+        only state in which a command goes out with no delay at all.
+
+        The estimate is the sum of three things a caller cannot see separately:
+        the spacing still owed by the air, one further gap if somebody holds the
+        slot (a holder has yet to transmit and start its own gap), and one gap
+        per reservation ahead of this one in the tiers it cannot jump.
+
+        This exists so a caller can decide whether a wait is AFFORDABLE, which
+        is a different question from whether it is zero. Folding the two — "not
+        free this instant" therefore "stand down" — is what made a reconciliation
+        pass emit at most one frame: the very spacing the pass's own first
+        resend started disqualified every remaining entity on the queue.
+        Spacing owed is bounded by ``gap_seconds`` and is largely the caller's
+        own doing; waiting it out is the entire point of the queue.
         """
-        return (
-            self._owner is None
-            and not self._head_waiters
-            and not self._routine_waiters
-            and self._busy_until <= monotonic()
-        )
+        ahead = len(self._head_waiters)
+        if not head_of_line:
+            ahead += len(self._routine_waiters)
+        wait = self.busy_for_seconds()
+        if self._owner is not None:
+            wait += self.gap_seconds
+        return wait + ahead * self.gap_seconds
 
     # ------------------------------------------------------------------ #
     # The slot
@@ -247,26 +261,21 @@ class CommandQueue:
         *,
         head_of_line: bool,
         budget: float,
-        wait: bool = True,
     ) -> QueueGrant | None:
         """Take the slot and wait out any spacing still owed.
 
         Returns ``None`` when this reservation was superseded by a newer one
-        for the same entity while it waited, or — with ``wait=False`` — when
-        the slot was not free to begin with. Every other outcome is a grant the
+        for the same entity while it waited. Every other outcome is a grant the
         caller must transmit on and then :meth:`release`, including the
         budget-expired one.
 
-        ``wait=False`` is for a caller that cannot afford to suspend at all:
-        the reconciliation resend, whose pass IS the retry loop and which HA
-        re-fires on an interval it re-arms before dispatching. It takes the
-        slot only if :meth:`can_grant_now`, and otherwise stands down having
-        reserved nothing — structurally, so the guarantee survives a later edit
-        to the waiting paths below.
+        ``budget`` is the caller's whole allowance for this one acquisition. A
+        caller that cannot afford to suspend for long — the reconciliation
+        resend, whose pass IS the retry loop and which HA re-fires on an
+        interval it re-arms before dispatching — passes a small one and asks
+        :meth:`resend_stands_down` first, so it only ever enters a wait it can
+        pay for.
         """
-        if not wait and not self.can_grant_now():
-            return None
-
         started = monotonic()
         depth_at_enqueue = self.depth
         budget_expired = False
@@ -419,29 +428,32 @@ class CommandQueue:
         """
         return entity_id in self._pending
 
-    def resend_stands_down(self, entity_id: str) -> bool:
+    def resend_stands_down(self, entity_id: str, *, budget: float) -> bool:
         """Whether a reconciliation resend must yield its whole turn.
 
-        Two independent reasons:
+        Two independent reasons, and the split between them is the point:
 
         * :meth:`defers_to_pending` — a live dispatch for this entity is
-          already waiting and carries the newer decision.
-        * The slot is not free this instant. A resend that queued would hold
-          the reconciliation pass open, per entity, for the whole clearance
-          budget — and HA re-arms the reconciliation interval listener before
-          dispatching each fire as its own background task, so a blocked pass
-          is still running when the next one starts and the two mutate the same
-          per-entity state.
+          already waiting and carries the newer decision. Unbounded from this
+          pass's perspective and never this pass's to wait out.
+        * The turn would cost more than ``budget``, the pass's REMAINING
+          allowance. Spacing owed and reservations ahead are both bounded and
+          largely the pass's own doing, so it waits them out when it can afford
+          to and stands down only when it cannot.
 
-        Exists as a question the PASS can ask before it counts a retry, which
-        is the same reason the clearance gate is asked there: a resend that
-        never goes out must not burn one of the pass's attempts, or repeated
-        stand-downs reach ``gave_up`` and warn "max retries exceeded" about a
-        cover that was never resent. Composed from the same two primitives
-        ``acquire(..., wait=False)`` uses, so the reading taken before the
-        count and the acquisition that follows it cannot disagree.
+        The earlier form asked "is the slot free this instant", which folded the
+        spacing the pass's own previous resend had just started into the
+        stand-down: the first entity to resend disqualified every remaining one,
+        so a pass emitted at most one frame no matter how idle the queue was.
+
+        Advisory, not authoritative. The pass asks it to avoid entering a wait
+        it cannot pay for; whether the resend actually went out is answered by
+        the acquisition itself, so nothing downstream depends on this reading
+        still being true when the wait ends.
         """
-        return self.defers_to_pending(entity_id) or not self.can_grant_now()
+        return (
+            self.defers_to_pending(entity_id) or self.projected_wait_seconds() > budget
+        )
 
     def _enqueue(self, entity_id: str, *, head_of_line: bool) -> _Waiter:
         """Queue a reservation, superseding any this entity already had waiting."""

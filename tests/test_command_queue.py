@@ -25,6 +25,8 @@ from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    COMMAND_QUEUE_MAX_WAIT_SECONDS,
+    COMMAND_QUEUE_PASS_BUDGET_FRACTION,
     COMMAND_QUEUE_REGISTRY_KEY,
     CONF_COMMAND_QUEUE,
     CONF_COMMAND_QUEUE_GAP,
@@ -482,6 +484,50 @@ class TestQueueMechanics:
         with pytest.raises(Exception):
             grant.waited_seconds = 1.0  # type: ignore[misc]
         assert not hasattr(grant, "__dict__")
+
+    @pytest.mark.asyncio
+    async def test_projected_wait_counts_spacing_holder_and_queue(self):
+        """The wait a caller would actually take, as a number rather than a flag.
+
+        Zero only when the slot is free, unqueued and the air owes nothing. A
+        holder adds one gap (it has yet to transmit and start its own), each
+        reservation ahead adds another, and spacing already owed adds itself —
+        which is the distinction that matters: spacing is bounded and usually
+        the caller's own doing, so it is affordable, while an unbounded backlog
+        is not.
+        """
+        queue = _queue(gap=1.0)
+        assert queue.projected_wait_seconds() == 0.0
+
+        queue.mark_external_transmit()  # ~1 s of spacing owed, slot still free
+        assert 0.5 < queue.projected_wait_seconds() <= 1.0
+
+        holder = await queue.acquire("cover.a", head_of_line=False, budget=_BUDGET)
+        assert holder is not None  # took the slot, waited the spacing out
+        # A holder is one further gap for whoever comes next.
+        assert 0.9 <= queue.projected_wait_seconds() <= 1.1
+
+        waiter = asyncio.create_task(
+            queue.acquire("cover.b", head_of_line=False, budget=_BUDGET)
+        )
+        await asyncio.sleep(0)
+        assert queue.depth == 1
+        # Holder + one routine reservation ahead.
+        assert 1.9 <= queue.projected_wait_seconds() <= 2.1
+        # A head-of-line asker does not queue behind the routine tier.
+        assert 0.9 <= queue.projected_wait_seconds(head_of_line=True) <= 1.1
+
+        queue.release(holder, transmitted=False)
+        granted = await asyncio.wait_for(waiter, timeout=1.0)
+        assert granted is not None
+        queue.release(granted, transmitted=False)
+
+    def test_resend_stands_down_only_beyond_the_budget(self):
+        """The predicate the pass reads: affordability, not idleness."""
+        queue = _queue(gap=5.0)
+        queue.mark_external_transmit()
+        assert queue.resend_stands_down("cover.a", budget=1.0) is True
+        assert queue.resend_stands_down("cover.a", budget=30.0) is False
 
 
 # ---------------------------------------------------------------------------
@@ -1012,26 +1058,26 @@ class TestOtherWireSites:
 
     @pytest.mark.asyncio
     async def test_reconciliation_resend_takes_a_routine_turn(self):
-        """Routine tier, and never a waiting one.
+        """Routine tier, on the allowance its caller sized.
 
         A retry of a command that already had its chance has no claim on the
-        head of the line ahead of a fresh safety decision — and it asks with
-        ``wait=False``, so it can only ever take a slot that is free already.
+        head of the line ahead of a fresh safety decision. It does WAIT for its
+        turn like any other transmission — what bounds it is the budget handed
+        down, not a refusal to suspend.
         """
         hass = _svc_hass()
         queue = _queue(gap=0.0)
         svc = _svc(hass, command_queue=queue)
-        calls: list[tuple[bool, bool]] = []
+        calls: list[tuple[bool, float]] = []
         real_acquire = CommandQueue.acquire
 
-        async def _tracked(self, entity_id, *, head_of_line, budget, wait=True):
-            calls.append((head_of_line, wait))
+        async def _tracked(self, entity_id, *, head_of_line, budget):
+            calls.append((head_of_line, budget))
             return await real_acquire(
                 self,
                 entity_id,
                 head_of_line=head_of_line,
                 budget=budget,
-                wait=wait,
             )
 
         with (
@@ -1039,89 +1085,98 @@ class TestOtherWireSites:
             patch.object(svc, "_get_current_position", return_value=10),
             patch.object(CommandQueue, "acquire", _tracked),
         ):
-            await svc._execute_command("cover.a", 70)
+            assert await svc._execute_command("cover.a", 70, queue_budget=4.0) is True
 
-        assert calls == [(False, False)]
+        assert calls == [(False, 4.0)]
         hass.services.async_call.assert_awaited_once()
         assert queue._owner is None
         assert queue.busy_for_seconds() == 0.0
 
     @pytest.mark.asyncio
-    async def test_reconciliation_resend_stands_down_rather_than_blocking(self):
-        """A resend takes the slot only if it is free RIGHT NOW.
+    async def test_a_resend_waits_out_spacing_it_can_afford(self):
+        """Spacing owed is not contention — it is the queue doing its job.
 
-        The reconciliation pass IS the retry loop, and HA re-arms its interval
-        listener before dispatching each fire as its own background task — so a
-        pass that blocks per entity for the clearance budget (30 s, against a
-        1-minute interval) is still running when the next one starts, and the
-        two mutate the same ``PerEntityState``. That is the same overlap the
-        ``wait=False`` clearance gate above it exists to prevent, reached by a
-        different road. Standing down costs nothing: the next pass re-asks.
+        Folding "the air is spaced" into the stand-down is what limited a
+        reconciliation pass to a single frame: the gap its OWN first resend
+        started disqualified every remaining cover on the queue. A turn that
+        costs less than the caller's remaining allowance is taken and waited
+        out.
         """
         hass = _svc_hass()
-        queue = _queue(gap=0.0)
+        queue = _queue(gap=_GAP)
         svc = _svc(hass, command_queue=queue)
-        holder = await queue.acquire("cover.other", head_of_line=False, budget=5.0)
-        assert holder is not None
+        queue.mark_external_transmit()  # slot free, but the air is not
+        assert queue._owner is None
+        assert queue.projected_wait_seconds() > 0.0
 
+        loop = asyncio.get_running_loop()
+        started = loop.time()
         with (
             _patch_caps(),
             patch.object(svc, "_get_current_position", return_value=10),
         ):
-            task = asyncio.create_task(svc._execute_command("cover.a", 70))
-            await asyncio.sleep(0)
-            # Returned without ever suspending, and left no reservation behind
-            # for the next pass to trip over.
-            assert task.done()
-            await task
+            assert (
+                await asyncio.wait_for(
+                    svc._execute_command("cover.a", 70, queue_budget=5.0),
+                    timeout=2.0,
+                )
+                is True
+            )
 
-        hass.services.async_call.assert_not_awaited()
-        assert queue.depth == 0
-        queue.release(holder, transmitted=False)
+        hass.services.async_call.assert_awaited_once()
+        assert loop.time() - started >= _GAP
 
     @pytest.mark.asyncio
-    async def test_reconciliation_resend_stands_down_while_the_air_is_spaced(self):
-        """Spacing owed is a wait too — a free slot alone is not enough.
+    async def test_a_resend_stands_down_when_the_turn_outruns_the_allowance(self):
+        """Beyond the allowance the resend yields the whole turn.
 
-        With a configured gap anywhere near the clearance budget, waiting out
-        the spacing blocks the pass for just as long as waiting for the slot.
+        The pass IS the retry loop, and HA re-arms its interval listener before
+        dispatching each fire as its own background task — so a pass that
+        outspends its own interval is still running when the next one starts,
+        and the two mutate the same ``PerEntityState``. Standing down costs
+        nothing: the next pass re-asks.
         """
         hass = _svc_hass()
         queue = _queue(gap=30.0)
         svc = _svc(hass, command_queue=queue)
-        queue.mark_external_transmit()  # slot free, but the air is not
-        assert queue._owner is None
+        queue.mark_external_transmit()  # ~30 s of spacing owed
+        assert queue.projected_wait_seconds() > 5.0
 
         with (
             _patch_caps(),
             patch.object(svc, "_get_current_position", return_value=10),
         ):
-            task = asyncio.create_task(svc._execute_command("cover.a", 70))
+            task = asyncio.create_task(
+                svc._execute_command("cover.a", 70, queue_budget=5.0)
+            )
             await asyncio.sleep(0)
+            # Returned without ever suspending, and left no reservation behind
+            # for the next pass to trip over.
             assert task.done()
-            await task
+            assert await task is False
 
         hass.services.async_call.assert_not_awaited()
+        assert queue.depth == 0
 
     @pytest.mark.asyncio
     async def test_a_stood_down_resend_burns_no_retry(self):
         """Standing down must not cost one of the pass's three attempts.
 
-        The clearance gate directly above is asked before the counter for
-        exactly this reason. A queue stand-down that counted would reach
-        ``gave_up`` after three passes and warn "max retries exceeded" about a
-        cover that was never resent — and with the resend now non-blocking,
-        standing down is the common case on a busy queue, not a corner one.
+        A queue stand-down that counted would reach ``gave_up`` after three
+        passes and warn "max retries exceeded" about a cover that was never
+        resent. The counter is driven by what ``_execute_command`` reports,
+        not by a prediction made before the acquisition — the acquisition
+        suspends, so no earlier reading can promise the frame goes out.
         """
         hass = _svc_hass()
-        queue = _queue(gap=0.0)
+        # A gap wider than the whole pass allowance: every turn on this queue
+        # costs more than one pass can spend.
+        queue = _queue(gap=90.0)
         svc = _svc(hass, command_queue=queue)
         svc.enable_position_matching = True
         svc.set_target("cover.a", 50)
         svc.set_waiting("cover.a", False)
-
-        holder = await queue.acquire("cover.blocker", head_of_line=False, budget=5.0)
-        assert holder is not None
+        queue.mark_external_transmit()
 
         with (
             _patch_caps(),
@@ -1135,7 +1190,6 @@ class TestOtherWireSites:
         hass.services.async_call.assert_not_awaited()
         assert svc.state("cover.a").retry_count == 0
         assert svc.state("cover.a").gave_up is False
-        queue.release(holder, transmitted=False)
 
     @pytest.mark.asyncio
     async def test_a_resend_that_goes_out_still_counts_its_retry(self):
@@ -1233,6 +1287,25 @@ class TestOtherWireSites:
         assert queue.busy_for_seconds() > 0.0
 
     @pytest.mark.asyncio
+    async def test_a_stop_that_raises_still_reports_its_frame(self):
+        """Reported BEFORE the await, on the position dispatch's own doctrine.
+
+        HA raising — or the task being cancelled mid-call — does not prove the
+        backend never keyed the radio, and claiming the air was free when it may
+        not have been is the one error this feature exists to avoid. The gap is
+        cheap; a collision is not.
+        """
+        hass = _svc_hass()
+        queue = _queue()
+        svc = _svc(hass, command_queue=queue)
+        hass.services.async_call = AsyncMock(side_effect=HomeAssistantError("boom"))
+
+        with pytest.raises(HomeAssistantError):
+            await svc._stop_tracker.call_stop_cover("cover.a")
+
+        assert queue.busy_for_seconds() > 0.0
+
+    @pytest.mark.asyncio
     async def test_stop_on_an_unqueued_cover_is_untouched(self):
         hass = _svc_hass()
         svc = _svc(hass)
@@ -1254,6 +1327,176 @@ class TestOtherWireSites:
         assert queue.busy_for_seconds() == 0.0
         svc.mark_queue_external_transmit()
         assert queue.busy_for_seconds() > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Step 5a — the reconciliation pass's own wait allowance
+#
+# The pass sits between two invariants that pull in opposite directions. It must
+# reconcile EVERY cover it owns, or a cover that missed its target sits wrong
+# indefinitely with nothing in the diagnostics to say so. And it must finish
+# before the next pass starts, because HA re-arms the interval listener before
+# dispatching each fire as its own background task, so two overlapping passes
+# mutate one ``PerEntityState``.
+#
+# A per-entity ceiling cannot hold both: N entities each entitled to
+# COMMAND_QUEUE_MAX_WAIT_SECONDS is N x 30 s against a 60 s interval. A
+# per-entity refusal to wait at all cannot either: the gap the pass's own first
+# resend starts then disqualifies every remaining cover, and the pass emits one
+# frame. One allowance for the whole pass is what satisfies both.
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_svc(hass, queue, covers, *, target=50):
+    """Build a service with *covers* recorded off target and eligible to resend."""
+    svc = _svc(hass, command_queue=queue)
+    svc.enable_position_matching = True
+    for entity_id in covers:
+        svc.set_target(entity_id, target)
+        svc.set_waiting(entity_id, False)
+    return svc
+
+
+def _sent_entities(hass) -> list[str]:
+    return [
+        call.args[2]["entity_id"] for call in hass.services.async_call.await_args_list
+    ]
+
+
+@pytest.mark.unit
+class TestReconciliationPassAllowance:
+    """One pass reconciles every cover it can afford, and no more."""
+
+    @pytest.mark.asyncio
+    async def test_one_pass_resends_every_off_target_cover_on_an_idle_queue(self):
+        """Five covers, one entry, an idle queue — five frames, spaced.
+
+        The regression this locks: ``resend_stands_down`` used to ask "is the
+        slot free THIS INSTANT", and ``can_grant_now`` counts the spacing owed.
+        The first cover's own resend started that spacing, so covers two
+        through five stood down — every pass, forever, on a queue nobody else
+        was using.
+        """
+        hass = _svc_hass()
+        queue = _queue(gap=_GAP)
+        covers = [f"cover.c{i}" for i in range(1, 6)]
+        svc = _reconcile_svc(hass, queue, covers)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+            patch.object(svc, "_is_cover_in_transit", return_value=False),
+        ):
+            await asyncio.wait_for(
+                svc.run_reconciliation_pass(dt.datetime.now(dt.UTC)), timeout=5.0
+            )
+        elapsed = loop.time() - started
+
+        assert _sent_entities(hass) == covers
+        assert [svc.state(c).retry_count for c in covers] == [1] * len(covers)
+        # Spaced, not simultaneous: four gaps between five frames.
+        assert elapsed >= _GAP * (len(covers) - 1)
+
+    @pytest.mark.asyncio
+    async def test_the_pass_stops_spending_when_its_allowance_runs_out(self):
+        """The allowance is what bounds the pass, and it is a TOTAL.
+
+        Covers past the allowance stand down having booked nothing and burned
+        no attempt, and the pass ends inside its own budget rather than
+        N x the per-command ceiling.
+        """
+        hass = _svc_hass()
+        gap = 0.15
+        budget = 0.375  # room for two waits (0.15 + 0.15), not for a third
+        queue = _queue(gap=gap)
+        covers = [f"cover.c{i}" for i in range(1, 7)]
+        svc = _reconcile_svc(hass, queue, covers)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+            patch.object(svc, "_is_cover_in_transit", return_value=False),
+            patch.object(svc, "_reconciliation_queue_budget", return_value=budget),
+        ):
+            await asyncio.wait_for(
+                svc.run_reconciliation_pass(dt.datetime.now(dt.UTC)), timeout=5.0
+            )
+        elapsed = loop.time() - started
+
+        sent = _sent_entities(hass)
+        # More than the single frame the old stand-down allowed, and fewer than
+        # all six — the allowance genuinely cut in.
+        assert 1 < len(sent) < len(covers)
+        assert sent == covers[: len(sent)]
+        for entity_id in sent:
+            assert svc.state(entity_id).retry_count == 1
+        for entity_id in covers[len(sent) :]:
+            assert svc.state(entity_id).retry_count == 0
+            assert svc.state(entity_id).gave_up is False
+        # The pass spent its allowance, not a per-entity multiple of it.
+        assert elapsed < budget + gap
+
+    @pytest.mark.asyncio
+    async def test_the_allowance_cannot_reach_the_next_pass(self):
+        """The overlap bound, stated on the shipped derivation.
+
+        Half the pass's own interval, so the other half is slack for the
+        transmissions themselves and for scheduler jitter — and never more than
+        the per-command ceiling for any single entity, so a slow interval does
+        not license a single cover to sit in the queue for minutes.
+        """
+        svc = _svc(_svc_hass(), command_queue=_queue())
+        interval_seconds = svc._check_interval_minutes * 60.0
+        allowance = svc._reconciliation_queue_budget()
+
+        assert allowance == interval_seconds * COMMAND_QUEUE_PASS_BUDGET_FRACTION
+        assert allowance < interval_seconds
+        # A single entity is capped twice over: by what the pass has left, and
+        # by the per-command bounded-wait invariant.
+        deadline = time.monotonic() + 10_000.0
+        assert svc._resend_wait_allowance(deadline) == COMMAND_QUEUE_MAX_WAIT_SECONDS
+        assert svc._resend_wait_allowance(time.monotonic() - 1.0) == 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_re_armed_cover_does_not_starve_the_others(self):
+        """The starvation case: sun tracking re-arming the first cover.
+
+        ``apply_position`` resets ``retry_count``/``gave_up``, so a re-targeted
+        cover re-enters every pass at the front of the dispatch order. With the
+        stand-down keyed on "slot free this instant", that cover's own resend
+        spaced the air and the covers behind it were never resent once — a cover
+        stuck off target with no retry, no warning and no diagnostic, on a
+        default configuration.
+        """
+        hass = _svc_hass()
+        queue = _queue(gap=_GAP)
+        covers = ["cover.c1", "cover.c2", "cover.c3"]
+        svc = _reconcile_svc(hass, queue, covers)
+        resent: dict[str, int] = dict.fromkeys(covers, 0)
+
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=10),
+            patch.object(svc, "_is_cover_in_transit", return_value=False),
+        ):
+            for cycle in range(3):
+                # Sun tracking re-targets the first cover between passes.
+                await svc.apply_position("cover.c1", 50 + cycle, "solar", _ctx())
+                hass.services.async_call.reset_mock()
+                for entity_id in covers:
+                    svc.set_waiting(entity_id, False)
+                await asyncio.wait_for(
+                    svc.run_reconciliation_pass(dt.datetime.now(dt.UTC)), timeout=5.0
+                )
+                for entity_id in _sent_entities(hass):
+                    resent[entity_id] += 1
+
+        assert resent["cover.c2"] > 0, "cover.c2 was never resent"
+        assert resent["cover.c3"] > 0, "cover.c3 was never resent"
 
 
 # ---------------------------------------------------------------------------
