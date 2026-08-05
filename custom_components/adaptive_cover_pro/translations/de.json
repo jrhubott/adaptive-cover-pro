@@ -45,7 +45,8 @@
           "create_new": "Neue Beschattung erstellen",
           "create_building_profile": "Gebäudeprofil erstellen",
           "duplicate_existing": "Von vorhandener Beschattung duplizieren",
-          "create_group": "Beschattungsgruppe erstellen"
+          "create_group": "Beschattungsgruppe erstellen",
+          "create_command_queue": "Befehlswarteschlange erstellen"
         }
       },
       "create_new": {
@@ -280,11 +281,24 @@
           "member_covers": "Einfache Beschattungen werden direkt mit dem Szenenziel angesteuert. Eine Beschattung, die bereits von einem ausgewählten Mitglied gesteuert wird, wird übersprungen.",
           "group_area": "Optional: Beschattungen in diesem Bereich treten der Gruppe automatisch bei und die Mitgliedschaft folgt Registrierungsänderungen. Kombiniert mit den obigen Listen."
         }
+      },
+      "create_command_queue": {
+        "title": "Befehlswarteschlange erstellen",
+        "description": "Eine Befehlswarteschlange lässt Beschattungen abwechselnd senden, damit One-Way-Radio-Backends (Somfy RTS, RFXtrx) keine Rahmen durch Kollisionen verlieren. Beschattungen treten bei, indem sie diese Warteschlange auf ihrer Seite \"Bewegung & Zeitplan\" nennen. Das Erstellen dieses Eintrags ist optional - eine benannte Warteschlange serialisiert bereits mit dem Standard-Abstand; hier können Sie diesen Abstand ändern und sehen, wer beigetreten ist. [Weitere Informationen]({learn_more})",
+        "data": {
+          "name": "Name der Warteschlange",
+          "command_queue_gap": "Abstand zwischen Befehlen"
+        },
+        "data_description": {
+          "name": "Beschattungen verweisen auf diese Warteschlange nach Name in ihren Einstellungen \"Bewegung & Zeitplan\". Der Vergleich ignoriert Groß- und Kleinschreibung sowie zusätzliche Leerzeichen.",
+          "command_queue_gap": "Sekunden, die die Warteschlange nach jeder Übertragung einer Beschattung in dieser Warteschlange aktiv bleibt, bevor die nächste Beschattung gehen darf. Standard: 5 Sekunden."
+        }
       }
     },
     "abort": {
       "user_cancelled": "Aktion vom Benutzer abgebrochen",
-      "source_not_found": "Die Quellbeschattung existiert nicht mehr."
+      "source_not_found": "Die Quellbeschattung existiert nicht mehr.",
+      "already_configured": "Eine Befehlswarteschlange mit diesem Namen existiert bereits. Beschattungen verweisen auf Warteschlangen nach Name, daher ein Eintrag pro Name — öffnen Sie den bestehenden Eintrag, um den Abstand zu ändern."
     }
   },
   "options": {
@@ -320,7 +334,9 @@
           "group_arbitration": "⚖️ Schiedsverfahren & Zeitplanung",
           "group_entities": "🧩 Verfügbar gemachte Entitäten",
           "change_cover_type": "🔁 Beschattungstyp ändern",
-          "calibration": "📐 Kalibrierung"
+          "calibration": "📐 Kalibrierung",
+          "queue_settings": "🚦 Warteschlangen-Einstellungen",
+          "queue_overview": "🚦 Warteschlangen-Übersicht"
         },
         "description": "Konfiguration: **{instance_name}**{profile_line}\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -335,7 +351,8 @@
           "end_time": "Endzeit",
           "end_entity": "Entität, die die Endzeit angibt",
           "max_coverage_steps": "Maximale Abdeckungsschritte",
-          "minimize_movements": "Bewegungen minimieren"
+          "minimize_movements": "Bewegungen minimieren",
+          "command_queue": "Befehlswarteschlange"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert winzige Anpassungen, wenn die Sonne langsam wandert. Typische Werte: 1-2 % (sehr reaktiv, kann häufig angepasst werden), 5 % (ausgewogen, für die meisten empfohlen), 10 % (weniger häufig, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30 % liegt und die Sonne sich leicht bewegt, passen Sie nur an, wenn die neue Position 35 % oder mehr beträgt (mit 5 % Schwellenwert). Reduziert Motorverschleiß und Geräusche durch ständige winzige Anpassungen.",
@@ -345,7 +362,8 @@
           "end_time": "Beenden Sie die automatische Steuerung nach dieser Zeit (24-Stunden-Format). Verwenden Sie diese Option, um den Datenschutz am Abend aufrechtzuerhalten (auf 18:00 oder 19:00 einstellen), zur Standardeinstellung vor dem Schlafengehen zurückkehren oder leer lassen, um bis Sonnenuntergang fortzufahren. Beispiel: '20:00' bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Die manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
           "end_entity": "Entity, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entity (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
           "max_coverage_steps": "Die maximale Anzahl der zu berücksichtigenden Schritte (z. B. 5 Schritte = 20% je Schritt). Mehr Schritte bedeuten glattere Bewegungen, aber häufigere Befehle und möglicherweise langsamere Reaktionen. Weniger Schritte reduzieren die Motorverschleiß, aber die Bewegung erscheint weniger flüssig.",
-          "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus."
+          "minimize_movements": "Reduzieren Sie die Häufigkeit der Positionsänderung der Beschattung beim Sonnenverfolgen durch Einrasten auf wenige feste Abdeckungsebenen statt kontinuierlicher Sonnenverfolgung. Rundet zu MEHR Abdeckung, damit direkte Sonnenstrahlung niemals durch Rundung eindringt. Tauscht etwas Tageslicht gegen weit weniger Motorbewegungen ein. Standard: aus.",
+          "command_queue": "Serialisieren Sie die Befehle dieser Beschattung gegen andere Beschattungen, die derselben Warteschlange zugewiesen sind. Beschattungen, die eine Warteschlange teilen, senden nie gleichzeitig - nützlich für One-Way-Radio-Backends (Somfy RTS, RFXtrx), bei denen gleichzeitige Befehle kollidieren und verloren gehen. Der Abstand zwischen Befehlen wird im Eintrag \"Befehlswarteschlange\" mit demselben Namen festgelegt oder standardmäßig auf 5 Sekunden eingestellt, falls keine vorhanden ist. Leer lassen für keine Warteschlange (Standard)."
         }
       },
       "cover_entities": {
@@ -1117,6 +1135,20 @@
       "travel_time_manual": {
         "description": "Sekunden für eine vollständige Fahrt von vollständig geschlossen bis vollständig offen. Setzen Sie eine Beschattung auf **0**, um ihre Zeit zu löschen; alles andere muss mindestens {min_seconds} Sekunden betragen.\n\nEine ungefähre Zahl ist wertvoll: Sie beeinflusst nur, wie die Bewegung angezeigt wird, niemals, wohin die Beschattung geschickt wird. Das Timing eines vollständigen Schließens mit einer Stoppuhr ist ausreichend.\n\n{cover_list}",
         "title": "Laufzeit — manuelle Eingabe"
+      },
+      "queue_settings": {
+        "title": "Warteschlangen-Einstellungen",
+        "description": "Wie lange diese Warteschlange nach der Übertragung einer ihrer Beschattungen blockiert bleibt. Jede Beschattung, die diese Warteschlange nennt, übernimmt den neuen Wert bei ihrem nächsten Befehl - kein Neustart erforderlich. [Weitere Informationen]({learn_more})",
+        "data": {
+          "command_queue_gap": "Abstand zwischen Befehlen"
+        },
+        "data_description": {
+          "command_queue_gap": "Sekunden, die die Warteschlange nach jeder Übertragung einer Beschattung in dieser Warteschlange aktiv bleibt, bevor die nächste Beschattung gehen darf. Standard: 5 Sekunden."
+        }
+      },
+      "queue_overview": {
+        "title": "Warteschlangen-Übersicht",
+        "description": "{overview}"
       }
     },
     "abort": {

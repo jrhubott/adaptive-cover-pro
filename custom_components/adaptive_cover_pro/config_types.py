@@ -736,6 +736,11 @@ class TrackingSlice:
     # instead of set_cover_position(100/0). Falls back to set_cover_position
     # when the cover lacks open/close; never applies to a tilt-only axis.
     endpoint_use_open_close: bool = True
+    # Name of the shared dispatch queue this cover belongs to (issue #1189).
+    # ``None``/blank — the default — means no queue: the cover transmits the
+    # moment it decides to, exactly as before the queue existed. Read at setup
+    # only, deliberately: changing it is wiring, so it must take a full reload.
+    command_queue: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -794,6 +799,7 @@ class RuntimeConfig:
             CONF_CLIMATE_TEMP_HOLD_TIME,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            CONF_COMMAND_QUEUE,
             CONF_DAYTIME_GATE_SENSORS,
             CONF_DAYTIME_GATE_TEMPLATE,
             CONF_DAYTIME_GATE_TEMPLATE_MODE,
@@ -918,6 +924,7 @@ class RuntimeConfig:
                     CONF_ENDPOINT_USE_OPEN_CLOSE,
                     DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
                 ),
+                command_queue=options.get(CONF_COMMAND_QUEUE),
             ),
             manual_override=ManualOverrideSlice(
                 reset=options.get(CONF_MANUAL_OVERRIDE_RESET, False),

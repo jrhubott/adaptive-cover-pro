@@ -43,6 +43,7 @@ _EXPECTED_SKIP_CODES: frozenset[str] = frozenset(
         "cover_unavailable",
         "policy_deferred",
         "calibration_in_progress",
+        "superseded_in_queue",
     }
 )
 

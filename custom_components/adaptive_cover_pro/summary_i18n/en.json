@@ -219,6 +219,9 @@
     "travel_time": "Travel time: {done}/{total} covers",
     "travel_time_manual": "Travel time: {done}/{total} covers ({manual} entered by hand)"
   },
+  "movement": {
+    "queue": "🚦 Commands serialized on queue \"{queue}\" ({gap}s gap)"
+  },
   "my": {
     "entities_enabled": "🎛️ My-preset entities: enabled",
     "entities_disabled": "🎛️ My-preset entities: disabled",

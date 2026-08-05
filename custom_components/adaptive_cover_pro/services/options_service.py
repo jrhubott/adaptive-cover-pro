@@ -68,6 +68,8 @@ from ..const import (
     CONF_END_ENTITY,
     CONF_END_OF_WINDOW_POS,
     CONF_EXTREME_HEAT_POSITION,
+    CONF_COMMAND_QUEUE,
+    CONF_COMMAND_QUEUE_GAP,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
@@ -709,6 +711,11 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_SOLAR_PRIORITY: _range(CONF_SOLAR_PRIORITY),
     # Cover group (issue #790, Phase 2)
     CONF_GROUP_STAGGER_DELAY: _range(CONF_GROUP_STAGGER_DELAY),
+    # Named dispatch queue (issue #1189). The gap is bounded; the name is free
+    # text (any string, or blank for "no queue"), because a cover may join a
+    # queue nobody has created an entry for yet.
+    CONF_COMMAND_QUEUE_GAP: _range(CONF_COMMAND_QUEUE_GAP),
+    CONF_COMMAND_QUEUE: vol.Any(str, None),
 }
 
 # ---------------------------------------------------------------------------

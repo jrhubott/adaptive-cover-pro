@@ -67,6 +67,13 @@ DOMAIN = "adaptive_cover_pro"  # HA integration domain; must match manifest.json
 # outside the coordinator so it survives a reload (when entry.runtime_data is
 # briefly unset) and can be served by the diagnostics download as a stale fallback.
 DIAG_CACHE_KEY = f"{DOMAIN}_last_diagnostics"
+# hass.data slot holding the named cover-command dispatch queues, keyed by the
+# NORMALIZED queue name (issue #1189). Cross-entry shared state by construction:
+# a queue serializes commands across independent config entries, so it must
+# outlive any single member's reload and therefore cannot live on
+# ``entry.runtime_data``. Members attach/detach with a refcount; the key is
+# dropped when the last one leaves.
+COMMAND_QUEUE_REGISTRY_KEY = f"{DOMAIN}_command_queues"
 LOGGER = logging.getLogger(__package__)  # package-scoped logger
 _LOGGER = logging.getLogger(__name__)  # module-scoped; also imported by button.py
 
@@ -126,6 +133,47 @@ OPT_OUT_ALL_SCENES = "*"
 CONF_GROUP_STAGGER_DELAY = "group_stagger_delay"
 DEFAULT_GROUP_STAGGER_DELAY = 0.0
 _RANGE_GROUP_STAGGER = (0.0, 30.0)
+
+# ── Named cover-command dispatch queue (issue #1189) ─────────────────────────
+# A cover names the queue it belongs to; every cover naming the same queue
+# transmits one at a time, the queue staying busy for ``gap`` seconds after each
+# send. Deliberately disjoint from the group stagger above: that one is
+# group-scoped AND group-triggered (it only spaces a group fan-out), this one
+# spaces a cover's OWN routine dispatch across independent config entries.
+#
+# The name is stored on the cover (blank = no queue = today's behaviour); the
+# gap lives on the optional "Command Queue" config entry that owns the name. A
+# name with no matching entry still serializes, at DEFAULT_COMMAND_QUEUE_GAP —
+# naming a queue must never require creating one.
+CONF_COMMAND_QUEUE = "command_queue"
+CONF_COMMAND_QUEUE_GAP = "command_queue_gap"
+DEFAULT_COMMAND_QUEUE_GAP = 5.0
+_RANGE_COMMAND_QUEUE_GAP = (0.0, 60.0)
+# Hard ceiling on how long any one command may sit in a queue. NOT an option in
+# v1: it is the bounded-wait invariant, not a preference. A queue wait is a
+# long-blocking dispatch inside the coordinator's update cycle — exactly issue
+# #756's shape — so on expiry the command transmits anyway rather than being
+# withheld. Wider than the worst backend queue #1139 measured (33.7 s) would be
+# pointless; narrower than it would expire routinely.
+COMMAND_QUEUE_MAX_WAIT_SECONDS = 30.0
+# How much of its OWN interval one reconciliation pass may spend waiting on the
+# queue, in total across every entity it resends. The pass is not a dispatch: it
+# is the retry loop, and HA re-arms the interval listener before dispatching each
+# fire as its own background task, so a pass still running when the next one
+# starts leaves two of them mutating the same ``PerEntityState``.
+#
+# A whole-PASS allowance rather than a per-entity one, because the per-entity
+# ceiling above bounds the wrong thing here: N entities each waiting up to
+# COMMAND_QUEUE_MAX_WAIT_SECONDS is N x 30 s against a 60 s interval. Half the
+# interval leaves the other half as slack for the transmissions themselves —
+# ``async_call`` against a slow backend was measured at 33.7 s in #1139 — and for
+# scheduler jitter, so the bound holds without having to model either.
+#
+# At the shipped 1-minute interval and 5 s gap that is 30 s of spacing per pass,
+# i.e. seven covers resent per minute on one queue. Raising it buys throughput
+# out of the overlap margin; it is not an option because the trade is between two
+# invariants, not two preferences.
+COMMAND_QUEUE_PASS_BUDGET_FRACTION = 0.5
 
 # The scene select's "no scene" option (wire-stable select state). Not a
 # GroupScene member — it is the absence of a scene: choosing it clears the
@@ -2552,6 +2600,11 @@ class CoverType(StrEnum):
     # (``controls_cover = True``) but is not geometry-driven: setup branches
     # on ``is_orchestrator`` to a ``GroupCoordinator`` (issue #790).
     GROUP = "cover_group"
+    # Virtual entry type — owns the gap for ONE named dispatch queue (issue
+    # #1189). Controls nothing itself (``controls_cover = False``); covers join
+    # by naming it, and a name with no matching entry still serializes, at the
+    # default gap. Registers no platforms and builds no coordinator.
+    COMMAND_QUEUE = "cover_command_queue"
 
     @property
     def display_name(self) -> str:
@@ -2574,6 +2627,7 @@ class CoverType(StrEnum):
             self.DUAL_PANEL: "Dual Panel Shade",
             self.BUILDING_PROFILE: "Building Profile",
             self.GROUP: "Cover Group",
+            self.COMMAND_QUEUE: "Command Queue",
         }[self]
 
 

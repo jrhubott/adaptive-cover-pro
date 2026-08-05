@@ -48,6 +48,8 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
+    CONF_COMMAND_QUEUE,
+    CONF_COMMAND_QUEUE_GAP,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DAYTIME_GATE_TEMPLATE_MODE,
@@ -225,6 +227,7 @@ from .const import (
     DEFAULT_DELTA_TIME,
     DEFAULT_GROUP_ENABLE_COVER_ENTITY,
     DEFAULT_GROUP_ENABLE_SENSOR,
+    DEFAULT_COMMAND_QUEUE_GAP,
     DEFAULT_GROUP_STAGGER_DELAY,
     DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
@@ -375,8 +378,10 @@ from .pipeline.handlers import (  # noqa: E402
     resolve_handler_priority,
 )
 from .priority_chain import build_priority_chain  # noqa: E402
+from .managers.cover_command.queue import normalize_queue_name  # noqa: E402
 from .profile_link import (  # noqa: E402
     _building_profile_entries,
+    _command_queue_entries,
     _copy_profile_to_cover,
     _cover_entries,
     _covers_linked_to,
@@ -538,6 +543,107 @@ BUILDING_PROFILE_CREATE_SCHEMA = vol.Schema(
     {
         vol.Required("name"): selector.TextSelector(),
         **building_profile_sensors_schema().schema,
+    }
+)
+
+
+def known_command_queue_names(hass) -> list[str]:
+    """Every queue name in use, deduped by normalization, in first-seen casing.
+
+    The union of two sources, because a queue exists as soon as ONE cover names
+    it: the ``command_queue`` stored on every cover entry, and the name of every
+    Command Queue entry. Neither alone is the truth — a user may create the
+    entry first, or may never create one at all.
+
+    Deduping on the normalized key while DISPLAYING the original casing is the
+    whole mitigation for the free-text typo class: "Facade South" and "facade
+    south" collapse to one row, so the second cover picks the existing name
+    instead of silently minting a near-miss.
+    """
+    seen: dict[str, str] = {}
+    for entry in _cover_entries(hass):
+        raw = entry.options.get(CONF_COMMAND_QUEUE)
+        key = normalize_queue_name(raw)
+        if key:
+            seen.setdefault(key, str(raw).strip())
+    for entry in _command_queue_entries(hass):
+        raw = entry.data.get("name")
+        key = normalize_queue_name(raw)
+        if key:
+            seen.setdefault(key, str(raw).strip())
+    return [seen[key] for key in sorted(seen)]
+
+
+def _covers_on_command_queue(hass, queue_entry) -> list:
+    """Every cover entry whose queue name normalizes to this queue's.
+
+    By NORMALIZED name, never ``entry_id`` — that is the linkage the runtime
+    uses, so this list is exactly the membership that will serialize.
+    """
+    key = normalize_queue_name(queue_entry.data.get("name"))
+    if not key:
+        return []
+    return [
+        entry
+        for entry in _cover_entries(hass)
+        if normalize_queue_name(entry.options.get(CONF_COMMAND_QUEUE)) == key
+    ]
+
+
+def command_queue_selector(hass) -> selector.SelectSelector:
+    """Build the cover-side queue picker: known names, plus free text.
+
+    ``custom_value=True`` so only the FIRST cover on a queue has to type the
+    name; every cover after it picks the existing row.
+    """
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[
+                {"value": name, "label": name}
+                for name in known_command_queue_names(hass)
+            ],
+            mode=selector.SelectSelectorMode.DROPDOWN,
+            custom_value=True,
+        )
+    )
+
+
+def command_queue_gap_for(hass, name: str) -> float:
+    """Resolve the gap a queue NAME uses: its owning entry's, or the default.
+
+    The single statement of the resolution the runtime performs (a member reads
+    ``queue.gap_seconds``, which is the entry's value while one is bound and the
+    default otherwise). Restating it in the summary rather than sharing it is
+    how the displayed number drifts from the transmitted one.
+    """
+    key = normalize_queue_name(name)
+    if hass is not None and key:
+        for entry in _command_queue_entries(hass):
+            if normalize_queue_name(entry.data.get("name")) == key:
+                return entry.options.get(
+                    CONF_COMMAND_QUEUE_GAP, DEFAULT_COMMAND_QUEUE_GAP
+                )
+    return DEFAULT_COMMAND_QUEUE_GAP
+
+
+def command_queue_gap_schema() -> vol.Schema:
+    """Build the gap field alone — the create form and settings step share it.
+
+    Built from the registry ``FieldSpec``, so the bounds, step and default come
+    from ``const`` exactly once and the create form can never drift from the
+    edit form.
+    """
+    spec = config_fields.FIELD_SPECS[CONF_COMMAND_QUEUE_GAP]
+    marker, sel = spec.to_marker(None, {})
+    return vol.Schema({marker: sel})
+
+
+# Command Queue create form (issue #1189): the name covers will reference, and
+# the gap the queue holds the air for after each member transmits.
+COMMAND_QUEUE_CREATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): selector.TextSelector(),
+        **command_queue_gap_schema().schema,
     }
 )
 
@@ -1803,6 +1909,8 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "collapses every climate/glare-control decision to the floor "
         "and the cover stops blocking heat."
     ),
+    # --- Named command queue (issue #1189) ---
+    "movement.queue": '🚦 Commands serialized on queue "{queue}" ({gap}s gap)',
     # --- My preset / Somfy ---
     "my.entities_enabled": "🎛️ My-preset entities: enabled",
     "my.entities_disabled": "🎛️ My-preset entities: disabled",
@@ -3160,6 +3268,23 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         lines.append(L["headers.position_limits"])
         lines.append(L["limits.separator"].join(limit_parts))
 
+    # Named command queue (issue #1189). Its own line rather than a
+    # ``limit_parts`` fragment: the other entries there are numeric limits on
+    # this cover alone, while this one names a constraint SHARED with other
+    # config entries, and the gap it reports may be owned by an entry the user
+    # has to go elsewhere to edit. The gap is resolved exactly the way the
+    # runtime resolves it — the owning entry's value, or the default when no
+    # entry owns the name — so the summary can never promise a number the
+    # dispatcher would not use.
+    _queue_name = str(config.get(CONF_COMMAND_QUEUE) or "").strip()
+    if _queue_name:
+        lines.append(
+            L["movement.queue"].format(
+                queue=_queue_name,
+                gap=command_queue_gap_for(hass, _queue_name),
+            )
+        )
+
     # Footgun: a cover whose state Home Assistant only assumes can never be
     # measured, so leaving it without a hand-entered time silently means "this
     # cover will never animate" — exactly the kind of quiet no-op the summary
@@ -3458,6 +3583,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_START_ENTITY,
             CONF_END_TIME,
             CONF_END_ENTITY,
+            # Issue #1189. The one option whose whole point is that many covers
+            # share a value — Copy-to-covers fans one queue assignment across a
+            # whole facade in a single gesture, which for the 16-instance
+            # install this feature exists for is the difference between usable
+            # and not.
+            CONF_COMMAND_QUEUE,
         }
     ),
     "manual_override": frozenset(
@@ -4374,7 +4505,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # 3.15 (issue #1138): the same shape again for the additive
     # day_night_external_command_interlock option — absent reads as "on", so the
     # v3.14→v3.15 block is a no-op bump and nothing else.
-    MINOR_VERSION = 16
+    MINOR_VERSION = 17
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -4404,9 +4535,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         choices. The duplicate option only appears when prior entries exist.
         """
         acp_entries = _cover_entries(self.hass)
-        menu_options = ["create_new", "create_building_profile", "create_group"] + (
-            ["duplicate_existing"] if acp_entries else []
-        )
+        menu_options = [
+            "create_new",
+            "create_building_profile",
+            "create_group",
+            "create_command_queue",
+        ] + (["duplicate_existing"] if acp_entries else [])
         return self.async_show_menu(step_id="user", menu_options=menu_options)
 
     async def async_step_create_new(self, user_input: dict[str, Any] | None = None):
@@ -4470,6 +4604,45 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Cover-Groups"
+            },
+        )
+
+    async def async_step_create_command_queue(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Create a Command Queue entry from a single combined form (issue #1189).
+
+        One step collects the queue name together with its gap, then delegates
+        to the shared finalize (``async_step_update``) — the same path the
+        Building Profile and Cover Group flows use.
+
+        Creating a queue is entirely optional: a cover can name a queue that has
+        no entry behind it and still serialize, at the default gap. This entry
+        exists to change that gap and to show which covers joined.
+
+        The NAME is the identity, which is why a duplicate is refused outright
+        rather than merely discouraged. A Building Profile links by ``entry_id``
+        and can afford two entries with one title; this entry binds itself to a
+        shared runtime object by normalized name, so two of them both
+        ``attach()`` and both ``set_gap()`` — the bound gap becomes whichever
+        loaded last, and unloading or deleting EITHER reverts the queue to the
+        5 s default while the surviving entry's UI still shows its own value.
+        """
+        if user_input is not None:
+            key = normalize_queue_name(user_input.get("name"))
+            if key and any(
+                normalize_queue_name(entry.data.get("name")) == key
+                for entry in _command_queue_entries(self.hass)
+            ):
+                return self.async_abort(reason="already_configured")  # type: ignore[return-value]
+            self.config = dict(user_input)
+            self.type_blind = CoverType.COMMAND_QUEUE
+            return await self.async_step_update()
+        return self.async_show_form(
+            step_id="create_command_queue",
+            data_schema=COMMAND_QUEUE_CREATE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation"
             },
         )
 
@@ -4932,6 +5105,25 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
+        # Command Queue entries own one number and a membership view. Routed
+        # BEFORE the profile branch below, because both virtual entry types
+        # report ``controls_cover == False`` and the profile menu would
+        # otherwise swallow this one (issue #1189).
+        if get_policy(self.sensor_type).is_command_queue:
+            return self.async_show_menu(
+                step_id="init",
+                menu_options=[
+                    "queue_settings",
+                    "queue_overview",
+                    "done",
+                ],
+                description_placeholders={
+                    "instance_name": self._config_entry.title,
+                    "coffee_url": "https://www.buymeacoffee.com/jrhubott",
+                    "profile_line": "",
+                },
+            )
+
         # Building Profile entries have no cover, geometry, or handlers to
         # configure — show a small menu (edit shared sensors, view the overview
         # of linked covers) instead of the full cover-options menu.
@@ -5816,6 +6008,15 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage automation options."""
         if user_input is not None:
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
+            # A blank queue means "no queue", and that must be storable —
+            # otherwise a cover could join one but never leave. Same strip
+            # pattern as the time keys below: drop it from the submission AND
+            # from the stored options, since the suggested-values path can
+            # re-add it. Stored EXACTLY as typed (normalization is a match-time
+            # concern) so the dropdown can keep showing the user's own casing.
+            if not str(user_input.get(CONF_COMMAND_QUEUE) or "").strip():
+                user_input.pop(CONF_COMMAND_QUEUE, None)
+                self.options.pop(CONF_COMMAND_QUEUE, None)
             # A cleared TimeSelector either omits the key or coerces to the blank
             # sentinel "00:00:00". Treat both as "unset": drop the key from the
             # submission and from any previously-stored option so it never
@@ -5833,10 +6034,18 @@ class OptionsFlowHandler(OptionsFlow):
                     self.options.pop(time_key, None)
             self.options.update(user_input)
             return await self.async_step_init()
+        # The queue picker is appended here rather than declared in the static
+        # AUTOMATION_SCHEMA because its options are drawn from the OTHER loaded
+        # config entries, which a module-level schema cannot see.
+        schema = AUTOMATION_SCHEMA.extend(
+            {
+                vol.Optional(CONF_COMMAND_QUEUE): command_queue_selector(self.hass),
+            }
+        )
         return self.async_show_form(
             step_id="automation",
             data_schema=self.add_suggested_values_to_schema(
-                AUTOMATION_SCHEMA, user_input or self.options
+                schema, user_input or self.options
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation"
@@ -6200,6 +6409,53 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="profile_overview",
             data_schema=vol.Schema({}),
             description_placeholders={"overview": overview_text},
+        )
+
+    async def async_step_queue_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Edit the gap this Command Queue holds after each member transmits.
+
+        The only editable setting a queue has. Members read it live, so saving
+        takes effect on the next transmission without reloading any cover.
+        """
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="queue_settings",
+            data_schema=self.add_suggested_values_to_schema(
+                command_queue_gap_schema(), self.options
+            ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation"
+            },
+        )
+
+    async def async_step_queue_overview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Read-only list of the covers currently on this queue.
+
+        Membership is resolved the same way the runtime resolves it — by
+        NORMALIZED name — so a cover that typed a different casing shows up
+        here exactly as it will be serialized in practice. That is the point of
+        the page: it is where a user finds out whether the name they typed
+        actually joined the queue they meant.
+        """
+        if user_input is not None:
+            return await self.async_step_init()
+        members = _covers_on_command_queue(self.hass, self._config_entry)
+        gap = self.options.get(CONF_COMMAND_QUEUE_GAP, DEFAULT_COMMAND_QUEUE_GAP)
+        lines = [f"**{self._config_entry.data.get('name')}** — {gap}s gap", ""]
+        if members:
+            lines.extend(f"- 🪟 {entry.title}" for entry in members)
+        else:
+            lines.append("_No covers are assigned to this queue._")
+        return self.async_show_form(
+            step_id="queue_overview",
+            data_schema=vol.Schema({}),
+            description_placeholders={"overview": "\n".join(lines)},
         )
 
     async def async_step_profile_overrides(

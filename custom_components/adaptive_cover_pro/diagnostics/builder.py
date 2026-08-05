@@ -129,6 +129,10 @@ class DiagnosticContext:
         None  # deprecated alias; use event_timeline
     )
     cover_command_state: dict[str, dict] | None = None
+    # The shared dispatch queue this entry belongs to, or None when unqueued
+    # (issue #1189). The live object, not a snapshot: its depth and gap are read
+    # at build time so a downloaded snapshot shows the queue as it actually was.
+    command_queue: Any = None
     debug_config: dict | None = None
 
     # Meta — integration identity and coordinator health
@@ -739,6 +743,25 @@ class DiagnosticsBuilder:
         return diagnostics
 
     @staticmethod
+    def build_command_queue_block(queue) -> dict | None:
+        """Describe the dispatch queue this entry belongs to, or ``None``.
+
+        ``gap_source`` is the field that actually answers support questions: a
+        queue named by covers but owned by no Command Queue entry reports
+        ``default``, which is the difference between "your 12-second gap is not
+        being applied" and "you never created the entry that holds it".
+        """
+        if queue is None:
+            return None
+        return {
+            "name": queue.name,
+            "gap_seconds": queue.gap_seconds,
+            "gap_source": queue.gap_source,
+            "attached_members": queue.attached,
+            "current_depth": queue.depth,
+        }
+
+    @staticmethod
     def _build_last_action(ctx: DiagnosticContext) -> dict:
         """Build last action diagnostics."""
         diagnostics: dict = {}
@@ -788,6 +811,13 @@ class DiagnosticsBuilder:
 
         # Always emit cover_commands (empty dict when nothing active)
         diagnostics["cover_commands"] = ctx.cover_command_state or {}
+
+        # Named dispatch queue (issue #1189). Omitted entirely for the
+        # overwhelmingly common unqueued cover, so an existing snapshot's shape
+        # is unchanged.
+        queue_block = DiagnosticsBuilder.build_command_queue_block(ctx.command_queue)
+        if queue_block is not None:
+            diagnostics["command_queue"] = queue_block
 
         # Issue #33 Phase 5 cross-axis publish-lag suppression counts.
         # Surfaced only when non-empty so the field stays out of the way

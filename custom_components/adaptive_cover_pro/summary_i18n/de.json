@@ -330,5 +330,8 @@
   "axes": {
     "position": "Position",
     "tilt": "Neigung"
+  },
+  "movement": {
+    "queue": "🚦 Befehle serialisiert auf Warteschlange \"{queue}\" ({gap}s Abstand)"
   }
 }

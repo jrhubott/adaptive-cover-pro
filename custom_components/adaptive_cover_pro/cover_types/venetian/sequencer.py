@@ -148,6 +148,7 @@ class DualAxisSequencer:
         backrotate_publish_lag_seconds: float = (
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
         ),
+        mark_air_busy: Callable[[], None] | None = None,
     ) -> None:
         """Bind HA + cmd_svc dependencies; per-entity timestamps start empty.
 
@@ -169,6 +170,12 @@ class DualAxisSequencer:
         self._hass = hass
         self._logger = logger
         self._grace_mgr = grace_mgr
+        # Reports a tilt frame to the instance's command queue (issue #1189).
+        # Every tilt send is a transmission the queue never gated: the tail runs
+        # outside the slot by design, and the pre-send runs inside one it is
+        # about to hand back. ``None`` for an unqueued instance and for the
+        # sequencers unit tests build directly.
+        self._mark_air_busy = mark_air_busy
         self._get_current_position = get_current_position
         self._set_commanded_position = set_commanded_position
         self._position_tolerance = position_tolerance
@@ -832,6 +839,21 @@ class DualAxisSequencer:
                 trigger=reason,
             )
             return False
+
+        # A tilt frame keys the radio and the command queue never gated it
+        # (issue #1189). The post-settle tail runs OUTSIDE the slot on purpose —
+        # ``_wait_for_position_settle`` is capped at
+        # ``VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS`` (60 s), and holding the
+        # slot across that would starve every other member, while #1115's
+        # day/night guard depends on the tail not holding it — so by the time
+        # this frame goes out the queue believes the air is free and the next
+        # member is free to key on top of it. Reported here, at the one
+        # chokepoint every real tilt send passes through, exactly as
+        # ``StopTracker.call_stop_cover`` reports a stop. Deduped, dry-run and
+        # min-delta-gated sends returned above and report nothing: they owe the
+        # air only what they actually used.
+        if self._mark_air_busy is not None:
+            self._mark_air_busy()
 
         self._record_event(
             "tilt_command_sent",

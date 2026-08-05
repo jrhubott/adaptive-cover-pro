@@ -1456,6 +1456,7 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             invert_tilt=kwargs.get("invert_tilt"),
             get_min_change=kwargs.get("get_min_change"),
             get_enforce_delta_at_endpoints=kwargs.get("get_enforce_delta_at_endpoints"),
+            mark_air_busy=kwargs.get("mark_air_busy"),
         )
         self._schedule_refresh_after = kwargs.get("schedule_refresh_after")
 
