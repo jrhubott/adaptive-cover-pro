@@ -4213,3 +4213,114 @@ def test_both_gates_render_through_the_one_shared_helper():
 
     src = inspect.getsource(cf._build_config_summary)
     assert src.count("_render_condition_gate_summary(") == 2
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Custom slot names in the How It Decides rule line (issue #1190)
+#
+# #910 (PR #915) already made the Decision Priority chain and the priority
+# ladder preview name-aware. This is the separate "How It Decides" narrative
+# rule line (`rules.custom` / `rules.custom_tilt_only`) and its three inline
+# footgun warnings, which #910 never touched — the exact surface the
+# reporter's screenshot shows.
+# ---------------------------------------------------------------------------
+
+
+def test_custom_rule_line_uses_configured_name_instead_of_slot_number():
+    """A configured custom_position_name_N replaces the generic '#N' label in
+    the primary rule line — the name REPLACES the slot number outright,
+    matching the priority_chain.py precedent from #910.
+    """
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 82,
+        "custom_position_priority_4": 82,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Terrace access" in summary
+    assert "Custom #4" not in summary
+
+
+def test_custom_tilt_only_rule_line_uses_configured_name():
+    """The tilt-only variant of the rule line also substitutes the name."""
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 82,
+        "custom_position_priority_4": 82,
+        "custom_position_tilt_4": 30,
+        "custom_position_tilt_only_4": True,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "Terrace access" in summary
+    assert "Custom #4" not in summary
+
+
+def test_custom_rule_line_falls_back_to_slot_number_when_no_name():
+    """No configured name -> the generic '#N' label, byte-identical to today.
+
+    Regression lock for the "unnamed" path — mirrors the existing no-name
+    fixtures (e.g. test_safety_priority_slot_shown_with_position).
+    """
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 82,
+        "custom_position_priority_4": 82,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Custom #4" in summary
+
+
+def test_custom_warning_bound_conflict_uses_configured_name():
+    """The min>max footgun warning substitutes the configured name too."""
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 70,
+        "custom_position_min_mode_4": True,
+        "custom_position_position_max_4": 40,
+        "custom_position_priority_4": 82,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "maximum" in ln
+    )
+    assert "Terrace access" in warn_line
+    assert "Custom #4" not in warn_line
+
+
+def test_custom_warning_tilt_only_conflict_uses_configured_name():
+    """The tilt_only mutual-exclusion warning substitutes the configured name."""
+    cfg = {
+        "custom_position_sensors_4": ["binary_sensor.terrace"],
+        "custom_position_4": 80,
+        "custom_position_priority_4": 82,
+        "custom_position_tilt_4": 30,
+        "custom_position_tilt_only_4": True,
+        "custom_position_min_mode_4": True,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "tilt only" in ln.lower()
+    )
+    assert "Terrace access" in warn_line
+    assert "Custom #4" not in warn_line
+
+
+def test_custom_warning_and_no_sensors_uses_configured_name():
+    """The AND-combine-mode-with-no-sensors warning substitutes the name."""
+    cfg = {
+        "custom_position_template_4": "{{ true }}",
+        "custom_position_template_mode_4": "and",
+        "custom_position_4": 80,
+        "custom_position_priority_4": 82,
+        "custom_position_name_4": "Terrace access",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "combine mode" in ln.lower()
+    )
+    assert "Terrace access" in warn_line
+    assert "Custom #4" not in warn_line
