@@ -1665,11 +1665,11 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "manual.transit_timeout": "transit timeout: {seconds}s",
     # --- Custom positions ---
     "rules.custom_tilt_only": (
-        "🎯 Custom #{slot}: if {trigger} is on → tilt only "
+        "🎯 {label}: if {trigger} is on → tilt only "
         "(slat fixed at {slat}%; position driven by sun tracking)"
     ),
     "rules.custom": (
-        "🎯 Custom #{slot}: if {trigger} is on → {target}{cp_min}{tilt_note}"
+        "🎯 {label}: if {trigger} is on → {target}{cp_min}{tilt_note}"
         " — bypasses delta gates and auto-control{safety}"
     ),
     "custom.tilt_note": ", tilt {tilt}%",
@@ -1680,16 +1680,20 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "custom.tilt_bound_max": ", tilt at most {max}%",
     "custom.tilt_bound_range": ", tilt {min}–{max}%",
     "custom.no_position_claim": "the calculated position",
+    # Fallback slot label when no custom_position_name_N is configured
+    # (issue #1190) — the exact "Custom #{slot}" fragment extracted verbatim
+    # from the five templates below, so the no-name path stays byte-identical.
+    "custom.slot_label_default": "Custom #{slot}",
     "warnings.custom_position_bound_conflict": (
-        "⚠️ Custom #{slot}: the maximum ({max}%) is below the minimum ({min}%) — "
+        "⚠️ {label}: the maximum ({max}%) is below the minimum ({min}%) — "
         "the minimum wins and the maximum is ignored."
     ),
     "warnings.custom_tilt_only_conflict": (
-        "⚠️ Custom #{slot}: tilt only is on — "
+        "⚠️ {label}: tilt only is on — "
         "Use as minimum / Use My position are ignored for this slot."
     ),
     "warnings.custom_and_no_sensors": (
-        "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are "
+        "⚠️ {label}: combine mode AND is set but no trigger sensors are "
         "configured — the template alone activates the slot."
     ),
     # NOTE: the safety-priority bypass warning moved to the shared triage engine
@@ -2537,6 +2541,14 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             _tilt_only,
             _has_trigger,
         ) in _custom_slots:
+            # Configured name replaces the generic "Custom #{slot}" label
+            # outright (issue #1190) — computed once per slot and reused by
+            # every .format() call site below, mirroring the precedent
+            # already shipped for the Decision Priority chain
+            # (priority_chain.py, issue #910).
+            _slot_label = _custom_slot_names.get(_slot) or L[
+                "custom.slot_label_default"
+            ].format(slot=_slot)
             tilt_note = (
                 L["custom.tilt_note"].format(tilt=_slot_tilt)
                 if _slot_tilt is not None
@@ -2556,7 +2568,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     _pri,
                     _order,
                     L["rules.custom_tilt_only"].format(
-                        slot=_slot, trigger=_trigger, slat=slat
+                        label=_slot_label, trigger=_trigger, slat=slat
                     ),
                 )
             else:
@@ -2600,7 +2612,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     _pri,
                     _order,
                     L["rules.custom"].format(
-                        slot=_slot,
+                        label=_slot_label,
                         trigger=_trigger,
                         target=target,
                         cp_min=cp_min,
@@ -2619,7 +2631,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 ):
                     _sub(
                         L["warnings.custom_position_bound_conflict"].format(
-                            slot=_slot, max=_pos_max, min=_pos
+                            label=_slot_label, max=_pos_max, min=_pos
                         )
                     )
             # Mutual-exclusion warning: tilt_only wins over min_mode / use_my
@@ -2628,7 +2640,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             if _tilt_only and (
                 config.get(f"custom_position_min_mode_{_slot}") or _use_my
             ):
-                _sub(L["warnings.custom_tilt_only_conflict"].format(slot=_slot))
+                _sub(L["warnings.custom_tilt_only_conflict"].format(label=_slot_label))
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
@@ -2649,7 +2661,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             # Footgun warning: AND combine mode with no sensors — the template
             # gates nothing and the slot degenerates to template-only OR.
             if _slot in _and_no_sensor_slots:
-                _sub(L["warnings.custom_and_no_sensors"].format(slot=_slot))
+                _sub(L["warnings.custom_and_no_sensors"].format(label=_slot_label))
 
     # Motion timeout (75)
     timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
