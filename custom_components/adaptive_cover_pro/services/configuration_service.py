@@ -20,6 +20,7 @@ from ..config_types import (
 )
 from ..const import (
     CONF_AWNING_ANGLE,
+    CONF_AWNING_SHADE_MODE,
     CONF_DISTANCE,
     CONF_ENABLE_GLARE_ZONES,
     CONF_HEIGHT_WIN,
@@ -28,20 +29,29 @@ from ..const import (
     CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
     CONF_MIN_TILT_SUN_ONLY,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_SILL_HEIGHT,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_TRANSFORM,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    DEFAULT_AWNING_SHADE_MODE,
     DEFAULT_DISTANCE,
     DEFAULT_GLARE_ZONE_Z,
+    GLARE_ZONE_SLOT_NUMBERS,
     DEFAULT_MAX_TILT,
     DEFAULT_MAX_TILT_SUN_ONLY,
     DEFAULT_MIN_TILT,
     DEFAULT_MIN_TILT_SUN_ONLY,
-    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
+    DEFAULT_TILT_SAFETY_MARGIN,
+    DEFAULT_VENETIAN_TILT_TRANSFORM,
+    DEFAULT_TILT_ANGLE_0,
+    DEFAULT_TILT_ANGLE_100,
     DEFAULT_WINDOW_HEIGHT,
 )
 
@@ -107,6 +117,7 @@ class ConfigurationService:
         return HorizontalConfig(
             awn_length=options.get(CONF_LENGTH_AWNING) or 2.0,
             awn_angle=options.get(CONF_AWNING_ANGLE) or 0,
+            shade_mode=options.get(CONF_AWNING_SHADE_MODE) or DEFAULT_AWNING_SHADE_MODE,
         )
 
     def get_tilt_data(self, options: dict) -> TiltConfig:
@@ -148,6 +159,8 @@ class ConfigurationService:
             slat_distance=distance / 100,  # Convert cm to meters
             depth=depth / 100,  # Convert cm to meters
             mode=options.get(CONF_TILT_MODE),
+            angle_0=options.get(CONF_TILT_ANGLE_0, DEFAULT_TILT_ANGLE_0),
+            angle_100=options.get(CONF_TILT_ANGLE_100, DEFAULT_TILT_ANGLE_100),
             max_tilt=options.get(CONF_MAX_TILT, DEFAULT_MAX_TILT),
             min_tilt=options.get(CONF_MIN_TILT, DEFAULT_MIN_TILT),
             min_tilt_sun_only=bool(
@@ -158,9 +171,15 @@ class ConfigurationService:
             ),
             safety_margin=float(
                 options.get(
-                    CONF_VENETIAN_TILT_SAFETY_MARGIN,
-                    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
+                    CONF_TILT_SAFETY_MARGIN,
+                    options.get(
+                        CONF_VENETIAN_TILT_SAFETY_MARGIN,
+                        DEFAULT_TILT_SAFETY_MARGIN,
+                    ),
                 )
+            ),
+            tilt_transform=options.get(
+                CONF_VENETIAN_TILT_TRANSFORM, DEFAULT_VENETIAN_TILT_TRANSFORM
             ),
         )
 
@@ -173,7 +192,7 @@ class ConfigurationService:
             return None
 
         zones = []
-        for i in range(1, 5):  # zones 1–4
+        for i in GLARE_ZONE_SLOT_NUMBERS:  # zones 1–4
             name = options.get(f"glare_zone_{i}_name", "")
             if not name:
                 continue

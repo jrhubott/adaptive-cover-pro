@@ -23,6 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (as minimum)",
+    "as_maximum": " (at most {max}%)",
     "safety": " 🔒 safety: acts outside the time window too",
     "template_value": "[template]"
   },
@@ -31,7 +32,7 @@
     "manual": "✋ Manual override: pauses automatic control when you move the cover{detail}",
     "custom_tilt_only": "🎯 Custom #{slot}: if {trigger} is on → tilt only (slat fixed at {slat}%; position driven by sun tracking)",
     "custom": "🎯 Custom #{slot}: if {trigger} is on → {target}{cp_min}{tilt_note} — bypasses delta gates and auto-control{safety}",
-    "motion": "🚶 Motion-based: if no occupancy for {motion_timeout}s ({sources}) → {action}",
+    "motion": "🚶 Occupancy: if no occupancy for {motion_timeout}s ({sources}) → {action}",
     "cloud": "☁️ Cloud suppression: skips sun tracking{cloud} → {fallback}",
     "climate": "🌡️ Climate mode: adjusts strategy for heating/cooling{detail}",
     "glare": "🔆 Glare zones: lowers blind further to protect floor areas from glare{detail}",
@@ -54,6 +55,11 @@
   },
   "manual": {
     "pauses_for": "pauses for {duration}",
+    "until_sunset": "holds until the next sunset",
+    "until_sunrise": "holds until the next sunrise",
+    "until_next_sun_event": "holds until the next sunrise or sunset",
+    "until_window_end": "holds until the time window ends",
+    "until_window_end_no_window": "⚠️ Manual override is set to hold until the time window ends, but no end time is configured — the configured duration is used instead",
     "threshold": "threshold {threshold}%",
     "resets_on_move": "resets on next move",
     "ignore_intermediate": "ignores intermediate positions",
@@ -65,22 +71,29 @@
     "tilt_note": ", tilt {tilt}%",
     "trigger_sensors": "any of {n} sensors",
     "trigger_template": "template",
-    "trigger_join": " or "
+    "trigger_join": " or ",
+    "tilt_bound_min": ", tilt at least {min}%",
+    "tilt_bound_max": ", tilt at most {max}%",
+    "tilt_bound_range": ", tilt {min}–{max}%",
+    "no_position_claim": "the calculated position"
   },
   "warnings": {
+    "custom_position_bound_conflict": "⚠️ Custom #{slot}: the maximum ({max}%) is below the minimum ({min}%) — the minimum wins and the maximum is ignored.",
     "custom_tilt_only_conflict": "⚠️ Custom #{slot}: tilt only is on — Use as minimum / Use My position are ignored for this slot.",
-    "motion_hold_no_sensors": "⚠️ hold_position mode is set but no motion sensors or media players are configured — the setting has no effect until a motion source is added",
+    "motion_hold_no_sensors": "⚠️ hold_position mode is set but no occupancy sources are configured — the setting has no effect until an occupancy source is added",
     "cloudy_pos_ignored": "⚠️ Cloudy position ({pos}%) configured but cloud suppression is disabled — value will be ignored.",
     "sun_track_min_below_floor": "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — always-on floor dominates; sun-tracking floor will be raised to {min_pos}%.",
     "mode2_min_position": "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open (horizontal) slat angle IS 50%, so any min position ≥ 50 collapses every climate/glare-control decision to the floor and the cover stops blocking heat.",
     "somfy_my_unset": "⚠️ Somfy My preset is enabled for one or more targets but My Preset Value is not set — falls back to configured %.",
     "proxy_no_min": "⚠️ Proxy cover is enabled but no custom-position slot has Use as minimum on — the managed cover will not clamp.",
     "custom_and_no_sensors": "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are configured — the template alone activates the slot.",
-    "custom_safety_bypass": "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the automatic-control toggle, manual override, and the start/end time window, so it can move the cover even when automatic control is OFF and outside your schedule. Lower its priority below {safety} to make it respect those gates."
+    "group_empty": "⚠️ This group has no members — it will not command anything.",
+    "forecast_source_no_weather_entity": "⚠️ Outdoor-temperature source is forecast-based but no weather entity is configured — the forecast will silently fall back to the live reading. Configure a weather entity in Weather, Light & Cloud.",
+    "travel_time_unmeasurable": "⚠️ {entities} report an assumed state, so their travel time cannot be measured and none has been entered — dashboards will not show them moving. Enter a time under Calibration → Travel Time."
   },
   "motion": {
     "template_source": "occupancy template",
-    "action_hold": "covers hold current position (return to default when sun leaves FOV)",
+    "action_hold": "covers hold current position (return to default when sun leaves the sun acceptance angle)",
     "action_return": "covers return to default ({default_pos}%)"
   },
   "cloud": {
@@ -94,7 +107,12 @@
     "weather_in": "weather in {{{states}}}",
     "when": " when {parts}",
     "fallback_cloudy": "cloudy position {pos}%",
-    "fallback_default": "default ({default_pos}%)"
+    "fallback_default": "default ({default_pos}%)",
+    "hold_time": " · smoothing hold {secs}s",
+    "release": " · release when {parts}",
+    "lux_release": "lux ≥ {release} lx",
+    "irradiance_release": "irradiance ≥ {release} W/m²",
+    "coverage_release": "cloud ≤ {release}%"
   },
   "info": {
     "light_sensors_off": "📊 Light sensors configured ({names}) but cloud suppression is off.",
@@ -105,13 +123,21 @@
   "climate": {
     "comfort_range": "comfort range {lo}–{hi}°C",
     "using": "using {entity}",
+    "using_area": "using area temperature sensor",
     "outside_thresh": "outside: {entity} > {thresh}°C",
     "outside": "outside: {entity}",
     "weather": "weather: {entity}",
     "presence": "presence: {entity}",
     "transparent": "transparent blind",
     "winter_close": "closes fully in winter for insulation",
-    "summer_full_close": "closes fully in summer heat"
+    "summer_full_close": "closes fully in summer heat",
+    "extreme_heat": "holds {pos}% all day above {thresh}°C outside",
+    "hold_time": " · smoothing hold {secs}s",
+    "release": " · release when {parts}",
+    "temp_low_release": "winter ≥ {release}°",
+    "temp_high_release": "summer ≤ {release}°",
+    "outside_release": "outside ≤ {release}°",
+    "extreme_heat_release": "extreme ≤ {release}°"
   },
   "glare": {
     "zones": "zones: {names}",
@@ -121,7 +147,7 @@
   },
   "solar": {
     "azimuth": "azimuth {azimuth}°",
-    "fov": "±{fov_l}°/{fov_r}° field of view",
+    "fov": "±{fov_l}°/{fov_r}° sun acceptance angle",
     "elev_above": "above {elev}°",
     "elev_below": "below {elev}°",
     "elevation": "elevation {parts}",
@@ -130,7 +156,11 @@
     "today_no_window": " (today: sun does not enter window)",
     "minimize_one_step": "moves straight to full coverage and holds (1 step)",
     "minimize_steps": "reaches full coverage in up to {steps} steps",
-    "minimize": "{indent}🪟 Minimize movements — {detail}, rounding toward more coverage to reduce motor movements."
+    "minimize": "{indent}🪟 Minimize movements — {detail}, rounding toward more coverage to reduce motor movements.",
+    "gate_sensors": "{indent}🚦 Sun tracking gate: {sensors} decide whether to sun-track.",
+    "gate_template": "{indent}🚦 Sun tracking gate: a template decides whether to sun-track.",
+    "gate_both": "{indent}🚦 Sun tracking gate: {sensors} and a template ({mode}) decide whether to sun-track.",
+    "gate_explainer": "{indent}While the gate reads false, solar positioning is skipped and the cover falls through to the default position. Climate mode, motion and manual override are unaffected, and the operating window stays open — unlike the daytime gate, which closes the window and suppresses all of them. Glare zones keep running but drop their sun-tracking-only limits, since those apply only while tracking is live."
   },
   "timing": {
     "from_entity": "from {entity}",
@@ -159,14 +189,14 @@
     "gate_offset_ignored": "{indent}⚠️ Sunset/Sunrise Offset is ignored while a daytime gate is set — the gate, not the clock, decides the boundary."
   },
   "blind_spot": {
-    "line": "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree or roof overhang).",
+    "line": "🟥 Blind spot: ignores sun at {bs} (gamma from the window normal — e.g. tree or roof overhang).",
     "range": "{left}°–{right}°",
     "elevation": "up to {elev}° elevation",
     "elevation_above": "above {elev}° elevation"
   },
   "default": {
-    "tilt": "  ↳ Default tilt: {tilt}% (explicit; overrides solar-computed)",
-    "sunset_tilt": "  ↳ Sunset tilt: {tilt}% (explicit; overrides solar-computed)"
+    "tilt": "  ↳ Default tilt: {tilt}% (used when no handler wins control)",
+    "sunset_tilt": "  ↳ Sunset tilt: {tilt}% (used when no handler wins control, during sunset)"
   },
   "limits": {
     "range": "Range: {lo}–{hi}{qualifier}",
@@ -184,7 +214,9 @@
     "calibration": "Calibration {lo}→{hi}",
     "calibration_on": "Position calibration on",
     "sun_tracking_min": "Sun-tracking min: {pos}%",
-    "separator": " · "
+    "separator": " · ",
+    "travel_time": "Travel time: {done}/{total} covers",
+    "travel_time_manual": "Travel time: {done}/{total} covers ({manual} entered by hand)"
   },
   "my": {
     "entities_enabled": "🎛️ My-preset entities: enabled",
@@ -200,7 +232,15 @@
     "tilt": "Venetian / Tilt Blind",
     "oscillating_awning": "Oscillating Awning",
     "venetian": "Venetian Blind (Dual-Axis)",
-    "roof_window": "Roof Window"
+    "roof_window": "Roof Window",
+    "sliding_curtain": "Sliding Curtain",
+    "louvered_roof": "Louvered Roof",
+    "day_night_shade": "Day/Night Shade",
+    "dual_panel": "Dual Panel Shade"
+  },
+  "axes": {
+    "position": "Position",
+    "tilt": "Tilt"
   },
   "geometry": {
     "window": {
@@ -213,12 +253,16 @@
     "awning": {
       "length": "{v}m awning",
       "angle": "angled at {v}°",
+      "shade_mode_window": "shade window glass",
+      "shade_mode_area": "shade area in front (patio)",
       "blocking_wall": "blocking sun {v}m from wall"
     },
     "slat": {
       "depth": "slat depth {v}cm",
       "spacing": "spacing {v}cm",
-      "mode": "mode: {v}"
+      "mode": "mode: {v}",
+      "angle_0": "0% angle {v}°",
+      "angle_100": "100% angle {v}°"
     },
     "oscillating": {
       "arm": "{v}m arm",
@@ -228,7 +272,17 @@
     },
     "roof": {
       "pitch": "roof pitch {v}° from horizontal",
-      "height_above": "{v}m roof above window (ridge gate)"
+      "height_above": "{v}m roof above window (ridge gate)",
+      "max_slat_angle": "max slat angle {v}°"
+    },
+    "sliding": {
+      "slide": "slide: {v}",
+      "dir_left": "single (left)",
+      "dir_right": "single (right)",
+      "dir_bi_part": "centre-parting",
+      "width": "{v}m window width",
+      "shade_area": "shade area ({x1}, {y1})–({x2}, {y2}) m",
+      "binary": "binary open/close (no shade area)"
     },
     "venetian": {
       "skip_tilt": "skip tilt when position > {skip_above}%",
@@ -239,13 +293,41 @@
       "max_tilt": "max tilt {max_tilt}%",
       "min_tilt": "min tilt {min_tilt}%",
       "tilt_safety_margin": "tilt safety margin {pct}%",
+      "tilt_transform": "proportional tilt remap into min–max band",
       "post_settle_hold": "post-settle hold {hold}s",
       "backrotate_lag": "back-rotate publish lag {lag}s",
       "drift_reset": "drift-reset every {threshold}% accumulated tilt (via {direction})",
       "drift_reset_scope_solar": "sun-tracking commands only"
     },
+    "day_night": {
+      "model_position_tilt": "position and tilt (dual axis)",
+      "model_split_range": "split range (single axis)",
+      "model_dual_entity": "two rail entities (dual entity)",
+      "rail_travel": "rail travel: {v}",
+      "rail_travel_concurrent": "both rails move concurrently once the leading rail is under way",
+      "rail_travel_serialized": "rails move one at a time — the following rail waits for full clearance",
+      "rail_interlock": "rail interlock: {v}",
+      "rail_interlock_on": "⚠️ a command a rail cannot reach is completed by moving the other rail first — ACP may move the rail you did not command",
+      "rail_interlock_off": "a command a rail cannot reach is left alone"
+    },
+    "dual_panel": {
+      "front_entity": "front (sheer) panel: {v}",
+      "triggers": "blackout deploys on: {v}",
+      "none": "no triggers"
+    },
     "fov": {
-      "computed": "Computed FOV ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"
+      "computed": "Computed acceptance angle ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"
     }
+  },
+  "group": {
+    "header": "**Cover Group**",
+    "members": "Controls {acp_count} ACP member(s) + {generic_count} generic cover(s)",
+    "member_acp": "- 🪟 {title} (ACP)",
+    "member_generic": "- 🪟 {entity} (generic)",
+    "scene_priority": "Group scenes apply at priority {scene_priority} (above manual override, below weather safety)",
+    "lock": "🔒 Group lock at priority {lock_priority} — freezes members in place; a member's own safety still wins ties",
+    "stagger": "Members commanded {stagger}s apart",
+    "cover_entity": "Aggregate cover entity exposed — dragging it commands every member",
+    "area": "Membership tracks area '{area}' — covers there join automatically"
   }
 }

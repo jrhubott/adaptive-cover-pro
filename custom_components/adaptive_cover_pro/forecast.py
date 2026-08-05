@@ -3,7 +3,7 @@
 Walks the per-coordinator solar position table that ``SunData`` already
 computes for the current day and emits a coarse-grained series of
 (timestamp, position) samples plus the boundary events the dashboard
-needs (sunrise, sunset, FOV entry, FOV exit).
+needs (sunrise, sunset, acceptance-angle entry, acceptance-angle exit).
 
 Only solar tracking is projected forward — the other handlers in the
 pipeline (manual override, motion, weather safety, custom positions)
@@ -16,12 +16,13 @@ and roughly where will the cover sit through the rest of the day?*
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from .const import (
+    CONF_DELTA_TIME,
     CONF_END_OF_WINDOW_POS,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MINIMIZE_MOVEMENTS,
@@ -37,9 +38,10 @@ from .const import (
 )
 from .helpers import compute_effective_default
 from .pipeline.helpers import (
+    anticipated_solar_position_from_geometry,
     default_position_with_limits,
-    solar_position_from_geometry,
 )
+from .pipeline.snapshot_builder import _delta_time_minutes
 
 if TYPE_CHECKING:
     from .config_types import CoverConfig
@@ -49,13 +51,29 @@ if TYPE_CHECKING:
     from .sun import SunData
 
 
+# Closure that projects a cover-type's non-primary axes at one forecast step.
+# Mirrors the ``cover_factory`` decoupling: the pure sample loop stays free of
+# ``config_service``/``options``/policy plumbing and is trivially stub-testable.
+#   (position, sol_azi, sol_elev, t) -> {axis_name: value}
+# ``t`` is passed for signature symmetry / future time-dependent axes even
+# though venetian tilt is a pure function of the sun geometry + position.
+SecondaryAxisFactory = Callable[[int, float, float, datetime], dict[str, int]]
+
+
 @dataclass(frozen=True, slots=True)
 class ForecastSample:
-    """One (time, position) pair on the forecast strip."""
+    """One (time, position [+ secondary axes]) point on the forecast strip.
+
+    ``position`` is the primary-axis target (the stable wire contract older
+    cards read). ``axes`` carries any non-primary axis projections for
+    multi-axis covers (venetian tilt today), keyed by ``CoverAxis.name`` —
+    empty for single-axis covers so the serialized shape is unchanged (#724).
+    """
 
     t: datetime
     position: int
     handler: str  # "solar" when direct sun is valid at t, else "default"
+    axes: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +100,14 @@ class Forecast:
         """
         return {
             "forecast": [
-                {"t": s.t.isoformat(), "position": s.position, "handler": s.handler}
+                {
+                    "t": s.t.isoformat(),
+                    "position": s.position,
+                    "handler": s.handler,
+                    # Spread the secondary-axis map additively (#724): empty for
+                    # single-axis covers → the pre-#724 keys only.
+                    **s.axes,
+                }
                 for s in self.samples
             ],
             "events": [
@@ -105,6 +130,8 @@ def build_forecast(
     floor_active: bool = True,
     end_of_window_pos: int | None = None,
     end_of_window_time: datetime | None = None,
+    secondary_axis_factory: SecondaryAxisFactory | None = None,
+    time_threshold_minutes: int = 0,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
@@ -113,12 +140,17 @@ def build_forecast(
     and sample strip share the same time axis.
 
     Each sample's position is computed through the **same** shared primitives
-    the live pipeline uses (``solar_position_from_geometry`` /
+    the live pipeline uses (``anticipated_solar_position_from_geometry`` /
     ``default_position_with_limits`` in :mod:`pipeline.helpers`), so the
     forecast strip matches what the cover is actually commanded to — including
-    min/max position limits, the 1 % floor, movement minimization, and the
-    sunset-aware effective default. *config* and *policy* supply everything
-    those primitives need.
+    min/max position limits, the 1 % floor, movement minimization, the
+    look-ahead anticipation horizon (a grid-resolution approximation, not an
+    exact match — see :func:`_build_samples`), and the sunset-aware effective
+    default.
+    *config* and *policy* supply everything those primitives need;
+    *time_threshold_minutes* supplies the anticipation look-ahead horizon
+    (mirrors the live path's ``PipelineSnapshot.time_threshold_minutes``,
+    sourced from ``CONF_DELTA_TIME`` — see :func:`build_forecast_for_coord`).
 
     ``cover_factory`` is a closure that builds a cover engine for an
     arbitrary (sol_azi, sol_elev) pair; the caller is responsible for
@@ -136,6 +168,10 @@ def build_forecast(
     until astral sunset, then hand off to the astral sunset position — the same
     two-phase rule the live path uses (delegated to ``compute_effective_default``
     per sample). ``None``/``None`` (default) preserves today's behavior.
+
+    ``secondary_axis_factory`` (issue #724) projects a multi-axis cover's
+    non-primary axes (venetian tilt) alongside each *solar* sample. ``None``
+    (default) — or a single-axis cover — leaves every sample's ``axes`` empty.
     """
     samples = _build_samples(
         sun_data=sun_data,
@@ -148,6 +184,8 @@ def build_forecast(
         floor_active=floor_active,
         end_of_window_pos=end_of_window_pos,
         end_of_window_time=end_of_window_time,
+        secondary_axis_factory=secondary_axis_factory,
+        time_threshold_minutes=time_threshold_minutes,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -167,6 +205,8 @@ def _build_samples(
     floor_active: bool = True,
     end_of_window_pos: int | None = None,
     end_of_window_time: datetime | None = None,
+    secondary_axis_factory: SecondaryAxisFactory | None = None,
+    time_threshold_minutes: int = 0,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -176,11 +216,26 @@ def _build_samples(
     elevation chart regardless of what time ``build_forecast`` is called.
 
     Each sample routes through the same ``pipeline.helpers`` primitives the live
-    pipeline uses, so positions are identical to runtime. The effective default
-    (and whether the sunset position is active) is recomputed at *each sample's*
-    time via :func:`compute_effective_default`, mirroring the live snapshot
-    builder rather than holding a static default. Note: the forecast projects
-    solar tracking whenever the sun is in the FOV regardless of the
+    pipeline uses — solar samples call
+    :func:`~.pipeline.helpers.anticipated_solar_position_from_geometry`, the same
+    primitive the live ``SolarHandler`` calls via
+    :func:`~.pipeline.helpers.anticipated_solar_position`, with the same
+    look-ahead anticipation horizon (``time_threshold_minutes``, issue #1091).
+    This is a grid-resolution approximation of runtime, not an exact match:
+    each probe time is quantized via :func:`_nearest_index` to the same
+    5-minute ``SunData`` grid this walk is itself aligned to, so at small
+    horizons (e.g. the default ``CONF_DELTA_TIME`` of 2 minutes) every probe
+    collapses onto the sample's own grid index and the anticipation is a
+    no-op — whereas the live path anticipates from an arbitrary wall-clock
+    ``now`` and can land on a later grid index the forecast never reaches. At
+    horizon 0 (the default parameter) the primitive is identical to the
+    plain, non-anticipated ``solar_position_from_geometry``.
+
+    The effective default (and whether the sunset position is active) is
+    recomputed at *each sample's* time via
+    :func:`compute_effective_default`, mirroring the live snapshot builder
+    rather than holding a static default. Note: the forecast projects solar
+    tracking whenever the sun is in the FOV regardless of the
     ``enable_sun_tracking`` toggle — the card's purpose is to show where the
     cover *would* sit, so that mode gate is deliberately not applied here.
     For the same reason the operational *start*-time window is not modeled,
@@ -216,15 +271,24 @@ def _build_samples(
         # and every sample collapses to the default position (issue #516).
         cover.eval_time = t
         if cover.direct_sun_valid:
-            pos = solar_position_from_geometry(
+            pos = anticipated_solar_position_from_geometry(
                 cover,
                 config,
+                horizon_minutes=time_threshold_minutes,
                 minimize_movements=minimize_movements,
                 max_coverage_steps=max_coverage_steps,
                 policy=policy,
                 floor_active=floor_active,
             )
-            samples.append(ForecastSample(t=t, position=pos, handler="solar"))
+            # Secondary-axis projection (#724) runs on solar samples only —
+            # mirroring the live path, where tilt is meaningful only when the
+            # solar engine drives the position with direct sun on the window.
+            axes: dict[str, int] = {}
+            if secondary_axis_factory is not None:
+                axes = secondary_axis_factory(pos, azi, ele, t)
+            samples.append(
+                ForecastSample(t=t, position=pos, handler="solar", axes=axes)
+            )
         else:
             # Sunset-aware effective default at this sample's projected time,
             # then the same limit treatment the live default branch applies.
@@ -264,7 +328,7 @@ def _build_events(
     """Sunrise/sunset come from SunData; FOV transitions come from the samples.
 
     FOV-enter/exit timestamps are refined from the coarse forecast cadence
-    (default 15 min) down to SunData's native 5-min grid by scanning the
+    (default 10 min) down to SunData's native 5-min grid by scanning the
     grid points between the two samples that bracket the handler change —
     otherwise the marker can lag the visible cover-position drop by up to
     one full sample step.
@@ -304,11 +368,15 @@ def _build_events(
         t_event = crossing if crossing is not None else sample.t
         if target_valid:
             events.append(
-                ForecastEvent(t=t_event, kind=EVENT_FOV_ENTER, label="Sun enters FOV")
+                ForecastEvent(
+                    t=t_event, kind=EVENT_FOV_ENTER, label="Sun enters acceptance angle"
+                )
             )
         else:
             events.append(
-                ForecastEvent(t=t_event, kind=EVENT_FOV_EXIT, label="Sun exits FOV")
+                ForecastEvent(
+                    t=t_event, kind=EVENT_FOV_EXIT, label="Sun exits acceptance angle"
+                )
             )
         prev_sample = sample
 
@@ -325,8 +393,8 @@ def _refine_fov_crossing(
 ) -> datetime | None:
     """First grid time in [t_before, t_after] where direct_sun_valid matches target_valid.
 
-    Used to refine FOV-enter/exit event timestamps from the 15-min sample
-    cadence down to SunData's native 5-min grid; returns None when no
+    Used to refine FOV-enter/exit event timestamps from the default 10-min
+    sample cadence down to SunData's native 5-min grid; returns None when no
     match is found.
     """
     times = list(sun_data.times)
@@ -423,6 +491,41 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
                 # No end time configured → the feature cannot fire.
                 eow_pos = None
 
+    # Read once so the value the primitives quantize with is the same one the
+    # secondary-axis closure hands the policy hook (no drift between axes).
+    minimize_movements = bool(
+        options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
+    )
+    max_coverage_steps = int(
+        options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+    )
+
+    # Anticipation look-ahead horizon (issue #1091): the same
+    # CONF_DELTA_TIME-derived horizon the live SolarHandler anticipates
+    # across via PipelineSnapshot.time_threshold_minutes, coerced with the
+    # single shared helper so the forecast never drifts from the live
+    # coercion rules (non-numeric / bool values safely disable anticipation).
+    time_threshold_minutes = _delta_time_minutes(options.get(CONF_DELTA_TIME))
+
+    # Secondary-axis projection (#724): build the closure from the polymorphic
+    # policy hook — the shim never branches on the cover type. Single-axis
+    # policies inherit the base no-op returning ``{}``; venetian projects tilt.
+    def make_secondary_axes(
+        position: int, azi: float, ele: float, t: datetime
+    ) -> dict[str, int]:
+        return coord._policy.forecast_secondary_axes(  # noqa: SLF001
+            position=position,
+            logger=coord.logger,
+            sol_azi=azi,
+            sol_elev=ele,
+            sun_data=sun_data,
+            config=config,
+            config_service=coord._config_service,  # noqa: SLF001
+            options=options,
+            minimize_movements=minimize_movements,
+            max_coverage_steps=max_coverage_steps,
+        )
+
     # The coverage direction the primitives need is read from the policy's
     # primary axis (single source of truth), so the shim passes the policy
     # straight through rather than precomputing full_coverage_at_zero.
@@ -432,13 +535,11 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         config=config,
         policy=coord._policy,  # noqa: SLF001
         now=dt_util.now(),
-        minimize_movements=bool(
-            options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
-        ),
-        max_coverage_steps=int(
-            options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
-        ),
+        minimize_movements=minimize_movements,
+        max_coverage_steps=max_coverage_steps,
         floor_active=not all_positionable,
         end_of_window_pos=eow_pos,
         end_of_window_time=eow_time,
+        secondary_axis_factory=make_secondary_axes,
+        time_threshold_minutes=time_threshold_minutes,
     )

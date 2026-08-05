@@ -47,6 +47,17 @@ def _make_coord_with_stale_default():
     coord.entities = ["cover.test_1"]
     coord._policy = MagicMock()
     coord._policy.sequencer = None
+    # The per-entity dispatch seam delegates to the policy; identity here so the
+    # mock policy leaves the dispatched position unchanged (blind semantics).
+    coord._policy.resolve_entity_target = (
+        lambda entity_id, position, *, inverted=None, interpolated=False: position
+    )
+    # The dispatch loop asks the policy for the entity order (#1115), naming the
+    # number it is fanning out (#1118); a blind's answer is identity and ignores
+    # both keywords, so mirror that on the stub.
+    coord._policy.order_for_dispatch = (
+        lambda entities, *, position=None, inverted=None: list(entities)  # noqa: ARG005
+    )
     coord._inverse_state = False
     coord._use_interpolation = False  # ``coord.state`` post-processing
     coord._pending_cover_events = []
@@ -143,7 +154,6 @@ def _make_switch(coord):
     switch._key = "automatic_control"
     switch._switch_name = "Automatic Control"
     switch._initial_state = True
-    switch._attr_is_on = False
     switch.schedule_update_ha_state = MagicMock()
     return switch
 

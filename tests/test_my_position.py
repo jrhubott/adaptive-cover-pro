@@ -193,6 +193,24 @@ class TestSendMyPosition:
             "cover", "stop_cover", {"entity_id": "cover.somfy"}, context=ANY
         )
 
+    @pytest.mark.asyncio
+    async def test_acp_my_move_records_assumed_position(self, svc, mock_hass):
+        """Issue #888: an ACP My move on an open/close-only cover records the
+        assumed display position so the card can show My instead of ``—``.
+        """
+        with _patch_caps_my(has_set_position=False, has_stop=True):
+            await svc.send_my_position("cover.somfy", 50)
+
+        assert svc.get_assumed_position("cover.somfy") == 50
+
+    @pytest.mark.asyncio
+    async def test_no_assumed_recorded_for_position_capable(self, svc, mock_hass):
+        """A position-capable cover has a real read, so no assumed value is stored."""
+        with _patch_caps_my(has_set_position=True, has_stop=True):
+            await svc.send_my_position("cover.somfy", 50)
+
+        assert svc.get_assumed_position("cover.somfy") is None
+
 
 # ---------------------------------------------------------------------------
 # _prepare_service_call — My-position routing

@@ -12,6 +12,7 @@ from .const import (
     CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENTITIES,
     CONF_MY_POSITION_VALUE,
+    CONF_SENSOR_TYPE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
@@ -25,6 +26,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up the button platform."""
     coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
+
+    # Cover groups expose scene + clear-overrides buttons, never the cover set.
+    from .cover_types import get_policy
+
+    if get_policy(config_entry.data.get(CONF_SENSOR_TYPE)).is_orchestrator:
+        from .group_entities import build_group_buttons
+
+        async_add_entities(
+            build_group_buttons(config_entry.entry_id, hass, config_entry, coordinator)
+        )
+        return
 
     buttons: list[ButtonEntity] = []
 
@@ -41,6 +53,11 @@ async def async_setup_entry(
                     config_entry.entry_id, hass, config_entry, coordinator
                 )
             )
+        buttons.append(
+            AdaptiveCoverApplyCalculatedPositionButton(
+                config_entry.entry_id, hass, config_entry, coordinator
+            )
+        )
 
     async_add_entities(buttons)
 
@@ -69,54 +86,13 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
         return self._button_name
 
     async def async_press(self) -> None:
-        """Handle the button press."""
-        reset_entities = []
-        for entity in self._entities:
-            if self.coordinator.manager.is_cover_manual(entity):
-                _LOGGER.debug("Resetting manual override for: %s", entity)
-                self.coordinator.manager.reset(entity)
-                # Suppress re-detection: cover state events during refresh must
-                # not be treated as a new manual override.
-                self.coordinator._cmd_svc.set_waiting(entity, True)  # noqa: SLF001
-                self.coordinator.cover_state_change = False
-                reset_entities.append(entity)
-            else:
-                _LOGGER.debug(
-                    "Resetting manual override for %s is not needed since it is already auto-controlled",
-                    entity,
-                )
+        """Handle the button press.
 
-        if not reset_entities:
-            return
-
-        # Refresh so the pipeline re-runs without the override active,
-        # producing the correct post-override position (climate, solar,
-        # default — whichever handler wins now).
-        await self.coordinator.async_refresh()
-
-        # Delegate to the shared post-override send path.
-        # Time-window and automatic-control gates live there, along with
-        # force=True so time_delta/position_delta are bypassed for this
-        # intentional user reset.
-        sent = await self.coordinator._async_send_after_override_clear(
-            self.coordinator.state,
-            self.coordinator.config_entry.options,
-            entities=reset_entities,
-            trigger="manual_reset",
-        )
-
-        # Entities not sent to (gated by time window / auto-control, or
-        # skipped inside apply_position) must have wait_for_target cleared so
-        # later cover state events are not silently swallowed.
-        # Entities that were sent already have wait_for_target=True set by
-        # apply_position; leave those untouched.
-        for entity in reset_entities:
-            if entity not in sent:
-                _LOGGER.debug(
-                    "Manual override reset: no position change sent for %s",
-                    entity,
-                )
-                self.coordinator._cmd_svc.set_waiting(entity, False)  # noqa: SLF001
+        The full clear-and-resend sequence lives on the coordinator
+        (``async_reset_manual_overrides``) so this button and the cover-group
+        bulk clear (issue #790) share one path.
+        """
+        await self.coordinator.async_reset_manual_overrides(self._entities)
 
 
 class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
@@ -144,7 +120,22 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
                 "My Position button pressed but my_position_value is not configured"
             )
             return
-        for entity_id in self._entities:
+        # Policy-mandated dispatch order, shared with every other dispatch seam
+        # (issue #1115): a Model C day/night shade commands the rail DOWNSTREAM
+        # of the move first, because neither rail can travel past the other.
+        # Identity for every cover type whose entities are independent.
+        #
+        # Name the number and frame this loop fans out so the ordering view can
+        # tell a raise from a lower (issue #1118). ``user_dispatch_position`` is
+        # the shared derivation ``async_apply_user_position`` runs below, floor
+        # clamp included — naming the raw preset instead lets a floor flip the
+        # direction between the ordering view and the gate.
+        ordered = self.coordinator._policy.order_for_dispatch(  # noqa: SLF001
+            self._entities,
+            position=self.coordinator.user_dispatch_position(int(my_position_value)),
+            inverted=self.coordinator.position_axis_inverted,
+        )
+        for entity_id in ordered:
             await self.coordinator.async_apply_user_position(
                 entity_id,
                 int(my_position_value),
@@ -152,3 +143,34 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
                 force=False,
                 use_my_position=True,
             )
+
+
+class AdaptiveCoverApplyCalculatedPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
+    """Button that force-applies the calculated position (issue #1045).
+
+    Recomputes the pipeline position and dispatches it past the
+    ``delta_position`` / ``delta_time`` gates.  The full guard policy lives on
+    the coordinator (``async_force_apply_calculated_position``) so this stays a
+    one-liner and no cover-type knowledge leaks into the button platform.
+    """
+
+    _attr_translation_key = "apply_calculated_position"
+
+    def __init__(
+        self,
+        entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(entry_id, hass, config_entry, coordinator)
+        self._attr_unique_id = f"{entry_id}_apply_calculated_position"
+
+    async def async_press(self) -> None:
+        """Recompute and force-send the calculated position to every cover.
+
+        No entity list is passed: the coordinator resolves ``self.entities``
+        live, so covers added after this entity was constructed are included.
+        """
+        await self.coordinator.async_force_apply_calculated_position()

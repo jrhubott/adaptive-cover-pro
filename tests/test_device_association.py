@@ -192,7 +192,7 @@ def test_device_info_standalone_when_no_device_id(mock_hass):
 
     info = entity.device_info
     assert (DOMAIN, "test-entry-id") in info["identifiers"]
-    assert info.get("manufacturer") == "BasHeijermans"
+    assert info.get("manufacturer") == "Jason Rhubottom"
 
 
 @pytest.mark.unit
@@ -253,7 +253,7 @@ def test_device_info_fallback_when_device_not_found(mock_hass):
 
     # Should fall back to standalone virtual device
     assert (DOMAIN, "test-entry-id") in info["identifiers"]
-    assert info.get("manufacturer") == "BasHeijermans"
+    assert info.get("manufacturer") == "Jason Rhubottom"
 
 
 # ---------------------------------------------------------------------------

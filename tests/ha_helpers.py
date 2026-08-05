@@ -10,6 +10,7 @@ pytest-homeassistant-custom-component.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Mapping
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -196,6 +197,117 @@ def _patch_coordinator_refresh():
 
 
 # ---------------------------------------------------------------------------
+# Coordinator-shaped mock wiring
+# ---------------------------------------------------------------------------
+
+
+def wire_dispatch_frame(
+    coord: Any, options: dict[str, Any], *, cover_type: str = CoverType.BLIND
+) -> Any:
+    """Give a coordinator-shaped mock the inputs the dispatch boundary reads.
+
+    ``async_apply_user_position`` maps its logical input into the cover's
+    dispatch frame before handing it to ``CoverCommandService`` (#1027), which
+    means every fixture that binds the real method also needs the frame inputs
+    the coordinator's own ``__init__`` / ``_update_options`` would have set.
+    Everything here is derived from *options* exactly the way the coordinator
+    derives it, and ``position_axis_inverted`` is evaluated through the real
+    property, so no fixture ever hand-rolls the inversion formula it is meant
+    to be exercising.
+
+    The min-mode floor clamp is bound for the same reason (#1118). It runs
+    before the frame mapping on every user command and is shared with
+    ``user_dispatch_position``, the accessor the fan-out seams name their
+    dispatched target through — so a mock that binds the real
+    ``async_apply_user_position`` but leaves the clamp mocked dispatches
+    ``int(MagicMock())`` instead of a position.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP,
+        CONF_INTERP_END,
+        CONF_INTERP_LIST,
+        CONF_INTERP_LIST_NEW,
+        CONF_INTERP_START,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord._policy = get_policy(cover_type)
+    coord._inverse_state = bool(options.get(CONF_INVERSE_STATE, False))
+    coord._use_interpolation = bool(options.get(CONF_INTERP, False))
+    coord.start_value = options.get(CONF_INTERP_START)
+    coord.end_value = options.get(CONF_INTERP_END)
+    coord.normal_list = options.get(CONF_INTERP_LIST)
+    coord.new_list = options.get(CONF_INTERP_LIST_NEW)
+    coord.logger = MagicMock()
+    coord.position_axis_inverted = (
+        AdaptiveDataUpdateCoordinator.position_axis_inverted.fget(coord)
+    )
+    coord._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(coord)
+    coord._entity_target = AdaptiveDataUpdateCoordinator._entity_target.__get__(coord)
+    for name in (
+        "_build_user_command_snapshot",
+        "_clamp_to_active_floor",
+        "user_dispatch_position",
+    ):
+        setattr(
+            coord, name, getattr(AdaptiveDataUpdateCoordinator, name).__get__(coord)
+        )
+    return coord
+
+
+def _bare_coordinator(**overrides: Any) -> Any:
+    """Build an ``object.__new__`` coordinator stub wired for ``async_shutdown``.
+
+    ``async_shutdown`` touches a fixed set of collaborators regardless of
+    which handle a given test cares about: ``_grace_mgr.cancel_all()``,
+    ``_cancel_motion_timeout()``, ``_cancel_weather_timeout()``,
+    ``_sensor_health.shutdown()``, ``_repair.shutdown()``, ``_cmd_svc.stop()``,
+    six ``if self._X_unsub is not None: ...`` cancel blocks
+    (``_forecast_unsub``, ``_forecast_max_unsub``, ``_gate_fallback_unsub``,
+    ``_refresh_after_unsub``, ``_custom_position_hold_unsub``,
+    ``_sun_tracking_gate_unsub``), the
+    ``_external_interlock_tasks`` map (#1138), and the travel-time calibrator
+    plus its republish tick handle. Every test
+    that exercises ``async_shutdown`` against a from-scratch stub needs all of
+    these stubbed or it raises ``AttributeError`` — this was hand-mirrored
+    across ``tests/test_issue_632_daytime_gate.py`` and
+    ``tests/test_coordinator_healthchecks.py`` and broke both files the last
+    time ``async_shutdown`` gained a new handle (issue #1012's per-input hold
+    wake). Pass keyword overrides (e.g. ``gate_fallback_unsub=my_cancel_spy``)
+    to replace any default before returning; unprefixed attribute names are
+    used (``gate_fallback_unsub``, not ``_gate_fallback_unsub``).
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._grace_mgr = MagicMock()
+    coord._cancel_motion_timeout = MagicMock()
+    coord._cancel_weather_timeout = MagicMock()
+    coord._sensor_health = MagicMock()
+    coord._repair = MagicMock()
+    coord._cmd_svc = MagicMock()
+    coord._forecast_unsub = None
+    coord._forecast_max_unsub = None
+    coord._gate_fallback_unsub = None
+    coord._refresh_after_unsub = None
+    coord._custom_position_hold_unsub = None
+    coord._sun_tracking_gate_unsub = None
+    coord._external_interlock_tasks = {}
+    # Shutdown stands a calibration run down and cancels its republish tick.
+    coord._travel_calibrator = MagicMock()
+    coord._travel_tick_unsub = None
+    for name, value in overrides.items():
+        setattr(coord, f"_{name}", value)
+    return coord
+
+
+# ---------------------------------------------------------------------------
 # Convenience assertions
 # ---------------------------------------------------------------------------
 
@@ -221,3 +333,75 @@ def assert_entities_registered(
         len(ids) >= min_count
     ), f"Expected >= {min_count} {platform} entities, got {len(ids)}: {ids}"
     return ids
+
+
+def make_mock_policy(**attrs: Any) -> MagicMock:
+    """Return a ``MagicMock`` cover-type policy inert on control-flow hooks.
+
+    A bare ``MagicMock`` answers a truthy ``Mock`` to every question, which for
+    a hook that DECIDES something — "is this command blocked?" — silently routes
+    production code down the branch the test is not about. The base
+    ``CoverTypePolicy`` answers ``None`` there ("nothing blocks it"), which is
+    what every cover type with physically independent entities really does, so
+    that is the honest stand-in. Tests about a specific hook set it themselves.
+    """
+    policy = MagicMock(**attrs)
+    policy.plan_external_command_interlock.return_value = None
+    return policy
+
+
+def bind_user_position_seam(coord: Any, *, interlock_plan: Any = None) -> Any:
+    """Bind ``async_apply_user_position`` and the siblings it calls onto ``coord``.
+
+    A test that binds the user-position seam onto a ``MagicMock`` coordinator is
+    exercising real production code that reaches for real collaborators, and
+    every one it does not bind resolves to a bare ``MagicMock`` — which for an
+    awaited call raises ``TypeError`` and for a returned value is truthy, so an
+    unbound sibling does not fail loudly, it silently changes the seam's control
+    flow. Binding them here rather than in nine harnesses means the next
+    collaborator is added in one place.
+
+    ``plan_external_command_interlock`` is defaulted to ``None`` on a mocked
+    policy because that is the BASE ``CoverTypePolicy`` answer — "nothing blocks
+    it", which is every cover type whose entities are physically independent. A
+    ``MagicMock`` would answer a truthy plan instead and send these tests
+    through a corrective partner move they are not about. Pass
+    ``interlock_plan`` to exercise the correction deliberately. A harness
+    carrying a REAL policy or command service is left alone: its answers are the
+    production ones, which is the point of using it.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    for name in (
+        "async_apply_user_position",
+        "_interlock_user_command",
+        "_execute_external_interlock",
+    ):
+        setattr(
+            coord, name, getattr(AdaptiveDataUpdateCoordinator, name).__get__(coord)
+        )
+
+    # An unset `_resolved_options` is a bare MagicMock, and the seam reads
+    # options through it. That is not an inert default: `MagicMock.get(...)`
+    # returns a MagicMock, `int()` of which is 1, so
+    # `resolve_handler_priority` silently answers 1 instead of 80 and every
+    # floor suddenly outranks manual override. Production always has a real
+    # dict (`Coordinator.__init__`), so mirror that rather than letting the
+    # mock invent a priority.
+    if isinstance(getattr(coord, "_resolved_options", None), MagicMock):  # noqa: SLF001
+        entry_opts = getattr(getattr(coord, "config_entry", None), "options", None)
+        coord._resolved_options = (  # noqa: SLF001
+            entry_opts if isinstance(entry_opts, Mapping) else {}
+        )
+
+    hook = getattr(
+        coord._policy, "plan_external_command_interlock", None
+    )  # noqa: SLF001
+    if isinstance(hook, MagicMock):
+        hook.return_value = interlock_plan
+    unavailable = getattr(coord._cmd_svc, "is_entity_unavailable", None)  # noqa: SLF001
+    if isinstance(unavailable, MagicMock):
+        unavailable.return_value = False
+    return coord

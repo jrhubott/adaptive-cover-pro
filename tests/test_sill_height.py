@@ -420,11 +420,12 @@ class TestInteractionWithWindowDepth:
     """Tests for combined sill_height + window_depth interaction."""
 
     def test_both_params_combine_independently(self, base_cover_params):
-        """With both sill_height and window_depth, both affect effective_distance.
-
-        window_depth adds to effective_distance; sill_height subtracts from it.
+        """sill_height moves effective_distance; window_depth is a no-op below
+        its full-open gate (#1169 — window_depth is a binary lintel gate, not
+        a continuous term, so "combine independently" no longer means "both
+        always change the result" — it means each keeps its own, separate
+        effect where that effect actually applies).
         """
-        # gamma=30° > 10° threshold, so window_depth contributes
         gamma = 30.0
         sol_elev = 45.0
 
@@ -462,27 +463,56 @@ class TestInteractionWithWindowDepth:
         pos_sill_only = cover_sill_only.calculate_position()
         pos_both = cover_both.calculate_position()
 
-        # Both individually change position from baseline
-        assert pos_depth_only != pos_neither
+        # base_cover_params (distance=0.5, h_win=2.1) keeps window_depth=0.1's
+        # lintel shadow well short of h_win at this gamma/elev, so depth alone
+        # is a no-op below the gate.
+        assert pos_depth_only == pos_neither
+        # sill_height still shifts effective_distance unconditionally.
         assert pos_sill_only != pos_neither
-
-        # Combined should differ from each individually
         assert pos_both != pos_neither
 
+        # Above the gate (shorter h_win), window_depth flips the result to a
+        # full open — proving it still combines independently where its gate
+        # actually fires, rather than being dead code.
+        h_win_above_gate = 0.6
+        cover_above_neither = make_vertical_cover(
+            base_cover_params,
+            gamma=gamma,
+            sol_elev=sol_elev,
+            sill_height=0.0,
+            window_depth=0.0,
+            h_win=h_win_above_gate,
+        )
+        cover_above_depth_only = make_vertical_cover(
+            base_cover_params,
+            gamma=gamma,
+            sol_elev=sol_elev,
+            sill_height=0.0,
+            window_depth=0.1,
+            h_win=h_win_above_gate,
+        )
+        pos_above_neither = cover_above_neither.calculate_position()
+        pos_above_depth_only = cover_above_depth_only.calculate_position()
+
+        assert pos_above_depth_only == pytest.approx(h_win_above_gate)
+        assert pos_above_depth_only != pos_above_neither
+
     def test_combined_result_is_consistent_with_offsets(self, base_cover_params):
-        """window_depth adds and sill_height subtracts from effective_distance independently."""
+        """Below the lintel gate, window_depth is a no-op and sill_height alone
+        drives effective_distance (#1169 — window_depth no longer adds a
+        continuous ``depth·sin(gamma)`` term; see ``TestLintelGate`` in
+        test_geometric_accuracy.py for the full-open gate itself).
+        """
         gamma = 30.0
         sol_elev = 45.0
         window_depth = 0.1
         sill_height = 0.1  # Small enough that effective_distance stays positive
 
-        # Calculate expected combined effective_distance manually:
-        # window_depth adds, sill_height subtracts
-        depth_contrib = window_depth * math.sin(math.radians(abs(gamma)))
+        # window_depth contributes nothing below the gate — only sill_height
+        # moves effective_distance.
         sill_offset = sill_height / math.tan(math.radians(sol_elev))
-        expected_effective_dist = 0.5 + depth_contrib - sill_offset  # base distance=0.5
+        expected_effective_dist = 0.5 - sill_offset  # base distance=0.5
 
-        # Expected base_height (gamma=30°, safety margin = 1.0 at this angle)
         expected_path_length = expected_effective_dist / math.cos(math.radians(gamma))
         expected_base_height = expected_path_length * math.tan(math.radians(sol_elev))
 

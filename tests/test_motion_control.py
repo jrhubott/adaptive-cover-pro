@@ -538,7 +538,7 @@ def test_determine_control_status_motion_timeout():
     pipeline_result = PipelineResult(
         position=60,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active",
+        reason="occupancy timeout active",
     )
 
     ctx = DiagnosticContext(
@@ -609,7 +609,13 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     coordinator.logger = MagicMock()
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
     coordinator._pipeline_bypasses_auto_control = False
+    # `state` delegates post-processing to the shared logical → cover-frame
+    # helper (#1027) — bind the real one so the mock does not intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
 
     # Mock property access for direct checks in state property
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
@@ -618,7 +624,7 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     coordinator._pipeline_result = PipelineResult(
         position=10,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active — default position 10%",
+        reason="occupancy timeout active — default position 10%",
     )
 
     result = AdaptiveDataUpdateCoordinator.state.fget(coordinator)
@@ -638,6 +644,13 @@ def test_state_property_safety_custom_position_precedence():
     coordinator.logger = MagicMock()
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
+    # A safety winner runs the same frame transform as any other (#1036), so
+    # bind the real logical → cover-frame helper instead of letting the bare
+    # MagicMock intercept it.
+    coordinator._to_cover_frame = AdaptiveDataUpdateCoordinator._to_cover_frame.__get__(
+        coordinator
+    )
 
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
 
@@ -1389,6 +1402,91 @@ class TestMotionTemplate:
         assert mgr.is_motion_detected is True
         mgr_off = self._mgr(hass, template="{{ false }}", template_mode="and")
         assert mgr_off.is_motion_detected is False
+
+    async def test_occupancy_template_can_reference_this_instances_own_entity(
+        self, hass
+    ):
+        """The occupancy template resolves the ``acp`` namespace (issue #1159)."""
+        from tests._helpers.acp_namespace import (
+            acp_variables,
+            make_acp_entry,
+            seed_sun_infront,
+        )
+
+        entry = make_acp_entry(hass, "motion_acp_01")
+        entity_id = seed_sun_infront(hass, entry, "on")
+        await hass.async_block_till_done()
+
+        mgr = MotionManager(
+            hass=hass,
+            logger=MagicMock(),
+            template_variables=acp_variables(hass, entry),
+        )
+        mgr.update_config(
+            sensors=[],
+            timeout_seconds=300,
+            template="{{ is_state(acp.sun_infront, 'on') }}",
+        )
+        assert mgr.template_active is True
+        assert mgr.is_motion_detected is True
+
+        hass.states.async_set(entity_id, "off")
+        await hass.async_block_till_done()
+        assert mgr.template_active is False
+
+    async def test_occupancy_template_without_context_reads_as_unoccupied(self, hass):
+        """No context threaded in → the namespace is undefined → *not occupied*.
+
+        Emphatically NOT "no opinion". ``template_active`` goes through
+        ``render_condition(default=False)``, so a failed render is a substantive
+        verdict rather than a shrug: ``is_motion_detected`` goes False. The
+        tri-state ``render_condition_or_none`` / ``fold_condition_template``
+        path is the one that abstains; this field does not use it.
+
+        Whether that verdict reaches the cover is a separate question, and with
+        the template as the *only* occupancy source the answer is no.
+        ``is_motion_timeout_active`` hard-returns False whenever no sensors are
+        configured, so ``snapshot.motion_timeout_active`` stays False and
+        ``MotionTimeoutHandler.evaluate`` returns None. A typo'd key costs a
+        template-only instance its occupancy signal, not its position — see
+        ``test_and_mode_failed_render_reaches_the_timeout_gate`` for the one
+        shape where it does park the cover.
+        """
+        mgr = self._mgr(hass, template="{{ is_state(acp.sun_infront, 'on') }}")
+        assert mgr.template_active is False
+        assert mgr.is_motion_detected is False
+        mgr.set_no_motion()  # what a completed no-motion timeout leaves behind
+        assert mgr.is_motion_timeout_active is False, (
+            "No sensors → the timeout gate is off, so the unoccupied verdict "
+            "never reaches MotionTimeoutHandler."
+        )
+
+    async def test_and_mode_failed_render_reaches_the_timeout_gate(self, hass):
+        """AND mode *with sensors* is the shape where a bad template parks the cover.
+
+        Pins the two manager-level facts that make that shape reachable: the
+        failed render folds to False through the AND, overriding an active
+        sensor (``test_and_mode_template_falsy_blocks_active_sensor``), and
+        because sensors are configured the ``is_motion_timeout_active`` gate is
+        open rather than short-circuited off. ``set_no_motion()`` stands in for
+        a completed timeout, so what is asserted is that the gate would be open
+        — the expiry path and ``MotionTimeoutHandler`` itself are covered
+        elsewhere.
+        """
+        hass.states.async_set("binary_sensor.motion", "on")
+        await hass.async_block_till_done()
+        mgr = self._mgr(
+            hass,
+            sensors=["binary_sensor.motion"],
+            # No render context threaded in, so `acp` is undefined and the
+            # render fails — the same shape as a typo'd namespace key.
+            template="{{ is_state(acp.sun_infront, 'on') }}",
+            template_mode="and",
+        )
+        assert mgr.template_active is False
+        assert mgr.is_motion_detected is False
+        mgr.set_no_motion()
+        assert mgr.is_motion_timeout_active is True
 
 
 @pytest.mark.asyncio

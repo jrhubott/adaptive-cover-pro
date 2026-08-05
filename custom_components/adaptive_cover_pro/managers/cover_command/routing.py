@@ -92,7 +92,7 @@ def route_service_call(
     Routing precedence: position-capable axis → My-position stop → open/close
     threshold → no capable service.
 
-    Inverse-state ordering note (``CODING_GUIDELINES.md`` line 221):
+    Inverse-state ordering note (see ``CODING_GUIDELINES.md``):
     ``state`` here is the value the caller wants the cover to land at, after
     any inverse-state transformation upstream. This helper does NOT touch
     inverse state.
@@ -119,7 +119,7 @@ def route_service_call(
         :class:`ServiceCallPlan` describing what the orchestrator must do.
 
     """
-    supports_position = caps.get(axis.capability_key, True)
+    supports_position = caps_get(caps, axis.capability_key, default=True)
 
     if (
         supports_position

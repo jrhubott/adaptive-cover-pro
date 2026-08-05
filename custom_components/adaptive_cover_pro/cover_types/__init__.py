@@ -18,13 +18,20 @@ from .blind import BlindPolicy
 from .awning import AwningPolicy
 from .oscillating_awning import OscillatingAwningPolicy
 from .roof_window import RoofWindowPolicy
+from .sliding_curtain import SlidingCurtainPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
+from .louvered_roof import LouveredRoofPolicy
+from .day_night_shade import DayNightShadePolicy
+from .dual_panel import DualPanelPolicy
 
-# Virtual entry type — imported LAST so it sorts to the bottom of the
-# cover-type picker (``SENSOR_TYPE_MENU`` follows registration order). It is
-# not a physical cover (``controls_cover = False``).
+# Virtual entry types — imported LAST so they sort to the bottom of
+# registry-derived menus (``SENSOR_TYPE_MENU`` follows registration order).
+# The building profile is not a physical cover (``controls_cover = False``);
+# the group controls covers but is an orchestrator (``is_orchestrator =
+# True``) — both are filtered out of the cover-type picker by capability.
 from .building_profile import BuildingProfilePolicy
+from .group import GroupPolicy
 
 
 def get_policy(cover_type) -> CoverTypePolicy:
@@ -49,15 +56,53 @@ def get_policy(cover_type) -> CoverTypePolicy:
     return cls()
 
 
+def percentage_option_keys() -> frozenset[str]:
+    """Every option any registered cover type stores as a 0-100 % value.
+
+    The structural enumeration behind ``config_fields._POSITION_ROLES``'
+    completeness guard (issue #1132): a new percentage option shows up here the
+    moment its section renders it, and the guard fails until it is classified as
+    re-seeded / disclosed / neutral.
+
+    Rendering the sections rather than reading ``FieldSpec.rng`` is what makes
+    it exhaustive. Several percentage fields are built by the dynamic section
+    builders and carry no range on their spec at all — ``cloudy_position`` has
+    neither a range nor a static selector — so a registry-only sweep would
+    quietly miss exactly the fields most likely to be forgotten.
+
+    Lives here rather than in ``config_fields`` because it is a cross-policy
+    question: ``config_fields`` must never import ``cover_types``.
+    """
+    from ..config_fields import is_percentage_marker
+
+    keys: set[str] = set()
+    for cover_type in POLICY_REGISTRY:
+        policy = get_policy(cover_type)
+        for section in policy.section_order():
+            schema = policy.build_section_schema(section)
+            keys.update(
+                str(marker)
+                for marker, validator in schema.schema.items()
+                if is_percentage_marker(validator)
+            )
+    return frozenset(keys)
+
+
 __all__ = [
     "POLICY_REGISTRY",
     "AwningPolicy",
     "BlindPolicy",
     "BuildingProfilePolicy",
     "CoverTypePolicy",
+    "DayNightShadePolicy",
+    "DualPanelPolicy",
+    "GroupPolicy",
+    "LouveredRoofPolicy",
     "OscillatingAwningPolicy",
     "RoofWindowPolicy",
+    "SlidingCurtainPolicy",
     "TiltPolicy",
     "VenetianPolicy",
     "get_policy",
+    "percentage_option_keys",
 ]

@@ -4,12 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from operator import ge, le
-from typing import TYPE_CHECKING
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping
 
 from ..const import DEFAULT_TEMPLATE_COMBINE_MODE
+from ..engine.climate_crossings import (
+    extreme_heat_crossing,
+    outside_high_crossing,
+    resolve_current_temperature,
+    summer_warm_crossing,
+    winter_crossing,
+)
 from ..helpers import get_domain, get_safe_state, is_entity_active, state_attr
-from ..templates import fold_condition_template
+from ..templates import fold_condition_template, is_template_string
+from .area_resolver import AreaSensorResolver
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -28,22 +36,82 @@ class ClimateReadings:
     lux_below_threshold: bool
     irradiance_below_threshold: bool
     cloud_coverage_above_threshold: bool
+    # Hysteresis release edges consumed by CloudSuppressionManager's Schmitt
+    # latch (issue #864). ``*_release_cleared`` is True when the value has passed
+    # the configured release threshold so the latch may drop. With a blank
+    # release threshold the band is zero-width and this equals ``not activate``,
+    # so a manager that ORs them each cycle reproduces today's instantaneous
+    # behaviour exactly. Default True (cleared) so a snapshot built without the
+    # new fields never holds a latch.
+    lux_release_cleared: bool = True
+    irradiance_release_cleared: bool = True
+    cloud_coverage_release_cleared: bool = True
+    # Temperature-season crossings consumed by ClimateSmoothingManager's Schmitt
+    # latches (issue #917). Each ``*_release_cleared`` is True once the value has
+    # passed the release edge so the latch may drop; with a blank release edge it
+    # equals ``not <activate>`` (instantaneous). The defaults reproduce each
+    # legacy ``ClimateCoverData`` property's unavailability value EXACTLY so a
+    # snapshot built without these fields never changes behaviour:
+    # winter/summer-warm/extreme fail to (inactive, cleared) = no latch; the
+    # outside-high crossing FAILS OPEN to (active, held) = latch stays engaged.
+    temp_below_low_threshold: bool = False
+    temp_low_release_cleared: bool = True
+    temp_above_high_threshold: bool = False
+    temp_high_release_cleared: bool = True
+    outside_above_threshold: bool = True
+    outside_release_cleared: bool = False
+    outside_above_extreme_heat: bool = False
+    extreme_heat_release_cleared: bool = True
+    # Effective indoor temperature entity actually read, and its provenance
+    # (issue #786): "explicit" (configured), "area" (auto-resolved from the
+    # cover's HA area), or "none". ``inside_temperature_area_id`` is set only
+    # for the "area" source. Surfaced in diagnostics + config summary.
+    inside_temperature_entity_id: str | None = None
+    inside_temperature_source: str = "none"
+    inside_temperature_area_id: str | None = None
+    # Provenance of the outdoor temperature actually used (issue #547):
+    # "live" (sensor state / weather temp attr), "forecast_max" (pre-fetched
+    # daily high), "max_of_live_and_forecast" (true combine of both), or
+    # "live_fallback" (a forecast source was selected but no numeric forecast
+    # was available). Surfaced in diagnostics.
+    outside_temperature_source: str = "live"
 
 
 class ClimateProvider:
     """Reads climate-related HA entities and returns a ClimateReadings snapshot."""
 
-    def __init__(self, hass: HomeAssistant, logger: ConfigContextAdapter) -> None:
-        """Initialize with HA instance and logger."""
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        logger: ConfigContextAdapter,
+        *,
+        template_variables: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Initialize with HA instance, logger, and the shared render context.
+
+        ``template_variables`` is the ``acp`` self-reference namespace built once
+        by the coordinator (issue #1159), threaded into the is_sunny / presence
+        condition templates. Opaque here — the provider never inspects it.
+        """
         self._hass = hass
         self._logger = logger
+        self._template_variables = template_variables
+        self._area_resolver = AreaSensorResolver(hass)
+        # Last authoritative is_sunny opinion, held across a transient invalid
+        # sensor/template read so a blip cannot substitute a lower-authority
+        # weather fallback (issue #1014; mirrors #1010's custom-position hold).
+        self._last_valid_is_sunny: bool | None = None
 
     def read(
         self,
         *,
         temp_entity: str | None = None,
+        temp_device_id: str | None = None,
+        auto_resolve_temp_from_area: bool = True,
         outside_entity: str | None = None,
         weather_entity: str | None = None,
+        outside_temp_source: str = "live",
+        forecast_max_outside: float | None = None,
         weather_condition: list[str] | None = None,
         presence_entity: str | None = None,
         presence_template: str | None = None,
@@ -51,22 +119,50 @@ class ClimateProvider:
         use_lux: bool = False,
         lux_entity: str | None = None,
         lux_threshold: int | None = None,
+        lux_release_threshold: float | None = None,
         use_irradiance: bool = False,
         irradiance_entity: str | None = None,
         irradiance_threshold: int | None = None,
+        irradiance_release_threshold: float | None = None,
         use_cloud_coverage: bool = False,
         cloud_coverage_entity: str | None = None,
         cloud_coverage_threshold: int | None = None,
+        cloud_coverage_release_threshold: float | None = None,
         is_sunny_sensor: str | None = None,
         is_sunny_template: str | None = None,
         is_sunny_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
+        temp_switch: bool = False,
+        temp_low: float | None = None,
+        temp_high: float | None = None,
+        outside_threshold: float | None = None,
+        temp_extreme_heat: float | None = None,
+        temp_low_release_threshold: float | None = None,
+        temp_high_release_threshold: float | None = None,
+        outside_threshold_release: float | None = None,
+        temp_extreme_heat_release_threshold: float | None = None,
     ) -> ClimateReadings:
         """Read all climate entities and return a frozen snapshot."""
+        resolved_temp = self._area_resolver.resolve_temperature_entity(
+            explicit_entity=temp_entity,
+            device_id=temp_device_id,
+            auto_resolve=auto_resolve_temp_from_area,
+        )
+        outside_temperature, outside_temperature_source = (
+            self._read_outside_temperature(
+                outside_entity,
+                weather_entity,
+                outside_temp_source,
+                forecast_max_outside,
+            )
+        )
+        inside_temperature = self._read_inside_temperature(resolved_temp.entity_id)
         return ClimateReadings(
-            outside_temperature=self._read_outside_temperature(
-                outside_entity, weather_entity
-            ),
-            inside_temperature=self._read_inside_temperature(temp_entity),
+            outside_temperature=outside_temperature,
+            outside_temperature_source=outside_temperature_source,
+            inside_temperature=inside_temperature,
+            inside_temperature_entity_id=resolved_temp.entity_id,
+            inside_temperature_source=resolved_temp.source,
+            inside_temperature_area_id=resolved_temp.area_id,
             is_presence=self._read_presence(
                 presence_entity, presence_template, presence_template_mode
             ),
@@ -77,14 +173,85 @@ class ClimateProvider:
                 is_sunny_template,
                 is_sunny_template_mode,
             ),
-            lux_below_threshold=self._read_lux(use_lux, lux_entity, lux_threshold),
-            irradiance_below_threshold=self._read_irradiance(
-                use_irradiance, irradiance_entity, irradiance_threshold
+            **self._read_lux(use_lux, lux_entity, lux_threshold, lux_release_threshold),
+            **self._read_irradiance(
+                use_irradiance,
+                irradiance_entity,
+                irradiance_threshold,
+                irradiance_release_threshold,
             ),
-            cloud_coverage_above_threshold=self._read_cloud_coverage(
-                use_cloud_coverage, cloud_coverage_entity, cloud_coverage_threshold
+            **self._read_cloud_coverage(
+                use_cloud_coverage,
+                cloud_coverage_entity,
+                cloud_coverage_threshold,
+                cloud_coverage_release_threshold,
+            ),
+            **self._read_temperature_crossings(
+                outside_temperature=outside_temperature,
+                inside_temperature=inside_temperature,
+                temp_switch=temp_switch,
+                temp_low=temp_low,
+                temp_high=temp_high,
+                outside_threshold=outside_threshold,
+                temp_extreme_heat=temp_extreme_heat,
+                temp_low_release_threshold=temp_low_release_threshold,
+                temp_high_release_threshold=temp_high_release_threshold,
+                outside_threshold_release=outside_threshold_release,
+                temp_extreme_heat_release_threshold=(
+                    temp_extreme_heat_release_threshold
+                ),
             ),
         )
+
+    def _read_temperature_crossings(
+        self,
+        *,
+        outside_temperature: float | str | None,
+        inside_temperature: float | str | None,
+        temp_switch: bool,
+        temp_low: float | None,
+        temp_high: float | None,
+        outside_threshold: float | None,
+        temp_extreme_heat: float | None,
+        temp_low_release_threshold: float | None,
+        temp_high_release_threshold: float | None,
+        outside_threshold_release: float | None,
+        temp_extreme_heat_release_threshold: float | None,
+    ) -> dict[str, bool]:
+        """Compute the four temperature crossings (issue #917).
+
+        Resolves the season-driving current temperature FIRST (same
+        outside/inside/temp_switch logic as ``ClimateCoverData``), then delegates
+        each crossing to the pure ``engine.climate_crossings`` helpers so the
+        provider and the handler's raw fallback share one computation site.
+        """
+        current_temp = resolve_current_temperature(
+            outside_temperature, inside_temperature, temp_switch=temp_switch
+        )
+        below_low, low_cleared = winter_crossing(
+            current_temp, temp_low, temp_low_release_threshold
+        )
+        above_high, high_cleared = summer_warm_crossing(
+            current_temp, temp_high, temp_high_release_threshold
+        )
+        outside_high, outside_cleared = outside_high_crossing(
+            outside_temperature, outside_threshold, outside_threshold_release
+        )
+        extreme, extreme_cleared = extreme_heat_crossing(
+            outside_temperature,
+            temp_extreme_heat,
+            temp_extreme_heat_release_threshold,
+        )
+        return {
+            "temp_below_low_threshold": below_low,
+            "temp_low_release_cleared": low_cleared,
+            "temp_above_high_threshold": above_high,
+            "temp_high_release_cleared": high_cleared,
+            "outside_above_threshold": outside_high,
+            "outside_release_cleared": outside_cleared,
+            "outside_above_extreme_heat": extreme,
+            "extreme_heat_release_cleared": extreme_cleared,
+        }
 
     # ------------------------------------------------------------------
     # Private readers
@@ -94,13 +261,67 @@ class ClimateProvider:
         self,
         outside_entity: str | None,
         weather_entity: str | None,
+        source: str = "live",
+        forecast_max_outside: float | None = None,
+    ) -> tuple[float | str | None, str]:
+        """Read outside temperature and its provenance (issue #547).
+
+        Returns a ``(value, source_label)`` tuple. ``source`` selects the
+        strategy; every forecast path degrades to the live read when no
+        numeric forecast is available so climate mode is never stranded:
+
+        - ``live`` → sensor state / weather temp attr, label ``live``.
+        - ``forecast_max`` → the pre-fetched daily high when numeric
+          (label ``forecast_max``), else the live read (label
+          ``live_fallback``).
+        - ``max_of_live_and_forecast`` → ``max(live, forecast)`` when both
+          are numeric (label ``max_of_live_and_forecast``); if only one is
+          available it is used with the matching single-source label.
+        """
+        live_value = self._read_live_outside(outside_entity, weather_entity)
+
+        if source == "live":
+            return live_value, "live"
+
+        forecast = self._coerce_float(forecast_max_outside)
+        live_num = self._coerce_float(live_value)
+
+        if source == "forecast_max":
+            if forecast is not None:
+                return forecast, "forecast_max"
+            return live_value, "live_fallback"
+
+        if source == "max_of_live_and_forecast":
+            if forecast is not None and live_num is not None:
+                return max(live_num, forecast), "max_of_live_and_forecast"
+            if forecast is not None:
+                return forecast, "forecast_max"
+            return live_value, "live_fallback"
+
+        # Unknown/absent source → safe live default.
+        return live_value, "live"
+
+    def _read_live_outside(
+        self,
+        outside_entity: str | None,
+        weather_entity: str | None,
     ) -> float | str | None:
-        """Read outside temperature from entity or weather fallback."""
+        """Live outdoor read: dedicated sensor, else weather temp attr."""
         if outside_entity:
             return get_safe_state(self._hass, outside_entity)
         if weather_entity:
             return state_attr(self._hass, weather_entity, "temperature")
         return None
+
+    @staticmethod
+    def _coerce_float(value: float | str | None) -> float | None:
+        """Coerce a reading to float, or None when non-numeric/unavailable."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
 
     def _read_inside_temperature(
         self,
@@ -132,6 +353,7 @@ class ClimateProvider:
             presence_template_mode,
             others_truthy=is_entity_active(self._hass, presence_entity),
             has_others=bool(presence_entity),
+            variables=self._template_variables,
         )
         if combined is not None:
             return combined
@@ -151,9 +373,15 @@ class ClimateProvider:
         sensor's on/off state and the rendered template combine via
         ``is_sunny_template_mode`` (issue #639). A sensor that is
         unavailable/unknown and a template that is empty or fails to render are
-        each treated as "no opinion": when NEITHER source is authoritative the
-        code falls through to the weather-entity logic so a stale source cannot
-        strand the integration in a fixed state.
+        each treated as "no opinion" this cycle. When a source is configured
+        and a PRIOR cycle produced an authoritative opinion, that opinion is
+        HELD across the transient invalid read instead of falling through to
+        weather (issue #1014 — mirrors #1010's custom-position hold: a
+        transient invalid read must not be read as a lower-authority signal).
+        Only when a configured source has never yet produced an opinion, or no
+        source is configured at all, does the code fall through to the
+        weather-entity logic — preserving the original "stale source cannot
+        strand the integration" intent for that first-ever-invalid case.
         """
         sensor_state = (
             get_safe_state(self._hass, is_sunny_sensor) if is_sunny_sensor else None
@@ -165,6 +393,7 @@ class ClimateProvider:
             is_sunny_template_mode,
             others_truthy=sensor_state == "on",
             has_others=has_sensor,
+            variables=self._template_variables,
         )
         if combined is not None:
             self._logger.debug(
@@ -173,7 +402,17 @@ class ClimateProvider:
                 is_sunny_template,
                 combined,
             )
+            self._last_valid_is_sunny = combined
             return combined
+        configured = bool(is_sunny_sensor) or is_template_string(is_sunny_template)
+        if configured and self._last_valid_is_sunny is not None:
+            self._logger.debug(
+                "is_sunny(): sensor=%r template=%r invalid — holding last-valid %s",
+                is_sunny_sensor,
+                is_sunny_template,
+                self._last_valid_is_sunny,
+            )
+            return self._last_valid_is_sunny
         if is_sunny_sensor:
             self._logger.debug(
                 "is_sunny(): sensor %s unavailable (%r) — falling through to weather",
@@ -201,69 +440,107 @@ class ClimateProvider:
         entity: str | None,
         threshold: int | None,
         comparison: Callable[[float, float], bool],
+        release_threshold: float | None,
+        release_comparison: Callable[[float, float], bool],
         label: str,
-    ) -> bool:
-        """Compare an entity's numeric state to a threshold.
+    ) -> tuple[bool, bool]:
+        """Compare an entity's numeric state to its activate + release edges.
 
-        Shared shape used by lux / irradiance / cloud-coverage readings:
-        feature-flag gate, then read the entity, coerce to float, and compare
-        against the configured threshold. Non-numeric or unavailable values
-        return False so the climate snapshot stays bool-typed.
+        Returns ``(activate_met, release_cleared)`` from a SINGLE read (issue
+        #864). ``activate_met`` is the existing single-crossing comparison
+        against ``threshold``. ``release_cleared`` is True when the value has
+        passed the ``release_threshold`` edge (via ``release_comparison``), so a
+        downstream Schmitt latch may drop.
+
+        A blank ``release_threshold`` collapses the band to zero width →
+        ``release_cleared = not activate_met``, reproducing today's
+        instantaneous behaviour. A disabled / unavailable / non-numeric read
+        reports ``(False, True)`` — inactive and cleared, so no latch is created
+        or held (fail-open: sensor failure never strands the cover suppressed).
         """
         if not enabled or entity is None or threshold is None:
-            return False
+            return False, True
         value = get_safe_state(self._hass, entity)
         if value is None:
-            return False
+            return False, True
         try:
-            return comparison(float(value), threshold)
+            fvalue = float(value)
         except (ValueError, TypeError):
             self._logger.debug(
                 "%s entity %s returned non-numeric value: %r", label, entity, value
             )
-            return False
+            return False, True
+        activate_met = comparison(fvalue, threshold)
+        if release_threshold is None:
+            return activate_met, not activate_met
+        return activate_met, release_comparison(fvalue, release_threshold)
 
     def _read_lux(
         self,
         use_lux: bool,
         lux_entity: str | None,
         lux_threshold: int | None,
-    ) -> bool:
-        """Check if lux is at or below threshold (low light)."""
-        return self._read_numeric_threshold(
+        lux_release_threshold: float | None = None,
+    ) -> dict[str, bool]:
+        """Read lux activate (at/below threshold) + release-cleared (issue #864)."""
+        activate, cleared = self._read_numeric_threshold(
             enabled=use_lux,
             entity=lux_entity,
             threshold=lux_threshold,
             comparison=le,
+            release_threshold=lux_release_threshold,
+            release_comparison=ge,
             label="Lux",
         )
+        return {
+            "lux_below_threshold": activate,
+            "lux_release_cleared": cleared,
+        }
 
     def _read_irradiance(
         self,
         use_irradiance: bool,
         irradiance_entity: str | None,
         irradiance_threshold: int | None,
-    ) -> bool:
-        """Check if irradiance is at or below threshold (low radiation)."""
-        return self._read_numeric_threshold(
+        irradiance_release_threshold: float | None = None,
+    ) -> dict[str, bool]:
+        """Read irradiance activate (at/below) + release-cleared (issue #864)."""
+        activate, cleared = self._read_numeric_threshold(
             enabled=use_irradiance,
             entity=irradiance_entity,
             threshold=irradiance_threshold,
             comparison=le,
+            release_threshold=irradiance_release_threshold,
+            release_comparison=ge,
             label="Irradiance",
         )
+        return {
+            "irradiance_below_threshold": activate,
+            "irradiance_release_cleared": cleared,
+        }
 
     def _read_cloud_coverage(
         self,
         use_cloud_coverage: bool,
         cloud_coverage_entity: str | None,
         cloud_coverage_threshold: int | None,
-    ) -> bool:
-        """Check if cloud coverage is at or above threshold (overcast)."""
-        return self._read_numeric_threshold(
+        cloud_coverage_release_threshold: float | None = None,
+    ) -> dict[str, bool]:
+        """Read cloud activate (at/above) + release-cleared (issue #864).
+
+        The cloud band is inverted vs lux/irradiance — activate is "at or above"
+        (overcast), so the release edge clears "at or below" a lower value.
+        """
+        activate, cleared = self._read_numeric_threshold(
             enabled=use_cloud_coverage,
             entity=cloud_coverage_entity,
             threshold=cloud_coverage_threshold,
             comparison=ge,
+            release_threshold=cloud_coverage_release_threshold,
+            release_comparison=le,
             label="Cloud coverage",
         )
+        return {
+            "cloud_coverage_above_threshold": activate,
+            "cloud_coverage_release_cleared": cleared,
+        }

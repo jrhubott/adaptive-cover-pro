@@ -1,7 +1,7 @@
 """Tests for solar math review findings.
 
 Covers gaps identified in the 2026-04-12 solar code review:
-- Horizontal awning division-by-zero guard (sin_c < 1e-6)
+- Horizontal awning overhang projection (issue #1025 corrected math)
 - Tilt cover negative discriminant
 - solar_times() method
 - Non-zero sill_height
@@ -310,7 +310,7 @@ class TestControlStateReasonAllBranches:
 
     @pytest.mark.unit
     def test_reason_fov_exit(self, mock_sun_data, mock_logger):
-        """Returns 'Default: FOV Exit' when sun is outside azimuth FOV (elevation valid)."""
+        """Returns 'Default: Acceptance Angle Exit' when sun is outside azimuth FOV (elevation valid)."""
         cover = build_vertical_cover(
             **_common_kwargs(mock_sun_data, mock_logger),
             h_win=2.0,
@@ -342,7 +342,7 @@ class TestControlStateReasonAllBranches:
                 return_value=True,
             ),
         ):
-            assert cover.control_state_reason == "Default: FOV Exit"
+            assert cover.control_state_reason == "Default: Acceptance Angle Exit"
 
     @pytest.mark.unit
     def test_reason_elevation_limit(self, mock_sun_data, mock_logger):
@@ -485,18 +485,113 @@ class TestTiltNegativeDiscriminant:
         assert result >= 0.0
 
 
+class TestTiltSpecifyAngles:
+    """Explicit endpoint-angle mapping for calibrated tilt covers."""
+
+    @pytest.mark.unit
+    def test_specify_angles_converts_blocking_angle_to_tilt_percentage(
+        self, mock_sun_data, mock_logger
+    ):
+        """Calculated slat angle is interpolated between the configured endpoints."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        blocking_angle = cover.calculate_position()
+        expected = ((blocking_angle - 20.0) / (140.0 - 20.0)) * 100.0
+
+        assert cover._last_calc_details["max_degrees"] == pytest.approx(180.0)
+        assert cover.calculate_percentage() == pytest.approx(expected)
+        assert 0.0 <= cover.calculate_percentage() <= 100.0
+
+    @pytest.mark.unit
+    def test_specify_angles_uses_raw_horizontal_angle_directly(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """Raw 90° is horizontal and maps directly through the endpoint calibration."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 90.0)
+
+        assert cover._specified_target_angle(90.0) == pytest.approx(90.0)
+        assert cover.calculate_percentage() == pytest.approx(58.3333333)
+
+    @pytest.mark.unit
+    def test_specify_angles_low_sun_uses_raw_angle(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """A raw 61° target maps directly to the calibrated percentage."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 61.0)
+
+        assert cover._specified_target_angle(61.0) == pytest.approx(61.0)
+        assert cover.calculate_percentage() == pytest.approx(34.1666667)
+
+    @pytest.mark.unit
+    def test_specify_angles_clamps_percentage_outside_configured_endpoint_range(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """A target outside the calibrated endpoint range is clipped to 0..100%."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=20.0,
+            angle_100=140.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 180.0)
+
+        assert cover.calculate_percentage() == pytest.approx(100.0)
+
+    @pytest.mark.unit
+    def test_specify_angles_target_angle_is_limited_to_useful_blocking_range(
+        self, mock_sun_data, mock_logger, monkeypatch
+    ):
+        """Endpoint calibration may exceed 0..180°, but target slat angles do not."""
+        cover = build_tilt_cover(
+            **_common_kwargs(mock_sun_data, mock_logger),
+            slat_distance=0.02,
+            depth=0.05,
+            mode="specify_angles",
+            angle_0=-20.0,
+            angle_100=220.0,
+        )
+        monkeypatch.setattr(cover, "calculate_position", lambda: 220.0)
+
+        assert cover.calculate_percentage() == pytest.approx(83.3333333)
+        assert cover._specified_target_angle(220.0) == pytest.approx(180.0)
+
+
 # ===========================================================================
-# 6. Horizontal awning division-by-zero guard
+# 6. Horizontal awning overhang projection (issue #1025)
 # ===========================================================================
 
 
 class TestHorizontalDivisionByZeroGuard:
-    """Horizontal awning geometry.
+    """Horizontal awning overhang projection (issue #1025).
 
-    The formula is: c_angle = awn_angle_conf + sol_elev (derived from the law-of-sines
-    triangle). c_angle is always in [0°, 180°] for physical inputs, so length is always
-    non-negative and no clipping to zero occurs in normal operation.  The guard triggers
-    when c_angle ≈ 0° (both angles near 0°) or ≈ 180° (both near 90°).
+    Window mode projects ``L = h_win / (sin β + cos β · tan α / cos γ) − distance``,
+    clipped to ``[0, awn_length]``. The projection is well-conditioned for the
+    physical fixed-awning domain (``β`` ∈ [0, 45°], sun above horizon and in front
+    of the plane) and decays smoothly to 0 as ``|γ| → 90°``.
     """
 
     @pytest.mark.unit
@@ -527,28 +622,20 @@ class TestHorizontalDivisionByZeroGuard:
         assert 0.0 <= pct <= 100.0
 
     @pytest.mark.unit
-    def test_guard_returns_full_extension_when_sin_c_near_zero(
-        self, mock_sun_data, mock_logger
-    ):
-        """When sin(c_angle) < 1e-6, the guard returns full awn_length (safe fallback)."""
-        from unittest.mock import patch
-        import numpy as np
-        import custom_components.adaptive_cover_pro.engine.covers.horizontal as horiz_mod
-
+    def test_retracts_when_sun_behind_plane(self, mock_sun_data, mock_logger):
+        """Retract fully when cos γ ≤ 0 (|γ| ≥ 90°) — sun behind the window plane."""
+        # sol_azi offset 100° from win_azi (180) → |gamma| = 100° → cos γ < 0.
         cover = build_horizontal_cover(
-            **_common_kwargs(mock_sun_data, mock_logger, sol_elev=45.0),
+            **_common_kwargs(mock_sun_data, mock_logger, sol_elev=45.0, sol_azi=280.0),
+            win_azi=180,
+            fov_left=137,
+            fov_right=137,
             h_win=2.0,
             distance=0.5,
             awn_length=3.0,
             awn_angle=45.0,
         )
-        # Patch sin to return near-zero regardless of argument, triggering the guard
-        with patch.object(horiz_mod, "sin", return_value=np.float64(1e-8)):
-            result = cover.calculate_position()
-
-        assert result == pytest.approx(
-            3.0
-        ), f"Guard should return full extension 3.0m, got {result}"
+        assert cover.calculate_position() == 0.0
 
     @pytest.mark.unit
     def test_extension_increases_with_larger_gap(self, mock_sun_data, mock_logger):

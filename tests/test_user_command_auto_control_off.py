@@ -18,7 +18,7 @@ is issue #293 and is verified in test_issue_293_force_true_auto_off.py.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,6 +31,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
+from tests.ha_helpers import bind_user_position_seam, wire_dispatch_frame
 
 
 def _make_coord():
@@ -46,6 +47,7 @@ def _make_coord():
     coord.config_entry.options = {}
     # After fix #643, async_apply_user_position falls back to _resolved_options.
     coord._resolved_options = {}
+    wire_dispatch_frame(coord, coord.config_entry.options)
 
     from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
 
@@ -55,6 +57,9 @@ def _make_coord():
     coord._cover_data = MagicMock()
     coord._cover_type = "cover_blind"
     coord._weather_readings = None
+    coord._cloud_mgr = MagicMock()
+    coord._climate_smoothing_mgr = MagicMock()
+    coord._climate_smoothing_mgr.resolved_flags = None
 
     # Solar winner (priority 40) — below ManualOverrideHandler, so a force=False
     # user move is not preempted.
@@ -77,11 +82,8 @@ def _make_coord():
     coord._pipeline_result = PipelineResult(
         position=50, control_method=ControlMethod.SOLAR, reason="solar"
     )
-    coord._inverse_state = False
     coord.min_change = 2
     coord.time_threshold = 0
-    coord._policy = MagicMock()
-    coord._policy.position_context_overrides.return_value = {}
 
     coord.manager = MagicMock()
     coord.manager.is_cover_manual.return_value = False
@@ -102,8 +104,12 @@ def _make_coord():
     coord._build_position_context = (
         AdaptiveDataUpdateCoordinator._build_position_context.__get__(coord)
     )
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    bind_user_position_seam(coord)
+    # set_position routes through the axis collapse point (issue #725) — bind the
+    # real dispatcher so the service still reaches async_apply_user_position.
+    coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
     )
     return coord
 

@@ -214,6 +214,69 @@ class TestCustomPositionTiltEndToEnd:
         assert resolved.tilt == 70
 
 
+class TestLosingCustomPositionTiltDoesNotSuppressSolarEngine:
+    """Full-stack regression for issue #1153.
+
+    Reproduces the reporter's exact configuration end-to-end: a
+    CustomPositionHandler slot is triggered but loses on priority (1) to
+    SolarHandler (40), which wins with tilt=None (a venetian resolves its
+    slat angle after the pipeline). Before the fix, the registry's
+    ``_MERGEABLE`` fill copied the *losing* slot's tilt onto the winner, and
+    ``VenetianPolicy.post_pipeline_resolve`` treated that non-None tilt as
+    explicit user intent — honoring it and never running the solar tilt
+    engine, even though solar unambiguously won the decision trace.
+    """
+
+    def _resolved(self):
+        from custom_components.adaptive_cover_pro.cover_types.venetian import (
+            VenetianPolicy,
+        )
+
+        registry = PipelineRegistry(
+            [
+                SolarHandler(),
+                DefaultHandler(),
+                CustomPositionHandler(slot=1, position=0, priority=1, tilt=100),
+            ]
+        )
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cps(
+                    "binary_sensor.slot1",
+                    is_on=True,
+                    position=0,
+                    priority=1,
+                    tilt=100,
+                )
+            ],
+            direct_sun_valid=True,
+        )
+        pipeline_result = registry.evaluate(snap)
+        assert pipeline_result.control_method == ControlMethod.SOLAR
+        assert pipeline_result.tilt is None
+
+        policy = VenetianPolicy()
+        return policy.post_pipeline_resolve(pipeline_result, **_solar_kwargs())
+
+    def test_resolved_tilt_is_the_engine_tilt_not_the_losing_slot(self):
+        """The resolved tilt comes from the solar engine, never the loser's 100."""
+        resolved = self._resolved()
+        assert resolved.tilt is not None
+        assert resolved.tilt != 100
+
+    def test_handler_tilt_honored_step_is_absent(self):
+        """'venetian_handler_tilt' must not appear — the loser never won the tilt."""
+        resolved = self._resolved()
+        handler_names = [s.handler for s in resolved.decision_trace]
+        assert "venetian_handler_tilt" not in handler_names
+
+    def test_engine_step_is_present(self):
+        """The solar tilt engine step must run instead."""
+        resolved = self._resolved()
+        handler_names = [s.handler for s in resolved.decision_trace]
+        assert "venetian_engine" in handler_names
+
+
 # ---------------------------------------------------------------------------
 # Step 17: Non-venetian policy — identity passthrough preserves tilt field
 # ---------------------------------------------------------------------------

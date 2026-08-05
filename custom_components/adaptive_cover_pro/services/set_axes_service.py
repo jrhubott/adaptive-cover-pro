@@ -1,0 +1,123 @@
+"""set_axes service — dispatches a per-axis target map in one call (issue #725).
+
+Generalizes ``set_position`` / ``set_tilt`` into a single service that accepts
+``axes: {position, tilt}`` plus ``force``. Each requested axis is validated
+against the target entity's ``policy.supported_axes(caps)`` and then dispatched
+through ``Coordinator.async_apply_user_axis`` — the same collapse point the two
+single-axis services now use. Requesting an axis the cover does not support is a
+``ServiceValidationError`` (the issue is explicit: an error, not a no-op).
+
+No cover-type string branching: the supported-axis set and dispatch are keyed on
+the ``AXIS_NAME_*`` constants and ``policy.supported_axes`` / ``describe`` — the
+service works unchanged for a ninth cover type.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+import voluptuous as vol
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from voluptuous.validators import Coerce, Range
+
+from ..cover_types.base import (
+    AXIS_NAME_POSITION,
+    AXIS_NAME_TILT,
+    AXIS_VALUE_MAX,
+    AXIS_VALUE_MIN,
+)
+
+if TYPE_CHECKING:
+    from homeassistant.core import ServiceCall
+
+_LOGGER = logging.getLogger(__name__)
+
+_AXIS_VALUE = vol.All(Coerce(int), Range(min=AXIS_VALUE_MIN, max=AXIS_VALUE_MAX))
+
+SET_AXES_SCHEMA = cv.make_entity_service_schema(
+    {
+        vol.Required("axes"): vol.Schema(
+            {
+                vol.Optional(AXIS_NAME_POSITION): _AXIS_VALUE,
+                vol.Optional(AXIS_NAME_TILT): _AXIS_VALUE,
+            }
+        ),
+        vol.Optional("force", default=False): bool,
+    }
+)
+
+
+def _resolve_targets(hass, call):
+    """Thin re-export so tests can patch the local name."""
+    from . import _resolve_targets as _rt  # noqa: PLC0415
+
+    return _rt(hass, call)
+
+
+async def async_handle_set_axes(call: ServiceCall) -> None:
+    """Handle the set_axes service call.
+
+    Resolves targets, validates every requested axis against each target
+    entity's supported axes (raising ``ServiceValidationError`` for an
+    unsupported axis or an empty request), then dispatches each axis through
+    ``coord.async_apply_user_axis``. Validation happens for all targets before
+    any dispatch, so a rejected axis never leaves a partial move behind.
+    """
+    hass = call.hass
+    axes: dict[str, int] = dict(call.data["axes"])
+    force: bool = call.data.get("force", False)
+
+    if not axes:
+        raise ServiceValidationError(
+            "set_axes requires at least one axis in 'axes' (position and/or tilt)"
+        )
+
+    targets = _resolve_targets(hass, call)
+
+    # Validate every (entity, axis) pair up front so an unsupported axis rejects
+    # the whole call rather than dispatching a partial set.
+    resolved: list[tuple] = []
+    for coord, entity_filter in targets.items():
+        entity_ids = (
+            list(entity_filter) if entity_filter is not None else list(coord.entities)
+        )
+        policy = coord._policy  # noqa: SLF001
+        # Policy-mandated dispatch order, shared with every other dispatch seam
+        # (issue #1115). Applied here rather than at the dispatch loop below so
+        # ``resolved`` — which the loop iterates — carries the order through
+        # validation. Identity for every cover type with independent entities.
+        #
+        # Name the number this call fans out so the ordering view can tell a
+        # raise from a lower (issue #1118). The position axis when it is
+        # requested; otherwise the tilt value, which on a single-carriage type
+        # falls back to the position path and lands on the carriage anyway
+        # (#684). A type with a real tilt axis ignores the pair entirely.
+        # ``user_dispatch_position`` is the shared derivation the dispatch loop
+        # below runs, floor clamp included — naming the raw request instead lets
+        # a floor flip the direction between the ordering view and the gate.
+        for entity_id in policy.order_for_dispatch(
+            entity_ids,
+            position=coord.user_dispatch_position(
+                axes.get(AXIS_NAME_POSITION, axes.get(AXIS_NAME_TILT))
+            ),
+            inverted=coord.position_axis_inverted,
+        ):
+            caps = coord._cover_provider.read_single_capabilities(  # noqa: SLF001
+                entity_id
+            )
+            supported = {a.name for a in policy.supported_axes(caps)}
+            for axis_name in axes:
+                if axis_name not in supported:
+                    raise ServiceValidationError(
+                        f"{policy.display_label()} cover {entity_id} does not "
+                        f"support the '{axis_name}' axis"
+                    )
+            resolved.append((coord, entity_id))
+
+    for coord, entity_id in resolved:
+        for axis_name, value in axes.items():
+            await coord.async_apply_user_axis(
+                entity_id, axis_name, int(value), trigger="set_axes", force=force
+            )

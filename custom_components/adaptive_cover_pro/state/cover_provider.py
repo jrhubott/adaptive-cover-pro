@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..cover_types.base import (
@@ -36,18 +37,32 @@ class CoverProvider:
         self.logger = logger
 
     def read_positions(
-        self, entities: list[str], policy: CoverTypePolicy
+        self,
+        entities: list[str],
+        policy: CoverTypePolicy,
+        assumed: Callable[[str], int | None] | None = None,
     ) -> dict[str, int | None]:
         """Read current positions for all managed cover entities.
 
         Delegates the per-entity axis routing to ``policy.read_axis_value`` so
         the same "pick the axis, fall back to open/close" rule used by
         ``CoverCommandService`` lives in exactly one place.
+
+        ``assumed`` (issue #888) is a per-entity lookup for the display-only
+        assumed position. When supplied, its value is passed through to
+        ``read_axis_value``, which surfaces it ONLY on the open/close-only
+        branch when the live read is None. This is a reported-position surface,
+        never the command-dispatch read path — so it never affects the gates.
         """
         positions: dict[str, int | None] = {}
         for entity in entities:
             caps = self.read_single_capabilities(entity)
-            positions[entity] = policy.read_axis_value(self._hass, entity, caps)
+            positions[entity] = policy.read_axis_value(
+                self._hass,
+                entity,
+                caps,
+                assumed=assumed(entity) if assumed is not None else None,
+            )
         return positions
 
     def read_single_capabilities(self, entity: str) -> CoverCapabilities:

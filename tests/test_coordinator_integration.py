@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ def _make_pipeline_result(
     position: int = 50,
     control_method: ControlMethod = ControlMethod.SOLAR,
     bypass_auto_control: bool = False,
-    floor_clamp_applied: bool = False,
+    position_constraint_applied: bool = False,
     is_safety: bool = False,
 ) -> PipelineResult:
     return PipelineResult(
@@ -38,7 +39,7 @@ def _make_pipeline_result(
         control_method=control_method,
         reason="test",
         bypass_auto_control=bypass_auto_control,
-        floor_clamp_applied=floor_clamp_applied,
+        position_constraint_applied=position_constraint_applied,
         is_safety=is_safety,
     )
 
@@ -99,6 +100,9 @@ def _make_coordinator(
     coordinator._pending_cover_events = [state_data]
     coordinator._target_just_reached = set()
     coordinator._cover_type = "cover_blind"
+    # Real policy: the dispatch loops ask it for the entity order (issue #1115),
+    # so a bare MagicMock would hand back an unusable sort key.
+    coordinator._policy = get_policy(coordinator._cover_type)
     coordinator.manual_reset = False
     coordinator.manual_threshold = None
     coordinator.manager = MagicMock()
@@ -439,7 +443,7 @@ class TestFloorClampUnderManualOverride:
         result = _make_pipeline_result(
             position=80,
             control_method=ControlMethod.MANUAL,
-            floor_clamp_applied=True,
+            position_constraint_applied=True,
         )
         coordinator = _make_coordinator(
             entities=["cover.blind"],
@@ -475,7 +479,7 @@ class TestFloorClampUnderManualOverride:
         result = _make_pipeline_result(
             position=90,
             control_method=ControlMethod.MANUAL,
-            floor_clamp_applied=False,
+            position_constraint_applied=False,
         )
         coordinator = _make_coordinator(
             entities=["cover.blind"],

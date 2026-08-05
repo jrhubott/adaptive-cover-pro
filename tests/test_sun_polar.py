@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -84,3 +84,31 @@ def test_sunrise_normal_returns_location_result():
 
     result = sd.sunrise()
     assert result == expected
+
+
+@pytest.mark.unit
+def test_next_sunset_polar_midnight_sun_sentinel():
+    """`SunData.next_sunset()` returns tomorrow 23:59:59 when astral raises.
+
+    Mirrors `next_sunrise()`'s 00:01 polar-night sentinel so a sun-anchored
+    manual-override deadline stays bounded at polar latitudes (issue #1044).
+    """
+    sd = _make_sun_data()
+    sd.location.sunset.side_effect = ValueError("Sun never sets at this latitude")
+
+    result = sd.next_sunset()
+
+    tomorrow = date.today() + timedelta(days=1)
+    assert result == datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 59)
+
+
+@pytest.mark.unit
+def test_next_sunset_polar_attribute_error_returns_sentinel():
+    """`SunData.next_sunset()` returns the sentinel on AttributeError too."""
+    sd = _make_sun_data()
+    sd.location.sunset.side_effect = AttributeError
+
+    result = sd.next_sunset()
+
+    tomorrow = date.today() + timedelta(days=1)
+    assert result == datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 59)

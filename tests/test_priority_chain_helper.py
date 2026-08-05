@@ -105,6 +105,32 @@ def test_custom_slot_ties_break_after_fixed_handler():
     assert motion_idx < custom_idx
 
 
+def test_custom_slot_uses_configured_name_when_provided():
+    """A named slot's label is the configured name, not Custom#N (issue #910)."""
+    slots = [(2, "sensor.x", 0, 75, False, None, False)]
+    chain = build_priority_chain(
+        **_kwargs(custom_slots=slots, slot_names={2: "Canicule"})
+    )
+    custom = next(e for e in chain if e.slot == 2)
+    assert custom.label == "Canicule(75)"
+
+
+def test_custom_slot_falls_back_to_default_label_when_name_absent():
+    """A slot missing from slot_names still renders Custom#N (fallback)."""
+    slots = [(2, "sensor.x", 0, 75, False, None, False)]
+    chain = build_priority_chain(**_kwargs(custom_slots=slots, slot_names={}))
+    custom = next(e for e in chain if e.slot == 2)
+    assert custom.label == "Custom#2(75)"
+
+
+def test_custom_slot_empty_or_missing_slot_names_mapping_falls_back():
+    """slot_names=None (the default) must not change today's label behavior."""
+    slots = [(2, "sensor.x", 0, 75, False, None, False)]
+    chain = build_priority_chain(**_kwargs(custom_slots=slots))
+    custom = next(e for e in chain if e.slot == 2)
+    assert custom.label == "Custom#2(75)"
+
+
 def test_entry_is_priority_chain_entry():
     chain = build_priority_chain(**_kwargs())
     assert all(isinstance(e, PriorityChainEntry) for e in chain)
@@ -163,3 +189,20 @@ def test_priority_scale_unconfigured_slots_absent():
 
     scale = _render_priority_scale({}, _blind_policy())
     assert "◀" not in scale  # no custom slot configured → no marker
+
+
+def test_priority_scale_shows_custom_name_when_configured():
+    """A named slot's ladder entry shows its name, not Custom#N (issue #910)."""
+    from custom_components.adaptive_cover_pro.config_flow import _render_priority_scale
+    from custom_components.adaptive_cover_pro.const import CUSTOM_POSITION_SLOTS
+
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    config = {
+        slot1["sensors"]: ["binary_sensor.x"],
+        slot1["position"]: 40,
+        slot1["priority"]: 85,
+        slot1["name"]: "Canicule",
+    }
+    scale = _render_priority_scale(config, _blind_policy())
+    assert "Canicule(85)" in scale
+    assert "Custom#1" not in scale

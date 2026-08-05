@@ -48,9 +48,15 @@ def _make_dispatch_coordinator(
     coordinator._last_dispatched_target_sig = last_sig
     coordinator._resolved_target_signature = MagicMock(return_value=current_sig)
     coordinator.async_handle_state_change = AsyncMock()
-    coordinator._async_send_after_override_clear = AsyncMock()
+    coordinator._async_force_send_pipeline_position = AsyncMock()
     coordinator._policy = MagicMock()
     coordinator._policy.has_pending_secondary_axis = MagicMock(return_value=has_pending)
+    # The dispatch loops ask the policy for the entity order (#1115), naming the
+    # number they are fanning out (#1118); a blind's answer is identity and
+    # ignores both keywords, so mirror that on the stub.
+    coordinator._policy.order_for_dispatch = (
+        lambda entities, *, position=None, inverted=None: list(entities)  # noqa: ARG005
+    )
     return coordinator
 
 
@@ -80,7 +86,7 @@ async def test_override_dispatches_when_target_changed_despite_lost_state_change
     coordinator.async_handle_state_change.assert_awaited_once()
     _, kwargs = coordinator.async_handle_state_change.call_args
     assert kwargs.get("target_changed") is True
-    coordinator._async_send_after_override_clear.assert_not_awaited()
+    coordinator._async_force_send_pipeline_position.assert_not_awaited()
     # Nothing pending → the new target signature is recorded as last-dispatched.
     assert coordinator._last_dispatched_target_sig == winner_sig
 
@@ -106,7 +112,7 @@ async def test_no_dispatch_when_target_unchanged_and_no_state_change():
     )
 
     coordinator.async_handle_state_change.assert_not_awaited()
-    coordinator._async_send_after_override_clear.assert_not_awaited()
+    coordinator._async_force_send_pipeline_position.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -161,7 +167,7 @@ async def test_auto_expired_branch_unchanged():
         template_release=False,
     )
 
-    coordinator._async_send_after_override_clear.assert_awaited_once()
+    coordinator._async_force_send_pipeline_position.assert_awaited_once()
     coordinator.async_handle_state_change.assert_not_awaited()
 
 
@@ -218,7 +224,7 @@ def test_resolved_target_signature_tuple_content():
         is_safety=False,
         bypass_auto_control=True,
         skip_command=False,
-        floor_clamp_applied=False,
+        position_constraint_applied=False,
     )
 
     sig = AdaptiveDataUpdateCoordinator._resolved_target_signature(coordinator)
@@ -230,7 +236,7 @@ def test_resolved_target_signature_tuple_content():
         False,  # is_safety
         True,  # bypass_auto_control
         False,  # skip_command
-        False,  # floor_clamp_applied
+        False,  # position_constraint_applied
     )
 
 
@@ -254,6 +260,12 @@ def _make_state_change_coordinator(*, pipeline_result: PipelineResult):
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._dispatch_to_cover = AsyncMock()
+    # The dispatch loop asks the policy for the entity order (#1115), naming the
+    # number it is fanning out (#1118); a blind's answer is identity and ignores
+    # both keywords, so mirror that on the stub.
+    coordinator._policy.order_for_dispatch = (
+        lambda entities, *, position=None, inverted=None: list(entities)  # noqa: ARG005
+    )
     return coordinator
 
 

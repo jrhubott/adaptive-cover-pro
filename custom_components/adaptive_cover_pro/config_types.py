@@ -8,12 +8,16 @@ from typing import Any
 from .const import (
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
+    DEFAULT_AWNING_SHADE_MODE,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+    DEFAULT_MANUAL_OVERRIDE_DURATION_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_ENABLED,
+    VENETIAN_TILT_TRANSFORM_CLAMP,
     BlindSpot,
     TiltMode,
+    blind_spot_legacy_to_gamma,
 )
 
 
@@ -41,13 +45,40 @@ def _make_blind_spot(
     )
 
 
-def _extra_blind_spots_from(get: Any, *, enabled: bool) -> tuple[BlindSpot, ...]:
+def _resolve_slot_gamma(
+    get: Any, keys: dict[str, str], fov_left: float
+) -> tuple[int | None, int | None]:
+    """Resolve a slot's signed-gamma ``(left, right)`` edges (issue #247).
+
+    The signed-gamma keys are the primary storage: when BOTH
+    ``blind_spot_left_gamma`` and ``blind_spot_right_gamma`` are present they win
+    verbatim. Otherwise fall back to the legacy FOV-relative edges, converted via
+    the single shared :func:`blind_spot_legacy_to_gamma` (so migration and this
+    runtime fallback can never diverge). Returns ``(None, None)`` when the slot
+    is inactive on both paths — ``_make_blind_spot`` then treats it as unset.
+    """
+    new_left = get(keys["left_gamma"])
+    new_right = get(keys["right_gamma"])
+    if new_left is not None and new_right is not None:
+        return int(new_left), int(new_right)
+    old_left = get(keys["left"])
+    old_right = get(keys["right"])
+    if old_left is not None and old_right is not None:
+        return blind_spot_legacy_to_gamma(fov_left, old_left, old_right)
+    return None, None
+
+
+def _extra_blind_spots_from(
+    get: Any, *, enabled: bool, fov_left: float
+) -> tuple[BlindSpot, ...]:
     """Build blind-spot slots 2..N from an option accessor.
 
     Slot 1 is intentionally excluded: it derives *live* from the flat
     ``blind_spot_*`` fields on :class:`CoverConfig` (so post-construction
     mutation of those fields is reflected). The whole feature is gated by the
-    master ``enabled`` flag.
+    master ``enabled`` flag. Each slot's edges are resolved to signed gamma via
+    :func:`_resolve_slot_gamma` (new keys preferred, legacy converted with
+    ``fov_left``).
     """
     if not enabled:
         return ()
@@ -56,9 +87,10 @@ def _extra_blind_spots_from(get: Any, *, enabled: bool) -> tuple[BlindSpot, ...]
         if n == 1:
             continue
         keys = BLIND_SPOT_SLOTS[n]
+        left, right = _resolve_slot_gamma(get, keys, fov_left)
         bs = _make_blind_spot(
-            get(keys["left"]),
-            get(keys["right"]),
+            left,
+            right,
             get(keys["elevation"]),
             get(keys["elevation_mode"]),
         )
@@ -124,6 +156,12 @@ class CoverConfig:
     min_pos: int
     max_pos_sun_only: bool  # enable_max_position
     min_pos_sun_only: bool  # enable_min_position
+    # Slot-1 blind-spot edges as SIGNED GAMMA from the window normal (issue
+    # #247): ``blind_spot_left`` is the upper gamma edge, ``blind_spot_right``
+    # the negated lower edge, so the engine wedge is
+    # ``-blind_spot_right <= gamma <= blind_spot_left``. ``from_options``
+    # resolves these from the new signed-gamma keys or converts the legacy
+    # FOV-relative keys; direct construction supplies gamma values.
     blind_spot_left: int | None
     blind_spot_right: int | None
     blind_spot_elevation: int | None
@@ -171,8 +209,6 @@ class CoverConfig:
             CONF_AZIMUTH,
             CONF_BLIND_SPOT_ELEVATION,
             CONF_BLIND_SPOT_ELEVATION_MODE,
-            CONF_BLIND_SPOT_LEFT,
-            CONF_BLIND_SPOT_RIGHT,
             CONF_DEFAULT_HEIGHT,
             CONF_ENABLE_BLIND_SPOT,
             CONF_ENABLE_MAX_POSITION,
@@ -184,20 +220,26 @@ class CoverConfig:
             CONF_MIN_ELEVATION,
             CONF_MIN_POSITION,
             CONF_MIN_POSITION_SUN_TRACKING,
-            CONF_SUNRISE_OFFSET,
-            CONF_SUNSET_OFFSET,
             CONF_SUNSET_POS,
             DEFAULT_FOV_LEFT,
             DEFAULT_FOV_RIGHT,
         )
+        from .helpers import resolve_sunrise_offset, resolve_sunset_offset
+
+        fov_left = (
+            options[CONF_FOV_LEFT]
+            if options.get(CONF_FOV_LEFT) is not None
+            else DEFAULT_FOV_LEFT
+        )
+        # Slot-1 signed-gamma edges (issue #247): prefer the new keys, else
+        # convert the legacy FOV-relative edges with the resolved fov_left.
+        blind_spot_left, blind_spot_right = _resolve_slot_gamma(
+            options.get, BLIND_SPOT_SLOTS[1], fov_left
+        )
 
         return cls(
             win_azi=options.get(CONF_AZIMUTH) or 180,
-            fov_left=(
-                options[CONF_FOV_LEFT]
-                if options.get(CONF_FOV_LEFT) is not None
-                else DEFAULT_FOV_LEFT
-            ),
+            fov_left=fov_left,
             fov_right=(
                 options[CONF_FOV_RIGHT]
                 if options.get(CONF_FOV_RIGHT) is not None
@@ -205,11 +247,8 @@ class CoverConfig:
             ),
             h_def=options.get(CONF_DEFAULT_HEIGHT) or 0,
             sunset_pos=options.get(CONF_SUNSET_POS),
-            sunset_off=options.get(CONF_SUNSET_OFFSET) or 0,
-            sunrise_off=options.get(
-                CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)
-            )
-            or 0,
+            sunset_off=resolve_sunset_offset(options),
+            sunrise_off=resolve_sunrise_offset(options),
             max_pos=(  # no `or` — 0 ("always closed", #806) must survive, not fall back to 100
                 options[CONF_MAX_POSITION]
                 if options.get(CONF_MAX_POSITION) is not None
@@ -223,15 +262,17 @@ class CoverConfig:
                 if options.get(CONF_MIN_POSITION_SUN_TRACKING) is not None
                 else None
             ),
-            blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
-            blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
+            blind_spot_left=blind_spot_left,
+            blind_spot_right=blind_spot_right,
             blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),
             blind_spot_elevation_mode=options.get(
                 CONF_BLIND_SPOT_ELEVATION_MODE, DEFAULT_BLIND_SPOT_ELEVATION_MODE
             ),
             blind_spot_on=options.get(CONF_ENABLE_BLIND_SPOT, False),
             extra_blind_spots=_extra_blind_spots_from(
-                options.get, enabled=options.get(CONF_ENABLE_BLIND_SPOT, False)
+                options.get,
+                enabled=options.get(CONF_ENABLE_BLIND_SPOT, False),
+                fov_left=fov_left,
             ),
             min_elevation=options.get(CONF_MIN_ELEVATION, None),
             max_elevation=options.get(CONF_MAX_ELEVATION, None),
@@ -255,6 +296,10 @@ class HorizontalConfig:
 
     awn_length: float = 2.0
     awn_angle: float = 0.0
+    # Shade strategy (issue #1025): "window" (default) projects the overhang to
+    # shade the window glass; "area" keeps the awning fully extended across the
+    # whole field of view (patio / area shading).
+    shade_mode: str = DEFAULT_AWNING_SHADE_MODE
 
 
 @dataclass
@@ -344,12 +389,173 @@ class RoofWindowConfig:
 
 
 @dataclass
+class SlidingCurtainConfig:
+    """Configuration specific to horizontal sliding curtains (#829, Part 2).
+
+    The two shade-area points are floor Cartesian coordinates in the SAME frame
+    as :class:`GlareZone`: ``x`` along the wall (signed, positive = right facing
+    the window from inside), ``y`` depth into the room (> 0). Projecting both
+    points to the window plane gives the along-wall interval the fabric must
+    cover; ``slide_direction`` maps that interval to an open percentage.
+
+    When ``is_area_configured`` is False (the master toggle is off, or no window
+    width is set) the engine falls back to the Part 1 binary open/close.
+    """
+
+    enabled: bool = False
+    slide_direction: str = "bi_part"
+    window_width: float = 0.0
+    point1_x: float = 0.0
+    point1_y: float = 0.0
+    point2_x: float = 0.0
+    point2_y: float = 0.0
+
+    @property
+    def is_area_configured(self) -> bool:
+        """Whether the continuous two-point shade-area model should be used."""
+        return self.enabled and self.window_width > 0
+
+    @classmethod
+    def from_options(cls, options: dict) -> SlidingCurtainConfig:
+        """Build from a config-entry options dict, applying defaults."""
+        from .const import (
+            CONF_SLIDING_ENABLE_SHADE_AREA,
+            CONF_SLIDING_POINT1_X,
+            CONF_SLIDING_POINT1_Y,
+            CONF_SLIDING_POINT2_X,
+            CONF_SLIDING_POINT2_Y,
+            CONF_SLIDING_SLIDE_DIRECTION,
+            CONF_WINDOW_WIDTH,
+            DEFAULT_SLIDING_ENABLE_SHADE_AREA,
+            DEFAULT_SLIDING_POINT_X,
+            DEFAULT_SLIDING_POINT_Y,
+            DEFAULT_SLIDING_SLIDE_DIRECTION,
+        )
+
+        return cls(
+            enabled=options.get(
+                CONF_SLIDING_ENABLE_SHADE_AREA, DEFAULT_SLIDING_ENABLE_SHADE_AREA
+            ),
+            slide_direction=options.get(
+                CONF_SLIDING_SLIDE_DIRECTION, DEFAULT_SLIDING_SLIDE_DIRECTION
+            ),
+            window_width=float(options.get(CONF_WINDOW_WIDTH) or 0.0),
+            point1_x=float(options.get(CONF_SLIDING_POINT1_X, DEFAULT_SLIDING_POINT_X)),
+            point1_y=float(options.get(CONF_SLIDING_POINT1_Y, DEFAULT_SLIDING_POINT_Y)),
+            point2_x=float(options.get(CONF_SLIDING_POINT2_X, DEFAULT_SLIDING_POINT_X)),
+            point2_y=float(options.get(CONF_SLIDING_POINT2_Y, DEFAULT_SLIDING_POINT_Y)),
+        )
+
+
+@dataclass
+class LouveredRoofConfig:
+    """Configuration specific to louvered (lamella) roofs (#830).
+
+    A louvered roof rotates slats around a horizontal axis lying in a horizontal
+    (or pitched) roof plane — a bioclimatic pergola / "Lamellendach". It reuses
+    the venetian slat geometry (depth, spacing, mode — carried in a sibling
+    ``TiltConfig``) and adds only the roof-plane pitch.
+
+    ``roof_pitch`` is measured FROM HORIZONTAL: ``0`` = flat roof (the default),
+    ``90`` = vertical plane (reduces to the venetian/tilt profile angle exactly).
+
+    ``max_slat_angle`` optionally overrides the tilt mode's 90°/180° ceiling for
+    a pergola drive whose mechanical travel is neither (e.g. 0–160°). ``0`` (the
+    default sentinel) keeps the mode's max; a nonzero value becomes BOTH the
+    clamp ceiling and the tilt%→angle denominator.
+    """
+
+    roof_pitch: float = 0.0
+    max_slat_angle: float = 0.0
+
+    @classmethod
+    def from_options(cls, options: dict) -> LouveredRoofConfig:
+        """Build from a config-entry options dict, applying defaults."""
+        from .const import (
+            CONF_MAX_SLAT_ANGLE,
+            CONF_ROOF_PITCH,
+            DEFAULT_LOUVERED_ROOF_PITCH,
+            DEFAULT_MAX_SLAT_ANGLE,
+        )
+
+        pitch = options.get(CONF_ROOF_PITCH)
+        max_slat = options.get(CONF_MAX_SLAT_ANGLE)
+        return cls(
+            roof_pitch=(
+                float(pitch)
+                if pitch is not None
+                else float(DEFAULT_LOUVERED_ROOF_PITCH)
+            ),
+            max_slat_angle=(
+                float(max_slat)
+                if max_slat is not None
+                else float(DEFAULT_MAX_SLAT_ANGLE)
+            ),
+        )
+
+
+@dataclass
+class DayNightShadeConfig:
+    """Configuration specific to day/night dual-fabric shades (#993, Model A).
+
+    A day/night shade stacks two fabrics on one carriage — a light-filtering
+    ``sheer`` band and an opaque ``blackout`` band. The blend axis (rides
+    ``result.tilt``) is the share of the covered band that is sheer: 100 = all
+    sheer, 0 = all blackout.
+
+    ``opacity_sheer`` / ``opacity_blackout`` are the fabrics' light-blocking
+    percentages, consumed ONLY as the filtering-estimate input and the
+    fabric-choice decision — never as hard coverage gates. ``blackout_threshold``
+    is the sheer-opacity below which summer direct sun escalates the fabric
+    choice from sheer to blackout.
+    """
+
+    opacity_sheer: int = 30
+    opacity_blackout: int = 100
+    blackout_threshold: int = 65
+
+    @classmethod
+    def from_options(cls, options: dict) -> DayNightShadeConfig:
+        """Build from a config-entry options dict, applying defaults."""
+        from .const import (
+            CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            CONF_DAY_NIGHT_OPACITY_BLACKOUT,
+            CONF_DAY_NIGHT_OPACITY_SHEER,
+            DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
+            DEFAULT_DAY_NIGHT_OPACITY_SHEER,
+        )
+
+        def _int_or(key: str, default: int) -> int:
+            value = options.get(key)
+            return int(value) if value is not None else default
+
+        return cls(
+            opacity_sheer=_int_or(
+                CONF_DAY_NIGHT_OPACITY_SHEER, DEFAULT_DAY_NIGHT_OPACITY_SHEER
+            ),
+            opacity_blackout=_int_or(
+                CONF_DAY_NIGHT_OPACITY_BLACKOUT, DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT
+            ),
+            blackout_threshold=_int_or(
+                CONF_DAY_NIGHT_BLACKOUT_THRESHOLD,
+                DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
+            ),
+        )
+
+
+@dataclass
 class TiltConfig:
     """Configuration specific to tilt/venetian blinds."""
 
     slat_distance: float
     depth: float
     mode: TiltMode | str
+    # Endpoint calibration for the specify-angles mode. Defaults mirror
+    # const.DEFAULT_TILT_ANGLE_0/100 (0°..180°, the full raw slat range) so a
+    # TiltConfig built without explicit endpoints matches the config path.
+    angle_0: float = 0.0
+    angle_100: float = 180.0
     max_tilt: int = 100
     min_tilt: int = 0
     # When True, the corresponding tilt limit is only enforced during active sun
@@ -357,11 +563,20 @@ class TiltConfig:
     # enforce. Issue #503/#629.
     min_tilt_sun_only: bool = False
     max_tilt_sun_only: bool = False
-    # Configurable venetian tilt safety margin (issue #783): 0.0 (default) is a
-    # provable no-op; 1.0 applies the full angle-dependent geometry margin in the
-    # slat-closing direction. Scales the automatic ``SafetyMarginCalculator``
-    # factor — see ``engine/covers/tilt.py``.
+    # Configurable tilt safety margin (issue #783, shared by every tilt-axis
+    # cover in #964): 0.0 (default) is a provable no-op; 1.0 applies the
+    # automatic angle-dependent geometry margin PLUS SAFETY_MARGIN_USER_SLACK_MAX
+    # of flat slack, in the slat-closing direction — so the slider bites at
+    # benign sun angles too (#1089), except where the solve has already parked
+    # the slat on a travel limit and there is no closure left to scale — see
+    # ``engine/covers/tilt.py``.
     safety_margin: float = 0.0
+    # Output transform for the sun-tracking tilt demand (issue #957). "clamp"
+    # (default) flat-caps at the [min_tilt, max_tilt] band edges — today's exact
+    # behaviour; "proportional" linearly remaps the full 0–100% demand into the
+    # band. Shared by all tilt-axis covers (#964): consumed at the venetian
+    # ``_clamp_tilt`` seam and at ``AdaptiveTiltCover._apply_tilt_axis_limits``.
+    tilt_transform: str = VENETIAN_TILT_TRANSFORM_CLAMP
 
 
 # ---------------------------------------------------------------------------
@@ -462,10 +677,35 @@ class WeatherSlice:
     is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
     is_windy_template: str | None = None
     is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    # Optional severe-weather condition template + combine mode (issue #974).
+    # Folds with the severe sensor list; a template-only config engages the
+    # instant the template flips (tracked via async_track_template_result).
+    severe_template: str | None = None
+    severe_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
     # Master on/off toggle for the whole weather override (issue #719). When
     # False the manager ignores every configured sensor/template. Defaults OFF
     # for new covers; pre-existing covers are migrated to True (v3.5 → v3.6).
     enabled: bool = DEFAULT_WEATHER_ENABLED
+
+
+@dataclass(frozen=True, slots=True)
+class CloudSuppressionSlice:
+    """Inputs for ``CloudSuppressionManager.update_config`` (issue #864)."""
+
+    enabled: bool
+    hold_time_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class ClimateSmoothingSlice:
+    """Inputs for ``ClimateSmoothingManager.update_config`` (issue #917).
+
+    ``enabled`` tracks climate mode being on — the manager only smooths when
+    climate mode drives the season decision.
+    """
+
+    enabled: bool
+    hold_time_seconds: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,6 +748,13 @@ class ManualOverrideSlice:
     # Input binary sensors whose off→on edge engages manual override on every
     # cover in the instance (issue #688). Empty = feature off.
     input_entities: list[str]
+    # Optional Jinja template whose truthy render engages manual override on
+    # every cover (issue #974). Edge-triggered, no combine mode. None = off.
+    input_template: str | None = None
+    # What the hold is measured against (issue #1044). ``fixed`` uses the
+    # numeric ``duration`` above; every other mode runs until the next sun or
+    # schedule boundary and falls back to ``duration`` when unresolvable.
+    duration_mode: str = DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -523,12 +770,15 @@ class RuntimeConfig:
     entities: list[str]
     open_close_threshold: int
     event_buffer_size: int
+    outside_temp_source: str
     tracking: TrackingSlice
     manual_override: ManualOverrideSlice
     time_window: TimeWindowSlice
     motion: MotionSlice
     weather: WeatherSlice
     venetian: VenetianSlice
+    cloud_suppression: CloudSuppressionSlice
+    climate_smoothing: ClimateSmoothingSlice
 
     @classmethod
     def from_options(cls, options: dict) -> RuntimeConfig:
@@ -540,6 +790,10 @@ class RuntimeConfig:
         """
         from .const import (
             CONF_AZIMUTH,
+            CONF_CLIMATE_MODE,
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+            CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
             CONF_DAYTIME_GATE_SENSORS,
             CONF_DAYTIME_GATE_TEMPLATE,
             CONF_DAYTIME_GATE_TEMPLATE_MODE,
@@ -558,7 +812,9 @@ class RuntimeConfig:
             CONF_INTERP_START,
             CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MANUAL_OVERRIDE_DURATION,
+            CONF_MANUAL_OVERRIDE_DURATION_MODE,
             CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+            CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MAX_COVERAGE_STEPS,
@@ -569,6 +825,7 @@ class RuntimeConfig:
             CONF_MOTION_TEMPLATE_MODE,
             CONF_MOTION_TIMEOUT,
             CONF_OPEN_CLOSE_THRESHOLD,
+            CONF_OUTSIDE_TEMP_SOURCE,
             CONF_POSITION_TOLERANCE,
             CONF_START_ENTITY,
             CONF_START_TIME,
@@ -591,11 +848,15 @@ class RuntimeConfig:
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_SEVERE_SENSORS,
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
             CONF_WEATHER_TIMEOUT,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+            DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
             DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
             DEFAULT_ENABLE_POSITION_MATCHING,
             DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
@@ -603,6 +864,7 @@ class RuntimeConfig:
             DEFAULT_MAX_COVERAGE_STEPS,
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
+            DEFAULT_OUTSIDE_TEMP_SOURCE,
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
@@ -625,6 +887,9 @@ class RuntimeConfig:
             open_close_threshold=options.get(CONF_OPEN_CLOSE_THRESHOLD, 50),
             event_buffer_size=options.get(
                 CONF_DEBUG_EVENT_BUFFER_SIZE, DEFAULT_DEBUG_EVENT_BUFFER_SIZE
+            ),
+            outside_temp_source=options.get(
+                CONF_OUTSIDE_TEMP_SOURCE, DEFAULT_OUTSIDE_TEMP_SOURCE
             ),
             tracking=TrackingSlice(
                 min_change=options.get(CONF_DELTA_POSITION) or 1,
@@ -659,6 +924,11 @@ class RuntimeConfig:
                 duration=options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2},
                 ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
                 input_entities=options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []),
+                input_template=options.get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE),
+                duration_mode=(
+                    options.get(CONF_MANUAL_OVERRIDE_DURATION_MODE)
+                    or DEFAULT_MANUAL_OVERRIDE_DURATION_MODE
+                ),
             ),
             time_window=TimeWindowSlice(
                 start_time=options.get(CONF_START_TIME),
@@ -718,6 +988,10 @@ class RuntimeConfig:
                     CONF_WEATHER_IS_WINDY_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
                 ),
                 severe_sensors=options.get(CONF_WEATHER_SEVERE_SENSORS, []),
+                severe_template=options.get(CONF_WEATHER_SEVERE_TEMPLATE),
+                severe_template_mode=options.get(
+                    CONF_WEATHER_SEVERE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
                 timeout_seconds=options.get(
                     CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT
                 ),
@@ -754,6 +1028,24 @@ class RuntimeConfig:
                 backrotate_publish_lag_seconds=options.get(
                     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
                     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+                ),
+            ),
+            cloud_suppression=CloudSuppressionSlice(
+                enabled=bool(options.get(CONF_CLOUD_SUPPRESSION, False)),
+                hold_time_seconds=int(
+                    options.get(
+                        CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+                        DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+                    )
+                ),
+            ),
+            climate_smoothing=ClimateSmoothingSlice(
+                enabled=bool(options.get(CONF_CLIMATE_MODE, False)),
+                hold_time_seconds=int(
+                    options.get(
+                        CONF_CLIMATE_TEMP_HOLD_TIME,
+                        DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+                    )
                 ),
             ),
         )

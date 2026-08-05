@@ -18,7 +18,9 @@ from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
 )
 
-pytestmark = pytest.mark.unit
+# No module-level pytestmark: one test here drives a real options flow and marks
+# itself `integration`, which collided with a blanket `unit` mark. The conftest
+# hook derives the right marker per test.
 
 
 def _make_manager(covers: list[str]) -> AdaptiveCoverManager:
@@ -103,6 +105,11 @@ def _make_coordinator():
     coordinator.manager = MagicMock()
     coordinator.state_change = False
     coordinator.async_refresh = AsyncMock()
+    # The sensor-edge handler now delegates to the shared engage helper, so bind
+    # the real method (issue #974 shared engage path).
+    coordinator._engage_override_from_input = (
+        AdaptiveDataUpdateCoordinator._engage_override_from_input.__get__(coordinator)
+    )
     coordinator.async_check_manual_override_input_change = (
         AdaptiveDataUpdateCoordinator.async_check_manual_override_input_change.__get__(
             coordinator
@@ -227,3 +234,211 @@ async def test_handler_ignores_missing_new_state() -> None:
 
     coordinator.manager.engage_manual_override_from_external.assert_not_called()
     coordinator.async_refresh.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Addition 2 (issue #974): manual-override input *template* (edge-triggered)
+# ---------------------------------------------------------------------------
+
+
+def _make_template_coordinator(template: str | None) -> MagicMock:
+    """Bind the input-template handler + shared engage helper onto a mock."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = MagicMock()
+    coordinator.logger = MagicMock()
+    coordinator.manager = MagicMock()
+    coordinator.hass = MagicMock()
+    coordinator.state_change = False
+    coordinator.async_refresh = AsyncMock()
+    coordinator.manual_override_input_template = template
+    coordinator._engage_override_from_input = (
+        AdaptiveDataUpdateCoordinator._engage_override_from_input.__get__(coordinator)
+    )
+    coordinator.async_check_manual_override_input_template_change = AdaptiveDataUpdateCoordinator.async_check_manual_override_input_template_change.__get__(
+        coordinator
+    )
+    return coordinator
+
+
+@pytest.mark.asyncio
+async def test_input_template_engages_when_truthy() -> None:
+    """A template rendering truthy engages override with the input_template reason."""
+    from unittest.mock import patch
+
+    coordinator = _make_template_coordinator("{{ true }}")
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.render_condition_or_none",
+        return_value=True,
+    ):
+        await coordinator.async_check_manual_override_input_template_change(None, [])
+
+    coordinator.manager.engage_manual_override_from_external.assert_called_once_with(
+        reason="input_template"
+    )
+    assert coordinator.state_change is True
+    coordinator.async_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_input_template_ignores_falsy_or_no_opinion() -> None:
+    """A falsy or broken/non-template render does not engage."""
+    from unittest.mock import patch
+
+    for rendered in (False, None):
+        coordinator = _make_template_coordinator("{{ false }}")
+        with patch(
+            "custom_components.adaptive_cover_pro.coordinator.render_condition_or_none",
+            return_value=rendered,
+        ):
+            await coordinator.async_check_manual_override_input_template_change(
+                None, []
+            )
+
+        coordinator.manager.engage_manual_override_from_external.assert_not_called()
+        coordinator.async_refresh.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Step 8: input template schema / clearable strip / sync wiring (issue #974)
+# ---------------------------------------------------------------------------
+
+
+def test_input_template_in_manual_override_schema() -> None:
+    """The template key lives on MANUAL_OVERRIDE_SCHEMA as a TemplateSelector."""
+    from homeassistant.helpers import selector
+
+    from custom_components.adaptive_cover_pro import config_flow as cf
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+    )
+
+    match = next(
+        (
+            val
+            for key, val in cf.MANUAL_OVERRIDE_SCHEMA.schema.items()
+            if str(key) == CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE
+        ),
+        None,
+    )
+    assert match is not None, "input-template key missing from MANUAL_OVERRIDE_SCHEMA"
+    assert isinstance(match, selector.TemplateSelector)
+
+
+def test_input_template_in_sync_category() -> None:
+    """The template key is in the manual_override sync category (#974)."""
+    from custom_components.adaptive_cover_pro import config_flow as cf
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+    )
+
+    assert CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE in cf.SYNC_CATEGORIES["manual_override"]
+
+
+@pytest.mark.integration
+async def test_options_flow_manual_override_clears_input_template(hass) -> None:
+    """Submitting the manual-override step without the key clears a stored template.
+
+    Same clearable-strip contract as issue #323: an empty submission must
+    overwrite a previously-saved input template with None (issue #974).
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+        CONF_SENSOR_TYPE,
+        DOMAIN,
+        CoverType,
+    )
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    pre_options[CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE] = "{{ true }}"
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Input Tmpl Clear", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=pre_options,
+        entry_id="input_tmpl_clear_01",
+        title="Input Tmpl Clear",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "manual_override"}
+    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"].get(CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE) is None
+
+
+# ---------------------------------------------------------------------------
+# acp self-reference namespace in the input template (issue #1159)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_input_template_resolves_the_acp_namespace(hass) -> None:
+    """The input template can name this instance's own entity, end to end (#1159).
+
+    Exercises the real coordinator render site with the context the coordinator
+    builds for itself — no patched renderer.
+    """
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+        CONF_SENSOR_TYPE,
+        DOMAIN,
+        CoverType,
+    )
+    from tests._helpers.acp_namespace import seed_sun_infront
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Dining Room Shade", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={
+            **VERTICAL_OPTIONS,
+            CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: (
+                "{{ is_state(acp.sun_infront, 'on') }}"
+            ),
+        },
+        entry_id="mo_input_acp_01",
+        title="Vertical Blind Dining Room Shade",
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set(
+        "sun.sun", "above_horizon", {"azimuth": 180.0, "elevation": 45.0}
+    )
+    hass.states.async_set(
+        "cover.test_blind", "open", {"current_position": 100, "supported_features": 143}
+    )
+    seed_sun_infront(hass, entry, "off")
+
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data
+    with patch.object(coordinator, "async_refresh", new=AsyncMock()):
+        # Falsy render → no engagement.
+        await coordinator.async_check_manual_override_input_template_change(None, [])
+        assert coordinator.manager.binary_cover_manual is False
+
+        hass.states.async_set("binary_sensor.dining_room_shade_sun_infront", "on")
+        await hass.async_block_till_done()
+        await coordinator.async_check_manual_override_input_template_change(None, [])
+
+    assert coordinator.manager.binary_cover_manual is True

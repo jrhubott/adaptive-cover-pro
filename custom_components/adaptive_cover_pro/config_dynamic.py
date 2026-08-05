@@ -15,6 +15,8 @@ selector construction. It imports the neutral selector primitives from
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
@@ -26,33 +28,46 @@ from .config_fields import (
 )
 from .const import (
     BLIND_SPOT_ELEVATION_MODES,
+    BLIND_SPOT_FORM_KEYS,
     BLIND_SPOT_SLOT_NUMBERS,
     BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
+    CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
+    CONF_CLIMATE_TEMP_HOLD_TIME,
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_SUPPRESSION_HOLD_TIME,
     CONF_CLOUDY_POSITION,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    CONF_SUN_TRACKING_GATE_SENSORS,
+    CONF_SUN_TRACKING_GATE_TEMPLATE,
+    CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_SUN_TRACKING,
+    CONF_EXTREME_HEAT_POSITION,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_IRRADIANCE_ENTITY,
+    CONF_IRRADIANCE_RELEASE_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
     CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
+    CONF_LUX_RELEASE_THRESHOLD,
     CONF_LUX_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MIN_ELEVATION,
+    CONF_OUTSIDE_TEMP_SOURCE,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDE_THRESHOLD_RELEASE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
@@ -67,8 +82,12 @@ from .const import (
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
+    CONF_TEMP_EXTREME_HEAT,
+    CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD,
     CONF_TEMP_HIGH,
+    CONF_TEMP_HIGH_RELEASE_THRESHOLD,
     CONF_TEMP_LOW,
+    CONF_TEMP_LOW_RELEASE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENABLED,
@@ -84,24 +103,40 @@ from .const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_SEVERE_TEMPLATE,
+    CONF_WEATHER_SEVERE_TEMPLATE_MODE,
     CONF_WEATHER_STATE,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_TRACKING_SEASONS,
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
+    DEFAULT_CLIMATE_TEMP_HOLD_TIME,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
+    DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+    DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_GLARE_ZONE_Z,
+    GLARE_ZONE_FORM_KEYS,
+    GLARE_ZONE_SLOT_NUMBERS,
+    GLARE_ZONE_SLOTS,
+    DEFAULT_OUTSIDE_TEMP_SOURCE,
+    DEFAULT_TRACKING_SEASONS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WINDOW_AZIMUTH,
+    OutsideTempSource,
     TemplateCombineMode,
+    TrackingSeason,
+    clamp_gamma_pair,
+    resolve_fov_left,
+    resolve_fov_right,
 )
 from .unit_system import length_default, length_selector
 
@@ -173,7 +208,9 @@ def _condition_template_schema(template_key: str, mode_key: str) -> dict:
     }
 
 
-def window_facing_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+def window_facing_schema(
+    hass: HomeAssistant | None = None, *, include_distance: bool = True
+) -> vol.Schema:
     """Per-window facing fields: azimuth + FOV left/right + shaded distance.
 
     Single definition of the four fields relocated from the sun-tracking step to
@@ -181,47 +218,51 @@ def window_facing_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     they sit beside the window width/depth the FOV button derives from. Only
     ``CONF_DISTANCE`` is unit-dependent; azimuth and FOV are angles. ``min_m=0.0``
     keeps a flush shaded distance of 0 valid (#427).
+
+    ``include_distance=False`` omits the ``CONF_DISTANCE`` marker for cover types
+    whose engine never reads it (the tilt-only louvered roof, #830); the default
+    keeps it so every existing caller is unchanged.
     """
-    return vol.Schema(
-        {
-            vol.Required(
-                CONF_AZIMUTH, default=DEFAULT_WINDOW_AZIMUTH
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=359,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
-            vol.Required(CONF_FOV_LEFT, default=90): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=180,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
-            vol.Required(CONF_FOV_RIGHT, default=90): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=180,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
-            vol.Required(
-                CONF_DISTANCE, default=length_default(0.5, hass)
-            ): length_selector(
+    fields: dict = {
+        vol.Required(
+            CONF_AZIMUTH, default=DEFAULT_WINDOW_AZIMUTH
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=359,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Required(CONF_FOV_LEFT, default=90): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=180,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Required(CONF_FOV_RIGHT, default=90): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=180,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+    }
+    if include_distance:
+        fields[vol.Required(CONF_DISTANCE, default=length_default(0.5, hass))] = (
+            length_selector(
                 hass,
                 min_m=0.0,
                 max_m=50,
                 metric_step=0.1,
-            ),
-        }
-    )
+            )
+        )
+    return vol.Schema(fields)
 
 
 def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
@@ -260,6 +301,20 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_ENABLE_BLIND_SPOT, default=False
             ): selector.BooleanSelector(),
+            # The sun-tracking gate (issue #1167): sensors and/or a Jinja
+            # condition that suppress solar positioning while they read false,
+            # letting the chain fall through to the default position. Sits beside
+            # the master toggle it ANDs with. Profile-owned — a linked cover
+            # renders it pre-filled with the inherited value under the
+            # inherit/override model, same as the daytime gate on the behavior step.
+            vol.Optional(
+                CONF_SUN_TRACKING_GATE_SENSORS, default=[]
+            ): binary_on_selector(multiple=True),
+            vol.Optional(CONF_SUN_TRACKING_GATE_TEMPLATE): selector.TemplateSelector(),
+            vol.Optional(
+                CONF_SUN_TRACKING_GATE_TEMPLATE_MODE,
+                default=DEFAULT_TEMPLATE_COMBINE_MODE,
+            ): _template_combine_mode_selector(),
             # minimize_movements / max_coverage_steps moved to the L4 global
             # motion-constraints (automation) step — see config_flow.AUTOMATION_SCHEMA (#613).
         }
@@ -269,111 +324,162 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
 def blind_spot_edges(options: dict | None = None) -> int:
     """Return the blind-spot azimuth span: ``fov_left + fov_right``.
 
-    Each side defaults to 90 when absent, matching the legacy in-step
-    construction (a cover created before the FOV fields are saved). This is
-    the single source for the formula: ``blind_spot_schema`` derives its
-    slider bounds from it, and ``clamp_blind_spots_to_fov`` (issue #852) uses
-    the identical value to re-clamp stored slots when the FOV narrows — the
-    two must never drift apart on this arithmetic.
+    Each side defaults to ``DEFAULT_FOV_LEFT``/``DEFAULT_FOV_RIGHT`` when absent
+    (None-tolerant via the shared resolvers).
+
+    NOTE: production-dead as of the signed-gamma switch (issue #247) —
+    ``blind_spot_schema`` and ``clamp_blind_spots_to_fov`` now derive their
+    signed bounds from ``fov_left``/``fov_right`` directly (and the shared
+    ``clamp_gamma_pair``), not from this sum. Retained only for external callers
+    and the ``test_blind_spot_edges_*`` tests that document the span formula.
     """
     opts = options or {}
-    return int(opts.get(CONF_FOV_LEFT, 90)) + int(opts.get(CONF_FOV_RIGHT, 90))
+    return resolve_fov_left(opts) + resolve_fov_right(opts)
 
 
 def clamp_blind_spots_to_fov(options: dict) -> dict:
-    """Re-clamp stored blind-spot slot offsets to the current FOV span.
+    """Re-clamp stored signed-gamma blind-spot edges to the current FOV (issue #852/#247).
 
-    Blind-spot left/right are azimuth offsets *within* the FOV span
-    (``blind_spot_edges``), consumed raw at runtime. Nothing re-clamps them
-    when ``fov_left``/``fov_right`` narrow on the geometry step, so a slot
-    saved under a wider FOV can be left exceeding the new span — silently
-    disagreeing with the options-flow slider (max = the new edges) and
-    mis-shaping the wedge at runtime (issue #852).
+    Blind-spot edges are stored as signed gamma from the window normal
+    (issue #247): ``left_gamma`` (upper edge) ∈ ``[-fov_right, fov_left]`` and
+    ``right_gamma`` (negated lower edge) ∈ ``[-fov_left, fov_right]``. Nothing
+    re-clamps them when ``fov_left``/``fov_right`` narrow on the geometry step,
+    so an edge saved under a wider FOV can exceed the new span — silently
+    disagreeing with the options-flow slider and mis-shaping the wedge at
+    runtime (issue #852). The bounds here mirror ``blind_spot_schema`` exactly.
 
     Call this right after any options/config update that changes
     ``CONF_FOV_LEFT``/``CONF_FOV_RIGHT`` (the geometry-step save sites in
-    ``config_flow.py``, plus the geometry sync-merge). Bounds mirror
-    ``blind_spot_schema`` exactly (``0 <= left <= edges-1``,
-    ``1 <= right <= edges``), sourced from the same ``blind_spot_edges`` call
-    so schema and clamp can never disagree.
+    ``config_flow.py``, plus the geometry sync-merge).
 
     Mutates *options* in place (and returns it) for every slot in
     ``BLIND_SPOT_SLOTS``. A slot key that is absent or explicitly ``None`` is
     left untouched — an unconfigured slot must stay inactive, never coerced
-    into existence by the clamp.
+    into existence by the clamp. The legacy FOV-relative keys are
+    migration-read-only and are NEVER touched here.
+
+    The bound arithmetic + non-empty repair lives in the shared
+    ``clamp_gamma_pair`` (single source shared with the migration), so a
+    previously non-empty wedge (e.g. the default 1° sliver) can never be
+    clamped into the empty-wedge lockout when the FOV narrows (issue #247).
     """
-    edges = blind_spot_edges(options)
-    left_max = edges - 1
-    right_max = edges
+    fov_left = resolve_fov_left(options)
+    fov_right = resolve_fov_right(options)
     for keys in BLIND_SPOT_SLOTS.values():
-        left = options.get(keys["left"])
+        left = options.get(keys["left_gamma"])
+        right = options.get(keys["right_gamma"])
+        if left is None and right is None:
+            continue  # unconfigured slot — never coerce into existence
+        new_left, new_right = clamp_gamma_pair(left, right, fov_left, fov_right)
         if left is not None:
-            options[keys["left"]] = min(int(left), left_max)
-        right = options.get(keys["right"])
+            options[keys["left_gamma"]] = new_left
         if right is not None:
-            options[keys["right"]] = min(int(right), right_max)
+            options[keys["right_gamma"]] = new_right
     return options
 
 
 def blind_spot_schema(options: dict | None = None) -> vol.Schema:
-    """Blind-spot wedge schema for up to 3 slots (issue #701).
+    """Blind-spot wedge schema for up to 3 slots — signed gamma (issue #247/#701).
 
-    ``edges = fov_left + fov_right`` (defaulting to 90+90) sets the maximum
-    left/right azimuth offset, matching the legacy in-step construction. The
-    formula is single-sourced in ``blind_spot_edges`` — ``clamp_blind_spots_to_fov``
-    (issue #852) derives its clamp bounds from the same call.
+    Edges are signed gamma from the window normal: the left (upper) edge slider
+    spans ``[-fov_right, fov_left]`` and the right (negated lower) edge slider
+    spans ``[-fov_left, fov_right]`` (each side defaulting to 90 when absent).
+    ``clamp_blind_spots_to_fov`` (issue #852) clamps to the identical bounds so
+    schema and clamp can never disagree. The wedge is
+    ``-right_gamma <= gamma <= left_gamma``.
 
-    Slot 1 reuses the legacy unsuffixed keys and keeps its ``Required``
-    defaults (0/1) so its form is byte-for-byte unchanged. Slots 2/3's left
-    marker also gets ``default=0`` (mirroring slot 1) — HA validates
-    submitted form data against this schema before the step handler runs,
-    and a frontend slider resting at its minimum value (0) may never appear
-    in the raw payload; without a default, ``vol.Optional`` drops an absent
-    key entirely instead of backfilling it, silently losing a brand-new
-    slot's left edge (issue #868). Slot 2/3's right marker stays a
-    default-less ``Optional`` so an unconfigured slot's right edge remains
-    genuinely absent — ``_make_blind_spot``'s "both edges present" gate still
-    keeps a truly untouched slot inactive.
+    Slot 1 keeps ``Required`` markers whose default is a harmless 1° sliver at
+    the LEFT acceptance edge (``left=fov_left``, ``right=1-fov_left`` → wedge
+    ``fov_left-1 <= gamma <= fov_left``): non-empty (``fov_left + (1-fov_left) =
+    1 > 0``) so the empty-wedge gate never trips, yet it never swallows the
+    window normal (gamma 0) the way the old ``0 / 1`` default did — passing the
+    step without touching a slider leaves direct sun at transit unblocked
+    (issue #247, finding 6). Slots 2/3's left marker also gets ``default=0``
+    — HA validates submitted form data against this schema before the step
+    handler runs, and a frontend slider resting at 0 may never appear in the
+    raw payload; without a default, ``vol.Optional`` drops the absent key
+    entirely, silently losing a brand-new slot's left edge (issue #868). Slot
+    2/3's right marker stays a default-less ``Optional`` so an unconfigured
+    slot's right edge remains genuinely absent — ``_make_blind_spot``'s "both
+    edges present" gate still keeps a truly untouched slot inactive.
     """
-    edges = blind_spot_edges(options)
-
-    def _slider(min_v: int, max_v: int, *, step: int | None = None):
-        cfg: dict = {
-            "mode": selector.NumberSelectorMode.SLIDER,
-            "unit_of_measurement": "°",
-            "min": min_v,
-            "max": max_v,
-        }
-        if step is not None:
-            cfg["step"] = step
-        return selector.NumberSelector(selector.NumberSelectorConfig(**cfg))
+    opts = options or {}
+    fov_left = resolve_fov_left(opts)
+    fov_right = resolve_fov_right(opts)
 
     schema: dict = {}
     for n in BLIND_SPOT_SLOT_NUMBERS:
-        keys = BLIND_SPOT_SLOTS[n]
-        if n == 1:
-            left_marker = vol.Required(keys["left"], default=0)
-            right_marker = vol.Required(keys["right"], default=1)
-        else:
-            left_marker = vol.Optional(keys["left"], default=0)
-            right_marker = vol.Optional(keys["right"])
-        schema[left_marker] = _slider(0, edges - 1)
-        schema[right_marker] = _slider(1, edges)
-        schema[vol.Optional(keys["elevation"])] = _slider(0, 90, step=1)
-        # Per-slot below/above elevation mode (issue #702). Defaults to "below"
-        # so an unconfigured slot keeps today's "blocks low sun" behavior.
-        schema[
-            vol.Optional(
-                keys["elevation_mode"], default=DEFAULT_BLIND_SPOT_ELEVATION_MODE
-            )
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=list(BLIND_SPOT_ELEVATION_MODES),
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="blind_spot_elevation_mode",
-            )
+        schema.update(
+            _blind_spot_slot_fields(n, BLIND_SPOT_SLOTS[n], fov_left, fov_right)
         )
     return vol.Schema(schema)
+
+
+def _blind_spot_gamma_slider(min_v: int, max_v: int, *, step: int | None = None):
+    """Signed-gamma degree slider for a blind-spot edge."""
+    cfg: dict = {
+        "mode": selector.NumberSelectorMode.SLIDER,
+        "unit_of_measurement": "°",
+        "min": min_v,
+        "max": max_v,
+    }
+    if step is not None:
+        cfg["step"] = step
+    return selector.NumberSelector(selector.NumberSelectorConfig(**cfg))
+
+
+def _blind_spot_slot_fields(
+    n: int, keys: Mapping[str, str], fov_left: int, fov_right: int
+) -> dict:
+    """Build one blind-spot slot's schema markers, keyed by *keys*.
+
+    ``keys`` is a ``BLIND_SPOT_SLOTS[n]`` mapping for the multi-slot form, or
+    ``BLIND_SPOT_FORM_KEYS`` for the generic single-slot page (issue #945). The
+    *slot number* — not the keys — selects the marker semantics, so slot 1 keeps
+    its legacy ``Required`` 1° sliver and slots 2/3 stay ``Optional`` regardless
+    of which key set renders them.
+    """
+    schema: dict = {}
+    if n == 1:
+        # Harmless 1° sliver at the left acceptance edge — non-empty but
+        # never blocks the window normal (issue #247, finding 6).
+        left_marker = vol.Required(keys["left_gamma"], default=fov_left)
+        right_marker = vol.Required(keys["right_gamma"], default=1 - fov_left)
+    else:
+        left_marker = vol.Optional(keys["left_gamma"], default=0)
+        right_marker = vol.Optional(keys["right_gamma"])
+    # left (upper) edge ∈ [-fov_right, fov_left]; right (negated lower)
+    # edge ∈ [-fov_left, fov_right].
+    schema[left_marker] = _blind_spot_gamma_slider(-fov_right, fov_left)
+    schema[right_marker] = _blind_spot_gamma_slider(-fov_left, fov_right)
+    schema[vol.Optional(keys["elevation"])] = _blind_spot_gamma_slider(0, 90, step=1)
+    # Per-slot below/above elevation mode (issue #702). Defaults to "below"
+    # so an unconfigured slot keeps today's "blocks low sun" behavior.
+    schema[
+        vol.Optional(keys["elevation_mode"], default=DEFAULT_BLIND_SPOT_ELEVATION_MODE)
+    ] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(BLIND_SPOT_ELEVATION_MODES),
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="blind_spot_elevation_mode",
+        )
+    )
+    return schema
+
+
+def blind_spot_slot_schema(slot_n: int, options: dict | None = None) -> vol.Schema:
+    """Single-slot blind-spot schema for the per-slot options page (issue #945).
+
+    Renders exactly slot *slot_n* under the generic ``BLIND_SPOT_FORM_KEYS`` so
+    the translation block is authored once. Slot-1 semantics (``Required`` + the
+    #247 sliver default) and the FOV-tracking slider bounds are preserved.
+    """
+    opts = options or {}
+    fov_left = resolve_fov_left(opts)
+    fov_right = resolve_fov_right(opts)
+    return vol.Schema(
+        _blind_spot_slot_fields(slot_n, BLIND_SPOT_FORM_KEYS, fov_left, fov_right)
+    )
 
 
 def weather_override_schema(
@@ -417,6 +523,10 @@ def weather_override_schema(
         **_condition_template_schema(
             CONF_WEATHER_IS_WINDY_TEMPLATE,
             CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+        ),
+        **_condition_template_schema(
+            CONF_WEATHER_SEVERE_TEMPLATE,
+            CONF_WEATHER_SEVERE_TEMPLATE_MODE,
         ),
         vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): binary_on_selector(
             multiple=True
@@ -514,6 +624,25 @@ def light_cloud_schema(
             CONF_CLOUD_COVERAGE_THRESHOLD,
             default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
         ): _threshold_selector(),
+        # Smoothing controls (issue #864). Optional per-trigger hysteresis
+        # release edges (blank = off) accept a number or template like the
+        # activate thresholds above; the symmetric hold-time debounces the
+        # aggregate decision.
+        vol.Optional(CONF_LUX_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_IRRADIANCE_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_CLOUD_COVERAGE_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(
+            CONF_CLOUD_SUPPRESSION_HOLD_TIME,
+            default=DEFAULT_CLOUD_SUPPRESSION_HOLD_TIME,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=3600,
+                step=30,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="s",
+            )
+        ),
     }
     return vol.Schema(schema)
 
@@ -548,6 +677,8 @@ def building_profile_sensors_schema() -> vol.Schema:
         CONF_WEATHER_IS_WINDY_SENSOR: binary_on_selector(),
         CONF_WEATHER_IS_WINDY_TEMPLATE: selector.TemplateSelector(),
         CONF_WEATHER_IS_WINDY_TEMPLATE_MODE: _template_combine_mode_selector(),
+        CONF_WEATHER_SEVERE_TEMPLATE: selector.TemplateSelector(),
+        CONF_WEATHER_SEVERE_TEMPLATE_MODE: _template_combine_mode_selector(),
         CONF_WEATHER_SEVERE_SENSORS: binary_on_selector(multiple=True),
         # Outside temperature
         CONF_OUTSIDETEMP_ENTITY: numeric_selector(),
@@ -555,6 +686,10 @@ def building_profile_sensors_schema() -> vol.Schema:
         CONF_DAYTIME_GATE_SENSORS: binary_on_selector(multiple=True),
         CONF_DAYTIME_GATE_TEMPLATE: selector.TemplateSelector(),
         CONF_DAYTIME_GATE_TEMPLATE_MODE: _template_combine_mode_selector(),
+        # Sun-tracking gate (issue #1167)
+        CONF_SUN_TRACKING_GATE_SENSORS: binary_on_selector(multiple=True),
+        CONF_SUN_TRACKING_GATE_TEMPLATE: selector.TemplateSelector(),
+        CONF_SUN_TRACKING_GATE_TEMPLATE_MODE: _template_combine_mode_selector(),
         # Sunrise / sunset time entities (offsets stay per-cover)
         CONF_SUNSET_TIME_ENTITY: selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
@@ -582,8 +717,24 @@ def temperature_climate_schema(
             selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
         ),
         vol.Optional(
+            CONF_AUTO_RESOLVE_TEMP_FROM_AREA,
+            default=DEFAULT_AUTO_RESOLVE_TEMP_FROM_AREA,
+        ): selector.BooleanSelector(),
+        vol.Optional(
             CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
         ): numeric_selector(),
+        # Outdoor-temp source (issue #547): live (default), forecast daily-max,
+        # or the max of the two. The forecast is fetched from the configured
+        # weather entity — no separate picker.
+        vol.Optional(
+            CONF_OUTSIDE_TEMP_SOURCE, default=DEFAULT_OUTSIDE_TEMP_SOURCE
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[m.value for m in OutsideTempSource],
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="outside_temp_source",
+            )
+        ),
         vol.Optional(
             CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
         ): presence_like_selector(),
@@ -600,6 +751,48 @@ def temperature_climate_schema(
         vol.Optional(
             CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, default=False
         ): selector.BooleanSelector(),
+        # Extreme-heat mode (issue #766): a number-or-template threshold with no
+        # default (blank = feature off) plus a clearable hold position.
+        vol.Optional(CONF_TEMP_EXTREME_HEAT): _threshold_selector(),
+        vol.Optional(CONF_EXTREME_HEAT_POSITION): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_TRACKING_SEASONS, default=DEFAULT_TRACKING_SEASONS
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[s.value for s in TrackingSeason],
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="tracking_seasons",
+            )
+        ),
+        # Temperature smoothing controls (issue #917). Optional per-crossing
+        # hysteresis release edges (blank = off) accept a number or template like
+        # the activate thresholds; the hold-time debounces the aggregate season
+        # decision. Mirrors the cloud smoothing schema.
+        vol.Optional(CONF_TEMP_LOW_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_TEMP_HIGH_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(CONF_OUTSIDE_THRESHOLD_RELEASE): _threshold_selector(),
+        vol.Optional(CONF_TEMP_EXTREME_HEAT_RELEASE_THRESHOLD): _threshold_selector(),
+        vol.Optional(
+            CONF_CLIMATE_TEMP_HOLD_TIME,
+            default=DEFAULT_CLIMATE_TEMP_HOLD_TIME,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=3600,
+                step=30,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="s",
+            )
+        ),
     }
     return vol.Schema(schema)
 
@@ -671,63 +864,90 @@ def glare_zones_schema(
 ) -> vol.Schema:
     """Glare-zones schema: name + x/y/radius/z for 4 zone slots (locale-aware)."""
     opts = options or {}
+    schema_dict: dict = {}
+    for n in GLARE_ZONE_SLOT_NUMBERS:
+        schema_dict.update(_glare_zone_slot_fields(GLARE_ZONE_SLOTS[n], opts, hass))
+    return vol.Schema(schema_dict)
 
-    def _default(key: str, canonical_fallback: float) -> float:
-        canonical = float(opts.get(key, canonical_fallback))
+
+def _glare_zone_slot_fields(
+    keys: Mapping[str, str], opts: dict, hass: HomeAssistant | None
+) -> dict:
+    """Build one glare-zone slot's schema markers, keyed by *keys*.
+
+    ``keys`` is a ``GLARE_ZONE_SLOTS[n]`` mapping for the 4-zone form, or
+    ``GLARE_ZONE_FORM_KEYS`` for the generic single-slot page (issue #945).
+    Defaults are seeded (locale-aware) from ``opts`` under the *same* key set,
+    so the single-slot caller passes a slot-remapped ``opts``.
+    """
+
+    def _default(sub: str, canonical_fallback: float) -> float:
+        canonical = float(opts.get(keys[sub], canonical_fallback))
         return length_default(canonical, hass)
 
     schema_dict: dict = {}
-    for i in range(1, 5):
-        prefix = f"glare_zone_{i}"
-        schema_dict[
-            vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))
-        ] = selector.TextSelector()
-        schema_dict[
-            vol.Optional(f"{prefix}_x", default=_default(f"{prefix}_x", 0.0))
-        ] = length_selector(
-            hass,
-            min_m=-5.0,
-            max_m=5.0,
-            metric_step=0.05,
-            mode=selector.NumberSelectorMode.SLIDER,
-        )
-        schema_dict[
-            vol.Optional(f"{prefix}_y", default=_default(f"{prefix}_y", 1.0))
-        ] = length_selector(
-            hass,
-            min_m=0.0,
-            max_m=10.0,
-            metric_step=0.05,
-            mode=selector.NumberSelectorMode.SLIDER,
-        )
-        schema_dict[
-            vol.Optional(f"{prefix}_radius", default=_default(f"{prefix}_radius", 0.3))
-        ] = length_selector(
+    schema_dict[vol.Optional(keys["name"], default=opts.get(keys["name"], ""))] = (
+        selector.TextSelector()
+    )
+    schema_dict[vol.Optional(keys["x"], default=_default("x", 0.0))] = length_selector(
+        hass,
+        min_m=-5.0,
+        max_m=5.0,
+        metric_step=0.05,
+        mode=selector.NumberSelectorMode.SLIDER,
+    )
+    schema_dict[vol.Optional(keys["y"], default=_default("y", 1.0))] = length_selector(
+        hass,
+        min_m=0.0,
+        max_m=10.0,
+        metric_step=0.05,
+        mode=selector.NumberSelectorMode.SLIDER,
+    )
+    schema_dict[vol.Optional(keys["radius"], default=_default("radius", 0.3))] = (
+        length_selector(
             hass,
             min_m=0.1,
             max_m=2.0,
             metric_step=0.05,
             mode=selector.NumberSelectorMode.SLIDER,
         )
-        schema_dict[
-            vol.Optional(
-                f"{prefix}_z",
-                default=_default(f"{prefix}_z", DEFAULT_GLARE_ZONE_Z),
-            )
-        ] = length_selector(
-            hass,
-            min_m=0.0,
-            max_m=3.0,
-            metric_step=0.05,
-            mode=selector.NumberSelectorMode.SLIDER,
-        )
-    return vol.Schema(schema_dict)
+    )
+    schema_dict[
+        vol.Optional(keys["z"], default=_default("z", DEFAULT_GLARE_ZONE_Z))
+    ] = length_selector(
+        hass,
+        min_m=0.0,
+        max_m=3.0,
+        metric_step=0.05,
+        mode=selector.NumberSelectorMode.SLIDER,
+    )
+    return schema_dict
+
+
+def glare_zone_slot_schema(
+    slot_n: int, options: dict | None = None, hass: HomeAssistant | None = None
+) -> vol.Schema:
+    """Single-slot glare-zone schema for the per-slot options page (issue #945).
+
+    Renders slot *slot_n* under the generic ``GLARE_ZONE_FORM_KEYS`` (one
+    translation block). Defaults are seeded from the slot's stored metres values
+    remapped onto the generic keys, so the baked slider defaults are correct even
+    before ``add_suggested_values_to_schema`` overlays locale-converted values.
+    """
+    stored = options or {}
+    slot_keys = GLARE_ZONE_SLOTS[slot_n]
+    remapped = {
+        GLARE_ZONE_FORM_KEYS[sub]: stored[wire]
+        for sub, wire in slot_keys.items()
+        if wire in stored
+    }
+    return vol.Schema(_glare_zone_slot_fields(GLARE_ZONE_FORM_KEYS, remapped, hass))
 
 
 def glare_zone_length_keys() -> tuple[str, ...]:
     """Return the 16 metres-stored option keys for the 4 glare-zone slots."""
     return tuple(
         f"glare_zone_{i}_{axis}"
-        for i in range(1, 5)
+        for i in GLARE_ZONE_SLOT_NUMBERS
         for axis in ("x", "y", "radius", "z")
     )

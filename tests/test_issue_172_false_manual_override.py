@@ -581,13 +581,9 @@ class TestTransitTimeout:
         _call(coord)
         assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
-    def test_transit_timeout_constant_is_documented(self) -> None:
-        """DEFAULT_TRANSIT_TIMEOUT_SECONDS must be defined in const.py and be 45."""
-        from custom_components.adaptive_cover_pro.const import (
-            DEFAULT_TRANSIT_TIMEOUT_SECONDS,
-        )
-
-        assert DEFAULT_TRANSIT_TIMEOUT_SECONDS == 45
+    # The DEFAULT_TRANSIT_TIMEOUT_SECONDS == 45 lock lives in
+    # test_issue_271_slow_cover_transit_false_override.py, alongside the other
+    # two transit-timeout constant checks. It was duplicated verbatim here.
 
 
 # ===========================================================================

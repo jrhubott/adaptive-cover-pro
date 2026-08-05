@@ -20,6 +20,9 @@ import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
+
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 
 UTC = dt.UTC
 
@@ -35,7 +38,7 @@ def _make_coordinator(
     automatic_control: bool = True,
     clock_window_open: bool | None = None,
 ):
-    """Build a minimal mock coordinator for testing _async_send_after_override_clear.
+    """Build a minimal mock coordinator for testing _async_force_send_pipeline_position.
 
     ``clock_window_open`` defaults to mirror ``check_adaptive_time`` because every
     scenario in this file models "outside the window" as a genuinely closed clock
@@ -50,6 +53,8 @@ def _make_coordinator(
     coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coordinator._policy = get_policy("cover_blind")
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
@@ -57,11 +62,13 @@ def _make_coordinator(
     coordinator._cmd_svc.apply_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
+    # The per-entity dispatch seam is identity for a blind (no rail remap).
+    coordinator._entity_target = lambda cover, state: state
     return coordinator
 
 
 # ---------------------------------------------------------------------------
-# _async_send_after_override_clear — time-window guard
+# _async_force_send_pipeline_position — time-window guard
 # ---------------------------------------------------------------------------
 
 
@@ -80,7 +87,7 @@ async def test_override_clear_skips_send_outside_time_window():
 
     coordinator = _make_coordinator(check_adaptive_time=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -101,7 +108,7 @@ async def test_override_clear_sends_position_inside_time_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=50, options={}
     )
 
@@ -134,7 +141,7 @@ async def test_override_clear_sends_when_gate_dark_but_clock_open():
         automatic_control=True,
     )
 
-    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    result = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -156,7 +163,7 @@ async def test_override_clear_logs_debug_when_outside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -182,7 +189,7 @@ async def test_override_clear_uses_force_true_inside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=75, options={"test_option": True}
     )
 
@@ -192,11 +199,14 @@ async def test_override_clear_uses_force_true_inside_window():
         "cover.test_blind",
         {"test_option": True},
         force=True,
+        # Default for this caller — the auto-control bypass is opt-in and only
+        # the Apply Calculated Position button (#1045) requests it.
+        bypass_auto_control=False,
         sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
     )
     ctx = coordinator._build_position_context.call_args
     assert not ctx.kwargs.get("is_safety", False), (
-        "_async_send_after_override_clear must NOT pass is_safety=True — "
+        "_async_force_send_pipeline_position must NOT pass is_safety=True — "
         "override-clear targets are NOT safety targets and must not persist "
         "across window boundaries (fix for issue #223)"
     )
@@ -215,7 +225,7 @@ async def test_override_clear_outside_window_multiple_covers():
     coordinator = _make_coordinator(check_adaptive_time=False)
     coordinator.entities = ["cover.blind_1", "cover.blind_2", "cover.blind_3"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -237,7 +247,7 @@ async def test_override_clear_inside_window_multiple_covers():
     coordinator = _make_coordinator(check_adaptive_time=True)
     coordinator.entities = ["cover.blind_1", "cover.blind_2"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=50, options={}
     )
 
@@ -251,7 +261,7 @@ async def test_override_clear_inside_window_multiple_covers():
 
 
 # ---------------------------------------------------------------------------
-# _async_send_after_override_clear — automatic-control guard (issue #139)
+# _async_force_send_pipeline_position — automatic-control guard (issue #139)
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +280,7 @@ async def test_override_clear_skips_send_when_auto_control_off():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -287,7 +297,7 @@ async def test_override_clear_logs_debug_when_auto_control_off():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -309,7 +319,7 @@ async def test_override_clear_sends_when_auto_control_on_inside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=True)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=40, options={}
     )
 
@@ -331,7 +341,7 @@ async def test_override_clear_auto_control_off_multiple_covers():
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
     coordinator.entities = ["cover.blind_a", "cover.blind_b", "cover.blind_c"]
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -353,7 +363,7 @@ async def test_override_clear_outside_window_takes_precedence_over_auto_control(
 
     coordinator = _make_coordinator(check_adaptive_time=False, automatic_control=False)
 
-    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
         coordinator, state=0, options={}
     )
 
@@ -391,6 +401,8 @@ def _make_state_change_coordinator(
     )
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
+    # Real policy: the dispatch loops ask it for the entity order (#1115).
+    coordinator._policy = get_policy("cover_blind")
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
@@ -658,7 +670,7 @@ class TestIssue215EuropeParisSunsetConfig:
         coordinator = _make_coordinator(check_adaptive_time=False)
 
         # state=0 simulates the pipeline's correct answer (sunset_pos)
-        await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
             coordinator, state=0, options={}
         )
 
@@ -1001,7 +1013,7 @@ class TestIssue215StaleSafetyTarget:
 class TestIssue223OverrideClearSafetyTag:
     """Regression tests for issue #223.
 
-    Root cause: _async_send_after_override_clear called apply_position with
+    Root cause: _async_force_send_pipeline_position called apply_position with
     force=True (to bypass delta gates), but force=True was conflated with
     is_safety=True, adding the entity to _safety_targets.  When the window
     later closed, clear_non_safety_targets() preserved the entity and
@@ -1009,7 +1021,7 @@ class TestIssue223OverrideClearSafetyTag:
 
     Fix: decouple force (bypass gates) from is_safety (safety target
     classification) by adding an explicit is_safety field to PositionContext.
-    _async_send_after_override_clear still uses force=True but is_safety
+    _async_force_send_pipeline_position still uses force=True but is_safety
     defaults to False, so the target is cleaned up normally when the window
     closes.
     """
@@ -1197,3 +1209,152 @@ class TestIssue223OverrideClearSafetyTag:
                 "when the window closed (fix for issue #223)."
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Sun-mode expiry driven through the real coordinator guards (issue #1051)
+# ---------------------------------------------------------------------------
+
+
+def _sun_data(
+    *,
+    sunrise=dt.datetime(2026, 7, 2, 4, 0),
+    sunset=dt.datetime(2026, 7, 2, 21, 0),
+    next_sunrise=dt.datetime(2026, 7, 3, 4, 1),
+    next_sunset=dt.datetime(2026, 7, 3, 20, 59),
+):
+    """Return a mid-latitude summer day: sunrise 04:00, sunset 21:00 UTC."""
+    sun_data = MagicMock()
+    sun_data.sunrise.return_value = sunrise.replace(tzinfo=UTC)
+    sun_data.sunset.return_value = sunset.replace(tzinfo=UTC)
+    sun_data.next_sunrise.return_value = next_sunrise.replace(tzinfo=UTC)
+    sun_data.next_sunset.return_value = next_sunset.replace(tzinfo=UTC)
+    return sun_data
+
+
+def _sunrise_mode_coordinator(**kwargs):
+    """Coordinator with the REAL resolver, manager, and force-send path wired.
+
+    Everything between "the resolver picks a sunrise deadline" and "the guard
+    decides whether to reposition" is production code here: only the HA reads
+    (sun data, cover command service, position context) are stubbed.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_DURATION_MODE,
+        MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
+
+    coord = _make_coordinator(**kwargs)
+    coord.config_entry.options = {
+        CONF_MANUAL_OVERRIDE_DURATION_MODE: (
+            MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+        )
+    }
+    coord.manual_override_duration_mode = MANUAL_OVERRIDE_DURATION_MODE_UNTIL_SUNRISE
+    # No sunrise-time entity configured — the resolver falls through to astral.
+    coord.hass.states.get.return_value = None
+    coord._cover_data = MagicMock(sun_data=_sun_data())
+    coord._time_mgr.end_time = None
+    coord._resolve_override_deadline = (
+        AdaptiveDataUpdateCoordinator._resolve_override_deadline.__get__(coord)
+    )
+    coord._async_force_send_pipeline_position = (
+        AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position.__get__(coord)
+    )
+
+    manager = AdaptiveCoverManager(
+        hass=MagicMock(), reset_duration={"hours": 2}, logger=MagicMock()
+    )
+    manager.add_covers(["cover.test_blind"])
+    manager.set_deadline_resolver(coord._resolve_override_deadline)
+    coord.manager = manager
+    return coord
+
+
+def _engage_override_at_dusk(coord):
+    """Engage a manual override at 22:00 — the close-the-blind-at-dusk case."""
+    coord.manager.set_last_updated(
+        "cover.test_blind",
+        MagicMock(last_updated=dt.datetime(2026, 7, 2, 22, 0, tzinfo=UTC)),
+        allow_reset=True,
+    )
+    coord.manager.mark_manual_control("cover.test_blind")
+
+
+class TestSunModeExpiryThroughCoordinatorGuards:
+    """A sun-anchored expiry lands on the guards #215/#223 were written for.
+
+    Issue #1051 item 3. Everything else in this file drives
+    ``_async_force_send_pipeline_position`` directly; nothing walked the whole
+    path — resolver resolves a sunrise deadline, ``reset_if_needed`` returns the
+    entity, the guards suppress the reposition. The sun modes relocate expiry
+    onto exactly the dawn/dusk moments those issues were about, so a
+    ``until_sunrise`` deadline fires inside #215's literal timeline.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sunrise_expiry_outside_window_does_not_reposition(self):
+        """Expiry at sunrise, hours before the window opens → stay put."""
+        coord = _sunrise_mode_coordinator(check_adaptive_time=False)
+        _engage_override_at_dusk(coord)
+
+        # 02:00 — the fixed 2 h duration would have expired at midnight, and
+        # #215's "reopening at 2 a.m." is exactly this moment. The sun deadline
+        # holds, which is what proves the resolver set it and not the duration.
+        with freeze_time("2026-07-03 02:00:00"):
+            assert await coord.manager.reset_if_needed() == set()
+        assert coord.manager.is_cover_manual("cover.test_blind") is True
+
+        # Just past the resolved sunrise (04:01) the override clears.
+        with freeze_time("2026-07-03 04:01:01"):
+            expired = await coord.manager.reset_if_needed()
+        assert expired == {"cover.test_blind"}
+
+        sent = await coord._async_force_send_pipeline_position(60, {})
+
+        assert sent == set()
+        coord._cmd_svc.apply_position.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sunrise_expiry_with_auto_control_off_does_not_reposition(self):
+        """Same expiry inside the window, automatic control OFF → stay put."""
+        coord = _sunrise_mode_coordinator(
+            check_adaptive_time=True,
+            clock_window_open=True,
+            automatic_control=False,
+        )
+        _engage_override_at_dusk(coord)
+
+        with freeze_time("2026-07-03 04:01:01"):
+            expired = await coord.manager.reset_if_needed()
+        assert expired == {"cover.test_blind"}
+
+        sent = await coord._async_force_send_pipeline_position(60, {})
+
+        assert sent == set()
+        coord._cmd_svc.apply_position.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sunrise_expiry_inside_window_does_reposition(self):
+        """Positive control: with both guards open the same expiry DOES send.
+
+        Without this the two guard tests above would pass against an inert
+        harness that never dispatches for any reason.
+        """
+        coord = _sunrise_mode_coordinator(check_adaptive_time=True)
+        _engage_override_at_dusk(coord)
+
+        with freeze_time("2026-07-03 04:01:01"):
+            expired = await coord.manager.reset_if_needed()
+        assert expired == {"cover.test_blind"}
+
+        sent = await coord._async_force_send_pipeline_position(60, {})
+
+        assert sent == {"cover.test_blind"}
+        coord._cmd_svc.apply_position.assert_awaited_once()

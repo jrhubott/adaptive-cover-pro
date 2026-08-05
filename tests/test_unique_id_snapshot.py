@@ -92,6 +92,7 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         "manual_override_end_time",
         "position_verification",
         "motion_status",
+        "travel_calibration",
         "climate_status",
         "position_forecast",
         # --- switch platform (uses display switch_name, not translation key) ---
@@ -115,6 +116,7 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         # --- button platform ---
         "Reset Manual Override",
         "my_position",
+        "apply_calculated_position",
         # --- number platform ---
         "my_position_value",
     ]

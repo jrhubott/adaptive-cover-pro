@@ -844,6 +844,10 @@ class TestClimateCoverState:
             mock_dsv.return_value = True
             tilt_cover_instance.tilt_degrees = 90
             tilt_cover_instance.calculate_percentage = MagicMock(return_value=50.0)
+            # The solar branch reads the unrounded geometry via
+            # ``calculate_raw_percentage`` (issue #978); keep it consistent with
+            # the mocked percentage so the floor()-toward-coverage step yields 50.
+            tilt_cover_instance.calculate_raw_percentage = MagicMock(return_value=50.0)
 
             climate_data = _make_climate(
                 inside_temperature="18.0",  # Below temp_low (20) = winter
@@ -1363,23 +1367,46 @@ class TestIssue71IrradianceSummerFix:
 
 
 class TestIssue373Mode2SummerTiltHemisphere:
-    """Regression tests for Issue #373.
+    """Regression tests for issues #373 and #1088.
 
-    MODE2 tilt blinds use a 0–180° range where >50% means the slat is tilted
-    toward the upper/blocking hemisphere.  The summer cooling angle (45°) must
-    be mapped to the far side of horizontal (135° equivalent = 75%) for MODE2,
-    not to 25% (which is on the open/wrong hemisphere).
+    MODE2 tilt blinds use a 0–180° range where 50% is horizontal/open. The
+    summer cooling angle (45°) maps to 25%, on the closed hemisphere that
+    contains the sun's profile angle — the side that actually blocks the beam.
+
+    These tests originally asserted the mirror (135° ≡ 75%) on the theory that
+    ">50% is the blocking hemisphere". That was wrong: #1088 showed 75% passes
+    direct sun at every elevation, and that the branch producing it keyed off
+    the *sign* of gamma — a quantity slat tilt is provably even in. The numbers
+    below were read off that branch, so they ratified the defect rather than
+    guarding against it.
+
+    The physical assertions now live in
+    ``tests/test_cover_types/test_tilt_aperture.py``, which scores the commanded
+    angle against an aperture oracle validated against the production cut-off
+    solver. What remains here is the *pipeline wiring*: which strategy fires and
+    what percentage reaches the cover.
+
+    #373's actual defect — the raw answer falling below a ``min_position`` floor
+    and collapsing to horizontal — was fixed by the config-summary ⚠️ warning
+    that #405 shipped alongside the hemisphere flip, and is unaffected by #1088.
+    See ``config_flow._build_config_summary`` and the ``mode2_min_position``
+    warning tests.
     """
 
     # ------------------------------------------------------------------
-    # 1a — MODE2 summer with presence must land on blocking hemisphere
+    # 1a — MODE2 summer with presence must land on the blocking hemisphere
     # ------------------------------------------------------------------
 
     @pytest.mark.unit
     def test_tilt_summer_mode2_with_presence_correct_hemisphere(
         self, tilt_cover_instance, mock_logger
     ):
-        """MODE2 summer cooling must produce >50% (blocking hemisphere), not 25%."""
+        """MODE2 summer cooling must land on the blocking hemisphere (25%).
+
+        25% is slat angle 45°, the closed side containing the sun's profile
+        angle. Its mirror (75% ≡ 135°) is the leaking side — see #1088 and the
+        aperture tests in ``tests/test_cover_types/test_tilt_aperture.py``.
+        """
         tilt_cover_instance.mode = "mode2"
 
         with (
@@ -1414,8 +1441,11 @@ class TestIssue373Mode2SummerTiltHemisphere:
             )
             result = state_handler.tilt_with_presence()
 
-            assert result > 50, f"Expected >50 (blocking hemisphere) but got {result}"
-            assert result >= 75, f"Expected >=75 but got {result}"
+            assert result < 50, (
+                f"Expected <50 (blocking hemisphere, slat below horizontal) "
+                f"but got {result}"
+            )
+            assert result == 25, f"Expected 25 but got {result}"
             assert state_handler.climate_strategy.name == "SUMMER_COOLING"
 
     # ------------------------------------------------------------------
@@ -1475,14 +1505,22 @@ class TestIssue373Mode2SummerTiltHemisphere:
     # ------------------------------------------------------------------
 
     @pytest.mark.unit
-    def test_tilt_summer_mode2_with_presence_min_pos_clamp(
+    def test_tilt_summer_mode2_with_presence_raw_answer_is_unclamped(
         self, mock_logger, mock_sun_data
     ):
-        """MODE2 summer result (75%) must survive min_pos=50 without clamping to 50.
+        """``tilt_state()`` returns the raw blocking answer, limits not applied.
 
-        Mirrors the exact user symptom: min_position=50, enable_min_position=false
-        (always enforce).  Pre-fix the raw result was 25 → clamped to 50 (horizontal).
-        Post-fix the raw result is 75 → 75 > 50 so no clamp, stays at 75.
+        Built with the exact #373 config (min_position=50,
+        enable_min_position=false) to pin *which layer clamps*: this one does
+        not. ``tilt_state()`` is below ``apply_snapshot_limits``, so it hands
+        back the helper's 25% untouched; the floor is applied by ``get_state()``
+        and by ``ClimateHandler.evaluate()`` — see the 1d test below and
+        ``test_climate_handler.py``.
+
+        The old name said "min_pos_clamp" and the old assertion was 75. Neither
+        was load-bearing: 75 > 50, so the test could not distinguish clamped
+        from unclamped, and 75 was the hemisphere that lets direct sun through
+        (#1088).
         """
         tilt = build_tilt_cover(
             logger=mock_logger,
@@ -1539,13 +1577,29 @@ class TestIssue373Mode2SummerTiltHemisphere:
             )
             result = state_handler.tilt_state()
 
+            # The helper's raw answer is the blocking hemisphere...
+            from custom_components.adaptive_cover_pro.const import (
+                CLIMATE_SUMMER_TILT_ANGLE,
+                TiltMode,
+            )
+            from custom_components.adaptive_cover_pro.cover_types.tilt import (
+                TiltPolicy,
+            )
+
             assert (
-                result > 50
-            ), f"Expected result >50 (not clamped to horizontal) but got {result}"
-            assert result == 75, f"Expected 75 but got {result}"
+                TiltPolicy.climate_tilt_percentage(
+                    angle_deg=CLIMATE_SUMMER_TILT_ANGLE, mode=TiltMode.MODE2
+                )
+                == 25
+            )
+            # ...and tilt_state() passes it through without applying min_position.
+            assert result == 25, (
+                f"Expected the raw blocking answer 25 (tilt_state() sits below "
+                f"apply_snapshot_limits) but got {result}"
+            )
 
     # ------------------------------------------------------------------
-    # 1d — Issue #373 E2E: MODE2 + min_pos=50 + out-of-FOV must not clamp
+    # 1d — Issue #373 E2E: MODE2 + min_pos=50 + out-of-FOV, GLARE_CONTROL
     # ------------------------------------------------------------------
 
     @pytest.mark.unit
@@ -1560,17 +1614,17 @@ class TestIssue373Mode2SummerTiltHemisphere:
         - sun outside FOV (so cover.valid is False, climate falls to GLARE_CONTROL)
         - summer-ish climate with presence
 
-        Pre-fix: GLARE_CONTROL fallback returns round(80/180*100) = 44, then
-        apply_limits clamps up to 50 — the cover sits horizontal and does nothing.
+        The GLARE_CONTROL fallback returns round(80/180*100) = 44 — the blocking
+        hemisphere — and apply_limits then clamps it up to the user's
+        min_position floor of 50, leaving the cover horizontal.
 
-        Post-fix: helper is gamma-aware. For positive gamma (sun east of normal
-        per ACP's gamma sign convention: gamma = win_azi - sol_azi mod 360), the
-        MODE2 closed-positive hemisphere gives raw 56% → survives the min_pos=50
-        clamp → final 56%, no longer stuck at horizontal.
-
-        The complementary negative-gamma case (raw 44 → still clamped to 50) is
-        addressed by the config-summary ⚠️ warning that teaches users to avoid
-        min_position ≥ 50 in MODE2.
+        That collapse is the ``mode2_min_position`` footgun, and the
+        config-summary ⚠️ warning #405 added is what addresses it. It is not
+        gamma-dependent and never was: #405's hemisphere flip made the *positive*
+        gamma side return 56% so it escaped the floor, but 56% points the slats
+        at the leaking hemisphere (#1088), and the negative side stayed clamped
+        regardless. Post-#1088 both sides return the same blocking 44%, so the
+        behaviour is consistent with what the warning already tells users.
         """
         tilt = build_tilt_cover(
             logger=mock_logger,
@@ -1631,30 +1685,39 @@ class TestIssue373Mode2SummerTiltHemisphere:
             # exactly what the pipeline does and what reproduces the issue.
             result = state_handler.get_state()
 
+        # Raw helper answer is the blocking hemisphere, below the floor...
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+            TiltMode,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
         assert (
-            result != 50
-        ), f"Expected result != 50 (horizontal floor footgun) but got {result}"
-        # Positive-gamma case: raw 56% (helper returns (180-80)/180*100 ≈ 56)
-        # survives the min_pos=50 clamp.  Pre-fix returned 44 → clamped to 50.
-        assert (
-            result > 50
-        ), f"Expected result > 50 (positive closed hemisphere) but got {result}"
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=CLIMATE_DEFAULT_TILT_ANGLE, mode=TiltMode.MODE2
+            )
+            == 44
+        )
+        # ...so the user's min_position=50 raises it to horizontal.
+        assert result == 50, (
+            f"Expected 50 (min_position floor swallows the blocking answer — "
+            f"the documented MODE2 footgun) but got {result}"
+        )
         assert state_handler.climate_strategy == ClimateStrategy.GLARE_CONTROL
 
     # ------------------------------------------------------------------
-    # 2a — MODE2 summer + presence + negative gamma: pick OTHER hemisphere
+    # 2a — MODE2 summer + presence, sun west of normal (gamma < 0)
     # ------------------------------------------------------------------
 
     @pytest.mark.unit
-    def test_tilt_summer_mode2_with_presence_negative_gamma_picks_other_hemisphere(
+    def test_tilt_summer_mode2_with_presence_negative_gamma(
         self, mock_logger, mock_sun_data
     ):
-        """MODE2 summer with negative gamma must tilt to the negative hemisphere (25%).
+        """MODE2 summer tilts to the blocking hemisphere (25%) west of normal.
 
-        With gamma ≈ −40° (sun west of window normal under ACP's gamma sign
-        convention), the open/blocking direction flips compared to positive gamma —
-        the slat must tilt to the OTHER side of horizontal.  Pre-fix the code
-        always returned 75% regardless of sun side.
+        Paired with ``…_positive_gamma`` below: the two differ only in the sign
+        of gamma and must agree. Slat tilt is even in gamma, so a mirrored sun
+        azimuth cannot change the answer — see #1088.
 
         Note: SunGeometry.gamma = (win_azi - sol_azi + 180) % 360 - 180, so
         win_azi=180 + sol_azi=220 gives gamma ≈ -40°.
@@ -1714,21 +1777,25 @@ class TestIssue373Mode2SummerTiltHemisphere:
             )
             result = state_handler.tilt_with_presence()
 
-            assert result == 25, f"Expected 25 (negative hemisphere) but got {result}"
+            assert result == 25, f"Expected 25 (blocking hemisphere) but got {result}"
             assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
     # ------------------------------------------------------------------
-    # 2b — MODE2 summer + presence + positive gamma: keep 75% (canary)
+    # 2b — MODE2 summer + presence, sun east of normal (gamma > 0)
     # ------------------------------------------------------------------
 
     @pytest.mark.unit
-    def test_tilt_summer_mode2_with_presence_positive_gamma_picks_75(
+    def test_tilt_summer_mode2_with_presence_positive_gamma(
         self, mock_logger, mock_sun_data
     ):
         """MODE2 summer with positive gamma keeps the existing 75% answer.
 
-        Canary for the positive-side hemisphere — the fix must not regress this
-        path (which today returns 75%, the correct blocking-hemisphere answer).
+        Mirror of ``…_negative_gamma`` above. The two differ only in the sign of
+        gamma and must agree: slat tilt is even in gamma.
+
+        This asserted 75% until #1088, which showed 75% (slat angle 135°) is the
+        hemisphere that lets direct sun through at every elevation tested. The
+        answer is 25% on both sides.
 
         Note: SunGeometry.gamma = (win_azi - sol_azi + 180) % 360 - 180, so
         win_azi=180 + sol_azi=140 gives gamma ≈ +40°.
@@ -1788,5 +1855,177 @@ class TestIssue373Mode2SummerTiltHemisphere:
             )
             result = state_handler.tilt_with_presence()
 
-            assert result == 75, f"Expected 75 (positive hemisphere) but got {result}"
+            assert result == 25, f"Expected 25 (blocking hemisphere) but got {result}"
             assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
+
+
+class TestExtremeHeatRule:
+    """Extreme-heat force-hold at the TOP of every climate table (issue #766).
+
+    Crossing the outside-temp threshold holds a fixed position regardless of the
+    sun's FOV, presence, or season — pre-empting even winter heating.  Below the
+    threshold every existing rule resumes unchanged.
+    """
+
+    def _extreme(self, **overrides):
+        """Extreme-heat climate data: hot outside, threshold crossed, hold 30%."""
+        base = {
+            "inside_temperature": "22.0",  # intermediate — not summer, not winter
+            "outside_temperature": "40.0",  # well above the extreme threshold
+            "temp_extreme_heat": 35.0,
+            "extreme_heat_position": 30,
+            "is_presence": True,
+            "is_sunny": True,
+        }
+        base.update(overrides)
+        return _make_climate(**base)
+
+    @pytest.mark.unit
+    def test_holds_position_with_presence(self, vertical_cover_instance, mock_logger):
+        """normal_with_presence holds extreme_heat_position, strategy EXTREME_HEAT."""
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(is_presence=True),
+        )
+        result = sh.normal_with_presence()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_holds_position_without_presence(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """normal_without_presence also holds the extreme-heat position."""
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(is_presence=False),
+        )
+        result = sh.normal_without_presence()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_fires_regardless_of_fov(self, vertical_cover_instance, mock_logger):
+        """The hold fires even when the sun calc is invalid (cover out of FOV)."""
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = False
+            sh = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance, vertical_cover_instance.config.h_def
+                ),
+                self._extreme(),
+            )
+            result = sh.normal_with_presence()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_overrides_winter_heating_on_cold_flagged_morning(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """A cold inside (winter) but a heatwave outside → extreme heat pre-empts winter."""
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            sh = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance, vertical_cover_instance.config.h_def
+                ),
+                self._extreme(
+                    inside_temperature="18.0",  # below temp_low (20) → winter
+                    outside_temperature="40.0",  # heatwave → extreme heat
+                    is_sunny=True,
+                ),
+            )
+            result = sh.normal_with_presence()
+        # Winter heating would open to 100; extreme heat wins and holds 30.
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_below_threshold_resumes_normal_rules(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """Outside temp at/below the threshold → feature inert → winter rule resumes."""
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+            sh = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance, vertical_cover_instance.config.h_def
+                ),
+                self._extreme(
+                    inside_temperature="18.0",  # winter
+                    outside_temperature="30.0",  # below extreme threshold (35)
+                    is_sunny=False,
+                ),
+            )
+            result = sh.normal_with_presence()
+        # Not extreme → winter heating opens fully.
+        assert result == 100
+        assert sh.climate_strategy == ClimateStrategy.WINTER_HEATING
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "router,tilt",
+        [
+            ("normal_with_presence", False),
+            ("normal_without_presence", False),
+            ("tilt_with_presence", True),
+            ("tilt_without_presence", True),
+        ],
+    )
+    def test_extreme_heat_label_across_all_four_tables(
+        self, router, tilt, vertical_cover_instance, tilt_cover_instance, mock_logger
+    ):
+        """Every one of the four routers claims EXTREME_HEAT when the flag is set."""
+        cover = tilt_cover_instance if tilt else vertical_cover_instance
+        policy = get_policy("cover_tilt") if tilt else get_policy("cover_blind")
+        is_presence = "without" not in router
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(cover, cover.config.h_def),
+            self._extreme(policy=policy, is_presence=is_presence),
+        )
+        result = getattr(sh, router)()
+        assert result == 30
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_default_position_when_unset_is_closed(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """extreme_heat_position unset (None) → holds POSITION_CLOSED (0)."""
+        from custom_components.adaptive_cover_pro.const import POSITION_CLOSED
+
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(extreme_heat_position=None),
+        )
+        result = sh.normal_with_presence()
+        assert result == POSITION_CLOSED
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+    @pytest.mark.unit
+    def test_explicit_zero_position_holds_zero(
+        self, vertical_cover_instance, mock_logger
+    ):
+        """An explicit extreme_heat_position=0 is honored (not treated as unset)."""
+        sh = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            self._extreme(extreme_heat_position=0),
+        )
+        result = sh.normal_with_presence()
+        assert result == 0
+        assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT

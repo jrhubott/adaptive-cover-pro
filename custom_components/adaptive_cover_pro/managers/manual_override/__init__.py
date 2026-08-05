@@ -7,6 +7,7 @@ unchanged, and so new detection patterns are reachable from one place.
 
 from __future__ import annotations
 
+from ...position_utils import inverse_state
 from .detector import (
     DetectionContext,
     DetectorConfig,
@@ -17,7 +18,8 @@ from .detector import (
     default_stop_to_my_decision,
     default_user_context_decision,
 )
-from .manager import AdaptiveCoverManager, inverse_state
+from .expiry import STARTED_AT_SOURCE_DERIVED, STARTED_AT_SOURCE_ENGAGED
+from .manager import AdaptiveCoverManager
 from .position_delta import PositionDeltaDetector
 from .registry import DEFAULT_DETECTOR, DETECTOR_REGISTRY, get_detector
 from .secondary_axis import (
@@ -36,6 +38,8 @@ __all__ = [
     "DetectorConfig",
     "OverrideDecision",
     "OverrideDetector",
+    "STARTED_AT_SOURCE_DERIVED",
+    "STARTED_AT_SOURCE_ENGAGED",
     "PositionDeltaDetector",
     "SecondaryAxisCheck",
     "SecondaryAxisResult",

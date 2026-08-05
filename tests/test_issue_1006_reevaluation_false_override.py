@@ -17,13 +17,14 @@ ACP actually DISPATCHED (45), so the settle tilt=45 read a large delta and
 tripped a false ``manual_override_set``.
 
 The fix anchors the correlation to the value ACP last DISPATCHED per axis, in
-one shared rule (:func:`resolve_dispatched_secondary_expected`) that the
-venetian tilt axis delegates to: the check's expected reads
-``sequencer.last_tilt_target(entity_id)`` (the stored commanded value) instead of
-the mutable per-cycle pipeline value. When ACP dispatched no independent tilt
-(empty anchor — suppress mode, HA restart, drift-verify pop, Auto-Control
-off→on), the rule returns ``None`` and the check yields NO independent tilt
-manual-detection rather than falling back to the reevaluated ``result.tilt``.
+one shared rule (:func:`resolve_dispatched_secondary_expected`) that both the
+venetian tilt axis and the day/night-shade blend axis delegate to: the check's
+expected reads ``sequencer.last_tilt_target(entity_id)`` (the stored commanded
+value) instead of the mutable per-cycle pipeline value. When ACP dispatched no
+independent tilt (empty anchor — suppress mode, HA restart, drift-verify pop,
+Auto-Control off→on), the rule returns ``None`` and the check yields NO
+independent tilt manual-detection rather than falling back to the reevaluated
+``result.tilt``.
 
 The position axis was already robust — a reevaluation that dispatches nothing
 never re-anchors the recorded target (``_prepare_service_call`` is the sole
@@ -34,8 +35,8 @@ refuses to re-anchor while the carriage is mid-transit (drift beyond
 Tests A/B/D drive the tilt anchor through the real ``update_tilt_only`` dispatch
 path and the post-fix 3-arg ``policy.secondary_axis_check(result, cmd_svc,
 entity_id)`` accessor exactly as the coordinator does, so the tilt expected
-value is derived, not hand-fed. The empty-anchor test covers the no-dispatched
-case.
+value is derived, not hand-fed. The DNS and empty-anchor tests cover Findings 1
+and 2.
 """
 
 from __future__ import annotations
@@ -46,6 +47,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.cover_types.day_night_shade.policy import (
+    DayNightShadePolicy,
+)
 from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
     VenetianPolicy,
 )
@@ -341,9 +345,9 @@ async def test_combined_position_and_tilt_endpoint_after_reevaluation_is_not_man
 
 
 # ---------------------------------------------------------------------------
-# Real-dispatch helpers: drive the tilt anchor through the public sequencer path
-# so the stored ``_tilt_targets`` value is one the real dispatch path actually
-# produces, not a hand-poked number.
+# Real-dispatch helpers (Finding 4): drive the tilt anchor through the public
+# sequencer path so the stored ``_tilt_targets`` value is one the real dispatch
+# path actually produces, not a hand-poked number.
 # ---------------------------------------------------------------------------
 
 
@@ -373,8 +377,8 @@ def _make_dispatch_venetian_policy() -> VenetianPolicy:
 
     Uses an awaitable ``async_call`` and a timer-free grace mock so a real
     ``update_tilt_only`` runs, populating ``_tilt_targets`` through the same code
-    a solar-tracking cycle uses (producible anchor values, not hand-poked
-    numbers).
+    a solar-tracking cycle uses (Finding 4: producible anchor values, not
+    hand-poked numbers).
     """
     policy = VenetianPolicy()
     policy.attach(
@@ -391,6 +395,29 @@ def _make_dispatch_venetian_policy() -> VenetianPolicy:
     return policy
 
 
+def _make_attached_dns_policy(entity_id: str) -> DayNightShadePolicy:
+    """Return a Day/Night Shade Model A policy with a real DualAxisSequencer.
+
+    Model A (``position_tilt``, the default control model) drives the blend
+    (tilt) axis through the SAME ``DualAxisSequencer`` venetian uses — so
+    ``sequencer.last_tilt_target`` is populated by ``update_tilt_only`` exactly
+    as it is for venetian. This is the store Finding 1 says the DNS
+    ``secondary_axis_check`` must anchor against.
+    """
+    policy = DayNightShadePolicy()
+    policy.attach(
+        hass=_make_dispatch_hass(),
+        logger=MagicMock(),
+        grace_mgr=_make_quiet_grace_mgr(),
+        get_current_position=lambda _eid: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        get_state=lambda _eid: "open",
+    )
+    return policy
+
+
 async def _dispatch_tilt(policy, entity_id: str, *, tilt: int, position: int) -> None:
     """Drive a real tilt send through the public sequencer path.
 
@@ -403,7 +430,64 @@ async def _dispatch_tilt(policy, entity_id: str, *, tilt: int, position: int) ->
 
 
 # ---------------------------------------------------------------------------
-# Empty anchor (suppress mode / restart / Auto-Control off→on):
+# Finding 1 — Day/Night Shade Model A: blend-axis expected must be DISPATCHED
+# ---------------------------------------------------------------------------
+
+
+async def test_dns_model_a_tilt_expected_is_dispatched_not_reevaluated() -> None:
+    """DNS Model A blend axis anchors ``expected`` to the DISPATCHED tilt.
+
+    The reporter's incident on the venetian path applies identically to the
+    Day/Night Shade Model A blend axis: it reuses the venetian
+    ``DualAxisSequencer`` by composition and dispatches its blend through the
+    same ``_tilt_targets`` store. ACP dispatches blend=45 (a producible
+    mid-range solar value), a mid-transit reevaluation recomputes blend=20 and
+    sends nothing, and the actuator settles at the commanded 45. The check the
+    coordinator builds from the reevaluated result must expect the dispatched
+    45, not the reevaluated 20 — otherwise the settle reads as a manual move.
+    """
+    entity_id = "cover.day_night_shade_a"
+    policy = _make_attached_dns_policy(entity_id)
+    assert policy._drives_dual_axis(), "default DNS control model must be Model A"
+
+    # Real dispatch of the blend axis → populates the shared _tilt_targets store.
+    await _dispatch_tilt(policy, entity_id, tilt=45, position=60)
+    assert policy.sequencer.last_tilt_target(entity_id) == 45
+
+    cmd_svc = _make_cmd_svc()
+    cmd_svc.set_target(entity_id, 60)  # dispatched mid position
+    result = _reevaluated_result(position=20, tilt=20)  # reevaluated, no send
+
+    check = policy.secondary_axis_check(result, cmd_svc, entity_id)
+    assert check is not None
+    assert check.expected == 45, (
+        "DNS Model A blend expected must be the dispatched value (45), not the "
+        f"mid-transit reevaluated pipeline value (20); got {check.expected}"
+    )
+
+    # End-to-end: settle at the commanded blend (45) must NOT trip override.
+    recorded_target = cmd_svc.get_target(entity_id)
+    mgr = _make_manager(entity_id)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=60, tilt=45),
+        our_state=recorded_target,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        has_recorded_target=recorded_target is not None,
+        secondary_axis_check=check,
+        is_in_command_grace=lambda _eid: False,
+        is_in_transit=lambda _eid: False,
+    )
+    assert not mgr.is_cover_manual(entity_id), (
+        "DNS Model A settle at the dispatched blend after a reevaluation must "
+        "NOT trip manual override"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Finding 2 — empty anchor (suppress mode / restart / Auto-Control off→on):
 # no dispatched tilt → NO independent tilt manual-detection (not result.tilt)
 # ---------------------------------------------------------------------------
 

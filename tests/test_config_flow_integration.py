@@ -24,7 +24,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
     CONF_AZIMUTH,
-    CONF_BUILDING_PROFILE_ID,
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
@@ -43,7 +42,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
-    CONF_OUTSIDETEMP_ENTITY,
     CONF_VENETIAN_MODE,
     CONF_ENABLE_MAX_POSITION,
     CONF_MIN_ELEVATION,
@@ -60,8 +58,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SYNC_SELECT_ALL,
     CONF_INVERSE_STATE,
     CONF_IS_SUNNY_SENSOR,
-    CONF_LUX_ENTITY,
-    CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     CUSTOM_POSITION_SLOTS,
@@ -69,7 +65,11 @@ from custom_components.adaptive_cover_pro.const import (
     CoverType,
 )
 
-pytestmark = pytest.mark.integration
+# No module-level pytestmark: most of this file drives a real config-entry flow,
+# but a handful of tests only exercise schema builders. A blanket `integration`
+# mark collided with their explicit `@pytest.mark.unit`, leaving them tagged both
+# and unreachable via either selector. The conftest hook derives the right marker
+# per test from whether it resolves the real `hass` fixture.
 
 
 # ---------------------------------------------------------------------------
@@ -182,76 +182,111 @@ _TEMPERATURE_CLIMATE = {
 
 
 @pytest.mark.integration
-async def test_quick_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
-    """Quick-setup path for a vertical blind creates a config entry with safe defaults."""
+async def test_minimal_create_wizard_geometry_only(hass: HomeAssistant) -> None:
+    """The create wizard collapses to create_new → cover_entities → geometry → summary (#945 Part 2).
+
+    No setup_mode menu, no sun_tracking/position steps; geometry advances
+    straight to the summary, and finishing yields a loadable entry whose options
+    carry the finalizer's critical defaults (#133) despite geometry-only input.
+    """
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
     )
-    # The create menu is always shown (cover vs building profile); pick create_new.
-    assert result["type"] in ("form", "menu")
-
-    # Step: create_new
     if result["type"] == "menu":
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {"next_step_id": "create_new"}
         )
-    assert result["type"] == "form"
     assert result["step_id"] == "create_new"
 
+    # create_new goes directly to cover_entities — no setup_mode menu.
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "Test Blind", CONF_MODE: CoverType.BLIND},
+        result["flow_id"], {"name": "Minimal Blind", CONF_MODE: CoverType.BLIND}
     )
-    # Step: setup_mode menu
-    assert result["type"] == "menu"
-    assert result["step_id"] == "setup_mode"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    # Step: cover_entities
     assert result["type"] == "form"
     assert result["step_id"] == "cover_entities"
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: []}
     )
-    # Step: geometry
-    assert result["type"] == "form"
     assert result["step_id"] == "geometry"
 
+    # geometry advances straight to summary — no sun_tracking/position steps.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _VERTICAL_GEOMETRY
     )
-    # Step: sun_tracking
-    assert result["type"] == "form"
-    assert result["step_id"] == "sun_tracking"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    # Step: position
-    assert result["type"] == "form"
-    assert result["step_id"] == "position"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
-    )
-    # Quick-setup goes to summary after position
     assert result["type"] == "form"
     assert result["step_id"] == "summary"
 
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    # Should be "create_entry"
     assert result["type"] == "create_entry"
     entry = result["result"]
     assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
-    assert entry.data["name"] == "Test Blind"
+    # Geometry captured; finalizer defaults present so the entry is loadable (#133).
+    assert entry.options.get(CONF_AZIMUTH) is not None
+    assert entry.options.get(CONF_DELTA_TIME) is not None
+    assert entry.options.get(CONF_MANUAL_OVERRIDE_DURATION) is not None
 
-    # Quick-setup critical keys must have safe non-None values (regression #133)
-    options = entry.options
-    assert options.get(CONF_DELTA_TIME) is not None
-    assert options.get(CONF_MANUAL_OVERRIDE_DURATION) is not None
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("cover_type", "geometry_input", "expected_default_height"),
+    [
+        (CoverType.BLIND, _VERTICAL_GEOMETRY, 100),
+        (CoverType.AWNING, {"length_awning": 2.1, "angle": 0}, 0),
+    ],
+)
+async def test_create_seeds_default_position_per_cover_type(
+    hass: HomeAssistant,
+    cover_type: str,
+    geometry_input: dict,
+    expected_default_height: int,
+) -> None:
+    """A newly created cover starts at its per-type no-coverage endpoint (#1126).
+
+    The minimal create wizard has no position step, so ``CONF_DEFAULT_HEIGHT``
+    must be seeded by the finalizer — like a blind's fully-open 100, not a
+    literal 60 and not an absent key (which every runtime read falls back to
+    0 for, driving the cover fully closed until Options -> Position is opened
+    and saved). Awning's position axis is polarity-flipped (100 % = fully
+    extended = maximum shading), so its no-coverage endpoint is 0, not 100.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    assert result["step_id"] == "create_new"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Cover", CONF_MODE: cover_type}
+    )
+    assert result["step_id"] == "cover_entities"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    assert result["step_id"] == "geometry"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], geometry_input
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "summary"
+
+    # The pre-create preview must show the same per-type default the entry is
+    # about to be created with (#1126) — async_step_summary seeds
+    # self.config via _apply_create_defaults before rendering, precisely so
+    # the summary and the created entry can't disagree.
+    summary_text = result["description_placeholders"]["summary"]
+    assert f"🌙 Default (no rule matches) → {expected_default_height}%" in summary_text
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+    entry = result["result"]
+    assert entry.data[CONF_SENSOR_TYPE] == cover_type
+    assert entry.options.get(CONF_DEFAULT_HEIGHT) == expected_default_height
 
 
 @pytest.mark.integration
@@ -270,21 +305,12 @@ async def test_quick_setup_horizontal_creates_entry(hass: HomeAssistant) -> None
         {"name": "Test Awning", CONF_MODE: CoverType.AWNING},
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: []}
     )
     assert result["step_id"] == "geometry"
     # Awning geometry needs length + angle
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"length_awning": 2.1, "angle": 0}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -307,9 +333,6 @@ async def test_quick_setup_tilt_creates_entry(hass: HomeAssistant) -> None:
         {"name": "Test Tilt", CONF_MODE: CoverType.TILT},
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: []}
     )
     assert result["step_id"] == "geometry"
@@ -317,12 +340,6 @@ async def test_quick_setup_tilt_creates_entry(hass: HomeAssistant) -> None:
         result["flow_id"],
         # Tilt geometry schema uses cm (0.1-15), not metres
         {"slat_depth": 3.0, "slat_distance": 2.0, "tilt_mode": "mode1"},
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -354,9 +371,6 @@ async def test_quick_setup_oscillating_awning(hass: HomeAssistant) -> None:
         {"name": "Test Oscillating", CONF_MODE: CoverType.OSCILLATING_AWNING},
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: []}
     )
     assert result["step_id"] == "geometry"
@@ -368,12 +382,6 @@ async def test_quick_setup_oscillating_awning(hass: HomeAssistant) -> None:
             CONF_AWNING_MIN_ANGLE: 0,
             CONF_AWNING_MAX_ANGLE: 175,
         },
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -435,272 +443,71 @@ async def test_duplicate_oscillating_awning(hass: HomeAssistant) -> None:
     assert result["title"].startswith("Oscillating Awning")
 
 
+@pytest.mark.integration
+async def test_duplicate_seeds_default_position_when_source_lacks_it(
+    hass: HomeAssistant,
+) -> None:
+    """Duplicating a key-less source entry must not propagate the missing key (#1126).
+
+    ``profile_link._cover_entries`` (the duplicate-source picker) enumerates
+    sources via ``hass.config_entries.async_entries(DOMAIN)``, which includes
+    disabled entries — and HA never runs ``async_migrate_entry`` on a
+    disabled entry. So a cover created during the #1126 window and then
+    disabled would, pre-fix, be duplicated straight through
+    ``_extract_shared_options`` with no ``CONF_DEFAULT_HEIGHT`` key at all,
+    stamping the copy at the current ``MINOR_VERSION`` — already past the
+    v3.13 migration threshold, so the copy would never self-heal and stays
+    stuck at an effective 0 % (fully closed) forever. A test that duplicates
+    a well-formed source (which already carries the key via
+    ``_extract_shared_options``) would not catch this — only a source
+    missing the key exercises the bug.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS
+
+    source_options = {
+        k: v for k, v in VERTICAL_OPTIONS.items() if k != CONF_DEFAULT_HEIGHT
+    }
+    assert CONF_DEFAULT_HEIGHT not in source_options
+    source_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bitten Blind", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=source_options,
+        version=3,
+        minor_version=13,
+        entry_id="dup_src_no_default_height",
+        title="Vertical Blind Bitten Blind",
+    )
+    source_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "duplicate_existing"}
+        )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"source_entry": source_entry.entry_id}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Bitten Blind Copy", CONF_AZIMUTH: 180},
+    )
+    assert result["type"] == "create_entry"
+    entry = result["result"]
+    assert entry.options.get(CONF_DEFAULT_HEIGHT) == 100
+
+
 # ---------------------------------------------------------------------------
 # Phase 2a: Full-setup — vertical only (demonstrates all steps)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.integration
-async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
-    """Full-setup path for a vertical blind — walks all steps, creates entry."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "Full Test Blind", CONF_MODE: CoverType.BLIND},
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "full_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENTITIES: []}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    assert result["step_id"] == "position"
-    # 4-layer order (#613): after L1 (entities/geometry/window) and L2 (position),
-    # the L3 handler steps run in pipeline-priority order, then L4 (automation).
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
-    )
-    assert result["step_id"] == "behavior"  # L2b timing & thresholds
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _BEHAVIOR
-    )
-    assert result["step_id"] == "weather_override"  # L3 priority 90
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _WEATHER_OVERRIDE
-    )
-    assert result["step_id"] == "manual_override"  # L3 priority 80
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MANUAL_OVERRIDE
-    )
-    assert result["step_id"] == "custom_position"  # L3 priority 1-100
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _CUSTOM_POSITION
-    )
-    assert result["step_id"] == "motion_override"  # L3 priority 75
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MOTION_OVERRIDE
-    )
-    assert result["step_id"] == "light_cloud"  # L3 priority 60
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _LIGHT_CLOUD
-    )
-    assert result["step_id"] == "temperature_climate"  # L3 priority 50
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _TEMPERATURE_CLIMATE
-    )
-    assert result["step_id"] == "automation"  # L4 global motion constraints
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
-    )
-    # Summary step
-    assert result["type"] == "form"
-    assert result["step_id"] == "summary"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    assert result["type"] == "create_entry"
-    entry = result["result"]
-    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
-    # All options keys present
-    opts = entry.options
-    assert CONF_AZIMUTH in opts
-    assert CONF_FOV_LEFT in opts
-    assert CONF_DEFAULT_HEIGHT in opts
-    assert CONF_DELTA_POSITION in opts
-    assert opts[CONF_DELTA_TIME] is not None
-    assert opts[CONF_MANUAL_OVERRIDE_DURATION] is not None
-
-
 # ---------------------------------------------------------------------------
 # Phase 2b: Full-setup — building profile integration (issue #693)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.integration
-async def test_full_setup_includes_building_profile_step_when_profile_exists(
-    hass: HomeAssistant,
-) -> None:
-    """Full-setup create flow surfaces building_profile step when profiles exist.
-
-    Regression test for issue #693: the step was absent from ConfigFlow and
-    only existed in OptionsFlowHandler.
-    """
-    # Register a building profile so _building_profile_entries(hass) is non-empty.
-    profile = MockConfigEntry(
-        domain=DOMAIN,
-        data={"name": "My Building", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
-        options={
-            CONF_OUTSIDETEMP_ENTITY: "sensor.outside_temp",
-            CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.p_wind",
-            CONF_LUX_ENTITY: "sensor.p_lux",
-        },
-        entry_id="test_profile_693",
-        title="My Building",
-    )
-    profile.add_to_hass(hass)
-
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "Profile Blind", CONF_MODE: CoverType.BLIND},
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "full_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENTITIES: []}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    # The building_profile step must appear when profiles exist.
-    assert result["step_id"] == "building_profile"
-
-    # Submit with a profile chosen.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_BUILDING_PROFILE_ID: "test_profile_693"}
-    )
-    # blind_spot is False in _SUN_TRACKING → position is next.
-    assert result["step_id"] == "position"
-
-    # Walk through the remaining steps to create the entry.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
-    )
-    assert result["step_id"] == "behavior"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _BEHAVIOR
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _WEATHER_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MANUAL_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _CUSTOM_POSITION
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MOTION_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _LIGHT_CLOUD
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _TEMPERATURE_CLIMATE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
-    )
-    assert result["step_id"] == "summary"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    assert result["type"] == "create_entry"
-
-    opts = result["result"].options
-    assert opts.get(CONF_BUILDING_PROFILE_ID) == "test_profile_693"
-    # All three profile-key categories persist through the create-link (issue
-    # #851 / @FredM67's report): outsidetemp, weather-override, and light/cloud.
-    assert opts.get(CONF_OUTSIDETEMP_ENTITY) == "sensor.outside_temp"
-    assert opts.get(CONF_WEATHER_WIND_SPEED_SENSOR) == "sensor.p_wind"
-    assert opts.get(CONF_LUX_ENTITY) == "sensor.p_lux"
-
-
-@pytest.mark.integration
-async def test_full_setup_skips_building_profile_step_when_no_profiles(
-    hass: HomeAssistant,
-) -> None:
-    """Full-setup create flow skips building_profile step when no profiles exist.
-
-    When _building_profile_entries(hass) is empty the flow jumps directly to
-    position (or blind_spot), preserving the pre-#693 path.
-    """
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "No Profile Blind", CONF_MODE: CoverType.BLIND},
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "full_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENTITIES: []}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    # No profiles registered → skip directly to position.
-    assert result["step_id"] == "position"
-
-
-@pytest.mark.integration
-async def test_quick_setup_skips_building_profile_step_even_when_profiles_exist(
-    hass: HomeAssistant,
-) -> None:
-    """Quick-setup path bypasses the building_profile step even when profiles exist."""
-    profile = MockConfigEntry(
-        domain=DOMAIN,
-        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
-        options={},
-        entry_id="test_profile_quick",
-        title="Bldg",
-    )
-    profile.add_to_hass(hass)
-
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "Quick Blind", CONF_MODE: CoverType.BLIND},
-    )
-    # Quick setup
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENTITIES: []}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    # Quick setup never shows the building_profile step.
-    assert result["step_id"] == "position"
 
 
 # ---------------------------------------------------------------------------
@@ -710,78 +517,40 @@ async def test_quick_setup_skips_building_profile_step_even_when_profiles_exist(
 
 @pytest.mark.integration
 async def test_sun_tracking_max_elevation_must_exceed_min(hass: HomeAssistant) -> None:
-    """Sun tracking step rejects max_elevation <= min_elevation."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
+    """The options-flow sun-tracking step rejects max_elevation <= min_elevation.
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"name": "Err Test", CONF_MODE: CoverType.BLIND}
+    Sun tracking moved out of the create wizard (#945 Part 2); the elevation
+    ordering validation now lives only on the options-flow step.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Err Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="sun_elev_err_01",
+        title="Err Test",
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENTITIES: []}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    # Submit invalid elevation: max <= min
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "sun_tracking"}
+        )
+    assert result["step_id"] == "sun_tracking"
+
     bad_tracking = dict(_SUN_TRACKING_VERTICAL)
     bad_tracking[CONF_MIN_ELEVATION] = 30.0
     bad_tracking[CONF_MAX_ELEVATION] = 20.0  # max < min → error
-
-    result = await hass.config_entries.flow.async_configure(
+    result = await hass.config_entries.options.async_configure(
         result["flow_id"], bad_tracking
     )
     assert result["type"] == "form"
-    assert result["step_id"] == "sun_tracking"
     assert CONF_MAX_ELEVATION in result.get("errors", {})
-
-
-@pytest.mark.integration
-async def test_quick_setup_critical_keys_never_none(hass: HomeAssistant) -> None:
-    """Quick-setup options must never store None for DELTA_TIME / MANUAL_OVERRIDE_DURATION.
-
-    Regression guard for issue #133.
-    """
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    if result["type"] == "menu":
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"next_step_id": "create_new"}
-        )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"name": "Regression", CONF_MODE: CoverType.BLIND}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENTITIES: []}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
-    )
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    assert result["type"] == "create_entry"
-    opts = result["result"].options
-    assert opts.get(CONF_DELTA_TIME) is not None, "CONF_DELTA_TIME must not be None"
-    assert (
-        opts.get(CONF_MANUAL_OVERRIDE_DURATION) is not None
-    ), "CONF_MANUAL_OVERRIDE_DURATION must not be None"
 
 
 # ---------------------------------------------------------------------------
@@ -815,7 +584,6 @@ async def test_options_flow_round_trips_input_entities(hass: HomeAssistant) -> N
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "manual_override"}
         )
-    assert result["step_id"] == "manual_override"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.cover_input_0"]},
@@ -1354,7 +1122,13 @@ async def test_custom_position_step_exposes_priority_scale(
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "custom_position"}
         )
-    assert result["step_id"] == "custom_position"
+    # custom_position is now a slot sub-menu (#945); the priority-scale visual
+    # moved onto the focused per-slot page. Open the first free slot via "Add".
+    assert result["type"] == "menu"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_custom_position"}
+    )
+    assert result["step_id"] == "custom_position_slot"
     scale = result["description_placeholders"]["priority_scale"]
     assert "Weather" in scale and "Default" in scale
 
@@ -1503,15 +1277,9 @@ def test_config_flow_does_not_use_system_language() -> None:
                 CONF_MANUAL_IGNORE_INTERMEDIATE: False,
             },
         ),
-        (
-            "custom_position",
-            {
-                "custom_position_sensors_5": ["binary_sensor.alarm"],
-                "custom_position_5": 100,
-                "custom_position_priority_5": 100,
-            },
-        ),
-        ("custom_position", {}),
+        # custom_position is a slot sub-menu (#945), not a form step — its
+        # save/clear round-trips are covered by the dedicated paged-flow tests
+        # below and by tests/test_per_slot_config_pages.py.
         ("motion_override", {"motion_sensors": [], "motion_timeout": 300}),
         (
             "weather_override",
@@ -1585,7 +1353,6 @@ async def test_options_flow_position_saves_position_tolerance(
             result = await hass.config_entries.options.async_configure(
                 result["flow_id"], {"next_step_id": "behavior"}
             )
-        assert result["step_id"] == "behavior"
 
         # position_tolerance now lives on the L2b behavior step; returns to menu.
         result = await hass.config_entries.options.async_configure(
@@ -1631,8 +1398,6 @@ async def test_options_flow_sun_tracking_step(hass: HomeAssistant) -> None:
             result["flow_id"], {"next_step_id": "sun_tracking"}
         )
 
-    assert result["step_id"] == "sun_tracking"
-
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {**_SUN_TRACKING, "enable_glare_zones": False}
     )
@@ -1672,7 +1437,6 @@ async def test_options_flow_sun_tracking_validation_error(hass: HomeAssistant) -
         result["flow_id"], bad_input
     )
     assert result["type"] == "form"
-    assert result["step_id"] == "sun_tracking"
     assert CONF_MAX_ELEVATION in result.get("errors", {})
 
 
@@ -1726,34 +1490,106 @@ async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
     assert result["type"] == "menu"
     assert "glare_zones" in result.get("menu_options", [])
 
+    # glare_zones is now a zone sub-menu (#945): open a zone via "Add", then
+    # submit one zone under the generic un-suffixed field keys.
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "glare_zones"}
     )
     assert result["step_id"] == "glare_zones"
+    assert result["type"] == "menu"
 
-    # Submit zone data
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_glare_zone"}
+    )
+    assert result["step_id"] == "glare_zone_slot"
+
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "glare_zone_1_name": "East Window",
-            "glare_zone_1_x": 0.0,
-            "glare_zone_1_y": 1.0,
-            "glare_zone_1_radius": 0.3,
-            "glare_zone_2_name": "",
-            "glare_zone_2_x": 0.0,
-            "glare_zone_2_y": 1.0,
-            "glare_zone_2_radius": 0.3,
-            "glare_zone_3_name": "",
-            "glare_zone_3_x": 0.0,
-            "glare_zone_3_y": 1.0,
-            "glare_zone_3_radius": 0.3,
-            "glare_zone_4_name": "",
-            "glare_zone_4_x": 0.0,
-            "glare_zone_4_y": 1.0,
-            "glare_zone_4_radius": 0.3,
+            "glare_zone_name": "East Window",
+            "glare_zone_x": 0.0,
+            "glare_zone_y": 1.0,
+            "glare_zone_radius": 0.3,
+            "glare_zone_z": 0.0,
         },
     )
-    assert result["type"] in ("form", "menu", "create_entry")
+    # Saving returns to the zone sub-menu; go Back to init then Save & Close so
+    # the options entry commits, and confirm zone 1's suffixed keys are stored
+    # (and no generic key leaked into storage).
+    assert result["type"] == "menu"
+    assert result["step_id"] == "glare_zones"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"]["glare_zone_1_name"] == "East Window"
+    assert "glare_zone_name" not in result["data"]
+
+
+@pytest.mark.integration
+async def test_options_flow_custom_position_paged_save(hass: HomeAssistant) -> None:
+    """A custom-position slot page saves under the slot's suffixed keys (#945).
+
+    End-to-end through the real flow manager: init menu → custom_position sub-
+    menu → "Add" opens the lowest free slot page (generic keys) → submitting it
+    writes slot 1's suffixed storage keys and returns to the sub-menu.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Paged CP", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="paged_cp_01",
+        title="Paged CP",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position"}
+    )
+    # No slots configured yet → only the Add + Back entries are listed.
+    assert "custom_position_slot_1" not in result.get("menu_options", {})
+    assert "add_custom_position" in result.get("menu_options", {})
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_custom_position"}
+    )
+    assert result["step_id"] == "custom_position_slot"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "custom_position_sensors": ["binary_sensor.alarm"],
+            "custom_position": 100,
+            "custom_position_priority": 100,
+        },
+    )
+    # Back at the sub-menu, slot 1 is now listed and committed on Save & Close.
+    assert result["type"] == "menu"
+    assert "custom_position_slot_1" in result.get("menu_options", {})
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+    saved = result["data"]
+    assert saved["custom_position_1"] == 100
+    assert saved["custom_position_priority_1"] == 100
+    assert saved["custom_position_sensors_1"] == ["binary_sensor.alarm"]
+    # No generic key leaked into storage.
+    assert "custom_position" not in saved
+    assert "custom_position_priority" not in saved
 
 
 # ---------------------------------------------------------------------------
@@ -1785,9 +1621,6 @@ async def test_config_flow_cover_entities_no_devices_skips_device_selector(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "Test Blind", CONF_MODE: CoverType.BLIND}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
     assert result["step_id"] == "cover_entities"
 
     with patch(
@@ -1815,9 +1648,6 @@ async def test_config_flow_cover_entities_with_devices_shows_device_selector(
         )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "Test Blind", CONF_MODE: CoverType.BLIND}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
     )
     assert result["step_id"] == "cover_entities"
 
@@ -1854,9 +1684,6 @@ async def test_config_flow_cover_entities_standalone_selection_proceeds_to_geome
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "Test Blind", CONF_MODE: CoverType.BLIND}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
 
     devices = {"device_abc123": "My Blind Motor"}
 
@@ -1890,9 +1717,6 @@ async def test_config_flow_cover_entities_real_device_selection_stores_device_id
         )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "Test Blind", CONF_MODE: CoverType.BLIND}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
     )
 
     devices = {"device_abc123": "My Blind Motor"}
@@ -2027,19 +1851,19 @@ async def test_options_flow_cover_entities_combined_form_with_devices(
 async def test_options_flow_custom_position_clears_sensor_position_and_priority(
     hass: HomeAssistant,
 ) -> None:
-    """Clearing custom position fields in options flow must set keys to None.
+    """Clearing a custom-position slot page must set its keys to None.
 
-    Regression for issue #323: submitting an empty custom_position form while
-    previously-saved slot values exist must overwrite them with None, not leave
-    the old values in place.
+    Regression for issue #323 on the paged flow (#945): opening a configured
+    slot and submitting it empty must overwrite the slot's stored values with
+    None, not leave the old values in place.
     """
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
     pre_options = dict(VERTICAL_OPTIONS)
-    for n, slot in CUSTOM_POSITION_SLOTS.items():
-        pre_options[slot["sensor"]] = f"binary_sensor.slot_{n}"
-        pre_options[slot["position"]] = 25
-        pre_options[slot["priority"]] = 60
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    pre_options[slot1["sensor"]] = "binary_sensor.slot_1"
+    pre_options[slot1["position"]] = 25
+    pre_options[slot1["priority"]] = 60
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -2059,27 +1883,143 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "custom_position"}
     )
-    assert result["step_id"] == "custom_position"
+    # The configured slot 1 is listed; open it and submit the page empty.
+    assert "custom_position_slot_1" in result.get("menu_options", {})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position_slot_1"}
+    )
+    assert result["step_id"] == "custom_position_slot"
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    assert result["type"] in ("form", "menu")
+    assert result["type"] == "menu"  # back to the slot sub-menu
 
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "done"}
     )
     assert result["type"] == "create_entry"
 
     saved = result["data"]
-    for slot in CUSTOM_POSITION_SLOTS.values():
-        assert (
-            saved.get(slot["sensor"]) is None
-        ), f"{slot['sensor']} should be None after clearing"
-        assert (
-            saved.get(slot["position"]) is None
-        ), f"{slot['position']} should be None after clearing"
-        assert (
-            saved.get(slot["priority"]) is None
-        ), f"{slot['priority']} should be None after clearing"
+    assert saved.get(slot1["sensor"]) is None, "legacy sensor mirror should be None"
+    assert (
+        saved.get(slot1["position"]) is None
+    ), "position should be None after clearing"
+    assert (
+        saved.get(slot1["priority"]) is None
+    ), "priority should be None after clearing"
+
+
+@pytest.mark.integration
+async def test_options_flow_delete_custom_position_slot_frees_it_for_clean_reuse(
+    hass: HomeAssistant,
+) -> None:
+    """🗑️ Delete must erase every key a slot owns, form-key or not (issue #1071).
+
+    Blanking a slot's form fields leaves the card/service-controlled leftovers
+    (``enabled``, ``min_mode``, ``use_my``, ``position_max``) in storage, so the
+    slot number the next "Add" hands out arrives pre-poisoned — most sharply,
+    ``enabled=False`` silently disables the brand-new slot. Delete pops the full
+    stored key map, so a re-added slot starts genuinely clean.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    slot2 = CUSTOM_POSITION_SLOTS[2]
+    slot3 = CUSTOM_POSITION_SLOTS[3]
+    # Slots 1 and 2 exist independently — they must survive untouched, and they
+    # keep slot 3 the lowest free number once it is deleted.
+    pre_options[slot1["sensors"]] = ["binary_sensor.slot_1"]
+    pre_options[slot1["position"]] = 15
+    pre_options[slot1["priority"]] = 30
+    pre_options[slot2["sensors"]] = ["binary_sensor.slot_2"]
+    pre_options[slot2["position"]] = 20
+    # Slot 3 as the card + service leave it: form fields plus the inert keys the
+    # per-slot page can never clear.
+    pre_options[slot3["sensors"]] = ["binary_sensor.slot_3"]
+    pre_options[slot3["sensor"]] = "binary_sensor.slot_3"
+    pre_options[slot3["position"]] = 25
+    pre_options[slot3["priority"]] = 60
+    pre_options[slot3["position_max"]] = 80
+    pre_options[slot3["enabled"]] = False
+    pre_options[slot3["min_mode"]] = True
+    pre_options[slot3["use_my"]] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Delete Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=pre_options,
+        entry_id="custom_pos_delete_01",
+        title="Delete Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position"}
+    )
+    assert "custom_position_slot_3" in result.get("menu_options", {})
+    assert "delete_custom_position" in result.get("menu_options", {})
+
+    # The chooser IS the confirm step.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "delete_custom_position"}
+    )
+    assert result["step_id"] == "delete_slot"
+    assert "delete_custom_position_slot_3" in result.get("menu_options", {})
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "delete_custom_position_slot_3"}
+    )
+    assert result["type"] == "menu"  # back on the sub-menu
+    assert "custom_position_slot_3" not in result.get("menu_options", {})
+    assert "custom_position_slot_1" in result.get("menu_options", {})
+
+    # Add lands on the freed number and opens a genuinely blank page.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_custom_position"}
+    )
+    assert result["step_id"] == "custom_position_slot"
+    assert result["description_placeholders"]["slot"] == "3"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "custom_position_sensors": ["binary_sensor.fresh"],
+            "custom_position": 70,
+            "custom_position_priority": 55,
+        },
+    )
+    assert result["type"] == "menu"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    saved = result["data"]
+    # `enabled` is opt-out and never on the form — only a pop clears it, and a
+    # stored None would still read as "disabled".
+    assert slot3["enabled"] not in saved, "the reused slot must start enabled"
+    # BooleanSelectors, so the fresh submit writes False back: assert falsy.
+    assert not saved.get(slot3["min_mode"])
+    assert not saved.get(slot3["use_my"])
+    assert saved.get(slot3["position_max"]) is None
+    # The fresh config's own values are in place, mirror included.
+    assert saved[slot3["position"]] == 70
+    assert saved[slot3["priority"]] == 55
+    assert saved[slot3["sensors"]] == ["binary_sensor.fresh"]
+    assert saved.get(slot3["sensor"]) == "binary_sensor.fresh"
+    # Neighbouring slots untouched.
+    assert saved[slot1["position"]] == 15
+    assert saved[slot1["priority"]] == 30
 
 
 @pytest.mark.integration
@@ -2115,7 +2055,6 @@ async def test_cleared_start_time_persists_blank(hass: HomeAssistant) -> None:
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "automation"}
     )
-    assert result["step_id"] == "automation"
 
     # Submit the automation step omitting the time keys (cleared TimeSelectors).
     result = await hass.config_entries.options.async_configure(
@@ -2177,7 +2116,6 @@ async def test_options_flow_light_cloud_clears_is_sunny_sensor(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "light_cloud"}
     )
-    assert result["step_id"] == "light_cloud"
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] in ("form", "menu")
@@ -2340,9 +2278,6 @@ async def test_create_flow_title_uses_device_name_when_attached(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "", CONF_MODE: CoverType.BLIND}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
     assert result["step_id"] == "cover_entities"
 
     # Pass 1: submit the cover entity. The flow looks up the device and stores the
@@ -2361,12 +2296,6 @@ async def test_create_flow_title_uses_device_name_when_attached(
     # Walk the remaining quick-setup steps
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -2404,21 +2333,12 @@ async def test_create_flow_title_falls_back_to_adaptive_prefix_without_device(
         result["flow_id"], {"name": "", CONF_MODE: CoverType.BLIND}
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: [entity_id]}
     )
     # No device → step proceeds straight to geometry
     assert result["step_id"] == "geometry"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -2454,9 +2374,6 @@ async def test_create_flow_user_typed_name_overrides_device_name(
         result["flow_id"], {"name": "My Cover", CONF_MODE: CoverType.BLIND}
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: [entity_id]}
     )
     # Device exists → form re-renders with device picker
@@ -2467,12 +2384,6 @@ async def test_create_flow_user_typed_name_overrides_device_name(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -2507,9 +2418,6 @@ async def test_create_flow_blank_name_no_entities_gets_fallback_name(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "", CONF_MODE: CoverType.BLIND}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "quick_setup"}
-    )
     assert result["step_id"] == "cover_entities"
 
     # Zero entities selected — auto-fill in Pass 1 never runs.
@@ -2520,12 +2428,6 @@ async def test_create_flow_blank_name_no_entities_gets_fallback_name(
     assert result["step_id"] == "geometry"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _VERTICAL_GEOMETRY
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
@@ -2570,7 +2472,6 @@ async def test_options_flow_position_step_exposes_my_position_toggle(
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "position"}
         )
-    assert result["step_id"] == "position"
 
     # Schema must contain the new toggle key with default False.
     schema_keys = result["data_schema"].schema
@@ -2646,7 +2547,6 @@ async def test_options_flow_position_step_clears_sunset_pos_when_omitted(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "position"}
     )
-    assert result["step_id"] == "position"
 
     # Submit position form WITHOUT CONF_SUNSET_POS (user cleared the field)
     result = await hass.config_entries.options.async_configure(
@@ -2705,9 +2605,6 @@ async def test_full_setup_persists_fov_and_window_width(
         {"name": "Persist Test Blind", CONF_MODE: CoverType.BLIND},
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "full_setup"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ENTITIES: []}
     )
     # Geometry step now carries the window dims AND the FOV button (#778). First
@@ -2727,7 +2624,8 @@ async def test_full_setup_persists_fov_and_window_width(
     assert (
         result.get("step_id") == "geometry"
     ), f"expected re-render on button press, got {result!r}"
-    # Second geometry submit without the button: keep the angles and advance.
+    # Second geometry submit without the button: keep the angles; the minimal
+    # wizard (#945 Part 2) advances straight to the summary.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
@@ -2737,38 +2635,6 @@ async def test_full_setup_persists_fov_and_window_width(
             CONF_FOV_LEFT: 45,
             CONF_FOV_RIGHT: 45,
         },
-    )
-    # Then the behavioural sun-tracking step.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _SUN_TRACKING_VERTICAL
-    )
-    # 4-layer order (#613): position → behavior → L3 handlers → L4 automation.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _POSITION
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _BEHAVIOR
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _WEATHER_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MANUAL_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _CUSTOM_POSITION
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MOTION_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _LIGHT_CLOUD
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _TEMPERATURE_CLIMATE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
     )
     assert result["type"] == "form"
     assert result["step_id"] == "summary"

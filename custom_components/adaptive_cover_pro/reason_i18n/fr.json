@@ -1,0 +1,124 @@
+{
+  "fragment": {
+    "sunset_position": "position coucher du soleil",
+    "default_position": "position par défaut",
+    "cloudy_position": "position nuageux",
+    "coverage_step": " (étape de couverture, max {steps})",
+    "z_adjusted": " (Z-ajusté)",
+    "bypass_note": " [contourne le contrôle automatique]",
+    "season_extreme_heat": "chaleur extrême",
+    "season_tracking_off": "défaut : suivi désactivé cette saison",
+    "season_summer": "été",
+    "season_winter": "hiver",
+    "season_glare_low_light": "contrôle d'éblouissement (faible luminosité)",
+    "season_glare": "contrôle d'éblouissement",
+    "trigger_not_sunny": "météo non ensoleillée",
+    "trigger_lux_below": "lux sous le seuil",
+    "trigger_irradiance_below": "irradiance sous le seuil",
+    "trigger_cloud_above": "couverture nuageuse au-dessus du seuil",
+    "trigger_smoothing_hold": "maintien de lissage",
+    "trigger_template": "modèle",
+    "trigger_fallback": "déclencheur",
+    "axis_position": "position",
+    "axis_tilt": "inclinaison"
+  },
+  "solar": {
+    "tracking": "soleil dans l'angle d'acceptation — position {position}%{suffix}"
+  },
+  "manual": {
+    "holding_solar": "dérogation manuelle active — maintien {held}% (soleil serait {position}%)",
+    "solar_only": "dérogation manuelle active — soleil serait {position}%",
+    "holding_label": "dérogation manuelle active — maintien {held}% ({pos_label} serait {position}%)",
+    "label_only": "dérogation manuelle active — {pos_label} {position}%"
+  },
+  "occupancy": {
+    "holding": "délai d'absence — maintien position {held}% (soleil dans l'angle d'acceptation)",
+    "label": "délai d'absence actif — {pos_label} {position}%"
+  },
+  "climate": {
+    "active": "mode climatique actif ({season}) — position {position}%"
+  },
+  "glare": {
+    "protection": "protection zone d'éblouissement ({zones}) — distance effective {distance:.2f}m{z_suffix} → position {position}%"
+  },
+  "cloud": {
+    "suppression": "suppression nuages/faible luminosité — {triggers} → {pos_label} {position}%"
+  },
+  "weather": {
+    "active": "dérogation météo active — position {position}%{bypass_note}"
+  },
+  "custom": {
+    "head_named": "{name} actif",
+    "head_slot": "position personnalisée #{slot} active ({trigger})",
+    "use_my": "{head} — utiliser ma position ({position}%){bypass_note}",
+    "position": "{head} — position {position}%{bypass_note}"
+  },
+  "default": {
+    "sunset_use_my": "position coucher du soleil — utiliser ma position ({position}%)",
+    "no_condition": "aucune condition active — {pos_label} {position}%"
+  },
+  "group": {
+    "lock": "verrouillage groupe depuis groupe {group_id} — maintien {position}%",
+    "scene": "scène groupe '{scene}' depuis groupe {group_id} → {position}%"
+  },
+  "registry": {
+    "outprioritized": "déprioritisé par {handler}",
+    "floor_raised": "minimum augmenté gagnant de {from_pos}% à {to_pos}% par {label}",
+    "floor_inactive": "minimum {floor_pos}% inactif (gagnant {winner_pos}% au-dessus du minimum)",
+    "tilt_applied": "inclinaison seule : angle lame fixé à {tilt}% par {label} ; position pilotée par {handler}",
+    "tilt_deferred": "inclinaison seule {tilt}% différée — {handler} a déjà défini inclinaison {winner_tilt}%",
+    "ceiling_lowered": "maximum abaissé gagnant de {from_pos}% à {to_pos}% par {label}",
+    "ceiling_inactive": "maximum {ceiling_pos}% inactif (position résolue {to_pos}% au niveau ou en dessous du maximum)",
+    "ceiling_overridden": "maximum {ceiling_pos}% ignoré — un minimum a relevé le volet à {to_pos}%",
+    "floor_overrides_ceiling": "minimum relevé à {to_pos}% au-dessus du maximum {ceiling_pos}% par {label} (gagnant était {from_pos}%)",
+    "bound_yielded_to_hold": "limite {low_label}–{high_label} ({axis}) de {label} écartée — la priorité {priority} ne dépasse pas {holder} ({holder_priority})",
+    "hold_position_carried": "la limite d'inclinaison commande la couverture — position maintenue à {position}% (et non la valeur théorique de {shadow_pos}%)",
+    "tilt_bound_active": "limite d'inclinaison {low_label}–{high_label} active par {label} ; en attente de l'inclinaison résolue",
+    "tilt_bound_inactive": "limite d'inclinaison {low_label}–{high_label} inactive par {label} ; inclinaison résolue {tilt}% déjà dans la plage",
+    "tilt_clamped": "inclinaison limitée de {from_tilt}% à {to_tilt}% par {label}"
+  },
+  "builder": {
+    "unknown": "Inconnu",
+    "control_occupancy_timeout": "Délai d'Absence",
+    "control_manual_override": "Dérogation Manuelle",
+    "control_tracking_off_season": "Défaut : Suivi Désactivé Cette Saison",
+    "control_tilt_fixed": "{reason} — inclinaison fixée par Position Personnalisée #{slot}",
+    "outside_window": "En dehors de la plage horaire → {pos_label} {pos}% (commandes en pause)",
+    "manual_divergence": "dérogation manuelle active — maintien protection à {held}% (soleil serait {raw}%)",
+    "tilt_fixed": "inclinaison fixée à {tilt}% par Position Personnalisée #{slot}",
+    "interpolated": "interpolé → {final}%",
+    "inversed": "inversé → {final}%"
+  },
+  "engine": {
+    "direct_sun": "Soleil Direct",
+    "default_sunset_offset": "Défaut : Décalage Coucher du Soleil",
+    "default_elevation_limit": "Défaut : Limite d'Élévation",
+    "default_acceptance_angle_exit": "Défaut : Sortie Angle d'Acceptation",
+    "default_sun_behind_plane": "Défaut : Soleil Derrière le Plan",
+    "default_blind_spot": "Défaut : Angle Mort",
+    "default": "Défaut"
+  },
+  "skip": {
+    "outside_window": "en dehors de la plage horaire",
+    "sun_outside": "soleil en dehors de l'angle d'acceptation ou des limites d'élévation",
+    "sun_tracking_gate": "le filtre de suivi du soleil est fermé",
+    "sun_tracking_off": "le suivi du soleil est désactivé",
+    "manual_not_active": "dérogation manuelle non active",
+    "occupancy_disabled": "détection de présence désactivée",
+    "occupancy_not_active": "délai d'absence non actif",
+    "climate_mode_off": "mode climatique non activé",
+    "climate_readings_unavailable": "lectures climatiques ou options indisponibles",
+    "climate_deferred": "contrôle d'éblouissement différé aux gestionnaires soleil/éblouissement",
+    "no_glare_zones": "aucune zone d'éblouissement active ou soleil en dehors de l'angle d'acceptation",
+    "cloud_skipped": "suppression nuages ignorée (soleil en dehors de l'angle d'acceptation)",
+    "cloud_inactive": "suppression nuages inactive (soleil direct présent ou fonction désactivée)",
+    "weather_not_active": "dérogation météo non active",
+    "custom_not_active": "position personnalisée #{slot} non active",
+    "always_matches": "toujours valide",
+    "group_scene_not_lock": "l'intention groupe est une scène, pas un verrouillage",
+    "no_group_lock": "aucune intention de verrouillage groupe",
+    "group_lock_not_scene": "l'intention groupe est un verrouillage, pas une scène",
+    "no_group_scene": "aucune intention de scène groupe",
+    "not_active": "non actif"
+  }
+}

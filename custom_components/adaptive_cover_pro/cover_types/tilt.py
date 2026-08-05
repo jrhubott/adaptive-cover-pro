@@ -8,10 +8,30 @@ import voluptuous as vol
 from homeassistant.helpers import selector
 
 from ..const import (
-    CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET,
+    CONF_MAX_TILT,
+    CONF_MAX_TILT_SUN_ONLY,
+    CONF_MIN_TILT,
+    CONF_MIN_TILT_SUN_ONLY,
+    CONF_TILT_ANGLE_0,
+    CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    CONF_TILT_SAFETY_MARGIN,
+    CONF_VENETIAN_TILT_TRANSFORM,
+    DEFAULT_MAX_TILT,
+    DEFAULT_MAX_TILT_SUN_ONLY,
+    DEFAULT_MIN_TILT,
+    DEFAULT_MIN_TILT_SUN_ONLY,
+    DEFAULT_TILT_ANGLE_0,
+    DEFAULT_TILT_ANGLE_100,
+    DEFAULT_TILT_SAFETY_MARGIN,
+    DEFAULT_VENETIAN_TILT_TRANSFORM,
+    MAX_TILT_SAFETY_MARGIN,
+    MIN_TILT_SAFETY_MARGIN,
+    OPTION_RANGES,
+    TILT_HORIZONTAL_DEG,
+    VENETIAN_TILT_TRANSFORMS,
 )
 from ..engine.covers import AdaptiveTiltCover
 from ..const import TiltMode
@@ -19,7 +39,8 @@ from ..unit_system import slat_default, slat_selector
 from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
-    TILT_AXIS,
+    TILT_AXIS_PRIMARY,
+    TILT_CAPABLE_ENTITY_FILTER,
     CoverAxis,
     CoverTypePolicy,
     caps_get,
@@ -29,6 +50,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from ..engine.covers import AdaptiveGeneralCover
+    from ..pipeline.types import PipelineResult
     from ..services.configuration_service import ConfigurationService
 
 
@@ -42,22 +64,80 @@ _DEFAULT_TILT_DEPTH_CM = 3.0
 _DEFAULT_TILT_DISTANCE_CM = 2.0
 
 
+def tilt_limits_schema() -> dict:
+    """Shared tilt-axis limit/shape controls (issue #964, unit-independent).
+
+    Cover-type-agnostic controls that clamp and shape the sun-derived slat tilt:
+    the ``[min_tilt, max_tilt]`` band, the two ``*_sun_only`` enforcement flags,
+    the tilt safety margin, and the clamp/proportional output transform. Every
+    tilt-axis cover reaches them — ``geometry_tilt_schema`` composes this
+    fragment (so tilt-only and, via it, louvered-roof get them), and the
+    venetian geometry schema composes ``geometry_tilt_schema`` too. Kept as a
+    plain dict so both schemas can spread it inline.
+    """
+    return {
+        vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(
+            CONF_MIN_TILT_SUN_ONLY, default=DEFAULT_MIN_TILT_SUN_ONLY
+        ): selector.BooleanSelector(),
+        vol.Optional(CONF_MAX_TILT, default=DEFAULT_MAX_TILT): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(
+            CONF_MAX_TILT_SUN_ONLY, default=DEFAULT_MAX_TILT_SUN_ONLY
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_TILT_SAFETY_MARGIN, default=DEFAULT_TILT_SAFETY_MARGIN
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=MIN_TILT_SAFETY_MARGIN,
+                max=MAX_TILT_SAFETY_MARGIN,
+                step=0.05,
+                mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+        vol.Optional(
+            CONF_VENETIAN_TILT_TRANSFORM, default=DEFAULT_VENETIAN_TILT_TRANSFORM
+        ): vol.In(VENETIAN_TILT_TRANSFORMS),
+    }
+
+
 def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Tilt-only geometry schema. ``hass=None`` → metric labels."""
+    depth_lo, depth_hi = OPTION_RANGES[CONF_TILT_DEPTH]
+    distance_lo, distance_hi = OPTION_RANGES[CONF_TILT_DISTANCE]
     return vol.Schema(
         {
             vol.Required(
                 CONF_TILT_DEPTH, default=slat_default(_DEFAULT_TILT_DEPTH_CM, hass)
-            ): slat_selector(hass, min_cm=0.1, max_cm=15),
+            ): slat_selector(hass, min_cm=depth_lo, max_cm=depth_hi),
             vol.Required(
                 CONF_TILT_DISTANCE,
                 default=slat_default(_DEFAULT_TILT_DISTANCE_CM, hass),
-            ): slat_selector(hass, min_cm=0.1, max_cm=15),
+            ): slat_selector(hass, min_cm=distance_lo, max_cm=distance_hi),
             vol.Required(CONF_TILT_MODE, default="mode2"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=["mode1", "mode2"], translation_key="tilt_mode"
+                    options=["mode1", "mode2", "specify_angles"],
+                    translation_key="tilt_mode",
                 )
             ),
+            vol.Required(
+                CONF_TILT_ANGLE_0, default=DEFAULT_TILT_ANGLE_0
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-180, max=180, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
+                CONF_TILT_ANGLE_100, default=DEFAULT_TILT_ANGLE_100
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=360, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            **tilt_limits_schema(),
         }
     )
 
@@ -67,21 +147,13 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
 GEOMETRY_TILT_SCHEMA = geometry_tilt_schema()
 
 
-# Filter shared by tilt and venetian: cover entities that expose
-# ``set_tilt_position``. HA's ``supported_features`` filter is OR-of-listed,
-# not AND, so venetian uses this same filter and surfaces the
-# missing-set_position case as a config-flow capability warning.
-TILT_CAPABLE_ENTITY_FILTER = selector.EntityFilterSelectorConfig(
-    domain="cover",
-    supported_features=["cover.CoverEntityFeature.SET_TILT_POSITION"],
-)
-
-
 class TiltPolicy(CoverTypePolicy, register=True):
     """Cover that rotates slats only (no vertical movement)."""
 
     cover_type = "cover_tilt"
-    axes: ClassVar[tuple[CoverAxis, ...]] = (TILT_AXIS,)
+    # Tilt is this type's only axis, so it carries primary-axis config
+    # semantics (``inverse_state`` + interpolation) — see ``TILT_AXIS_PRIMARY``.
+    axes: ClassVar[tuple[CoverAxis, ...]] = (TILT_AXIS_PRIMARY,)
 
     def wiki_anchor(self) -> str:
         """Slat-tilt geometry page."""
@@ -136,6 +208,11 @@ class TiltPolicy(CoverTypePolicy, register=True):
             parts.append(L["geometry.slat.spacing"].format(v=v))
         if (v := config.get(CONF_TILT_MODE)) is not None:
             parts.append(L["geometry.slat.mode"].format(v=v))
+        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
+            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
+                parts.append(L["geometry.slat.angle_0"].format(v=v))
+            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
+                parts.append(L["geometry.slat.angle_100"].format(v=v))
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
@@ -159,20 +236,21 @@ class TiltPolicy(CoverTypePolicy, register=True):
         *,
         angle_deg: float,
         mode: TiltMode | str,
-        gamma_deg: float,
         sun_through: bool = False,
     ) -> int:
         """Convert a target slat angle to a tilt percentage that blocks the sun.
 
         Single source of truth for the climate handler's angle → percent
-        translation across MODE1/MODE2 and positive/negative sun hemispheres.
+        translation across MODE1/MODE2.
+
+        Takes no sun-azimuth argument on purpose. Slat tilt is even in gamma —
+        the sun's left/right offset enters the slat geometry only through the
+        profile angle, via ``cos(gamma)`` — so an answer that varied with the
+        *sign* of gamma could only be wrong on one side. It was (issue #1088).
 
         Args:
             angle_deg: Target slat angle in degrees (e.g. CLIMATE_SUMMER_TILT_ANGLE).
             mode: Tilt mode — TiltMode enum value or its string ("mode1"/"mode2").
-            gamma_deg: Sun azimuth offset from window normal, in degrees.
-                When negative, the sun is on the opposite hemisphere and MODE2 must
-                flip its answer onto the other closed side.
             sun_through: When True, return the OPEN hemisphere instead of closed
                 (winter heating: let sun reach the window).  Mirrors the
                 ``sun_through`` flag on ``position_for_intent``.
@@ -188,24 +266,34 @@ class TiltPolicy(CoverTypePolicy, register=True):
             return round((angle_deg / TiltMode.MODE1.max_degrees) * 100)
 
         # MODE2: bi-directional 0–180° scale where 50% is horizontal/open.
-        # Choose hemisphere by sun side (gamma) and intent (sun_through).
+        # Intent alone picks the hemisphere — NOT the sun's left/right side.
+        # Slats rotate about a horizontal axis parallel to the facade, so the
+        # sun's azimuth offset reaches the geometry only through the profile
+        # angle beta = arctan(tan(elev)/cos(gamma)), and cos is even. A branch on
+        # sign(gamma) is therefore unphysical; it made the answer discontinuous
+        # at gamma = 0 and, on the gamma >= 0 side, selected the hemisphere that
+        # lets direct sun through (issue #1088).
         max_degrees = TiltMode.MODE2.max_degrees
-        # Closed-hemisphere mapping for MODE2:
-        #   gamma >= 0 → angle on the positive-side closed hemisphere
-        #               → (180 - angle) / 180 * 100  (== 100 - mode1_pct/2)
-        #   gamma <  0 → angle on the negative-side closed hemisphere
-        #               → angle / 180 * 100
-        # sun_through (winter heating) flips to the open hemisphere by mirroring
-        # the angle across horizontal (+90° offset).
         if sun_through:
-            effective_angle = (
-                CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET + angle_deg
-                if gamma_deg >= 0
-                else CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET - angle_deg
-            )
+            # Winter heating: mirror the angle across horizontal, which lands the
+            # slat parallel to the beam — the exact maximum-transmission angle.
+            effective_angle = TILT_HORIZONTAL_DEG + angle_deg
         else:
-            effective_angle = max_degrees - angle_deg if gamma_deg >= 0 else angle_deg
+            # Blocking: the closed hemisphere containing the profile angle.
+            effective_angle = angle_deg
         return round((effective_angle / max_degrees) * 100)
+
+    def targets_full_mechanical_endpoint(
+        self,
+        result: PipelineResult,  # noqa: ARG002
+    ) -> bool:
+        """Tilt-only covers have no position axis, so never route open/close.
+
+        ``route_service_call`` only substitutes close_cover/open_cover on the
+        position axis; a slat-only cover has none, so it can never target a
+        full *mechanical* endpoint in the sense the manager forces (issue #897).
+        """
+        return False
 
     def build_calc_engine(
         self,

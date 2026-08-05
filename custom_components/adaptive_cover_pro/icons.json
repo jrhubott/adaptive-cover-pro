@@ -29,9 +29,21 @@
     "button": {
       "reset_manual_override": {
         "default": "mdi:hand-back-left-off"
+      },
+      "apply_calculated_position": {
+        "default": "mdi:target-variant"
       }
     },
     "sensor": {
+      "travel_calibration": {
+        "default": "mdi:timer-cog-outline",
+        "state": {
+          "running": "mdi:timer-sand",
+          "complete": "mdi:timer-check-outline",
+          "failed": "mdi:timer-alert-outline",
+          "cancelled": "mdi:timer-off-outline"
+        }
+      },
       "control": {
         "default": "mdi:white-balance-sunny",
         "state": {

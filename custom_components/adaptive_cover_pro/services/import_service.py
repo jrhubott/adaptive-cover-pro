@@ -14,8 +14,16 @@ from homeassistant.exceptions import ServiceValidationError
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN, OPTION_RANGES
+from ..const import (
+    CONF_MAX_SLAT_ANGLE,
+    DOMAIN,
+    OPTION_RANGES,
+    TIME_OPTION_KEYS,
+    TIME_STRING_RE,
+)
+from ..helpers import normalize_time_string
 from .export_service import DEFAULT_EXPORT_PATH
+from .options_service import FIELD_VALIDATORS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +32,17 @@ IMPORT_CONFIG_SCHEMA = vol.Schema(
         vol.Optional("filename", default=DEFAULT_EXPORT_PATH): str,
     }
 )
+
+
+def _out_of_range_error(key: str, value: object) -> str:
+    """Format the shared "out of range" message for an ``OPTION_RANGES`` key.
+
+    Both the ``CONF_MAX_SLAT_ANGLE`` bespoke-validator branch and the generic
+    ``OPTION_RANGES`` branch below need this exact wording — extracted so the
+    two can never drift apart (issue #1105).
+    """
+    lo, hi = OPTION_RANGES[key]
+    return f"{key}={value} out of range [{lo}, {hi}]"
 
 
 async def async_handle_import_config(call: ServiceCall) -> dict:
@@ -39,8 +58,19 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
     Numeric keys present in ``OPTION_RANGES`` are validated against their
     declared bounds before the entry is updated; a failed check records
     ``"error: ..."`` for that entry in the result dict without aborting the
-    rest of the import. Keys absent from ``OPTION_RANGES`` (booleans, strings,
-    enums, and unknown future keys) are accepted as-is.
+    rest of the import. ``CONF_MAX_SLAT_ANGLE`` is special-cased to route
+    through ``FIELD_VALIDATORS`` instead (issue #1105) so its sub-degree dead
+    zone is rejected the same way here as in ``set_option``.
+
+    Time keys (``TIME_OPTION_KEYS``) are **canonicalised, not rejected**, and
+    this deliberately differs from ``set_options``: a value that parses is
+    rewritten to the ``const.TIME_STRING_RE`` wire format (``"00:00"`` is
+    stored as ``"00:00:00"``) and only a value no parser can rescue records an
+    error. An export file predates this validation, so failing the entry would
+    drop every *other* option a user is restoring — while a malformed time left
+    verbatim defeats the literal ``BLANK_TIME`` comparisons across the
+    integration (issue #1049). Remaining keys (booleans, strings, enums, and
+    unknown future keys) are accepted as-is.
 
     Returns a per-entry result dict:
         ``{entry_id: "updated" | "skipped" | "error: <msg>"}``
@@ -119,20 +149,80 @@ async def async_handle_import_config(call: ServiceCall) -> dict:
                 k: v for k, v in file_opts.items() if not k.startswith("_")
             }
 
-            # Validate numeric keys against their declared OPTION_RANGES bounds.
+            # Validate numeric keys against their declared OPTION_RANGES bounds
+            # and time keys against the one accepted HH:MM:SS wire format.
             validation_errors: list[str] = []
-            for key, value in imported_public.items():
-                if key not in OPTION_RANGES or value is None:
+            for key, value in list(imported_public.items()):
+                if value is None:
                     continue
-                lo, hi = OPTION_RANGES[key]
-                try:
-                    num = float(value)
-                    if not (lo <= num <= hi):
+                if key == CONF_MAX_SLAT_ANGLE:
+                    # Bespoke validator (#1105): the plain OPTION_RANGES lo/hi
+                    # check below also admits the sub-degree dead zone between
+                    # the "0 = use tilt mode" sentinel and the smallest usable
+                    # physical angle that ``services.set_option`` now rejects
+                    # via ``FIELD_VALIDATORS``. Routed through the SAME
+                    # validator here so both config boundaries agree. This is
+                    # deliberately special-cased to this one key rather than
+                    # routing every OPTION_RANGES key through FIELD_VALIDATORS
+                    # generically — several other keys (e.g.
+                    # CONF_OUTSIDE_THRESHOLD) also accept a Jinja2 template via
+                    # a *different* bespoke validator, and swapping those over
+                    # would flip values import_config currently rejects
+                    # outright to silently passing.
+                    try:
+                        FIELD_VALIDATORS[CONF_MAX_SLAT_ANGLE](value)
+                    except vol.MultipleInvalid:
+                        # Outside the dead zone, ``_max_slat_angle_v`` falls
+                        # through to ``_num()``'s ``vol.Any(None, ...)``
+                        # composition, and voluptuous's ``Any`` keeps the
+                        # "None"-literal alternative's generic fallback
+                        # message ("not a valid value") instead of the real
+                        # ``vol.Range`` one — that's what distinguishes this
+                        # from the branch below (``vol.Any`` failing raises
+                        # ``MultipleInvalid``, a subclass of ``vol.Invalid``).
+                        # Every sibling OPTION_RANGES key on this loop still
+                        # names its bounds on an out-of-range value, so
+                        # reconstruct the same wording here rather than
+                        # surfacing the uninformative fallback to the user.
+                        validation_errors.append(_out_of_range_error(key, value))
+                    except vol.Invalid as exc:
+                        # The dead-zone branch (naming the ``0`` sentinel) and
+                        # a bad type (via ``vol.Coerce``) both raise directly
+                        # with an already-informative message — keep it as-is.
+                        validation_errors.append(f"{key}={value!r}: {exc.msg}")
+                elif key in OPTION_RANGES:
+                    lo, hi = OPTION_RANGES[key]
+                    try:
+                        num = float(value)
+                        if not (lo <= num <= hi):
+                            validation_errors.append(_out_of_range_error(key, value))
+                    except (TypeError, ValueError):
                         validation_errors.append(
-                            f"{key}={value} out of range [{lo}, {hi}]"
+                            f"{key}={value!r} is not a valid number"
                         )
-                except (TypeError, ValueError):
-                    validation_errors.append(f"{key}={value!r} is not a valid number")
+                if key in TIME_OPTION_KEYS:
+                    # Canonicalise what parses rather than failing the entry.
+                    # An export predates this validation, so the users most
+                    # likely to hold a "00:00" are exactly the ones #1049 bit —
+                    # rejecting would drop every *other* option they are trying
+                    # to restore. ``set_options`` still refuses the same value:
+                    # it has a caller who can fix the patch, an import file has
+                    # no one to ask.
+                    canonical = normalize_time_string(value)
+                    if TIME_STRING_RE.match(str(canonical)):
+                        if canonical != value:
+                            _LOGGER.debug(
+                                "import_config: entry '%s' %s=%r stored as %r",
+                                entry_id,
+                                key,
+                                value,
+                                canonical,
+                            )
+                        imported_public[key] = canonical
+                    else:
+                        validation_errors.append(
+                            f"{key}={value!r} is not a valid time (expected HH:MM:SS)"
+                        )
             if validation_errors:
                 raise ServiceValidationError(
                     f"import_config: invalid values for entry '{entry_id}': "

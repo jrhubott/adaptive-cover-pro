@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...const import ControlMethod
+from ...const import ControlMethod, ReasonCode
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
@@ -42,18 +43,21 @@ class WeatherOverrideHandler(OverrideHandler):
         pos = snapshot.weather_override_position
         bypass = snapshot.weather_bypass_auto_control
         raw = compute_raw_calculated_position(snapshot)
-        reason = f"weather override active — position {pos}%"
+        bypass_note: Reason | str = ""
         if bypass:
-            reason += " [bypasses automatic control]"
+            bypass_note = Reason(ReasonCode.FRAGMENT_BYPASS_NOTE)
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.WEATHER,
-            reason=reason,
+            reason_payload=Reason(
+                ReasonCode.WEATHER_ACTIVE,
+                {"position": pos, "bypass_note": bypass_note},
+            ),
             bypass_auto_control=bypass,
             is_safety=True,
             raw_calculated_position=raw,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:  # noqa: ARG002
         """Reason when weather override is not active."""
-        return "weather override not active"
+        return Reason(ReasonCode.SKIP_WEATHER_NOT_ACTIVE)

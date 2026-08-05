@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.config_dynamic import (
 )
 from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
 from custom_components.adaptive_cover_pro.const import (
+    BUILDING_PROFILE_SENSOR_KEYS,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLIMATE_MODE,
     CONF_CLOUDY_POSITION,
@@ -122,6 +123,41 @@ def test_linked_cover_shows_profile_pickers() -> None:
     assert CONF_LUX_ENTITY in lc_unlinked
     assert CONF_LUX_ENTITY in lc_linked
     assert CONF_CLOUDY_POSITION in lc_linked
+
+
+# ---------------------------------------------------------------------------
+# const ⇄ schema equality lock (issue #1085)
+# ---------------------------------------------------------------------------
+
+
+def test_profile_sensor_keys_match_schema_so_saves_never_clear_a_key() -> None:
+    """Every ``BUILDING_PROFILE_SENSOR_KEYS`` entry must render in the schema.
+
+    ``async_step_profile_sensors`` hands the whole const to
+    ``optional_entities``, which nulls every listed key the frontend did not
+    send back (that is what makes a cleared field stick — issue #1085). A key
+    in the const that ``building_profile_sensors_schema()`` never renders can
+    never be in ``user_input``, so it is nulled on *every* profile save,
+    ``cleared_profile_keys`` reports it as a clear, and
+    ``propagate_profile_clears`` then deletes it from every linked cover.
+
+    The reverse direction matters too: the schema filters its selectors on the
+    const today, but a rendered key the const does not own would be silently
+    dropped from copy-on-link and propagation.
+    """
+    rendered = _schema_keys(building_profile_sensors_schema())
+    owned = set(BUILDING_PROFILE_SENSOR_KEYS)
+
+    assert rendered == owned, (
+        "BUILDING_PROFILE_SENSOR_KEYS and building_profile_sensors_schema() have "
+        f"diverged.\n  Owned but not rendered: {sorted(owned - rendered)} — add a "
+        "selector for each to building_profile_sensors_schema() "
+        "(config_dynamic.py), or drop the key from BUILDING_PROFILE_SENSOR_KEYS "
+        "(const.py). Left as-is, every profile save nulls the key and propagates "
+        "that as a clear to every linked cover.\n  Rendered but not owned: "
+        f"{sorted(rendered - owned)} — add each to BUILDING_PROFILE_SENSOR_KEYS, "
+        "or the profile screen will collect a value nothing ever copies."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +282,80 @@ def test_copy_profile_to_cover_skips_overrides() -> None:
     assert opts[CONF_LUX_ENTITY] == "sensor.office"  # override preserved
     assert opts[CONF_OUTSIDETEMP_ENTITY] == "sensor.out"  # inherited key copied
     assert opts[CONF_PROFILE_SENSOR_OVERRIDES] == [CONF_LUX_ENTITY]
+
+
+def test_merge_profile_into_config_keeps_local_value_for_a_blank_profile_key() -> None:
+    """A blank profile key never wipes the cover's own value (issue #1085).
+
+    ``optional_entities`` writes ``None`` for every field the profile form
+    leaves blank, so a saved profile carries the whole shared-sensor key set
+    with most values empty in every shape blankness takes — ``None``, ``""``
+    and ``[]``. Those blanks mean "the profile does not define this", which is
+    indistinguishable from "the user never filled it in", so the merge must
+    leave the cover's value alone for all of them.
+    """
+    from custom_components.adaptive_cover_pro.profile_link import (
+        merge_profile_into_config,
+    )
+
+    profile = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Bldg", CONF_SENSOR_TYPE: CoverType.BUILDING_PROFILE},
+        options={
+            CONF_LUX_ENTITY: "sensor.profile_lux",
+            CONF_OUTSIDETEMP_ENTITY: None,
+            CONF_WEATHER_RAIN_SENSOR: "",
+            CONF_DAYTIME_GATE_SENSORS: [],
+        },
+        entry_id="profile_1",
+    )
+
+    config: dict = {
+        CONF_OUTSIDETEMP_ENTITY: "sensor.local_outside",
+        CONF_WEATHER_RAIN_SENSOR: "sensor.local_rain",
+        CONF_DAYTIME_GATE_SENSORS: ["binary_sensor.daylight"],
+    }
+    merge_profile_into_config(profile, config)
+
+    assert config[CONF_LUX_ENTITY] == "sensor.profile_lux"
+    assert config[CONF_OUTSIDETEMP_ENTITY] == "sensor.local_outside"
+    assert config[CONF_WEATHER_RAIN_SENSOR] == "sensor.local_rain"
+    assert config[CONF_DAYTIME_GATE_SENSORS] == ["binary_sensor.daylight"]
+
+
+def test_cleared_profile_keys_reports_only_set_to_blank_transitions() -> None:
+    """Only a set → blank move counts as a clear (issue #1085).
+
+    The saved options alone cannot tell a cleared field from one that was
+    never filled in — both end up blank. The transition can, so the profile's
+    stored options are diffed against the ones the dialog is about to write.
+    """
+    from custom_components.adaptive_cover_pro.profile_link import cleared_profile_keys
+
+    previous = {
+        CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+        CONF_DAYTIME_GATE_SENSORS: ["binary_sensor.daylight"],
+        CONF_IS_SUNNY_TEMPLATE_MODE: "or",
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_IRRADIANCE_ENTITY: None,
+        CONF_CLOUDY_POSITION: 40,
+    }
+    new = {
+        CONF_WEATHER_RAIN_SENSOR: None,  # cleared
+        CONF_DAYTIME_GATE_SENSORS: [],  # multi-select clears to []
+        CONF_IS_SUNNY_TEMPLATE_MODE: None,  # combine mode cleared
+        CONF_LUX_ENTITY: "sensor.lux",  # untouched
+        CONF_IRRADIANCE_ENTITY: None,  # blank before and after → never set
+        CONF_CLOUDY_POSITION: None,  # not a shared key at all
+    }
+
+    assert cleared_profile_keys(previous, new) == frozenset(
+        {
+            CONF_WEATHER_RAIN_SENSOR,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
+        }
+    )
 
 
 def test_clear_cover_override_reinherits_and_removes() -> None:

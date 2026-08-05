@@ -4,10 +4,16 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-# Activate virtual environment
-if [[ -d "venv" ]]; then
-    source venv/bin/activate
-fi
+# shellcheck source=scripts/_venv.sh
+source scripts/_venv.sh
+activate_venv || true
+
+for tool in ruff black; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "$tool not found. Run ./scripts/setup, or activate a venv that has it." >&2
+        exit 1
+    fi
+done
 
 ruff check . --fix
 black .

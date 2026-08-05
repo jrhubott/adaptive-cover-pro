@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any
 
 from ..const import (
     DEFAULT_TEMPLATE_COMBINE_MODE,
@@ -53,18 +53,29 @@ class WeatherManager:
     retract covers on sensor failure).
     """
 
-    def __init__(self, hass: HomeAssistant, logger, *, event_buffer=None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        logger,
+        *,
+        event_buffer=None,
+        template_variables: Mapping[str, Any] | None = None,
+    ) -> None:
         """Initialize the WeatherManager.
 
         Args:
             hass: Home Assistant instance used to read sensor states
             logger: Logger instance for debug/info output
             event_buffer: Shared diagnostic ring buffer (optional).
+            template_variables: Opaque render context threaded into every
+                condition-template fold — the ``acp`` self-reference namespace
+                built once by the coordinator (issue #1159).
 
         """
         self._hass = hass
         self._logger = logger
         self._event_buffer = event_buffer
+        self._template_variables = template_variables
         self._events = EventRecorder(event_buffer)
 
         # Config (updated via update_config)
@@ -85,6 +96,8 @@ class WeatherManager:
         self._is_windy_template: str | None = None
         self._is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
         self._severe_sensors: list[str] = []
+        self._severe_template: str | None = None
+        self._severe_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
         self._timeout_seconds: int = DEFAULT_WEATHER_TIMEOUT
         # Master on/off toggle for the whole feature (issue #719). Pre-config
         # state mirrors the new-cover default; the coordinator always supplies
@@ -115,6 +128,8 @@ class WeatherManager:
         is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
         is_windy_template: str | None = None,
         is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
+        severe_template: str | None = None,
+        severe_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
         enabled: bool = True,
     ) -> None:
         """Update all weather override configuration.
@@ -140,6 +155,8 @@ class WeatherManager:
         self._is_raining_template_mode = is_raining_template_mode
         self._is_windy_template = is_windy_template
         self._is_windy_template_mode = is_windy_template_mode
+        self._severe_template = severe_template
+        self._severe_template_mode = severe_template_mode
         self._severe_sensors = list(severe_sensors)
         self._timeout_seconds = timeout_seconds
         self._enabled = enabled
@@ -167,14 +184,18 @@ class WeatherManager:
 
     @property
     def condition_templates(self) -> list[str]:
-        """Return the configured is-raining / is-windy condition templates.
+        """Return the configured is-raining / is-windy / severe condition templates.
 
         Used by __init__.py to register ``async_track_template_result`` so a
-        template-only override reacts the instant the template flips (#639).
+        template-only override reacts the instant the template flips (#639/#974).
         """
         return [
             tmpl
-            for tmpl in (self._is_raining_template, self._is_windy_template)
+            for tmpl in (
+                self._is_raining_template,
+                self._is_windy_template,
+                self._severe_template,
+            )
             if is_template_string(tmpl)
         ]
 
@@ -314,6 +335,7 @@ class WeatherManager:
             mode,
             others_truthy=self._is_binary_on(entity_id),
             has_others=bool(entity_id),
+            variables=self._template_variables,
         )
         return bool(result)
 
@@ -334,8 +356,25 @@ class WeatherManager:
         )
 
     def _is_any_severe_active(self) -> bool:
-        """Check whether any severe weather binary sensor is 'on'."""
-        return any(self._is_binary_on(entity_id) for entity_id in self._severe_sensors)
+        """Whether any severe sensor and/or the severe template reports severe (#974).
+
+        Folds the severe sensor *list* with its optional condition template via
+        the shared :func:`fold_condition_template`: ``others_truthy`` is any
+        sensor being on, ``has_others`` gates it so a template-only config
+        (no sensors) is decided by the template alone. A broken/empty template
+        gives no opinion and the result reduces to the sensor list (fail-open).
+        """
+        result = fold_condition_template(
+            self._hass,
+            self._severe_template,
+            self._severe_template_mode,
+            others_truthy=any(
+                self._is_binary_on(entity_id) for entity_id in self._severe_sensors
+            ),
+            has_others=bool(self._severe_sensors),
+            variables=self._template_variables,
+        )
+        return bool(result)
 
     # --- State management ---
 

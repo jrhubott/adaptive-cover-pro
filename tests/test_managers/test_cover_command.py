@@ -61,6 +61,23 @@ def tilt_cmd_svc(mock_hass, logger, grace_mgr):
     )
 
 
+@pytest.fixture
+def threshold_cmd_svc(mock_hass, logger, grace_mgr):
+    """CoverCommandService for a vertical blind with a high open/close threshold.
+
+    Mirrors ``cmd_svc`` but with ``open_close_threshold=99`` (issue #1095) so
+    a wide sub-threshold band (any calculated position below 99) collapses to
+    the same ``close_cover``/``routed_target=0`` decision.
+    """
+    return CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        open_close_threshold=99,
+    )
+
+
 # --- Initial state ---
 
 
@@ -1473,6 +1490,183 @@ async def test_force_endpoint_within_tolerance_skips_command_gate(
     mock_hass.services.async_call.assert_not_called()
 
 
+# --- non-venetian (single-axis) full endpoint forcing + latch (issue #897) ---
+
+
+def _endpoint_service(
+    entity_id,
+    position,
+    inverse_state=False,
+    caps=None,
+    is_safety=False,
+    use_my_position=False,
+    plan=None,
+    dispatch_token=None,
+):
+    """_prepare_service_call side_effect: route 0→close, 100→open, else set_position."""
+    if position == 0:
+        return ("close_cover", {"entity_id": entity_id}, True)
+    if position == 100:
+        return ("open_cover", {"entity_id": entity_id}, True)
+    return ("set_cover_position", {"entity_id": entity_id, "position": position}, True)
+
+
+def _sent_services(mock_hass) -> list[str]:
+    """Return the cover service name from every async_call (positional arg 1)."""
+    return [call.args[1] for call in mock_hass.services.async_call.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_non_venetian_endpoint_close_fires_once_when_never_reports_closed(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #897 — single-axis blind, target 0, state never 'closed': fire once.
+
+    A ZHA rollershade that settles at current_position=2 and reports HA state
+    'open' forever must route close_cover exactly once (so it can seat at the
+    mechanical stop), then be latched so it does not relay-click every cycle
+    (#507 anti-storm preserved for the generalized path).
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=2, state="open")
+    ctx = _ctx_full_endpoint(full_endpoint_target=True, tilt=None)
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=2),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(svc, "_prepare_service_call", side_effect=_endpoint_service),
+    ):
+        outcome1 = await svc.apply_position("cover.test", 0, "custom_position", ctx)
+        outcome2 = await svc.apply_position("cover.test", 0, "custom_position", ctx)
+
+    assert outcome1 == ("sent", "close_cover")
+    assert outcome2 == ("skipped", "same_position")
+    assert mock_hass.services.async_call.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_endpoint_latch_clears_on_midrange_move(mock_hass, logger, grace_mgr):
+    """Issue #897 — a mid-range move clears the endpoint latch so 0 re-fires.
+
+    Force-close to 0 arms the latch; a mid-range 50 move (no endpoint flag)
+    sends and clears it; commanding 0 again re-routes close_cover.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=2, state="open")
+
+    close_ctx = _ctx_full_endpoint(full_endpoint_target=True, tilt=None)
+    mid_ctx = _ctx_full_endpoint(full_endpoint_target=False, tilt=None)
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=2),
+        patch.object(svc, "_check_position_delta", return_value=True),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(svc, "_prepare_service_call", side_effect=_endpoint_service),
+    ):
+        await svc.apply_position("cover.test", 0, "custom_position", close_ctx)
+        await svc.apply_position("cover.test", 50, "solar", mid_ctx)
+        await svc.apply_position("cover.test", 0, "custom_position", close_ctx)
+
+    assert _sent_services(mock_hass).count("close_cover") == 2
+
+
+@pytest.mark.asyncio
+async def test_endpoint_latch_refires_on_endpoint_flip(mock_hass, logger, grace_mgr):
+    """Issue #897 — flipping to the other endpoint re-fires (latch is per-target).
+
+    Force-close to 0 arms the latch at 0; a subsequent open to 100 (cover still
+    not mechanically open) routes open_cover because the latched endpoint (0)
+    differs from the new target (100).
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=2, state="open")
+    state_obj = mock_hass.states.get.return_value
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=2),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(svc, "_prepare_service_call", side_effect=_endpoint_service),
+    ):
+        await svc.apply_position(
+            "cover.test",
+            0,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=None),
+        )
+        # Cover now reports 'closed'; commanding the opposite endpoint (100) must
+        # not be suppressed by the latch armed at 0.
+        state_obj.state = "closed"
+        await svc.apply_position(
+            "cover.test",
+            100,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=None),
+        )
+
+    services = _sent_services(mock_hass)
+    assert services == ["close_cover", "open_cover"]
+
+
+@pytest.mark.asyncio
+async def test_non_venetian_open_endpoint_within_tolerance_still_skips(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #897 / #507 lock — target 100, current 98, state 'open': SKIPPED.
+
+    On the OPEN endpoint the cover already reports state 'open' at any position
+    > 0, so the mechanical-stop check suppresses forcing and the #507 tolerance
+    band still applies — no open_cover relay click.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=98, state="open")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(svc, "_prepare_service_call", side_effect=_endpoint_service),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            100,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=None),
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_non_venetian_close_endpoint_within_tolerance_fires(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #897 — target 0, current 1, state 'open': routes close_cover.
+
+    Unlike the open endpoint, a cover only reports 'closed' at true 0, so a
+    cover pinned at 1 with state 'open' is NOT at the mechanical stop and the
+    within-tolerance close must route close_cover at least once (#697 promise).
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=1, state="open")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=1),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(svc, "_prepare_service_call", side_effect=_endpoint_service),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "custom_position",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=None),
+        )
+
+    assert outcome == "sent"
+    assert reason == "close_cover"
+    mock_hass.services.async_call.assert_called_once()
+
+
 @pytest.mark.asyncio
 async def test_apply_position_exact_equality_still_skips(mock_hass, logger, grace_mgr):
     """The same-position SEND gate suppresses true no-ops (exact equality).
@@ -1903,6 +2097,359 @@ async def test_apply_position_position_capable_current_unknown_uses_raw_target_f
     mock_hass.services.async_call.assert_not_called()
 
 
+# --- same-position skip must record the commanded target (issue #1158) ---
+#
+# Before this fix, `_skip()` only forwarded to the diagnostics recorders and
+# never called `set_target()`, so a cover that landed on its computed
+# position without ACP ever dispatching a command kept
+# `PerEntityState.target = None` forever — `get_diagnostics()["at_target"]`
+# read False even though the cover was genuinely at rest, contradicting the
+# independently-computed `all_at_target` sensor attribute.
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_skip_records_target_direct_arm(
+    cmd_svc, mock_hass
+):
+    """Issue #1158 arm 1: a position-capable cover already at the computed
+    position on its very first ``apply_position`` call (no prior dispatch,
+    no prior ``set_target``) must still have its target recorded when the
+    gate skips it, so ``get_target``/``get_diagnostics`` reflect reality
+    instead of a permanent ``None``.
+    """
+    _stub_state(mock_hass, current_position=50, state="open")
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=50),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.test", 50, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+    assert cmd_svc.get_target("cover.test") == 50
+    assert cmd_svc.get_diagnostics("cover.test")["at_target"] is True
+    assert cmd_svc.state("cover.test").dispatch_token is None
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_skip_records_routed_target_not_raw_position(
+    threshold_cmd_svc, mock_hass
+):
+    """Issue #1158 arm 2: on a threshold-routed cover, the skip must record
+    ``_plan.routed_target`` (0), NOT the raw ``position`` argument (67).
+
+    Mirrors #1095's evidence numbers: ``has_set_position=False``,
+    ``open_close_threshold=99`` so a wide sub-threshold band collapses onto
+    ``close_cover``/``routed_target=0``. ``_current=0`` already matches that
+    routed decision even though the raw calculated ``position=67`` has
+    drifted elsewhere inside the same sub-threshold band. Recording the raw
+    ``position`` instead would write a target (67) that never equals
+    ``actual`` (0), reopening #1095: the entity would become
+    reconciliation-eligible with a target that can never match.
+    """
+    _stub_state(mock_hass, current_position=0, state="closed")
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.threshold", 67, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+    assert threshold_cmd_svc.get_target("cover.threshold") == 0
+    assert threshold_cmd_svc.get_diagnostics("cover.threshold")["at_target"] is True
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_skip_endpoint_tolerance_leaves_target_unbooked(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #1158 (narrowed scope): arm 1's endpoint-tolerance sub-arm must
+    NOT book a target when the gate skips it.
+
+    A cover resting within ``_position_tolerance`` of a hard endpoint (98,
+    tolerance 3) but not exactly on it (100) routes, via
+    ``route_service_call``, to ``_plan.routed_target == 100`` — the literal
+    endpoint, not ``_current``. Booking that value would record
+    ``target=100`` while the cover is genuinely at 98: a target/actual
+    mismatch. That mismatch is exactly what flipped
+    ``has_recorded_target`` to True and let manual-override's narrower
+    detection threshold misread the same gap as a user touch (#546/#654) —
+    two earlier audit rounds tried fixing that by widening the
+    manual-override detector instead, and both times the widening leaked
+    into unrelated comparisons. The narrower fix scopes down to this one
+    sub-arm: it simply does not book. ACP never dispatched anything to this
+    cover this cycle, so ``target: null`` is the honest answer, and
+    ``at_target`` stays False rather than lying about arrival.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=98, state="open")
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.get_target("cover.test") is None
+    assert svc.get_diagnostics("cover.test")["at_target"] is False
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_skip_preserves_dispatch_token_when_unchanged(
+    cmd_svc, mock_hass
+):
+    """Issue #1158 finding 2: a same_position skip that re-confirms an
+    already-booked target must not erase the dispatch_token a prior REAL
+    dispatch stamped it with.
+
+    ``set_target`` writes the ``(target, dispatch_token)`` pair together
+    (issue #1115). An unconditional ``set_target(..., dispatch_token=None)``
+    on every skip — even when the booked value does not change — would
+    silently drop the provenance ``run_reconciliation_pass`` hands to
+    ``policy.await_dispatch_clearance`` on a later resend, exactly the
+    resolve-then-skip failure the stamp exists to prevent.
+    """
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    # Cycle 1: a real dispatch, far from the target, stamped with a token.
+    _stub_state(mock_hass, current_position=0, state="open")
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=0),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, _ = await cmd_svc.apply_position(
+            "cover.test",
+            50,
+            "solar",
+            _ctx_with_special(),
+            dispatch_token="TOKEN-FROM-DISPATCH",
+        )
+    assert outcome == "sent"
+    assert cmd_svc.get_target("cover.test") == 50
+    assert cmd_svc.state("cover.test").dispatch_token == "TOKEN-FROM-DISPATCH"
+
+    # Cycle 2: the cover arrived — same_position now skips. The booked value
+    # is unchanged (50), so the skip write must be a no-op.
+    _stub_state(mock_hass, current_position=50, state="open")
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=50),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.test", 50, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert cmd_svc.get_target("cover.test") == 50
+    assert cmd_svc.state("cover.test").dispatch_token == "TOKEN-FROM-DISPATCH"
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_skip_endpoint_tolerance_leaves_prior_dispatch_untouched(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #1158 (narrowed scope, #1115 guard): a same_position skip landing
+    in the endpoint-tolerance sub-arm must not clobber a REAL dispatch's
+    ``(target, dispatch_token)`` pair with a value that dispatch never
+    produced.
+
+    Cycle 1: a genuine dispatch to the 100 endpoint, stamped with a token —
+    ``_prepare_service_call`` books ``(100, "TOKEN-FROM-DISPATCH")``. Cycle
+    2: the motor settles 2% short (98, the #507 population) — same computed
+    position (100), so the gate skips via the endpoint-tolerance sub-arm
+    (``|98-100|=2 <= tolerance 3``).
+
+    Since the narrowing, this sub-arm never books at all (see the sibling
+    test above), so the pair from cycle 1 is left completely untouched by
+    construction — the suppression check fires before the value-change guard
+    is even consulted, not because the routed value happens to be unchanged.
+    Mirrors the auditor's ``repro_token_clobber.py``.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    # Cycle 1: a real dispatch to the endpoint, stamped with a token.
+    _stub_state(mock_hass, current_position=40, state="open")
+    with (
+        patch.object(svc, "_get_current_position", return_value=40),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            100,
+            "solar",
+            _ctx_with_special(),
+            dispatch_token="TOKEN-FROM-DISPATCH",
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 100
+    assert svc.state("cover.test").dispatch_token == "TOKEN-FROM-DISPATCH"
+
+    # Cycle 2: the motor settled 2% short of the endpoint — same_position
+    # skips via the endpoint-tolerance sub-arm instead of a real dispatch.
+    _stub_state(mock_hass, current_position=98, state="open")
+    svc.state("cover.test").forced_endpoint = 100  # anti-relay latch (#897)
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 100
+    assert svc.state("cover.test").dispatch_token == "TOKEN-FROM-DISPATCH"
+
+
+@pytest.mark.asyncio
+async def test_apply_position_same_position_skip_endpoint_tolerance_does_not_trip_manual_override(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #1158 (#546/#654 regression, narrowed scope): the
+    endpoint-tolerance sub-arm's *lack* of a target booking must not open a
+    false manual-override detection on the entity's next state change.
+
+    A cover resting at 82 with a computed target of 100 clears the
+    same_position gate's endpoint band (``tolerance=20``, ``|82-100|=18 <=
+    20``) and is correctly skipped — but per the narrowing above, this
+    sub-arm never books a target, so ``get_target()`` stays ``None``.
+
+    That is the fix, not a gap to patch around: with no target recorded,
+    ``has_recorded_target`` is False, which routes
+    ``PositionDeltaDetector.detect`` into the #546 branch
+    (``position_delta.py``) instead of the ordinary threshold comparison.
+    That branch only marks manual on a genuine *move* (``old_position`` vs
+    ``new_position`` diverging by more than the effective threshold) — a
+    resting-position republish with no prior position on record is
+    unconditionally rejected. This test drives that branch directly: no
+    ``old_state`` is available (mirrors an entity ACP has never tracked a
+    move for), so ``is_real_move`` is False regardless of the reported
+    position, and override detection must reject it.
+    """
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
+
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=20)
+    _stub_state(mock_hass, current_position=82, state="open")
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=82),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+    recorded_target = svc.get_target("cover.test")
+    assert recorded_target is None  # narrowed fix: this sub-arm never books.
+
+    mgr = AdaptiveCoverManager(
+        hass=MagicMock(), reset_duration={"hours": 2}, logger=MagicMock()
+    )
+    mgr.add_covers(["cover.test"])
+
+    event = MagicMock()
+    event.entity_id = "cover.test"
+    event.old_state = None
+    event.new_state = MagicMock()
+    event.new_state.state = "open"
+    event.new_state.attributes = {"current_position": 82}
+    event.new_state.last_updated = dt.datetime.now(dt.UTC)
+
+    mgr.handle_state_change(
+        states_data=event,
+        our_state=recorded_target,
+        policy=get_policy("cover_blind"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        has_recorded_target=recorded_target is not None,
+    )
+
+    assert not mgr.is_cover_manual("cover.test")
+
+
 # --- same-position gate: My-preset fallback correctness (issue #779 regression
 # from PR #781 — the fallback ignored use_my_position and hand-rolled the
 # open/close threshold math, so a My move collapsed to the same routed
@@ -2003,3 +2550,676 @@ async def test_apply_position_repeated_my_preset_suppressed_when_current_unknown
 
     assert (outcome2, reason2) == ("skipped", "same_position")
     mock_hass.services.async_call.assert_not_called()
+
+
+# --- same-position gate: threshold-routed cover with a resolved current
+# position (issue #1095) ---
+#
+# The #779 fallback above is reachable only when `_current is None`. A
+# threshold-routed cover (supports_position=False) whose HA state genuinely
+# resolves to closed/open (_current = 0/100, not None) never takes that
+# branch, so the gate falls back to comparing the raw pre-routing `position`
+# against `_current` -- two numbers that are never comparable once the
+# calculated position drifts inside the sub-threshold band, since every
+# state below the threshold collapses to the same routed_target=0. The fix
+# broadens the fallback trigger to `_current is None OR not
+# plan.supports_position` so the routed decision is consulted whenever the
+# routing is not position-capable, not just when the reading is unresolved.
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_resend_suppressed_when_current_resolves(
+    threshold_cmd_svc, mock_hass
+):
+    """Issue #1095: a threshold-routed cover with a resolved _current must not
+    be commanded every cycle just because the calculated position drifts
+    inside the sub-threshold band while the cover is already mechanically at
+    the routed decision.
+
+    open_close_threshold=99 collapses every calculated position below 99
+    into the same close_cover/routed_target=0 decision. With _current
+    resolved to 0 (mechanically closed, state-derived -- not None) and no
+    prior ACP-commanded target, successive solar cycles walking the
+    calculated position through the sub-threshold band (93 -> 88 -> 67) must
+    all be recognised as already matching the routed decision and suppressed
+    as same_position -- not dispatched as a redundant close_cover every
+    cycle (the reported relay-click bug).
+    """
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        for target_position in (93, 88, 67):
+            outcome, reason = await threshold_cmd_svc.apply_position(
+                "cover.thresh", target_position, "solar", _ctx_with_special()
+            )
+            assert (outcome, reason) == ("skipped", "same_position")
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_crossing_dispatches(
+    threshold_cmd_svc, mock_hass
+):
+    """Issue #1095: the broadened gate is not a one-way latch -- once the
+    calculated position genuinely crosses back over open_close_threshold,
+    the routed decision changes and the gate must let the command through.
+
+    The cover starts mechanically closed (_current=0, resolved). Calculated
+    positions in the sub-threshold band (67 -> 88) route to the same
+    close_cover/routed_target=0 decision the cover already occupies, so both
+    are correctly suppressed as same_position (see the resend-suppressed
+    test above). Once the calculated position crosses the threshold to 100,
+    the routed decision flips to open_cover/routed_target=100 -- a real
+    state change the gate must let through.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.thresh_cross", 67, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("skipped", "same_position")
+
+        outcome2, reason2 = await threshold_cmd_svc.apply_position(
+            "cover.thresh_cross", 88, "solar", _ctx_with_special()
+        )
+        assert (outcome2, reason2) == ("skipped", "same_position")
+        mock_hass.services.async_call.assert_not_called()
+
+        outcome3, reason3 = await threshold_cmd_svc.apply_position(
+            "cover.thresh_cross", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome3, reason3) == ("sent", "open_cover")
+
+
+@pytest.mark.asyncio
+async def test_apply_position_position_capable_still_dispatches_on_change(
+    cmd_svc, mock_hass
+):
+    """Issue #1095 regression guard: broadening the fallback trigger to
+    `_current is None or not plan.supports_position` must not over-suppress
+    a position-capable cover -- for NON-endpoint targets.
+
+    93 and 78 are mid-range, so routing stays supports_position=True and the
+    broadened OR arm is unreachable here: exact equality against the raw
+    position stays the only comparison, and a resolved _current that differs
+    from the new target must still dispatch every cycle, exactly as before
+    this change.
+
+    This does NOT cover a position-capable cover commanded to a mechanical
+    ENDPOINT (0/100) under endpoint_use_open_close -- that routes through
+    open_cover/close_cover, which is `supports_position=False` just like a
+    threshold-routed cover, and DOES reach the broadened arm. See
+    test_apply_position_endpoint_contradicted_by_current_dispatches_after_latch
+    (audit finding-1 scenario B) for that case.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"current_position": 50, "supported_features": 15}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    current_state = {"value": 10}
+
+    with (
+        patch.object(cmd_svc, "_get_current_position") as mock_current,
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        mock_current.side_effect = lambda entity: current_state["value"]
+
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.pos_capable", 93, "solar", _ctx_with_special()
+        )
+        assert (outcome, reason) == ("sent", "set_cover_position")
+
+        mock_hass.services.async_call.reset_mock()
+        current_state["value"] = 40
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.pos_capable", 78, "solar", _ctx_with_special()
+        )
+
+    assert (outcome2, reason2) == ("sent", "set_cover_position")
+    mock_hass.services.async_call.assert_called_once()
+
+
+# --- same-position gate: broadened-arm reachable but must still dispatch
+# when the live reading CONTRADICTS the routed/stored target (issue #1095
+# audit findings 1-3) ---
+#
+# The tests above (`test_apply_position_threshold_routed_resend_suppressed_
+# when_current_resolves`, `..._crossing_dispatches`) only ever suppress via
+# `_current == _plan.routed_target` -- the live reading always AGREES with
+# the routed decision. None of them exercise the case where a resolved
+# `_current` genuinely contradicts a *stored* target that still matches the
+# newly routed decision: before the finding-1 fix, that fell through to
+# `_same_position_via_target_fallback`, which compares only the last
+# *commanded* target against the routed decision and never looks at
+# `_current` at all -- so a stale stored target could mask a live state
+# change and swallow a command that must dispatch.
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_current_contradicts_stored_target_dispatches(
+    threshold_cmd_svc, mock_hass
+):
+    """Audit finding-1 scenario A: current reading contradicts a matching
+    stored target -- must dispatch, not suppress.
+
+    The cover reports mechanically `closed` (_current=0) but the last
+    *commanded* target was already 100 (e.g. a prior open command that
+    hasn't mechanically landed, or a stale target from before an option
+    change). ACP now calculates 100 again, which routes to
+    open_cover/routed_target=100 -- the SAME routed decision as the stored
+    target, so the pre-fix code's `last_target == plan.routed_target`
+    fallback said "same_position" and swallowed the command. But the live
+    reading directly contradicts that: the cover is NOT open. The fix
+    requires `_current is None` to consult that fallback at all, so a
+    resolved, contradicting `_current` falls through to dispatch.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="closed", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    threshold_cmd_svc.set_target("cover.thresh_contradict", 100)
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=0),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.thresh_contradict", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "open_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_threshold_routed_current_contradicts_stored_close_dispatches(
+    threshold_cmd_svc, mock_hass
+):
+    """Audit finding-1 scenario E: same contradiction, mirrored at the close
+    side, with the calculated position mid-band rather than a literal
+    endpoint.
+
+    The cover reports mechanically `open` (_current=100) but the last
+    *commanded* target was already 0. ACP now calculates 67, which -- with
+    `open_close_threshold=99` -- routes to close_cover/routed_target=0, the
+    SAME routed decision as the stored target. The live reading contradicts
+    it (the cover is not closed), so this must dispatch close_cover, not be
+    suppressed as same_position.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="open", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    threshold_cmd_svc.set_target("cover.thresh_contradict_close", 0)
+
+    with (
+        patch.object(threshold_cmd_svc, "_get_current_position", return_value=100),
+        patch.object(threshold_cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await threshold_cmd_svc.apply_position(
+            "cover.thresh_contradict_close", 67, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "close_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_endpoint_contradicted_by_current_dispatches_after_latch(
+    mock_hass, logger, grace_mgr
+):
+    """Audit finding-1 scenario B: a position-capable cover routed to an
+    endpoint (supports_position=False, same routing shape as a
+    threshold-routed cover) must not be over-suppressed once the anti-relay
+    latch (#897) has already armed -- the largest blast-radius regression,
+    since endpoint_use_open_close defaults ON and this is not a
+    threshold-routed cover at all.
+
+    Setup: endpoint_use_open_close ON (default), target=0, _current=45 (well
+    outside `_position_tolerance`), stored target already 0, and the
+    `forced_endpoint` latch already armed at 0. Because the latch already
+    equals the target, `force_endpoint` computes False on this cycle (the
+    `!= position` check fails) -- the force_endpoint bypass does NOT fire,
+    so the same-position band is the only thing standing between "must
+    dispatch" (the cover is nowhere near closed) and "must skip". Before the
+    finding-1 fix, `not _plan.supports_position` let a resolved,
+    contradicting `_current` fall through to
+    `_same_position_via_target_fallback`, which only compares the *stored*
+    target (0) against the routed decision (0) and ignores `_current`
+    entirely -- so it wrongly reported same_position. This also serves as
+    the endpoint counterpart to
+    `test_apply_position_position_capable_still_dispatches_on_change`,
+    which only covers non-endpoint targets.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=45, state="open")
+    svc.set_target("cover.endpoint_pos", 0)
+    svc.state("cover.endpoint_pos").forced_endpoint = 0
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=45),
+        patch.object(svc, "_check_time_delta", return_value=True),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.endpoint_pos", 0, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "close_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+# --- same-position gate: assumed_state cover's synthetic open/close mapping
+# is not a genuine reading (issue #1130) ---
+#
+# `get_open_close_state` maps a no-feedback cover's raw HA state string
+# (open/closed) to a synthetic `_current` of 100/0. RFXtrx-style Somfy RTS
+# covers clear `is_closed` on every stop_cover, so an `assumed_state` cover
+# parked at My~=10% still reads back `_current = 100` forever. Arms one and
+# two of the same-position gate treat that synthetic value as a genuine
+# reading, which produces two symptoms: a My-route repeat is never
+# suppressed (100 never equals the My target), and a genuine return to the
+# default (100) is wrongly swallowed as same_position (100 == 100) even
+# though the cover physically sits elsewhere. The fix routes an
+# assumed_state, non-position-capable cover's `_current` through the
+# stored-target-vs-routed-target fallback instead (the same comparison
+# #779/#1095 already use for `_current is None`).
+
+
+@pytest.mark.asyncio
+async def test_apply_position_assumed_state_my_route_repeat_suppressed(
+    cmd_svc, mock_hass
+):
+    """Issue #1130 symptom 1: a repeated identical My-preset move on an
+    assumed_state cover must be suppressed as same_position, not resent
+    every cycle.
+
+    The cover's raw HA state is "open" (assumed_state=True), so
+    `_current` resolves to 100 via the open/close mapping -- not a genuine
+    reading. On the My route `routed_target == position` by construction,
+    so arms one and two both degenerate to `100 != 10` and can never
+    match. Without the widened fallback, `sun.sun`'s frequent tracked
+    updates would re-fire stop_cover every cycle, interrupting the
+    cover's own travel.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"assumed_state": True}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_assumed", 10, "solar", _ctx_with_special(use_my_position=True)
+        )
+        assert (outcome, reason) == ("sent", "stop_cover")
+        assert cmd_svc.get_target("cover.rts_assumed") == 10
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_assumed", 10, "solar", _ctx_with_special(use_my_position=True)
+        )
+
+    assert (outcome2, reason2) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_assumed_state_return_to_default_dispatches(
+    cmd_svc, mock_hass
+):
+    """Issue #1130 symptom 2: a pipeline-driven return to the default (100)
+    must dispatch, not be swallowed as same_position, even though the
+    assumed_state cover's synthetic `_current` also reads 100.
+
+    The stored *commanded* target is 10 (a prior My move); the newly
+    routed target is 100 (open_cover). Those genuinely differ, so the
+    widened fallback must let this through -- unlike the un-widened arm
+    one, which would wrongly match on `_current(100) == position(100)`
+    alone and drop the reopen.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"assumed_state": True}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    cmd_svc.set_target("cover.rts_assumed_default", 10)
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_assumed_default", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("sent", "open_cover")
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_non_assumed_open_close_cover_unaffected(
+    cmd_svc, mock_hass
+):
+    """Regression guard: the widening must key off assumed_state, not "resolved
+    _current on a non-position-capable route" alone.
+
+    Identical shape to the symptom-1 test above -- same My-route repeat,
+    same open/close-only caps, same synthetic `_current = 100` from the
+    open state -- but with no `assumed_state` attribute. Without that
+    flag, `_current_is_assumed_mapping` must stay False and arms one/two
+    must behave exactly as before this fix: neither matches (100 != 10),
+    so the repeat is NOT suppressed. This proves the new branch is scoped
+    to genuinely assumed_state covers and does not change behavior for
+    every open/close-only cover.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="open", attributes={})
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.rts_not_assumed",
+            10,
+            "solar",
+            _ctx_with_special(use_my_position=True),
+        )
+        assert (outcome, reason) == ("sent", "stop_cover")
+
+        mock_hass.services.async_call.reset_mock()
+        outcome2, reason2 = await cmd_svc.apply_position(
+            "cover.rts_not_assumed",
+            10,
+            "solar",
+            _ctx_with_special(use_my_position=True),
+        )
+
+    assert (outcome2, reason2) == ("sent", "stop_cover")
+
+
+@pytest.mark.asyncio
+async def test_apply_position_position_capable_assumed_state_still_same_position(
+    cmd_svc, mock_hass
+):
+    """Post-audit regression guard: a position-capable, assumed_state cover
+    must NOT have its genuine `_current` reading treated as a synthetic
+    open/close mapping.
+
+    An MQTT/template optimistic cover (or a `cover` group containing an RTS
+    member) can advertise `has_set_position: True` AND `assumed_state:
+    True` at once. Routed to the 100 endpoint under
+    `endpoint_use_open_close` (the default), it goes through `open_cover`
+    just like a genuinely non-position-capable cover would --
+    `_plan.supports_position` is False either way -- but here `_current`
+    (100) IS a real position read, not a synthetic mapping. The
+    #1130-widened gate must not misclassify it: `_current_is_assumed_mapping`
+    has to key off the axis's actual position CAPABILITY
+    (`caps_get(..., axis.capability_key)`), not the routing outcome, or this
+    shape re-dispatches `open_cover` every cycle and disturbs a coupled
+    venetian's slats -- exactly the #985 guarantee the same-position gate
+    exists to protect.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open", attributes={"assumed_state": True}
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value=caps,
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position(
+            "cover.pos_assumed", 100, "solar", _ctx_with_special()
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    mock_hass.services.async_call.assert_not_called()
+
+
+# --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---
+# Issue #990. Read-only predicate the coordinator polls each cycle to raise the
+# cover_not_moving Repair. True iff a target is set, the cover has settled
+# (not waiting), it is not under manual override, its position reads, and it is
+# outside tolerance of the target. Reuses _at_target; must have NO side effects.
+
+
+def test_is_target_unreached_true_when_settled_offtarget(cmd_svc):
+    """A settled cover far from its commanded target is unreached."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is True
+
+
+def test_is_target_unreached_false_while_waiting(cmd_svc):
+    """A cover still in transit (waiting) is not flagged — slow-cover guard."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = True
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_under_manual_override(cmd_svc):
+    """A cover the user moved (manual override) is not flagged."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    cmd_svc.manual_override_entities = {"cover.x"}
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_when_position_unreadable(cmd_svc):
+    """An unreadable position defers to A1 (cover_unavailable) — no double-nag."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    with patch.object(cmd_svc, "_get_current_position", return_value=None):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_when_at_target(cmd_svc):
+    """A cover within tolerance of its target is reached (clear-on-recovery)."""
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    # Default tolerance is 3% — 51 is within tolerance of 50.
+    with patch.object(cmd_svc, "_get_current_position", return_value=51):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_when_no_target(cmd_svc):
+    """No commanded target → nothing to be unreached."""
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_has_no_side_effects(cmd_svc):
+    """The predicate never mutates waiting/retry_count/target and never inserts.
+
+    Locks the StateClassifier / reconciliation invariants (#147/#172/#186/
+    #271/#285/#518): a read-only health poll must not clear waiting, reset
+    retry_count, or pollute _state with an empty record for an unknown entity.
+    """
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    s.retry_count = 2
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        cmd_svc.is_target_unreached("cover.x")
+    assert s.waiting is False
+    assert s.retry_count == 2
+    assert s.target == 50
+    # An unknown entity must not insert a new state record (uses _get, not state).
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        cmd_svc.is_target_unreached("cover.unknown")
+    assert "cover.unknown" not in cmd_svc._state
+
+
+def test_is_target_unreached_false_in_dry_run(cmd_svc):
+    """Dry-run never sends commands, so a simulated target must never nag (#990 audit).
+
+    ``_prepare_service_call`` sets ``target``/``waiting``/``sent_at`` BEFORE the
+    dry-run gate returns, so in dry-run the predicate would otherwise go True for
+    a cover ACP never actually commanded. The early dry-run guard prevents that.
+    """
+    cmd_svc.dry_run = True
+    s = cmd_svc.state("cover.x")
+    s.target = 50
+    s.waiting = False
+    with patch.object(cmd_svc, "_get_current_position", return_value=0):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_false_for_my_preset_on_open_close_only_cover(cmd_svc):
+    """An intermediate ("My") target on an open/close-only cover is unverifiable (#990 audit).
+
+    An open/close-only cover (no granular position axis) can only ever report an
+    endpoint (0/100), so a My-preset target (1–99) can never register as
+    reached — the predicate would go permanently True against a healthy cover.
+    The guard returns False for a non-endpoint target on that surface. Reuses the
+    exact capability signal the position read uses (``position_axis_supported``).
+    """
+    s = cmd_svc.state("cover.x")
+    s.target = 50  # My preset — not an endpoint
+    s.waiting = False
+    open_close_only = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    with (
+        patch.object(cmd_svc, "get_cover_capabilities", return_value=open_close_only),
+        patch.object(cmd_svc, "_get_current_position", return_value=100),
+    ):
+        assert cmd_svc.is_target_unreached("cover.x") is False
+
+
+def test_is_target_unreached_true_for_tilt_fallback_cover_off_target(cmd_svc):
+    """A tilt-fallback cover off its granular target is verifiable — A2 must fire (#990 re-audit).
+
+    A blind/venetian configured ``has_set_position=False, has_set_tilt_position=True``
+    routes commands to ``set_cover_tilt_position`` with a granular target (1–99) and
+    reads a granular ``current_tilt_position`` — so an intermediate ("My") target IS
+    verifiable, unlike a genuinely open/close-only cover. The guard must gate on the
+    default axis actually read/commanded (tilt here), not the primary position axis,
+    or it wrongly silences A2 for this healthy-but-stuck cover.
+    """
+    s = cmd_svc.state("cover.x")
+    s.target = 50  # granular My preset — verifiable on the tilt axis
+    s.waiting = False
+    tilt_fallback = {
+        "has_set_position": False,
+        "has_set_tilt_position": True,
+    }
+    with (
+        patch.object(cmd_svc, "get_cover_capabilities", return_value=tilt_fallback),
+        patch.object(cmd_svc, "_get_current_position", return_value=0),
+    ):
+        assert cmd_svc.is_target_unreached("cover.x") is True

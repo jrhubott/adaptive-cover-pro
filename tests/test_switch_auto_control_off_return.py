@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
@@ -45,6 +46,11 @@ def _make_coord_with_real_cmd_svc(hass):
     coord.manager.manual_controlled = []
     coord.config_entry.options = {"default_height": 60}
     coord.async_refresh = AsyncMock()
+    # The return-to-default loop routes each target through the polymorphic
+    # ``_entity_target`` (identity for every non-dual-entity cover type).
+    coord._entity_target = lambda _entity, position, *, inverted=None: position
+    # Real policy: the return-to-default loop asks it for the entity order (#1115).
+    coord._policy = get_policy("cover_blind")
 
     cmd_svc = CoverCommandService(
         hass=hass,
@@ -96,7 +102,6 @@ async def test_return_to_default_fires_when_auto_control_toggled_off():
     switch._key = "automatic_control"
     switch._name = "test_switch"
     switch._initial_state = True
-    switch._attr_is_on = True
     switch.schedule_update_ha_state = MagicMock()
 
     with _patch_caps():

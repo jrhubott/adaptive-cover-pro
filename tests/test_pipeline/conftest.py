@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.pipeline.types import (
@@ -30,6 +31,7 @@ def _make_mock_cover(
         spec=[
             "direct_sun_valid",
             "calculate_percentage",
+            "calculate_raw_percentage",
             "distance",
             "gamma",
             "config",
@@ -44,6 +46,9 @@ def _make_mock_cover(
     )
     cover.direct_sun_valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.distance = distance
     cover.gamma = gamma
     if config is None:
@@ -71,6 +76,7 @@ def make_snapshot(
     weather_override_active: bool = False,
     weather_override_position: int = 0,
     weather_override_min_mode: bool = False,
+    weather_override_priority: int | None = None,
     weather_bypass_auto_control: bool = True,
     glare_zones=None,
     active_zone_names: set[str] | frozenset[str] | None = None,
@@ -80,8 +86,11 @@ def make_snapshot(
     my_position_value: int | None = None,
     sunset_use_my: bool = False,
     enable_sun_tracking: bool = True,
+    sun_tracking_gate_closed: bool = False,
     motion_timeout_mode: str = "return_to_default",
     current_cover_position: int | None = None,
+    cover_positions: Mapping[str, int | None] | None = None,
+    position_axis_inverted: bool = False,
     default_tilt: int | None = None,
     sunset_tilt: int | None = None,
     min_tilt: int = 0,
@@ -89,15 +98,37 @@ def make_snapshot(
     min_tilt_sun_only: bool = False,
     max_tilt_sun_only: bool = False,
     solar_floor_active: bool = True,
+    group_intent=None,
+    cloud_suppression_active: bool | None = None,
+    climate_temp_flags=None,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
 ) -> PipelineSnapshot:
-    """Build a PipelineSnapshot with sensible defaults for testing."""
+    """Build a PipelineSnapshot with sensible defaults for testing.
+
+    ``cloud_suppression_active`` defaults to the *instantaneous* OR of the
+    climate readings (mirroring the CloudSuppressionManager with hold-time 0 and
+    blank release thresholds) so existing cloud-suppression tests that only set
+    readings + enabled keep exercising the handler. Pass an explicit bool to
+    decouple the resolved latch from the raw readings (issue #864).
+    """
     if cover is None:
         cover = _make_mock_cover(
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
+        )
+    if cloud_suppression_active is None:
+        cloud_suppression_active = bool(
+            climate_options is not None
+            and getattr(climate_options, "cloud_suppression_enabled", False)
+            and climate_readings is not None
+            and (
+                not climate_readings.is_sunny
+                or climate_readings.lux_below_threshold
+                or climate_readings.irradiance_below_threshold
+                or climate_readings.cloud_coverage_above_threshold
+            )
         )
     return PipelineSnapshot(
         cover=cover,
@@ -113,6 +144,7 @@ def make_snapshot(
         weather_override_active=weather_override_active,
         weather_override_position=weather_override_position,
         weather_override_min_mode=weather_override_min_mode,
+        weather_override_priority=weather_override_priority,
         weather_bypass_auto_control=weather_bypass_auto_control,
         glare_zones=glare_zones,
         active_zone_names=(
@@ -128,8 +160,11 @@ def make_snapshot(
         my_position_value=my_position_value,
         sunset_use_my=sunset_use_my,
         enable_sun_tracking=enable_sun_tracking,
+        sun_tracking_gate_closed=sun_tracking_gate_closed,
         motion_timeout_mode=motion_timeout_mode,
         current_cover_position=current_cover_position,
+        cover_positions=cover_positions,
+        position_axis_inverted=position_axis_inverted,
         default_tilt=default_tilt,
         sunset_tilt=sunset_tilt,
         min_tilt=min_tilt,
@@ -137,4 +172,7 @@ def make_snapshot(
         min_tilt_sun_only=min_tilt_sun_only,
         max_tilt_sun_only=max_tilt_sun_only,
         solar_floor_active=solar_floor_active,
+        group_intent=group_intent,
+        cloud_suppression_active=cloud_suppression_active,
+        climate_temp_flags=climate_temp_flags,
     )

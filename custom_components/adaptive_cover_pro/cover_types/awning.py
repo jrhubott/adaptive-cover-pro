@@ -8,11 +8,15 @@ import voluptuous as vol
 from homeassistant.helpers import selector
 
 from ..const import (
+    AWNING_SHADE_MODE_AREA,
+    AWNING_SHADE_MODE_WINDOW,
     CONF_AWNING_ANGLE,
+    CONF_AWNING_SHADE_MODE,
     CONF_DISTANCE,
     CONF_HEIGHT_WIN,
     CONF_LENGTH_AWNING,
     DEFAULT_AWNING_LENGTH,
+    DEFAULT_AWNING_SHADE_MODE,
     DEFAULT_WINDOW_HEIGHT,
     MAX_AWNING_ANGLE,
 )
@@ -58,6 +62,15 @@ def geometry_horizontal_schema(hass: HomeAssistant | None = None) -> vol.Schema:
                     max=MAX_AWNING_ANGLE,
                     mode=selector.NumberSelectorMode.SLIDER,
                     unit_of_measurement="°",
+                )
+            ),
+            vol.Required(
+                CONF_AWNING_SHADE_MODE, default=DEFAULT_AWNING_SHADE_MODE
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[AWNING_SHADE_MODE_WINDOW, AWNING_SHADE_MODE_AREA],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="awning_shade_mode",
                 )
             ),
             vol.Required(
@@ -132,6 +145,11 @@ class AwningPolicy(CoverTypePolicy, register=True):
             parts.append(L["geometry.awning.length"].format(v=v))
         if (v := config.get(CONF_AWNING_ANGLE)) is not None:
             parts.append(L["geometry.awning.angle"].format(v=v))
+        mode = config.get(CONF_AWNING_SHADE_MODE)
+        if mode == AWNING_SHADE_MODE_AREA:
+            parts.append(L["geometry.awning.shade_mode_area"])
+        elif mode is not None:
+            parts.append(L["geometry.awning.shade_mode_window"])
         if (v := config.get(CONF_HEIGHT_WIN)) is not None:
             parts.append(L["geometry.window.height"].format(v=v))
         if (v := config.get(CONF_DISTANCE)) is not None:

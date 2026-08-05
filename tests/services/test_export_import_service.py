@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +12,33 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Time values the config flow's TimeSelector can never emit. Each compares
+# unequal to BLANK_TIME ("00:00:00") while the runtime still treats it as a
+# configured window end — the whole of issue #1049.
+#
+# They split by whether a parser can rescue them, and import treats the halves
+# differently on purpose. An export file predates this validation, so rejecting
+# a rescuable value would drop every *other* option for that entry on a restore
+# — punishing precisely the users #1049 already bit. So import canonicalises
+# what it can and errors only on the rest.
+_RESCUABLE_TIMES = [
+    ("00:00", "00:00:00"),  # HH:MM — the reported case
+    ("0:00:00", "00:00:00"),  # unpadded hour
+    ("00:00:00\n", "00:00:00"),  # trailing newline: `$` would let this through
+    ("٠٠:٠٠:٠٠", "00:00:00"),  # Arabic-Indic digits: `\d` matches
+    ("8:30:00", "08:30:00"),  # unpadded hour, non-midnight
+    ("7:30", "07:30:00"),
+]
+
+_UNRESCUABLE_TIMES = [
+    "not a time",
+    "",  # empty string is not the unset sentinel
+    "25:00:00",  # shape-valid, impossible clock time
+    "24:99:99",  # shape-valid, impossible clock time
+]
+
+_GOOD_TIMES = ["00:00:00", "07:00:00", "22:30:00", "23:59:59"]
 
 
 def _make_entry(
@@ -362,6 +390,459 @@ class TestImportConfig:
         assert "set_azimuth" in result["id-1"]
         # entry options must not have been modified
         assert entry.options["set_azimuth"] == 90
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_dead_zone_recorded_as_error(self, tmp_path):
+        """Issue #1105: import_config rejects the same dead zone set_option does.
+
+        ``max_slat_angle`` is neither the "0 = use tilt mode" sentinel nor a
+        usable physical angle in the open interval (0, 1) — a plain
+        ``OPTION_RANGES`` lo/hi check (0, 180) would accept it, since it is
+        within bounds. This closes the gap: the two config boundaries
+        (``set_option`` via ``FIELD_VALIDATORS`` and ``import_config``) must
+        agree, both rejecting it.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 0})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 0.5}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"].startswith("error:")
+        assert "max_slat_angle" in result["id-1"]
+        # entry options must not have been modified
+        assert entry.options["max_slat_angle"] == 0
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_out_of_range_error_names_the_bounds(self, tmp_path):
+        """Issue #1105 audit: an out-of-range import error must still name [0, 180].
+
+        Routing ``max_slat_angle`` through ``FIELD_VALIDATORS`` (for the dead
+        zone above) means an out-of-range value now fails through
+        ``_num()``'s ``vol.Any(None, ...)`` composition, whose ``exc.msg`` is
+        voluptuous's generic "not a valid value" fallback rather than the
+        real ``vol.Range`` message. Every sibling ``OPTION_RANGES`` key on
+        this same loop still reports ``"out of range [lo, hi]"`` for a
+        bounds violation, and an import validation error aborts the entire
+        entry — so a degraded message here is the only string a user has to
+        debug from. This pins that the bounds survive.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 181}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"].startswith("error:")
+        assert "max_slat_angle=181 out of range [0, 180]" in result["id-1"]
+        # entry options must not have been modified
+        assert entry.options["max_slat_angle"] == 160
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_and_sibling_out_of_range_messages_share_shape(
+        self, tmp_path
+    ):
+        """Issue #1105 audit: pin the *parity*, not just one key's literal string.
+
+        fc868075 built ``max_slat_angle``'s out-of-range message by hand-copying
+        the generic ``OPTION_RANGES`` branch's f-string thirteen lines below it
+        in the same function.
+        ``test_max_slat_angle_out_of_range_error_names_the_bounds`` above only
+        pins that one copy — a reword of the generic branch's message would
+        silently make ``max_slat_angle`` the odd one out again while that test
+        stayed green, since it never compares the two. Both branches now
+        delegate to a shared ``_out_of_range_error`` helper; this test proves
+        it structurally by asserting ``max_slat_angle`` and a sibling
+        ``OPTION_RANGES`` key (``roof_pitch``) both match the exact same
+        "key=value out of range [lo, hi]" regex shape, with only the
+        key/value/bounds substituted — not by re-pinning two literals that
+        could drift together for the wrong reason.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry_slat = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass_slat = _make_hass([entry_slat], config_dir=str(tmp_path))
+        slat_path = tmp_path / "import_slat.json"
+        self._write_export(
+            slat_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 181}}],
+        )
+        call_slat = MagicMock()
+        call_slat.hass = hass_slat
+        call_slat.data = {"filename": str(slat_path)}
+        slat_msg = (await async_handle_import_config(call_slat))["id-1"]
+
+        entry_pitch = _make_entry("id-2", "Roof B", {"roof_pitch": 45})
+        hass_pitch = _make_hass([entry_pitch], config_dir=str(tmp_path))
+        pitch_path = tmp_path / "import_pitch.json"
+        self._write_export(
+            pitch_path,
+            [{"entry_id": "id-2", "options": {"roof_pitch": 999}}],
+        )
+        call_pitch = MagicMock()
+        call_pitch.hass = hass_pitch
+        call_pitch.data = {"filename": str(pitch_path)}
+        pitch_msg = (await async_handle_import_config(call_pitch))["id-2"]
+
+        shape = re.compile(
+            r"^error: import_config: invalid values for entry '[\w-]+': "
+            r"(?P<key>[a-z_]+)=(?P<value>-?\d+(?:\.\d+)?) "
+            r"out of range \[(?P<lo>-?\d+(?:\.\d+)?), (?P<hi>-?\d+(?:\.\d+)?)\]$"
+        )
+        slat_match = shape.match(slat_msg)
+        pitch_match = shape.match(pitch_msg)
+
+        assert slat_match is not None, slat_msg
+        assert pitch_match is not None, pitch_msg
+        assert slat_match.group("key") == "max_slat_angle"
+        assert pitch_match.group("key") == "roof_pitch"
+        assert (
+            slat_match.group("value"),
+            slat_match.group("lo"),
+            slat_match.group("hi"),
+        ) == ("181", "0", "180")
+        assert (
+            pitch_match.group("value"),
+            pitch_match.group("lo"),
+            pitch_match.group("hi"),
+        ) == ("999", "0", "90")
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_sentinel_value_imports_cleanly(self, tmp_path):
+        """Issue #1105: the ``0`` sentinel imports cleanly (does not error)."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 0}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options["max_slat_angle"] == 0
+
+    @pytest.mark.asyncio
+    async def test_max_slat_angle_usable_value_imports_cleanly(self, tmp_path):
+        """Issue #1105 audit: a nonzero in-range angle also imports cleanly.
+
+        The prior test's name and docstring claimed to cover this ("the ``0``
+        sentinel and a usable angle") but only ever imported ``0`` — ``0``
+        returns from ``_max_slat_angle_v``'s sentinel branch before
+        ``ranged(...)`` is ever reached, so the nonzero in-range path through
+        the new ``import_config`` branch had no assertion anywhere. This
+        closes that gap.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Roof A", {"max_slat_angle": 160})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"max_slat_angle": 45}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options["max_slat_angle"] == 45
+
+    @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
+    @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)
+    @pytest.mark.asyncio
+    async def test_rescuable_time_is_canonicalized(
+        self, tmp_path, time_key, raw, expected
+    ):
+        """A parsable non-canonical time is stored canonically, not rejected.
+
+        Import used to skip every key absent from OPTION_RANGES, so a stray
+        ``"00:00"`` reached the config entry and defeated the literal
+        ``BLANK_TIME`` comparisons the rest of the integration relies on
+        (issue #1049). Erroring instead would fail the whole entry, which is
+        worse for the one population guaranteed to have such a file: users
+        restoring a backup taken before the validation existed.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {time_key: "22:00:00"})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {time_key: raw}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options[time_key] == expected
+
+    @pytest.mark.asyncio
+    async def test_rescuable_time_does_not_block_the_rest_of_the_entry(self, tmp_path):
+        """The whole point of canonicalising: every other option still restores."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {"azimuth": 90})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [
+                {
+                    "entry_id": "id-1",
+                    "options": {"end_time": "00:00", "azimuth": 270, "fov_left": 45},
+                }
+            ],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        assert (await async_handle_import_config(call))["id-1"] == "updated"
+        assert entry.options["azimuth"] == 270
+        assert entry.options["fov_left"] == 45
+        assert entry.options["end_time"] == "00:00:00"
+
+    @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
+    @pytest.mark.parametrize("bad_time", _UNRESCUABLE_TIMES)
+    @pytest.mark.asyncio
+    async def test_unrescuable_time_recorded_as_error(
+        self, tmp_path, time_key, bad_time
+    ):
+        """A value no parser can rescue errors and leaves the entry alone.
+
+        Nothing can be inferred from ``"25:00:00"``, and guessing would store a
+        time the user never chose — so the import reports it and the caller
+        fixes the file.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {time_key: "22:00:00"})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {time_key: bad_time}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"].startswith("error:")
+        assert time_key in result["id-1"]
+        assert entry.options[time_key] == "22:00:00"
+
+    @pytest.mark.parametrize("time_key", ["start_time", "end_time"])
+    @pytest.mark.parametrize("good_time", [*_GOOD_TIMES, None])
+    @pytest.mark.asyncio
+    async def test_well_formed_time_imports(self, tmp_path, time_key, good_time):
+        """HH:MM:SS values — including the BLANK_TIME sentinel — and None import cleanly."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {time_key: "07:00:00"})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {time_key: good_time}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert result["id-1"] == "updated"
+        assert entry.options[time_key] == good_time
+
+    @pytest.mark.asyncio
+    async def test_numeric_and_time_errors_reported_together(self, tmp_path):
+        """One entry carrying both a bad number and a bad time reports both keys."""
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+
+        entry = _make_entry("id-1", "Blind A", {"set_azimuth": 90})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [
+                {
+                    "entry_id": "id-1",
+                    "options": {"set_azimuth": 999, "end_time": "25:00:00"},
+                }
+            ],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        result = await async_handle_import_config(call)
+
+        assert "set_azimuth" in result["id-1"]
+        assert "end_time" in result["id-1"]
+        assert entry.options["set_azimuth"] == 90
+
+    @pytest.mark.parametrize(
+        "bad_time", [raw for raw, _ in _RESCUABLE_TIMES] + _UNRESCUABLE_TIMES
+    )
+    def test_set_options_rejects_every_non_canonical_time(self, bad_time):
+        """``set_options`` is the strict path: no value outside the format gets in.
+
+        Unlike import it has no file to salvage — the caller wrote this patch by
+        hand and can fix it, so a hard error is the useful answer (issue #1049).
+        """
+        from homeassistant.exceptions import ServiceValidationError
+
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            validate_options_patch,
+        )
+
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch({"end_time": bad_time}, {})
+
+    @pytest.mark.parametrize(("raw", "expected"), _RESCUABLE_TIMES)
+    @pytest.mark.asyncio
+    async def test_import_canonicalizes_what_set_options_rejects(
+        self, tmp_path, raw, expected
+    ):
+        """The two service paths diverge on rescuable values, by design.
+
+        Both end at the same stored format — ``const.TIME_STRING_RE`` — but
+        import gets there by canonicalising a file it cannot ask the user to
+        edit, while ``set_options`` refuses. Pinning the divergence here keeps
+        it a decision rather than a drift.
+        """
+        from homeassistant.exceptions import ServiceValidationError
+
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            validate_options_patch,
+        )
+
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch({"end_time": raw}, {})
+
+        entry = _make_entry("id-1", "Blind A", {})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"end_time": raw}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        assert (await async_handle_import_config(call))["id-1"] == "updated"
+        assert entry.options["end_time"] == expected
+
+    @pytest.mark.parametrize("good_time", _GOOD_TIMES)
+    @pytest.mark.asyncio
+    async def test_time_acceptance_matches_set_options(self, tmp_path, good_time):
+        """The accept side of the same parity — neither path is stricter (issue #1049).
+
+        Rejection parity alone would stay green if both paths went on accepting
+        a value the config flow can never emit; this is the half that catches
+        that.
+        """
+        from custom_components.adaptive_cover_pro.services.import_service import (
+            async_handle_import_config,
+        )
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            validate_options_patch,
+        )
+
+        validate_options_patch({"end_time": good_time}, {})
+
+        entry = _make_entry("id-1", "Blind A", {})
+        hass = _make_hass([entry], config_dir=str(tmp_path))
+
+        export_path = tmp_path / "import.json"
+        self._write_export(
+            export_path,
+            [{"entry_id": "id-1", "options": {"end_time": good_time}}],
+        )
+
+        call = MagicMock()
+        call.hass = hass
+        call.data = {"filename": str(export_path)}
+
+        assert (await async_handle_import_config(call))["id-1"] == "updated"
 
     @pytest.mark.asyncio
     async def test_mixed_results(self, tmp_path):

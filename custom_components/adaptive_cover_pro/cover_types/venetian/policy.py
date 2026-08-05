@@ -29,10 +29,9 @@ from ...const import (
     CONF_INVERSE_TILT,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_TILT,
-    CONF_MAX_TILT_SUN_ONLY,
     CONF_MIN_TILT,
-    CONF_MIN_TILT_SUN_ONLY,
     CONF_MINIMIZE_MOVEMENTS,
+    CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
@@ -43,13 +42,13 @@ from ...const import (
     CONF_VENETIAN_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
+    CONF_VENETIAN_TILT_TRANSFORM,
     ControlMethod,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MAX_TILT,
-    DEFAULT_MAX_TILT_SUN_ONLY,
     DEFAULT_MIN_TILT,
-    DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
@@ -57,16 +56,14 @@ from ...const import (
     DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_SCOPE,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
-    DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     DEFAULT_VENETIAN_TILT_SKIP_MODE,
+    DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_TILT_RESET_THRESHOLD,
-    MAX_VENETIAN_TILT_SAFETY_MARGIN,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
     MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MIN_VENETIAN_TILT_RESET_THRESHOLD,
-    MIN_VENETIAN_TILT_SAFETY_MARGIN,
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -81,12 +78,14 @@ from ...const import (
     VENETIAN_TILT_RESET_SCOPES,
     VENETIAN_TILT_SKIP_MODES,
     VENETIAN_TILT_SKIP_SUPPRESS,
+    VENETIAN_TILT_TRANSFORM_CLAMP,
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import (
     SecondaryAxisCheck,
     resolve_dispatched_secondary_expected,
 )
+from ...pipeline.axis_constraints import clamp_to_bounds, tilt_clamp_step
 from ...pipeline.types import DecisionStep
 from ...position_utils import PositionConverter
 from .._helpers import window_dimensions_lines
@@ -96,12 +95,13 @@ from ..base import (
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
     TILT_AXIS,
+    TILT_CAPABLE_ENTITY_FILTER,
     CoverAxis,
     CoverTypePolicy,
     caps_get,
 )
 from ..blind import geometry_vertical_schema
-from ..tilt import TILT_CAPABLE_ENTITY_FILTER, geometry_tilt_schema
+from ..tilt import geometry_tilt_schema
 from .sequencer import DualAxisSequencer
 
 if TYPE_CHECKING:
@@ -123,6 +123,9 @@ _POSITION_AXIS_SERVICES = frozenset(
 
 
 # Re-exported for callers that want the unit-independent venetian-only keys.
+# The tilt-band controls (min/max tilt, the *_sun_only flags, safety margin, and
+# the output transform) moved to the shared tilt-limits fragment in #964 and are
+# no longer venetian-only, so they are not listed here.
 _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_TILT_SKIP_MODE,
@@ -131,15 +134,17 @@ _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_POST_SETTLE_MODE,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_INVERSE_TILT,
-    CONF_MAX_TILT,
-    CONF_MAX_TILT_SUN_ONLY,
-    CONF_MIN_TILT,
-    CONF_MIN_TILT_SUN_ONLY,
 )
 
 # Control methods that carry an explicit, user-specified position.
 # The tilt-only carriage-close rewrite does not apply to these — the
 # user's position wins over "close carriage, let tilt filter".
+# GROUP_SCENE and GROUP_LOCK carry the same "explicit user intent" semantics
+# as CUSTOM_POSITION and MANUAL (issue #1153 finding 1): both handlers set
+# ``bypass_auto_control=True`` for exactly that reason (see their own
+# docstrings in pipeline/handlers/group_scene.py and group_lock.py), and
+# GROUP_LOCK's held position must not contradict itself by being reported as
+# force-closed while skip_command=True holds the carriage where it is.
 _EXPLICIT_USER_POSITION_METHODS = frozenset(
     {
         ControlMethod.CUSTOM_POSITION,
@@ -147,8 +152,29 @@ _EXPLICIT_USER_POSITION_METHODS = frozenset(
         ControlMethod.WEATHER,
         ControlMethod.MANUAL,
         ControlMethod.MOTION,
+        ControlMethod.GROUP_SCENE,
+        ControlMethod.GROUP_LOCK,
     }
 )
+
+
+def _venetian_select(
+    options: tuple[str, ...], translation_key: str
+) -> selector.SelectSelector:
+    """Build a translated dropdown for one of the venetian enum fields.
+
+    Mirrors the working pattern in ``config_dynamic.py``
+    (``blind_spot_elevation_mode``) / ``config_fields._select()`` — a bare
+    ``vol.In(...)`` renders raw enum values in the frontend with no
+    translation attempted at all.
+    """
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(options),
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key=translation_key,
+        )
+    )
 
 
 def _venetian_extras_schema() -> dict:
@@ -164,7 +190,7 @@ def _venetian_extras_schema() -> dict:
         ),
         vol.Optional(
             CONF_VENETIAN_TILT_SKIP_MODE, default=DEFAULT_VENETIAN_TILT_SKIP_MODE
-        ): vol.In(VENETIAN_TILT_SKIP_MODES),
+        ): _venetian_select(VENETIAN_TILT_SKIP_MODES, "venetian_tilt_skip_mode"),
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             default=DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
@@ -178,21 +204,23 @@ def _venetian_extras_schema() -> dict:
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_DIRECTION,
             default=DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
-        ): vol.In(VENETIAN_TILT_RESET_DIRECTIONS),
+        ): _venetian_select(
+            VENETIAN_TILT_RESET_DIRECTIONS, "venetian_tilt_reset_direction"
+        ),
         vol.Optional(
             CONF_VENETIAN_TILT_RESET_SCOPE,
             default=DEFAULT_VENETIAN_TILT_RESET_SCOPE,
-        ): vol.In(VENETIAN_TILT_RESET_SCOPES),
-        vol.Optional(CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE): vol.In(
-            VENETIAN_MODES
-        ),
+        ): _venetian_select(VENETIAN_TILT_RESET_SCOPES, "venetian_tilt_reset_scope"),
+        vol.Optional(
+            CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE
+        ): _venetian_select(VENETIAN_MODES, "venetian_mode"),
         vol.Optional(
             CONF_VENETIAN_POST_SETTLE_HOLD,
             default=DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
         vol.Optional(
             CONF_VENETIAN_POST_SETTLE_MODE, default=DEFAULT_VENETIAN_POST_SETTLE_MODE
-        ): vol.In(VENETIAN_POST_SETTLE_MODES),
+        ): _venetian_select(VENETIAN_POST_SETTLE_MODES, "venetian_post_settle_mode"),
         vol.Optional(
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             default=DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
@@ -204,29 +232,6 @@ def _venetian_extras_schema() -> dict:
             ),
         ),
         vol.Optional(CONF_INVERSE_TILT, default=False): bool,
-        vol.Optional(CONF_MAX_TILT, default=DEFAULT_MAX_TILT): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
-        vol.Optional(
-            CONF_MAX_TILT_SUN_ONLY, default=DEFAULT_MAX_TILT_SUN_ONLY
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_MIN_TILT, default=DEFAULT_MIN_TILT): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
-        vol.Optional(
-            CONF_MIN_TILT_SUN_ONLY, default=DEFAULT_MIN_TILT_SUN_ONLY
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_VENETIAN_TILT_SAFETY_MARGIN,
-            default=DEFAULT_VENETIAN_TILT_SAFETY_MARGIN,
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=MIN_VENETIAN_TILT_SAFETY_MARGIN,
-                max=MAX_VENETIAN_TILT_SAFETY_MARGIN,
-                step=0.05,
-                mode=selector.NumberSelectorMode.SLIDER,
-            )
-        ),
     }
 
 
@@ -344,7 +349,14 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
         """Render window dimensions plus the slat-config block."""
-        from ...const import CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE
+        from ...const import (
+            CONF_TILT_ANGLE_0,
+            CONF_TILT_ANGLE_100,
+            CONF_TILT_DEPTH,
+            CONF_TILT_DISTANCE,
+            CONF_TILT_MODE,
+            TiltMode,
+        )
 
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         tilt_parts: list[str] = []
@@ -354,6 +366,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             tilt_parts.append(L["geometry.slat.spacing"].format(v=v))
         if (v := config.get(CONF_TILT_MODE)) is not None:
             tilt_parts.append(L["geometry.slat.mode"].format(v=v))
+        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
+            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
+                tilt_parts.append(L["geometry.slat.angle_0"].format(v=v))
+            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
+                tilt_parts.append(L["geometry.slat.angle_100"].format(v=v))
         slat_line = [", ".join(tilt_parts)] if tilt_parts else []
         skip_above = config.get(
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
@@ -427,9 +444,12 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         else:
             drift_reset_line = []
         # Tilt safety margin is opt-in (issue #783): render only when non-zero,
-        # matching the drift-reset line's zero-disables convention.
+        # matching the drift-reset line's zero-disables convention. Read the
+        # neutral #964 key, falling back to the legacy venetian-prefixed key for
+        # entries not yet migrated (or rolled forward from an older build).
         safety_margin = config.get(
-            CONF_VENETIAN_TILT_SAFETY_MARGIN, DEFAULT_VENETIAN_TILT_SAFETY_MARGIN
+            CONF_TILT_SAFETY_MARGIN,
+            config.get(CONF_VENETIAN_TILT_SAFETY_MARGIN, DEFAULT_TILT_SAFETY_MARGIN),
         )
         safety_margin_line = (
             [
@@ -438,6 +458,16 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 )
             ]
             if safety_margin
+            else []
+        )
+        # Tilt output transform is opt-in (issue #957): render only when it
+        # departs from the default clamp, matching the zero-disables convention.
+        tilt_transform = config.get(
+            CONF_VENETIAN_TILT_TRANSFORM, DEFAULT_VENETIAN_TILT_TRANSFORM
+        )
+        tilt_transform_line = (
+            [L["geometry.venetian.tilt_transform"]]
+            if tilt_transform != VENETIAN_TILT_TRANSFORM_CLAMP
             else []
         )
         return (
@@ -450,6 +480,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             + min_tilt_line
             + max_tilt_line
             + safety_margin_line
+            + tilt_transform_line
             + post_settle_line
             + backrotate_line
             + drift_reset_line
@@ -529,6 +560,181 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             return True
         return cover is None or not cover.direct_sun_valid
 
+    def _pin_tilt_only_carriage(
+        self,
+        result: PipelineResult,
+        position: int,
+        tilt: int | None,
+        trace: list[DecisionStep],
+    ) -> int:
+        """Pin the carriage closed in tilt-only mode; append the trace step in place.
+
+        Tilt-only mode's defining behavior (issue #514) is that the carriage
+        stays closed and only the slats move — that must hold on EVERY exit
+        path out of ``post_pipeline_resolve``, not just the ones that happen
+        to produce a tilt. Before issue #1153's fix this pin only ran as a
+        side effect of the "handler tilt" and "engine tilt" branches; the
+        engine-suppressed no-tilt branch (a non-SOLAR winner, or SOLAR
+        without direct sun) returned early and skipped it entirely, so a
+        tilt-only install's carriage opened whenever no tilt happened to be
+        available. Skipped for explicit user position methods (a
+        manual/custom-position carriage move is intentional) and while a
+        tilt-only Custom Position slot's own FIXED contribution is already
+        driving the carriage (``tilt_only_contribution_active``), matching
+        the original per-branch guards this replaces — except on the engine
+        branch, whose original guard carried no
+        ``_EXPLICIT_USER_POSITION_METHODS`` check at all; adding one there is
+        harmless only because ``SOLAR`` is the sole control method that ever
+        reaches that branch, so the guard has nothing else to exclude.
+
+        Also skipped for ``ControlMethod.DEFAULT`` (issue #1153 finding 2).
+        Tilt-only is a sun-tracking-*window* behavior; ``DEFAULT`` is by
+        definition the no-handler-fired fallback that wins precisely OUTSIDE
+        that window, and it is the carrier for ``sunset_position`` /
+        ``return_sunset`` / ``default_percentage`` — pinning it would
+        silently disable all three documented carriage-movement options on a
+        tilt-only install. This is deliberately a separate condition rather
+        than a member of ``_EXPLICIT_USER_POSITION_METHODS``: DEFAULT is not
+        explicit user intent, it is the absence of any handler intent.
+        """
+        if (
+            self._venetian_mode != VENETIAN_MODE_TILT_ONLY
+            or result.control_method in _EXPLICIT_USER_POSITION_METHODS
+            or result.control_method == ControlMethod.DEFAULT
+            or result.tilt_only_contribution_active
+        ):
+            return position
+        trace.append(
+            DecisionStep(
+                handler="venetian_mode",
+                matched=True,
+                reason=(
+                    f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
+                    "(closed); tilt drives the slats"
+                ),
+                position=POSITION_CLOSED,
+                tilt=tilt,
+            )
+        )
+        return POSITION_CLOSED
+
+    def _compose_tilt(
+        self,
+        position: int,
+        *,
+        logger,
+        sol_azi: float,
+        sol_elev: float,
+        sun_data,
+        config,
+        config_service: ConfigurationService,
+        options: dict,
+        minimize_movements: bool,
+        max_coverage_steps: int,
+    ) -> tuple[int, VenetianCoverCalculation]:
+        """Single source of truth for the engine slat angle + minimize quantize.
+
+        Builds the tilt engine, computes the slat angle for ``position``, and
+        applies the movement-minimization quantize. The tilt axis declares
+        ``open_blocks_sun=False`` — 0 % is a covering end — but that is only the
+        whole story where coverage is MONOTONIC in the percentage, which a
+        bi-directional slat is not: on MODE2 the axis closes at BOTH ends and is
+        most open at the horizontal 50 %. So the engine's coverage pivot goes
+        along with the axis semantic and the quantiser measures the demand from
+        whichever of the two the axis actually has (issue #1104). The engine's
+        reachable travel goes along with it for the same reason: nothing re-bands
+        after this quantise, so its levels have to span ``[min_tilt, max_tilt]``
+        — the band ``_clamp_tilt`` just applied — rather than the whole scale.
+        Returns ``(tilt, venetian_calc)`` so the
+        live ``post_pipeline_resolve`` can still merge the tilt engine's raw
+        trace (#682) and the forecast hook can take just the scalar. BOTH the
+        live path and the projected forecast flow through this one method, so
+        the tilt geometry never diverges between them (CODING_GUIDELINES.md
+        "No Code Duplication").
+        """
+        venetian_calc = VenetianCoverCalculation(
+            config=config,
+            vert_config=config_service.get_vertical_data(options),
+            tilt_config=config_service.get_tilt_data(options),
+            sun_data=sun_data,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            logger=logger,
+        )
+        tilt = venetian_calc.tilt_for_position(position)
+        if minimize_movements:
+            tilt = PositionConverter.quantize_to_coverage_steps(
+                tilt,
+                max_coverage_steps,
+                full_coverage_at_zero=not self.axes[1].open_blocks_sun,
+                pivot=venetian_calc.tilt_coverage_pivot_percentage(),
+                bounds=venetian_calc.tilt_coverage_travel_bounds(),
+            )
+        return tilt, venetian_calc
+
+    def forecast_secondary_axes(
+        self,
+        *,
+        position: int,
+        logger,
+        sol_azi: float,
+        sol_elev: float,
+        sun_data,
+        config,
+        config_service: ConfigurationService,
+        options: dict,
+        minimize_movements: bool,
+        max_coverage_steps: int,
+    ) -> dict[str, int]:
+        """Project the slat tilt that pairs with ``position`` (#724).
+
+        Delegates to the shared :meth:`_compose_tilt` seam so the forecast
+        strip's tilt track matches the live cover exactly. Returns the tilt
+        keyed by the tilt axis's ``name`` (``self.axes[1].name`` — no hardcoded
+        ``"tilt"`` literal), which the forecast serializer spreads additively.
+        """
+        tilt, _ = self._compose_tilt(
+            position,
+            logger=logger,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            sun_data=sun_data,
+            config=config,
+            config_service=config_service,
+            options=options,
+            minimize_movements=minimize_movements,
+            max_coverage_steps=max_coverage_steps,
+        )
+        return {self.axes[1].name: tilt}
+
+    def entities_move_independently(self) -> bool:
+        """Venetian blinds on one instance are unrelated covers (#1174).
+
+        The base predicate derives its answer from three hooks, and this policy
+        trips one of them: it overrides ``post_pipeline_resolve``. That hook's
+        only write to ``PipelineResult.position`` is
+        :meth:`_pin_tilt_only_carriage`, and that pin is skipped for every
+        control method in ``_EXPLICIT_USER_POSITION_METHODS`` — which contains
+        both ``MANUAL`` and ``GROUP_LOCK``, the only two winners that ever set
+        ``held_position`` and so the only two the registry ever judges per
+        cover. Under a hold this hook resolves a tilt and leaves the position
+        exactly as the registry left it, which is the condition the base
+        predicate is really asking about.
+
+        Nothing else here is per-entity: ``resolve_entity_target`` is the
+        identity default (one slat angle and one carriage position per cover),
+        and ``dispatch_order_key`` is the constant default because two venetian
+        blinds share no track. That makes the per-cover path both safe and
+        worth having: a tilt bound that outranks a hold has to reach every
+        cover's slats without moving anybody's carriage, which is precisely
+        what one shared position cannot express.
+
+        ``tests/test_cover_types/test_venetian_post_pipeline.py`` locks the
+        premise — if the pin ever starts firing under a hold, that test fails
+        rather than this silently becoming wrong.
+        """
+        return True
+
     def post_pipeline_resolve(
         self,
         result: PipelineResult,
@@ -558,24 +764,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             handler_tilt = result.tilt
             position = result.position
             trace = list(result.decision_trace)
-            if (
-                self._venetian_mode == VENETIAN_MODE_TILT_ONLY
-                and result.control_method not in _EXPLICIT_USER_POSITION_METHODS
-                and not result.tilt_only_contribution_active
-            ):
-                trace.append(
-                    DecisionStep(
-                        handler="venetian_mode",
-                        matched=True,
-                        reason=(
-                            f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
-                            "(closed); tilt drives the slats"
-                        ),
-                        position=POSITION_CLOSED,
-                        tilt=handler_tilt,
-                    )
-                )
-                position = POSITION_CLOSED
+            position = self._pin_tilt_only_carriage(
+                result, position, handler_tilt, trace
+            )
             trace.append(
                 DecisionStep(
                     handler="venetian_handler_tilt",
@@ -593,18 +784,31 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         # No handler tilt: engine fallback runs only when SOLAR + direct sun.
         if self._engine_tilt_suppressed(result, cover):
             self._clear_last_tilt()
-            return replace(result, tilt=None)
+            position = result.position
+            trace = list(result.decision_trace)
+            position = self._pin_tilt_only_carriage(result, position, None, trace)
+            return replace(result, position=position, tilt=None, decision_trace=trace)
 
-        venetian_calc = VenetianCoverCalculation(
-            config=config,
-            vert_config=config_service.get_vertical_data(options),
-            tilt_config=config_service.get_tilt_data(options),
-            sun_data=sun_data,
+        # Compose the engine slat angle (+ movement-minimization quantize) via
+        # the shared seam the forecast hook also uses, so the projected tilt
+        # track and the live tilt never diverge. The returned ``venetian_calc``
+        # carries the transient tilt trace the live-only #682 merge needs.
+        tilt, venetian_calc = self._compose_tilt(
+            result.position,
+            logger=logger,
             sol_azi=sol_azi,
             sol_elev=sol_elev,
-            logger=logger,
+            sun_data=sun_data,
+            config=config,
+            config_service=config_service,
+            options=options,
+            minimize_movements=bool(
+                options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
+            ),
+            max_coverage_steps=int(
+                options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+            ),
         )
-        tilt = venetian_calc.tilt_for_position(result.position)
         # Issue #682: merge the (otherwise transient) tilt engine's raw trace into
         # the position engine's _last_calc_details under a `tilt` sub-key so the
         # live solar_calculation sensor and the diagnostics download surface BOTH
@@ -616,36 +820,28 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         cover_trace = getattr(cover, "_last_calc_details", None)
         if isinstance(cover_trace, dict) and tilt_trace is not None:
             cover_trace[TRACE_KEY_TILT] = tilt_trace
-        # Movement minimization: quantize the slat tilt into the same number of
-        # discrete coverage levels as the carriage position (which the solar
-        # branch already quantized). The tilt axis closes at 0%, so full coverage
-        # is at zero. N=1 → slats fully closed while the sun is in the FOV.
-        if options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS):
-            tilt = PositionConverter.quantize_to_coverage_steps(
-                tilt,
-                int(options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)),
-                full_coverage_at_zero=not self.axes[1].open_blocks_sun,
-            )
         position = result.position
         trace = list(result.decision_trace)
 
-        if (
-            self._venetian_mode == VENETIAN_MODE_TILT_ONLY
-            and not result.tilt_only_contribution_active
-        ):
+        # Axis constraints (issue #943). The registry could not clamp this tilt
+        # — it did not exist yet, the engine just produced it — so it carried
+        # the composed bounds on the result instead. Apply them here, through
+        # the same shared clamp the registry uses: the arithmetic stays in the
+        # one pipeline helper, while the knowledge that a venetian resolves its
+        # tilt after the pipeline stays inside the venetian policy.
+        bounded = clamp_to_bounds(tilt, result.tilt_low, result.tilt_high)
+        if bounded != tilt:
             trace.append(
-                DecisionStep(
-                    handler="venetian_mode",
-                    matched=True,
-                    reason=(
-                        f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
-                        "(closed); tilt drives the slats"
-                    ),
-                    position=POSITION_CLOSED,
-                    tilt=tilt,
+                tilt_clamp_step(
+                    from_tilt=tilt,
+                    to_tilt=bounded,
+                    label=result.tilt_bound_label or "constraint",
+                    source="tilt_clamp",
                 )
             )
-            position = POSITION_CLOSED
+            tilt = bounded
+
+        position = self._pin_tilt_only_carriage(result, position, tilt, trace)
 
         trace.append(
             DecisionStep(
@@ -659,22 +855,36 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self._last_tilt = tilt
         return replace(result, position=position, tilt=tilt, decision_trace=trace)
 
+    def targets_full_mechanical_endpoint(self, result: PipelineResult) -> bool:
+        """Report a full mechanical endpoint only when BOTH axes reach it.
+
+        Narrows the base single-axis predicate (issue #897): a venetian is at a
+        true 0/0 or 100/100 stop only when carriage and slats target the same
+        endpoint. Position 0 with tilt 100 (a legitimate solar state) is NOT a
+        mechanical stop. Only the venetian policy knows the paired tilt, so this
+        dual-axis decision stays here (issue #755).
+        """
+        return (
+            result is not None
+            and result.tilt is not None
+            and result.position is not None
+            and result.position == result.tilt
+            and result.position in (POSITION_CLOSED, POSITION_OPEN)
+        )
+
     def position_context_overrides(self, result: PipelineResult) -> dict[str, Any]:
         """Thread the resolved tilt into ``PositionContext.tilt``.
 
         When BOTH axes target the same full mechanical endpoint (0/0 or
         100/100) also set the cover-type-agnostic ``full_endpoint_target`` flag
-        so the command manager forces close_cover/open_cover instead of dropping
-        the move as same_position (issue #755). Only the venetian policy knows
-        the paired tilt, so this decision lives here.
+        (via :meth:`targets_full_mechanical_endpoint`) so the command manager
+        forces close_cover/open_cover instead of dropping the move as
+        same_position (issue #755).
         """
         if result is None or result.tilt is None:
             return {}
         overrides: dict[str, Any] = {"tilt": result.tilt}
-        if result.position == result.tilt and result.position in (
-            POSITION_CLOSED,
-            POSITION_OPEN,
-        ):
+        if self.targets_full_mechanical_endpoint(result):
             overrides["full_endpoint_target"] = True
         return overrides
 
@@ -940,15 +1150,15 @@ class VenetianPolicy(CoverTypePolicy, register=True):
 
         Issue #1006: the ``expected`` tilt is anchored to the value ACP last
         DISPATCHED for this entity via the shared
-        :func:`resolve_dispatched_secondary_expected` rule. A handler
-        reevaluation mid-transit can recompute a different tilt without sending
-        any replacement command; binding ``expected`` to the reevaluated value
-        made the actuator's end-of-travel arrival at the still-commanded tilt
-        read as a manual move. When ACP has no dispatched tilt stored (suppress
-        mode, HA restart, drift-verify pop, Auto-Control off→on) the helper
-        returns ``None`` and the check yields no independent tilt
-        manual-detection — the value-based ``excursion_match`` below (issue #927)
-        still runs.
+        :func:`resolve_dispatched_secondary_expected` rule (day/night-shade's
+        blend axis delegates to the same helper). A handler reevaluation
+        mid-transit can recompute a different tilt without sending any
+        replacement command; binding ``expected`` to the reevaluated value made
+        the actuator's end-of-travel arrival at the still-commanded tilt read as
+        a manual move. When ACP has no dispatched tilt stored (suppress mode, HA
+        restart, drift-verify pop, Auto-Control off→on) the helper returns
+        ``None`` and the check yields no independent tilt manual-detection — the
+        value-based ``excursion_match`` below (issue #927) still runs.
 
         The suppression callback is the same predicate
         :meth:`primary_axis_suppression` exposes for the position axis

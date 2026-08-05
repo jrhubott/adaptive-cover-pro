@@ -300,6 +300,104 @@ async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) ->
     ), f"_last_update_success_time must be None or datetime, got {type(val)}"
 
 
+async def test_manual_override_input_template_initialized_in_init(
+    hass: HomeAssistant,
+) -> None:
+    """Regression (#974): the input-template attr exists right after __init__.
+
+    The manual-override input-template tracker is registered during setup,
+    with awaits before the first _update_options runs. If its handler fires in
+    that window it reads self.manual_override_input_template — which is only
+    assigned in _update_options. Without an __init__ default that read raises
+    AttributeError and breaks setup/reload. This constructs the coordinator
+    directly (no _update_options) and asserts the attribute already exists.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "MOIT Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="moit_01",
+        title="MOIT Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    # Attribute must exist before _update_options ever runs, defaulting to None.
+    assert coordinator.manual_override_input_template is None
+
+
+async def test_manager_covers_populated_at_init_for_restore(
+    hass: HomeAssistant,
+) -> None:
+    """Regression (#1019): manager.covers is populated at __init__ so the
+    RestoreEntity manual-override restore (runs during platform setup, before
+    first_refresh) sees the configured covers instead of an empty set.
+
+    Without this, `_ManualOverrideEndSensor._restore_from_attributes` filters
+    every restored override out via its `eid not in manager.covers` guard,
+    silently discarding manual overrides across a Home Assistant restart.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Restore Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="restore_01",
+        title="Restore Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    # Before the fix this is empty (covers only added during first_refresh),
+    # so the restore guard drops every override.
+    assert "cover.test_blind" in coordinator.manager.covers
+
+
+async def test_coordinator_injects_time_mgr_into_snapshot_builder(
+    hass: HomeAssistant,
+) -> None:
+    """The builder gets the live TimeWindowManager at construction (#1055).
+
+    The builder's effective-default fallback reads the gate, the start-time
+    signal and the window-end flag off this collaborator. Its ``None`` default
+    exists only for tests, so production must never be left on it — a refactor
+    that drops the injection, or reorders ``__init__`` back so ``_time_mgr`` is
+    built after the builder, silently reverts the ad-hoc path to the pure
+    defaults.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "TW Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="tw_inject_01",
+        title="TW Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    assert coordinator._snapshot_builder._time_mgr is coordinator._time_mgr
+
+
 # ---------------------------------------------------------------------------
 # Venetian mode wiring
 # ---------------------------------------------------------------------------
@@ -436,3 +534,41 @@ async def test_coordinator_wires_post_settle_mode_into_sequencer(
     seq = coordinator._policy.sequencer
     assert seq is not None
     assert seq._post_settle_mode == VENETIAN_POST_SETTLE_MODE_ENTITY_STATE
+
+
+async def test_coordinator_shares_its_own_policy_with_the_command_service(
+    hass: HomeAssistant,
+) -> None:
+    """The command service gets the entry's OWN policy object (issue #1115).
+
+    ``CoverCommandService`` falls back to building a private policy from the
+    cover-type string when none is passed. That fallback is fine for the
+    stateless axis/capability queries, and silently wrong for everything else:
+    the private instance is never primed by ``post_pipeline_resolve`` and never
+    ``attach``ed, so a stateful policy answers every question this manager asks
+    with its unprimed default. The Model C day/night rail order
+    (``order_for_dispatch``) collapses to identity and the travel clearance
+    (``await_dispatch_clearance``) to an unconditional yes — the manager keeps
+    running, silently unsequenced.
+
+    Identity, not equality: a fresh ``get_policy()`` compares indistinguishable
+    while being exactly the wrong object.
+    """
+    from homeassistant import config_entries as ha_config_entries
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Policy Cover", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="policy_share_01",
+        title="Policy Cover",
+    )
+    entry.add_to_hass(hass)
+
+    token = ha_config_entries.current_entry.set(entry)
+    try:
+        coordinator = AdaptiveDataUpdateCoordinator(hass)
+    finally:
+        ha_config_entries.current_entry.reset(token)
+
+    assert coordinator._cmd_svc._policy is coordinator._policy

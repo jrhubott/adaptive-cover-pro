@@ -30,7 +30,8 @@ from custom_components.adaptive_cover_pro.engine.covers import (
     AdaptiveTiltCover,
     AdaptiveVerticalCover,
 )
-from custom_components.adaptive_cover_pro.const import TiltMode
+from custom_components.adaptive_cover_pro.const import ControlMethod, TiltMode
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
 def _common_cover_config() -> CoverConfig:
@@ -160,9 +161,82 @@ class TestDefaultHooks:
         out = policy_cls().post_pipeline_resolve(result, **calc_kwargs)
         assert out is result
 
-    @pytest.mark.parametrize("policy_cls", [BlindPolicy, AwningPolicy, TiltPolicy])
-    def test_position_context_overrides_empty(self, policy_cls):
-        assert policy_cls().position_context_overrides(MagicMock()) == {}
+    @pytest.mark.parametrize("policy_cls", [BlindPolicy, AwningPolicy])
+    @pytest.mark.parametrize(
+        ("position", "expect"),
+        [(0, True), (100, True), (50, False), (30, False)],
+    )
+    def test_single_axis_position_endpoint_sets_full_endpoint_flag(
+        self, policy_cls, position, expect
+    ):
+        """Single-axis position covers flag 0/100 as a full mechanical endpoint.
+
+        Issue #897 — the base policy generalizes the #755 venetian bypass to any
+        position-capable cover so ``endpoint_use_open_close`` routes 0→close_cover
+        and 100→open_cover instead of being swallowed as same_position.
+        """
+        result = PipelineResult(
+            position=position, control_method=ControlMethod.SOLAR, reason="t"
+        )
+        assert (
+            policy_cls()
+            .position_context_overrides(result)
+            .get("full_endpoint_target", False)
+            is expect
+        )
+
+    @pytest.mark.parametrize("position", [0, 100, 50])
+    def test_tilt_only_never_sets_full_endpoint_flag(self, position):
+        """Tilt-only covers have no position axis, so never flag a full endpoint."""
+        result = PipelineResult(
+            position=position, control_method=ControlMethod.SOLAR, reason="t"
+        )
+        assert (
+            TiltPolicy()
+            .position_context_overrides(result)
+            .get("full_endpoint_target", False)
+            is False
+        )
+
+    def test_targets_full_mechanical_endpoint_predicate(self):
+        """The predicate is True at 0/100 for position covers, always False for tilt."""
+        blind = BlindPolicy()
+        assert (
+            blind.targets_full_mechanical_endpoint(
+                PipelineResult(
+                    position=0, control_method=ControlMethod.SOLAR, reason="t"
+                )
+            )
+            is True
+        )
+        assert (
+            blind.targets_full_mechanical_endpoint(
+                PipelineResult(
+                    position=100, control_method=ControlMethod.SOLAR, reason="t"
+                )
+            )
+            is True
+        )
+        assert (
+            blind.targets_full_mechanical_endpoint(
+                PipelineResult(
+                    position=50, control_method=ControlMethod.SOLAR, reason="t"
+                )
+            )
+            is False
+        )
+        tilt = TiltPolicy()
+        for position in (0, 100, 50):
+            assert (
+                tilt.targets_full_mechanical_endpoint(
+                    PipelineResult(
+                        position=position,
+                        control_method=ControlMethod.SOLAR,
+                        reason="t",
+                    )
+                )
+                is False
+            )
 
     @pytest.mark.parametrize("policy_cls", [BlindPolicy, AwningPolicy, TiltPolicy])
     def test_secondary_axis_check_none(self, policy_cls):

@@ -45,7 +45,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy import cos, sin, tan
+from numpy import cos, sin
 from numpy import radians as rad
 
 from ...config_types import OscillatingConfig
@@ -53,30 +53,15 @@ from ...const import (
     OSCILLATING_ARC_SCAN_SAMPLES,
     OSCILLATING_PROTECTED_BOUNDARY_DEFAULT,
 )
+from ..sun_geometry import foreshortened_slope
 from .horizontal import AdaptiveHorizontalCover
-from .vertical import MIN_COS_GAMMA_CLAMP, AdaptiveVerticalCover
+from .vertical import AdaptiveVerticalCover
 
 # Tolerance (metres) for treating two coverage-floor heights as equal when the
 # fail-open branch selects the deepest-coverage angle. Once the running floor
 # plateaus, any angle within this band shades equally, so the awning is driven
 # to the largest (most-extended) such angle.
 _COVERAGE_PLATEAU_EPS = 1e-6
-
-
-def _foreshortened_drop_per_reach(sol_elev: float, gamma: float) -> float:
-    """Vertical drop of a sun ray per metre of horizontal lip reach.
-
-    A ray grazing the lip descends toward the wall at ``tan(elev)`` per metre of
-    in-room depth; the surface-azimuth foreshortening divides by ``cos(gamma)``.
-    Shares the ``MIN_COS_GAMMA_CLAMP`` guard with the vertical engine so a
-    near-90° gamma cannot divide by zero (single source of truth for the
-    foreshortening factor used on the window face).
-    """
-    cos_gamma = float(cos(rad(gamma)))
-    cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
-        1 if cos_gamma >= 0 else -1
-    )
-    return float(tan(rad(sol_elev))) / cos_gamma_clamped
 
 
 def _lip_shadow_top(
@@ -95,11 +80,16 @@ def _lip_shadow_top(
     lip's projected reach so the shadow drops lower on the pane (``0.0`` =
     flush, a no-op). Lower return values mean the lip shades further down the
     face (more coverage).
+
+    The lip's drop per metre of reach is the same Vertical Shadow Angle tangent
+    the window face uses everywhere else, taken from the shared
+    ``foreshortened_slope`` helper (#1030) rather than a local copy of the
+    ``cos(gamma)`` guard.
     """
     theta = rad(theta_deg)
     reach = pivot_offset + arm_length * float(sin(theta))
     lip_y = pivot_y + arm_length * float(cos(theta))
-    return lip_y - reach * _foreshortened_drop_per_reach(sol_elev, gamma)
+    return lip_y - reach * foreshortened_slope(sol_elev, gamma)
 
 
 def _monotone_coverage_floor(shadow_tops: np.ndarray) -> np.ndarray:
@@ -206,3 +196,30 @@ class AdaptiveOscillatingCover(AdaptiveHorizontalCover):
         )
         pos = (theta - lo) / (hi - lo) * 100.0
         return float(np.clip(pos, 0, 100))
+
+    def calculate_raw_percentage(self) -> float:
+        """Route the pipeline's raw-percentage read to the arc solver (#1031).
+
+        The base :class:`AdaptiveHorizontalCover` implements
+        ``calculate_raw_percentage`` as ``calculate_position() / awn_length``,
+        i.e. the horizontal *overhang* projection — the wrong shade model for a
+        drop-arm awning, and (since #1025) it reads ``self.horiz_config`` which
+        an oscillating cover does not have (it carries ``osc_config`` instead),
+        raising ``AttributeError`` in the live solar pipeline. Returning the
+        arc-solved open percentage keeps the oscillating cover on its own
+        lip-drop geometry end-to-end. Already an unrounded float, so no separate
+        raw fraction is needed.
+        """
+        return self.calculate_percentage()
+
+    def calculate_position(self) -> float:
+        """Arm reach (metres) consistent with the arc-solved open percentage.
+
+        Overrides the inherited horizontal overhang projection so the
+        meters-based API stays coherent for an oscillating cover and never
+        touches ``horiz_config`` (which it does not have). Scales the open
+        percentage by the arm length; the live pipeline reads position via
+        :meth:`calculate_raw_percentage`, so this exists for API symmetry and
+        any direct meters caller (diagnostics, tests).
+        """
+        return self.calculate_percentage() / 100.0 * self.awn_length

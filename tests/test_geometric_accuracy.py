@@ -7,6 +7,9 @@ Tests Phase 1 improvements:
 - Regression testing (normal angles should show minimal change)
 """
 
+import itertools
+import math
+
 import pytest
 import numpy as np
 
@@ -508,69 +511,6 @@ class TestWindowDepth:
 
         assert abs(pos_no_depth - pos_zero_depth) < 1e-10
 
-    def test_window_depth_increases_position_at_angles(self, base_cover_params):
-        """Window depth should increase position at angled sun positions."""
-        # Test at gamma=45 where depth effect is significant
-        params_no_depth = base_cover_params.copy()
-        params_no_depth["window_depth"] = 0.0
-        cover_no_depth = make_cover_with_angles(
-            params_no_depth, gamma=45.0, sol_elev=45.0
-        )
-
-        params_with_depth = base_cover_params.copy()
-        params_with_depth["window_depth"] = 0.10  # 10cm window depth
-        cover_with_depth = build_vertical_cover(**params_with_depth)
-        cover_with_depth.sol_azi = gamma_to_sol_azi(
-            cover_with_depth.config.win_azi, 45.0
-        )
-        cover_with_depth.sol_elev = 45.0
-
-        pos_no_depth = cover_no_depth.calculate_position()
-        pos_with_depth = cover_with_depth.calculate_position()
-
-        # With window depth, position should be higher (more protective)
-        assert pos_with_depth > pos_no_depth
-
-    def test_window_depth_no_effect_at_low_gamma(self, base_cover_params):
-        """Window depth should have minimal effect at gamma < 10°."""
-        params_no_depth = base_cover_params.copy()
-        params_no_depth["window_depth"] = 0.0
-        cover_no_depth = make_cover_with_angles(
-            params_no_depth, gamma=5.0, sol_elev=45.0
-        )
-
-        params_with_depth = base_cover_params.copy()
-        params_with_depth["window_depth"] = 0.10
-        cover_with_depth = build_vertical_cover(**params_with_depth)
-        cover_with_depth.sol_azi = gamma_to_sol_azi(
-            cover_with_depth.config.win_azi, 5.0
-        )
-        cover_with_depth.sol_elev = 45.0
-
-        pos_no_depth = cover_no_depth.calculate_position()
-        pos_with_depth = cover_with_depth.calculate_position()
-
-        # Difference should be negligible at low gamma
-        assert abs(pos_with_depth - pos_no_depth) < 0.01  # Less than 1cm difference
-
-    def test_window_depth_effect_increases_with_gamma(self, base_cover_params):
-        """Window depth effect should increase with larger gamma angles."""
-        params = base_cover_params.copy()
-        params["window_depth"] = 0.10
-
-        positions = []
-        for gamma in [10.0, 30.0, 50.0, 70.0]:
-            cover = build_vertical_cover(**params)
-            cover.sol_azi = gamma_to_sol_azi(cover.config.win_azi, gamma)
-            cover.sol_elev = 45.0
-            positions.append(cover.calculate_position())
-
-        # Each position should be higher than the previous (more depth effect)
-        for i in range(len(positions) - 1):
-            assert (
-                positions[i] < positions[i + 1]
-            ), "Position should increase with gamma"
-
     def test_window_depth_realistic_values(self, base_cover_params):
         """Test with realistic window depth values."""
         test_depths = [
@@ -611,6 +551,209 @@ class TestWindowDepth:
         position = cover.calculate_position()
         assert 0 <= position <= cover.h_win
         assert not (position != position)  # not NaN
+
+
+class TestLintelGate:
+    """Window depth is a binary full-open gate, not a continuous term (#1169).
+
+    ``position`` is exposed glass measured up from the sill; ``window_depth``
+    is a reveal that shadows the TOP of the glass — the same band the blind
+    already covers from the top. That shadow can never license a *partial*
+    opening (it never protects territory the blind wasn't already covering),
+    only a *full* one, once the reveal shadow plus the blind's own coverage
+    together span the whole pane. See ``vertical.py``'s lintel-gate comment
+    for the derivation.
+    """
+
+    def test_depth_never_opens_glass_below_the_lintel_gate(self, base_cover_params):
+        """The user asked for zero sun in the room; depth must not grant any.
+
+        distance=0 means "no direct sun past the glass plane" — window_depth
+        must never override that by opening the blind from the bottom, where
+        the reveal shadow (which falls on the TOP of the glass) shades nothing.
+        """
+        params = base_cover_params.copy()
+        params["distance"] = 0.0
+        params["h_win"] = 2.2
+        params["window_depth"] = 0.18
+        cover = make_cover_with_angles(params, gamma=30.0, sol_elev=45.0)
+
+        assert cover.calculate_position() == 0.0
+
+    def test_lintel_gate_opens_fully_when_shadow_completes_coverage(
+        self, base_cover_params
+    ):
+        """When the reveal shadow alone already covers the whole pane, open fully.
+
+        Fires here at gamma=0°, where the old 10° gamma gate used to suppress
+        the depth term entirely — this is a genuine 0-gamma full-open case the
+        pre-#1169 code could never reach.
+        """
+        params = base_cover_params.copy()
+        params["distance"] = 0.2
+        params["h_win"] = 0.62
+        params["window_depth"] = 0.18
+        cover = make_cover_with_angles(params, gamma=0.0, sol_elev=60.0)
+
+        assert cover.calculate_position() == pytest.approx(0.62)
+
+    def test_lintel_shadow_is_foreshortened_by_gamma(self, base_cover_params):
+        """The reveal depth is measured along the window normal, not the sun's
+        bearing, so the sun's run through it is depth/cos(gamma) — the lintel
+        shadow is ``depth * tan(elev) / cos(gamma)``, not ``depth * tan(elev)``.
+
+        DISCRIMINATOR: a ``depth * tan(elev)`` variant (dropping the
+        ``/cos(gamma)`` foreshortening — the reporter's original, numerically
+        wrong proposal) computes a lintel shadow of only 0.5 m here, leaves the
+        gate unfired (base 0.7071 + 0.5 = 1.2071 < h_win 1.35), and falls
+        through to the normal path returning ~0.7071 instead of the correct
+        fully-open 1.35. The pre-#1169 code (the old ``depth * sin(|gamma|)``
+        permission-budget term) also misses the gate here, projecting a
+        shadow-inflated ~1.2071. Both wrong answers happen to differ from the
+        correct 1.35, so this test is a genuine discriminator against either
+        regression — unlike the old params, which the pre-#1169 formula also
+        passed (it returned 1.20 there, same as the correct answer; only the
+        ``depth * tan(elev)`` variant failed, at ~0.9871). If this test starts
+        failing after a "simplification" that
+        removes the ``/cos(gamma)`` term, that removal is the regression.
+        """
+        params = base_cover_params.copy()
+        params["distance"] = 0.5
+        params["h_win"] = 1.35
+        params["window_depth"] = 0.5
+        cover = make_cover_with_angles(params, gamma=45.0, sol_elev=45.0)
+
+        assert cover.calculate_position() == pytest.approx(1.35)
+
+    def test_depth_has_no_effect_below_the_gate(self, base_cover_params):
+        """Below the full-open threshold, window_depth must be a pure no-op —
+        bit-identical to window_depth=0, not merely "close enough".
+        """
+        params_with_depth = base_cover_params.copy()
+        params_with_depth["distance"] = 0.5
+        params_with_depth["h_win"] = 2.1
+        params_with_depth["window_depth"] = 0.10
+        cover_with_depth = make_cover_with_angles(
+            params_with_depth, gamma=45.0, sol_elev=45.0
+        )
+
+        params_no_depth = params_with_depth.copy()
+        params_no_depth["window_depth"] = 0.0
+        cover_no_depth = make_cover_with_angles(
+            params_no_depth, gamma=45.0, sol_elev=45.0
+        )
+
+        assert (
+            cover_with_depth.calculate_position() == cover_no_depth.calculate_position()
+        )
+
+
+def _lintel_gate_max_penetration(
+    position: float, h_win: float, depth: float, gamma: float, elev: float
+) -> float:
+    """Upper bound on in-room sun penetration a returned ``position`` can produce.
+
+    Mirrors the ``distance_shaded_area`` contract ("Zero keeps direct sun from
+    passing the glass plane"): the highest lit point on the glass is capped
+    both by the blind's own coverage (``position``) and by the physical limit
+    of the lintel shadow (``h_win − depth·f``, the highest point the reveal can
+    ever leave lit, regardless of blind position) — whichever is lower wins.
+    """
+    f = math.tan(math.radians(elev)) / math.cos(math.radians(gamma))
+    lit_ceiling = max(h_win - depth * f, 0.0)
+    z = min(position, lit_ceiling)
+    return z * math.cos(math.radians(gamma)) / math.tan(math.radians(elev))
+
+
+# SafetyMarginCalculator (geometry.py) inflates the returned position beyond
+# what the base projection alone would allow at extreme low elevation + high
+# gamma — a pre-existing characteristic of the angle-dependent safety margin,
+# not of window_depth: it reproduces bit-for-bit with window_depth=0 (the gate
+# never fires for any of these cases; the position is identical either way).
+# It predates #1169, is out of scope for this fix (no window_depth involved),
+# and is tracked by #1173 rather than being papered over here by weakening
+# the contract for every other configuration.
+_SAFETY_MARGIN_OVERSHOOT_CASES = {
+    (0.5, 0.62, 0.05, 60, 20),
+    (0.5, 0.62, 0.18, 60, 20),
+    (0.5, 2.2, 0.05, 60, 20),
+    (0.5, 2.2, 0.05, 60, 45),
+    (0.5, 2.2, 0.05, 75, 20),
+    (0.5, 2.2, 0.05, 75, 45),
+    (0.5, 2.2, 0.18, 60, 20),
+    (0.5, 2.2, 0.18, 60, 45),
+    (0.5, 2.2, 0.18, 75, 20),
+    (0.5, 2.2, 0.5, 60, 20),
+    (0.5, 2.2, 0.5, 60, 45),
+    (0.5, 2.2, 0.5, 75, 20),
+    (1.5, 2.2, 0.05, 60, 20),
+    (1.5, 2.2, 0.05, 75, 20),
+    (1.5, 2.2, 0.18, 60, 20),
+    (1.5, 2.2, 0.5, 60, 20),
+}
+
+
+def _lintel_gate_contract_case(
+    distance: float, h_win: float, depth: float, gamma: float, elev: float
+):
+    case = (distance, h_win, depth, gamma, elev)
+    if case in _SAFETY_MARGIN_OVERSHOOT_CASES:
+        return pytest.param(
+            *case,
+            marks=pytest.mark.xfail(
+                reason=(
+                    "#1173: SafetyMarginCalculator inflates position past the "
+                    f"distance_shaded_area contract at elev={elev:g}°, "
+                    f"gamma={gamma:g}° (distance={distance:g}, h_win={h_win:g}, "
+                    f"depth={depth:g}) — bit-identical with window_depth=0, so "
+                    "orthogonal to the #1169 lintel gate."
+                ),
+                strict=True,
+            ),
+        )
+    return case
+
+
+@pytest.mark.parametrize(
+    "distance,h_win,depth,gamma,elev",
+    [
+        _lintel_gate_contract_case(*case)
+        for case in itertools.product(
+            [0.0, 0.5, 1.5],
+            [0.62, 2.2],
+            [0.05, 0.18, 0.5],
+            [0, 30, 60, 75],
+            [20, 45, 75],
+        )
+    ],
+)
+def test_no_direct_sun_lands_past_the_configured_distance(
+    base_cover_params, distance, h_win, depth, gamma, elev
+):
+    """Contract (#1169): no position the engine returns may leak direct sun past
+    the user's configured ``distance``.
+
+    This is the missing contract test — ``distance_shaded_area`` promises
+    "Zero (0 m) keeps direct sun from passing the glass plane", generalised to
+    any ``distance``. Fails on ~33% of these configs under the pre-#1169
+    continuous ``depth_contribution`` term, which opens the blind from the
+    BOTTOM — where the lintel shadow (which falls on the TOP of the glass)
+    protects nothing.
+    """
+    params = base_cover_params.copy()
+    params["distance"] = distance
+    params["h_win"] = h_win
+    params["window_depth"] = depth
+    cover = make_cover_with_angles(params, gamma=gamma, sol_elev=elev)
+    position = cover.calculate_position()
+
+    penetration = _lintel_gate_max_penetration(position, h_win, depth, gamma, elev)
+
+    assert penetration <= distance + 1e-9, (
+        f"distance={distance} h_win={h_win} depth={depth} gamma={gamma} "
+        f"elev={elev}: position={position:.4f} -> penetration={penetration:.4f} "
+        "exceeds the configured distance"
+    )
 
 
 class TestSmoothTransitions:

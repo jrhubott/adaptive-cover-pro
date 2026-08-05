@@ -5,12 +5,65 @@ which accept flat kwargs (old-style API) and route them to the correct typed
 config dataclasses (CoverConfig, VerticalConfig, etc.).
 """
 
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
+
 from custom_components.adaptive_cover_pro.config_types import (
     CoverConfig,
     HorizontalConfig,
+    LouveredRoofConfig,
     TiltConfig,
     VerticalConfig,
 )
+from custom_components.adaptive_cover_pro.engine.covers.base import (
+    AdaptiveGeneralCover,
+)
+from custom_components.adaptive_cover_pro.engine.covers.louvered_roof import (
+    AdaptiveLouveredRoofCover,
+)
+
+_COVERAGE_HOOKS = (
+    "round_toward_coverage",
+    "coverage_pivot_percentage",
+    "coverage_travel_bounds",
+)
+
+
+def attach_coverage_rounding(cover):
+    """Give a cover *double* the real base coverage hooks (#1090, #1104).
+
+    The solar branch asks the cover which way to quantise its raw percentage,
+    where its coverage bottoms out, and how far it can be driven, because only
+    the engine knows whether coverage is monotonic in the percentage (it is not
+    on a bi-directional slat axis) and whether the axis carries a band of its
+    own. Doubles standing in for an ``AdaptiveGeneralCover`` therefore have to
+    answer all three calls — a ``MagicMock`` would otherwise hand back a mock
+    where a ``float | None`` or a ``(low, high)`` pair is expected.
+
+    Binds the production implementations to the double rather than
+    reimplementing floor/ceil in test-land, so a double can never quietly
+    disagree with the rules it is standing in for. Returns *cover* for chaining.
+    """
+    for name in _COVERAGE_HOOKS:
+        setattr(cover, name, getattr(AdaptiveGeneralCover, name).__get__(cover))
+    return cover
+
+
+def make_daytime_sun_data() -> MagicMock:
+    """Return a SunData mock whose sunrise/sunset bracket *now*.
+
+    ``SunGeometry.sunset_valid`` compares wall-clock now against the sunrise /
+    sunset offsets, so a bare ``MagicMock`` makes it unevaluatable. Bracketing
+    now with real datetimes makes ``sunset_valid`` cleanly ``False``, which is
+    what a test asserting on ``direct_sun_valid`` needs without patching the
+    property away.
+    """
+    now = datetime.now(UTC)
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    sun_data.sunrise.return_value = now - timedelta(hours=6)
+    sun_data.sunset.return_value = now + timedelta(hours=6)
+    return sun_data
 
 
 def make_cover_config(**overrides) -> CoverConfig:
@@ -114,10 +167,22 @@ _VERT_CONFIG_FIELDS = {
 }
 
 # HorizontalConfig field names
-_HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle"}
+_HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle", "shade_mode"}
 
 # TiltConfig field names
-_TILT_CONFIG_FIELDS = {"slat_distance", "depth", "mode", "safety_margin"}
+_TILT_CONFIG_FIELDS = {
+    "slat_distance",
+    "depth",
+    "mode",
+    "safety_margin",
+    "angle_0",
+    "angle_100",
+    "max_tilt",
+    "min_tilt",
+    "min_tilt_sun_only",
+    "max_tilt_sun_only",
+    "tilt_transform",
+}
 
 
 def build_vertical_cover(**kwargs):
@@ -200,4 +265,45 @@ def build_tilt_cover(**kwargs):
         config=make_cover_config(**cover_kwargs),
         tilt_config=make_tilt_config(**tilt_kwargs),
         **direct_kwargs,
+    )
+
+
+def build_louvered_roof_cover(
+    *,
+    sol_azi: float,
+    sol_elev: float,
+    roof_pitch: float,
+    slat_distance: float = 0.02,
+    depth: float = 0.03,
+    mode: str = "mode2",
+    win_azi: float = 180.0,
+    fov_left: float = 90.0,
+    fov_right: float = 90.0,
+    max_slat_angle: float = 0.0,
+    safety_margin: float = 0.0,
+):
+    """Build an AdaptiveLouveredRoofCover at an explicit sun/slat geometry.
+
+    Shared by the engine and pipeline-helpers suites (#1105 audit) so the
+    louvered-roof construction isn't reimplemented at each call site — a
+    change to ``AdaptiveLouveredRoofCover``'s constructor only needs updating
+    here.
+    """
+    return AdaptiveLouveredRoofCover(
+        logger=MagicMock(),
+        sol_azi=sol_azi,
+        sol_elev=sol_elev,
+        sun_data=MagicMock(),
+        config=make_cover_config(
+            win_azi=win_azi, fov_left=fov_left, fov_right=fov_right
+        ),
+        tilt_config=make_tilt_config(
+            slat_distance=slat_distance,
+            depth=depth,
+            mode=mode,
+            safety_margin=safety_margin,
+        ),
+        roof_config=LouveredRoofConfig(
+            roof_pitch=roof_pitch, max_slat_angle=max_slat_angle
+        ),
     )

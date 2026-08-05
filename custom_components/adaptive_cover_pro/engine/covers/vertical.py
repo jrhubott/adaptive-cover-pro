@@ -13,10 +13,10 @@ from ...const import (
     TRACE_KEY_GAMMA_DEG,
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
-    WINDOW_DEPTH_GAMMA_THRESHOLD,
 )
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
+from ..sun_geometry import clamped_cos_gamma, ray_x_at_window_plane
 from .base import AdaptiveGeneralCover
 
 # --- Numeric guards (file-local) ---
@@ -24,10 +24,6 @@ from .base import AdaptiveGeneralCover
 # elevation ≈ 2.9°, below which the projected shadow is geometrically
 # unbounded. Capping the divisor keeps sill_offset finite at low sun.
 MIN_TAN_ELEVATION_CLAMP = 0.05
-# Minimum |cos(gamma)| before path-length division — corresponds to gamma
-# ≈ 89.4°. Bridges the gap between the edge-case threshold (85°) and the
-# 90° singularity where cos(gamma) → 0.
-MIN_COS_GAMMA_CLAMP = 0.01
 
 
 def _elevation_offset(height_m: float, sol_elev: float) -> float:
@@ -86,7 +82,7 @@ def glare_zone_effective_distance(
 
     # Project back to find where the sun ray enters the window.
     # A ray hitting floor point (fx, fy) entered at x_w = fx + fy * tan(γ).
-    x_at_window = nearest_x + nearest_y * float(tan(gamma_rad))
+    x_at_window = ray_x_at_window_plane(nearest_x, nearest_y, gamma)
     if abs(x_at_window) > window_half_width:
         return None  # Ray enters outside the window opening — zone is naturally blocked
 
@@ -176,11 +172,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
     ) -> dict:
         """Assemble the raw vertical solar-calculation trace (issue #682).
 
-        Single source for both the edge-case and normal return paths so the key
-        set never drifts between them. Values are raw native floats — rounding
-        happens at the presentation boundary (``DiagnosticsBuilder``), never here.
-        ``glare_zones_active`` is left empty; the GlareZoneHandler populates it
-        downstream via diagnostics.
+        Single source for all three ``calculate_position`` return paths — the
+        edge-case return, the lintel-gate return (#1169), and the normal
+        return — so the key set never drifts between them. Values are raw
+        native floats — rounding happens at the presentation boundary
+        (``DiagnosticsBuilder``), never here. ``glare_zones_active`` is left
+        empty; the GlareZoneHandler populates it downstream via diagnostics.
         """
         return {
             TRACE_KEY_SOL_ELEV_DEG: float(self.sol_elev),
@@ -213,11 +210,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         onto a tilted plane without duplicating the surrounding edge-case /
         window-depth / sill / safety-margin pipeline (CODING_GUIDELINES.md
         "Code duplication is not okay").
+
+        The divisor comes from the shared one-sided ``clamped_cos_gamma`` guard
+        (#1030); the raw ``cos_gamma`` is still returned for the #682 trace.
         """
         cos_gamma = float(cos(rad(self.gamma)))
-        cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
-            1 if cos_gamma >= 0 else -1
-        )
+        cos_gamma_clamped = clamped_cos_gamma(self.gamma)
         path_length = effective_distance / cos_gamma_clamped
         base_height = path_length * float(tan(rad(self.sol_elev)))
         return base_height, cos_gamma, cos_gamma_clamped, path_length
@@ -232,7 +230,8 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         - Safety margins: Angle-dependent multipliers (1.0-1.45x)
 
         Phase 2 (Optional):
-        - Window depth: Accounts for window reveals/frames (0.0-0.5m)
+        - Window depth: a binary full-open gate for window reveals/frames
+          (0.0-5.0m) — see the lintel-gate comment below (#1169)
         - Sill height: Accounts for windows not starting at floor level (0.0-3.0m)
 
         Args:
@@ -280,12 +279,6 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 
         effective_distance = effective_distance_base
 
-        # Account for window depth at angles (creates additional shadow)
-        depth_contribution = 0.0
-        if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
-            depth_contribution = self.window_depth * float(sin(rad(abs(self.gamma))))
-            effective_distance += depth_contribution
-
         # Account for window sill height (window not starting at floor)
         sill_offset = 0.0
         if self.sill_height > 0:
@@ -325,6 +318,69 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             effective_distance
         )
 
+        # ── Lintel gate — window depth is a full-open threshold, not a continuous
+        # term (#1169) ───────────────────────────────────────────────────────────
+        # The reveal soffit shadows the TOP window_depth·tan(elev)/cos(gamma) of
+        # the glass — the same band ``position`` already covers from the top. That
+        # shadow can never license a PARTIAL opening (it never protects territory
+        # the blind wasn't already covering); it can only ever push the blind to
+        # FULLY open, once the reveal shadow and the blind's own coverage together
+        # span the whole pane. Re-projecting ``effective_distance + window_depth``
+        # gives exactly ``base_height + lintel_shadow`` (the identity holds
+        # exactly, no separate trig): if that reaches h_win, every ray is either
+        # stopped by the blind or by the reveal, so open fully. Routed through
+        # ``_project_drop`` (never a hand-rolled ``cos(rad(gamma))``) so pitched
+        # glass (#212 roof-window) gets the right answer through its own override,
+        # and so the one-sided ``clamped_cos_gamma`` guard (#1030) still applies.
+        depth_contribution = 0.0
+        if self.window_depth > 0:
+            gated_height, *_ = self._project_drop(
+                effective_distance + self.window_depth
+            )
+            depth_contribution = gated_height - base_height  # lintel shadow, metres
+            if gated_height >= self.h_win:
+                result = float(np.clip(gated_height, 0, self.h_win))
+                clamped_to_window = bool(gated_height > self.h_win)
+                self.logger.debug(
+                    "Vertical calc: elev=%.1f°, gamma=%.1f°, effective_distance=%.3f "
+                    "(sill=%.3f) → base=%.3fm + lintel shadow=%.3fm = %.3fm reaches "
+                    "h_win=%.3fm → fully open",
+                    self.sol_elev,
+                    self.gamma,
+                    effective_distance,
+                    sill_offset,
+                    base_height,
+                    depth_contribution,
+                    gated_height,
+                    self.h_win,
+                )
+                self._last_calc_details = self._build_vertical_trace(
+                    edge_case_detected=False,
+                    safety_margin=1.0,
+                    effective_distance=float(effective_distance),
+                    effective_distance_source=effective_distance_source,
+                    window_depth_contribution=float(depth_contribution),
+                    sill_height_offset=float(sill_offset),
+                    cos_gamma=float(cos_gamma),
+                    cos_gamma_clamped=float(cos_gamma_clamped),
+                    path_length=float(path_length),
+                    base_height=float(base_height),
+                    # No safety margin is applied on the gate path (it returns
+                    # before that step), so report it consistent with every
+                    # other branch: adjusted_height_m == base_height_m *
+                    # safety_margin (#1169 audit). The gated height that
+                    # actually drove the full-open decision is still fully
+                    # recoverable as base_height_m + window_depth_contribution_m
+                    # (the lintel shadow), so nothing is lost. The trade is
+                    # that clamped_to_window is now True here while
+                    # adjusted_height_m sits below h_win — on this path the
+                    # flag reports the gated height, not the adjusted one.
+                    adjusted_height=float(base_height),
+                    result=result,
+                    clamped_to_window=clamped_to_window,
+                )
+                return result
+
         # Apply safety margin for extreme angles
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
         adjusted_height = base_height * safety_margin
@@ -332,16 +388,16 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         clamped_to_window = bool(adjusted_height > self.h_win)
 
         self.logger.debug(
-            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f "
-            "(depth=%.3f, sill=%.3f), base=%.3f, margin=%.3f, adjusted=%.3f, "
+            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (sill=%.3f), "
+            "base=%.3f, lintel_shadow=%.3f (below gate), margin=%.3f, adjusted=%.3f, "
             "clipped=%.3f, source=%s",
             self.sol_elev,
             self.gamma,
             self.distance,
             effective_distance,
-            depth_contribution,
             sill_offset,
             base_height,
+            depth_contribution,
             safety_margin,
             adjusted_height,
             result,
@@ -382,3 +438,17 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             "Converting height to percentage: %s / %s * 100", position, self.h_win
         )
         return PositionConverter.to_percentage(position, self.h_win)
+
+    def calculate_raw_percentage(
+        self, effective_distance_override: float | None = None
+    ) -> float:
+        """Unrounded geometry fraction for directional rounding (issue #978).
+
+        Bypasses the ``round()`` inside ``PositionConverter.to_percentage`` so
+        that callers can apply ``floor()`` / ``ceil()`` / ``round()`` as needed.
+        Accepts the same *effective_distance_override* as
+        :meth:`calculate_percentage` so the glare-zone handler can use it
+        without the internal ``round()`` applied by that method.
+        """
+        position = self.calculate_position(effective_distance_override)
+        return (float(position) / self.h_win) * 100.0

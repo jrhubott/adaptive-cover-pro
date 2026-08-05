@@ -5,16 +5,20 @@ import zoneinfo
 from unittest.mock import MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ENTITIES,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CUSTOM_POSITION_SLOTS,
 )
 from custom_components.adaptive_cover_pro.helpers import (
+    check_cover_capabilities,
     check_cover_features,
     check_time_passed,
     custom_position_slot_configured,
+    custom_position_slot_name,
     custom_position_slot_sensors,
     dt_check_time_passed,
     get_datetime_from_str,
@@ -23,7 +27,9 @@ from custom_components.adaptive_cover_pro.helpers import (
     get_open_close_state,
     get_safe_state,
     get_timedelta_str,
+    is_assumed_state,
     motion_entities,
+    resolve_sun_boundaries,
     should_use_tilt,
 )
 from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
@@ -93,6 +99,20 @@ def test_slot_configured_requires_trigger_and_position():
     assert not custom_position_slot_configured(
         {_SLOT1["template"]: "not a template", _SLOT1["position"]: 50}, _SLOT1
     )
+
+
+@pytest.mark.unit
+def test_custom_position_slot_name_reads_option_key():
+    """Returns the configured custom_position_name_N value (issue #867/#910)."""
+    options = {_SLOT1["name"]: "Canicule"}
+    assert custom_position_slot_name(options, _SLOT1) == "Canicule"
+
+
+@pytest.mark.unit
+def test_custom_position_slot_name_empty_string_normalizes_to_none():
+    """An empty string (cleared text box) and an absent key both mean unset."""
+    assert custom_position_slot_name({_SLOT1["name"]: ""}, _SLOT1) is None
+    assert custom_position_slot_name({}, _SLOT1) is None
 
 
 @pytest.mark.unit
@@ -281,6 +301,28 @@ def test_get_datetime_from_str_preserves_naive_static_time():
 
 
 @pytest.mark.unit
+def test_get_datetime_from_str_anchors_missing_date_on_ha_local_date():
+    """A bare "HH:MM:SS" gets HA's local date, not the host clock's (#1161).
+
+    ``dateutil`` fills components the string omits from its own
+    ``datetime.now()`` — the host clock. Here HA is in Pacific/Auckland while
+    the frozen instant is 2026-08-02 14:06 UTC, so the host is still on 08-02
+    and HA-local has already rolled to 08-03. The boundary must land on the
+    HA-local date, because that is the frame the "now" it gets compared
+    against comes from.
+    """
+    auckland = zoneinfo.ZoneInfo("Pacific/Auckland")
+    with (
+        freeze_time("2026-08-02 14:06:00"),
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", auckland),
+    ):
+        result = get_datetime_from_str("08:00:00")
+
+    assert result == dt.datetime(2026, 8, 3, 8, 0, 0)
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
 def test_get_datetime_from_str_preserves_naive_iso_datetime():
     """ISO string without tzinfo is treated as naive-local, not shifted."""
     ny = zoneinfo.ZoneInfo("America/New_York")
@@ -324,22 +366,39 @@ def test_get_last_updated_returns_none_when_entity_id_none(mock_hass):
 
 @pytest.mark.unit
 def test_check_time_passed_returns_true_when_passed():
-    """Test check_time_passed returns True when time has passed."""
-    # Create a datetime that's definitely in the past
-    past_time = dt.datetime.now() - dt.timedelta(hours=1)
+    """Test check_time_passed returns True when time has passed.
 
-    result = check_time_passed(past_time)
+    Anchors "now" via a patched dt_util.now() sentinel rather than the host
+    clock (issue #1161) — check_time_passed reads dt_util.now() internally, so
+    building the fixture from the host clock would no longer track it.
+    """
+    past_time = dt.datetime(2030, 1, 1, 0, 0, 0)
+    sentinel = dt.datetime(2035, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.dt_util.now",
+        return_value=sentinel,
+    ):
+        result = check_time_passed(past_time)
 
     assert result is True
 
 
 @pytest.mark.unit
 def test_check_time_passed_returns_false_when_future():
-    """Test check_time_passed returns False when time is in future."""
-    # Create a datetime that's definitely in the future
-    future_time = dt.datetime.now() + dt.timedelta(hours=1)
+    """Test check_time_passed returns False when time is in future.
 
-    result = check_time_passed(future_time)
+    Anchors "now" via a patched dt_util.now() sentinel rather than the host
+    clock (issue #1161) — see test_check_time_passed_returns_true_when_passed.
+    """
+    future_time = dt.datetime(2024, 1, 1, 0, 0, 0)
+    sentinel = dt.datetime(2020, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.dt_util.now",
+        return_value=sentinel,
+    ):
+        result = check_time_passed(future_time)
 
     assert result is False
 
@@ -373,6 +432,29 @@ def test_dt_check_time_passed_returns_true_for_past_date():
     yesterday = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
 
     result = dt_check_time_passed(yesterday)
+
+    assert result is True
+
+
+@pytest.mark.unit
+def test_check_time_passed_uses_dt_util_now_not_host_clock():
+    """check_time_passed must read dt_util.now(), not the naive host clock.
+
+    Issue #1161: a bare ``dt.datetime.now()`` silently reads the host OS
+    timezone instead of HA's configured ``hass.config.time_zone``. Freezing
+    ``dt_util.now()`` to a sentinel far from the real host clock must move
+    the result — proving the code reads dt_util, not the host clock.
+    """
+    fixed_time = dt.datetime(2090, 1, 1, 0, 0, 0)
+    # Sentinel is AFTER fixed_time — only a fix reading dt_util.now() can
+    # make check_time_passed True here (the real host clock is in 2026).
+    sentinel = dt.datetime(2095, 1, 1, 0, 0, 0, tzinfo=dt.UTC)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.helpers.dt_util.now",
+        return_value=sentinel,
+    ):
+        result = check_time_passed(fixed_time)
 
     assert result is True
 
@@ -575,6 +657,80 @@ def test_get_open_close_state_returns_none_for_other_states(mock_hass):
     result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
+
+
+# --- is_assumed_state ---
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_true_when_attribute_truthy():
+    """Test is_assumed_state returns True when assumed_state attribute is truthy."""
+    state_obj = MagicMock()
+    state_obj.attributes = {"assumed_state": True}
+
+    assert is_assumed_state(state_obj) is True
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_attribute_absent():
+    """Test is_assumed_state returns False when assumed_state attribute is missing."""
+    state_obj = MagicMock()
+    state_obj.attributes = {}
+
+    assert is_assumed_state(state_obj) is False
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_attribute_explicitly_false():
+    """Test is_assumed_state returns False when assumed_state is explicitly False."""
+    state_obj = MagicMock()
+    state_obj.attributes = {"assumed_state": False}
+
+    assert is_assumed_state(state_obj) is False
+
+
+@pytest.mark.unit
+def test_is_assumed_state_returns_false_when_state_is_none():
+    """Test is_assumed_state returns False when state is None (entity not resolved)."""
+    assert is_assumed_state(None) is False
+
+
+# --- check_cover_capabilities: assumed_state warning ---
+
+
+@pytest.mark.unit
+def test_check_cover_capabilities_warns_when_assumed_state(mock_hass):
+    """check_cover_capabilities appends the assumed_state warning for a ready cover whose state carries assumed_state=True."""
+    state_obj = MagicMock()
+    state_obj.state = "closed"
+    state_obj.attributes = {"assumed_state": True}
+    mock_hass.states.get.return_value = state_obj
+
+    cap_map, warnings = check_cover_capabilities(
+        {CONF_ENTITIES: ["cover.test"]}, None, mock_hass
+    )
+
+    assert cap_map["cover.test"] is not None
+    assert warnings == [
+        "⚠️ cover.test has assumed_state — real position cannot be "
+        "read back, which may affect position verification and delta-bypass."
+    ]
+
+
+@pytest.mark.unit
+def test_check_cover_capabilities_no_warning_without_assumed_state(mock_hass):
+    """check_cover_capabilities does not warn when the state has no assumed_state attribute."""
+    state_obj = MagicMock()
+    state_obj.state = "closed"
+    state_obj.attributes = {}
+    mock_hass.states.get.return_value = state_obj
+
+    cap_map, warnings = check_cover_capabilities(
+        {CONF_ENTITIES: ["cover.test"]}, None, mock_hass
+    )
+
+    assert cap_map["cover.test"] is not None
+    assert warnings == []
 
 
 # --- should_use_tilt ---
@@ -806,3 +962,100 @@ def test_is_entity_active_unknown_domain(mock_hass):
 
     mock_hass.states.get.return_value = _make_state("some_state")
     assert is_entity_active(mock_hass, "light.living_room") is True
+
+
+# ---------------------------------------------------------------------------
+# resolve_sun_boundaries — the shared sunset/sunrise boundary rule (#1044)
+# ---------------------------------------------------------------------------
+
+
+def _boundary_sun_data() -> MagicMock:
+    """SunData double returning aware-UTC astral instants for all four events."""
+    sun_data = MagicMock()
+    sun_data.sunset.return_value = dt.datetime(2026, 7, 2, 19, 30, tzinfo=dt.UTC)
+    sun_data.sunrise.return_value = dt.datetime(2026, 7, 2, 4, 15, tzinfo=dt.UTC)
+    sun_data.next_sunset.return_value = dt.datetime(2026, 7, 3, 19, 29, tzinfo=dt.UTC)
+    sun_data.next_sunrise.return_value = dt.datetime(2026, 7, 3, 4, 16, tzinfo=dt.UTC)
+    return sun_data
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_uses_astral_when_no_entities():
+    """With no override entities the four boundaries come straight from astral."""
+    sun_data = _boundary_sun_data()
+
+    b = resolve_sun_boundaries(
+        sun_data, sunset_time=None, sunrise_time=None, sunset_off=0, sunrise_off=0
+    )
+
+    assert b.sunset == dt.datetime(2026, 7, 2, 19, 30)
+    assert b.sunrise == dt.datetime(2026, 7, 2, 4, 15)
+    assert b.next_sunset == dt.datetime(2026, 7, 3, 19, 29)
+    assert b.next_sunrise == dt.datetime(2026, 7, 3, 4, 16)
+    # Naive-UTC is the comparison space every caller uses.
+    assert all(
+        v.tzinfo is None for v in (b.sunset, b.sunrise, b.next_sunset, b.next_sunrise)
+    )
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_prefers_entity_times_over_astral():
+    """Configured sunset/sunrise entities (#411/#415) win over astral entirely."""
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    sun_data = _boundary_sun_data()
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
+        b = resolve_sun_boundaries(
+            sun_data,
+            sunset_time=dt.datetime(2026, 7, 2, 20, 0),
+            sunrise_time=dt.datetime(2026, 7, 2, 6, 0),
+            sunset_off=0,
+            sunrise_off=0,
+        )
+
+    # 20:00 EDT (UTC-4) → 00:00 UTC the next day; 06:00 EDT → 10:00 UTC.
+    assert b.sunset == dt.datetime(2026, 7, 3, 0, 0)
+    assert b.sunrise == dt.datetime(2026, 7, 2, 10, 0)
+    sun_data.sunset.assert_not_called()
+    sun_data.sunrise.assert_not_called()
+    sun_data.next_sunset.assert_not_called()
+    sun_data.next_sunrise.assert_not_called()
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_applies_offsets():
+    """The configured minute offsets are baked into every returned boundary."""
+    sun_data = _boundary_sun_data()
+
+    b = resolve_sun_boundaries(sun_data, sunset_off=-30, sunrise_off=45)
+
+    assert b.sunset == dt.datetime(2026, 7, 2, 19, 0)
+    assert b.next_sunset == dt.datetime(2026, 7, 3, 18, 59)
+    assert b.sunrise == dt.datetime(2026, 7, 2, 5, 0)
+    assert b.next_sunrise == dt.datetime(2026, 7, 3, 5, 1)
+
+
+@pytest.mark.unit
+def test_resolve_sun_boundaries_rolls_entity_times_forward_in_local_space_across_dst():
+    """Entity-derived "next" boundaries roll +1 local day, not +24 UTC hours.
+
+    US DST starts 2026-03-08 02:00 local, so 21:00 on 03-07 (EST, UTC-5) and
+    21:00 on 03-08 (EDT, UTC-4) are only 23 hours apart. A naive +24 h in UTC
+    would put the rolled boundary an hour late.
+    """
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    sun_data = _boundary_sun_data()
+
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
+        b = resolve_sun_boundaries(
+            sun_data,
+            sunset_time=dt.datetime(2026, 3, 7, 21, 0),
+            sunrise_time=dt.datetime(2026, 3, 7, 6, 0),
+        )
+
+    assert b.sunset == dt.datetime(2026, 3, 8, 2, 0)
+    assert b.next_sunset == dt.datetime(2026, 3, 9, 1, 0)
+    assert b.next_sunset - b.sunset == dt.timedelta(hours=23)
+    assert b.sunrise == dt.datetime(2026, 3, 7, 11, 0)
+    assert b.next_sunrise == dt.datetime(2026, 3, 8, 10, 0)
+    assert b.next_sunrise - b.sunrise == dt.timedelta(hours=23)

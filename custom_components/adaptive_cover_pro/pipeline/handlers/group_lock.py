@@ -1,0 +1,82 @@
+"""Group lock handler — a cover-group lock freezes the member in place.
+
+Issue #790 Phase 2. Priority 100 (``CUSTOM_POSITION_SAFETY_PRIORITY``): the
+lock outranks everything — including weather — matching the shipped
+semantics of a member's own safety slot. On a 100-tie the member's own
+custom-position safety slot wins: it is built earlier in
+``HANDLER_FACTORIES`` and the registry's priority sort is stable, so
+physical safety local to the cover trumps a zone lock.
+"""
+
+from __future__ import annotations
+
+from ...const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    ControlMethod,
+    GroupIntentKind,
+    ReasonCode,
+)
+from ...position_utils import flip_if
+from ...reason_i18n import Reason
+from ..handler import OverrideHandler
+from ..helpers import compute_raw_calculated_position
+from ..types import PipelineResult, PipelineSnapshot
+
+
+class GroupLockHandler(OverrideHandler):
+    """Freeze the cover while a group lock intent is live.
+
+    Reuses the motion-hold shape: the result wins the pipeline (so nothing
+    else can move the cover) and carries ``skip_command=True`` (so nothing is
+    sent) — the cover holds whatever position it is in, with no per-entity
+    target bookkeeping. Deliberately NOT ``is_safety``: no command is emitted,
+    so the safety-target machinery has nothing to track.
+    """
+
+    name = "group_lock"
+    priority = CUSTOM_POSITION_SAFETY_PRIORITY
+
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
+        """Hold the current position while a lock intent is live."""
+        intent = snapshot.group_intent
+        if intent is None or intent.kind is not GroupIntentKind.LOCK:
+            return None
+        held = snapshot.current_cover_position
+        # ``held`` is a RAW cover-frame read, but ``PipelineResult.position`` is
+        # a logical-frame field: ``coordinator.state`` maps every winner through
+        # ``_to_cover_frame`` on the way out, so handing the raw value over
+        # would invert it a second time and publish a target that contradicts
+        # where the cover actually is (issue #1028 / #1036).
+        #
+        # ``bypass_auto_control=True`` below used to dodge that conversion by
+        # accident. That flag means "apply even when automatic control is OFF"
+        # — a statement about gate precedence, not about the number's frame —
+        # and it is set here because a group lock outranks the switch, exactly
+        # as ``motion_timeout`` explains for its own hold. Convert the frame
+        # instead and leave the flag alone. ``default_position`` is already
+        # logical, so only the entity read needs it.
+        if held is not None:
+            position = flip_if(held, inverted=snapshot.position_axis_inverted)
+            # The raw read stays in the reason payload / diagnostics, beside
+            # ``held_position`` — both describe where the cover physically is.
+            reported = held
+        else:
+            position = reported = snapshot.default_position
+        return PipelineResult(
+            position=position,
+            control_method=ControlMethod.GROUP_LOCK,
+            reason_payload=Reason(
+                ReasonCode.GROUP_LOCK,
+                {"group_id": intent.group_id, "position": reported},
+            ),
+            raw_calculated_position=compute_raw_calculated_position(snapshot),
+            held_position=held,
+            skip_command=True,
+            bypass_auto_control=True,
+        )
+
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
+        """Reason when no lock intent is live."""
+        if snapshot.group_intent is not None:
+            return Reason(ReasonCode.SKIP_GROUP_SCENE_NOT_LOCK)
+        return Reason(ReasonCode.SKIP_NO_GROUP_LOCK)

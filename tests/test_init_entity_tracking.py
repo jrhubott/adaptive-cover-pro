@@ -286,3 +286,162 @@ async def test_daytime_gate_template_registered(hass) -> None:
         "CONF_DAYTIME_GATE_TEMPLATE must be registered via async_track_template_result "
         "so the cover reacts the instant the template flips (issue #632)."
     )
+
+
+async def test_weather_severe_template_registered(hass) -> None:
+    """Severe weather template is tracked via async_track_template_result (#974).
+
+    A template-only severe override (no companion binary sensors) must engage
+    and react the instant the template flips — same immediacy as the is-raining
+    and is-windy weather templates.
+    """
+    from unittest.mock import patch as mock_patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_SEVERE_TEMPLATE,
+    )
+
+    severe_template = "{{ is_state('sensor.storm', 'severe') }}"
+    opts = {CONF_WEATHER_SEVERE_TEMPLATE: severe_template}
+
+    template_registered_calls: list[str] = []
+
+    from homeassistant.helpers import event as ha_event
+
+    original_template = ha_event.async_track_template_result
+
+    def _capture_template(hass_, track_templates, callback):
+        for tt in track_templates:
+            template_registered_calls.append(tt.template.template)
+        return original_template(hass_, track_templates, callback)
+
+    with (
+        mock_patch(
+            "custom_components.adaptive_cover_pro.async_track_template_result",
+            side_effect=_capture_template,
+        ),
+        _patch_coordinator_refresh(),
+    ):
+        _, _ = await _setup_entry_capture_tracked(
+            hass,
+            extra_options=opts,
+            entry_id="track_severe_tmpl_01",
+        )
+
+    assert severe_template in template_registered_calls, (
+        "CONF_WEATHER_SEVERE_TEMPLATE must be registered via "
+        "async_track_template_result so a template-only severe override reacts "
+        "the instant the template flips (issue #974)."
+    )
+
+
+async def test_manual_override_input_template_registered(hass) -> None:
+    """Manual-override input template is tracked via async_track_template_result (#974).
+
+    A template flipping truthy must engage manual override the instant it does,
+    with no polling — the same immediacy as the input-sensor edge path.
+    """
+    from unittest.mock import patch as mock_patch
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE,
+    )
+
+    input_template = "{{ is_state('input_boolean.cover_touch', 'on') }}"
+    opts = {CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE: input_template}
+
+    template_registered_calls: list[str] = []
+
+    from homeassistant.helpers import event as ha_event
+
+    original_template = ha_event.async_track_template_result
+
+    def _capture_template(hass_, track_templates, callback):
+        for tt in track_templates:
+            template_registered_calls.append(tt.template.template)
+        return original_template(hass_, track_templates, callback)
+
+    with (
+        mock_patch(
+            "custom_components.adaptive_cover_pro.async_track_template_result",
+            side_effect=_capture_template,
+        ),
+        _patch_coordinator_refresh(),
+    ):
+        _, _ = await _setup_entry_capture_tracked(
+            hass,
+            extra_options=opts,
+            entry_id="track_input_tmpl_01",
+        )
+
+    assert input_template in template_registered_calls, (
+        "CONF_MANUAL_OVERRIDE_INPUT_TEMPLATE must be registered via "
+        "async_track_template_result so the override engages the instant the "
+        "template flips truthy (issue #974)."
+    )
+
+
+async def test_acp_namespace_tracked_on_a_brand_new_entry(hass) -> None:
+    """A self-reference is tracked on the FIRST-EVER setup, not just after a reload.
+
+    ``TrackTemplateResultInfo.async_setup`` fixes the listener set from what the
+    *first* render touched, so a namespace key that resolves to nothing on that
+    render contributes no listener for the life of the setup. Registering the
+    option-template trackers after ``async_forward_entry_setups`` is what makes
+    the registry rows exist by then (issue #1159).
+    """
+    from unittest.mock import AsyncMock, patch as mock_patch
+
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.adaptive_cover_pro.const import CONF_MOTION_TEMPLATE
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Brand New Shade", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options={
+            **VERTICAL_OPTIONS,
+            CONF_MOTION_TEMPLATE: "{{ is_state(acp.sun_infront, 'on') }}",
+        },
+        entry_id="track_acp_bootstrap_01",
+        title="Vertical Brand New Shade",
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set(
+        "sun.sun", "above_horizon", {"azimuth": 180.0, "elevation": 45.0}
+    )
+    hass.states.async_set(
+        "cover.test_blind", "open", {"current_position": 100, "supported_features": 143}
+    )
+
+    with (
+        mock_patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "async_check_motion_template_change",
+            new_callable=AsyncMock,
+        ) as fired,
+        _patch_coordinator_refresh(),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        sun_infront = next(
+            e.entity_id
+            for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+            if e.domain == "binary_sensor" and e.translation_key == "sun_motion"
+        )
+
+        fired.reset_mock()
+        hass.states.async_set(sun_infront, "on")
+        await hass.async_block_till_done()
+
+    assert fired.called, (
+        "On a first-ever setup the entity registry is empty when trackers are "
+        "registered before platform forwarding, so acp.sun_infront resolves to "
+        "nothing and the template records no listener. Register the option "
+        "template trackers after async_forward_entry_setups (issue #1159)."
+    )

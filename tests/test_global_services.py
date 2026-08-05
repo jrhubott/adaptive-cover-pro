@@ -616,3 +616,37 @@ async def test_unload_services_keeps_services_when_only_real_entry_remains():
     await async_unload_services(hass)  # must not raise AttributeError
 
     hass.services.async_remove.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Travel-time calibration stand-down (both disable paths)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service", ["integration_disable", "emergency_stop"])
+async def test_disable_paths_stand_a_calibration_run_down_first(service):
+    """A run must be cancelled BEFORE the covers are stopped, not after.
+
+    A calibration run drives covers through ``_execute_command``, which bypasses
+    the enabled gate — so a run left going would keep issuing commands during and
+    after the stop, quietly undoing it. ``restore=False`` because both callers are
+    asking for movement to stop, and sending the covers home is more movement.
+    """
+    order: list[str] = []
+    coord = _make_coordinator(["cover.a"])
+    coord.async_cancel_travel_calibration = MagicMock(
+        side_effect=lambda *, restore: order.append(f"cancel:{restore}")
+    )
+    coord._cmd_svc.stop_in_flight = AsyncMock(
+        side_effect=lambda **_kw: order.append("stop") or []
+    )
+    coord._cmd_svc.stop_all = AsyncMock(
+        side_effect=lambda *_a: order.append("stop") or []
+    )
+    hass = _make_hass({"entry_a": coord})
+
+    await async_setup_services(hass)
+    await _get_handler(hass, service)(_make_call())
+
+    assert order == ["cancel:False", "stop"]

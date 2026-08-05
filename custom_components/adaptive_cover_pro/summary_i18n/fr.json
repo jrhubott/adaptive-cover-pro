@@ -23,6 +23,7 @@
   },
   "fragments": {
     "as_minimum": " (comme minimum)",
+    "as_maximum": " (au plus {max}%)",
     "safety": " 🔒 sécurité : agit aussi en dehors de la fenêtre horaire",
     "template_value": "[template]"
   },
@@ -31,7 +32,7 @@
     "manual": "✋ Dérogation manuelle : pause le contrôle automatique quand vous bougez le store{detail}",
     "custom_tilt_only": "🎯 Personnalisé #{slot} : si {trigger} est activé → inclinaison seulement (lamelle fixée à {slat}% ; position pilotée par le suivi solaire)",
     "custom": "🎯 Personnalisé #{slot} : si {trigger} est activé → {target}{cp_min}{tilt_note} — contourne les portes delta et le contrôle automatique{safety}",
-    "motion": "🚶 Basé sur le mouvement : si pas de présence pendant {motion_timeout}s ({sources}) → {action}",
+    "motion": "**Occupation** (🚶 {motion_timeout}s)\n\nLorsque l'occupation est détectée dans les capteurs sélectionnés:\n- {sources} (alimentation détectée)\n- {action}",
     "cloud": "☁️ Suppression de nuages : ignore le suivi solaire{cloud} → {fallback}",
     "climate": "🌡️ Mode climatique : ajuste la stratégie pour le chauffage/refroidissement{detail}",
     "glare": "🔆 Zones d'éblouissement : baisse davantage le store pour protéger les zones du sol contre l'éblouissement{detail}",
@@ -54,6 +55,11 @@
   },
   "manual": {
     "pauses_for": "pause pendant {duration}",
+    "until_sunset": "maintient jusqu'au prochain coucher de soleil",
+    "until_sunrise": "maintient jusqu'au prochain lever de soleil",
+    "until_next_sun_event": "maintient jusqu'au prochain lever ou coucher de soleil",
+    "until_window_end": "maintient jusqu'à la fin de la fenêtre de temps",
+    "until_window_end_no_window": "⚠️ La dérogation manuelle doit maintenir jusqu'à la fin de la fenêtre de temps, mais aucune heure de fin n'est configurée — la durée configurée est utilisée à la place",
     "threshold": "seuil {threshold}%",
     "resets_on_move": "réinitialise au prochain mouvement",
     "ignore_intermediate": "ignore les positions intermédiaires",
@@ -65,21 +71,28 @@
     "tilt_note": ", inclinaison {tilt}%",
     "trigger_sensors": "l'un des {n} capteurs",
     "trigger_template": "template",
-    "trigger_join": " ou "
+    "trigger_join": " ou ",
+    "tilt_bound_min": ", inclinaison d'au moins {min}%",
+    "tilt_bound_max": ", inclinaison d'au plus {max}%",
+    "tilt_bound_range": ", inclinaison {min}–{max}%",
+    "no_position_claim": "la position calculée"
   },
   "warnings": {
+    "custom_position_bound_conflict": "⚠️ Personnalisé #{slot} : le maximum ({max}%) est inférieur au minimum ({min}%) — le minimum l'emporte et le maximum est ignoré.",
     "custom_tilt_only_conflict": "⚠️ Personnalisé #{slot} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
-    "motion_hold_no_sensors": "⚠️ mode retenue est défini mais aucun détecteur de mouvement ou lecteur multimédia n'est configuré — le paramètre n'a aucun effet tant qu'une source de mouvement n'est pas ajoutée",
+    "motion_hold_no_sensors": "Aucun capteur d'occupation configuré. La détection d'occupation est désactivée.",
     "cloudy_pos_ignored": "⚠️ Position nuageux ({pos}%) configurée mais suppression de nuages est désactivée — la valeur sera ignorée.",
     "sun_track_min_below_floor": "⚠️ Min suivi solaire {sun_min}% < position min {min_pos}% — le plancher toujours actif domine ; le plancher suivi solaire sera relevé à {min_pos}%.",
     "mode2_min_position": "⚠️ Inclinaison MODE2 + position min {min_pos}% — en MODE2 l'angle de lamelle ouvert (horizontal) EST 50%, donc toute position min ≥ 50 réduit à néant chaque décision de contrôle climatique/éblouissement au plancher et le store cesse de bloquer la chaleur.",
     "somfy_my_unset": "⚠️ Préréglage Somfy My est activé pour une ou plusieurs cibles mais Valeur du préréglage My n'est pas définie — revient au % configuré.",
     "proxy_no_min": "⚠️ Store mandataire est activé mais aucun emplacement de position personnalisée n'a Utiliser comme minimum activé — le store géré ne limitera pas.",
     "custom_and_no_sensors": "⚠️ Personnalisé #{slot} : le mode de combinaison ET est défini mais aucun capteur déclencheur n'est configuré — le template seul active le slot.",
-    "custom_safety_bypass": "⚠️ L'emplacement personnalisé #{slot} est à la priorité de sécurité ({safety}) — il contourne l'interrupteur de contrôle automatique, la dérogation manuelle et la fenêtre horaire de début/fin, pour que le store puisse se déplacer même quand le contrôle automatique est DÉSACTIVÉ et en dehors de votre horaire. Réduisez sa priorité en dessous de {safety} pour qu'elle respecte ces seuils."
+    "group_empty": "⚠️ Ce groupe n'a pas de membres — il ne commandera rien.",
+    "forecast_source_no_weather_entity": "⚠️ La source de température extérieure est basée sur les prévisions mais aucune entité météo n'est configurée — les prévisions vont silencieusement revenir au relevé en direct. Configurez une entité météo dans Météo, lumière & nuages.",
+    "travel_time_unmeasurable": "⚠️ {entities} signalent un état supposé, donc leur temps de course ne peut pas être mesuré et aucun n'a été entré — les tableaux de bord ne les montreront pas en mouvement. Entrez une durée sous Étalonnage → Temps de course."
   },
   "motion": {
-    "action_hold": "stores maintiennent la position actuelle (reviennent au défaut quand le soleil quitte le FOV)",
+    "action_hold": "les stores maintiennent la position actuelle (retournent à la position par défaut quand le soleil quitte l'angle d'ouverture solaire)",
     "action_return": "stores reviennent au défaut ({default_pos}%)",
     "template_source": "modèle de présence"
   },
@@ -94,7 +107,12 @@
     "weather_in": "météo dans {{{states}}}",
     "when": " quand {parts}",
     "fallback_cloudy": "position nuageux {pos}%",
-    "fallback_default": "défaut ({default_pos}%)"
+    "fallback_default": "défaut ({default_pos}%)",
+    "hold_time": " · maintien de lissage {secs}s",
+    "release": " · libération quand {parts}",
+    "lux_release": "lux ≥ {release} lx",
+    "irradiance_release": "rayonnement ≥ {release} W/m²",
+    "coverage_release": "couverture nuageuse ≤ {release}%"
   },
   "info": {
     "light_sensors_off": "📊 Détecteurs de lumière configurés ({names}) mais suppression de nuages est désactivée.",
@@ -105,13 +123,21 @@
   "climate": {
     "comfort_range": "plage de confort {lo}–{hi}°C",
     "using": "utilisant {entity}",
+    "using_area": "utilisant le capteur de température de la zone",
     "outside_thresh": "extérieur : {entity} > {thresh}°C",
     "outside": "extérieur : {entity}",
     "weather": "météo : {entity}",
     "presence": "présence : {entity}",
     "transparent": "store transparent",
     "winter_close": "ferme complètement en hiver pour l'isolation",
-    "summer_full_close": "ferme complètement en cas de chaleur estivale"
+    "summer_full_close": "ferme complètement en cas de chaleur estivale",
+    "extreme_heat": "maintient {pos} % toute la journée au-dessus de {thresh} °C extérieur",
+    "hold_time": " · maintien du lissage {secs}s",
+    "release": " · relâchement quand {parts}",
+    "temp_low_release": "hiver ≥ {release}°",
+    "temp_high_release": "été ≤ {release}°",
+    "outside_release": "extérieur ≤ {release}°",
+    "extreme_heat_release": "chaleur extrême ≤ {release}°"
   },
   "glare": {
     "zones": "zones : {names}",
@@ -121,7 +147,7 @@
   },
   "solar": {
     "azimuth": "azimut {azimuth}°",
-    "fov": "±{fov_l}°/{fov_r}° champ de vision",
+    "fov": "±{fov_l}°/{fov_r}° angle d'ouverture solaire",
     "elev_above": "au-dessus {elev}°",
     "elev_below": "au-dessous {elev}°",
     "elevation": "élévation {parts}",
@@ -130,7 +156,11 @@
     "today_no_window": " (aujourd'hui : le soleil n'entre pas dans la fenêtre)",
     "minimize_one_step": "se déplace directement à la couverture complète et se maintient (1 étape)",
     "minimize_steps": "atteint la couverture complète en jusqu'à {steps} étapes",
-    "minimize": "{indent}🪟 Minimiser les mouvements — {detail}, arrondi vers plus de couverture pour réduire les mouvements moteur."
+    "minimize": "{indent}🪟 Minimiser les mouvements — {detail}, arrondi vers plus de couverture pour réduire les mouvements moteur.",
+    "gate_sensors": "{indent}🚦 Filtre de suivi du soleil : {sensors} décident s'il faut suivre le soleil.",
+    "gate_template": "{indent}🚦 Filtre de suivi du soleil : un modèle décide s'il faut suivre le soleil.",
+    "gate_both": "{indent}🚦 Filtre de suivi du soleil : {sensors} et un modèle ({mode}) décident s'il faut suivre le soleil.",
+    "gate_explainer": "{indent}Tant que le filtre est faux, le positionnement solaire est ignoré et le volet revient à la position par défaut. Le mode climatique, le mouvement et la dérogation manuelle ne sont pas affectés, et la fenêtre de fonctionnement reste ouverte — contrairement au filtre de jour, qui ferme la fenêtre et les supprime tous. Les zones d'éblouissement continuent de fonctionner mais perdent leurs limites réservées au suivi du soleil, celles-ci ne s'appliquant que lorsque le suivi est actif."
   },
   "timing": {
     "from_entity": "de {entity}",
@@ -159,14 +189,14 @@
     "gate_offset_ignored": "{indent}⚠️ Le décalage de coucher/lever de soleil est ignoré lorsqu'un filtre de jour est défini — le filtre, et non l'horloge, décide la limite."
   },
   "blind_spot": {
-    "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur depuis la gauche FOV (par ex. arbre ou avant-toit).",
+    "line": "🟥 Zone aveugle : ignore le soleil à {bs} (gamma à partir de la normale à la fenêtre — par ex. arbre ou débord de toit).",
     "range": "{left}°–{right}°",
     "elevation": "jusqu'à {elev}° élévation",
     "elevation_above": "au-dessus de {elev}° élévation"
   },
   "default": {
-    "tilt": "  ↳ Inclinaison par défaut : {tilt}% (explicite ; remplace calculé solaire)",
-    "sunset_tilt": "  ↳ Inclinaison coucher : {tilt}% (explicite ; remplace calculé solaire)"
+    "tilt": "  ↳ Inclinaison par défaut : {tilt}% (utilisée quand aucun gestionnaire ne prend le contrôle)",
+    "sunset_tilt": "  ↳ Inclinaison coucher : {tilt}% (utilisée au coucher du soleil, quand aucun gestionnaire ne prend le contrôle)"
   },
   "limits": {
     "range": "Plage : {lo}–{hi}{qualifier}",
@@ -184,7 +214,9 @@
     "sun_tracking_min": "Min suivi solaire : {pos}%",
     "separator": " · ",
     "position_matching_off": "📍 Correspondance de position désactivée (commande unique; une stabilisation au-delà de la tolérance devient une dérogation manuelle)",
-    "position_matching_on": "📍 Correspondance de position activée (renvoie jusqu'à ce que la store atteigne la position cible)"
+    "position_matching_on": "📍 Correspondance de position activée (renvoie jusqu'à ce que la store atteigne la position cible)",
+    "travel_time": "Temps de course : {done}/{total} stores",
+    "travel_time_manual": "Temps de course : {done}/{total} stores ({manual} entrées manuellement)"
   },
   "my": {
     "entities_enabled": "🎛️ Entités préréglage My : activées",
@@ -200,7 +232,11 @@
     "tilt": "Store vénitien / inclinaison",
     "oscillating_awning": "Store oscillant",
     "venetian": "Store vénitien (deux axes)",
-    "roof_window": "Fenêtre de toit"
+    "roof_window": "Fenêtre de toit",
+    "sliding_curtain": "Rideau coulissant",
+    "louvered_roof": "Toit à lames",
+    "day_night_shade": "Store jour/nuit",
+    "dual_panel": "Store à double panneau"
   },
   "geometry": {
     "window": {
@@ -213,12 +249,16 @@
     "awning": {
       "length": "store banne de {v}m",
       "angle": "incliné à {v}°",
-      "blocking_wall": "bloque le soleil {v}m du mur"
+      "blocking_wall": "bloque le soleil {v}m du mur",
+      "shade_mode_window": "ombrager la vitre",
+      "shade_mode_area": "ombrage de la zone avant (terrasse)"
     },
     "slat": {
       "depth": "profondeur de lamelle {v}cm",
       "spacing": "espacement {v}cm",
-      "mode": "mode : {v}"
+      "mode": "mode : {v}",
+      "angle_0": "angle 0 % {v}°",
+      "angle_100": "angle 100 % {v}°"
     },
     "oscillating": {
       "arm": "bras {v}m",
@@ -238,14 +278,56 @@
       "drift_reset": "réinitialisation de dérive tous les {threshold}% d'inclinaison cumulée (via {direction})",
       "drift_reset_scope_solar": "commandes de suivi solaire uniquement",
       "skip_tilt_suppress": "supprimer l'inclinaison à partir de {skip_above}% (pas d'envoi neutre)",
-      "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%"
+      "tilt_safety_margin": "marge de sécurité d'inclinaison {pct}%",
+      "tilt_transform": "remappage proportionnel de l'inclinaison dans la plage min-max"
     },
     "fov": {
-      "computed": "FOV calculé ≈ {deg}°/{deg}° (largeur {w}m, profondeur tableau {d}m)"
+      "computed": "Angle d'ouverture calculé ≈ {deg}°/{deg}° ({w} m de largeur, {d} m de profondeur de niche)"
     },
     "roof": {
       "pitch": "pente de toit {v}° depuis l'horizontale",
-      "height_above": "{v}m de toit au-dessus de la fenêtre (porte de faîtage)"
+      "height_above": "{v}m de toit au-dessus de la fenêtre (porte de faîtage)",
+      "max_slat_angle": "angle de lamelle max. {v}°"
+    },
+    "sliding": {
+      "slide": "glissement : {v}",
+      "dir_left": "un seul pan (gauche)",
+      "dir_right": "un seul pan (droite)",
+      "dir_bi_part": "ouverture centrale",
+      "width": "largeur de fenêtre {v}m",
+      "shade_area": "zone d'ombrage ({x1}, {y1})–({x2}, {y2}) m",
+      "binary": "ouverture/fermeture binaire (pas de zone d'ombrage)"
+    },
+    "day_night": {
+      "model_position_tilt": "position et inclinaison (à deux axes)",
+      "model_split_range": "plage fractionnée (à un seul axe)",
+      "model_dual_entity": "deux entités de rail (double entité)",
+      "rail_travel": "déplacement du rail : {v}",
+      "rail_travel_concurrent": "les deux rails se déplacent simultanément une fois que le rail de tête est en mouvement",
+      "rail_travel_serialized": "les rails se déplacent à tour de rôle — le rail suivant attend le dégagement complet",
+      "rail_interlock": "verrouillage des rails : {v}",
+      "rail_interlock_on": "⚠️ une commande qu'un rail ne peut pas atteindre est menée à bien en déplaçant d'abord l'autre rail — ACP peut déplacer le rail que vous n'avez pas commandé",
+      "rail_interlock_off": "une commande qu'un rail ne peut pas atteindre est laissée telle quelle"
+    },
+    "dual_panel": {
+      "front_entity": "panneau avant (voile) : {v}",
+      "triggers": "l'occultant se déploie sur : {v}",
+      "none": "aucun déclencheur"
     }
+  },
+  "group": {
+    "header": "**Groupe de stores**",
+    "members": "Contrôle {acp_count} membre(s) ACP + {generic_count} store(s) générique(s)",
+    "member_acp": "- 🪟 {title} (ACP)",
+    "member_generic": "- 🪟 {entity} (générique)",
+    "scene_priority": "Les scènes de groupe s'appliquent à la priorité {scene_priority} (au-dessus de la dérogation manuelle, en dessous de la sécurité météo)",
+    "lock": "🔒 Verrouillage de groupe à la priorité {lock_priority} — gèle les membres en place ; la sécurité propre d'un membre gagne toujours en cas d'égalité",
+    "stagger": "Membres commandés à {stagger}s d'intervalle",
+    "cover_entity": "Entité de store agrégée exposée — la faire glisser commande chaque membre",
+    "area": "L'adhésion suit la zone « {area} » — les stores de cette zone rejoignent automatiquement"
+  },
+  "axes": {
+    "position": "Position",
+    "tilt": "Inclinaison"
   }
 }

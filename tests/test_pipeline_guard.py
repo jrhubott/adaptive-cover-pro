@@ -15,6 +15,8 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     CloudSuppressionHandler,
     DefaultHandler,
     GlareZoneHandler,
+    GroupLockHandler,
+    GroupSceneHandler,
     ManualOverrideHandler,
     MotionTimeoutHandler,
     SolarHandler,
@@ -26,7 +28,12 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
 # user-configurable (1–100; 100 = safety/force-override semantics, issue
 # #563) and cannot be locked to a single value.
 _EXPECTED_PRIORITIES: dict[type, int] = {
+    # Group lock deliberately shares 100 with a member's custom-position
+    # SAFETY slot (excluded from this map); the tie is resolved by handler
+    # build order — member safety first (issue #790 Phase 2).
+    GroupLockHandler: 100,
     WeatherOverrideHandler: 90,
+    GroupSceneHandler: 85,
     ManualOverrideHandler: 80,
     MotionTimeoutHandler: 75,
     CloudSuppressionHandler: 60,

@@ -9,13 +9,15 @@ Thanks to @ZamenWolk for identifying this in GitHub issue #213.
 from __future__ import annotations
 
 import logging
+import math
 
 from ...cover_types import get_policy
 from ...engine.covers.vertical import (
     AdaptiveVerticalCover,
     glare_zone_effective_distance,
 )
-from ...const import ControlMethod
+from ...const import ControlMethod, ReasonCode
+from ...reason_i18n import Reason
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
@@ -109,8 +111,8 @@ class GlareZoneHandler(OverrideHandler):
             # shadow from SolarHandler's normal calculation. No override needed.
             return None
 
-        state = int(
-            round(cover.calculate_percentage(effective_distance_override=min_distance))
+        state = math.floor(
+            cover.calculate_raw_percentage(effective_distance_override=min_distance)
         )
         state = solar_floor(state, floor_active=snapshot.solar_floor_active)
         # ``sun_valid`` follows the live tracking state: the sun-only limits
@@ -131,19 +133,26 @@ class GlareZoneHandler(OverrideHandler):
 
         zone_names = ", ".join(contributing_zones)
         z_adjusted = any(zones_by_name[name].z > 0 for name in contributing_zones)
-        z_suffix = " (Z-adjusted)" if z_adjusted else ""
+        z_suffix: Reason | str = (
+            Reason(ReasonCode.FRAGMENT_Z_ADJUSTED) if z_adjusted else ""
+        )
         return PipelineResult(
             position=position,
             control_method=ControlMethod.GLARE_ZONE,
-            reason=(
-                f"glare zone protection ({zone_names}) — "
-                f"effective distance {min_distance:.2f}m{z_suffix} → position {position}%"
+            reason_payload=Reason(
+                ReasonCode.GLARE_PROTECTION,
+                {
+                    "zones": zone_names,
+                    "distance": min_distance,
+                    "z_suffix": z_suffix,
+                    "position": position,
+                },
             ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
+    def describe_skip(self, snapshot: PipelineSnapshot) -> Reason:
         """Reason when glare zone handler does not match."""
         if not snapshot.in_time_window:
-            return "outside time window"
-        return "no active glare zones or sun not in FOV"
+            return Reason(ReasonCode.SKIP_OUTSIDE_WINDOW)
+        return Reason(ReasonCode.SKIP_NO_GLARE_ZONES)

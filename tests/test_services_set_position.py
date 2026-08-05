@@ -21,8 +21,10 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
 from tests.ha_helpers import (
+    bind_user_position_seam,
     VERTICAL_OPTIONS,
     _patch_coordinator_refresh,
+    wire_dispatch_frame,
 )
 
 pytestmark = pytest.mark.integration
@@ -67,7 +69,9 @@ def _make_coord(
     coord = MagicMock()
     coord.entities = entities or ["cover.test_blind"]
     coord.config_entry = MagicMock()
-    coord.config_entry.options = options or {}
+    entry_opts = options or {}
+    coord.config_entry.options = entry_opts
+    wire_dispatch_frame(coord, entry_opts)
 
     # Snapshot builder — async_apply_user_position routes its custom-position
     # read through this collaborator after Phase D.  Floor composition now
@@ -99,8 +103,12 @@ def _make_coord(
         AdaptiveDataUpdateCoordinator,
     )
 
-    coord.async_apply_user_position = (
-        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    bind_user_position_seam(coord)
+    # set_position now routes through the axis collapse point (issue #725); bind
+    # the real dispatcher so behavior tests exercise the same path production does.
+    coord.async_apply_user_tilt = AsyncMock(return_value=("sent", "tilt"))
+    coord.async_apply_user_axis = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_axis.__get__(coord)
     )
 
     return coord
@@ -160,6 +168,42 @@ async def test_set_tilt_service_removed_after_all_entries_unloaded(hass) -> None
 # ---------------------------------------------------------------------------
 # Wrapper coverage: thin _resolve_targets re-export
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_position_routes_through_axis_dispatch() -> None:
+    """The set_position handler dispatches on the POSITION axis constant (#725)."""
+    from custom_components.adaptive_cover_pro.cover_types.base import (
+        AXIS_NAME_POSITION,
+    )
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        async_handle_set_position,
+    )
+
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    coord = MagicMock()
+    coord.entities = ["cover.blind_a"]
+    coord.async_apply_user_axis = AsyncMock(return_value=("sent", "position"))
+    # The service reads the policy's ordered dispatch view (#1115); a MagicMock
+    # policy would hand back a MagicMock that iterates as empty.
+    coord._policy = get_policy(CoverType.BLIND)
+    call = MagicMock()
+    call.data = {"position": 55}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_position_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_position(call)
+
+    coord.async_apply_user_axis.assert_awaited_once_with(
+        "cover.blind_a",
+        AXIS_NAME_POSITION,
+        55,
+        trigger="set_position",
+        force=False,
+    )
 
 
 def test_resolve_targets_wrapper_delegates_to_services_module() -> None:
@@ -334,11 +378,13 @@ async def test_min_mode_slot_on_clamps_up() -> None:
         async_handle_set_position,
     )
 
+    # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
+    # to clamp a user move.
     slot = CustomPositionSensorState(
         entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=50,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=82,
         min_mode=True,
         use_my=False,
     )
@@ -443,11 +489,13 @@ async def test_two_floors_request_below_highest_clamped() -> None:
         async_handle_set_position,
     )
 
+    # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
+    # to clamp a user move.
     slot_a = CustomPositionSensorState(
         entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=40,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=82,
         min_mode=True,
         use_my=False,
     )
@@ -455,7 +503,7 @@ async def test_two_floors_request_below_highest_clamped() -> None:
         entity_ids=("binary_sensor.slot2",),
         is_on=True,
         position=65,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=82,
         min_mode=True,
         use_my=False,
     )
@@ -587,11 +635,13 @@ async def test_clamp_emits_info_log(caplog) -> None:
         async_handle_set_position,
     )
 
+    # Re-anchored for #472: a floor must be > ManualOverrideHandler.priority (80)
+    # to clamp a user move.
     slot = CustomPositionSensorState(
         entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=50,
-        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        priority=82,
         min_mode=True,
         use_my=False,
     )
@@ -900,3 +950,120 @@ def test_schema_accepts_ha_injected_area_id() -> None:
 
     result = SET_POSITION_SCHEMA({"position": 75, "area_id": ["living_room"]})
     assert result["position"] == 75
+
+
+# ---------------------------------------------------------------------------
+# Issue #472: the user-move floor clamp is priority-aware. A floor clamps a
+# manual command only when its priority strictly exceeds ManualOverrideHandler
+# priority (80); a floor at or below 80 yields to the manual move.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sub_80_floor_does_not_clamp_user_move() -> None:
+    """A default-priority (77) floor yields to a below-floor user command (#472)."""
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        async_handle_set_position,
+    )
+
+    slot = CustomPositionSensorState(
+        entity_ids=("binary_sensor.slot1",),
+        is_on=True,
+        position=60,
+        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,  # 77 < 80 → does not clamp
+        min_mode=True,
+        use_my=False,
+    )
+    coord = _make_coord(custom_states=[slot])
+    call = MagicMock()
+    call.data = {"position": 20}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_position_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_position(call)
+
+    # Manual wins: the requested value is dispatched unchanged.
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test_blind",
+        20,
+        "set_position",
+        coord._build_position_context.return_value,
+    )
+
+
+@pytest.mark.asyncio
+async def test_above_80_floor_clamps_user_move_before_dispatch() -> None:
+    """A >80 floor clamps a below-floor user command up to the floor (#472).
+
+    ``apply_position`` receives the FLOOR value, proving the clamp intercepts
+    the move *before* dispatch — the motor never sees the below-floor value.
+    """
+    from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
+        ManualOverrideHandler,
+    )
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        async_handle_set_position,
+    )
+
+    slot = CustomPositionSensorState(
+        entity_ids=("binary_sensor.slot1",),
+        is_on=True,
+        position=60,
+        priority=ManualOverrideHandler.priority + 2,  # 82 > 80 → clamps
+        min_mode=True,
+        use_my=False,
+    )
+    coord = _make_coord(custom_states=[slot])
+    call = MagicMock()
+    call.data = {"position": 20}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_position_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_position(call)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test_blind",
+        60,
+        "set_position",
+        coord._build_position_context.return_value,
+    )
+
+
+@pytest.mark.asyncio
+async def test_floor_equal_to_manual_priority_does_not_clamp() -> None:
+    """A floor at exactly 80 ties with manual override and loses (strict ``>``)."""
+    from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
+        ManualOverrideHandler,
+    )
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        async_handle_set_position,
+    )
+
+    slot = CustomPositionSensorState(
+        entity_ids=("binary_sensor.slot1",),
+        is_on=True,
+        position=60,
+        priority=ManualOverrideHandler.priority,  # 80 == 80 → ties → does not clamp
+        min_mode=True,
+        use_my=False,
+    )
+    coord = _make_coord(custom_states=[slot])
+    call = MagicMock()
+    call.data = {"position": 20}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.set_position_service._resolve_targets",
+        return_value={coord: None},
+    ):
+        await async_handle_set_position(call)
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test_blind",
+        20,
+        "set_position",
+        coord._build_position_context.return_value,
+    )

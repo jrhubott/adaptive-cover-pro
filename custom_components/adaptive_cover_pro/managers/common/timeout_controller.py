@@ -42,7 +42,7 @@ class TimeoutController:
     timeout"``) used in debug logs only — not user-facing.
     """
 
-    def __init__(self, logger, *, label: str = "timeout") -> None:
+    def __init__(self, logger, *, label: str = "timeout", hass=None) -> None:
         """Initialize with the manager's logger and a short label.
 
         Args:
@@ -51,10 +51,20 @@ class TimeoutController:
                 output stays attributable to the owning manager.
             label: Short identifier for log messages. Convention is
                 ``"<feature> timeout"`` (e.g. ``"motion timeout"``).
+            hass: Optional HomeAssistant instance. When provided, the
+                timer task is spawned via ``hass.async_create_background_task``
+                so Home Assistant tracks it and cancels it on stop — this is
+                what keeps a long debounce (e.g. the 900s health-check timer)
+                from leaking as a lingering asyncio task when the owning entry
+                is never explicitly shut down (issue #975). When ``None`` the
+                helper falls back to a bare ``asyncio.create_task`` — the
+                original behaviour, kept for the event-driven managers whose
+                own lifecycle already cancels their timers.
 
         """
         self._logger = logger
         self._label = label
+        self._hass = hass
         self._task: asyncio.Task | None = None
 
     @property
@@ -80,7 +90,13 @@ class TimeoutController:
 
         """
         self.cancel()
-        self._task = asyncio.create_task(self._run(seconds, on_expire))
+        coro = self._run(seconds, on_expire)
+        if self._hass is not None:
+            # HA-tracked: cancelled automatically on Home Assistant stop, so a
+            # pending long debounce never lingers as an orphan task.
+            self._task = self._hass.async_create_background_task(coro, name=self._label)
+        else:
+            self._task = asyncio.create_task(coro)
 
     async def _run(
         self,

@@ -79,6 +79,9 @@ def _make_climate_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.calculate_raw_percentage = MagicMock(
+        return_value=float(calculate_percentage_return)
+    )
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -211,7 +214,7 @@ def test_decision_trace_non_matching_handlers_record_skip_reason() -> None:
     # SolarHandler doesn't match — reason comes from describe_skip().
     assert result.decision_trace[0].handler == "solar"
     assert result.decision_trace[0].matched is False
-    assert "not" in result.decision_trace[0].reason.lower()
+    assert "outside acceptance angle" in result.decision_trace[0].reason.lower()
     # Default matches.
     assert result.decision_trace[1].handler == "default"
     assert result.decision_trace[1].matched is True
@@ -457,3 +460,29 @@ def test_outprioritized_handler_trace_has_descriptive_reason() -> None:
     default_step = next(s for s in result.decision_trace if s.handler == "default")
     assert default_step.matched is False
     assert "outprioritized" in default_step.reason
+
+
+def test_outprioritized_step_carries_reason_payload_code() -> None:
+    """The outprioritized step carries a registry.outprioritized code + params,
+    while its English reason stays byte-identical to the legacy f-string.
+    """
+    from custom_components.adaptive_cover_pro.const import ReasonCode
+
+    handlers = [
+        _make_custom_position_handler(),
+        SolarHandler(),
+        DefaultHandler(),
+    ]
+    registry = PipelineRegistry(handlers)
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        calculate_percentage_return=70.0,
+        custom_position_sensors=[_custom_state()],
+    )
+    result = registry.evaluate(snap)
+    winner = result.decision_trace[0]
+    solar_step = next(s for s in result.decision_trace if s.handler == "solar")
+    assert solar_step.reason_payload is not None
+    assert solar_step.reason_payload.code == ReasonCode.REGISTRY_OUTPRIORITIZED
+    assert solar_step.reason_payload.params == {"handler": winner.handler}
+    assert solar_step.reason == f"outprioritized by {winner.handler}"
