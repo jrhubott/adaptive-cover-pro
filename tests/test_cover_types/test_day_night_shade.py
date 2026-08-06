@@ -28,6 +28,7 @@ from custom_components.adaptive_cover_pro.const import (
     DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
+    DAY_NIGHT_SPLIT_MIDPOINT,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
     DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
@@ -742,6 +743,33 @@ def test_model_a_and_b_dispatch_order_is_the_config_order(
     assert policy.order_for_dispatch(entities, **frame) == entities
 
 
+def test_the_split_midpoint_must_be_half_the_wire_range() -> None:
+    """50 is load-bearing for the codec, not a tunable constant.
+
+    ``_SPLIT_RANGE_SCALE`` is *derived* from ``DAY_NIGHT_SPLIT_MIDPOINT``, which
+    reads like the boundary is a knob with a divisibility caveat. It is not.
+    Each fabric half has to map the whole 0–100 coverage domain onto its own
+    share of the wire range, so the split can only sit at ``POSITION_OPEN / 2``.
+
+    A midpoint of 25 divides 100 cleanly and yields an exact integer scale of 4,
+    and still breaks ``_split_range_wire`` / ``_split_range_decode`` in both
+    directions: the encoder could never emit a wire above 50, and decoding wire
+    90 would return a coverage of 260. Every property ``TestSplitRangeDecode``
+    pins — surjectivity onto the wire range, the round trip, the single
+    ambiguous wire — holds at 50 and at no other midpoint.
+
+    The second half asserts the codomain that fact protects: the decode feeds
+    ``clamp_to_bounds`` as the instance's held coverage, so it must never hand
+    back a number outside the domain those bounds are expressed in.
+    """
+    assert DAY_NIGHT_SPLIT_MIDPOINT * 2 == POSITION_OPEN
+
+    policy = DayNightShadePolicy()
+    coverages = [policy._split_range_decode(w)[0] for w in range(POSITION_OPEN + 1)]
+    assert min(coverages) == 0
+    assert max(coverages) == POSITION_OPEN
+
+
 class TestSplitRangeWire:
     """``_split_range_wire`` folds (position, blend) into one physical position."""
 
@@ -805,11 +833,19 @@ class TestSplitRangeHoldFabricLifecycle:
     """The Model B fabric stash is per-cycle, and the clearing edge is the seam (#1179).
 
     ``post_pipeline_resolve`` replays a stashed fabric only when the winner's own
-    blend was cleared, so a fabric left over from an earlier cycle would re-fold
-    a later hold behind stale opacity. The design leans on ``sync_runtime_options``
-    clearing it at the top of every cycle — the coordinator drives that hook from
-    ``_update_options``, before ``registry.evaluate`` can set it and before
-    ``post_pipeline_resolve`` consumes it.
+    blend was cleared, so a fabric left over from an earlier evaluate would
+    re-fold a later hold behind stale opacity.
+
+    What rules that out is NOT that every write is preceded by a clear.
+    ``coordinator.async_apply_user_position`` evaluates the pipeline off-cycle
+    with no ``sync_runtime_options`` ahead of it, and that evaluate can reach
+    ``hold_reference_position`` and set the stash. It is that the stash has
+    exactly ONE consumer: ``post_pipeline_resolve`` is called from a single site,
+    in ``coordinator._calculate_cover_state``, which only ``_async_update_data``
+    calls — after ``_update_options`` → ``sync_runtime_options`` has already
+    cleared — and which is synchronous, so nothing can interleave between that
+    cycle's own ``registry.evaluate`` and the consume. An off-cycle write is
+    therefore always wiped before anything can replay it.
     """
 
     def test_a_re_synced_policy_starts_the_cycle_with_no_stashed_fabric(self) -> None:

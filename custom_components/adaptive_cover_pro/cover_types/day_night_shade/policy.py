@@ -109,14 +109,22 @@ _CLIMATE_METHODS = frozenset(
     {ControlMethod.SUMMER, ControlMethod.WINTER, ControlMethod.EXTREME_HEAT}
 )
 
-# Model B compresses the full coverage range into ONE fabric half of the physical
-# travel, so a coverage point costs half a wire point. Derived rather than
-# written as 2 to keep the scale tied to the split it comes from — but the
-# derivation only holds while ``DAY_NIGHT_SPLIT_MIDPOINT`` divides
-# ``POSITION_OPEN`` exactly. This is integer division: a midpoint of 40 would
-# silently yield 2 where the true ratio is 2.5. Moving the boundary off a
-# divisor of 100 means reworking ``_split_range_wire`` / ``_split_range_decode``
-# to carry a non-integer scale, not just editing the midpoint.
+# Model B compresses the full 0–100 coverage domain into ONE fabric half of the
+# physical travel, so a coverage point costs half a wire point. Derived rather
+# than written as 2 to keep the scale tied to the split it comes from — but the
+# split is NOT a knob. The codec requires
+# ``DAY_NIGHT_SPLIT_MIDPOINT == POSITION_OPEN / 2``, and 50 is the only value
+# that satisfies it: each fabric half has to map the whole coverage domain onto
+# its own share of the wire range, which fits only when the two halves are equal.
+#
+# Dividing ``POSITION_OPEN`` exactly is necessary and nowhere near sufficient. A
+# midpoint of 25 divides 100 cleanly and yields an exact integer scale of 4, and
+# still breaks the codec in both directions: ``_split_range_wire(80, sheer)`` is
+# 45, so the encoder can never reach wires 51–100 at all, and
+# ``_split_range_decode(90)`` returns a coverage of 260, which flows straight
+# into ``clamp_to_bounds`` as the instance's held coverage. Moving the boundary
+# means redesigning the ``_split_range_wire`` / ``_split_range_decode`` pair so
+# each half still spans the whole domain — not editing a constant.
 # File-private — those two are this constant's only readers.
 _SPLIT_RANGE_SCALE = POSITION_OPEN // DAY_NIGHT_SPLIT_MIDPOINT
 

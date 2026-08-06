@@ -120,15 +120,22 @@ def _policy_for(snapshot: PipelineSnapshot):
     resolution the glare-zone, group-scene and climate handlers already use.
 
     ⚠️ The fallback builds the right policy CLASS but a **default-constructed**
-    instance — one that has never been handed ``sync_runtime_options``. Both
-    questions asked through here are instance-state-dependent since #1179, not
-    class-derived, so a policy-less day/night snapshot answers as Model A
-    (independent) and a policy-less dual panel as front-less (independent),
-    where the old class-derived predicate said coupled for either. The fallback
-    is therefore only safe for a snapshot whose cover type has no
-    option-dependent coupling: hand a real Model C entry a policy-less snapshot
-    and its rails get per-cover verdicts judged on raw wire values, which is the
-    double-remap #1174's gate exists to prevent.
+    instance — one that has never been handed ``sync_runtime_options``. For most
+    registered policies that costs nothing: they answer
+    ``entities_move_independently`` from the class-derived base predicate (or
+    from a constant override, as venetian does) and inherit the base
+    ``hold_reference_position``, so a fresh instance gives exactly the answer the
+    live one would. That is what makes the fallback safe for them.
+
+    The hazard's boundary is the two policies that answer from INSTANCE state
+    since #1179 — ``DayNightShadePolicy`` (its cached control model) and
+    ``DualPanelPolicy`` (whether a front panel is designated). A fresh instance
+    holds their ``__init__`` defaults, so a policy-less day/night snapshot
+    answers as Model A (independent) and a policy-less dual panel as front-less
+    (independent), where the old class-derived predicate said coupled for either.
+    Hand a real Model C entry a policy-less snapshot and its rails get per-cover
+    verdicts judged on raw wire values, which is the double-remap #1174's gate
+    exists to prevent.
 
     Unreachable in production — ``snapshot_builder`` puts the coordinator's
     live, already-synced policy on every snapshot it builds, and

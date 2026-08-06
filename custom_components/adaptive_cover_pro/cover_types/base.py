@@ -838,10 +838,15 @@ class CoverTypePolicy(ABC):
         install's frame changed, and ``day_night_shade.resolve_entity_target``
         already declines to unwind it in the forward direction for the same
         reason. It only bites where a read's linear meaning feeds a DECODE
-        rather than a bare comparison — a Model B wire near the fabric boundary
-        can stash the wrong fabric half, and the clamped hold then re-folds
-        behind a fabric the shade is not physically behind. Mapping a motor
-        reading back onto the linear scale is #925's territory, not this hook's.
+        rather than a bare comparison, and there it bites twice. A Model B wire
+        near the fabric boundary can stash the wrong fabric half, so the clamped
+        hold re-folds behind a fabric the shade is not physically behind — and,
+        boundary or not, the decode AMPLIFIES whatever error the curve left in
+        the read by the split-range scale. An install whose curve puts logical
+        wire 80 at a motor read of 85 decodes to coverage 70 against a true 60:
+        a 5-point wire error reaches the composed floor/ceiling as a 10-point
+        coverage error. Mapping a motor reading back onto the linear scale is
+        #925's territory, not this hook's.
         """
         return None
 
