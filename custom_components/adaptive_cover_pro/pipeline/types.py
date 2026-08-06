@@ -561,7 +561,12 @@ class HoldClampVerdict:
     (``CoverTypePolicy.entities_move_independently``). That is what makes
     ``target`` safe to hand straight to ``coordinator._entity_target``: a policy
     that would remap it per entity, or rewrite it after the pipeline, produces
-    no verdicts at all and keeps its shared-target path.
+    no verdicts at all and keeps its shared-target path — including when it
+    names its own position through ``CoverTypePolicy.hold_reference_position``
+    (#1179). A coupled type's clamped value is ONE abstract position, and it has
+    to ride ``PipelineResult.position`` so ``post_pipeline_resolve`` and
+    ``resolve_entity_target`` expand it exactly once; a verdict would bypass the
+    first and double-apply the second.
     """
 
     #: This cover's own position, a RAW cover-frame read (matching the frame
@@ -598,6 +603,9 @@ class PositionAxisJudgment:
     #: winner's own ``position``; for a hold, the *violating* cover's position
     #: (lowest when a floor raised, highest when a ceiling lowered) so the
     #: clamp trace step reads as a real cover rather than a mean nobody sits at.
+    #: For a coupled hold that judged nothing, the policy's own reference (#1179)
+    #: — the value ``_release_hold_for_tilt_clamp`` carries when the other axis
+    #: forces a dispatch.
     effective_winner_pos: int
     #: ``effective_winner_pos`` after the composed bounds, i.e. the shared
     #: clamp target the trace and ``PipelineResult.position`` carry.
@@ -617,8 +625,9 @@ class PositionAxisJudgment:
     lower_from: int | None
     #: Per-cover dispatch verdicts, or ``None`` for a computed winner, for a
     #: snapshot carrying no per-entity positions, and for a cover type whose
-    #: entities do not move independently — all of which keep the cycle on the
-    #: singular pre-#1174 path.
+    #: entities do not move independently — whether that type named its own
+    #: reference position (#1179) or fell back to the summary mean. All of those
+    #: keep the cycle on the singular pre-#1174 path.
     verdicts: Mapping[str, HoldClampVerdict] | None
 
 
