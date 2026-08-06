@@ -4007,6 +4007,12 @@ def _offered_cover_types(current_type: str | None, eligible: list[str]) -> list[
     Deliberately never consults capabilities: a venetian entry bound to a
     position-only cover would otherwise be rendered as blocked and
     pre-selected at the same time.
+
+    That guarantee covers ``current_type`` — the type the FLOW is on — which is
+    the stored type only while no switch is pending. Mid-dialog venetian →
+    blind, ``current_type`` is blind and the stored venetian is back among the
+    blocked types like any other unsatisfiable one, so a revert to it is not
+    offered here.
     """
     if current_type not in SENSOR_TYPE_MENU:
         return eligible
@@ -5464,6 +5470,16 @@ class OptionsFlowHandler(OptionsFlow):
         # net change against stored state is nothing, so both ends name the
         # same cover type. Same screen, same handler, second step id — which is
         # the only handle the frontend has for choosing another description.
+        #
+        # ``_cover_type_changed`` is redundant today: the picker returns to the
+        # menu when the pick equals ``self.sensor_type``, so reaching here with
+        # ``new_type == stored_type`` already implies the flow moved off it. It
+        # stays because it is the revert copy's own precondition rather than a
+        # restatement of that early return — the screen asserts an unsaved
+        # switch exists and names it via ``pending_type``. Drop the conjunct and
+        # relaxing the early return would silently point a "you have a pending
+        # switch to X" screen at an entry with no pending switch, where X is the
+        # type it already is.
         reverting = new_type == stored_type and self._cover_type_changed
         return self.async_show_form(  # type: ignore[return-value]
             step_id=(

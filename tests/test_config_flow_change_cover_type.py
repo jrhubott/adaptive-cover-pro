@@ -296,11 +296,12 @@ async def test_picker_offers_the_current_type_even_when_it_is_no_longer_satisfia
 ) -> None:
     """The type it already is is offered whatever the bound covers can do (#1200).
 
-    A venetian entry whose covers are position-only fails venetian's own entity
-    filter, so the eligibility split calls it blocked. Offering it anyway is
-    what makes the pre-selection honest — and it must not simultaneously be
-    listed as a type the covers rule out, which would tell the user the value
-    the field is sitting on is unavailable.
+    A venetian entry whose covers are position-only would fail venetian's own
+    entity filter, and every other type that fails it is dropped from the
+    dropdown. ``_offered_cover_types`` puts the current type back without
+    asking about capabilities, which is what makes the pre-selection honest.
+
+    The two halves below do not carry equal weight — see their comments.
     """
     from custom_components.adaptive_cover_pro.cover_types import get_policy
 
@@ -311,7 +312,16 @@ async def test_picker_offers_the_current_type_even_when_it_is_no_longer_satisfia
     result = await _open_picker(hass, entry)
 
     offered = _type_selector(result).config["options"]
+    # Load-bearing: this is the assertion that fails without
+    # ``_offered_cover_types``, leaving the field to open on an arbitrary
+    # alternative and claim the instance is a type it is not.
     assert CoverType.VENETIAN in offered
+    # Weaker, and true for a structural reason rather than this change's doing:
+    # ``_eligible_cover_types`` ``continue``s past the current type, so venetian
+    # lands in neither ``eligible`` nor ``blocked`` and the screen has nothing
+    # to name it with. Kept as a lock on the rendered result all the same — the
+    # value the field opens on must never also be listed as one the bound
+    # covers rule out.
     assert (
         get_policy(CoverType.VENETIAN).display_label()
         not in result["description_placeholders"]["blocked_types"]

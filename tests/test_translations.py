@@ -778,6 +778,11 @@ def test_manual_override_duration_mode_options_translated_in_en():
 # renders ``get_policy(key).display_label()``. Two independent English sources
 # for one value, and nothing cross-checked them, so ``cover_awning`` shipped as
 # "Horizontal blind" in one and "Horizontal Awning" in the other.
+#
+# English-only by design. ``display_label()`` has no per-language form to
+# compare against, and DE/FR carry pre-existing label drift of their own —
+# tracked separately as issue #1201. Widening this guard to those files would
+# turn the suite red on that drift rather than on anything a change here did.
 # ---------------------------------------------------------------------------
 
 
@@ -843,4 +848,31 @@ def test_selector_mode_labels_name_the_same_cover_type_as_the_policy() -> None:
         "selector.mode and display_label() name the same cover type "
         "differently, so the picker and the screen after it disagree:\n"
         + "\n".join(mismatched)
+    )
+
+
+def test_every_offered_cover_type_has_a_selector_mode_label() -> None:
+    """The other direction: no offerable type may be missing its label (#1200).
+
+    ``test_selector_mode_labels_name_the_same_cover_type_as_the_policy`` walks
+    the label bundle and checks each key resolves to a policy, which says
+    nothing about a policy that ships with no key at all. A new cover type
+    registered without one renders its raw ``cover_*`` string in both the
+    create flow's dropdown and the change-cover-type picker.
+
+    Scoped to ``SENSOR_TYPE_MENU``, not ``POLICY_REGISTRY``: the menu is what
+    both dropdowns are built from — ``CONFIG_SCHEMA`` passes it straight to the
+    selector, and ``_eligible_cover_types``/``_offered_cover_types`` iterate it
+    — while the registry also holds virtual entry types (Building Profile,
+    Group, Command Queue) that no cover-type dropdown ever offers and that
+    therefore need no ``selector.mode`` label.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import SENSOR_TYPE_MENU
+
+    options = _load(TRANSLATIONS_DIR / "en.json")["selector"]["mode"]["options"]
+
+    missing = [key for key in SENSOR_TYPE_MENU if key not in options]
+    assert not missing, (
+        "cover types the picker offers with no selector.mode.options label, so "
+        f"the dropdown renders their raw key: {missing}"
     )
