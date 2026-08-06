@@ -427,6 +427,23 @@ def inactive_reason_from_result(
     return ClimateInactiveReason.MODE_OFF
 
 
+# The strategies whose label genuinely comes from the season.
+# ``ClimateCoverData.is_summer`` / ``.is_winter`` are pure temperature predicates
+# and say nothing about which rule table branch actually fired, so they are only
+# trusted when a season strategy is what ran. Ungated they shadow the LOW_LIGHT and
+# GLARE_CONTROL branches below, stamping "summer" on a low-light fall-through and on
+# in-FOV glare tracking (issue #1196). Same reasoning as the TRACKING_SEASON_GATE
+# branch in evaluate(): checked against the strategy because the strategy, not the
+# thermometer, is what the label is describing.
+_SEASON_STRATEGIES: frozenset[ClimateStrategy] = frozenset(
+    {
+        ClimateStrategy.SUMMER_COOLING,
+        ClimateStrategy.WINTER_HEATING,
+        ClimateStrategy.WINTER_INSULATION,
+    }
+)
+
+
 # ---------------------------------------------------------------------------
 # ClimateHandler
 # ---------------------------------------------------------------------------
@@ -438,10 +455,15 @@ class ClimateHandler(OverrideHandler):
     Priority 50 — lower than override handlers, higher than solar/default.
     Builds ClimateCoverData from ClimateReadings + ClimateOptions, runs
     ClimateCoverState strategy, and returns the computed position.
-    The control method is set based on the climate season:
-    - SUMMER when over the high-temp threshold (heat blocking)
-    - WINTER when under the low-temp threshold (solar heat gain)
-    - SOLAR for all other climate-mode states (glare control)
+    The control method is set from the strategy that produced the position,
+    not from the temperature alone (issue #1196) — see _SEASON_STRATEGIES:
+    - SUMMER / WINTER only when a season strategy ran (cooling, heating,
+      insulation) and the matching temperature predicate holds
+    - EXTREME_HEAT for the all-day heat hold, DEFAULT for the season gate
+    - DEFAULT for the LOW_LIGHT branch. This labels the branch, not the
+      position: the rule tables pick that with _default or _solar, so DEFAULT
+      is not a promise the cover sits at its default position
+    - SOLAR for glare control, in any season
     """
 
     name = "climate"
@@ -506,33 +528,37 @@ class ClimateHandler(OverrideHandler):
 
         position = round(raw_position)
 
-        if climate_cover_state.climate_strategy == ClimateStrategy.EXTREME_HEAT:
+        strategy = climate_cover_state.climate_strategy
+        is_season_strategy = strategy in _SEASON_STRATEGIES
+
+        if strategy == ClimateStrategy.EXTREME_HEAT:
             # Checked FIRST: extreme heat is an all-day force-hold that pre-empts
             # every season strategy (issue #766). The hold position already rode
             # get_state()/apply_snapshot_limits above — this branch only sets the
             # label + control method, never a short-circuit before get_state().
             method = ControlMethod.EXTREME_HEAT
             season_code = ReasonCode.FRAGMENT_SEASON_EXTREME_HEAT
-        elif (
-            climate_cover_state.climate_strategy == ClimateStrategy.TRACKING_SEASON_GATE
-        ):
+        elif strategy == ClimateStrategy.TRACKING_SEASON_GATE:
             # Season-scope gate fired: glare tracking is not permitted in the
             # current season, so the cover holds its default position. Checked
             # before is_summer/is_winter because the gate can fire in any season
             # the user deselected, and DEFAULT is the honest control method.
             method = ControlMethod.DEFAULT
             season_code = ReasonCode.FRAGMENT_SEASON_TRACKING_OFF
-        elif climate_data.is_summer:
+        elif is_season_strategy and climate_data.is_summer:
             method = ControlMethod.SUMMER
             season_code = ReasonCode.FRAGMENT_SEASON_SUMMER
-        elif climate_data.is_winter:
+        elif is_season_strategy and climate_data.is_winter:
             method = ControlMethod.WINTER
             season_code = ReasonCode.FRAGMENT_SEASON_WINTER
-        elif climate_cover_state.climate_strategy == ClimateStrategy.LOW_LIGHT:
-            # Low-light / no-sun branch — the cover returns to its default
-            # position rather than tracking the sun.  Emitting SOLAR here
-            # would cause VenetianPolicy to synthesise a tilt from the
+        elif strategy == ClimateStrategy.LOW_LIGHT:
+            # Low-light / no-sun branch.  The position came from the rule
+            # table (_default or _solar), so DEFAULT labels the branch rather
+            # than promising the cover is at its default.  Emitting SOLAR
+            # here would cause VenetianPolicy to synthesise a tilt from the
             # still-drifting azimuth even when the sun has set (issue #33).
+            # Now that the season arms above are strategy-guarded this branch is
+            # reachable in any season, not just at intermediate temperatures.
             method = ControlMethod.DEFAULT
             season_code = ReasonCode.FRAGMENT_SEASON_GLARE_LOW_LIGHT
         else:
@@ -547,7 +573,7 @@ class ClimateHandler(OverrideHandler):
                 {"season": Reason(season_code), "position": position},
             ),
             climate_state=position,
-            climate_strategy=climate_cover_state.climate_strategy,
+            climate_strategy=strategy,
             climate_data=climate_data,
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
