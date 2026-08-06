@@ -801,6 +801,43 @@ class TestHoldReferenceHasNoSingleAnswer:
         )
 
 
+class TestSplitRangeHoldFabricLifecycle:
+    """The Model B fabric stash is per-cycle, and the clearing edge is the seam (#1179).
+
+    ``post_pipeline_resolve`` replays a stashed fabric only when the winner's own
+    blend was cleared, so a fabric left over from an earlier cycle would re-fold
+    a later hold behind stale opacity. The design leans on ``sync_runtime_options``
+    clearing it at the top of every cycle — the coordinator drives that hook from
+    ``_update_options``, before ``registry.evaluate`` can set it and before
+    ``post_pipeline_resolve`` consumes it.
+    """
+
+    def test_a_re_synced_policy_starts_the_cycle_with_no_stashed_fabric(self) -> None:
+        """Set by the reduction hook, gone again on the next cycle's sync.
+
+        The second assertion pins WHERE the clear lives: moving it into
+        ``_cache_runtime_options`` would still satisfy the first (``sync``
+        delegates there) while wiping the stash from under
+        ``post_pipeline_resolve``, which calls the same helper on its way to
+        consuming it.
+        """
+        policy = DayNightShadePolicy()
+        options = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+        policy.sync_runtime_options(options)
+
+        # Wire 20 is in the blackout half: coverage 40, fabric blackout.
+        assert policy.hold_reference_position({"cover.x": 20}, inverted=False) == 40
+        assert policy._split_range_hold_fabric == DAY_NIGHT_BLACKOUT
+
+        # The consume path's own re-read must NOT clear it.
+        policy._cache_runtime_options(options)
+        assert policy._split_range_hold_fabric == DAY_NIGHT_BLACKOUT
+
+        # The next cycle's coordinator hook does.
+        policy.sync_runtime_options(options)
+        assert policy._split_range_hold_fabric is None
+
+
 class TestSplitRangeDecode:
     """``_split_range_decode`` is the algebraic inverse of ``_split_range_wire``.
 

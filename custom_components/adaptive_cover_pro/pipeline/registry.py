@@ -117,9 +117,25 @@ def _policy_for(snapshot: PipelineSnapshot):
     """Resolve this snapshot's policy — one site, one local import.
 
     ``snapshot.policy or get_policy(snapshot.cover_type)`` is the same
-    resolution the glare-zone, group-scene and climate handlers already use, so
-    a snapshot built without a policy object still gets its own cover type's
-    answer rather than a default.
+    resolution the glare-zone, group-scene and climate handlers already use.
+
+    ⚠️ The fallback builds the right policy CLASS but a **default-constructed**
+    instance — one that has never been handed ``sync_runtime_options``. Both
+    questions asked through here are instance-state-dependent since #1179, not
+    class-derived, so a policy-less day/night snapshot answers as Model A
+    (independent) and a policy-less dual panel as front-less (independent),
+    where the old class-derived predicate said coupled for either. The fallback
+    is therefore only safe for a snapshot whose cover type has no
+    option-dependent coupling: hand a real Model C entry a policy-less snapshot
+    and its rails get per-cover verdicts judged on raw wire values, which is the
+    double-remap #1174's gate exists to prevent.
+
+    Unreachable in production — ``snapshot_builder`` puts the coordinator's
+    live, already-synced policy on every snapshot it builds, and
+    ``tests/test_pipeline/conftest.make_snapshot`` documents the same hazard for
+    hand-built ones. The fresh-instance answers are pinned by
+    ``test_a_policy_less_snapshot_answers_from_a_default_constructed_policy``
+    so they cannot drift silently.
 
     Local import: ``cover_types`` pulls in policies that import from
     ``pipeline``, so a module-level import here would close the cycle — the same

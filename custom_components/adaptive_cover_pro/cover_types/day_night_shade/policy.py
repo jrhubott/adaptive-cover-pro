@@ -111,9 +111,13 @@ _CLIMATE_METHODS = frozenset(
 
 # Model B compresses the full coverage range into ONE fabric half of the physical
 # travel, so a coverage point costs half a wire point. Derived rather than
-# written as 2, because the ratio IS the split: change where the halves meet and
-# the scale follows. File-private — ``_split_range_wire`` and its inverse
-# ``_split_range_decode`` are its only readers.
+# written as 2 to keep the scale tied to the split it comes from — but the
+# derivation only holds while ``DAY_NIGHT_SPLIT_MIDPOINT`` divides
+# ``POSITION_OPEN`` exactly. This is integer division: a midpoint of 40 would
+# silently yield 2 where the true ratio is 2.5. Moving the boundary off a
+# divisor of 100 means reworking ``_split_range_wire`` / ``_split_range_decode``
+# to carry a non-integer scale, not just editing the midpoint.
+# File-private — those two are this constant's only readers.
 _SPLIT_RANGE_SCALE = POSITION_OPEN // DAY_NIGHT_SPLIT_MIDPOINT
 
 
@@ -1306,6 +1310,15 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         :meth:`post_pipeline_resolve` can re-fold the clamped coverage back onto
         the wire behind the fabric the user is physically already behind. A floor
         moves coverage; it does not change fabric.
+
+        ⚠️ The decode un-flips but does NOT un-interpolate, per the base
+        contract's caveat. On an interpolated install the wire read arrives on
+        the motor's scale, so a carriage sitting near the fabric boundary can be
+        decoded into the wrong half — and this branch, unlike the others, then
+        WRITES that half to the stash, so the re-fold can dispatch a fabric
+        change the hold never asked for. Model B under interpolation is already
+        approximate for the same reason in the forward direction; see the
+        ``interpolated`` paragraph in :meth:`resolve_entity_target`.
 
         **Model C (``dual_entity``)** — the BOTTOM rail. It *is* the coverage
         ``P``; the middle rail is ``M = 100 - blend * (100 - P) / 100``, a pure

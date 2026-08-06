@@ -827,6 +827,21 @@ class CoverTypePolicy(ABC):
         — and keeps that cycle on the legacy summary mean. That is the base
         answer, so a policy which never touches the dispatch hooks is never
         asked and never has to care.
+
+        ⚠️ **The inverse is partial: interpolation is not unwound.** The forward
+        chain ends at ``coordinator._to_cover_frame``, which applies the
+        calibration curve *and* the inversion to every dispatched value, but an
+        implementation here is only asked to undo the inversion — the reads it
+        receives from an interpolated install sit on the motor's own scale and
+        are treated as if they were linear. Pre-existing and deliberate: the
+        summary mean this hook replaced ignored interpolation identically, so no
+        install's frame changed, and ``day_night_shade.resolve_entity_target``
+        already declines to unwind it in the forward direction for the same
+        reason. It only bites where a read's linear meaning feeds a DECODE
+        rather than a bare comparison — a Model B wire near the fabric boundary
+        can stash the wrong fabric half, and the clamped hold then re-folds
+        behind a fabric the shade is not physically behind. Mapping a motor
+        reading back onto the linear scale is #925's territory, not this hook's.
         """
         return None
 

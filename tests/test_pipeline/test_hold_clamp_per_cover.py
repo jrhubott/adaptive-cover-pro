@@ -836,6 +836,41 @@ def test_an_independent_policy_never_consults_the_reduction_hook() -> None:
     assert policy.reference_calls == 0
 
 
+def test_a_policy_less_snapshot_answers_from_a_default_constructed_policy() -> None:
+    """``registry._policy_for``'s fallback, pinned to the FRESH instance (#1179).
+
+    A snapshot carrying no ``policy`` makes the registry resolve
+    ``get_policy(cover_type)`` — the right class, but an instance that has never
+    seen ``sync_runtime_options``. Both coupling questions became
+    instance-state-dependent in #1179, so the fallback answers from ``__init__``
+    defaults: day/night reads as Model A and the dual panel as front-less, both
+    independent, neither naming a reference — where the pre-#1179 class-derived
+    predicate said coupled for either.
+
+    Production never reaches this path (``snapshot_builder`` attaches the
+    coordinator's live, synced policy to every snapshot), which is exactly why
+    the answer needs pinning: it is a documented hazard for a future caller that
+    skips that step, not behaviour anyone observes today.
+    """
+    from custom_components.adaptive_cover_pro.pipeline.registry import (
+        _hold_reference_position,
+        _judges_per_cover,
+        _policy_for,
+    )
+
+    for cover_type in ("cover_day_night_shade", "cover_dual_panel"):
+        snapshot = make_snapshot(
+            cover=_climate_cover(direct_sun_valid=False),
+            cover_type=cover_type,
+            cover_positions={"cover.a": 40, "cover.b": 70},
+        )
+        assert snapshot.policy is None, cover_type
+        fallback = _policy_for(snapshot)
+        assert fallback.__class__ is get_policy(cover_type).__class__, cover_type
+        assert _judges_per_cover(snapshot) is True, cover_type
+        assert _hold_reference_position(snapshot) is None, cover_type
+
+
 def _day_night_policy(options: dict | None = None):
     """Build a day/night policy already synced to ``options``, as production has it.
 
