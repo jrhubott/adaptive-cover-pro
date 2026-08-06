@@ -955,142 +955,144 @@ def test_every_offered_cover_type_has_a_selector_mode_label() -> None:
 # (picker vs. confirm); they say nothing about a single term being reused
 # consistently for unrelated keys *within* one language, and never touch
 # `services.*` at all.
+#
+# One table, one assertion body: each row names a bundle + key path and the
+# terms that key's value must/must-not contain. A site that shares a term
+# with another site (e.g. a picker label and the help text that should echo
+# it) gets its own row rather than a shared derivation — cheap to add a row,
+# expensive to special-case a shape.
 # ---------------------------------------------------------------------------
 
 
-def test_de_cover_blind_uses_rollo_not_jalousie() -> None:
-    """DE cover_blind names a fabric shade, not a slatted Jalousie (#1203).
+def _bundle_path(bundle: str) -> Path:
+    """Resolve a ``"<dir>/<file>.json"`` shorthand to its path on disk."""
+    directory, filename = bundle.split("/", 1)
+    if directory == "translations":
+        return TRANSLATIONS_DIR / filename
+    if directory == "summary_i18n":
+        return TRANSLATIONS_DIR.parent / "summary_i18n" / filename
+    raise ValueError(f"unknown bundle directory: {directory!r}")
 
-    ``cover_blind`` is the position-only vertical fabric shade (EN: "Vertical
-    blind"). German "Jalousie" denotes a slatted venetian blind — that word
-    already correctly names ``cover_tilt`` and ``cover_venetian``, so reusing
-    it here mislabels the one row that isn't slatted. Both the picker and its
-    confirm-screen twin must say "Vertikales Rollo" — "Rollo" is the term
-    already used for the other position-only cover, ``cover_day_night_shade``
-    ("Tag/Nacht-Rollo").
+
+_WORDING_LOCKS = [
+    # -- #1203: cover_blind names a fabric shade, not a slatted Jalousie.
+    # "Jalousie" already correctly names cover_tilt/cover_venetian; "Rollo"
+    # already names the other position-only cover (cover_day_night_shade).
+    pytest.param(
+        "translations/de.json",
+        ("selector", "mode", "options", "cover_blind"),
+        ("Vertikales Rollo",),
+        ("Jalousie",),
+        id="de-cover_blind-picker",
+    ),
+    pytest.param(
+        "summary_i18n/de.json",
+        ("cover_types", "blind"),
+        ("Vertikales Rollo",),
+        ("Jalousie",),
+        id="de-cover_blind-confirm",
+    ),
+    # -- #1203: FR names the oscillating awning's drop arm the same way
+    # everywhere. A prior fix landed "bras oscillant" on the picker while the
+    # arm_length help text (both steps) still said "bras pivotant" — two
+    # words for the same part within one bundle.
+    pytest.param(
+        "translations/fr.json",
+        ("selector", "mode", "options", "cover_oscillating_awning"),
+        ("bras de projection",),
+        ("bras oscillant", "bras pivotant"),
+        id="fr-oscillating_awning-picker",
+    ),
+    pytest.param(
+        "translations/fr.json",
+        ("config", "step", "geometry", "data_description", "arm_length"),
+        ("bras de projection",),
+        ("bras oscillant", "bras pivotant"),
+        id="fr-arm_length-config",
+    ),
+    pytest.param(
+        "translations/fr.json",
+        ("options", "step", "geometry", "data_description", "arm_length"),
+        ("bras de projection",),
+        ("bras oscillant", "bras pivotant"),
+        id="fr-arm_length-options",
+    ),
+    # -- #1203: FR set_tilt service description matches the picker's "deux
+    # axes" wording. PR#1202 moved cover_venetian to "Store vénitien (deux
+    # axes)", but its parity guard only walks selector.mode.options vs.
+    # display_label() — it never reaches services.*.
+    pytest.param(
+        "translations/fr.json",
+        ("selector", "mode", "options", "cover_venetian"),
+        ("(deux axes)",),
+        ("à double axe",),
+        id="fr-cover_venetian-picker",
+    ),
+    pytest.param(
+        "translations/fr.json",
+        ("services", "set_tilt", "description"),
+        ("(deux axes)",),
+        ("à double axe",),
+        id="fr-set_tilt-description",
+    ),
+    # -- #1203: DE arm_length help text names the arm and pivot correctly.
+    # #1201 fixed the noun to "Fallarmmarkise" (matching
+    # cover_oscillating_awning) but left the surrounding sentence saying
+    # "Schwenkarmes" (should be "Fallarmes") and "Wandpivot", which is not a
+    # German word ("Wanddrehpunkt" is the trade term).
+    pytest.param(
+        "translations/de.json",
+        ("config", "step", "geometry", "data_description", "arm_length"),
+        ("Fallarmes", "Wanddrehpunkt"),
+        ("Schwenkarmes", "Wandpivot"),
+        id="de-arm_length-config",
+    ),
+    pytest.param(
+        "translations/de.json",
+        ("options", "step", "geometry", "data_description", "arm_length"),
+        ("Fallarmes", "Wanddrehpunkt"),
+        ("Schwenkarmes", "Wandpivot"),
+        id="de-arm_length-options",
+    ),
+    # -- #1203 follow-up: DE set_tilt service description matches the
+    # picker's "zweiachsig" wording. Same drift class as the FR "deux axes"
+    # row above, caught in the same audit pass: the picker (cover_venetian =
+    # "Jalousie (zweiachsig)") uses the German term, but the service
+    # description still carried the untranslated English qualifier
+    # "dual-axis" — services.* is outside every picker/confirm parity guard.
+    pytest.param(
+        "translations/de.json",
+        ("services", "set_tilt", "description"),
+        ("zweiachsig",),
+        ("dual-axis",),
+        id="de-set_tilt-description",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "bundle, key_path, must_contain, must_not_contain",
+    _WORDING_LOCKS,
+)
+def test_intra_bundle_wording_is_consistent(
+    bundle: str,
+    key_path: tuple[str, ...],
+    must_contain: tuple[str, ...],
+    must_not_contain: tuple[str, ...],
+) -> None:
+    """A single site's value carries the current term, not a drifted one (#1203).
+
+    Each parametrize case is one lock: one bundle, one key path, the term(s)
+    it must carry, and the term(s) it must not. Adding a new intra-bundle
+    consistency lock costs one row, not a new hand-rolled test.
     """
-    de = _load(TRANSLATIONS_DIR / "de.json")
-    summary_de = _load(TRANSLATIONS_DIR.parent / "summary_i18n" / "de.json")
+    data = _load(_bundle_path(bundle))
+    value = data
+    for part in key_path:
+        value = value[part]
 
-    picker_label = de["selector"]["mode"]["options"]["cover_blind"]
-    confirm_label = summary_de["cover_types"]["blind"]
-
-    assert picker_label == "Vertikales Rollo", (
-        "selector.mode.options.cover_blind should read 'Vertikales Rollo': "
-        f"{picker_label!r}"
-    )
-    assert confirm_label == "Vertikales Rollo", (
-        "summary_i18n cover_types.blind should read 'Vertikales Rollo': "
-        f"{confirm_label!r}"
-    )
-    assert (
-        "Jalousie" not in picker_label
-    ), f"selector.mode.options.cover_blind still says 'Jalousie': {picker_label!r}"
-    assert (
-        "Jalousie" not in confirm_label
-    ), f"summary_i18n cover_types.blind still says 'Jalousie': {confirm_label!r}"
-
-
-def test_fr_oscillating_awning_arm_term_is_consistent() -> None:
-    """FR names the awning's drop arm the same way everywhere (#1203).
-
-    ``cover_oscillating_awning``'s trailing parenthetical and both
-    ``arm_length`` help strings (config + options steps) must use the same
-    French term for the physical arm. A prior fix landed "bras oscillant" on
-    the picker while the help text still said "bras pivotant" — two words for
-    the same part within one bundle.
-    """
-    fr = _load(TRANSLATIONS_DIR / "fr.json")
-
-    picker_label = fr["selector"]["mode"]["options"]["cover_oscillating_awning"]
-    arm_length_config = fr["config"]["step"]["geometry"]["data_description"][
-        "arm_length"
-    ]
-    arm_length_options = fr["options"]["step"]["geometry"]["data_description"][
-        "arm_length"
-    ]
-
-    match = _PAREN_TAIL.search(picker_label)
-    assert match, (
-        "selector.mode.options.cover_oscillating_awning has no trailing "
-        f"parenthetical naming the arm: {picker_label!r}"
-    )
-    arm_term = match.group(1)
-
-    for path, text in (
-        ("config.step.geometry.data_description.arm_length", arm_length_config),
-        ("options.step.geometry.data_description.arm_length", arm_length_options),
-    ):
-        assert (
-            arm_term in text
-        ), f"{path} does not use the picker's arm term {arm_term!r}: {text!r}"
-
-    banned = ("bras oscillant", "bras pivotant")
-    for path, text in (
-        ("selector.mode.options.cover_oscillating_awning", picker_label),
-        ("config.step.geometry.data_description.arm_length", arm_length_config),
-        ("options.step.geometry.data_description.arm_length", arm_length_options),
-    ):
-        for term in banned:
-            assert term not in text, (
-                f"{path} still uses {term!r}, one of two FR terms for the same "
-                f"arm within this bundle: {text!r}"
-            )
-
-
-def test_fr_set_tilt_description_uses_deux_axes() -> None:
-    """FR set_tilt service description matches the picker's 'deux axes' wording (#1203).
-
-    PR#1202 moved ``cover_venetian`` to "Store vénitien (deux axes)", but its
-    parity guard only walks ``selector.mode.options`` vs ``display_label()`` —
-    it never reaches ``services.*``. The service description was left behind
-    reading "à double axe", the exact phrase #1201 eliminated everywhere else.
-    """
-    fr = _load(TRANSLATIONS_DIR / "fr.json")
-
-    picker_label = fr["selector"]["mode"]["options"]["cover_venetian"]
-    assert "(deux axes)" in picker_label, (
-        "selector.mode.options.cover_venetian drifted from 'deux axes': "
-        f"{picker_label!r}"
-    )
-
-    description = fr["services"]["set_tilt"]["description"]
-    assert "(deux axes)" in description, (
-        "services.set_tilt.description should say '(deux axes)' to match the "
-        f"picker: {description!r}"
-    )
-    assert "à double axe" not in description, (
-        "services.set_tilt.description still uses the eliminated phrase 'à "
-        f"double axe': {description!r}"
-    )
-
-
-def test_de_arm_length_uses_fallarm_and_wanddrehpunkt() -> None:
-    """DE arm_length help text names the arm and pivot correctly (#1203).
-
-    #1201 fixed the noun to "Fallarmmarkise" (matching ``cover_oscillating_awning``)
-    but left the surrounding sentence saying "Schwenkarmes" (should be
-    "Fallarmes", matching the EN "pivoting arm of an oscillating (drop-arm)
-    awning") and "Wandpivot", which is not a German word ("Wanddrehpunkt" is
-    the trade term).
-    """
-    de = _load(TRANSLATIONS_DIR / "de.json")
-
-    for path, text in (
-        (
-            "config.step.geometry.data_description.arm_length",
-            de["config"]["step"]["geometry"]["data_description"]["arm_length"],
-        ),
-        (
-            "options.step.geometry.data_description.arm_length",
-            de["options"]["step"]["geometry"]["data_description"]["arm_length"],
-        ),
-    ):
-        assert "Fallarmes" in text, f"{path} should say 'Fallarmes': {text!r}"
-        assert "Wanddrehpunkt" in text, f"{path} should say 'Wanddrehpunkt': {text!r}"
-        assert (
-            "Schwenkarmes" not in text
-        ), f"{path} still uses the wrong noun 'Schwenkarmes': {text!r}"
-        assert (
-            "Wandpivot" not in text
-        ), f"{path} still uses the non-German 'Wandpivot': {text!r}"
+    location = f"{bundle}:{'.'.join(key_path)}"
+    for term in must_contain:
+        assert term in value, f"{location} should contain {term!r}: {value!r}"
+    for term in must_not_contain:
+        assert term not in value, f"{location} still contains {term!r}: {value!r}"

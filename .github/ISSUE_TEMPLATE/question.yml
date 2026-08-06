@@ -29,7 +29,7 @@ body:
     id: cover_type
     attributes:
       label: Cover type
-      description: "Vertical blind, horizontal awning, or venetian/tilt."
+      description: "As shown in the integration's cover type selector."
       placeholder: "e.g. Vertical blind"
     validations:
       required: false
