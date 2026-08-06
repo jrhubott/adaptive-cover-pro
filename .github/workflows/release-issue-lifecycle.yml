@@ -116,6 +116,10 @@ jobs:
 
             // Tag a referenced OPEN issue `released`; the sweep below closes it.
             async function tagReferencedIssue(num, labels) {
+              if (labels.includes('triage-exempt')) {
+                console.log(`#${num} is triage-exempt — not tagging released.`);
+                return;
+              }
               if (labels.includes('awaiting-release')) await removeLabelSafe(num, 'awaiting-release');
               if (labels.includes('reopened')) await removeLabelSafe(num, 'reopened');
               if (!labels.includes('released')) {
@@ -180,13 +184,18 @@ jobs:
             }
 
             // Sweep: close every OPEN issue carrying `released` (just-tagged + any
-            // stragglers). This is what "all issues tagged released are closed" means.
+            // stragglers), skipping any that also carry `triage-exempt`.
             const releasedOpen = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', labels: 'released', per_page: 100,
             });
             let closed = 0;
             for (const item of releasedOpen) {
               if (item.pull_request) continue; // never close PRs
+              const labels = item.labels.map(l => l.name);
+              if (labels.includes('triage-exempt')) {
+                console.log(`#${item.number} is triage-exempt — not closing.`);
+                continue;
+              }
               await github.rest.issues.createComment({ owner, repo, issue_number: item.number, body: closeComment });
               await github.rest.issues.update({ owner, repo, issue_number: item.number, state: 'closed', state_reason: 'completed' });
               console.log(`Closed released issue #${item.number}.`);
