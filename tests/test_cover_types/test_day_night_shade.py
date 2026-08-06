@@ -330,6 +330,25 @@ class TestPostPipelineResolve:
         assert out.tilt is None
         assert policy._last_blend is None
 
+    def test_default_climate_fallthrough_clears_blend(self) -> None:
+        """Issue #1196: DEFAULT falls to the else branch even with is_summer data
+        attached — the method, not the thermometer, picks the fabric.
+        """
+        policy = DayNightShadePolicy()
+        policy._last_blend = 40
+        kw = _resolve_kwargs()
+        climate = MagicMock()
+        climate.is_summer = True
+        result = PipelineResult(
+            position=60,
+            control_method=ControlMethod.DEFAULT,
+            reason="default",
+            climate_data=climate,
+        )
+        out = policy.post_pipeline_resolve(result, cover=None, **kw)
+        assert out.tilt is None
+        assert policy._last_blend is None
+
     def test_solar_without_direct_sun_clears_blend(self) -> None:
         policy = DayNightShadePolicy()
         policy._last_blend = 40
