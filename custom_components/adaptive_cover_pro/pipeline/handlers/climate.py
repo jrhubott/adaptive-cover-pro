@@ -460,9 +460,9 @@ class ClimateHandler(OverrideHandler):
     - SUMMER / WINTER only when a season strategy ran (cooling, heating,
       insulation) and the matching temperature predicate holds
     - EXTREME_HEAT for the all-day heat hold, DEFAULT for the season gate
-    - DEFAULT for the LOW_LIGHT branch, whose position is whatever its own
-      rule returned (the default position in the normal tables, the solar
-      angle in the tilt tables) — not a promise the cover is at its default
+    - DEFAULT for the LOW_LIGHT branch. This labels the branch, not the
+      position: the rule tables pick that with _default or _solar, so DEFAULT
+      is not a promise the cover sits at its default position
     - SOLAR for glare control, in any season
     """
 
@@ -552,9 +552,9 @@ class ClimateHandler(OverrideHandler):
             method = ControlMethod.WINTER
             season_code = ReasonCode.FRAGMENT_SEASON_WINTER
         elif strategy == ClimateStrategy.LOW_LIGHT:
-            # Low-light / no-sun branch — the cover stops tracking the sun and
-            # holds whatever its rule returned (the default position in the
-            # normal tables, the solar angle in the tilt ones).  Emitting SOLAR
+            # Low-light / no-sun branch.  The position came from the rule
+            # table (_default or _solar), so DEFAULT labels the branch rather
+            # than promising the cover is at its default.  Emitting SOLAR
             # here would cause VenetianPolicy to synthesise a tilt from the
             # still-drifting azimuth even when the sun has set (issue #33).
             # Now that the season arms above are strategy-guarded this branch is
