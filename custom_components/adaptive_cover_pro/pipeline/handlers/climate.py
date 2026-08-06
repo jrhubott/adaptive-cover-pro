@@ -455,10 +455,13 @@ class ClimateHandler(OverrideHandler):
     Priority 50 — lower than override handlers, higher than solar/default.
     Builds ClimateCoverData from ClimateReadings + ClimateOptions, runs
     ClimateCoverState strategy, and returns the computed position.
-    The control method is set based on the climate season:
-    - SUMMER when over the high-temp threshold (heat blocking)
-    - WINTER when under the low-temp threshold (solar heat gain)
-    - SOLAR for all other climate-mode states (glare control)
+    The control method is set from the strategy that produced the position,
+    not from the temperature alone (issue #1196) — see _SEASON_STRATEGIES:
+    - SUMMER / WINTER only when a season strategy ran (cooling, heating,
+      insulation) and the matching temperature predicate holds
+    - EXTREME_HEAT and DEFAULT for the all-day heat hold and the season gate
+    - DEFAULT for a LOW_LIGHT fall-through to the default position
+    - SOLAR for glare control, in any season
     """
 
     name = "climate"
