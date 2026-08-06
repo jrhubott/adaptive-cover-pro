@@ -372,12 +372,12 @@
       },
       "change_cover_type": {
         "title": "Change Cover Type",
-        "description": "This instance is currently of type **{current_type}**. Pick the cover type it should become — every entity keeps its current entity ID, so your dashboards and automations keep working.\n\nOnly types your bound covers can actually drive are listed. Not offered here:\n\n{blocked_types}\n\n[Learn more]({learn_more})",
+        "description": "This instance is currently of type **{current_type}**. Pick the cover type it should become — every entity keeps its current entity ID, so your dashboards and automations keep working.\n\nApart from the type it already is, only types your bound covers can actually drive are listed. Not offered here:\n\n{blocked_types}\n\n[Learn more]({learn_more})",
         "data": {
-          "sensor_type": "New Cover Type"
+          "sensor_type": "Cover Type"
         },
         "data_description": {
-          "sensor_type": "The cover type this instance will switch to. You confirm on the next screen, then fill in the new type's geometry."
+          "sensor_type": "Starts on the type this instance is now. Pick a different one to switch — you confirm on the next screen, then fill in the new type's geometry. Leaving it as it is changes nothing."
         }
       },
       "change_cover_type_confirm": {
@@ -385,6 +385,13 @@
         "description": "Switching from **{from_type}** to **{to_type}**.\n\nSettings only the old type uses stay stored and are not deleted, so switching back finds them intact. Currently inert after the switch:\n\n{stranded_options}\n\nCapability notes for the new type:\n\n{capability_notes}\n\nPosition polarity:\n\n{position_polarity}\n\nEvery entity keeps its entity ID. Type-specific entities the new type does not provide stay in the entity registry as unavailable, and return if you switch back. After confirming, fill in the new type's geometry and finish with Save & Close to apply the change.",
         "data": {
           "confirm": "Confirm cover type change"
+        }
+      },
+      "change_cover_type_revert_confirm": {
+        "title": "Change Cover Type — Cancel Pending Switch",
+        "description": "This dialog has an unsaved switch to **{pending_type}** waiting to be applied. Confirming cancels it: this instance stays **{from_type}**, and the settings the pending switch changed go back to what they were when you opened the dialog.\n\nNothing has been written yet either way, so no entity is affected and no reload happens. After confirming, review the geometry and finish with Save & Close.",
+        "data": {
+          "confirm": "Cancel the pending cover type change"
         }
       },
       "cover_entities": {
@@ -1328,8 +1335,8 @@
     "mode": {
       "options": {
         "cover_blind": "Vertical blind",
-        "cover_awning": "Horizontal blind",
-        "cover_tilt": "Tilted blind",
+        "cover_awning": "Horizontal awning",
+        "cover_tilt": "Venetian / tilt blind (tilt-only)",
         "cover_venetian": "Venetian blind (dual-axis)",
         "cover_oscillating_awning": "Oscillating awning (drop-arm)",
         "cover_roof_window": "Roof window",
