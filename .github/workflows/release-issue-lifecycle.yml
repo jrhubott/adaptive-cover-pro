@@ -184,7 +184,7 @@ jobs:
             }
 
             // Sweep: close every OPEN issue carrying `released` (just-tagged + any
-            // stragglers). This is what "all issues tagged released are closed" means.
+            // stragglers), skipping any that also carry `triage-exempt`.
             const releasedOpen = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', labels: 'released', per_page: 100,
             });
