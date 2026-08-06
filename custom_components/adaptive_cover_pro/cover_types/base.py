@@ -777,6 +777,10 @@ class CoverTypePolicy(ABC):
         before #1174. A policy that overrides one of them harmlessly may say so
         by overriding this predicate — and owes the argument for why, in its own
         docstring, because nothing else here can check it.
+
+        Answering ``False`` no longer means "judge the group's mean": it means
+        "ask :meth:`hold_reference_position` where this ONE geometry is". See
+        there for what a coupled type owes in return (#1179).
         """
         cls = type(self)
         return (
@@ -784,6 +788,47 @@ class CoverTypePolicy(ABC):
             and cls.post_pipeline_resolve is CoverTypePolicy.post_pipeline_resolve
             and cls.dispatch_order_key is CoverTypePolicy.dispatch_order_key
         )
+
+    def hold_reference_position(
+        self,
+        cover_positions: Mapping[str, int | None],  # noqa: ARG002
+        *,
+        inverted: bool,  # noqa: ARG002
+    ) -> int | None:
+        """Reduce these raw reads to ``PipelineResult.position``'s frame (#1179).
+
+        The algebraic INVERSE of the dispatch chain. Dispatch expands one
+        abstract position into per-entity wire values —
+        :meth:`post_pipeline_resolve` → ``coordinator._to_cover_frame`` →
+        :meth:`resolve_entity_target` — and this reduces the per-entity reads
+        back to that one abstract position. Only the policy knows the mapping,
+        which is why the registry could previously do nothing better than
+        average the reads.
+
+        Consulted ONLY when :meth:`entities_move_independently` is ``False``. A
+        coupled type's entities express one geometry, so a composed floor or
+        ceiling is a statement about that geometry, and the number it has to be
+        compared against is the geometry's own position — not the arithmetic
+        mean of values from different coordinate systems (a Model C middle rail
+        derived from the bottom rail's coverage, a dual-panel back panel's
+        binary privacy state, a Model B wire that folds coverage and fabric
+        together).
+
+        ``cover_positions`` are **RAW** cover-frame reads, exactly as
+        ``PipelineSnapshot.cover_positions`` carries them, and ``inverted``
+        names their frame — the same kwarg :meth:`resolve_entity_target` takes,
+        so the frame is stated and never guessed (#993). The return value is
+        **LOGICAL**: an override that reads a wire encoding must undo the
+        inversion and decode in wire space *before* returning
+        (CODING_GUIDELINES § "Inverse State").
+
+        ``None`` means "no single answer" — an unconfigured entity role, an
+        unreadable anchor, or a cover type with genuinely independent entities
+        — and keeps that cycle on the legacy summary mean. That is the base
+        answer, so a policy which never touches the dispatch hooks is never
+        asked and never has to care.
+        """
+        return None
 
     def order_for_dispatch(
         self,

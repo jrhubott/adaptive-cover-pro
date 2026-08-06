@@ -2822,8 +2822,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         the instance mean the singular ``held_position`` carries. Without a
         verdict (a computed winner, a motion hold, a legacy snapshot, a cover
         absent from the dict, or a cover type whose entities do not move
-        independently) the singular ``skip_command`` and ``state`` answer for
-        every cover, exactly as before.
+        independently — including one that named its own abstract position via
+        ``CoverTypePolicy.hold_reference_position``, #1179) the singular
+        ``skip_command`` and ``state`` answer for every cover, exactly as
+        before. A coupled type's clamped position is deliberately routed that
+        way: ``state`` has already been through ``post_pipeline_resolve`` and
+        goes through ``_entity_target`` once, which is what makes a clamped hold
+        dispatch the same per-entity wire values as a computed winner at the
+        same position.
         """
         result = self._pipeline_result
         verdict = (result.hold_clamp_verdicts or {}).get(cover) if result else None

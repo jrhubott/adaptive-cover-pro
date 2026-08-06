@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from unittest.mock import MagicMock
 
+from custom_components.adaptive_cover_pro.cover_types.base import CoverTypePolicy
 from custom_components.adaptive_cover_pro.pipeline.types import (
     ClimateOptions,
     CustomPositionSensorState,
@@ -66,6 +67,7 @@ def make_snapshot(
     *,
     cover=None,
     cover_type: str = "cover_blind",
+    policy: CoverTypePolicy | None = None,
     default_position: int = 0,
     is_sunset_active: bool = False,
     climate_readings=None,
@@ -112,6 +114,13 @@ def make_snapshot(
     blank release thresholds) so existing cloud-suppression tests that only set
     readings + enabled keep exercising the handler. Pass an explicit bool to
     decouple the resolved latch from the raw readings (issue #864).
+
+    ``policy`` mirrors production, where ``coordinator`` puts its own live policy
+    instance on every snapshot. Leaving it ``None`` makes the registry fall back
+    to a FRESH policy built from ``cover_type``, which carries none of the
+    per-instance runtime options a real cycle has already synced — so a test
+    whose expectations depend on those options must pass the same instance it
+    resolves through afterwards (#1179).
     """
     if cover is None:
         cover = _make_mock_cover(
@@ -134,6 +143,7 @@ def make_snapshot(
         cover=cover,
         config=cover.config,
         cover_type=cover_type,
+        policy=policy,
         default_position=default_position,
         is_sunset_active=is_sunset_active,
         climate_readings=climate_readings,

@@ -113,15 +113,13 @@ def _split_bounds_against_hold(
     return binding, yielded
 
 
-def _judges_per_cover(snapshot: PipelineSnapshot) -> bool:
-    """Whether this instance's covers may be judged one at a time (#1174).
+def _policy_for(snapshot: PipelineSnapshot):
+    """Resolve this snapshot's policy — one site, one local import.
 
-    Delegated whole to ``CoverTypePolicy.entities_move_independently`` — the
-    registry asks the polymorphic hook and never inspects a cover-type string
-    (CODING_GUIDELINES § "Cover Type Abstraction"). ``snapshot.policy or
-    get_policy(snapshot.cover_type)`` is the same resolution the glare-zone,
-    group-scene and climate handlers already use, so a snapshot built without a
-    policy object still gets its own cover type's answer rather than a default.
+    ``snapshot.policy or get_policy(snapshot.cover_type)`` is the same
+    resolution the glare-zone, group-scene and climate handlers already use, so
+    a snapshot built without a policy object still gets its own cover type's
+    answer rather than a default.
 
     Local import: ``cover_types`` pulls in policies that import from
     ``pipeline``, so a module-level import here would close the cycle — the same
@@ -130,8 +128,32 @@ def _judges_per_cover(snapshot: PipelineSnapshot) -> bool:
     """
     from ..cover_types import get_policy
 
-    policy = snapshot.policy or get_policy(snapshot.cover_type)
-    return policy.entities_move_independently()
+    return snapshot.policy or get_policy(snapshot.cover_type)
+
+
+def _judges_per_cover(snapshot: PipelineSnapshot) -> bool:
+    """Whether this instance's covers may be judged one at a time (#1174).
+
+    Delegated whole to ``CoverTypePolicy.entities_move_independently`` — the
+    registry asks the polymorphic hook and never inspects a cover-type string
+    (CODING_GUIDELINES § "Cover Type Abstraction").
+    """
+    return _policy_for(snapshot).entities_move_independently()
+
+
+def _hold_reference_position(snapshot: PipelineSnapshot) -> int | None:
+    """Ask the policy for the coupled instance's own LOGICAL position (#1179).
+
+    The second half of the same polymorphic question: a cover type whose
+    entities are ONE geometry has no per-cover answer, but it does have a
+    position of its own, and only the policy can reduce the raw per-entity reads
+    back to it. ``None`` means it has no single answer this cycle, which keeps
+    the legacy summary mean.
+    """
+    return _policy_for(snapshot).hold_reference_position(
+        snapshot.cover_positions or {},
+        inverted=snapshot.position_axis_inverted,
+    )
 
 
 def _judge_position_axis(
@@ -161,14 +183,23 @@ def _judge_position_axis(
     applies the floor last, so the shared ``final_pos`` can only ever name one
     of the two edges.
 
-    **Judged set** (holds only). ``snapshot.cover_positions`` when it carries
-    entries AND this cover type's entities move independently — a cover with an
-    unknown position falls back to the summary ``winner.held_position``, which
-    is today's judgment kept exactly for the covers where per-entity data is
-    missing. Otherwise a single pseudo-entry ``{None: winner.held_position}``,
-    reproducing the legacy singular comparison byte-for-byte; ``verdicts`` is
-    ``None`` on that path so every pre-#1174 consumer stays on the singular
-    ``skip_command`` route.
+    **Judged set** (holds only) — three cases, in order:
+
+    1. ``snapshot.cover_positions`` when it carries entries AND this cover
+       type's entities move independently. A cover with an unknown position
+       falls back to the summary ``winner.held_position``, which is today's
+       judgment kept exactly for the covers where per-entity data is missing.
+       ``verdicts`` is populated: #1174's path, unchanged.
+    2. Coupled, and the policy names a reference (#1179) — ONE entry carrying
+       that one number, which is the whole instance's own position. ``verdicts``
+       stays ``None``: the clamped value rides ``PipelineResult.position``
+       through the shared dispatch route a coupled type already uses, so
+       ``post_pipeline_resolve`` and ``resolve_entity_target`` re-expand it
+       exactly once — exactly as they do for a computed winner.
+    3. Everything else — a single pseudo-entry carrying
+       ``winner.held_position``, reproducing the legacy singular comparison
+       byte-for-byte. ``verdicts`` is ``None`` so every pre-#1174 consumer stays
+       on the singular ``skip_command`` route.
 
     **The independence gate** is the policy's own
     ``entities_move_independently`` (``cover_types/base.py``), never a
@@ -176,13 +207,18 @@ def _judge_position_axis(
     that remaps a shared position per entity, rewrites it after the pipeline, or
     orders physically coupled entities has no per-cover question to answer: its
     entities express ONE geometry, and judging them apart both double-applies
-    the remap and bypasses the rewrite. Those instances keep the shared target
-    they had before #1174.
+    the remap and bypasses the rewrite. What that geometry's own position IS is
+    the second half of the same polymorphic question, and
+    ``CoverTypePolicy.hold_reference_position`` answers it; ``None`` there keeps
+    the pre-#1174 summary mean.
 
     **Frames.** Held positions are RAW cover-frame reads and the bounds are
     logical user values, so each is converted before comparing — the #1036
-    conversion, now applied per cover instead of once to the mean. Every
-    ``target`` is on the logical side of that conversion, matching
+    conversion, now applied per cover instead of once to the mean. A policy's
+    reference arrives ALREADY LOGICAL: the reduction is the inverse of the whole
+    dispatch chain, wire decoding included, so the policy un-flips and decodes
+    it itself and this function must not flip it a second time. Every ``target``
+    is on the logical side of that conversion, matching
     ``PipelineResult.position``, so the coordinator maps it to the wire through
     the same ``_to_cover_frame`` seam it already uses for the shared value.
 
@@ -207,18 +243,36 @@ def _judge_position_axis(
             verdicts=None,
         )
     per_entity = snapshot.cover_positions or None
+    reference: int | None = None
     if per_entity is not None and not _judges_per_cover(snapshot):
+        # One geometry, one position: ask the policy for this instance's own
+        # position in the frame PipelineResult.position speaks (#1179). None
+        # means the policy has no single answer, which keeps the legacy mean.
+        reference = _hold_reference_position(snapshot)
         per_entity = None
-    judged: Mapping[str | None, int | None] = (
-        per_entity if per_entity is not None else {None: winner.held_position}
-    )
+    # (entity_id, raw read for the verdict, LOGICAL position to judge).
+    entries: list[tuple[str | None, int | None, int]]
+    if per_entity is None and reference is not None:
+        # Already LOGICAL — the policy un-flipped and decoded it itself, so the
+        # #1036 conversion below must NOT run a second time on this value.
+        entries = [(None, None, reference)]
+    else:
+        # #1174's per-entity set, or the legacy single pseudo-entry on the mean.
+        # One conversion site for both, because they are the same conversion.
+        judged: Mapping[str | None, int | None] = (
+            per_entity if per_entity is not None else {None: winner.held_position}
+        )
+        entries = []
+        for entity_id, position in judged.items():
+            raw = position if position is not None else winner.held_position
+            entries.append(
+                (entity_id, raw, flip_if(raw, inverted=snapshot.position_axis_inverted))
+            )
     verdicts: dict[str, HoldClampVerdict] = {}
     effective_positions: list[int] = []
     raised = False
     lowered = False
-    for entity_id, position in judged.items():
-        raw = position if position is not None else winner.held_position
-        eff = flip_if(raw, inverted=snapshot.position_axis_inverted)
+    for entity_id, raw, eff in entries:
         # This cover's own answer, and the only one that can be right for it:
         # the edge that binds IT when a bound does, and where it already sits
         # when none does — which is what a command forced by the other axis
@@ -236,8 +290,16 @@ def _judge_position_axis(
     elif lowered:
         effective_winner_pos = max(effective_positions)
     else:
-        effective_winner_pos = flip_if(
-            winner.held_position, inverted=snapshot.position_axis_inverted
+        # Nothing clamped, so this is what ``_release_hold_for_tilt_clamp``
+        # writes into ``result.position`` when the TILT axis forces a dispatch
+        # and the position axis stayed inert. For a coupled type that must be
+        # the policy's own abstract reference, not the raw read it decoded it
+        # from: the Model B fabric-change path re-folds this value with a new
+        # blend, and folding a wire a second time halves the coverage.
+        effective_winner_pos = (
+            reference
+            if reference is not None
+            else flip_if(winner.held_position, inverted=snapshot.position_axis_inverted)
         )
     return PositionAxisJudgment(
         effective_winner_pos=effective_winner_pos,

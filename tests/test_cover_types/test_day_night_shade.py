@@ -33,6 +33,7 @@ from custom_components.adaptive_cover_pro.const import (
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
     OPTION_RANGES,
+    POSITION_OPEN,
     ControlMethod,
     CoverType,
 )
@@ -718,6 +719,29 @@ def test_control_model_option_registered() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "model", [DAY_NIGHT_MODEL_POSITION_TILT, DAY_NIGHT_MODEL_SPLIT_RANGE]
+)
+@pytest.mark.parametrize("named_frame", [False, True])
+def test_model_a_and_b_dispatch_order_is_the_config_order(
+    model: str, named_frame: bool
+) -> None:
+    """Only Model C mandates a rail order; A and B leave the user's pick alone.
+
+    ``dispatch_order_key`` early-returns its constant for every model that is
+    not ``dual_entity`` and ``order_for_dispatch`` is a stable sort, so Model A
+    reporting independent entities (#1179) cannot move a single dispatch — the
+    #1115 / #1118 sequencing is Model C's alone, whether or not a seam names the
+    direction of travel.
+    """
+    policy = DayNightShadePolicy()
+    policy.sync_runtime_options({CONF_DAY_NIGHT_CONTROL_MODEL: model})
+
+    entities = ["cover.z", "cover.a"]
+    frame = {"position": 30, "inverted": True} if named_frame else {}
+    assert policy.order_for_dispatch(entities, **frame) == entities
+
+
 class TestSplitRangeWire:
     """``_split_range_wire`` folds (position, blend) into one physical position."""
 
@@ -740,6 +764,110 @@ class TestSplitRangeWire:
     def test_wire_matrix(self, position: int, blend: int, expected: int) -> None:
         policy = DayNightShadePolicy()
         assert policy._split_range_wire(position, blend) == expected
+
+
+class TestHoldReferenceHasNoSingleAnswer:
+    """``None`` means "keep the legacy mean" — never a guessed anchor (#1179)."""
+
+    def test_model_b_with_no_readable_carriage(self) -> None:
+        policy = DayNightShadePolicy()
+        policy.sync_runtime_options(
+            {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+        )
+        assert policy.hold_reference_position({"cover.x": None}, inverted=False) is None
+        # Nothing decoded, so nothing was stashed for the re-encode either.
+        assert policy._split_range_hold_fabric is None
+
+    def test_model_c_with_no_middle_rail_configured(self) -> None:
+        policy = DayNightShadePolicy()
+        policy.sync_runtime_options(
+            {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY}
+        )
+        assert policy.hold_reference_position({"cover.x": 40}, inverted=False) is None
+
+    def test_model_c_with_no_readable_bottom_rail(self) -> None:
+        policy = DayNightShadePolicy()
+        policy.sync_runtime_options(
+            {
+                CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+                CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle",
+            }
+        )
+        assert (
+            policy.hold_reference_position(
+                {"cover.middle": 70, "cover.bottom": None}, inverted=False
+            )
+            is None
+        )
+
+
+class TestSplitRangeDecode:
+    """``_split_range_decode`` is the algebraic inverse of ``_split_range_wire``.
+
+    A held Model B carriage reports ONE wire value that encodes both coverage and
+    fabric, so a coverage floor can only be compared against it after the two are
+    pulled apart (#1179). The fix depends on that being possible, which is what
+    these pin.
+    """
+
+    #: The single wire whose preimage spans both fabric halves. See the test.
+    AMBIGUOUS_WIRE = 50
+
+    def test_split_range_wire_round_trips_through_its_decode(self) -> None:
+        """Every encodable pair comes back as the same fabric and ~the same coverage.
+
+        Coverage tolerance is 1, not 0: the encoder halves the range, so two
+        adjacent coverages share a wire. That is a hardware property of the 2:1
+        compression, not a decode error.
+        """
+        policy = DayNightShadePolicy()
+        for position in range(POSITION_OPEN + 1):
+            for fabric in (DAY_NIGHT_BLACKOUT, DAY_NIGHT_SHEER):
+                wire = policy._split_range_wire(position, fabric)
+                if wire == self.AMBIGUOUS_WIRE:
+                    continue  # pinned by the collision test below
+                coverage, decoded = policy._split_range_decode(wire)
+                assert abs(coverage - position) <= 1, (position, fabric, wire)
+                if position == POSITION_OPEN:
+                    # The encoder's documented endpoint collapse: a fully-open
+                    # carriage covers nothing, so it has no fabric to be behind
+                    # and both halves map onto the one physical endpoint.
+                    assert decoded == DAY_NIGHT_SHEER, (position, fabric)
+                else:
+                    assert decoded == fabric, (position, fabric, wire)
+
+    @pytest.mark.parametrize("wire", list(range(POSITION_OPEN + 1)))
+    def test_re_encoding_a_decoded_wire_is_idempotent(self, wire: int) -> None:
+        """``encode(decode(w)) == w`` for every physical position, no exceptions.
+
+        The property the clamp path actually needs: a held carriage that nothing
+        moves must be re-dispatched to the wire it is already sitting at, or the
+        fold itself would nudge the shade every cycle.
+        """
+        policy = DayNightShadePolicy()
+        assert policy._split_range_wire(*policy._split_range_decode(wire)) == wire
+
+    def test_split_range_wire_50_is_the_one_ambiguous_carriage_position(self) -> None:
+        """Wire 50 is the only cross-fabric collision, and it resolves to sheer.
+
+        It is reached by ``(0, sheer)``, ``(1, sheer)`` AND ``(99, blackout)``,
+        because the encoder is discontinuous at the top of the blackout half:
+        98 → 49, 99 → 50, 100 → 100. The decode resolves it as sheer/0 — the
+        conservative direction, since reading a nearly-closed blackout carriage
+        as fully open can only ever make a floor fire, never suppress one.
+
+        The discontinuity itself is the encoder's, and out of scope here.
+        """
+        policy = DayNightShadePolicy()
+
+        assert policy._split_range_wire(99, DAY_NIGHT_BLACKOUT) == 50
+        assert policy._split_range_wire(0, DAY_NIGHT_SHEER) == 50
+        assert policy._split_range_wire(1, DAY_NIGHT_SHEER) == 50
+        assert policy._split_range_decode(50) == (0, DAY_NIGHT_SHEER)
+
+        # The encoder discontinuity that produces it, documented in place.
+        assert policy._split_range_wire(98, DAY_NIGHT_BLACKOUT) == 49
+        assert policy._split_range_wire(100, DAY_NIGHT_BLACKOUT) == POSITION_OPEN
 
 
 # ---------------------------------------------------------------------------
