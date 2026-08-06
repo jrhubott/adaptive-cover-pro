@@ -986,6 +986,13 @@ def _bundle_path(bundle: str) -> Path:
     raise ValueError(f"unknown bundle directory: {directory!r}")
 
 
+def _location(bundle: str, key_path: tuple[str, ...]) -> str:
+    """Render a ``(bundle, key_path)`` pair as the ``"<bundle>:<dotted path>"``
+    string every assertion message in this table uses to name its site.
+    """
+    return f"{bundle}:{'.'.join(key_path)}"
+
+
 def _resolve(bundle: str, key_path: tuple[str, ...]) -> str:
     """Load *bundle*, walk *key_path*, and return the leaf — which must be a str.
 
@@ -1000,7 +1007,7 @@ def _resolve(bundle: str, key_path: tuple[str, ...]) -> str:
     value: object = _load(_bundle_path(bundle))
     for part in key_path:
         value = value[part]
-    location = f"{bundle}:{'.'.join(key_path)}"
+    location = _location(bundle, key_path)
     assert isinstance(value, str), f"{location} did not resolve to a string: {value!r}"
     return value
 
@@ -1008,12 +1015,21 @@ def _resolve(bundle: str, key_path: tuple[str, ...]) -> str:
 # Each row's ``same_term_as`` (default: ``None``) points at another
 # ``(bundle, key_path)`` whose trailing parenthetical holds the term *this*
 # row's value must also contain, extracted at test time with ``_PAREN_TAIL``
-# — the same regex ``_split_label`` uses above. Only the two FR arm_length
-# rows need this today, both pointing at the drop-arm picker; the field costs
-# nothing on every other row.
+# — the same regex ``_split_label`` uses above. Four rows use this today: the
+# two FR arm_length rows and the FR/DE set_tilt rows, pointing at the
+# drop-arm and venetian pickers respectively; the field costs nothing on
+# every other row.
 _FR_OSCILLATING_AWNING_PICKER = (
     "translations/fr.json",
     ("selector", "mode", "options", "cover_oscillating_awning"),
+)
+_FR_VENETIAN_PICKER = (
+    "translations/fr.json",
+    ("selector", "mode", "options", "cover_venetian"),
+)
+_DE_VENETIAN_PICKER = (
+    "translations/de.json",
+    ("selector", "mode", "options", "cover_venetian"),
 )
 
 _WORDING_LOCKS = [
@@ -1069,10 +1085,12 @@ _WORDING_LOCKS = [
     # -- #1203: FR set_tilt service description matches the picker's "deux
     # axes" wording. PR#1202 moved cover_venetian to "Store vénitien (deux
     # axes)", but its parity guard only walks selector.mode.options vs.
-    # display_label() — it never reaches services.*.
+    # display_label() — it never reaches services.*. ``same_term_as`` couples
+    # the description back to the picker's own parenthetical (round-2 audit
+    # fix, #1203): renaming the picker's qualifier without touching this row
+    # now fails on the coupling, not just on the (now-stale) literal below.
     pytest.param(
-        "translations/fr.json",
-        ("selector", "mode", "options", "cover_venetian"),
+        *_FR_VENETIAN_PICKER,
         ("(deux axes)",),
         ("à double axe",),
         None,
@@ -1083,7 +1101,7 @@ _WORDING_LOCKS = [
         ("services", "set_tilt", "description"),
         ("(deux axes)",),
         ("à double axe",),
-        None,
+        _FR_VENETIAN_PICKER,
         id="fr-set_tilt-description",
     ),
     # -- #1203: DE arm_length help text names the arm and pivot correctly.
@@ -1113,12 +1131,22 @@ _WORDING_LOCKS = [
     # "Jalousie (zweiachsig)") uses the German term, but the service
     # description still carried the untranslated English qualifier
     # "dual-axis" — services.* is outside every picker/confirm parity guard.
+    # Unlike FR, DE had no row locking the picker's own literal, so this row
+    # is added first (round-2 audit fix) to give ``de-set_tilt-description``'s
+    # ``same_term_as`` coupling below the same backstop the FR side has.
+    pytest.param(
+        *_DE_VENETIAN_PICKER,
+        ("zweiachsig",),
+        ("zwei Achsen",),
+        None,
+        id="de-cover_venetian-picker",
+    ),
     pytest.param(
         "translations/de.json",
         ("services", "set_tilt", "description"),
         ("zweiachsig",),
         ("dual-axis",),
-        None,
+        _DE_VENETIAN_PICKER,
         id="de-set_tilt-description",
     ),
 ]
@@ -1147,11 +1175,14 @@ def test_intra_bundle_wording_is_consistent(
     parity guard above), and whatever term is actually inside it — not this
     row's own ``must_contain`` literal — must also appear in *this* row's
     value. Rename the referenced parenthetical without updating this row and
-    it goes red on the coupling, not just on its own (unchanged) literal.
+    it goes red on the coupling, not just on its own (unchanged) literal. A
+    source whose parenthetical is present but empty (``"... ()"``) fails
+    loudly on its own, rather than letting an empty-string ``in`` check pass
+    vacuously.
     """
     value = _resolve(bundle, key_path)
 
-    location = f"{bundle}:{'.'.join(key_path)}"
+    location = _location(bundle, key_path)
     for term in must_contain:
         assert term in value, f"{location} should contain {term!r}: {value!r}"
     for term in must_not_contain:
@@ -1160,13 +1191,17 @@ def test_intra_bundle_wording_is_consistent(
     if same_term_as is not None:
         source_bundle, source_key_path = same_term_as
         source_value = _resolve(source_bundle, source_key_path)
-        source_location = f"{source_bundle}:{'.'.join(source_key_path)}"
+        source_location = _location(source_bundle, source_key_path)
         match = _PAREN_TAIL.search(source_value)
         assert match, (
             f"{source_location} has no trailing parenthetical for {location} "
             f"to echo: {source_value!r}"
         )
         term = " ".join(match.group(1).split())
+        assert term, (
+            f"{source_location}'s parenthetical is empty — nothing for "
+            f"{location} to echo: {source_value!r}"
+        )
         assert term in value, (
             f"{location} does not echo {source_location}'s parenthetical "
             f"term {term!r}: {value!r}"
