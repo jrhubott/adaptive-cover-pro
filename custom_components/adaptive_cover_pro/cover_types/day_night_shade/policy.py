@@ -120,11 +120,13 @@ _CLIMATE_METHODS = frozenset(
 # Dividing ``POSITION_OPEN`` exactly is necessary and nowhere near sufficient. A
 # midpoint of 25 divides 100 cleanly and yields an exact integer scale of 4, and
 # still breaks the codec in both directions: ``_split_range_wire(80, sheer)`` is
-# 45, so the encoder can never reach wires 51–100 at all, and
-# ``_split_range_decode(90)`` returns a coverage of 260, which flows straight
-# into ``clamp_to_bounds`` as the instance's held coverage. Moving the boundary
-# means redesigning the ``_split_range_wire`` / ``_split_range_decode`` pair so
-# each half still spans the whole domain — not editing a constant.
+# 45, and the scaled branch tops out at 50, so the only wire above it the encoder
+# can still emit is the 100 the fully-open short-circuit returns before any
+# scaling — 51–99, 49 of the 101 wires, become unreachable. In the other
+# direction ``_split_range_decode(90)`` returns a coverage of 260, which flows
+# straight into ``clamp_to_bounds`` as the instance's held coverage. Moving the
+# boundary means redesigning the ``_split_range_wire`` / ``_split_range_decode``
+# pair so each half still spans the whole domain — not editing a constant.
 # File-private — those two are this constant's only readers.
 _SPLIT_RANGE_SCALE = POSITION_OPEN // DAY_NIGHT_SPLIT_MIDPOINT
 
@@ -273,10 +275,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
         self._last_blend: int | None = None
         # Model B: the fabric half read off the carriage by
-        # ``hold_reference_position`` this cycle, replayed by
-        # ``post_pipeline_resolve`` when a hold's own blend has been cleared.
-        # ``None`` = this cycle asked no reference, so there is nothing to
-        # replay. See ``sync_runtime_options`` for why it is cleared there.
+        # ``hold_reference_position``, replayed by ``post_pipeline_resolve`` when
+        # a HOLD's own blend has been cleared — and only then, because an
+        # off-cycle evaluate writes here too. ``None`` = nothing has asked for a
+        # reference since the last clear. See ``sync_runtime_options`` for why it
+        # is cleared there and ``hold_reference_position`` for why the hold gate,
+        # not the clear, is what keeps a stale fabric out.
         self._split_range_hold_fabric: int | None = None
         self._schedule_refresh_after: Any | None = None
         # Per-instance control model (Model A vs B vs C). Read from options and
@@ -702,6 +706,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         per-cycle ordering is: this hook clears → ``registry.evaluate`` may set
         it via :meth:`hold_reference_position` → ``post_pipeline_resolve``
         consumes it.
+
+        The clear is hygiene, not the safety argument — an off-cycle evaluate can
+        land after it. What makes the consume safe is the hold gate in
+        ``post_pipeline_resolve``; see :meth:`hold_reference_position`.
         """
         self._cache_runtime_options(options)
         self._split_range_hold_fabric = None
@@ -956,11 +964,19 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             # fabric half that number happened to land in. The carriage's own
             # decoded fabric is the honest replacement: same fabric, new
             # coverage (#1179).
-            blend = (
-                resolved.tilt
-                if resolved.tilt is not None
-                else self._split_range_hold_fabric
-            )
+            #
+            # ``held_position`` is what licenses that replay. The stash is a side
+            # channel on the live policy, and an off-cycle
+            # ``async_apply_user_position`` evaluate can write it while this cycle
+            # is suspended on one of ``_async_update_data``'s awaits — so a
+            # leftover fabric may well be sitting here. A cycle whose own winner
+            # is COMPUTED never asked the reduction hook anything and has no
+            # claim on it; reading it would fold behind a fabric this cycle never
+            # chose. A hold winner always wrote it itself — see
+            # :meth:`hold_reference_position`.
+            blend = resolved.tilt
+            if blend is None and resolved.held_position is not None:
+                blend = self._split_range_hold_fabric
             if blend is not None:
                 return self._apply_split_range(resolved, blend=blend)
         if self._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY:
@@ -1318,6 +1334,30 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         :meth:`post_pipeline_resolve` can re-fold the clamped coverage back onto
         the wire behind the fabric the user is physically already behind. A floor
         moves coverage; it does not change fabric.
+
+        **Why the stash cannot be replayed against the wrong cycle.** It is
+        mutable state on the live policy and ``async_apply_user_position``
+        evaluates the pipeline off-cycle on that same policy, with no
+        ``sync_runtime_options`` ahead of it and no lock holding it off while
+        ``_async_update_data`` sits on one of its two awaits — so a leftover write
+        genuinely can outlive the per-cycle clear. Two facts make it unreadable
+        anyway:
+
+        * ``coordinator._calculate_cover_state`` is **synchronous** from
+          ``registry.evaluate`` through ``post_pipeline_resolve``, so this cycle's
+          own evaluate is the last thing that can touch the stash before the
+          consume — a later off-cycle write cannot exist;
+        * the consume fires only when ``PipelineResult.held_position`` is set, and
+          a Model B hold ALWAYS wrote the stash itself. ``held_position`` is
+          ``snapshot.current_cover_position``, which the coordinator computes as
+          the mean of the very ``cover_positions`` the same snapshot carries, so a
+          non-``None`` hold implies a numeric read; ``entities_move_independently``
+          is ``False`` for Model B, so the registry always takes the coupled
+          branch and asks this hook; and with a numeric read this branch always
+          stashes.
+
+        So the fabric a hold replays is its own evaluate's. A cycle that ends on a
+        computed winner asked nothing and reads nothing.
 
         ⚠️ The decode un-flips but does NOT un-interpolate, per the base
         contract's caveat. On an interpolated install the wire read arrives on

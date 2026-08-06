@@ -753,10 +753,12 @@ def test_the_split_midpoint_must_be_half_the_wire_range() -> None:
 
     A midpoint of 25 divides 100 cleanly and yields an exact integer scale of 4,
     and still breaks ``_split_range_wire`` / ``_split_range_decode`` in both
-    directions: the encoder could never emit a wire above 50, and decoding wire
-    90 would return a coverage of 260. Every property ``TestSplitRangeDecode``
-    pins — surjectivity onto the wire range, the round trip, the single
-    ambiguous wire — holds at 50 and at no other midpoint.
+    directions: the scaled branch would top out at wire 50, leaving 51–99
+    unreachable — 100 still comes out of the fully-open short-circuit, which
+    returns before any scaling — and decoding wire 90 would return a coverage of
+    260. Every property ``TestSplitRangeDecode`` pins — surjectivity onto the
+    wire range, the round trip, the single ambiguous wire — holds at 50 and at no
+    other midpoint.
 
     The second half asserts the codomain that fact protects: the decode feeds
     ``clamp_to_bounds`` as the instance's held coverage, so it must never hand
@@ -834,18 +836,24 @@ class TestSplitRangeHoldFabricLifecycle:
 
     ``post_pipeline_resolve`` replays a stashed fabric only when the winner's own
     blend was cleared, so a fabric left over from an earlier evaluate would
-    re-fold a later hold behind stale opacity.
+    re-fold a later winner behind stale opacity.
 
-    What rules that out is NOT that every write is preceded by a clear.
+    The clear does not rule that out on its own.
     ``coordinator.async_apply_user_position`` evaluates the pipeline off-cycle
-    with no ``sync_runtime_options`` ahead of it, and that evaluate can reach
-    ``hold_reference_position`` and set the stash. It is that the stash has
-    exactly ONE consumer: ``post_pipeline_resolve`` is called from a single site,
-    in ``coordinator._calculate_cover_state``, which only ``_async_update_data``
-    calls — after ``_update_options`` → ``sync_runtime_options`` has already
-    cleared — and which is synchronous, so nothing can interleave between that
-    cycle's own ``registry.evaluate`` and the consume. An off-cycle write is
-    therefore always wiped before anything can replay it.
+    with no ``sync_runtime_options`` ahead of it, that evaluate can reach
+    ``hold_reference_position`` and set the stash, and ``_async_update_data``
+    suspends twice — ``prime_cache`` and ``manager.reset_if_needed`` — between the
+    clear and the consume with nothing serialising the two. A write really can
+    land in that window.
+
+    What keeps it out of the fold is the consume side. ``post_pipeline_resolve``
+    reads the stash only for a winner carrying ``held_position``, and a Model B
+    hold always wrote it during its own evaluate (the argument is spelled out on
+    ``hold_reference_position``); ``coordinator._calculate_cover_state`` is
+    synchronous from ``registry.evaluate`` to the consume, so no later write can
+    slip in either. The stale-fold this excludes is pinned by
+    ``test_pipeline/test_hold_clamp_per_cover.py::
+    test_an_off_cycle_reference_cannot_fold_a_computed_winner``.
     """
 
     def test_a_re_synced_policy_starts_the_cycle_with_no_stashed_fabric(self) -> None:

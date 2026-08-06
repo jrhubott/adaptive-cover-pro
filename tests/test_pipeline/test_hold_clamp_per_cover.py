@@ -1473,3 +1473,64 @@ async def test_a_clamped_hold_dispatches_the_same_wire_as_a_computed_winner(
     )
 
     assert targets == {_DN_SHADE: expected_wire}
+
+
+def test_an_off_cycle_reference_cannot_fold_a_computed_winner() -> None:
+    """Only a HOLD may read the fabric stash, because only a hold wrote it (#1179).
+
+    The stash is a side channel between two calls on the live policy, and the two
+    are NOT the only pair that can use it. ``async_apply_user_position`` evaluates
+    the pipeline off-cycle on that same policy with no ``sync_runtime_options``
+    ahead of it, and ``_async_update_data`` suspends twice — on the
+    ``prime_cache`` executor job and on ``manager.reset_if_needed`` — between
+    clearing the stash and consuming it, with no lock serialising a service call
+    against the cycle. So a ``set_position`` tap landing on one of those awaits
+    can leave a fabric behind that this cycle never asked for.
+
+    What the fallback is gated on is the only thing that rules it out: this
+    cycle's OWN winner being a hold. A Model B hold always writes the stash
+    itself — ``held_position`` is ``current_cover_position``, the mean of the very
+    ``cover_positions`` the snapshot carries, so a non-``None`` hold implies a
+    numeric read; ``entities_move_independently`` is ``False`` for Model B, so the
+    registry always asks ``hold_reference_position``; and that branch always
+    stashes when it has a read. A computed winner reads nothing, so the leftover
+    below can only be ignored.
+    """
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.engine.covers.day_night_shade import (
+        DAY_NIGHT_BLACKOUT,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+    options = _model_b_options()
+    policy = _day_night_policy(options)
+
+    # The interleaved off-cycle evaluate: a user command's preemption check on
+    # the live policy, whose winner is a hold, so the registry reduces the
+    # carriage read and the Model B branch stashes its fabric half.
+    off_cycle = _coupled_hold(
+        cover_type="cover_day_night_shade",
+        policy=policy,
+        cover_positions={_DN_SHADE: _DN_WIRE_BLACKOUT_40},
+        current_cover_position=_DN_WIRE_BLACKOUT_40,
+        blend=None,
+    )
+    assert off_cycle.held_position == _DN_WIRE_BLACKOUT_40
+    assert policy._split_range_hold_fabric == DAY_NIGHT_BLACKOUT
+
+    # The suspended cycle resumes and finishes on a computed winner whose method
+    # carries no fabric opinion — ``_resolve_blend`` clears ``tilt`` for it.
+    # Nothing this cycle decided says anything about fabric, so nothing folds.
+    resolved = _resolve_through_policy(
+        PipelineResult(
+            position=60,
+            control_method=ControlMethod.SOLAR,
+            reason="computed",
+        ),
+        policy,
+        options,
+    )
+
+    assert resolved.tilt is None
+    assert resolved.position == 60
+    assert [s.handler for s in resolved.decision_trace] == []
