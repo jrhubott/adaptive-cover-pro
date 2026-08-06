@@ -77,10 +77,15 @@ body:
       description: "As shown in the integration's cover type selector."
       options:
         - "Vertical blind"
-        - "Horizontal blind (awning)"
-        - "Tilted blind"
+        - "Horizontal awning"
+        - "Venetian / tilt blind (tilt-only)"
         - "Venetian blind (dual-axis)"
         - "Oscillating awning (drop-arm)"
+        - "Roof window"
+        - "Sliding curtain (horizontal)"
+        - "Louvered roof"
+        - "Day/night shade (dual-fabric)"
+        - "Dual panel (sheer + blackout)"
         - "Not sure / not applicable"
     validations:
       required: false
