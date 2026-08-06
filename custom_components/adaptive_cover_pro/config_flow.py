@@ -3993,6 +3993,32 @@ def _eligible_cover_types(
     return eligible, blocked
 
 
+def _offered_cover_types(current_type: str | None, eligible: list[str]) -> list[str]:
+    """Build the picker's list: the alternatives plus the type it already is (#1200).
+
+    ``eligible`` answers "what can this instance switch TO", which is the
+    question the abort and the blocked-types explanation are both asking — so
+    the current type is rightly absent from it. The dropdown asks a different
+    question: what the field's value is allowed to be, and it opens on the
+    value the instance already has. Without the current type in the option set
+    that pre-selection is impossible and the frontend highlights whichever
+    alternative happens to sort first.
+
+    Deliberately never consults capabilities: a venetian entry bound to a
+    position-only cover would otherwise be rendered as blocked and
+    pre-selected at the same time.
+
+    That guarantee covers ``current_type`` — the type the FLOW is on — which is
+    the stored type only while no switch is pending. Mid-dialog venetian →
+    blind, ``current_type`` is blind and the stored venetian is back among the
+    blocked types like any other unsatisfiable one, so a revert to it is not
+    offered here.
+    """
+    if current_type not in SENSOR_TYPE_MENU:
+        return eligible
+    return [t for t in SENSOR_TYPE_MENU if t == current_type or t in eligible]
+
+
 def _blocked_types_text(
     blocked: list[str],
     known: Mapping[str, Mapping[str, bool] | None],
@@ -5333,6 +5359,12 @@ class OptionsFlowHandler(OptionsFlow):
         the covers already bound here, and explains the ones it filtered out
         instead of hiding them. The dropdown reuses the ``selector.mode`` label
         bundle the create flow already ships, so no per-type string is added.
+
+        The type the instance already is is offered too, and is what the field
+        opens on (issue #1200). It is not a switch target — picking it returns
+        to the menu — but a required select with no suggested value opens on
+        an arbitrary alternative, which reads as a claim about what this
+        instance currently is.
         """
         known = bound_cover_capabilities(self.hass, self.options)
         eligible, blocked = _eligible_cover_types(self.sensor_type, known)
@@ -5340,22 +5372,34 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_abort(reason="no_eligible_cover_types")  # type: ignore[return-value]
 
         if user_input is not None:
-            self._pending_cover_type = user_input[CONF_SENSOR_TYPE]
+            new_type = user_input[CONF_SENSOR_TYPE]
+            # Compared against the type the FLOW is on, never the stored one.
+            # Mid-dialog A → B, the flow is on B and picking A is the revert —
+            # which still has ``_apply_pending_cover_type``'s unwind to run.
+            # Keying on the stored type would strand a pending switch the user
+            # believed they had just cancelled.
+            if new_type == self.sensor_type:
+                return await self.async_step_init()
+            self._pending_cover_type = new_type
             return await self.async_step_change_cover_type_confirm()
 
         labels = await _load_summary_labels(
             self.hass, _resolve_summary_language(self.hass, self.context)
         )
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_SENSOR_TYPE): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=_offered_cover_types(self.sensor_type, eligible),
+                        translation_key="mode",
+                    )
+                )
+            }
+        )
         return self.async_show_form(  # type: ignore[return-value]
             step_id="change_cover_type",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SENSOR_TYPE): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=eligible, translation_key="mode"
-                        )
-                    )
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                schema, {CONF_SENSOR_TYPE: self.sensor_type}
             ),
             description_placeholders={
                 "current_type": get_policy(self.sensor_type).display_label(labels),
@@ -5371,6 +5415,10 @@ class OptionsFlowHandler(OptionsFlow):
 
         Same one-extra-click shape as ``async_step_sync_confirm``. Unticking the
         box returns to the menu with nothing changed.
+
+        Renders under a second step id when the pick cancels a pending switch
+        rather than making one — see
+        ``async_step_change_cover_type_revert_confirm``.
         """
         new_type = self._pending_cover_type
         if new_type is None:
@@ -5417,14 +5465,37 @@ class OptionsFlowHandler(OptionsFlow):
         _, capability_notes = check_cover_capabilities(
             self.options, new_type, self.hass, prospective=True
         )
+        # A pick that lands back on the stored type cancels the pending switch
+        # instead of making one, and the wording above degenerates there: the
+        # net change against stored state is nothing, so both ends name the
+        # same cover type. Same screen, same handler, second step id — which is
+        # the only handle the frontend has for choosing another description.
+        #
+        # ``_cover_type_changed`` is redundant today: the picker returns to the
+        # menu when the pick equals ``self.sensor_type``, so reaching here with
+        # ``new_type == stored_type`` already implies the flow moved off it. It
+        # stays because it is the revert copy's own precondition rather than a
+        # restatement of that early return — the screen asserts an unsaved
+        # switch exists and names it via ``pending_type``. Drop the conjunct and
+        # relaxing the early return would silently point a "you have a pending
+        # switch to X" screen at an entry with no pending switch, where X is the
+        # type it already is.
+        reverting = new_type == stored_type and self._cover_type_changed
         return self.async_show_form(  # type: ignore[return-value]
-            step_id="change_cover_type_confirm",
+            step_id=(
+                "change_cover_type_revert_confirm"
+                if reverting
+                else "change_cover_type_confirm"
+            ),
             data_schema=vol.Schema(
                 {vol.Required("confirm", default=False): selector.BooleanSelector()}
             ),
             description_placeholders={
                 "from_type": get_policy(stored_type).display_label(labels),
                 "to_type": get_policy(new_type).display_label(labels),
+                # The switch a revert cancels — the only placeholder on this
+                # screen read from in-memory rather than stored state.
+                "pending_type": get_policy(self.sensor_type).display_label(labels),
                 "stranded_options": "\n".join(f"- `{k}`" for k in stranded) or "—",
                 "capability_notes": "\n".join(f"- {n}" for n in capability_notes)
                 or "—",
@@ -5434,6 +5505,18 @@ class OptionsFlowHandler(OptionsFlow):
                 or "—",
             },
         )
+
+    async def async_step_change_cover_type_revert_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm cancelling a pending, unsaved cover-type switch (issue #1200).
+
+        Deliberately no logic of its own: cancelling a pending switch IS a
+        switch — back to the stored type — and runs the same unwind every other
+        pick runs. The step exists only because a step's description is chosen
+        by its id, so revert-specific copy needs an id of its own.
+        """
+        return await self.async_step_change_cover_type_confirm(user_input)
 
     # ---- Pending cover-type switch (issue #1132) ------------------------- #
 
