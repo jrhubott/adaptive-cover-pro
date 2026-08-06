@@ -151,7 +151,7 @@
           "min_tilt": "Limite inférieure de l'angle d'inclinaison des lamelles (0–100 %). Les valeurs plus élevées empêchent les lamelles de se fermer complètement — utile pour les stores qui bloquent toute la lumière à 0 %. Défaut : 0 (pas de limite). Exemple : réglez à 10 si vos stores deviennent complètement opaques à 0 % et vous voulez toujours un peu de lumière.",
           "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Durée (en secondes) pendant laquelle l'intégration tolère une publication tardive de l'état de position de votre actionneur avant de la traiter comme un geste utilisateur réel. 45 s par défaut convient à Somfy IO via Tahoma. Augmentez à 60–120 s si votre matériel (bus KNX lent, Fibaro/Shelly republish) publie la position actuelle après l'arrêt physique du store – le symptôme est des événements « manual_override_set » parasites déclenchés ~30–90 s après un mouvement commandé. Diminuez uniquement si vous avez un actionneur inhabituellement rapide et souhaitez une détection de faux contact plus stricte. Plage 15–180 s.",
-          "arm_length": "Longueur du bras articulé d'un store banne à bras articulés, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
+          "arm_length": "Longueur du bras pivotant d'un store à projection, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
           "awning_min_angle": "Angle du bras lorsque le store banne est complètement fermé/rétracté (0–180°). En règle générale, 0° = bras vertical contre le mur. Définit le début de l'arc de balayage.",
           "awning_max_angle": "Angle du bras lorsque le store banne est complètement ouvert (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
           "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
@@ -458,7 +458,7 @@
           "min_tilt": "Limite inférieure de l'angle d'inclinaison des lamelles (0–100 %). Les valeurs plus élevées empêchent les lamelles de se fermer complètement — utile pour les stores qui bloquent toute la lumière à 0 %. Défaut : 0 (pas de limite). Exemple : réglez à 10 si vos stores deviennent complètement opaques à 0 % et vous voulez toujours un peu de lumière.",
           "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Durée (en secondes) pendant laquelle l'intégration tolère une publication tardive de l'état de position de votre actionneur avant de la traiter comme un geste utilisateur réel. 45 s par défaut convient à Somfy IO via Tahoma. Augmentez à 60–120 s si votre matériel (bus KNX lent, Fibaro/Shelly republish) publie la position actuelle après l'arrêt physique du store – le symptôme est des événements « manual_override_set » parasites déclenchés ~30–90 s après un mouvement commandé. Diminuez uniquement si vous avez un actionneur inhabituellement rapide et souhaitez une détection de faux contact plus stricte. Plage 15–180 s.",
-          "arm_length": "Longueur du bras articulé d'un store banne à bras articulés, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
+          "arm_length": "Longueur du bras pivotant d'un store à projection, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
           "awning_min_angle": "Angle du bras lorsque le store banne est complètement fermé/rétracté (0–180°). En règle générale, 0° = bras vertical contre le mur. Définit le début de l'arc de balayage.",
           "awning_max_angle": "Angle du bras lorsque le store banne est complètement ouvert (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
           "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
@@ -1368,14 +1368,14 @@
       "options": {
         "cover_blind": "Store vertical",
         "cover_awning": "Store banne horizontal",
-        "cover_tilt": "Store à inclinaison",
-        "cover_venetian": "Store vénitien (double axe)",
-        "cover_oscillating_awning": "Store banne à bras articulé",
+        "cover_tilt": "Store vénitien (inclinaison seule)",
+        "cover_venetian": "Store vénitien (deux axes)",
+        "cover_oscillating_awning": "Store à projection (bras oscillant)",
         "cover_roof_window": "Fenêtre de toit",
         "cover_sliding_curtain": "Rideau coulissant (horizontal)",
         "cover_louvered_roof": "Toit à lames",
         "cover_day_night_shade": "Store jour/nuit (double tissu)",
-        "cover_dual_panel": "Double panneau (voile + occultant)"
+        "cover_dual_panel": "Store à double panneau (voile + occultant)"
       }
     },
     "tilt_mode": {

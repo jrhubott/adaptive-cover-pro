@@ -230,9 +230,9 @@
   "cover_types": {
     "blind": "Vertikale Jalousie",
     "awning": "Horizontale Markise",
-    "tilt": "Jalousie / Neigung",
-    "oscillating_awning": "Schwenkmarkise",
-    "venetian": "Jalousie (Zwei-Achsen)",
+    "tilt": "Jalousie (nur Neigung)",
+    "oscillating_awning": "Fallarmmarkise",
+    "venetian": "Jalousie (zweiachsig)",
     "roof_window": "Dachfenster",
     "sliding_curtain": "Schiebevorhang",
     "louvered_roof": "Lamellendach",

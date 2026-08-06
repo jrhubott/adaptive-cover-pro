@@ -1368,7 +1368,7 @@
       "options": {
         "cover_blind": "Vertical blind",
         "cover_awning": "Horizontal awning",
-        "cover_tilt": "Tilted blind",
+        "cover_tilt": "Venetian / tilt blind (tilt-only)",
         "cover_venetian": "Venetian blind (dual-axis)",
         "cover_oscillating_awning": "Oscillating awning (drop-arm)",
         "cover_roof_window": "Roof window",

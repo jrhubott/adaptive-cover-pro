@@ -151,7 +151,7 @@
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
           "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s.",
-          "arm_length": "Länge des Schwenkarmes einer Gelenkarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
+          "arm_length": "Länge des Schwenkarmes einer Fallarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
           "awning_min_angle": "Armwinkel, wenn die Markise vollständig geschlossen/eingezogen ist (0–180°). Normalerweise 0° = Arm vertikal an der Wand. Definiert den Anfang des Schwenkbereichs.",
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
@@ -458,7 +458,7 @@
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
           "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s.",
-          "arm_length": "Länge des Schwenkarmes einer Gelenkarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
+          "arm_length": "Länge des Schwenkarmes einer Fallarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
           "awning_min_angle": "Armwinkel, wenn die Markise vollständig geschlossen/eingezogen ist (0–180°). Normalerweise 0° = Arm vertikal an der Wand. Definiert den Anfang des Schwenkbereichs.",
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
@@ -1368,14 +1368,14 @@
       "options": {
         "cover_blind": "Vertikale Jalousie",
         "cover_awning": "Horizontale Markise",
-        "cover_tilt": "Dreh-Jalousie",
-        "cover_venetian": "Jalousette (zweiachsig)",
-        "cover_oscillating_awning": "Gelenkarmmarkise (drop-arm)",
+        "cover_tilt": "Jalousie (nur Neigung)",
+        "cover_venetian": "Jalousie (zweiachsig)",
+        "cover_oscillating_awning": "Fallarmmarkise",
         "cover_roof_window": "Dachfenster",
         "cover_sliding_curtain": "Schiebevorhang (horizontal)",
         "cover_louvered_roof": "Lamellendach",
         "cover_day_night_shade": "Tag/Nacht-Rollo (Doppelstoff)",
-        "cover_dual_panel": "Doppelpaneel (transparent + Verdunkelung)"
+        "cover_dual_panel": "Doppelpaneel-Beschattung (transparent + Verdunkelung)"
       }
     },
     "tilt_mode": {

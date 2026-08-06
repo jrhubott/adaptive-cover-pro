@@ -8,6 +8,7 @@ source of truth. DE/FR must match en.json exactly for every section including
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -773,29 +774,39 @@ def test_manual_override_duration_mode_options_translated_in_en():
 
 
 # ---------------------------------------------------------------------------
-# Issue #1200 — the picker dropdown and the screen after it must name the same
-# cover type. ``selector.mode.options`` labels the dropdown; the confirm step
-# renders ``get_policy(key).display_label()``. Two independent English sources
-# for one value, and nothing cross-checked them, so ``cover_awning`` shipped as
-# "Horizontal blind" in one and "Horizontal Awning" in the other.
+# Issues #1200 / #1201 — the picker dropdown and the screen after it must name
+# the same cover type. ``selector.mode.options`` labels the dropdown; the
+# confirm step renders ``get_policy(key).display_label(labels)``. Two
+# independent bundles name one value, and nothing cross-checked them, so
+# ``cover_awning`` shipped in English as "Horizontal blind" on one screen and
+# "Horizontal Awning" on the other (#1200), and DE/FR shipped a drop-arm awning
+# as "Gelenkarmmarkise"/"Schwenkmarkise" and "Store banne à bras articulé"/
+# "Store oscillant" (#1201).
 #
-# English-only by design. ``display_label()`` has no per-language form to
-# compare against, and DE/FR carry pre-existing label drift of their own —
-# tracked separately as issue #1201. Widening this guard to those files would
-# turn the suite red on that drift rather than on anything a change here did.
+# Runs over every shipped language. The rule is deliberately language-neutral:
+# #1200's first cut matched on the English head noun (last token), which does
+# not survive contact with German compounding ("Doppelpaneel-Beschattung" is
+# one token, not two) or French postposed adjectives.
 # ---------------------------------------------------------------------------
 
 
-def _label_tokens(label: str) -> list[str]:
-    """Normalize a cover-type label to comparable tokens.
+_PAREN_TAIL = re.compile(r"\s*\(([^()]*)\)\s*$")
 
-    Lower-cases, drops one trailing parenthesised qualifier (the selector adds
-    hardware hints the summary label omits — "(dual-axis)", "(drop-arm)"), and
-    splits on whitespace.
+
+def _split_label(label: str) -> tuple[list[str], str | None]:
+    """Split a cover-type label into (stem tokens, trailing qualifier).
+
+    Case-folds, then peels off one trailing parenthesised qualifier — the
+    picker adds hardware hints the summary label routinely omits ("(dual-axis)",
+    "(drop-arm)", "(sheer + blackout)"). Returns ``None`` for the qualifier when
+    the label carries none.
     """
-    import re
-
-    return re.sub(r"\s*\([^()]*\)\s*$", "", label.lower()).split()
+    text = label.casefold().strip()
+    qualifier: str | None = None
+    if match := _PAREN_TAIL.search(text):
+        qualifier = " ".join(match.group(1).split())
+        text = text[: match.start()]
+    return text.split(), qualifier
 
 
 def _is_prefix(shorter: list[str], longer: list[str]) -> bool:
@@ -803,26 +814,38 @@ def _is_prefix(shorter: list[str], longer: list[str]) -> bool:
     return len(shorter) <= len(longer) and longer[: len(shorter)] == shorter
 
 
-def test_selector_mode_labels_name_the_same_cover_type_as_the_policy() -> None:
-    """Every ``selector.mode`` option names the type its policy names (#1200).
+@pytest.mark.parametrize("language", sorted(SHIPPED_LANGUAGES))
+def test_selector_mode_labels_name_the_same_cover_type_as_the_policy(
+    language: str,
+) -> None:
+    """Every ``selector.mode`` option names the type its policy names (#1201).
 
-    The two labels are allowed to differ in casing and in trailing
-    parenthesised detail, so the pair agrees when either the head noun (last
-    token) matches — "Tilted blind" vs "Venetian / Tilt Blind" — or one token
-    list is a token-wise prefix of the other — "Dual panel" vs "Dual Panel
-    Shade". What it refuses is a different noun for the same value.
+    Two clauses, both language-neutral:
 
-    Known limitation: a wrong *modifier* in front of a right head noun
-    ("Vertical awning" for ``cover_awning``) still passes. This guards the
-    failure that actually shipped — two screens calling one cover type two
-    different things — not every possible wording slip.
+    * **Stem** — after case-folding and peeling one trailing parenthetical, the
+      two stems must be equal, or one must be a token-wise prefix of the other
+      ("Dual panel" vs "Dual Panel Shade"). No head-noun shortcut: a rule that
+      compares only the last token passes "Jalousette" against "Jalousie" in a
+      language that welds its nouns together.
+    * **Qualifier** — when *both* labels carry a trailing parenthetical they
+      must say the same thing. The picker is free to add a hint the summary
+      omits; it is not free to call the same hardware "(double axe)" on one
+      screen and "(deux axes)" on the next.
+
+    Deliberately no exemption list. Every shipped row satisfies the rule on its
+    own wording — a carve-out here is drift with a comment attached.
     """
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _load_summary_labels_sync,
+    )
     from custom_components.adaptive_cover_pro.cover_types import (
         POLICY_REGISTRY,
         get_policy,
     )
 
-    options = _load(TRANSLATIONS_DIR / "en.json")["selector"]["mode"]["options"]
+    options = _load(TRANSLATIONS_DIR / f"{language}.json")["selector"]["mode"][
+        "options"
+    ]
 
     unknown = [key for key in options if key not in POLICY_REGISTRY]
     assert not unknown, (
@@ -830,25 +853,73 @@ def test_selector_mode_labels_name_the_same_cover_type_as_the_policy() -> None:
         f"labels are never cross-checked against one: {unknown}"
     )
 
+    # The same resolution the confirm step performs: the language bundle
+    # overlaid on the code-owned English defaults, per key.
+    labels = _load_summary_labels_sync(language)
+
     mismatched: list[str] = []
     for key, label in options.items():
-        selector_tokens = _label_tokens(label)
-        policy_tokens = _label_tokens(get_policy(key).display_label())
-        same_head = selector_tokens[-1:] == policy_tokens[-1:]
-        prefix = _is_prefix(selector_tokens, policy_tokens) or _is_prefix(
-            policy_tokens, selector_tokens
+        policy_label = get_policy(key).display_label(labels)
+        selector_stem, selector_qualifier = _split_label(label)
+        policy_stem, policy_qualifier = _split_label(policy_label)
+
+        stem_agrees = _is_prefix(selector_stem, policy_stem) or _is_prefix(
+            policy_stem, selector_stem
         )
-        if not (same_head or prefix):
+        qualifier_agrees = (
+            selector_qualifier is None
+            or policy_qualifier is None
+            or selector_qualifier == policy_qualifier
+        )
+        if not (stem_agrees and qualifier_agrees):
             mismatched.append(
-                f"  - {key}: selector says {label!r}, "
-                f"policy says {get_policy(key).display_label()!r}"
+                f"  - {key}: picker says {label!r}, confirm says {policy_label!r}"
             )
 
     assert not mismatched, (
-        "selector.mode and display_label() name the same cover type "
-        "differently, so the picker and the screen after it disagree:\n"
+        f"[{language}] selector.mode and display_label() name the same cover "
+        "type differently, so the picker and the screen after it disagree:\n"
         + "\n".join(mismatched)
     )
+
+
+@pytest.mark.parametrize("language", sorted(SHIPPED_LANGUAGES))
+def test_cover_type_labels_are_distinct_within_a_language(language: str) -> None:
+    """No two cover types may share a label in either bundle (#1201).
+
+    The parity guard above compares one key's two labels, which says nothing
+    about two keys colliding. Reconciling a pair by deleting whatever made it
+    specific satisfies parity and still breaks the UI: a first pass at #1201
+    settled both German venetian rows on a bare "Jalousie", so tilt-only and
+    dual-axis became the same word on the confirm screen and in the config
+    summary. The picker is worse — two identical dropdown entries are
+    unpickable.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _load_summary_labels_sync,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    options = _load(TRANSLATIONS_DIR / f"{language}.json")["selector"]["mode"][
+        "options"
+    ]
+    labels = _load_summary_labels_sync(language)
+
+    for surface, rendered in (
+        ("picker (selector.mode.options)", dict(options)),
+        (
+            "confirm (display_label)",
+            {key: get_policy(key).display_label(labels) for key in options},
+        ),
+    ):
+        by_label: dict[str, list[str]] = {}
+        for key, text in rendered.items():
+            by_label.setdefault(text.casefold(), []).append(key)
+        collisions = {text: keys for text, keys in by_label.items() if len(keys) > 1}
+        assert not collisions, (
+            f"[{language}] {surface} gives one name to several cover types, so "
+            f"the user cannot tell them apart: {collisions}"
+        )
 
 
 def test_every_offered_cover_type_has_a_selector_mode_label() -> None:
