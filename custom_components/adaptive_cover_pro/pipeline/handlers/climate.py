@@ -427,11 +427,11 @@ def inactive_reason_from_result(
     return ClimateInactiveReason.MODE_OFF
 
 
-# The strategies whose label genuinely comes from the season. ``is_summer`` /
-# ``is_winter`` are pure temperature predicates (ClimateCoverData, climate.py:103-142)
+# The strategies whose label genuinely comes from the season.
+# ``ClimateCoverData.is_summer`` / ``.is_winter`` are pure temperature predicates
 # and say nothing about which rule table branch actually fired, so they are only
 # trusted when a season strategy is what ran. Ungated they shadow the LOW_LIGHT and
-# GLARE_CONTROL branches below, stamping "summer" on a default-position hold and on
+# GLARE_CONTROL branches below, stamping "summer" on a low-light fall-through and on
 # in-FOV glare tracking (issue #1196). Same reasoning as the TRACKING_SEASON_GATE
 # branch in evaluate(): checked against the strategy because the strategy, not the
 # thermometer, is what the label is describing.

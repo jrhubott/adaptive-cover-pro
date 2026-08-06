@@ -242,6 +242,7 @@ def _resolve(
     triggers=None,
     front: str | None = _FRONT,
     inverse: bool = False,
+    climate_data=None,
 ) -> PipelineResult:
     """Run ``post_pipeline_resolve`` so the per-cycle dispatch cache is set."""
     opts = _opts(triggers=triggers, front=front, inverse=inverse)
@@ -256,6 +257,7 @@ def _resolve(
         reason="test",
         bypass_auto_control=bypass,
         position_constraint_applied=floor_clamp,
+        climate_data=climate_data,
     )
     return policy.post_pipeline_resolve(result, cover=_sunset_cover(sunset_valid), **kw)
 
@@ -291,11 +293,28 @@ class TestResolveBackDeployDecision:
         assert policy.resolve_entity_target(_BACK, 40) == POSITION_OPEN
 
     def test_back_retracts_for_default_climate_fallthrough(self) -> None:
-        """Issue #1196: a climate LOW_LIGHT fall-through is DEFAULT, not SUMMER,
-        so it must not fire the heat blackout trigger.
+        """Issue #1196 end-to-end: summer climate data + a DEFAULT method → no heat.
+
+        The #1196 scenario reaches this seam as a result that genuinely carries
+        ``is_summer=True`` climate data while the honest label for the LOW_LIGHT
+        branch that produced it is DEFAULT. The blackout must follow the method.
+
+        What this discriminates against: ``_derive_active_triggers`` reading the
+        thermometer instead of ``control_method``. It reads only
+        ``control_method`` today, so the attached ``climate_data`` is a forward
+        guard, not a live one — and since ``_HEAT_METHODS`` already excludes
+        every method but SUMMER/EXTREME_HEAT, the DEFAULT half alone would only
+        catch someone widening that frozenset.
         """
         policy = DualPanelPolicy()
-        _resolve(policy, control_method=ControlMethod.DEFAULT, triggers=["heat"])
+        climate = MagicMock()
+        climate.is_summer = True
+        _resolve(
+            policy,
+            control_method=ControlMethod.DEFAULT,
+            triggers=["heat"],
+            climate_data=climate,
+        )
         assert policy.resolve_entity_target(_BACK, 40) == POSITION_OPEN
 
     def test_night_uses_sol_elev(self) -> None:
