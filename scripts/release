@@ -77,15 +77,15 @@ CREATED_COMMIT=""
 # ============================================================================
 
 log_info() {
-    echo -e "${BLUE}ℹ${RESET} $*"
+    echo -e "${BLUE}ℹ${RESET} $*" >&2
 }
 
 log_success() {
-    echo -e "${GREEN}✓${RESET} $*"
+    echo -e "${GREEN}✓${RESET} $*" >&2
 }
 
 log_warning() {
-    echo -e "${YELLOW}⚠${RESET} $*"
+    echo -e "${YELLOW}⚠${RESET} $*" >&2
 }
 
 log_error() {
@@ -93,11 +93,11 @@ log_error() {
 }
 
 log_step() {
-    echo -e "${MAGENTA}▸${RESET} ${BOLD}$*${RESET}"
+    echo -e "${MAGENTA}▸${RESET} ${BOLD}$*${RESET}" >&2
 }
 
 log_dry_run() {
-    echo -e "${CYAN}[DRY RUN]${RESET} $*"
+    echo -e "${CYAN}[DRY RUN]${RESET} $*" >&2
 }
 
 # ============================================================================
@@ -1161,4 +1161,6 @@ main() {
 # Entry Point
 # ============================================================================
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
