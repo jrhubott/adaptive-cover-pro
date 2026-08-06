@@ -6,107 +6,41 @@ body:
   - type: markdown
     attributes:
       value: >
-        Before opening a bug report, work through the [Troubleshooting wiki page](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) — it covers the most common causes of unexpected behavior with step-by-step diagnostics.
-        If you're still stuck after checking those steps, fill out the form below.
+        **Only three things are required:** the version, a description, and the diagnostics file.
+        Everything below that is optional — fill in what's relevant to your bug and skip the rest.
+
+
+        Before filing, it's worth a look at the [Troubleshooting wiki page](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting),
+        the built-in **Troubleshoot** step (cover options → Troubleshoot) and its [findings](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting-Findings),
+        the [latest release](https://github.com/jrhubott/adaptive-cover-pro/releases/latest),
+        and [existing bug reports](https://github.com/jrhubott/adaptive-cover-pro/issues?q=is%3Aissue+label%3Abug). One bug per issue, please.
 
   - type: checkboxes
     attributes:
       label: Checklist
       options:
-        - label: I have run the built-in **Troubleshoot** step (cover options → Troubleshoot) and reviewed its findings. See [Troubleshooting Findings](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting-Findings).
-          required: true
         - label: This is an issue with the **integration**, not the companion Dashboard Card. Card bugs belong in the [Adaptive Cover Pro Card issue tracker](https://github.com/jrhubott/adaptive-cover-pro-card/issues/new/choose).
-          required: true
-        - label: I have worked through the [Troubleshooting wiki page](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) and my issue is not covered there.
-          required: true
-        - label: I have confirmed I am running the [latest release](https://github.com/jrhubott/adaptive-cover-pro/releases/latest).
-          required: true
-        - label: I have searched [existing bug reports](https://github.com/jrhubott/adaptive-cover-pro/issues?q=is%3Aissue+label%3Abug) and this is not a duplicate.
-          required: true
-        - label: This report covers a single bug (open a separate issue for each additional bug).
-          required: true
-        - label: I have checked the [Hardware Compatibility wiki page](https://github.com/jrhubott/adaptive-cover-pro/wiki/Hardware-Compatibility) for my cover's required settings.
-          required: true
-        - label: I have attached the diagnostics file as an upload (drag-and-drop the JSON file into the Diagnostics field below — do **not** paste its contents). See [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics).
           required: true
 
   - type: input
     id: version
-    validations:
-      required: true
     attributes:
       label: Adaptive Cover Pro version
       description: "Found under Settings → Devices & Services → Adaptive Cover Pro."
-      placeholder: "e.g. 2.18.1"
-
-  - type: input
-    id: homeassistant
-    validations:
-      required: true
-    attributes:
-      label: Home Assistant version
-      description: >
-        Found in: [**Settings** > **About**](https://my.home-assistant.io/redirect/info/).
-      placeholder: "e.g. 2025.4.0"
-
-  - type: input
-    id: cover_type
-    attributes:
-      label: Cover type
-      description: "Vertical blind, horizontal awning, or venetian/tilt."
-      placeholder: "e.g. Vertical blind"
-    validations:
-      required: true
-
-  - type: input
-    id: cover_brand
-    attributes:
-      label: Cover brand
-      description: "The manufacturer of the cover or motor."
-      placeholder: "e.g. Somfy"
-    validations:
-      required: true
-
-  - type: input
-    id: cover_model
-    attributes:
-      label: Cover model
-      description: "The model of the cover, motor, or controller."
-      placeholder: "e.g. Sonesse 30 WireFree"
-    validations:
-      required: true
-
-  - type: input
-    id: communication_protocol
-    attributes:
-      label: Communication protocol
-      description: "How Home Assistant talks to the cover."
-      placeholder: "e.g. Zigbee, Z-Wave, KNX, RTS/RF, Wi-Fi, Matter"
+      placeholder: "e.g. 2026.8.0"
     validations:
       required: true
 
   - type: textarea
     attributes:
       label: Describe the issue
-      description: "A clear description of what happened and what you expected instead."
+      description: "What happened, and what you expected instead."
       placeholder: |
         What happened?
 
         What did you expect to happen?
 
-        What does sensor.{device}_decision_trace show? (state and trace attribute if relevant)
-    validations:
-      required: true
-
-  - type: textarea
-    attributes:
-      label: Reproduction steps
-      description: "Steps to reproduce the issue. Without these, it will be hard to investigate."
-      value: |
-        1.
-        2.
-        3.
-        ...
+        What does sensor.{device}_decision_trace show? (state and trace attribute, if relevant)
     validations:
       required: true
 
@@ -122,5 +56,61 @@ body:
 
 
         If GitHub refuses the `.json` file on drag-drop, zip it first or rename the file to `.txt`.
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: >
+        ### Everything below is optional
+
+
+        Fill these in when the problem is with **how your specific cover behaves** — it doesn't reach the
+        commanded position, reports the wrong state, moves when it shouldn't, tilts incorrectly, or only
+        misbehaves on one brand of motor. For logic bugs, config-flow bugs, and UI bugs, skip them.
+        The diagnostics file already carries your Home Assistant version, cover type, and full configuration.
+
+  - type: dropdown
+    id: cover_type
+    attributes:
+      label: Cover type
+      description: "As shown in the integration's cover type selector."
+      options:
+        - "Vertical blind"
+        - "Horizontal blind (awning)"
+        - "Tilted blind"
+        - "Venetian blind (dual-axis)"
+        - "Oscillating awning (drop-arm)"
+        - "Not sure / not applicable"
+    validations:
+      required: false
+
+  - type: input
+    id: cover_hardware
+    attributes:
+      label: Cover hardware
+      description: "Brand, model, and how Home Assistant talks to it. Only the brand is useful on its own — partial answers are fine."
+      placeholder: "e.g. Brel hub-03, 433 MHz  ·  Somfy Sonesse 30, Zigbee"
+    validations:
+      required: false
+
+  - type: input
+    id: homeassistant
+    attributes:
+      label: Home Assistant version
+      description: >
+        Found in: [**Settings** > **About**](https://my.home-assistant.io/redirect/info/). Skip if you attached diagnostics.
+      placeholder: "e.g. 2026.8.0"
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Reproduction steps
+      description: "Numbered steps, if the bug happens on demand. Leave blank if it's intermittent."
+      placeholder: |
+        1.
+        2.
+        3.
     validations:
       required: false

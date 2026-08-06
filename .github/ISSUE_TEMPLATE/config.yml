@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Adaptive Cover Pro Card (Dashboard card) issues
+    url: https://github.com/jrhubott/adaptive-cover-pro-card/issues/new/choose
+    about: Bugs with the companion Lovelace card belong in its own repository.
   - name: Home Assistant Community
     url: https://community.home-assistant.io/
     about: General Home Assistant questions and community support

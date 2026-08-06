@@ -99,7 +99,7 @@ jobs:
             // it true later, so a label event never reopens this complaint. That
             // keeps the bot off issues triaged before this workflow existed.
             if (action !== 'labeled') await syncLabel('needs-template', !usedTemplate, [
-              `Thanks for the writeup. This issue was opened without one of the issue forms, so it's missing the fields I triage from: integration version, Home Assistant version, cover type and brand, and the diagnostics file.`,
+              `Thanks for the writeup. This issue was opened without one of the issue forms, so it's missing the fields I triage from: the integration version and the diagnostics file.`,
               ``,
               `Please refile it from the [issue chooser](https://github.com/${owner}/${repo}/issues/new/choose) and paste what you wrote into the form's description field. The text carries over and the form collects the rest. Once the new issue is up I'll close this one as a duplicate.`,
               ``,
