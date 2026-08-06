@@ -770,3 +770,77 @@ def test_manual_override_duration_mode_options_translated_in_en():
     step = en["options"]["step"]["manual_override"]
     assert step["data"][CONF_MANUAL_OVERRIDE_DURATION_MODE].strip()
     assert step["data_description"][CONF_MANUAL_OVERRIDE_DURATION_MODE].strip()
+
+
+# ---------------------------------------------------------------------------
+# Issue #1200 — the picker dropdown and the screen after it must name the same
+# cover type. ``selector.mode.options`` labels the dropdown; the confirm step
+# renders ``get_policy(key).display_label()``. Two independent English sources
+# for one value, and nothing cross-checked them, so ``cover_awning`` shipped as
+# "Horizontal blind" in one and "Horizontal Awning" in the other.
+# ---------------------------------------------------------------------------
+
+
+def _label_tokens(label: str) -> list[str]:
+    """Normalize a cover-type label to comparable tokens.
+
+    Lower-cases, drops one trailing parenthesised qualifier (the selector adds
+    hardware hints the summary label omits — "(dual-axis)", "(drop-arm)"), and
+    splits on whitespace.
+    """
+    import re
+
+    return re.sub(r"\s*\([^()]*\)\s*$", "", label.lower()).split()
+
+
+def _is_prefix(shorter: list[str], longer: list[str]) -> bool:
+    """Whether *shorter* is a token-wise prefix of *longer*."""
+    return len(shorter) <= len(longer) and longer[: len(shorter)] == shorter
+
+
+def test_selector_mode_labels_name_the_same_cover_type_as_the_policy() -> None:
+    """Every ``selector.mode`` option names the type its policy names (#1200).
+
+    The two labels are allowed to differ in casing and in trailing
+    parenthesised detail, so the pair agrees when either the head noun (last
+    token) matches — "Tilted blind" vs "Venetian / Tilt Blind" — or one token
+    list is a token-wise prefix of the other — "Dual panel" vs "Dual Panel
+    Shade". What it refuses is a different noun for the same value.
+
+    Known limitation: a wrong *modifier* in front of a right head noun
+    ("Vertical awning" for ``cover_awning``) still passes. This guards the
+    failure that actually shipped — two screens calling one cover type two
+    different things — not every possible wording slip.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import (
+        POLICY_REGISTRY,
+        get_policy,
+    )
+
+    options = _load(TRANSLATIONS_DIR / "en.json")["selector"]["mode"]["options"]
+
+    unknown = [key for key in options if key not in POLICY_REGISTRY]
+    assert not unknown, (
+        "selector.mode.options has keys with no registered policy, so their "
+        f"labels are never cross-checked against one: {unknown}"
+    )
+
+    mismatched: list[str] = []
+    for key, label in options.items():
+        selector_tokens = _label_tokens(label)
+        policy_tokens = _label_tokens(get_policy(key).display_label())
+        same_head = selector_tokens[-1:] == policy_tokens[-1:]
+        prefix = _is_prefix(selector_tokens, policy_tokens) or _is_prefix(
+            policy_tokens, selector_tokens
+        )
+        if not (same_head or prefix):
+            mismatched.append(
+                f"  - {key}: selector says {label!r}, "
+                f"policy says {get_policy(key).display_label()!r}"
+            )
+
+    assert not mismatched, (
+        "selector.mode and display_label() name the same cover type "
+        "differently, so the picker and the screen after it disagree:\n"
+        + "\n".join(mismatched)
+    )

@@ -270,8 +270,52 @@ async def test_picker_offers_capability_compatible_types_only(
     assert CoverType.TILT not in offered
     assert CoverType.VENETIAN not in offered
     assert CoverType.LOUVERED_ROOF not in offered
-    # Never offer the type it already is.
-    assert CoverType.BLIND not in offered
+    # Always offer the type it already is, pre-selected (#1200).
+    assert CoverType.BLIND in offered
+
+
+@pytest.mark.integration
+async def test_picker_preselects_the_current_type(hass: HomeAssistant) -> None:
+    """The dropdown opens on the type this instance already is (#1200).
+
+    With the current type filtered out and no suggested value, the frontend
+    highlighted whichever type happened to sort first among the alternatives —
+    reading as "this instance is a Horizontal awning" on a vertical blind.
+    """
+    entry = await _setup_entry(hass, entry_id="preselect_current")
+
+    result = await _open_picker(hass, entry)
+
+    marker = next(m for m in result["data_schema"].schema if str(m) == CONF_SENSOR_TYPE)
+    assert (marker.description or {}).get("suggested_value") == CoverType.BLIND
+
+
+@pytest.mark.integration
+async def test_picker_offers_the_current_type_even_when_it_is_no_longer_satisfiable(
+    hass: HomeAssistant,
+) -> None:
+    """The type it already is is offered whatever the bound covers can do (#1200).
+
+    A venetian entry whose covers are position-only fails venetian's own entity
+    filter, so the eligibility split calls it blocked. Offering it anyway is
+    what makes the pre-selection honest — and it must not simultaneously be
+    listed as a type the covers rule out, which would tell the user the value
+    the field is sitting on is unavailable.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    entry = await _setup_entry(
+        hass, cover_type=CoverType.VENETIAN, entry_id="offer_unsatisfiable_current"
+    )
+
+    result = await _open_picker(hass, entry)
+
+    offered = _type_selector(result).config["options"]
+    assert CoverType.VENETIAN in offered
+    assert (
+        get_policy(CoverType.VENETIAN).display_label()
+        not in result["description_placeholders"]["blocked_types"]
+    )
 
 
 @pytest.mark.integration
@@ -440,6 +484,27 @@ async def test_confirm_step_shown_after_pick(hass: HomeAssistant) -> None:
     assert placeholders["to_type"] == get_policy(CoverType.AWNING).display_label()
     # Nothing is written until the user confirms.
     assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+
+
+@pytest.mark.integration
+async def test_picking_the_current_type_returns_to_the_menu(
+    hass: HomeAssistant,
+) -> None:
+    """Leaving the field on the type it already is changes nothing (#1200).
+
+    The current type is in the dropdown so the field can open on it. Submitting
+    it is "never mind", not a switch — there is nothing to confirm, nothing to
+    strand, and no geometry to re-collect.
+    """
+    entry = await _setup_entry(hass, entry_id="pick_current_noop")
+    options_before = dict(entry.options)
+
+    result = await _pick(hass, entry, CoverType.BLIND)
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
+    assert dict(entry.options) == options_before
 
 
 @pytest.mark.integration
@@ -2079,6 +2144,78 @@ async def test_round_trip_switch_reloads_nothing(hass: HomeAssistant) -> None:
     assert entry.data[CONF_SENSOR_TYPE] == CoverType.BLIND
     assert dict(entry.options) == options_before
     assert _reloads(reload, entry) == 0
+
+
+async def _revert_pending_switch(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
+    """Switch to awning without saving, then pick the stored type back."""
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    async def _straight_back_to_menu(self, user_input=None):
+        return await self.async_step_init()
+
+    with patch.object(
+        OptionsFlowHandler, "async_step_geometry", _straight_back_to_menu
+    ):
+        menu = await hass.config_entries.options.async_init(entry.entry_id)
+        menu = await _switch_to(hass, menu["flow_id"], CoverType.AWNING, geometry=False)
+        picker = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": "change_cover_type"}
+        )
+        return await hass.config_entries.options.async_configure(
+            picker["flow_id"], {CONF_SENSOR_TYPE: CoverType.BLIND}
+        )
+
+
+@pytest.mark.integration
+async def test_reverting_a_pending_switch_still_shows_the_confirm_screen(
+    hass: HomeAssistant,
+) -> None:
+    """Picking the stored type back mid-dialog is a switch, not a no-op (#1200).
+
+    The picker's no-op shortcut compares against ``self.sensor_type`` — the
+    type the FLOW is on — and never against the stored one. After a pending
+    blind → awning the flow is on awning, so picking blind is the revert, and
+    it has real work to do: ``_apply_pending_cover_type`` unwinds the polarity
+    re-seed and the incoming type's keys. Short-circuiting to the menu here
+    would leave the user's cancelled switch pending and applied at Save.
+    """
+    entry = await _setup_entry(hass, entry_id="revert_pending_confirm")
+
+    result = await _revert_pending_switch(hass, entry)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "change_cover_type_revert_confirm"
+
+
+@pytest.mark.integration
+async def test_reverting_a_pending_switch_reads_as_a_cancellation(
+    hass: HomeAssistant,
+) -> None:
+    """A revert gets its own copy instead of "switching from X to X" (#1200).
+
+    The confirm screen states the net change against STORED state on purpose,
+    and a revert has no net change — so the shared wording degenerates into
+    naming the same cover type twice. The revert gets a second step id, which
+    is the only handle the frontend has for choosing a different description,
+    and a ``pending_type`` placeholder naming the switch being cancelled.
+    ``from_type``/``to_type`` keep their stored-state meaning untouched.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    entry = await _setup_entry(hass, entry_id="revert_pending_copy")
+
+    result = await _revert_pending_switch(hass, entry)
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["pending_type"] == get_policy(CoverType.AWNING).display_label()
+    assert placeholders["from_type"] == get_policy(CoverType.BLIND).display_label()
+
+    step = _en_json()["options"]["step"]["change_cover_type_revert_confirm"]
+    assert step["description"].strip()
+    assert step["title"].strip()
+    assert step["data"]["confirm"].strip()
+    assert "{pending_type}" in step["description"]
+    assert "Switching from" not in step["description"]
 
 
 # ---------------------------------------------------------------------------

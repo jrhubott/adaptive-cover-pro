@@ -1097,12 +1097,12 @@
       },
       "change_cover_type": {
         "data": {
-          "sensor_type": "Neuer Beschattungstyp"
+          "sensor_type": "Beschattungstyp"
         },
         "data_description": {
-          "sensor_type": "Der Beschattungstyp, zu dem diese Instanz wechselt. Sie bestätigen im nächsten Bildschirm und geben dann die Geometrie des neuen Typs ein."
+          "sensor_type": "Startet mit dem Typ, den diese Instanz derzeit hat. Wählen Sie einen anderen, um zu wechseln – Sie bestätigen im nächsten Bildschirm und geben dann die Geometrie des neuen Typs ein. Wenn Sie ihn unverändert lassen, ändert sich nichts."
         },
-        "description": "Diese Instanz ist derzeit vom Typ **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nEs werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
+        "description": "Diese Instanz ist derzeit vom Typ **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nAbgesehen vom aktuellen Typ werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
         "title": "Beschattungstyp ändern"
       },
       "change_cover_type_confirm": {
@@ -1111,6 +1111,13 @@
         },
         "description": "Wechsel von **{from_type}** zu **{to_type}**.\n\nEinstellungen, die nur der alte Typ verwendet, bleiben gespeichert und werden nicht gelöscht, sodass ein Zurückwechsel sie intakt vorfindet. Nach dem Wechsel derzeit inaktiv:\n\n{stranded_options}\n\nFunktionseigenschaften für den neuen Typ:\n\n{capability_notes}\n\nPositionspolarität:\n\n{position_polarity}\n\nJede Entität behält ihre Entitäts-ID. Typspezifische Entitäten, die der neue Typ nicht bereitstellt, bleiben in der Entitätsregistrierung als nicht verfügbar und werden wiederhergestellt, wenn Sie zurückwechseln. Füllen Sie nach der Bestätigung die Geometrie des neuen Typs aus und beenden Sie mit Speichern und schließen, um die Änderung anzuwenden.",
         "title": "Beschattungstyp ändern – Bestätigung"
+      },
+      "change_cover_type_revert_confirm": {
+        "title": "Beschattungstyp ändern – Ausstehenden Wechsel abbrechen",
+        "description": "In diesem Dialog wartet ein ungespeicherter Wechsel zu **{pending_type}** darauf, angewendet zu werden. Wenn Sie dies bestätigen, wird er verworfen: Diese Instanz bleibt **{from_type}**, und die Einstellungen, die der ausstehende Wechsel geändert hat, werden auf ihren Zustand beim Öffnen des Dialogs zurückgesetzt.\n\nSo oder so wurde bisher nichts geschrieben, daher ist keine Entität betroffen und es wird nichts neu geladen. Überprüfen Sie nach der Bestätigung die Geometrie und beenden Sie mit Speichern und schließen.",
+        "data": {
+          "confirm": "Ausstehende Beschattungstypänderung abbrechen"
+        }
       },
       "calibration": {
         "description": "Messen Sie, wie diese Beschattung tatsächlich funktioniert, und speichern Sie die Messergebnisse.\n\n**Positionskalibrierung** ordnet die von Adaptive Cover Pro berechnete Position der Zahl zu, die Ihre Beschattung erreichen muss. **Laufzeit** speichert, wie lange ein vollständiges Öffnen oder Schließen dauert, sodass Dashboards die Bewegung der Beschattung anzeigen können, statt sie zu springen.",
