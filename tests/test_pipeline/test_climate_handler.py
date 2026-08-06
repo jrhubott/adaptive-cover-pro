@@ -607,6 +607,9 @@ class TestWinterInsulation:
         from custom_components.adaptive_cover_pro.const import ClimateStrategy
 
         assert result.climate_strategy != ClimateStrategy.WINTER_INSULATION
+        # Issue #1196: the cover is holding its default position, so the honest
+        # label is DEFAULT — is_winter must not shadow the LOW_LIGHT strategy.
+        assert result.control_method == ControlMethod.DEFAULT
 
     def test_winter_heating_takes_priority_without_presence(self) -> None:
         """Winter + sun in FOV → open (100%), even when insulation is enabled."""
@@ -1086,7 +1089,9 @@ class TestClimateHandlerControlMethodOnLowLightBranch:
 # ---------------------------------------------------------------------------
 
 
-def _make_tilt_mode2_cover(*, gamma_deg: float, valid: bool, min_pos: int):
+def _make_tilt_mode2_cover(
+    *, gamma_deg: float, valid: bool, min_pos: int, mode: str = "mode2"
+):
     """Mock AdaptiveTiltCover for the issue-#373 GLARE_CONTROL pipeline test."""
     from custom_components.adaptive_cover_pro.engine.covers import AdaptiveTiltCover
 
@@ -1098,7 +1103,7 @@ def _make_tilt_mode2_cover(*, gamma_deg: float, valid: bool, min_pos: int):
     cover.calculate_position = MagicMock(return_value=90.0)
     cover.gamma = gamma_deg  # SunGeometry.gamma is in degrees
     cover.beta = 0.0
-    cover.mode = "mode2"
+    cover.mode = mode
     config = MagicMock()
     config.min_pos = min_pos
     config.max_pos = 100
@@ -1166,3 +1171,156 @@ class TestIssue373PipelineGlareControl:
             f"MODE2, the documented footgun. Got {result.position}."
         )
         assert result.climate_strategy == ClimateStrategy.GLARE_CONTROL
+        # Issue #1196: GLARE_CONTROL is a glare-tracking strategy, so the label
+        # is SOLAR — the summer temperature predicate must not shadow it.
+        assert result.control_method == ControlMethod.SOLAR
+
+
+# ---------------------------------------------------------------------------
+# Issue #1196 — season predicates must not shadow the strategy's own label
+# ---------------------------------------------------------------------------
+
+
+class TestIssue1196SeasonPredicatesDoNotShadowStrategy:
+    """``is_summer``/``is_winter`` may only label a season strategy's result.
+
+    Both are pure temperature predicates (``ClimateCoverData``) and say nothing
+    about which rule-table branch actually fired. Evaluated ahead of the
+    strategy they stamped "summer"/"winter" onto a LOW_LIGHT default-position
+    hold and onto GLARE_CONTROL slat tracking, which then flipped real
+    downstream behaviour (dual-panel heat blackout, day/night fabric choice,
+    the sunset-dispatch override guard).
+    """
+
+    handler = ClimateHandler()
+
+    def test_low_light_fallthrough_in_summer_is_default(self) -> None:
+        """Summer temps + sun out of FOV + no presence → LOW_LIGHT holds default."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                outside_temperature=30.0,
+                inside_temperature=27.0,
+                is_presence=False,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_summer_outside=22.0,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.climate_strategy == ClimateStrategy.LOW_LIGHT
+        assert result.climate_data is not None
+        # The season predicate really is true — the fix must gate on the
+        # strategy, not on the thermometer being wrong.
+        assert result.climate_data.is_summer is True
+        assert result.control_method == ControlMethod.DEFAULT
+
+    def test_low_light_fallthrough_in_winter_is_default(self) -> None:
+        """Winter temps + sun out of FOV + insulation off → LOW_LIGHT holds default."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=10.0,
+                is_presence=False,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,
+                winter_close_insulation=False,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.climate_strategy == ClimateStrategy.LOW_LIGHT
+        assert result.climate_data is not None
+        assert result.climate_data.is_winter is True
+        assert result.control_method == ControlMethod.DEFAULT
+
+    def test_tilt_glare_control_fallthrough_in_summer_is_solar(self) -> None:
+        """Tilt + summer temps + sun out of FOV → GLARE_CONTROL, labelled SOLAR."""
+        cover = _make_tilt_mode2_cover(gamma_deg=90.0, valid=False, min_pos=0)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_tilt",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                outside_temperature=30.0,
+                inside_temperature=27.0,
+                is_presence=True,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_summer_outside=22.0,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.climate_strategy == ClimateStrategy.GLARE_CONTROL
+        assert result.control_method == ControlMethod.SOLAR
+
+    def test_tilt_glare_control_in_fov_in_winter_is_solar(self) -> None:
+        """Tilt + winter temps + sun IS in FOV → real glare tracking, so SOLAR.
+
+        ``valid=True`` means the sun is inside the window's field of view, so
+        this is genuine glare tracking rather than a catch-all fall-through:
+        ``TILT_WITHOUT_PRESENCE``'s ``cover_valid``-guarded GLARE_CONTROL rule
+        fires because the winter-heating rule above it is MODE2-only and this
+        cover runs MODE1. Labelling that "winter" told every downstream
+        consumer a heating strategy had won when the slats were tracking glare.
+        """
+        cover = _make_tilt_mode2_cover(
+            gamma_deg=90.0, valid=True, min_pos=0, mode="mode1"
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_tilt",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=10.0,
+                is_presence=False,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(temp_low=18.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.climate_strategy == ClimateStrategy.GLARE_CONTROL
+        assert result.climate_data is not None
+        assert result.climate_data.is_winter is True
+        assert result.control_method == ControlMethod.SOLAR
+
+    def test_tilt_glare_control_in_fov_intermediate_stays_solar(self) -> None:
+        """In-FOV glare tracking at intermediate temps stays SOLAR after the fix.
+
+        Green before and after — this pins the SOLAR-not-DEFAULT half of the
+        decision. No test covered GLARE_CONTROL with ``cover_valid=True``
+        before #1196, so nothing stopped the fix from relabelling genuine
+        slat tracking on every tilt install.
+        """
+        cover = _make_tilt_mode2_cover(gamma_deg=90.0, valid=True, min_pos=0)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_tilt",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                outside_temperature=20.0,
+                inside_temperature=21.0,
+                is_presence=True,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.climate_strategy == ClimateStrategy.GLARE_CONTROL
+        assert result.control_method == ControlMethod.SOLAR

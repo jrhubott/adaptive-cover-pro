@@ -290,6 +290,14 @@ class TestResolveBackDeployDecision:
         # No heat/privacy/night active → retracted (open, 100).
         assert policy.resolve_entity_target(_BACK, 40) == POSITION_OPEN
 
+    def test_back_retracts_for_default_climate_fallthrough(self) -> None:
+        """Issue #1196: a climate LOW_LIGHT fall-through is DEFAULT, not SUMMER,
+        so it must not fire the heat blackout trigger.
+        """
+        policy = DualPanelPolicy()
+        _resolve(policy, control_method=ControlMethod.DEFAULT, triggers=["heat"])
+        assert policy.resolve_entity_target(_BACK, 40) == POSITION_OPEN
+
     def test_night_uses_sol_elev(self) -> None:
         policy = DualPanelPolicy()
         _resolve(policy, sol_elev=-3.0, triggers=["night"])
