@@ -5,7 +5,7 @@ same season-condition expressions (low-light, winter-insulation, winter-heating,
 summer) in slightly different orders. This module factors the shared predicate
 vocabulary into one place (`ClimateContext` properties) and expresses each router
 as an ordered list of `ClimateRule`s evaluated first-match-wins. `ClimateCoverState`
-builds a context and delegates to `evaluate_rules`, preserving the exact branch
+builds a context and delegates to `match_rule`, preserving the exact branch
 order, `ClimateStrategy` labels, and position outputs of the original code.
 """
 
@@ -220,9 +220,13 @@ class ClimateRule:
 
         ``ClimateHandler`` reads this to decide whether a
         ``ControlMethod.DEFAULT`` winner has earned the effective
-        default/sunset tilt. ``_default`` is the only position function that
-        answers with ``ctx.default_position``; every other one derives its
-        value from geometry, a climate hold, or a configured override.
+        default/sunset tilt. ``_default`` is the rule whose position is
+        *always* ``ctx.default_position``, by construction. ``_solar`` can
+        return that same value too — it falls back to
+        ``ctx.default_position`` whenever ``direct_sun_valid`` is False —
+        but that fallback is still solar tracking, not a default-position
+        resolution, so identity (not the resulting number) is what keeps it
+        out.
         """
         return self.position is _default
 

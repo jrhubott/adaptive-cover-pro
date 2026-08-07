@@ -476,10 +476,12 @@ class ClimateHandler(OverrideHandler):
       branch only carries the effective default/sunset tilt (issue #1214)
       when the matched rule RESOLVED its position from the default —
       TRACKING_SEASON_GATE and the NORMAL-table LOW_LIGHT branch (_default)
-      qualify; the TILT-table LOW_LIGHT branch (_solar) does not, and stays
-      untilted so a solar-tracked slat angle is never overwritten by the
-      configured default tilt. ClimateRule.resolves_default_position carries
-      that provenance out of the rule table — see its docstring.
+      qualify; the TILT-table LOW_LIGHT branch (_solar) does not. That still
+      holds when the sun is invalid and _solar falls back to
+      ctx.default_position — the branch stays labelled solar, not a
+      default-position resolution, so it stays untilted either way.
+      ClimateRule.resolves_default_position carries that provenance out of
+      the rule table — see its docstring.
     - SOLAR for glare control, in any season
     """
 
