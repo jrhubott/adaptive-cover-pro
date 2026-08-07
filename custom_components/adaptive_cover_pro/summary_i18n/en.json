@@ -81,6 +81,8 @@
   "warnings": {
     "custom_position_bound_conflict": "⚠️ {label}: the maximum ({max}%) is below the minimum ({min}%) — the minimum wins and the maximum is ignored.",
     "custom_tilt_only_conflict": "⚠️ {label}: tilt only is on — Use as minimum / Use My position are ignored for this slot.",
+    "custom_tilt_only_bounds_discarded": "⚠️ {label}: slat fixed at {slat}% — the configured tilt bounds are ignored for this slot.",
+    "custom_tilt_only_no_effect": "⚠️ {label}: tilt only is on with no slat angle and no tilt bounds configured — this slot has no effect.",
     "motion_hold_no_sensors": "⚠️ hold_position mode is set but no occupancy sources are configured — the setting has no effect until an occupancy source is added",
     "cloudy_pos_ignored": "⚠️ Cloudy position ({pos}%) configured but cloud suppression is disabled — value will be ignored.",
     "sun_track_min_below_floor": "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — always-on floor dominates; sun-tracking floor will be raised to {min_pos}%.",

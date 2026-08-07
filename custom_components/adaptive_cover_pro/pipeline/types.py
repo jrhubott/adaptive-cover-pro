@@ -124,6 +124,24 @@ def derive_axis_mode(
     return AxisConstraintMode.NONE
 
 
+def has_fixed_tilt(*, tilt_only: bool, tilt: int | None) -> bool:
+    """Whether a slot's ``tilt_only`` flag names an actual FIXED tilt claim.
+
+    ``tilt_only`` conflates two different claims: it *always* disclaims the
+    position axis (issue #514 — see :attr:`CustomPositionSensorState.position_mode`,
+    which keys on the bare flag and is unaffected by this predicate), but it
+    only outranks ``tilt_min``/``tilt_max`` bounds on the tilt axis when it
+    also names a slat angle. ``tilt_only=True`` with ``tilt=None`` is a
+    *vacuous* FIXED claim — before issue #1215 that vacuous claim still won
+    the precedence, silently discarding a configured ``tilt_min``/``tilt_max``
+    and leaving the slot completely inert. Callers that need the FIXED-vs-
+    bounds precedence (:attr:`CustomPositionSensorState.tilt_mode`, the
+    snapshot-builder tilt-bound wipe, and the config-summary rendering
+    branch) must test this predicate, not the bare ``tilt_only`` flag.
+    """
+    return tilt_only and tilt is not None
+
+
 @dataclass(frozen=True, slots=True)
 class CustomPositionSensorState:
     """Per-slot trigger reading carried in the pipeline snapshot.
@@ -198,8 +216,11 @@ class CustomPositionSensorState:
     # same pre-inversion canonical space as ``position`` / ``tilt``.
     #
     # ``position_max`` is normalized off on the ``use_my`` path (hardware-pinned)
-    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off by
-    # ``tilt_only`` (a FIXED tilt claim wins over bounds on the same axis).
+    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off only
+    # when the slot names an actual fixed slat angle (``has_fixed_tilt``) — a
+    # real FIXED tilt claim wins over bounds on the same axis. A bare
+    # ``tilt_only`` flag with no configured slat angle is a vacuous claim and
+    # leaves ``tilt_min`` / ``tilt_max`` intact (issue #1215).
     position_max: int | None = None
     tilt_min: int | None = None
     tilt_max: int | None = None
@@ -230,6 +251,10 @@ class CustomPositionSensorState:
 
         ``tilt_only`` wins the whole slot: it fixes the slat angle and lets the
         position pipeline drive the carriage, so it claims nothing here.
+        Deliberately keyed on the bare flag, unlike :attr:`tilt_mode` (issue
+        #1215) — a tilt-only slot disclaims the position axis whether or not
+        it also names a slat angle, so this must NOT route through
+        :func:`has_fixed_tilt`.
         """
         if self.tilt_only:
             return AxisConstraintMode.NONE
@@ -243,17 +268,16 @@ class CustomPositionSensorState:
     def tilt_mode(self) -> AxisConstraintMode:
         """This slot's derived claim on the tilt axis (issue #943).
 
-        ``tilt_only`` is an exact (``FIXED``) tilt claim and wins over the
-        bounds — mirroring the precedence it already has over ``min_mode`` /
-        ``use_my``. A tilt-only slot with no configured slat angle claims
-        nothing (pre-#943 behavior, preserved).
+        A real FIXED tilt claim (``tilt_only`` *with* a configured slat
+        angle) wins over the bounds — mirroring the precedence it already has
+        over ``min_mode`` / ``use_my``. A tilt-only slot with no configured
+        slat angle makes no FIXED claim (issue #1215): it falls through to
+        the same bound derivation as any other slot, so a constraint-only
+        "tilt_only + tilt_min" slot still emits its floor instead of going
+        silently inert.
         """
-        if self.tilt_only:
-            return (
-                AxisConstraintMode.FIXED
-                if self.tilt is not None
-                else AxisConstraintMode.NONE
-            )
+        if has_fixed_tilt(tilt_only=self.tilt_only, tilt=self.tilt):
+            return AxisConstraintMode.FIXED
         return derive_axis_mode(fixed=None, low=self.tilt_min, high=self.tilt_max)
 
     @property
