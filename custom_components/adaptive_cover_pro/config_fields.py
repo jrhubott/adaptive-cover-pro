@@ -1226,8 +1226,11 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
-        # Tilt bounds (issue #943). Absent = off. `tilt_only` (a FIXED tilt
-        # claim) wins over these — normalized once in the snapshot builder.
+        # Tilt bounds (issue #943). Absent = off. A REAL fixed tilt
+        # (`tilt_only` *with* a configured slat angle) wins over these —
+        # normalized once in the snapshot builder via `has_fixed_tilt`. A
+        # `tilt_only` slot with no slat angle makes no FIXED claim, so its
+        # bounds are NOT discarded (issue #1215).
         for sub in ("tilt_min", "tilt_max"):
             specs.append(
                 FieldSpec(
