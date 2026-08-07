@@ -3079,6 +3079,42 @@ async def test_apply_position_position_capable_assumed_state_still_same_position
     mock_hass.services.async_call.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_full_endpoint_zero_already_closed_skips_for_climate_default_winner(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #1214 regression guard: a climate/cloud/motion DEFAULT-branch
+    winner now supplies tilt=0 alongside position=0 (previously tilt was
+    always None for these handlers -- the bug this issue fixes). On a
+    venetian already mechanically closed, that newly-real 0/0 pairing must
+    NOT re-fire close_cover -- the same #985 "no spurious command for a
+    target already satisfied" guarantee the assumed_state guard above locks,
+    now exercised with the tilt this fix newly makes non-None.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=0, state="closed")
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=0),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("close_cover", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            0,
+            "climate",
+            _ctx_full_endpoint(full_endpoint_target=True, tilt=0),
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
 # --- is_target_unreached: A2 read-only "commanded but not reached" predicate ---
 # Issue #990. Read-only predicate the coordinator polls each cycle to raise the
 # cover_not_moving Repair. True iff a target is set, the cover has settled

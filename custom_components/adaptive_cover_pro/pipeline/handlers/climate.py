@@ -33,6 +33,7 @@ from ...reason_i18n import Reason, _REASON_TEMPLATES_EN
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
+    compute_default_tilt,
     compute_raw_calculated_position,
     compute_solar_position,
 )
@@ -462,7 +463,10 @@ class ClimateHandler(OverrideHandler):
     - EXTREME_HEAT for the all-day heat hold, DEFAULT for the season gate
     - DEFAULT for the LOW_LIGHT branch. This labels the branch, not the
       position: the rule tables pick that with _default or _solar, so DEFAULT
-      is not a promise the cover sits at its default position
+      is not a promise the cover sits at its default position. Both DEFAULT
+      branches (season gate + LOW_LIGHT) also carry the effective
+      default/sunset tilt (issue #1214), since they answer with the
+      effective default position.
     - SOLAR for glare control, in any season
     """
 
@@ -565,9 +569,19 @@ class ClimateHandler(OverrideHandler):
             method = ControlMethod.SOLAR
             season_code = ReasonCode.FRAGMENT_SEASON_GLARE
 
+        # DEFAULT-labelled branches (TRACKING_SEASON_GATE, LOW_LIGHT) return
+        # the effective default position, so they must also carry the
+        # effective default/sunset tilt — otherwise a venetian's sunset_tilt
+        # is unreachable whenever climate outranks DefaultHandler (issue
+        # #1214). Every other branch leaves tilt unset, same as before.
+        tilt = (
+            compute_default_tilt(snapshot) if method is ControlMethod.DEFAULT else None
+        )
+
         return PipelineResult(
             position=position,
             control_method=method,
+            tilt=tilt,
             reason_payload=Reason(
                 ReasonCode.CLIMATE_ACTIVE,
                 {"season": Reason(season_code), "position": position},

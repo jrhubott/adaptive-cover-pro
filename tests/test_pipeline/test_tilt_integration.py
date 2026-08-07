@@ -16,20 +16,34 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_TRACKING_SEASONS,
+    ControlMethod,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
+    CloudSuppressionHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
+    MotionTimeoutHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
     CustomPositionSensorState,
     PipelineResult,
 )
+from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
 
 # ---------------------------------------------------------------------------
@@ -393,3 +407,187 @@ class TestNonVenetianPolicyTiltPassthrough:
             options={},
         )
         assert resolved is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #1214 — default/sunset tilt reaches higher-priority DEFAULT winners
+# ---------------------------------------------------------------------------
+#
+# #1153 correctly closed the _MERGEABLE tilt leak (a losing DefaultHandler
+# could no longer stamp its tilt onto a winning handler), but ClimateHandler
+# (LOW_LIGHT), CloudSuppressionHandler, and MotionTimeoutHandler all answer
+# with the *effective default position* via compute_default_position and
+# never supplied a tilt of their own -- so a venetian's sunset_tilt/default_tilt
+# became unreachable whenever one of these three outranked DefaultHandler.
+# These full-stack registry tests lock the fix: each handler supplies its OWN
+# tilt (via compute_default_tilt), so _MERGEABLE stays untouched.
+
+
+def _low_light_climate_readings() -> ClimateReadings:
+    """Build readings that drive ClimateStrategy.LOW_LIGHT: presence, no sun, intermediate temp."""
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=22.0,
+        is_presence=True,
+        is_sunny=False,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+
+
+def _climate_options(**overrides) -> ClimateOptions:
+    kwargs = {
+        "temp_low": 18.0,
+        "temp_high": 26.0,
+        "temp_switch": False,
+        "transparent_blind": False,
+        "temp_summer_outside": None,
+        "cloud_suppression_enabled": False,
+        "winter_close_insulation": False,
+        "temp_extreme_heat": None,
+        "extreme_heat_position": None,
+        "tracking_seasons": frozenset(DEFAULT_TRACKING_SEASONS),
+    }
+    kwargs.update(overrides)
+    return ClimateOptions(**kwargs)
+
+
+class TestDefaultTiltReachesClimateWinner:
+    """A LOW_LIGHT climate winner must carry the same tilt DefaultHandler would.
+
+    Reproduces the reporter's own trace (issue #1214): climate mode active,
+    no direct sun, presence, intermediate temperature -- ClimateStrategy.LOW_LIGHT
+    labels its branch ControlMethod.DEFAULT and outranks DefaultHandler
+    (priority 50 vs 0), so it must supply the effective default/sunset tilt
+    itself.
+    """
+
+    def _registry(self) -> PipelineRegistry:
+        return PipelineRegistry([ClimateHandler(), SolarHandler(), DefaultHandler()])
+
+    def test_sunset_active_carries_sunset_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=True,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert winning_step.priority == ClimateHandler.priority
+        assert result.tilt == 0
+
+    def test_not_sunset_carries_default_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=False,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert winning_step.priority == ClimateHandler.priority
+        assert result.tilt == 50
+
+
+class TestDefaultTiltReachesCloudSuppressionWinner:
+    """CloudSuppressionHandler must carry the effective default/sunset tilt too."""
+
+    def _registry(self) -> PipelineRegistry:
+        return PipelineRegistry([CloudSuppressionHandler(), DefaultHandler()])
+
+    def test_sunset_active_carries_sunset_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(cloud_suppression_enabled=True),
+            is_sunset_active=True,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.CLOUD
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "cloud_suppression"
+        assert winning_step.priority == CloudSuppressionHandler.priority
+        assert result.tilt == 0
+
+    def test_cloudy_position_not_sunset_carries_default_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(
+                cloud_suppression_enabled=True, cloudy_position=25
+            ),
+            is_sunset_active=False,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.CLOUD
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "cloud_suppression"
+        assert winning_step.priority == CloudSuppressionHandler.priority
+        assert result.tilt == 50
+
+
+class TestDefaultTiltReachesMotionTimeoutWinner:
+    """MotionTimeoutHandler's return_to_default branch must carry the tilt too."""
+
+    def _registry(self) -> PipelineRegistry:
+        return PipelineRegistry([MotionTimeoutHandler(), DefaultHandler()])
+
+    def test_return_to_default_carries_default_tilt(self):
+        snap = make_snapshot(
+            motion_control_enabled=True,
+            motion_timeout_active=True,
+            motion_timeout_mode="return_to_default",
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.MOTION
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "motion_timeout"
+        assert winning_step.priority == MotionTimeoutHandler.priority
+        assert result.tilt == 50
+
+    def test_hold_position_mode_stays_untilted(self):
+        """Regression lock: the hold branch must NOT gain a tilt (skip_command=True).
+
+        Must pass both before and after the fix -- it locks the hold
+        carve-out that must never be given a tilt.
+        """
+        snap = make_snapshot(
+            motion_control_enabled=True,
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=42,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.MOTION
+        assert result.skip_command is True
+        assert result.tilt is None

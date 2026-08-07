@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from ...const import ControlMethod, ReasonCode
-from ...position_utils import PositionConverter
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
-from ..helpers import compute_default_position
+from ..helpers import compute_default_position, compute_default_tilt
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -26,31 +25,10 @@ class DefaultHandler(OverrideHandler):
         position = compute_default_position(snapshot)
         # Resolve tilt: sunset_tilt takes precedence during the sunset window,
         # then fall back to default_tilt. None means the venetian policy will
-        # use solar-computed tilt instead.
-        # Sunset tilt (and its default_tilt fallback) is a deliberate carve-out
-        # and stays UNclamped, mirroring the sunset *position* bypass (#128).
-        # Only the non-sunset default_tilt honors the global min_tilt/max_tilt
-        # clamp (#503) — exactly as default *position* is clamped. tilt is None
-        # for non-venetian covers, so the clamp is a natural no-op there (no
-        # cover-type string branch needed).
-        tilt: int | None
-        if snapshot.is_sunset_active:
-            tilt = (
-                snapshot.sunset_tilt
-                if snapshot.sunset_tilt is not None
-                else snapshot.default_tilt
-            )
-        else:
-            tilt = snapshot.default_tilt
-            if tilt is not None:
-                tilt = PositionConverter.apply_tilt_limits(
-                    tilt,
-                    snapshot.min_tilt,
-                    snapshot.max_tilt,
-                    snapshot.min_tilt_sun_only,
-                    snapshot.max_tilt_sun_only,
-                    sun_valid=False,
-                )
+        # use solar-computed tilt instead. See compute_default_tilt for the
+        # #503 clamp / #128 carve-out this delegates to (issue #1214: shared
+        # with every other handler that answers with the default position).
+        tilt = compute_default_tilt(snapshot)
         # "Use My at sunset" path: route through the cover's hardware-stored My preset
         # when the sunset window is active and the user has opted in.
         if (

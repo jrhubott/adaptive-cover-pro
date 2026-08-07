@@ -8,6 +8,7 @@ from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
     compute_default_position,
+    compute_default_tilt,
     compute_raw_calculated_position,
 )
 from ..types import PipelineResult, PipelineSnapshot
@@ -79,6 +80,11 @@ class CloudSuppressionHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.CLOUD,
+            # This handler always answers with either the effective default
+            # position or a configured cloudy_position — never a solar-tracked
+            # one — so it always carries the effective default/sunset tilt too
+            # (issue #1214), the same one DefaultHandler would have supplied.
+            tilt=compute_default_tilt(snapshot),
             reason_payload=Reason(
                 ReasonCode.CLOUD_SUPPRESSION,
                 {

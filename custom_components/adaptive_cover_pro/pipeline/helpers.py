@@ -437,3 +437,48 @@ def compute_default_position(snapshot: PipelineSnapshot) -> int:
         snapshot.config,
         is_sunset_active=snapshot.is_sunset_active,
     )
+
+
+def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
+    """Effective default/sunset tilt for the live pipeline (issue #1214).
+
+    Single source of truth for resolving ``sunset_tilt``/``default_tilt`` —
+    extracted from ``DefaultHandler`` so every handler that answers with the
+    *effective default position* (``compute_default_position``) can also
+    supply the *effective default tilt* that pairs with it, without any of
+    them needing to know each other's tilt (issue #1153's ``_MERGEABLE`` seam
+    stays closed — each handler states its own tilt as the winner).
+
+    Sunset tilt (and its default_tilt fallback) is a deliberate carve-out and
+    stays UNclamped, mirroring the sunset *position* bypass (#128). Only the
+    non-sunset default_tilt honors the global min_tilt/max_tilt clamp (#503)
+    — exactly as default *position* is clamped. Returns None for cover types
+    that never configure a tilt (default_tilt/sunset_tilt both None), which
+    is a natural no-op — no cover-type string branch needed.
+
+    Args:
+        snapshot: Current pipeline snapshot.
+
+    Returns:
+        Effective default/sunset tilt, or None when neither is configured.
+
+    """
+    tilt: int | None
+    if snapshot.is_sunset_active:
+        tilt = (
+            snapshot.sunset_tilt
+            if snapshot.sunset_tilt is not None
+            else snapshot.default_tilt
+        )
+    else:
+        tilt = snapshot.default_tilt
+        if tilt is not None:
+            tilt = PositionConverter.apply_tilt_limits(
+                tilt,
+                snapshot.min_tilt,
+                snapshot.max_tilt,
+                snapshot.min_tilt_sun_only,
+                snapshot.max_tilt_sun_only,
+                sun_valid=False,
+            )
+    return tilt

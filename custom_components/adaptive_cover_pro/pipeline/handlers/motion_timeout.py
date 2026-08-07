@@ -6,7 +6,11 @@ from ...const import ControlMethod, ReasonCode
 from ...position_utils import flip_if
 from ...reason_i18n import Reason
 from ..handler import OverrideHandler
-from ..helpers import compute_default_position, compute_raw_calculated_position
+from ..helpers import (
+    compute_default_position,
+    compute_default_tilt,
+    compute_raw_calculated_position,
+)
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -71,6 +75,11 @@ class MotionTimeoutHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MOTION,
+            # This return-to-default branch answers with the effective default
+            # position, so it also carries the effective default/sunset tilt
+            # (issue #1214) — the same one DefaultHandler would have supplied.
+            # The hold_position branch above deliberately stays untilted.
+            tilt=compute_default_tilt(snapshot),
             reason_payload=Reason(
                 ReasonCode.OCCUPANCY_LABEL,
                 {"pos_label": pos_label, "position": position},
