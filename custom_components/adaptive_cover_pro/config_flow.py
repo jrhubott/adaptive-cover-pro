@@ -2586,6 +2586,18 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 # values — reporting the conflict is its job.
                 _is_min = bool(config.get(_keys["min_mode"])) and not _tilt_only
                 _use_my_effective = _use_my and not _tilt_only
+                # ``position_mode`` is NONE for every tilt_only slot regardless
+                # of a fixed tilt (types.py's ``position_mode`` keys on the
+                # bare flag, unlike ``tilt_mode``), and snapshot_builder.py
+                # wipes ``position_max`` the same way. Normalize both the
+                # stored position claim and its ceiling here too, or a
+                # tilt_only slot that also stores a ``custom_position_N`` /
+                # ``position_max`` would render a phantom "→ N%" / "(at most
+                # N%)" the handler never applies (issue #1215 audit findings
+                # 1-2).
+                if _tilt_only:
+                    _pos = None
+                    _pos_max = None
                 # A constraint-only slot names no position — the pipeline's own
                 # result is what gets clamped (issue #943).
                 target = (

@@ -2873,11 +2873,14 @@ def test_custom_position_tilt_only_without_fixed_tilt_renders_bound():
 def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_minimum():
     """Issue #1215 residual risk: routing a tilt_only-without-fixed-tilt slot
     into the bound-rendering branch must not expose it to a phantom
-    '(as minimum)' fragment. The runtime normalizes min_mode off for ANY
-    tilt_only slot regardless of whether a slat angle is configured
-    (snapshot_builder.py:617-619), so the summary must match — while the
-    mutual-exclusion ⚠️ warning still fires, since reporting the conflict is
-    its job.
+    '(as minimum)' fragment, nor a phantom position target. The runtime
+    normalizes min_mode off for ANY tilt_only slot regardless of whether a
+    slat angle is configured (snapshot_builder.py:617-619), and
+    ``position_mode`` is NONE for every tilt_only slot too (types.py's
+    ``position_mode`` keys on the bare flag) — so a stored
+    ``custom_position_N`` must not render as a target the handler never
+    claims. The mutual-exclusion ⚠️ warning still fires, since reporting the
+    conflict is its job.
     """
     cfg = {
         "custom_position_sensor_1": "binary_sensor.door",
@@ -2890,7 +2893,29 @@ def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_minimum():
     summary = _build_config_summary(cfg, CoverType.VENETIAN)
     custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
     assert "(as minimum)" not in custom_line
+    assert "→ 80%" not in custom_line
+    assert "the calculated position" in custom_line
     assert "⚠️" in summary
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_ceiling():
+    """Issue #1215 finding 2: a tilt_only slot with no fixed slat angle must
+    not render a phantom position ceiling either. snapshot_builder.py wipes
+    ``position_max`` for EVERY tilt_only slot (bare flag, regardless of a
+    fixed tilt), so a stored ``custom_position_position_max_N`` must not
+    surface as '(at most N%)' — the handler makes no position claim to cap.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(at most 60%)" not in custom_line
+    assert "at least 50%" in custom_line
 
 
 def test_weather_state_list_in_cloud_line():

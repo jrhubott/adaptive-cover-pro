@@ -216,8 +216,11 @@ class CustomPositionSensorState:
     # same pre-inversion canonical space as ``position`` / ``tilt``.
     #
     # ``position_max`` is normalized off on the ``use_my`` path (hardware-pinned)
-    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off by
-    # ``tilt_only`` (a FIXED tilt claim wins over bounds on the same axis).
+    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off only
+    # when the slot names an actual fixed slat angle (``has_fixed_tilt``) — a
+    # real FIXED tilt claim wins over bounds on the same axis. A bare
+    # ``tilt_only`` flag with no configured slat angle is a vacuous claim and
+    # leaves ``tilt_min`` / ``tilt_max`` intact (issue #1215).
     position_max: int | None = None
     tilt_min: int | None = None
     tilt_max: int | None = None

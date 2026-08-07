@@ -11,7 +11,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.cover_types.venetian import VenetianPolicy
-from custom_components.adaptive_cover_pro.const import ControlMethod, ReasonCode
+from custom_components.adaptive_cover_pro.const import (
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+    ControlMethod,
+    ReasonCode,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
@@ -846,7 +850,7 @@ class TestTiltBoundFromTiltOnlySlotWithoutFixedTilt:
             entity_ids=("binary_sensor.slot1",),
             is_on=True,
             position=None,
-            priority=77,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
             tilt=None,
@@ -859,7 +863,12 @@ class TestTiltBoundFromTiltOnlySlotWithoutFixedTilt:
             [
                 SolarHandler(),
                 DefaultHandler(),
-                CustomPositionHandler(slot=1, position=None, priority=77, tilt=None),
+                CustomPositionHandler(
+                    slot=1,
+                    position=None,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                    tilt=None,
+                ),
             ]
         )
         snap = make_snapshot(
