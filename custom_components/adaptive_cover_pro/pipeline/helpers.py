@@ -6,6 +6,7 @@ patterns across pipeline handlers:
 - ``apply_snapshot_limits``    — apply position limits using config from the snapshot
 - ``compute_solar_position``   — calculate_raw_percentage() + floor-at-1 + limits
 - ``compute_default_position`` — default_position + limits (sun not in FOV)
+- ``compute_default_tilt``     — sunset_tilt/default_tilt + the #503 tilt clamp
 
 Floor-mode composition (the former ``apply_minimum_mode`` semantic) now
 lives in :mod:`pipeline.floors` and runs as a post-decision pass in the
@@ -439,39 +440,40 @@ def compute_default_position(snapshot: PipelineSnapshot) -> int:
     )
 
 
-def compute_default_tilt(
-    snapshot: PipelineSnapshot, *, position: int | None = None
-) -> int | None:
+def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
     """Effective default/sunset tilt for the live pipeline (issue #1214).
 
     Single source of truth for resolving ``sunset_tilt``/``default_tilt`` —
-    extracted from ``DefaultHandler`` so every handler that answers with the
-    *effective default position* (``compute_default_position``) can also
-    supply the *effective default tilt* that pairs with it, without any of
-    them needing to know each other's tilt (issue #1153's ``_MERGEABLE`` seam
-    stays closed — each handler states its own tilt as the winner).
+    extracted from ``DefaultHandler`` so every handler branch that resolves
+    its position *from* the default position can also supply the default tilt
+    that pairs with it, without any of them needing to know each other's tilt
+    (issue #1153's ``_MERGEABLE`` seam stays closed — each handler states its
+    own tilt as the winner).
 
-    ``position`` is the caller's OWN resolved position for the branch it is
-    calling from. When given, the tilt is only returned if ``position``
-    equals ``compute_default_position(snapshot)`` — i.e. the caller is
-    genuinely AT the effective default position, not merely sharing a
-    control-method label with a handler that is. This is the gate that keeps
-    the tilt off a ``CloudSuppressionHandler`` ``cloudy_position`` branch
-    (issue #1214 finding 1 — that position is a configured override, not the
-    default) and off a tilt-primary ``ClimateHandler`` LOW_LIGHT branch that
-    resolved via ``_solar`` rather than ``_default`` (issue #1214 finding 2 —
-    ``ControlMethod.DEFAULT`` labels the branch, not the position; see the
-    class docstring on ``ClimateHandler``). A coincidental match — e.g. a
-    ``cloudy_position`` or solar-tracked position that happens to equal the
-    default — is treated as a real match: the cover genuinely is sitting at
-    the default position, so pairing it with the default tilt is correct.
+    **Deciding whether a branch qualifies is the caller's job, not this
+    helper's.** A handler knows structurally which of its own branches it
+    took and whether that branch resolved from the default; it calls this on
+    those branches and passes ``tilt=None`` on the others. That is not a
+    duplication of policy — the shared part (sunset precedence, the #503
+    clamp, the #128 carve-out) lives here, and each handler owning its own
+    output is exactly the #1153 principle. Concretely:
 
-    Omit ``position`` (the default, ``None``) to skip the gate entirely —
-    for a caller that is unconditionally at the default position by
-    construction, such as ``DefaultHandler``, which stays at its default
-    even on its "Use My at sunset" branch that substitutes a different
-    *position* value but still means "the default handler won, use its
-    tilt."
+    * ``DefaultHandler`` — every branch, including "Use My at sunset", which
+      substitutes the *position* only.
+    * ``CloudSuppressionHandler`` — the sunset and no-``cloudy_position``
+      branches; the ``cloudy_position`` branch is a configured override and
+      stays untilted.
+    * ``MotionTimeoutHandler`` — the return-to-default branch; the
+      ``hold_position`` branch stays untilted.
+    * ``ClimateHandler`` — the ``ControlMethod.DEFAULT`` branches whose
+      matched rule reports ``ClimateRule.resolves_default_position``.
+
+    Note that qualification is about PROVENANCE, never about whether the
+    branch's number happens to equal ``compute_default_position(snapshot)``.
+    A limit clamp can move a genuine default answer away from that value
+    (``min_position`` versus the sunset bypass, #128), and a configured
+    override can coincide with it — so a value comparison is wrong in both
+    directions.
 
     Sunset tilt (and its default_tilt fallback) is a deliberate carve-out and
     stays UNclamped, mirroring the sunset *position* bypass (#128). Only the
@@ -482,16 +484,11 @@ def compute_default_tilt(
 
     Args:
         snapshot: Current pipeline snapshot.
-        position: The calling handler's own resolved position, or None to
-            skip the position-match gate (see above).
 
     Returns:
-        Effective default/sunset tilt, or None when neither is configured,
-        or when ``position`` does not match the effective default position.
+        Effective default/sunset tilt, or None when neither is configured.
 
     """
-    if position is not None and position != compute_default_position(snapshot):
-        return None
     tilt: int | None
     if snapshot.is_sunset_active:
         tilt = (

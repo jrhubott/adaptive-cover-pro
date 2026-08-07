@@ -45,7 +45,7 @@ from .climate_modes import (
     TILT_WITHOUT_PRESENCE,
     ClimateContext,
     ClimateRule,
-    evaluate_rules,
+    match_rule,
 )
 
 # ---------------------------------------------------------------------------
@@ -182,6 +182,13 @@ class ClimateCoverState:
     snapshot: PipelineSnapshot
     climate_data: ClimateCoverData
     climate_strategy: ClimateStrategy | None = field(default=None, init=False)
+    # Whether the matched rule resolved its position FROM the cover's
+    # configured default (``climate_modes._default``) rather than from solar
+    # tracking, a climate hold, or a configured override. Recorded by ``_run``
+    # at the moment the rule matches — i.e. BEFORE ``get_state`` clamps the
+    # answer — so a min/max limit that moves the value cannot disqualify it
+    # (issue #1214). Stays False until a table has run.
+    position_from_default: bool = field(default=False, init=False)
 
     @property
     def cover(self):
@@ -269,10 +276,12 @@ class ClimateCoverState:
         )
 
     def _run(self, rules: tuple[ClimateRule, ...], *, tilt: bool) -> int | None:
-        """Evaluate a rule table, record the chosen strategy, return its position."""
-        strategy, position = evaluate_rules(rules, self._build_context(tilt=tilt))
-        self.climate_strategy = strategy
-        return position
+        """Match a rule table, record strategy + provenance, return its position."""
+        ctx = self._build_context(tilt=tilt)
+        rule = match_rule(rules, ctx)
+        self.climate_strategy = rule.strategy
+        self.position_from_default = rule.resolves_default_position
+        return rule.position(ctx)
 
     def normal_with_presence(self) -> int | None:
         """Climate strategy for normal covers with occupants present.
@@ -465,12 +474,12 @@ class ClimateHandler(OverrideHandler):
       position: the rule tables pick that with _default or _solar, so DEFAULT
       is not a promise the cover sits at its default position. A DEFAULT
       branch only carries the effective default/sunset tilt (issue #1214)
-      when its position ACTUALLY equals the effective default —
+      when the matched rule RESOLVED its position from the default —
       TRACKING_SEASON_GATE and the NORMAL-table LOW_LIGHT branch (_default)
       qualify; the TILT-table LOW_LIGHT branch (_solar) does not, and stays
       untilted so a solar-tracked slat angle is never overwritten by the
-      configured default tilt. compute_default_tilt's position gate makes
-      this automatic — see its docstring.
+      configured default tilt. ClimateRule.resolves_default_position carries
+      that provenance out of the rule table — see its docstring.
     - SOLAR for glare control, in any season
     """
 
@@ -573,21 +582,27 @@ class ClimateHandler(OverrideHandler):
             method = ControlMethod.SOLAR
             season_code = ReasonCode.FRAGMENT_SEASON_GLARE
 
-        # A DEFAULT-labelled branch carries the effective default/sunset tilt
-        # only when its own `position` is genuinely the effective default
-        # (issue #1214) — the ControlMethod.DEFAULT label alone is not that
-        # promise (see the class docstring above). Gating on `method` first
-        # keeps this call off every SOLAR/WINTER/SUMMER/EXTREME_HEAT branch,
-        # so a genuinely solar- or climate-tracked tilt from the venetian
-        # engine is never at risk of being overwritten by a handler-supplied
-        # tilt (post_pipeline_resolve honors a non-None handler tilt
-        # unconditionally). Within the DEFAULT label, compute_default_tilt's
-        # position gate then tells TRACKING_SEASON_GATE / NORMAL-table
-        # LOW_LIGHT (both `_default`) apart from TILT-table LOW_LIGHT
-        # (`_solar`) — only the former two qualify.
+        # Two gates, two different jobs (issue #1214):
+        #
+        # `method is ControlMethod.DEFAULT` is the SAFETY gate. It keeps this
+        # call off every SOLAR/WINTER/SUMMER/EXTREME_HEAT branch, because
+        # `VenetianPolicy.post_pipeline_resolve` honors a non-None handler
+        # tilt unconditionally — a tilt on a SOLAR branch would silently
+        # switch the geometry engine's slat angle off.
+        #
+        # `position_from_default` is the CORRECTNESS gate. Within the DEFAULT
+        # label it separates the branches that resolved their position from
+        # the configured default (`climate_modes._default`:
+        # TRACKING_SEASON_GATE and the NORMAL-table LOW_LIGHT) from the one
+        # that resolved it from solar tracking (`_solar`: the TILT-table
+        # LOW_LIGHT). It is provenance, recorded when the rule matched, not a
+        # comparison against `compute_default_position` — so the limit clamp
+        # `get_state` applies afterwards (and the sunset bypass that clamp
+        # does NOT share, #128) cannot strip the tilt off a genuine default.
         tilt = (
-            compute_default_tilt(snapshot, position=position)
+            compute_default_tilt(snapshot)
             if method is ControlMethod.DEFAULT
+            and climate_cover_state.position_from_default
             else None
         )
 

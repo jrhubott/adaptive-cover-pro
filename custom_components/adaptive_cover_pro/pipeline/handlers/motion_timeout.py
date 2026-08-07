@@ -75,15 +75,13 @@ class MotionTimeoutHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MOTION,
-            # This return-to-default branch answers with the effective default
-            # position, so it also carries the effective default/sunset tilt
-            # (issue #1214) — the same one DefaultHandler would have supplied.
-            # The position gate is a no-op here (this branch's `position` IS
-            # compute_default_position(snapshot)) but is passed anyway to keep
-            # every handler using the same "earn the tilt by position, not by
-            # label" invariant. The hold_position branch above deliberately
-            # stays untilted.
-            tilt=compute_default_tilt(snapshot, position=position),
+            # This return-to-default branch resolves its position from the
+            # effective default, so it also carries the effective
+            # default/sunset tilt (issue #1214) — the same one DefaultHandler
+            # would have supplied. The hold_position branch above resolves
+            # from the cover's own current position and deliberately stays
+            # untilted (skip_command, #1153 hold semantics).
+            tilt=compute_default_tilt(snapshot),
             reason_payload=Reason(
                 ReasonCode.OCCUPANCY_LABEL,
                 {"pos_label": pos_label, "position": position},

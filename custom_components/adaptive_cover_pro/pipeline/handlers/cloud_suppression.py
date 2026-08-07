@@ -66,28 +66,33 @@ class CloudSuppressionHandler(OverrideHandler):
         if not triggers:
             triggers.append(Reason(ReasonCode.FRAGMENT_TRIGGER_SMOOTHING_HOLD))
 
+        # Each branch states its own tilt (issue #1214). The two that resolve
+        # the position from the effective default pair it with the effective
+        # default/sunset tilt; the cloudy_position branch answers with a
+        # configured override, so the slats hold their current angle — the
+        # #1153 rule for hold-type winners. Provenance, not value: a
+        # cloudy_position that happens to equal the default position (0 %
+        # alongside a venetian's default_percentage of 0 %, the #1214
+        # reporter's own config) is still an override.
         cloudy = snapshot.climate_options.cloudy_position
+        tilt: int | None
         if snapshot.is_sunset_active:
             position = compute_default_position(snapshot)
             pos_label = Reason(ReasonCode.FRAGMENT_SUNSET_POSITION)
+            tilt = compute_default_tilt(snapshot)
         elif cloudy is not None:
             position = apply_snapshot_limits(snapshot, cloudy, sun_valid=False)
             pos_label = Reason(ReasonCode.FRAGMENT_CLOUDY_POSITION)
+            tilt = None
         else:
             position = compute_default_position(snapshot)
             pos_label = Reason(ReasonCode.FRAGMENT_DEFAULT_POSITION)
+            tilt = compute_default_tilt(snapshot)
 
         return PipelineResult(
             position=position,
             control_method=ControlMethod.CLOUD,
-            # This handler carries the effective default/sunset tilt only on
-            # the sunset and no-cloudy_position branches, where `position` IS
-            # the effective default (issue #1214 finding 1). The
-            # cloudy_position branch answers with a configured override, not
-            # the default — compute_default_tilt's position gate returns
-            # None there rather than stamping the default tilt onto an
-            # unrelated position.
-            tilt=compute_default_tilt(snapshot, position=position),
+            tilt=tilt,
             reason_payload=Reason(
                 ReasonCode.CLOUD_SUPPRESSION,
                 {

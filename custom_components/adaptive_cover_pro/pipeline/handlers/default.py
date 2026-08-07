@@ -27,7 +27,11 @@ class DefaultHandler(OverrideHandler):
         # then fall back to default_tilt. None means the venetian policy will
         # use solar-computed tilt instead. See compute_default_tilt for the
         # #503 clamp / #128 carve-out this delegates to (issue #1214: shared
-        # with every other handler that answers with the default position).
+        # with every other handler branch that resolves from the default
+        # position). Resolved once, above the branch split, because BOTH of
+        # this handler's branches are the default by construction — "Use My
+        # at sunset" substitutes the hardware preset for the *position* only
+        # and still owes the configured sunset tilt.
         tilt = compute_default_tilt(snapshot)
         # "Use My at sunset" path: route through the cover's hardware-stored My preset
         # when the sunset window is active and the user has opted in.
