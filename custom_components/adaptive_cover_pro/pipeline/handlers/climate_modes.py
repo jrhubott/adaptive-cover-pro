@@ -220,8 +220,8 @@ class ClimateRule:
 
         ``ClimateHandler`` reads this to decide whether a
         ``ControlMethod.DEFAULT`` winner has earned the effective
-        default/sunset tilt. ``_default`` is the rule whose position is
-        *always* ``ctx.default_position``, by construction. ``_solar`` can
+        default/sunset tilt. ``_default`` is the position function whose
+        answer is *always* ``ctx.default_position``. ``_solar`` can
         return that same value too — it falls back to
         ``ctx.default_position`` whenever ``direct_sun_valid`` is False —
         but that fallback is still solar tracking, not a default-position
