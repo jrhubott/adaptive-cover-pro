@@ -47,6 +47,36 @@ from custom_components.adaptive_cover_pro.state.climate_provider import ClimateR
 from tests.test_pipeline.conftest import make_snapshot
 
 # ---------------------------------------------------------------------------
+# Mock tilt-cover builder for issue #1214 finding 2's TILT_WITH_PRESENCE case
+# ---------------------------------------------------------------------------
+# The generic conftest mock cover has no `beta` attribute (only position-
+# primary tests need it), and ClimateHandler._build_context reads
+# `tilt_cover.beta` unconditionally for tilt-primary covers. Mirrors
+# `test_climate_handler.py::_make_tilt_cover`.
+
+
+def _make_low_light_solar_tilt_cover(*, percentage: float):
+    from custom_components.adaptive_cover_pro.engine.covers import AdaptiveTiltCover
+
+    cover = MagicMock(spec=AdaptiveTiltCover)
+    cover.direct_sun_valid = True
+    cover.valid = True
+    cover.calculate_percentage = MagicMock(return_value=percentage)
+    cover.calculate_raw_percentage = MagicMock(return_value=percentage)
+    cover.gamma = 0.0
+    cover.beta = 0.0
+    cover.mode = "mode2"
+    config = MagicMock()
+    config.min_pos = None
+    config.max_pos = None
+    config.min_pos_sun_only = False
+    config.max_pos_sun_only = False
+    config.min_pos_sun_tracking = None
+    cover.config = config
+    return cover
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -504,6 +534,51 @@ class TestDefaultTiltReachesClimateWinner:
         assert winning_step.priority == ClimateHandler.priority
         assert result.tilt == 50
 
+    def test_tilt_primary_low_light_via_solar_stays_untilted(self):
+        """Issue #1214 finding 2: ControlMethod.DEFAULT labels the branch, not
+        the position -- it is not a promise the cover sits at its default.
+
+        On a tilt-primary cover (``cover_tilt``/``cover_louvered_roof``),
+        ``ClimateStrategy.LOW_LIGHT`` resolves via ``TILT_WITH_PRESENCE``'s
+        ``_solar`` rule (climate_modes.py:346), not ``_default`` -- the same
+        ``ControlMethod.DEFAULT`` label the NORMAL-table LOW_LIGHT branch
+        carries, but a solar-tracked position, not the effective default one.
+        Pairing that with the configured default tilt would silently
+        overwrite a genuine solar-tracked slat angle with a stale default.
+        The class docstring says exactly this; the fix is that the tilt is
+        gated on the ACTUAL position matching compute_default_position, not
+        on the DEFAULT label alone -- so this must stay untilted even though
+        default_tilt is configured and the branch is labelled DEFAULT.
+
+        default_tilt/sunset_tilt are only exposed via the UI for
+        position-primary policies (VenetianPolicy, DayNightShadePolicy), but
+        nothing at the pipeline/snapshot layer or in ``set_option`` gates
+        them by cover type -- so this combination, while not reachable
+        through the UI today, must not silently misbehave if it occurs.
+        """
+        snap = make_snapshot(
+            cover=_make_low_light_solar_tilt_cover(percentage=70.0),
+            cover_type="cover_tilt",
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=False,
+            default_position=0,
+            default_tilt=40,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert winning_step.priority == ClimateHandler.priority
+        # Sanity: the winning position is the solar-tracked one (70), not the
+        # effective default (0) -- otherwise this test would not exercise the
+        # gate it claims to.
+        assert result.position != 0
+        assert result.tilt is None
+
 
 class TestDefaultTiltReachesCloudSuppressionWinner:
     """CloudSuppressionHandler must carry the effective default/sunset tilt too."""
@@ -529,7 +604,15 @@ class TestDefaultTiltReachesCloudSuppressionWinner:
         assert winning_step.priority == CloudSuppressionHandler.priority
         assert result.tilt == 0
 
-    def test_cloudy_position_not_sunset_carries_default_tilt(self):
+    def test_cloudy_position_not_sunset_stays_untilted(self):
+        """A cloudy_position winner is NOT at the effective default position.
+
+        Issue #1214 finding 1: the position here (25) is a configured
+        cloudy_position override, not compute_default_position(snapshot) (0).
+        Pairing it with default_tilt would snap a venetian's slats to
+        default_tilt during a cloudy in-FOV daytime hold instead of letting
+        them hold -- exactly what #1153 removed for non-default winners.
+        """
         snap = make_snapshot(
             direct_sun_valid=True,
             in_time_window=True,
@@ -547,7 +630,8 @@ class TestDefaultTiltReachesCloudSuppressionWinner:
         winning_step = next(s for s in result.decision_trace if s.matched)
         assert winning_step.handler == "cloud_suppression"
         assert winning_step.priority == CloudSuppressionHandler.priority
-        assert result.tilt == 50
+        assert result.position == 25
+        assert result.tilt is None
 
 
 class TestDefaultTiltReachesMotionTimeoutWinner:

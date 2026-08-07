@@ -439,7 +439,9 @@ def compute_default_position(snapshot: PipelineSnapshot) -> int:
     )
 
 
-def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
+def compute_default_tilt(
+    snapshot: PipelineSnapshot, *, position: int | None = None
+) -> int | None:
     """Effective default/sunset tilt for the live pipeline (issue #1214).
 
     Single source of truth for resolving ``sunset_tilt``/``default_tilt`` —
@@ -448,6 +450,28 @@ def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
     supply the *effective default tilt* that pairs with it, without any of
     them needing to know each other's tilt (issue #1153's ``_MERGEABLE`` seam
     stays closed — each handler states its own tilt as the winner).
+
+    ``position`` is the caller's OWN resolved position for the branch it is
+    calling from. When given, the tilt is only returned if ``position``
+    equals ``compute_default_position(snapshot)`` — i.e. the caller is
+    genuinely AT the effective default position, not merely sharing a
+    control-method label with a handler that is. This is the gate that keeps
+    the tilt off a ``CloudSuppressionHandler`` ``cloudy_position`` branch
+    (issue #1214 finding 1 — that position is a configured override, not the
+    default) and off a tilt-primary ``ClimateHandler`` LOW_LIGHT branch that
+    resolved via ``_solar`` rather than ``_default`` (issue #1214 finding 2 —
+    ``ControlMethod.DEFAULT`` labels the branch, not the position; see the
+    class docstring on ``ClimateHandler``). A coincidental match — e.g. a
+    ``cloudy_position`` or solar-tracked position that happens to equal the
+    default — is treated as a real match: the cover genuinely is sitting at
+    the default position, so pairing it with the default tilt is correct.
+
+    Omit ``position`` (the default, ``None``) to skip the gate entirely —
+    for a caller that is unconditionally at the default position by
+    construction, such as ``DefaultHandler``, which stays at its default
+    even on its "Use My at sunset" branch that substitutes a different
+    *position* value but still means "the default handler won, use its
+    tilt."
 
     Sunset tilt (and its default_tilt fallback) is a deliberate carve-out and
     stays UNclamped, mirroring the sunset *position* bypass (#128). Only the
@@ -458,11 +482,16 @@ def compute_default_tilt(snapshot: PipelineSnapshot) -> int | None:
 
     Args:
         snapshot: Current pipeline snapshot.
+        position: The calling handler's own resolved position, or None to
+            skip the position-match gate (see above).
 
     Returns:
-        Effective default/sunset tilt, or None when neither is configured.
+        Effective default/sunset tilt, or None when neither is configured,
+        or when ``position`` does not match the effective default position.
 
     """
+    if position is not None and position != compute_default_position(snapshot):
+        return None
     tilt: int | None
     if snapshot.is_sunset_active:
         tilt = (

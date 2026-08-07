@@ -80,11 +80,14 @@ class CloudSuppressionHandler(OverrideHandler):
         return PipelineResult(
             position=position,
             control_method=ControlMethod.CLOUD,
-            # This handler always answers with either the effective default
-            # position or a configured cloudy_position — never a solar-tracked
-            # one — so it always carries the effective default/sunset tilt too
-            # (issue #1214), the same one DefaultHandler would have supplied.
-            tilt=compute_default_tilt(snapshot),
+            # This handler carries the effective default/sunset tilt only on
+            # the sunset and no-cloudy_position branches, where `position` IS
+            # the effective default (issue #1214 finding 1). The
+            # cloudy_position branch answers with a configured override, not
+            # the default — compute_default_tilt's position gate returns
+            # None there rather than stamping the default tilt onto an
+            # unrelated position.
+            tilt=compute_default_tilt(snapshot, position=position),
             reason_payload=Reason(
                 ReasonCode.CLOUD_SUPPRESSION,
                 {

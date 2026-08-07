@@ -78,8 +78,12 @@ class MotionTimeoutHandler(OverrideHandler):
             # This return-to-default branch answers with the effective default
             # position, so it also carries the effective default/sunset tilt
             # (issue #1214) — the same one DefaultHandler would have supplied.
-            # The hold_position branch above deliberately stays untilted.
-            tilt=compute_default_tilt(snapshot),
+            # The position gate is a no-op here (this branch's `position` IS
+            # compute_default_position(snapshot)) but is passed anyway to keep
+            # every handler using the same "earn the tilt by position, not by
+            # label" invariant. The hold_position branch above deliberately
+            # stays untilted.
+            tilt=compute_default_tilt(snapshot, position=position),
             reason_payload=Reason(
                 ReasonCode.OCCUPANCY_LABEL,
                 {"pos_label": pos_label, "position": position},

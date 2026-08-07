@@ -463,10 +463,14 @@ class ClimateHandler(OverrideHandler):
     - EXTREME_HEAT for the all-day heat hold, DEFAULT for the season gate
     - DEFAULT for the LOW_LIGHT branch. This labels the branch, not the
       position: the rule tables pick that with _default or _solar, so DEFAULT
-      is not a promise the cover sits at its default position. Both DEFAULT
-      branches (season gate + LOW_LIGHT) also carry the effective
-      default/sunset tilt (issue #1214), since they answer with the
-      effective default position.
+      is not a promise the cover sits at its default position. A DEFAULT
+      branch only carries the effective default/sunset tilt (issue #1214)
+      when its position ACTUALLY equals the effective default —
+      TRACKING_SEASON_GATE and the NORMAL-table LOW_LIGHT branch (_default)
+      qualify; the TILT-table LOW_LIGHT branch (_solar) does not, and stays
+      untilted so a solar-tracked slat angle is never overwritten by the
+      configured default tilt. compute_default_tilt's position gate makes
+      this automatic — see its docstring.
     - SOLAR for glare control, in any season
     """
 
@@ -569,13 +573,22 @@ class ClimateHandler(OverrideHandler):
             method = ControlMethod.SOLAR
             season_code = ReasonCode.FRAGMENT_SEASON_GLARE
 
-        # DEFAULT-labelled branches (TRACKING_SEASON_GATE, LOW_LIGHT) return
-        # the effective default position, so they must also carry the
-        # effective default/sunset tilt — otherwise a venetian's sunset_tilt
-        # is unreachable whenever climate outranks DefaultHandler (issue
-        # #1214). Every other branch leaves tilt unset, same as before.
+        # A DEFAULT-labelled branch carries the effective default/sunset tilt
+        # only when its own `position` is genuinely the effective default
+        # (issue #1214) — the ControlMethod.DEFAULT label alone is not that
+        # promise (see the class docstring above). Gating on `method` first
+        # keeps this call off every SOLAR/WINTER/SUMMER/EXTREME_HEAT branch,
+        # so a genuinely solar- or climate-tracked tilt from the venetian
+        # engine is never at risk of being overwritten by a handler-supplied
+        # tilt (post_pipeline_resolve honors a non-None handler tilt
+        # unconditionally). Within the DEFAULT label, compute_default_tilt's
+        # position gate then tells TRACKING_SEASON_GATE / NORMAL-table
+        # LOW_LIGHT (both `_default`) apart from TILT-table LOW_LIGHT
+        # (`_solar`) — only the former two qualify.
         tilt = (
-            compute_default_tilt(snapshot) if method is ControlMethod.DEFAULT else None
+            compute_default_tilt(snapshot, position=position)
+            if method is ControlMethod.DEFAULT
+            else None
         )
 
         return PipelineResult(
