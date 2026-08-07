@@ -1371,6 +1371,53 @@ def test_tilt_only_wins_over_tilt_bounds():
     assert state.tilt_max is None
 
 
+@pytest.mark.unit
+def test_tilt_only_without_fixed_tilt_preserves_tilt_bounds():
+    """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must NOT be
+    wiped. ``tilt_only`` alone (no ``tilt``) is a vacuous FIXED claim — it
+    must not suppress the tilt_min the slot was actually configured for.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt_only"]: True, keys["tilt_min"]: 50},
+    )
+    assert state.tilt_min == 50
+    assert state.tilt_mode is AxisConstraintMode.MIN
+
+
+@pytest.mark.unit
+def test_tilt_only_with_fixed_tilt_still_wipes_tilt_bounds():
+    """Issue #1215 regression guard: a REAL fixed tilt still wins and wipes
+    the stored bound — the #514 precedence is preserved unchanged.
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {keys["tilt"]: 20, keys["tilt_only"]: True, keys["tilt_min"]: 50},
+    )
+    assert state.tilt_min is None
+    assert state.tilt_mode is AxisConstraintMode.FIXED
+
+
+@pytest.mark.unit
+def test_tilt_only_still_wipes_position_max_without_fixed_tilt():
+    """Issue #1215: the position-axis disclaimer stays keyed on the bare
+    ``tilt_only`` flag regardless of whether a slat angle is configured — a
+    tilt-only slot always disclaims the position axis (issue #514).
+    """
+    keys = CUSTOM_POSITION_SLOTS[1]
+    state = _constraint_builder(
+        keys,
+        {
+            keys["tilt_only"]: True,
+            keys["tilt_min"]: 50,
+            keys["position_max"]: 60,
+        },
+    )
+    assert state.position_max is None
+
+
 # ---------------------------------------------------------------------------
 # acp self-reference namespace in custom-position slot templates (issue #1159)
 # ---------------------------------------------------------------------------

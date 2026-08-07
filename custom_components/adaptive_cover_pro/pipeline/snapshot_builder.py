@@ -131,6 +131,7 @@ from .types import (
     CustomPositionSensorState,
     GroupIntent,
     PipelineSnapshot,
+    has_fixed_tilt,
 )
 
 if TYPE_CHECKING:
@@ -613,7 +614,10 @@ class PipelineSnapshotBuilder:
             # position as a floor / via My — not both. Normalize here, the
             # single read site, mirroring the existing use_my-over-min_mode
             # precedent. The config-summary surfaces a warning when a user
-            # configured a conflicting combination.
+            # configured a conflicting combination. Deliberately keyed on the
+            # bare flag, unlike the tilt-bound wipe below (issue #1215):
+            # tilt_only disclaims the position axis whether or not a slat
+            # angle is configured — do not gate this on ``has_fixed_tilt``.
             if tilt_only:
                 min_mode = False
                 use_my = False
@@ -625,18 +629,22 @@ class PipelineSnapshotBuilder:
             position_max = _opt_int(options, slot_keys["position_max"])
             tilt_min = _opt_int(options, slot_keys["tilt_min"])
             tilt_max = _opt_int(options, slot_keys["tilt_max"])
-            # Same mutual-exclusion pass as min_mode / use_my above: tilt_only
-            # fixes the slat angle and lets the position pipeline drive the
-            # carriage, so the slot carries no bounds on either axis. The My
-            # path is hardware-pinned — a position ceiling cannot apply to it.
-            # Normalizing the stored values here (rather than only deriving
-            # around them) keeps what diagnostics surface honest about what is
-            # actually in effect.
-            if tilt_only:
-                position_max = None
+            # Same mutual-exclusion pass as min_mode / use_my above: a REAL
+            # fixed tilt (tilt_only + a configured slat angle) wins over
+            # tilt_min/tilt_max on the same axis (issue #514), so the slot's
+            # tilt bounds are dropped only then — a tilt_only slot with no
+            # slat angle configured makes no FIXED claim, and its tilt_min /
+            # tilt_max are exactly what the slot exists to enforce (issue
+            # #1215). tilt_only, on the bare flag, always disclaims the
+            # position axis regardless of whether a slat angle is set — the
+            # My path is likewise hardware-pinned, so a position ceiling
+            # cannot apply to either. Normalizing the stored values here
+            # (rather than only deriving around them) keeps what diagnostics
+            # surface honest about what is actually in effect.
+            if has_fixed_tilt(tilt_only=tilt_only, tilt=tilt):
                 tilt_min = None
                 tilt_max = None
-            elif use_my:
+            if tilt_only or use_my:
                 position_max = None
 
             state = CustomPositionSensorState(

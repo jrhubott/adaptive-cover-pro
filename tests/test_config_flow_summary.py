@@ -2853,6 +2853,46 @@ def test_custom_position_tilt_only_no_warning_when_alone():
     assert warning_lines == []
 
 
+def test_custom_position_tilt_only_without_fixed_tilt_renders_bound():
+    """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must render
+    the actual configured bound, not the phantom 'slat fixed at 0%' claim —
+    nothing is fixed at 0% and the slot is not inert.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "at least 50%" in custom_line
+    assert "slat fixed at 0%" not in custom_line
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_minimum():
+    """Issue #1215 residual risk: routing a tilt_only-without-fixed-tilt slot
+    into the bound-rendering branch must not expose it to a phantom
+    '(as minimum)' fragment. The runtime normalizes min_mode off for ANY
+    tilt_only slot regardless of whether a slat angle is configured
+    (snapshot_builder.py:617-619), so the summary must match — while the
+    mutual-exclusion ⚠️ warning still fires, since reporting the conflict is
+    its job.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 80,
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_min_mode_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(as minimum)" not in custom_line
+    assert "⚠️" in summary
+
+
 def test_weather_state_list_in_cloud_line():
     """CONF_WEATHER_STATE list renders as 'weather in {state, state}' on the cloud line."""
     from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE

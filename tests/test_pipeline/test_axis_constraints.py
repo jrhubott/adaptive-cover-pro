@@ -375,6 +375,41 @@ class TestGatherTiltFixedParity:
         snap = _snapshot(sensors=[_slot(1, position=30, tilt=50, tilt_only=True)])
         assert _on(gather_axis_constraints(snap), AXIS_NAME_POSITION) == []
 
+    def test_tilt_only_without_fixed_tilt_still_emits_tilt_bound(self) -> None:
+        """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must
+        still emit a tilt bound, not vanish. ``tilt_only`` alone is a vacuous
+        FIXED claim when no slat angle is configured — it must fall through
+        to the tilt_min/tilt_max derivation instead of suppressing it.
+        """
+        snap = _snapshot(sensors=[_slot(1, tilt=None, tilt_only=True, tilt_min=50)])
+        cs = _on(gather_axis_constraints(snap), AXIS_NAME_TILT)
+        assert len(cs) == 1
+        assert cs[0].axis == AXIS_NAME_TILT
+        assert cs[0].kind is AxisConstraintMode.MIN
+        assert cs[0].low == 50
+        assert cs[0].high is None
+        assert cs[0].slot == 1
+
+    def test_tilt_only_without_fixed_tilt_makes_no_position_claim(self) -> None:
+        """Issue #1215: the tilt-bound fix must not leak onto the position
+        axis — tilt_only still disclaims position with no slat angle set.
+        """
+        snap = _snapshot(sensors=[_slot(1, tilt=None, tilt_only=True, tilt_min=50)])
+        snap_sensor = snap.custom_position_sensors[0]
+        assert snap_sensor.position_mode is AxisConstraintMode.NONE
+        assert _on(gather_axis_constraints(snap), AXIS_NAME_POSITION) == []
+
+    def test_tilt_only_with_fixed_tilt_still_outranks_bounds(self) -> None:
+        """Issue #1215 regression guard: a REAL fixed tilt must still outrank
+        tilt_min/tilt_max on the same slot — the #514 precedence is preserved.
+        """
+        snap = _snapshot(sensors=[_slot(1, tilt=20, tilt_only=True, tilt_min=50)])
+        cs = _on(gather_axis_constraints(snap), AXIS_NAME_TILT)
+        assert len(cs) == 1
+        assert cs[0].kind is AxisConstraintMode.FIXED
+        assert cs[0].low == 20
+        assert cs[0].high == 20
+
     def test_tilt_fixed_carries_slot_metadata(self) -> None:
         """Source/label/slot mirror TiltAxisContribution."""
         snap = _snapshot(

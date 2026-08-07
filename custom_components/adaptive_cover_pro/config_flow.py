@@ -377,6 +377,7 @@ from .pipeline.handlers import (  # noqa: E402
     HANDLER_PRIORITY_CONF,
     resolve_handler_priority,
 )
+from .pipeline.types import has_fixed_tilt  # noqa: E402
 from .priority_chain import build_priority_chain  # noqa: E402
 from .managers.cover_command.queue import normalize_queue_name  # noqa: E402
 from .profile_link import (  # noqa: E402
@@ -2560,10 +2561,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 L["fragments.safety"] if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY else ""
             )
             _order = _HID_CUSTOM_ORDER_BASE + _slot
-            if _tilt_only:
-                # Tilt-only fixes the slat angle and lets the position pipeline
-                # (solar etc.) drive the carriage — min_mode/use_my are ignored.
-                slat = _slot_tilt if _slot_tilt is not None else 0
+            if has_fixed_tilt(tilt_only=_tilt_only, tilt=_slot_tilt):
+                # A REAL fixed tilt (tilt_only + a configured slat angle)
+                # fixes the slat angle and lets the position pipeline (solar
+                # etc.) drive the carriage — min_mode/use_my are ignored.
+                slat = _slot_tilt
                 _open(
                     _pri,
                     _order,
@@ -2574,11 +2576,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             else:
                 _keys = CUSTOM_POSITION_SLOTS[_slot]
                 _pos_max = config.get(_keys["position_max"])
-                _is_min = bool(config.get(_keys["min_mode"]))
+                # tilt_only normalizes min_mode / use_my off unconditionally
+                # (snapshot_builder.py:617-619) — a slot only reaches this
+                # branch under tilt_only when it has no fixed slat angle (a
+                # real fixed tilt takes the branch above), so both flags must
+                # render as off here too, or the summary would claim a floor
+                # / My-path the runtime never applies (issue #1215 residual
+                # risk). The mutual-exclusion ⚠️ warning below reads the raw
+                # values — reporting the conflict is its job.
+                _is_min = bool(config.get(_keys["min_mode"])) and not _tilt_only
+                _use_my_effective = _use_my and not _tilt_only
                 # A constraint-only slot names no position — the pipeline's own
                 # result is what gets clamped (issue #943).
                 target = (
-                    _pos_label(_pos, _use_my)
+                    _pos_label(_pos, _use_my_effective)
                     if _pos is not None
                     else L["custom.no_position_claim"]
                 )
