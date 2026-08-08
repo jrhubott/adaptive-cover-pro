@@ -3008,9 +3008,12 @@ async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> N
     """The compensating control behind the one ordering exemption (issue #1115).
 
     ``WindowTransitionTracker.check_sunset_window`` fans the sunset position out
-    in the order it is handed, and has no policy handle of its own — so the
-    coordinator has to order the list at the call site. This is the only thing
-    that notices when that wrap goes away.
+    in the order it is handed and has no policy handle of its own, so the
+    coordinator owns the ordering. Since #943 item B it owns it inside
+    ``resolve_dispatch`` — deferred until the sunset edge actually fires, and
+    applied to the CLAMPED number rather than the configured one, because a live
+    bound that crosses the rails turns a lowering into a raise and ordering must
+    not disagree with what is dispatched (#1118).
     """
     coord = MagicMock()
     coord.entities = [_MIDDLE, _BOTTOM]
@@ -3018,11 +3021,30 @@ async def test_sunset_window_transition_hands_the_tracker_an_ordered_list() -> N
     coord.config_entry.options = {}
     coord._inverse_state = False
     coord._window_tracker.check_sunset_window = AsyncMock()
+    # The bound composition has its own tests; a scripted clamp keeps this one
+    # on the ordering it exists to guard.
+    clamp = {"to": 0}
+    coord._clamp_to_outside_window_bounds = lambda _position, _options: clamp["to"]
+    coord._resolve_sunset_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_sunset_dispatch, coord
+    )
 
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
 
     kwargs = coord._window_tracker.check_sunset_window.await_args.kwargs
-    assert kwargs["entities"] == [_BOTTOM, _MIDDLE]
+    resolve = kwargs["resolve_dispatch"]
+    # Lowering to 0: the bottom rail is downstream, so it leads (#1115).
+    assert resolve(0) == (0, [_BOTTOM, _MIDDLE])
+
+    # Same configured 0, but a live floor raises it to 100 — the ordering view
+    # must be asked about the CLAMPED number, since that is what gets dispatched.
+    clamp["to"] = 100
+    with patch.object(
+        coord._policy, "order_for_dispatch", wraps=coord._policy.order_for_dispatch
+    ) as order:
+        position, _entities = resolve(0)
+    assert position == 100
+    assert order.call_args.kwargs["position"] == 100
 
 
 # ---------------------------------------------------------------------------

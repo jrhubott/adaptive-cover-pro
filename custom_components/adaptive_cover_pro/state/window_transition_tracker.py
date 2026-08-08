@@ -52,6 +52,8 @@ ApplyPositionFn = Callable[..., Awaitable[Any]]
 RefreshFn = Callable[[], Awaitable[Any]]
 IsCoverManualFn = Callable[[str], bool]
 EntityTargetFn = Callable[[str, int], int]
+# LOGICAL sunset position in → (LOGICAL position to send, ordered entities).
+ResolveDispatchFn = Callable[[int], tuple[int, list[str]]]
 
 
 class WindowTransitionTracker:
@@ -138,6 +140,7 @@ class WindowTransitionTracker:
         apply_position: ApplyPositionFn,
         refresh: RefreshFn,
         entity_target: EntityTargetFn | None = None,
+        resolve_dispatch: ResolveDispatchFn | None = None,
     ) -> None:
         """Detect False→True transition of the astronomical sunset window.
 
@@ -152,6 +155,16 @@ class WindowTransitionTracker:
         False→True edge is deliberately left unresolved so the dispatch fires
         on the first subsequent call where the override is no longer active,
         rather than being lost.
+
+        ``resolve_dispatch`` maps the configured LOGICAL sunset position onto
+        the pair this broadcast actually needs — the position to send and the
+        entities in policy-mandated dispatch order — so both come from one
+        derivation and cannot disagree about the direction of travel (#1118).
+        It is a callable rather than two pre-computed arguments because
+        resolving it costs an off-cycle snapshot build on the coordinator side,
+        while this method runs on every reconciliation tick and the edge it
+        guards fires at most once a night. ``None`` keeps the raw configured
+        position and the ``entities`` list exactly as supplied.
         """
         if not track_end_time:
             return
@@ -181,7 +194,10 @@ class WindowTransitionTracker:
         if not just_opened:
             return
 
-        pos_to_send = flip_if(int(sunset_pos_cfg), inverted=inverse_state_enabled)
+        pos_logical = int(sunset_pos_cfg)
+        if resolve_dispatch is not None:
+            pos_logical, entities = resolve_dispatch(pos_logical)
+        pos_to_send = flip_if(pos_logical, inverted=inverse_state_enabled)
         self._logger.info(
             "Sunset window opened after end_time — dispatching sunset position %s%% "
             "to %s cover(s) (issue #266)",

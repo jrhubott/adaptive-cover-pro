@@ -1264,3 +1264,85 @@ async def test_end_time_default_clamped_by_outside_window_bound():
     cmd_svc.apply_position.assert_called_once()
     # 30, not 100 — and exactly one command, so no clamp-then-correct double move.
     assert cmd_svc.apply_position.call_args[0][1] == 30
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_sunset_window_dispatch_clamped_by_outside_window_bound():
+    """The astronomical-sunset send must not punch through a live bound either.
+
+    Issue #943 item B, the sibling seam of ``_on_window_closed``.
+    ``WindowTransitionTracker.check_sunset_window`` fires *after* ``end_time``
+    by construction (#266), so the user's clock window is already closed when it
+    dispatches — and it dispatches ``sunset_position`` raw, straight past the
+    registry. A constraint-only slot defers, so ``_pipeline_has_active_override``
+    never sees it (#895), and every cover would go to 100 while an opted-in
+    ``position_max`` of 30 is live. The trailing ``refresh()`` then re-evaluates
+    and the registry clamps back to 30 — a send-then-correct double move in the
+    middle of the night, which is exactly what routing through the same clamp as
+    the end-of-window default avoids.
+    """
+    from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    from tests.test_pipeline.conftest import make_snapshot
+    from tests.test_pipeline.test_outside_window_constraints import _slot
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = ["cover.test"]
+    coord.hass = MagicMock()
+    coord._policy = get_policy("cover_blind")
+    coord._pipeline_result = None
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    coord._cmd_svc = cmd_svc
+    coord.async_refresh = AsyncMock()
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=False))
+    coord.manager = MagicMock()
+    coord.manager.is_cover_manual = MagicMock(return_value=False)
+
+    # ``return_sunset`` parks the blind fully open at astronomical sunset —
+    # exactly the value the live ceiling has to clamp.
+    options = {CONF_SUNSET_POS: 100}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    coord._cover_data = MagicMock()
+    coord._build_user_command_snapshot = MagicMock(
+        return_value=make_snapshot(
+            custom_position_sensors=[_slot(position_max=30, outside_window=True)],
+            clock_window_open=False,
+        )
+    )
+
+    # Seeded False so this call observes the False→True astronomical-sunset edge.
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        effective_default_fn=lambda _opts: (100, True),
+    )
+    tracker._prev_sunset_active = False
+    coord._window_tracker = tracker
+
+    await coord._check_sunset_window_transition()
+
+    cmd_svc.apply_position.assert_called_once()
+    # 30, not 100 — one command, and no send-then-correct double move at night.
+    assert cmd_svc.apply_position.call_args[0][1] == 30

@@ -16,6 +16,7 @@ issue #132 for the detailed analysis.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -57,6 +58,11 @@ def _make_coordinator(
         check_adaptive_time if clock_window_open is None else clock_window_open
     )
     coordinator._pipeline_acts_outside_clock_window = acts_outside_clock_window
+    # No result computed yet — the default for every scenario in this file. It
+    # is pinned for the same reason as the flag above: the force-send path reads
+    # ``_pipeline_result.outside_window_constraint_active`` to decide whether to
+    # route per cover, and a bare ``MagicMock`` attribute is truthy.
+    coordinator._pipeline_result = None
     coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
@@ -680,6 +686,150 @@ async def test_first_refresh_still_blocked_without_admission():
     )
 
     coordinator._cmd_svc.apply_position.assert_not_called()
+
+
+def _make_pseudo_hold_coordinator(*, positions: dict[str, int], mean: int):
+    """Build a force-send coordinator carrying the outside-window pseudo-hold.
+
+    Outside the clock window the registry judges a computed winner as if it held
+    each cover's current read, so ``PipelineResult.position`` is the instance
+    MEAN and the per-cover answers live in ``hold_clamp_verdicts`` (#943 item B
+    borrowing #1174's machinery).
+    """
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import (
+        HoldClampVerdict,
+        PipelineResult,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+    coordinator.entities = list(positions)
+    coordinator._inverse_state = False
+    coordinator.position_axis_inverted = False
+    coordinator._to_cover_frame = lambda position: position
+    coordinator._pipeline_result = PipelineResult(
+        position=mean,
+        control_method=ControlMethod.DEFAULT,
+        outside_window_constraint_active=True,
+        hold_clamp_verdicts={
+            entity: HoldClampVerdict(held_position=pos, released=True, target=pos)
+            for entity, pos in positions.items()
+        },
+    )
+    coordinator._dispatch_to_cover = (
+        AdaptiveDataUpdateCoordinator._dispatch_to_cover.__get__(coordinator)
+    )
+    return coordinator
+
+
+@pytest.mark.asyncio
+async def test_force_send_outside_window_honors_per_cover_verdicts():
+    """An admitted force-send must not blast the instance mean at every cover.
+
+    #943 item B: outside the clock window the registry converts a computed
+    winner into a pseudo-hold, so ``PipelineResult.position`` — and therefore
+    ``coordinator.state`` — is the arithmetic MEAN of the instance, while each
+    cover's real answer sits in ``hold_clamp_verdicts``. Two covers at 80 and
+    10 with a tilt bound binding would both be driven ~35 points at 03:00.
+
+    ``honor_holds`` cannot rescue this: ``_INSTANCE_MEAN_POSITION_HOLDS`` is
+    keyed on ``ControlMethod`` and the pseudo-hold's winner is ``DEFAULT``, and
+    both callers that reach here outside the window (the manual-override
+    auto-expiry branch and ``async_reset_manual_overrides``) pass
+    ``honor_holds=False`` anyway.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_pseudo_hold_coordinator(
+        positions={"cover.high": 80, "cover.low": 10}, mean=45
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=45, options={}
+    )
+
+    # Each cover stays where it already is; only the constrained axis moves.
+    assert [
+        (call.args[0], call.args[1])
+        for call in coordinator._cmd_svc.apply_position.call_args_list
+    ] == [("cover.high", 80), ("cover.low", 10)]
+
+
+@pytest.mark.asyncio
+async def test_force_send_outside_window_skips_covers_the_bound_left_alone():
+    """A cover the bound never moved gets a hold-skip record, not a command.
+
+    The position-axis-only case: the pseudo-hold's verdicts say "released" for
+    the cover a ceiling lowered and "held" for the one already compliant. The
+    held cover must not receive the mean.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import HoldClampVerdict
+
+    coordinator = _make_pseudo_hold_coordinator(
+        positions={"cover.high": 80, "cover.low": 10}, mean=45
+    )
+    coordinator._pipeline_result = dataclasses.replace(
+        coordinator._pipeline_result,
+        hold_clamp_verdicts={
+            # A ceiling of 30 lowered the high cover and left the low one alone.
+            "cover.high": HoldClampVerdict(held_position=80, released=True, target=30),
+            "cover.low": HoldClampVerdict(held_position=10, released=False, target=10),
+        },
+    )
+
+    sent = await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=45, options={}
+    )
+
+    assert [
+        (call.args[0], call.args[1])
+        for call in coordinator._cmd_svc.apply_position.call_args_list
+    ] == [("cover.high", 30)]
+    assert sent == {"cover.high"}
+    assert coordinator._cmd_svc.record_skipped_action.call_args.args[0] == "cover.low"
+
+
+@pytest.mark.asyncio
+async def test_force_send_in_window_still_sends_the_shared_state():
+    """Byte-identical in-window control: no verdict routing while the clock is open.
+
+    ``outside_window_constraint_active`` is only ever set on a closed-clock
+    cycle, so an in-window force-send keeps the direct ``apply_position`` path
+    and the shared ``state`` even with per-cover verdicts present.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_pseudo_hold_coordinator(
+        positions={"cover.high": 80, "cover.low": 10}, mean=45
+    )
+    coordinator.clock_window_open = True
+    coordinator.check_adaptive_time = True
+    coordinator._pipeline_acts_outside_clock_window = False
+    coordinator._pipeline_result = dataclasses.replace(
+        coordinator._pipeline_result, outside_window_constraint_active=False
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=45, options={}
+    )
+
+    assert [
+        (call.args[0], call.args[1])
+        for call in coordinator._cmd_svc.apply_position.call_args_list
+    ] == [("cover.high", 45), ("cover.low", 45)]
 
 
 # ---------------------------------------------------------------------------

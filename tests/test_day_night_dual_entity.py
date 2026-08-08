@@ -412,6 +412,12 @@ async def test_sunset_seam_inverse_uses_seam_space_not_cached_flag() -> None:
     coord._entity_target = types.MethodType(
         AdaptiveDataUpdateCoordinator._entity_target, coord
     )
+    # Real clamp-then-order seam (#943 item B), with the bound composition —
+    # which has its own tests — stubbed to identity so this stays a frame test.
+    coord._clamp_to_outside_window_bounds = lambda position, _options: position
+    coord._resolve_sunset_dispatch = types.MethodType(
+        AdaptiveDataUpdateCoordinator._resolve_sunset_dispatch, coord
+    )
 
     # Seed prior state (no dispatch), then open the window.
     await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
