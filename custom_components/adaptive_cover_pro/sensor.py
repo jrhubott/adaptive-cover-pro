@@ -357,53 +357,28 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
 def _target_position(states: Mapping[str, Any], result: Any) -> Any:
     """Resolve where ACP is putting this cover — the Target Position value.
 
-    The single definition behind all three of this sensor's target surfaces —
-    its own state, its ``target_distance``, and its ``all_at_target`` verdict.
-    Before #1175 each derived the target itself: the first two identically (and
-    identically wrong once a bound clamped), the third from the raw ``state``
-    with no ``held_position`` term at all, which is how a perfectly-held group
-    read as "not at target".
+    The one definition behind all three of this sensor's target surfaces — its
+    own state, its ``target_distance``, and its ``all_at_target`` verdict. Each
+    derived the target separately before #1175, and they disagreed.
 
     A hold winner keeps the cover's *physical* position rather than proposing a
     computed one, so ``held_position`` is the honest answer while the hold is
-    holding: it beats the value the hold merely shadows (#534 / #809).
+    holding: it beats the value the hold merely shadows (#534 / #809). It stops
+    being the answer once a user-configured bound outranks the holder and clamps
+    it — the hold no longer decides where this cover goes, while
+    ``held_position`` still carries the pre-clamp read (#1175).
 
-    It stops being the answer once a user-configured bound outranks the holder
-    and CLAMPS it. The registry writes the clamped value into ``position``, sets
-    ``position_constraint_applied``, and clears ``skip_command`` in one
-    ``dataclasses.replace`` — the hold no longer decides where this cover goes,
-    while ``held_position`` still carries the pre-clamp read. Reporting that read
-    then names a position the cover is being moved off (#1175).
+    ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``. The
+    tilt axis clears ``skip_command`` too, but there the position axis stayed
+    inert and the winner's ``position`` was rewritten from the held read — the
+    cover is being commanded to where it already is, so the physical read is
+    still right. Only the position-axis flag means a bound re-targeted this
+    winner.
 
-    The flag says a bound re-targeted the winner; it does not promise the frame
-    reached the motor. ``_dispatch_for_cycle`` returns at the clock-window gate
-    before it ever consults ``position_constraint_applied``, so a non-safety
-    clamp resolved outside the user's start/end window updates this sensor and
-    sends nothing. That is deliberate and not special to holds: the pipeline
-    runs every cycle regardless, and outside the clock window ``DefaultHandler``
-    wins and is surfaced here the same way, undispatched. (Not ``solar`` — it
-    declines on ``in_time_window``, which is the clock window ANDed with the
-    daytime gate, so it can never be the winner while that gate suppresses.)
-    This surface is the pipeline's resolved target, not a dispatch log.
-
-    ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``, and the
-    two are not interchangeable. The tilt axis also clears ``skip_command``
-    (``registry._release_hold_for_tilt_clamp``) — but there the position axis
-    stayed inert and the winner's ``position`` is rewritten FROM the held read,
-    so the cover is being commanded to where it already is and the physical read
-    remains the honest answer. Keying on the position-axis flag confines the
-    change to bounds that actually re-targeted the winner, which is #1175's
-    scope.
-
-    That leaves the tilt-clamp path on the held read even in the two cases where
-    the dispatched number is not literally it — under ``CONF_INTERP``, where
-    ``coordinator._to_cover_frame`` interpolates the rewritten position on its
-    way to the wire, and on a coupled type, where
-    ``CoverTypePolicy.hold_reference_position`` decodes one abstract coverage
-    (#1179) while ``held_position`` stays the raw entry mean. Both predate this
-    gate and are unchanged by it; the interpolated-hold divergence is the known
-    limitation ``pipeline/handlers/motion_timeout.py`` and #1175 both flag, and
-    it is a separate fix — not something to launder through this predicate.
+    ``position_constraint_applied`` says a bound re-targeted the winner; it does
+    NOT say a frame reached the motor, and this surface does not claim one did.
+    It reports the pipeline's resolved target — as it already does for every
+    winner the dispatch gates go on to suppress — not a dispatch log.
     """
     held = states.get("held_position")
     clamped = result is not None and result.position_constraint_applied
