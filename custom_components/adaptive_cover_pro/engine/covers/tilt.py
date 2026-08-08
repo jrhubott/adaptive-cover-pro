@@ -49,6 +49,28 @@ def _interpolate(x: float, x0: float, x1: float, y0: float, y1: float) -> float:
     return y0 + (x - x0) / (x1 - x0) * (y1 - y0)
 
 
+def clamp_to_percentage_scale(value: float) -> float:
+    """Pin *value* onto the 0–100 scale a cover axis can actually be commanded to.
+
+    Sole owner of that clamp, shared by every place a mapped percentage becomes
+    a COMMAND: :meth:`AdaptiveTiltCover.calculate_percentage` for the solar
+    path, :meth:`AdaptiveTiltCover.climate_tilt_percentage` for the climate one,
+    and ``TiltPolicy.climate_tilt_percentage``'s engine-less fallback.
+
+    It has to be applied at those seams and nowhere earlier, because
+    :meth:`AdaptiveTiltCover._percentage_from_angle` and its inverse are
+    deliberately unclamped — a scale calibrated entirely to one side of
+    horizontal images the pivot outside 0–100, and that out-of-range image is
+    exactly what keeps :meth:`coverage_distance` ordering correctly. So the map
+    stays honest about what the scale SAYS, and the command layer pins the
+    answer to what the drive can reach. ``PositionConverter.apply_limits``
+    clips again far downstream; relying on that would leave every method
+    between here and there returning values its own docstring forbids
+    (#1222 audit).
+    """
+    return max(0.0, min(100.0, float(value)))
+
+
 def hinge_is_usable(
     angle_0: float, angle_100: float, horizontal_percent: float
 ) -> bool:
@@ -579,7 +601,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 self._last_calc_details["tilt_horizontal_percent"] = (
                     self.horizontal_percent
                 )
-            pct = max(0.0, min(100.0, percentage))
+            pct = clamp_to_percentage_scale(percentage)
         else:
             # Same effective ceiling the position solve clamps to (the mode max
             # for tilt/venetian; a configurable physical max for the louvered roof).
@@ -691,6 +713,15 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         pair; the proportionality constant cancels out of the only thing the
         caller does with two distances, which is compare them.
 
+        Proportional, not identical — and the difference is visible in the last
+        ulp. The base metric scored integer percentages against a pivot with
+        exact arithmetic, so a symmetric pair tied exactly; multiplying through
+        to degrees does not, and ``44`` and ``56`` — both exactly 10.8° off
+        horizontal — come out 1.4e-14 apart. Comparing them has to tolerate
+        that, which is why ``CoverTypePolicy.more_protective_position`` calls a
+        tie inside ``_COVERAGE_DISTANCE_TIE_EPS`` rather than testing equality
+        (#1222 audit).
+
         It stops cancelling the moment the scale hinges. On the reporting
         blind's 0°/90°/130° calibration, 40 % is 72° — 18° of closure — and 65 %
         is 102°, only 12°; ranked by percentage the second wins by 15 points to
@@ -737,8 +768,32 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         where it means anything: on a hinged scale, reflecting the percentage
         about the pivot lands somewhere else entirely.
 
+        A LOUVERED ROOF with a configured ``max_slat_angle`` is rescaled by this
+        too, deliberately, even though issue #1222 is about venetians. Its
+        travel is neither 90° nor 180°, so the static formula was answering it
+        on a denominator its drive does not have: a 140° pergola's default tilt
+        moves 89 % → 57 % and its summer tilt 50 % → 32 %, and because
+        horizontal is then a strictly interior 64.3 %, MODE1 starts taking the
+        winter mirror it used to decline (33 % → 86 %). Every one of those is
+        the slat angle the climate rule actually asked for, which the old
+        answers were not. Pinned by
+        ``tests/test_adaptive_tilt_cover.py::TestLouveredRoofClimateTiltIsRescaled``
+        and ``tests/test_climate_cover_state.py`` (#1222 audit).
+
+        The answer is a COMMAND, so it is pinned to the reachable scale by
+        :func:`clamp_to_percentage_scale` — the map underneath is deliberately
+        unclamped and a rescaled mirror or a one-sided calibration can image the
+        target outside 0–100 (``max_slat_angle = 100`` mirrors a 30° profile
+        angle to 120 %; a 100°/170° pair puts an 80° target at −29 %). The
+        ``Returns`` contract below is the promise; keeping it is this method's
+        job rather than the far-downstream ``apply_limits`` clip's.
+
         ``None`` on a degenerate scale, leaving the caller free to fall back —
         which the policy does, to the formula it has always used.
+
+        Returns:
+            Tilt percentage on the 0–100 command scale, or ``None``.
+
         """
         pivot = self._horizontal_percentage()
         if pivot is None:
@@ -749,7 +804,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         percentage = self._percentage_from_angle(effective_angle)
         if percentage is None:
             return None
-        return round(percentage)
+        return round(clamp_to_percentage_scale(percentage))
 
     def coverage_travel_bounds(self) -> tuple[float, float]:
         """Report ``[min_tilt, max_tilt]`` as the reachable travel (#1104).

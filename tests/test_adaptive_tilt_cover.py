@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock
 
-from tests.cover_helpers import build_tilt_cover
+from tests.cover_helpers import build_louvered_roof_cover, build_tilt_cover
 
 # Window azimuth every ``_tilt_at`` cover faces, so a test can place the sun by
 # surface-solar azimuth (``gamma``) rather than restating the facade orientation.
@@ -1244,3 +1244,137 @@ class TestMode1ClampCrossover:
             assert commanded == TILT_HORIZONTAL_DEG
         else:
             assert commanded == pytest.approx(raw)
+
+
+# ---------------------------------------------------------------------------
+# Climate tilt on a rescaled slat drive (issue #1222 audit)
+# ---------------------------------------------------------------------------
+# Routing the climate target angle through the engine's own map does not only
+# reach ``specify_angles`` covers. A LOUVERED ROOF with a configured
+# ``max_slat_angle`` is a rescaled drive too, and its climate percentages move
+# as a result. The new answers track the slat's actual travel instead of a
+# hardcoded 90°/180° denominator, which is the whole point of the change — but
+# it is a behaviour change on a cover type the issue never mentions, so it is
+# pinned here rather than left to be discovered.
+
+# ``mode``, target angle, ``sun_through``, the mode-based fallback's answer
+# (what a 140° louvered roof got before the engine seam existed), and the
+# rescaled answer it gets now.
+_LOUVERED_140_CLIMATE = [
+    ("mode1", 80.0, False, 89, 57),
+    ("mode1", 45.0, False, 50, 32),
+    ("mode1", 30.0, True, 33, 86),
+    ("mode2", 80.0, False, 44, 57),
+    ("mode2", 45.0, False, 25, 32),
+    ("mode2", 30.0, True, 67, 86),
+]
+
+
+class TestLouveredRoofClimateTiltIsRescaled:
+    """A configured ``max_slat_angle`` rescales the climate tilt too (#1222)."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("mode", "angle_deg", "sun_through", "before", "after"), _LOUVERED_140_CLIMATE
+    )
+    def test_max_slat_angle_rescales_the_climate_percentage(
+        self, mode, angle_deg, sun_through, before, after
+    ):
+        """The 140° drive's climate answers now sit on its own 140° scale.
+
+        ``before`` is what the mode-based formula still answers with no engine
+        in scope: MODE1 divides by 90° and MODE2 by 180°, neither of which is
+        this pergola's travel. ``after`` is the engine's answer on the drive's
+        real scale — an 80° slat is 57 % of 140°, not 89 % of 90°.
+
+        The two ``sun_through`` rows carry the largest jump, and for a second
+        reason: the hemisphere mirror is gated on the pivot being strictly
+        interior, and ``max_slat_angle = 140`` puts horizontal at 64.3 %. So a
+        MODE1 louvered roof now mirrors where plain MODE1 (pivot 100 %) never
+        did — correct, because a 140° drive really does have travel on the far
+        side of horizontal, and exactly the class of defect this change set out
+        to close.
+        """
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = build_louvered_roof_cover(
+            sol_azi=180.0, sol_elev=45.0, roof_pitch=0.0, mode=mode, max_slat_angle=140
+        )
+        assert cover.coverage_pivot_percentage() == pytest.approx(9000 / 140)
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg, mode=mode, sun_through=sun_through
+            )
+            == before
+        )
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg, mode=mode, sun_through=sun_through, cover=cover
+            )
+            == after
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(("mode", "before"), [("mode1", 89), ("mode2", 44)])
+    def test_unset_max_slat_angle_leaves_the_preset_scale_alone(self, mode, before):
+        """The ``0`` sentinel is not a scale — a plain pergola is unchanged."""
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = build_louvered_roof_cover(
+            sol_azi=180.0, sol_elev=45.0, roof_pitch=0.0, mode=mode, max_slat_angle=0
+        )
+        assert (
+            TiltPolicy.climate_tilt_percentage(angle_deg=80.0, mode=mode, cover=cover)
+            == before
+        )
+
+
+class TestClimateTiltPercentageStaysInRange:
+    """``climate_tilt_percentage`` honours its own 0–100 contract (#1222 audit)."""
+
+    @pytest.mark.unit
+    def test_a_rescaled_mirror_cannot_overshoot_the_top_of_the_scale(self):
+        """``max_slat_angle = 100`` puts the mirrored winter angle past 100 %.
+
+        Horizontal sits at 90 % of a 100° drive, which is strictly interior, so
+        winter heating mirrors a 30° profile angle to 120° — 120 % of the
+        travel. The drive cannot go there; the reachable answer is its top end.
+        """
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = build_louvered_roof_cover(
+            sol_azi=180.0,
+            sol_elev=45.0,
+            roof_pitch=0.0,
+            mode="mode2",
+            max_slat_angle=100,
+        )
+        assert cover._percentage_from_angle(120.0) == pytest.approx(120.0)
+        assert cover.climate_tilt_percentage(30.0, sun_through=True) == 100
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=30.0, mode="mode2", sun_through=True, cover=cover
+            )
+            == 100
+        )
+
+    @pytest.mark.unit
+    def test_a_one_sided_calibration_cannot_undershoot_the_bottom(self):
+        """A 100°/170° pair never reaches 80°, so the target images negative.
+
+        ``specify_angles`` accepts a calibration entirely above horizontal, and
+        the map is deliberately unclamped so an off-travel pivot keeps ordering
+        correctly. The climate percentage is a COMMAND, though, and −29 % is not
+        one.
+        """
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _calibrated_tilt(angle_0=100.0, angle_100=170.0)
+        assert cover._percentage_from_angle(80.0) == pytest.approx(-200 / 7)
+        assert cover.climate_tilt_percentage(80.0) == 0
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=80.0, mode="specify_angles", cover=cover
+            )
+            == 0
+        )

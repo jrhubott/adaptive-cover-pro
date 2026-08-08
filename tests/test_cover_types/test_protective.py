@@ -103,6 +103,57 @@ def test_symmetric_straddle_tie_breaks_to_axis_rule() -> None:
 
 
 @pytest.mark.unit
+def test_symmetric_straddle_really_reaches_the_axis_rule() -> None:
+    """Non-vacuity companion to the guard above (#1222 audit).
+
+    That guard names the axis rule but cannot see whether it ran. 30 % and 70 %
+    are both 36° off horizontal, so the distance metric is supposed to abstain —
+    but it is computed as ``|30/100·180 − 90|`` against ``|70/100·180 − 90|``,
+    and the second overshoots 36° by a few ulps. Under an exact ``!=`` the
+    metric therefore answers first, and answers 30 for no better reason than
+    which way the rounding fell.
+
+    Swapping the axis direction on the SAME engine separates the two branches:
+    the tilt and awning policies share this comparator and differ only in the
+    axis rule, so a distance metric that decided would hand both the same
+    percentage.
+    """
+    cover = _mode2_tilt_cover()
+    assert cover.coverage_distance(30) == pytest.approx(cover.coverage_distance(70))
+    assert get_policy("cover_tilt").more_protective_position(30, 70, cover=cover) == 30
+    assert (
+        get_policy("cover_awning").more_protective_position(30, 70, cover=cover) == 70
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("low", range(50))
+def test_symmetric_mode2_pairs_all_fall_through_to_the_axis_rule(low: int) -> None:
+    """Every ``pct`` / ``100 − pct`` pair on MODE2 is a tie (#1222 audit).
+
+    The shipped-default scale is symmetric about horizontal, so the two members
+    of each of these 50 pairs are the same number of degrees off it and neither
+    blocks more sun. Angle-space distance computes them through different
+    arithmetic, though — ``44/100·180`` lands 1.4e-14 below 10.8° while
+    ``56/100·180`` lands 1.4e-14 above — so an exact inequality test reads
+    floating-point noise as a real difference. 13 of these pairs used to flip
+    that way, all of them from the axis rule's answer to its opposite, the worst
+    an 82-point swing between two equally protective slats (9 ↔ 91).
+
+    Both axis directions are asserted for the same reason as the case above:
+    only the axis rule can distinguish them, so agreement here is proof the tie
+    fell through instead of being decided.
+    """
+    high = 100 - low
+    cover = _mode2_tilt_cover()
+    tilt, awning = get_policy("cover_tilt"), get_policy("cover_awning")
+    assert tilt.more_protective_position(low, high, cover=cover) == low
+    assert tilt.more_protective_position(high, low, cover=cover) == low
+    assert awning.more_protective_position(low, high, cover=cover) == high
+    assert awning.more_protective_position(high, low, cover=cover) == high
+
+
+@pytest.mark.unit
 def test_no_cover_falls_back_to_monotonic_rule() -> None:
     """Callers with no engine in scope (the glare-zone handler) are unchanged."""
     assert get_policy("cover_tilt").more_protective_position(55, 60) == 55

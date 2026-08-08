@@ -36,7 +36,7 @@ from ..const import (
     VENETIAN_TILT_TRANSFORMS,
 )
 from ..engine.covers import AdaptiveTiltCover
-from ..engine.covers.tilt import hinge_is_usable
+from ..engine.covers.tilt import clamp_to_percentage_scale, hinge_is_usable
 from ..const import TiltMode
 from ..unit_system import slat_default, slat_selector
 from ._helpers import slat_geometry_parts
@@ -331,7 +331,11 @@ class TiltPolicy(CoverTypePolicy, register=True):
                 louvered roof's ``max_slat_angle`` — is the authority.
 
         Returns:
-            Tilt percentage (0–100) for the cover entity.
+            Tilt percentage (0–100) for the cover entity. Every path pins the
+            answer onto that scale via ``clamp_to_percentage_scale`` — the
+            engine's map is deliberately unclamped so an off-travel pivot keeps
+            ordering correctly, which means the last step before a COMMAND is
+            where the range promise has to be kept (#1222 audit).
 
         """
         if cover is not None:
@@ -345,7 +349,11 @@ class TiltPolicy(CoverTypePolicy, register=True):
         # call sites that historically compared against both forms).
         if not TiltPolicy.is_mode2(mode):
             # MODE1: 0° → 0%, 90° → 100%.
-            return round((angle_deg / TiltMode.MODE1.max_degrees) * 100)
+            return round(
+                clamp_to_percentage_scale(
+                    (angle_deg / TiltMode.MODE1.max_degrees) * 100
+                )
+            )
 
         # MODE2: bi-directional 0–180° scale where 50% is horizontal/open.
         # Intent alone picks the hemisphere — NOT the sun's left/right side.
@@ -363,7 +371,7 @@ class TiltPolicy(CoverTypePolicy, register=True):
         else:
             # Blocking: the closed hemisphere containing the profile angle.
             effective_angle = angle_deg
-        return round((effective_angle / max_degrees) * 100)
+        return round(clamp_to_percentage_scale((effective_angle / max_degrees) * 100))
 
     def targets_full_mechanical_endpoint(
         self,
