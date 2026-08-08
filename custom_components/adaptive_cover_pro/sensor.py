@@ -355,8 +355,34 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
 
 
 def _cover_position_value(s: _ACPSensor) -> Any:
+    """Return where ACP is putting this cover — the Target Position value.
+
+    A hold winner keeps the cover's *physical* position rather than proposing a
+    computed one, so ``held_position`` is the honest answer while the hold is
+    holding: it beats the value the hold merely shadows (#534 / #809).
+
+    It stops being the answer once a user-configured bound outranks the holder
+    and CLAMPS it. The registry writes the clamped value into ``position``, sets
+    ``position_constraint_applied``, and clears ``skip_command`` in one
+    ``dataclasses.replace`` — a command *is* dispatched, while ``held_position``
+    still carries the pre-clamp read. Reporting that read then names a position
+    the cover is actively leaving (#1175).
+
+    ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``, and the
+    two are not interchangeable here. The tilt axis also clears ``skip_command``
+    (``registry._release_hold_for_tilt_clamp``) — but that path rewrites
+    ``position`` to the held read itself, so ``state`` and ``held`` already agree
+    and routing it through ``state`` would only push a raw motor read back
+    through ``coordinator._to_cover_frame``, which re-interpolates it under
+    ``CONF_INTERP``. Keying on the position-axis flag flips exactly the cases
+    where the dispatched value genuinely differs, and leaves the tilt-clamp path
+    alone.
+    """
     held = s.data.states.get("held_position")
-    if held is not None:
+    result = s.coordinator._pipeline_result  # noqa: SLF001
+    if held is not None and not (
+        result is not None and result.position_constraint_applied
+    ):
         return held
     return s.data.states["state"]
 
@@ -492,10 +518,11 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         else:
             attrs["all_at_target"] = None
 
-    target_pos = s.data.states.get("held_position")
-    if target_pos is None:
-        target_pos = s.data.states.get("state")
-    distance_attrs = _compute_distance_attrs(s.coordinator, snapshot, target_pos)
+    # Same value the sensor itself reports — one helper, so the distance can
+    # never describe a position the state does not (#1175).
+    distance_attrs = _compute_distance_attrs(
+        s.coordinator, snapshot, _cover_position_value(s)
+    )
     if distance_attrs is not None:
         attrs.update(distance_attrs)
 
