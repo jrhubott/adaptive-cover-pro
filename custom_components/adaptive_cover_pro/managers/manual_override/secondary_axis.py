@@ -38,6 +38,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ...const import POSITION_TOLERANCE_PERCENT
+from ...position_utils import flip_if
 
 
 def resolve_dispatched_secondary_expected(
@@ -143,16 +144,27 @@ class SecondaryAxisCheck:
     # one-shot-popped): endpoint publish marks, target-return consumes
     # (issue #927/#930).
     excursion_match: Callable[[str, float], bool] | None = None
-    # Normalises the raw published value into the same space as ``expected``
-    # before the delta comparison. ``expected`` is the LOGICAL
-    # dispatched value (``last_tilt_target``), but the actuator publishes the
-    # WIRE value — with ``inverse_tilt`` these differ by ``100 - x``, so a raw
-    # ``abs(expected - new_value)`` reads a fully-verified tilt as a ~``|2·x-100|``
-    # manual move. Symmetric (logical↔wire), so it maps the reported wire value
-    # back to logical. Defaults to identity for axes/covers without inversion.
-    # The excursion/suppression callbacks keep receiving the RAW value — they
-    # normalise internally (venetian's ``_publish_matches`` applies ``_to_wire``).
-    to_wire: Callable[[int], int] | None = None
+    # AUTHORITATIVE note on the wire/logical mismatch (issue #1227) — callers
+    # (``VenetianPolicy``/``DayNightShadePolicy.secondary_axis_check``) should
+    # point back here rather than re-deriving this explanation.
+    #
+    # Whether the reported value needs a frame flip before the delta
+    # comparison. ``expected`` is the LOGICAL dispatched value
+    # (``last_tilt_target``), but the actuator publishes the WIRE value — with
+    # ``inverse_tilt`` these differ by ``100 - x``, so an un-flipped
+    # ``abs(expected - new_value)`` reads a fully-verified tilt as a
+    # ~``|2·x-100|`` manual move. ``flip_if`` (this module's import from
+    # ``position_utils``, the project's single source for this conditional —
+    # issues #1036/#1042) is its own inverse, so the same flag maps the
+    # reported wire value back to logical. Callers derive the flag from
+    # ``DualAxisSequencer.tilt_inverted``, a sibling of the config-level
+    # ``cover_types.base.axis_inverted`` predicate (#1028) — same question,
+    # answered from the sequencer's own dispatch-time inversion callable
+    # instead of re-reading options. Defaults to ``False`` (identity) for
+    # axes/covers without inversion. The excursion/suppression callbacks keep
+    # receiving the RAW value — they normalise internally (venetian's
+    # ``_publish_matches`` applies ``_to_wire``).
+    inverted: bool = False
 
     def consume_excursion(self, entity_id: str, new_state) -> None:
         """Advance the excursion trajectory state under another gate.
@@ -188,6 +200,19 @@ class SecondaryAxisCheck:
 
         effective_threshold = effective_manual_threshold(manual_threshold)
 
+        # Normalise the reported WIRE value back into ``expected``'s LOGICAL
+        # space up front (see the ``inverted`` field for why) — identity when
+        # False. Computed before the excursion branch below so EVERY
+        # ``new_position`` this method reports (both branches of
+        # ``manual_override_rejected_tilt_suppression`` and
+        # ``manual_override_set``) is consistently LOGICAL, matching every
+        # other tilt diagnostic on the ``event_timeline``
+        # (``tilt_command_sent``/``tilt_command_verified``/``tilt_command_drift``
+        # all report the logical value; issue #1227 PR-3). The
+        # excursion/suppression MATCH calls below keep using the RAW
+        # ``new_value`` — only the diagnostic payload is normalised here.
+        reported = flip_if(new_value, inverted=self.inverted)
+
         # Issue #927: consult the value-based excursion predicate FIRST, before
         # the delta-based suppression grace check. A drift-reset publish must be
         # recognised and its trajectory state advanced (endpoint marked /
@@ -205,7 +230,7 @@ class SecondaryAxisCheck:
                 event_name="manual_override_rejected_tilt_suppression",
                 event_kwargs={
                     "our_state": self.expected,
-                    "new_position": new_value,
+                    "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
                         f"{self.label} value {new_value:.0f}% lies on an ACP "
@@ -223,11 +248,6 @@ class SecondaryAxisCheck:
         # position axis, which carries its own recorded target, still runs.
         if self.expected is None:
             return SecondaryAxisResult()
-
-        # Normalise the reported WIRE value back into ``expected``'s LOGICAL
-        # space before the delta (see the ``to_wire`` field for why). Identity
-        # when unset; the excursion/suppression callbacks keep the RAW value.
-        reported = self.to_wire(new_value) if self.to_wire is not None else new_value
 
         delta = abs(self.expected - reported)
 

@@ -63,7 +63,7 @@ from ...managers.cover_command.gates import (
     filter_endpoint_specials,
 )
 from ...managers.cover_command.transit import is_state_in_transit
-from ...position_utils import inverse_state
+from ...position_utils import flip_if
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -247,17 +247,29 @@ class DualAxisSequencer:
 
     # -- tilt inversion ---------------------------------------------------- #
 
+    @property
+    def tilt_inverted(self) -> bool:
+        """Whether this instance's tilt axis is currently wire-inverted.
+
+        Public seam (issue #1227 PR-2) so a policy building a
+        ``SecondaryAxisCheck`` can state the frame declaratively
+        (``inverted=self.tilt_inverted``) instead of reaching for the private
+        ``_to_wire`` method — the single source of truth for "is this axis
+        inverted right now?" that ``_to_wire`` itself delegates to below.
+        """
+        return self._invert_tilt is not None and self._invert_tilt()
+
     def _to_wire(self, tilt: int) -> int:
         """Convert logical tilt to wire value, applying inversion if configured.
 
         Symmetric: applied to a logical value yields wire; applied to a wire
         value yields logical. Both directions go through the same inversion
         check, so callers reading the actuator can use this to compare
-        against a logical target.
+        against a logical target. Delegates to :func:`flip_if` — the project's
+        single source of truth for the "flip on inversion" conditional
+        (issues #1036/#1042) — rather than re-deriving the ternary here.
         """
-        if self._invert_tilt is not None and self._invert_tilt():
-            return inverse_state(tilt)
-        return tilt
+        return flip_if(tilt, inverted=self.tilt_inverted)
 
     def _publish_matches(self, new_value: float, logical_tilt: int) -> bool:
         """Whether a published wire value matches a LOGICAL tilt within tolerance."""

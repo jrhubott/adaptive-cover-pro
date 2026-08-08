@@ -1606,3 +1606,177 @@ def test_inverse_tilt_genuine_off_target_move_still_trips() -> None:
     assert mgr.is_cover_manual(
         entity_id
     ), "a genuine off-target tilt move must still trip even with inversion normalised"
+
+
+def test_inverse_tilt_mirror_value_move_still_trips() -> None:
+    """The mirror-value false negative (TEST_GAP finding #2): a genuine user
+    move that happens to land the actuator on the WIRE value numerically equal
+    to ``expected`` must still trip — not be swallowed by a raw
+    ``new_value == self.expected`` on-target short-circuit. ACP dispatched
+    logical 96 (wire 4); the user twists the slats until the actuator publishes
+    wire 96 (logical 4) — a 92-point real move that lands exactly on the
+    un-normalised ``expected`` number by coincidence.
+    """
+    entity_id = "cover.raffstore_mirror"
+    policy = _make_inverse_policy()
+    check = _secondary_check(policy, 96)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=96),  # wire 96 -> logical 4
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert mgr.is_cover_manual(entity_id), (
+        "a genuine move to the mirror value must trip, not be swallowed by an "
+        "un-normalised on-target short-circuit"
+    )
+
+
+def _make_identity_policy() -> VenetianPolicy:
+    """Build a VenetianPolicy over a non-inverting sequencer (``invert_tilt=False``).
+
+    Pins that the normalisation is a no-op for the identity path — the PR's
+    central safety claim (TEST_GAP finding #3).
+    """
+    seq = DualAxisSequencer(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        invert_tilt=lambda: False,
+    )
+    grace_mgr = MagicMock()
+    grace_mgr.is_in_command_grace_period = lambda _eid: False
+    policy = VenetianPolicy()
+    policy._sequencer = seq
+    policy._grace_mgr = grace_mgr
+    return policy
+
+
+def test_non_inverting_tilt_delta_is_unchanged() -> None:
+    """A non-inverting install's delta must be byte-unchanged by the fix.
+
+    ACP dispatched logical 70; the actuator publishes 40 directly (no wire
+    inversion configured) — a genuine 30-point move that must trip exactly as
+    it did before the ``inverted``/normalisation seam existed.
+    """
+    entity_id = "cover.raffstore_identity"
+    policy = _make_identity_policy()
+    check = _secondary_check(policy, 70)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=40),
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a genuine move on a non-inverting install must trip exactly as before"
+
+
+def test_inverse_tilt_normalises_the_dispatched_anchor() -> None:
+    """The PRODUCTION anchor path (real ``entity_id``, ``last_tilt_target``
+    populated) must normalise identically to the ``entity_id=None`` fallback
+    the other inverse-tilt tests exercise (TEST_GAP finding #5). Seeds
+    ``_tilt_targets`` directly — the same seeding pattern ``_drive_drift_reset``
+    uses elsewhere in this file — so ``resolve_dispatched_secondary_expected``
+    takes the ``sequencer.last_tilt_target(entity_id)`` branch real installs
+    use, rather than the ``result.tilt`` fallback. ACP dispatched logical 96
+    (wire 4); the actuator publishes the verified wire value, which must NOT
+    trip.
+    """
+    entity_id = "cover.raffstore_anchor"
+    policy = _make_inverse_policy()
+    policy.sequencer._tilt_targets[entity_id] = 96  # seed the dispatched anchor
+    # A stale/different reevaluated result.tilt proves the anchor — not the
+    # fallback — is what the check actually uses.
+    check = policy.secondary_axis_check(SimpleNamespace(tilt=20), None, entity_id)
+    assert check is not None
+    assert check.expected == 96, (
+        "expected must come from the dispatched anchor (96), not the "
+        f"reevaluated result.tilt fallback (20); got {check.expected}"
+    )
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(entity_id), (
+        "wire publish of the verified logical target via the production anchor "
+        "path must NOT trip manual override"
+    )
+
+
+def test_rejected_suppression_event_reports_logical_in_both_branches() -> None:
+    """PR-3: ``manual_override_rejected_tilt_suppression`` must report LOGICAL
+    ``new_position`` from BOTH branches — the value-based excursion path
+    (:meth:`SecondaryAxisCheck.evaluate`'s issue #927 predicate) and the
+    delta-based suppression path — matching every other tilt diagnostic
+    (``tilt_command_sent``/``tilt_command_verified``/``tilt_command_drift`` all
+    report the logical target/actual). Exercises ``SecondaryAxisCheck.evaluate``
+    directly with a stub predicate forced True for each branch in isolation,
+    under ``inverted=True``.
+
+    ACP dispatched logical 96 (wire 4); the actuator publishes wire 4.
+    Normalised, ``new_position`` must read 96 from EITHER branch — before this
+    fix the excursion branch reported the raw wire value (4) while the
+    suppression branch already reported logical (96).
+    """
+    new_state = SimpleNamespace(attributes={"current_tilt_position": 4})
+
+    excursion_check = SecondaryAxisCheck(
+        expected=96,
+        attribute="current_tilt_position",
+        label="tilt",
+        excursion_match=lambda _eid, _value: True,
+        inverted=True,
+    )
+    excursion_result = excursion_check.evaluate(
+        "cover.test", new_state, manual_threshold=10
+    )
+    assert excursion_result.event_name == "manual_override_rejected_tilt_suppression"
+    assert excursion_result.event_kwargs["new_position"] == 96, (
+        "excursion branch must report LOGICAL new_position, matching every "
+        f"other tilt diagnostic; got {excursion_result.event_kwargs['new_position']}"
+    )
+
+    suppression_check = SecondaryAxisCheck(
+        expected=96,
+        attribute="current_tilt_position",
+        label="tilt",
+        suppression=lambda _eid, _delta: True,
+        inverted=True,
+    )
+    suppression_result = suppression_check.evaluate(
+        "cover.test", new_state, manual_threshold=10
+    )
+    assert suppression_result.event_name == "manual_override_rejected_tilt_suppression"
+    assert suppression_result.event_kwargs["new_position"] == 96, (
+        "suppression branch must report LOGICAL new_position; got "
+        f"{suppression_result.event_kwargs['new_position']}"
+    )

@@ -1175,11 +1175,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 if self._sequencer is not None
                 else None
             ),
-            # Inverse-tilt normalisation: convert the reported WIRE tilt back to
-            # the LOGICAL space of ``expected`` (``last_tilt_target``) before the
-            # delta, so an ``inverse_tilt`` cover's verified tilt isn't misread as
-            # a manual move. ``_to_wire`` is symmetric (logical↔wire).
-            to_wire=(self._sequencer._to_wire if self._sequencer is not None else None),
+            # Inverse-tilt normalisation (issue #1227) — see
+            # ``SecondaryAxisCheck.inverted`` for the wire/logical rationale.
+            inverted=(self._sequencer is not None and self._sequencer.tilt_inverted),
         )
 
     def _drift_reset_eligible(self, context: Any) -> bool:
