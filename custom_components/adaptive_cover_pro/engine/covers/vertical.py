@@ -14,7 +14,7 @@ from ...const import (
     TRACE_KEY_POSITION_PCT,
     TRACE_KEY_SOL_ELEV_DEG,
 )
-from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
+from ...geometry import EdgeCaseHandler
 from ...position_utils import PositionConverter
 from ..sun_geometry import clamped_cos_gamma, ray_x_at_window_plane
 from .base import AdaptiveGeneralCover
@@ -123,21 +123,6 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         """Get sill height from vert_config."""
         return self.vert_config.sill_height
 
-    def _calculate_safety_margin(self, gamma: float, sol_elev: float) -> float:
-        """Calculate angle-dependent safety margin multiplier (≥1.0).
-
-        Delegates to SafetyMarginCalculator utility class.
-
-        Args:
-            gamma: Surface solar azimuth in degrees (-180 to 180)
-            sol_elev: Sun elevation angle in degrees (0-90)
-
-        Returns:
-            Safety margin multiplier (1.0 to 1.45)
-
-        """
-        return SafetyMarginCalculator.calculate(gamma, sol_elev)
-
     def _handle_edge_cases(self) -> tuple[bool, float]:
         """Handle extreme angles with safe fallbacks.
 
@@ -227,7 +212,6 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 
         Phase 1 (Automatic):
         - Edge case handling: Safe fallbacks for extreme sun angles
-        - Safety margins: Angle-dependent multipliers (1.0-1.45x)
 
         Phase 2 (Optional):
         - Window depth: a binary full-open gate for window reveals/frames
@@ -381,15 +365,23 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                 )
                 return result
 
-        # Apply safety margin for extreme angles
-        safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
-        adjusted_height = base_height * safety_margin
+        # No safety margin on this axis (#1173): `position` is already the
+        # exposed-glass boundary derived above — `base_height` sits exactly
+        # on it with zero headroom (see the sill-geometry comment block).
+        # Multiplying it by anything > 1.0 can only push the exposed band
+        # PAST that boundary, i.e. it lets more sun in, never less — the
+        # opposite of a safety margin. The angle-dependent margin from
+        # SafetyMarginCalculator is applied correctly elsewhere: on the tilt
+        # axis (`tilt.py:304-331`, #783/#1089) it closes the slats further
+        # instead of opening the blind, which is the direction that
+        # actually adds slack.
+        adjusted_height = base_height
         result = float(np.clip(adjusted_height, 0, self.h_win))
         clamped_to_window = bool(adjusted_height > self.h_win)
 
         self.logger.debug(
             "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (sill=%.3f), "
-            "base=%.3f, lintel_shadow=%.3f (below gate), margin=%.3f, adjusted=%.3f, "
+            "base=%.3f, lintel_shadow=%.3f (below gate), adjusted=%.3f, "
             "clipped=%.3f, source=%s",
             self.sol_elev,
             self.gamma,
@@ -398,14 +390,13 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             sill_offset,
             base_height,
             depth_contribution,
-            safety_margin,
             adjusted_height,
             result,
             effective_distance_source,
         )
         self._last_calc_details = self._build_vertical_trace(
             edge_case_detected=False,
-            safety_margin=float(safety_margin),
+            safety_margin=1.0,
             effective_distance=float(effective_distance),
             effective_distance_source=effective_distance_source,
             window_depth_contribution=float(depth_contribution),

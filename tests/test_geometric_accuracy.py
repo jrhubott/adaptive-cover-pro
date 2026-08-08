@@ -14,6 +14,7 @@ import pytest
 import numpy as np
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+from custom_components.adaptive_cover_pro.geometry import SafetyMarginCalculator
 from tests.cover_helpers import build_vertical_cover
 
 
@@ -77,8 +78,17 @@ def base_cover_params(mock_sun_data, mock_logger):
     }  # These flat kwargs are routed by build_vertical_cover() to typed configs
 
 
-class TestSafetyMargins:
-    """Test angle-dependent safety margin calculations."""
+class TestSafetyMarginCalculatorValues:
+    """Test SafetyMarginCalculator's angle-dependent multiplier values.
+
+    The vertical axis retired this multiplier from its output path (#1173:
+    it was sign-inverted there, increasing sun penetration instead of
+    reducing it). ``SafetyMarginCalculator`` itself is unchanged and still
+    correctly consumed by the tilt axis (`tilt.py`, #783/#1089), so these
+    tests call the calculator directly rather than through
+    ``AdaptiveVerticalCover`` — they pin the multiplier's *values*, not any
+    vertical-axis behaviour.
+    """
 
     def test_safety_margin_normal_angles_returns_baseline(self, base_cover_params):
         """Safety margin should be 1.0 for normal angles."""
@@ -88,37 +98,31 @@ class TestSafetyMargins:
         base_cover_params["sol_elev"] = 45.0
         cover = build_vertical_cover(**base_cover_params)
 
-        margin = cover._calculate_safety_margin(cover.gamma, cover.sol_elev)
+        margin = SafetyMarginCalculator.calculate(cover.gamma, cover.sol_elev)
         assert margin == 1.0
 
     def test_safety_margin_moderate_gamma_returns_baseline(self, base_cover_params):
         """Safety margin should be 1.0 for gamma <= 45°."""
-        cover = build_vertical_cover(**base_cover_params)
-
         for gamma in [0, 15, 30, 45]:
-            margin = cover._calculate_safety_margin(gamma, 45.0)
+            margin = SafetyMarginCalculator.calculate(gamma, 45.0)
             assert margin == 1.0, f"Expected 1.0 at gamma={gamma}, got {margin}"
 
     def test_safety_margin_extreme_gamma_increases(self, base_cover_params):
         """Safety margin should increase at extreme gamma angles."""
-        cover = build_vertical_cover(**base_cover_params)
-
         # Test progressive increase
-        margin_60 = cover._calculate_safety_margin(60.0, 45.0)
-        margin_75 = cover._calculate_safety_margin(75.0, 45.0)
-        margin_90 = cover._calculate_safety_margin(90.0, 45.0)
+        margin_60 = SafetyMarginCalculator.calculate(60.0, 45.0)
+        margin_75 = SafetyMarginCalculator.calculate(75.0, 45.0)
+        margin_90 = SafetyMarginCalculator.calculate(90.0, 45.0)
 
         assert 1.0 < margin_60 < margin_75 < margin_90
         assert margin_90 <= 1.2  # Max 20% increase
 
     def test_safety_margin_low_elevation_increases(self, base_cover_params):
         """Safety margin should increase at low elevations."""
-        cover = build_vertical_cover(**base_cover_params)
-
         # Test progressive increase as elevation decreases
-        margin_10 = cover._calculate_safety_margin(0.0, 10.0)
-        margin_5 = cover._calculate_safety_margin(0.0, 5.0)
-        margin_2 = cover._calculate_safety_margin(0.0, 2.0)
+        margin_10 = SafetyMarginCalculator.calculate(0.0, 10.0)
+        margin_5 = SafetyMarginCalculator.calculate(0.0, 5.0)
+        margin_2 = SafetyMarginCalculator.calculate(0.0, 2.0)
 
         assert margin_10 == 1.0  # Threshold
         assert 1.0 < margin_5 < margin_2
@@ -126,12 +130,10 @@ class TestSafetyMargins:
 
     def test_safety_margin_high_elevation_increases(self, base_cover_params):
         """Safety margin should increase at high elevations."""
-        cover = build_vertical_cover(**base_cover_params)
-
         # Test progressive increase as elevation increases
-        margin_75 = cover._calculate_safety_margin(0.0, 75.0)
-        margin_82 = cover._calculate_safety_margin(0.0, 82.5)
-        margin_90 = cover._calculate_safety_margin(0.0, 90.0)
+        margin_75 = SafetyMarginCalculator.calculate(0.0, 75.0)
+        margin_82 = SafetyMarginCalculator.calculate(0.0, 82.5)
+        margin_90 = SafetyMarginCalculator.calculate(0.0, 90.0)
 
         assert margin_75 == 1.0  # Threshold
         assert 1.0 < margin_82 < margin_90
@@ -139,32 +141,26 @@ class TestSafetyMargins:
 
     def test_safety_margin_combined_extremes(self, base_cover_params):
         """Safety margin should combine gamma and elevation effects."""
-        cover = build_vertical_cover(**base_cover_params)
-
         # Extreme gamma + low elevation
-        margin = cover._calculate_safety_margin(85.0, 5.0)
+        margin = SafetyMarginCalculator.calculate(85.0, 5.0)
         assert 1.2 < margin <= 1.35  # ~20% + ~7.5% combined
 
         # Extreme gamma + high elevation
-        margin = cover._calculate_safety_margin(85.0, 85.0)
+        margin = SafetyMarginCalculator.calculate(85.0, 85.0)
         assert 1.2 < margin <= 1.30  # ~20% + ~6.7% combined
 
     def test_safety_margin_symmetric_gamma(self, base_cover_params):
         """Safety margin should be symmetric for positive/negative gamma."""
-        cover = build_vertical_cover(**base_cover_params)
-
-        margin_pos = cover._calculate_safety_margin(70.0, 45.0)
-        margin_neg = cover._calculate_safety_margin(-70.0, 45.0)
+        margin_pos = SafetyMarginCalculator.calculate(70.0, 45.0)
+        margin_neg = SafetyMarginCalculator.calculate(-70.0, 45.0)
 
         assert margin_pos == margin_neg
 
     def test_safety_margin_smoothstep_interpolation(self, base_cover_params):
         """Safety margin should use smooth interpolation (no sharp transitions)."""
-        cover = build_vertical_cover(**base_cover_params)
-
         # Test smooth transition in gamma range
         margins = [
-            cover._calculate_safety_margin(gamma, 45.0) for gamma in range(45, 91, 5)
+            SafetyMarginCalculator.calculate(gamma, 45.0) for gamma in range(45, 91, 5)
         ]
 
         # Check monotonic increase
@@ -175,6 +171,78 @@ class TestSafetyMargins:
         diffs = [margins[i + 1] - margins[i] for i in range(len(margins) - 1)]
         max_diff = max(diffs)
         assert max_diff < 0.05  # No jump > 5%
+
+
+class TestVerticalSafetyMarginRetirement:
+    """Direction/no-op guards for the vertical safety margin fix (#1173).
+
+    ``TestSafetyMarginCalculatorValues`` above tests the multiplier's
+    *values*; these tests exercise its *effect* on ``calculate_position()``
+    — the assertion that would have caught the #1173 inversion when it
+    shipped (evidence packet TEST_GAP #3: "Eight tests assert ... None
+    asserts that applying the margin makes the cover shade more").
+    """
+
+    def test_vertical_margin_never_increases_penetration(self, base_cover_params):
+        """The vertical margin must never let more sun penetrate past the
+        configured ``distance`` than the base projection alone allows
+        (#1173) — a direction guard the 216-case contract grid never had.
+
+        ``h_win=8.0`` is deliberately taller than the grid's usual 0.62/2.2:
+        at ``h_win=2.2`` the base projection alone already saturates to
+        ``h_win`` once ``elev > 75``, which masks the high-elevation branch
+        of the margin behind clipping (clipping only ever *reduces*
+        penetration, so it can hide but never cause a violation). A taller
+        window keeps that branch observable so this sweep actually exercises
+        both elevation thresholds (``elev < 10`` and ``elev > 75``), not just
+        the gamma one — see TEST_GAP #2 in the #1173 evidence packet.
+        """
+        params = base_cover_params.copy()
+        params["distance"] = 1.5
+        params["h_win"] = 8.0
+
+        for gamma in range(-89, 90):
+            for elev in (2.1, *range(3, 90)):
+                cover = make_cover_with_angles(
+                    params, gamma=float(gamma), sol_elev=float(elev)
+                )
+                position = cover.calculate_position()
+                penetration = _lintel_gate_max_penetration(
+                    position, params["h_win"], 0.0, gamma, elev
+                )
+                assert penetration <= params["distance"] + 1e-9, (
+                    f"gamma={gamma} elev={elev}: position={position:.4f} -> "
+                    f"penetration={penetration:.4f} exceeds "
+                    f"distance={params['distance']}"
+                )
+
+    def test_no_op_inside_the_normal_envelope(self, base_cover_params):
+        """Inside |gamma| <= 45 deg and 10 <= elev <= 75 deg, calculate_position()
+        must exactly match the un-margined base projection.
+
+        Characterization test (passes both before and after this fix): the
+        margin's own thresholds are gamma>45, elev<10 and elev>75, so it is
+        already 1.0 throughout this envelope today, and after the fix it is
+        1.0 everywhere. This pins the #783/#1089-style no-op guarantee to the
+        vertical axis too, so a future change to either envelope — not this
+        fix — is what would break it.
+        """
+        params = base_cover_params.copy()
+        params["distance"] = 1.5
+        params["h_win"] = 2.2
+
+        for gamma in range(-45, 46):
+            for elev in range(10, 76):
+                cover = make_cover_with_angles(
+                    params, gamma=float(gamma), sol_elev=float(elev)
+                )
+                base_height, *_ = cover._project_drop(cover.distance)
+                expected = float(np.clip(base_height, 0, cover.h_win))
+                actual = cover.calculate_position()
+                assert actual == pytest.approx(expected), (
+                    f"gamma={gamma} elev={elev}: expected no-op position "
+                    f"{expected:.6f}, got {actual:.6f}"
+                )
 
 
 class TestEdgeCases:
@@ -665,67 +733,17 @@ def _lintel_gate_max_penetration(
     return z * math.cos(math.radians(gamma)) / math.tan(math.radians(elev))
 
 
-# SafetyMarginCalculator (geometry.py) inflates the returned position beyond
-# what the base projection alone would allow at extreme low elevation + high
-# gamma — a pre-existing characteristic of the angle-dependent safety margin,
-# not of window_depth: it reproduces bit-for-bit with window_depth=0 (the gate
-# never fires for any of these cases; the position is identical either way).
-# It predates #1169, is out of scope for this fix (no window_depth involved),
-# and is tracked by #1173 rather than being papered over here by weakening
-# the contract for every other configuration.
-_SAFETY_MARGIN_OVERSHOOT_CASES = {
-    (0.5, 0.62, 0.05, 60, 20),
-    (0.5, 0.62, 0.18, 60, 20),
-    (0.5, 2.2, 0.05, 60, 20),
-    (0.5, 2.2, 0.05, 60, 45),
-    (0.5, 2.2, 0.05, 75, 20),
-    (0.5, 2.2, 0.05, 75, 45),
-    (0.5, 2.2, 0.18, 60, 20),
-    (0.5, 2.2, 0.18, 60, 45),
-    (0.5, 2.2, 0.18, 75, 20),
-    (0.5, 2.2, 0.5, 60, 20),
-    (0.5, 2.2, 0.5, 60, 45),
-    (0.5, 2.2, 0.5, 75, 20),
-    (1.5, 2.2, 0.05, 60, 20),
-    (1.5, 2.2, 0.05, 75, 20),
-    (1.5, 2.2, 0.18, 60, 20),
-    (1.5, 2.2, 0.5, 60, 20),
-}
-
-
-def _lintel_gate_contract_case(
-    distance: float, h_win: float, depth: float, gamma: float, elev: float
-):
-    case = (distance, h_win, depth, gamma, elev)
-    if case in _SAFETY_MARGIN_OVERSHOOT_CASES:
-        return pytest.param(
-            *case,
-            marks=pytest.mark.xfail(
-                reason=(
-                    "#1173: SafetyMarginCalculator inflates position past the "
-                    f"distance_shaded_area contract at elev={elev:g}°, "
-                    f"gamma={gamma:g}° (distance={distance:g}, h_win={h_win:g}, "
-                    f"depth={depth:g}) — bit-identical with window_depth=0, so "
-                    "orthogonal to the #1169 lintel gate."
-                ),
-                strict=True,
-            ),
-        )
-    return case
-
-
 @pytest.mark.parametrize(
     "distance,h_win,depth,gamma,elev",
-    [
-        _lintel_gate_contract_case(*case)
-        for case in itertools.product(
+    list(
+        itertools.product(
             [0.0, 0.5, 1.5],
             [0.62, 2.2],
             [0.05, 0.18, 0.5],
             [0, 30, 60, 75],
             [20, 45, 75],
         )
-    ],
+    ),
 )
 def test_no_direct_sun_lands_past_the_configured_distance(
     base_cover_params, distance, h_win, depth, gamma, elev
