@@ -16,21 +16,69 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.const import (
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_TRACKING_SEASONS,
+    ClimateStrategy,
+    ControlMethod,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
+    CloudSuppressionHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
+    MotionTimeoutHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
+from custom_components.adaptive_cover_pro.pipeline.helpers import (
+    compute_default_position,
+)
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
     CustomPositionSensorState,
     PipelineResult,
 )
+from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
+
+# ---------------------------------------------------------------------------
+# Mock tilt-cover builder for issue #1214 finding 2's TILT_WITH_PRESENCE case
+# ---------------------------------------------------------------------------
+# The generic conftest mock cover has no `beta` attribute (only position-
+# primary tests need it), and ClimateHandler._build_context reads
+# `tilt_cover.beta` unconditionally for tilt-primary covers. Mirrors
+# `test_climate_handler.py::_make_tilt_cover`.
+
+
+def _make_low_light_solar_tilt_cover(*, percentage: float):
+    from custom_components.adaptive_cover_pro.engine.covers import AdaptiveTiltCover
+
+    cover = MagicMock(spec=AdaptiveTiltCover)
+    cover.direct_sun_valid = True
+    cover.valid = True
+    cover.calculate_percentage = MagicMock(return_value=percentage)
+    cover.calculate_raw_percentage = MagicMock(return_value=percentage)
+    cover.gamma = 0.0
+    cover.beta = 0.0
+    cover.mode = "mode2"
+    config = MagicMock()
+    config.min_pos = None
+    config.max_pos = None
+    config.min_pos_sun_only = False
+    config.max_pos_sun_only = False
+    config.min_pos_sun_tracking = None
+    cover.config = config
+    return cover
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -393,3 +441,430 @@ class TestNonVenetianPolicyTiltPassthrough:
             options={},
         )
         assert resolved is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #1214 — default/sunset tilt reaches higher-priority DEFAULT winners
+# ---------------------------------------------------------------------------
+#
+# #1153 correctly closed the _MERGEABLE tilt leak (a losing DefaultHandler
+# could no longer stamp its tilt onto a winning handler), but ClimateHandler
+# (LOW_LIGHT), CloudSuppressionHandler, and MotionTimeoutHandler all answer
+# with the *effective default position* via compute_default_position and
+# never supplied a tilt of their own -- so a venetian's sunset_tilt/default_tilt
+# became unreachable whenever one of these three outranked DefaultHandler.
+# These full-stack registry tests lock the fix: each handler supplies its OWN
+# tilt (via compute_default_tilt), so _MERGEABLE stays untouched.
+
+
+def _low_light_climate_readings(
+    *, inside_temperature: float = 22.0, is_sunny: bool = False
+) -> ClimateReadings:
+    """Build readings that drive ClimateStrategy.LOW_LIGHT: presence, no sun, intermediate temp.
+
+    ``inside_temperature`` drives the season predicates (``_climate_options``
+    uses temp_low 18 / temp_high 26 and temp_switch False, so this reading is
+    the one ``get_current_temperature`` resolves to). ``is_sunny=True`` turns
+    the low-light predicate off so a table's later branches become reachable.
+    """
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=inside_temperature,
+        is_presence=True,
+        is_sunny=is_sunny,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+
+
+def _make_limited_cover(
+    *,
+    direct_sun_valid: bool = False,
+    min_pos: int | None = None,
+    max_pos: int | None = None,
+    min_pos_sun_only: bool = False,
+    max_pos_sun_only: bool = False,
+    min_pos_sun_tracking: int | None = None,
+):
+    """Mock cover whose ``CoverConfig`` carries real min/max position limits.
+
+    ``make_snapshot`` sources ``snapshot.config`` from ``cover.config`` and the
+    conftest mock leaves every limit unset, so a limit-sensitive test has to
+    build its own. Mirrors ``conftest._make_mock_cover``'s spec list.
+    """
+    cover = MagicMock(
+        spec=[
+            "direct_sun_valid",
+            "calculate_percentage",
+            "calculate_raw_percentage",
+            "distance",
+            "gamma",
+            "config",
+            "valid",
+            "valid_elevation",
+            "is_sun_in_blind_spot",
+            "sunset_valid",
+            "calculate_position",
+            "control_state_reason",
+            "sun_data",
+        ]
+    )
+    cover.direct_sun_valid = direct_sun_valid
+    cover.valid = True
+    cover.calculate_percentage = MagicMock(return_value=50.0)
+    cover.calculate_raw_percentage = MagicMock(return_value=50.0)
+    cover.distance = 3.0
+    cover.gamma = 0.0
+    config = MagicMock()
+    config.min_pos = min_pos
+    config.max_pos = max_pos
+    config.min_pos_sun_only = min_pos_sun_only
+    config.max_pos_sun_only = max_pos_sun_only
+    config.min_pos_sun_tracking = min_pos_sun_tracking
+    cover.config = config
+    return cover
+
+
+def _climate_options(**overrides) -> ClimateOptions:
+    kwargs = {
+        "temp_low": 18.0,
+        "temp_high": 26.0,
+        "temp_switch": False,
+        "transparent_blind": False,
+        "temp_summer_outside": None,
+        "cloud_suppression_enabled": False,
+        "winter_close_insulation": False,
+        "temp_extreme_heat": None,
+        "extreme_heat_position": None,
+        "tracking_seasons": frozenset(DEFAULT_TRACKING_SEASONS),
+    }
+    kwargs.update(overrides)
+    return ClimateOptions(**kwargs)
+
+
+class TestDefaultTiltReachesClimateWinner:
+    """A LOW_LIGHT climate winner must carry the same tilt DefaultHandler would.
+
+    Reproduces the reporter's own trace (issue #1214): climate mode active,
+    no direct sun, presence, intermediate temperature -- ClimateStrategy.LOW_LIGHT
+    labels its branch ControlMethod.DEFAULT and outranks DefaultHandler
+    (priority 50 vs 0), so it must supply the effective default/sunset tilt
+    itself.
+    """
+
+    def _registry(self) -> PipelineRegistry:
+        return PipelineRegistry([ClimateHandler(), SolarHandler(), DefaultHandler()])
+
+    def test_sunset_active_carries_sunset_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=True,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert winning_step.priority == ClimateHandler.priority
+        assert result.tilt == 0
+
+    def test_not_sunset_carries_default_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=False,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert winning_step.priority == ClimateHandler.priority
+        assert result.tilt == 50
+
+    def test_tilt_primary_low_light_via_solar_stays_untilted(self):
+        """Issue #1214 finding 2: ControlMethod.DEFAULT labels the branch, not
+        the position -- it is not a promise the cover sits at its default.
+
+        On a tilt-primary cover (``cover_tilt``/``cover_louvered_roof``),
+        ``ClimateStrategy.LOW_LIGHT`` resolves via ``TILT_WITH_PRESENCE``'s
+        ``_solar`` rule (climate_modes.py:346), not ``_default`` -- the same
+        ``ControlMethod.DEFAULT`` label the NORMAL-table LOW_LIGHT branch
+        carries, but a solar-tracked position, not the effective default one.
+        Pairing that with the configured default tilt would silently
+        overwrite a genuine solar-tracked slat angle with a stale default.
+        The class docstring says exactly this; the tilt is gated on the
+        matched rule's PROVENANCE (``ClimateRule.resolves_default_position``,
+        False for ``_solar``), not on the DEFAULT label -- so this must stay
+        untilted even though default_tilt is configured and the branch is
+        labelled DEFAULT, and it stays untilted regardless of what number the
+        solar position happens to land on.
+
+        default_tilt/sunset_tilt are only exposed via the UI for
+        position-primary policies (VenetianPolicy, DayNightShadePolicy), but
+        nothing at the pipeline/snapshot layer or in ``set_option`` gates
+        them by cover type -- so this combination, while not reachable
+        through the UI today, must not silently misbehave if it occurs.
+        """
+        snap = make_snapshot(
+            cover=_make_low_light_solar_tilt_cover(percentage=70.0),
+            cover_type="cover_tilt",
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=False,
+            default_position=0,
+            default_tilt=40,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert winning_step.priority == ClimateHandler.priority
+        # Sanity: the winning position is the solar-tracked one (70), not the
+        # effective default (0) -- otherwise this test would not exercise the
+        # gate it claims to.
+        assert result.position != 0
+        assert result.tilt is None
+
+    def test_clamped_sunset_position_still_carries_sunset_tilt(self):
+        """Round-2 finding 1: limit clamping must not disqualify the tilt.
+
+        ``compute_default_position`` bypasses the min/max limits during sunset
+        (#128), but ``ClimateCoverState.get_state`` runs every answer through
+        ``apply_snapshot_limits`` — so with ``min_pos=20`` and
+        ``sunset_position=0`` the climate winner sits at 20 while the effective
+        default reads 0. The position was still RESOLVED FROM the default
+        (``climate_modes._default``); a clamp applied afterwards does not make
+        it something else, so the sunset tilt must still ride along. This is
+        the originally reported defect (#1214) for every install whose limits
+        move the sunset position.
+        """
+        snap = make_snapshot(
+            cover=_make_limited_cover(min_pos=20),
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(),
+            is_sunset_active=True,
+            default_position=0,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        # The clamp genuinely moved the answer off the effective default —
+        # otherwise this test would not exercise what it claims to.
+        assert compute_default_position(snap) == 0
+        assert result.position == 20
+        assert result.tilt == 0
+
+    def test_sun_tracking_min_floor_still_carries_default_tilt(self):
+        """Round-2 finding 1, non-sunset twin: the sun-only floor is a clamp too.
+
+        ``get_state`` clamps with ``sun_valid = direct_sun_valid and is_summer``
+        while ``compute_default_position`` always uses ``sun_valid=False``. On a
+        hot, cloudy, in-FOV day with ``min_position_sun_tracking=30`` the climate
+        LOW_LIGHT answer (still ``_default``) lands at 30 against an effective
+        default of 0 — and must still carry ``default_tilt``.
+        """
+        snap = make_snapshot(
+            cover=_make_limited_cover(direct_sun_valid=True, min_pos_sun_tracking=30),
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(inside_temperature=30.0),
+            climate_options=_climate_options(),
+            is_sunset_active=False,
+            default_position=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.DEFAULT
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "climate"
+        assert compute_default_position(snap) == 0
+        assert result.position == 30
+        assert result.tilt == 50
+
+    def test_tracking_season_gate_carries_default_tilt(self):
+        """The other DEFAULT-labelled branch resolves from ``_default`` too.
+
+        With the current season deselected the season-scope gate replaces glare
+        tracking with the default position (``_SEASON_GATE`` → ``_default``), so
+        it earns the default tilt on the same provenance grounds as LOW_LIGHT.
+        """
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_mode_enabled=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(is_sunny=True),
+            climate_options=_climate_options(tracking_seasons=frozenset()),
+            is_sunset_active=False,
+            default_position=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.climate_strategy is ClimateStrategy.TRACKING_SEASON_GATE
+        assert result.control_method is ControlMethod.DEFAULT
+        assert result.tilt == 50
+
+
+class TestDefaultTiltReachesCloudSuppressionWinner:
+    """CloudSuppressionHandler must carry the effective default/sunset tilt too."""
+
+    def _registry(self) -> PipelineRegistry:
+        return PipelineRegistry([CloudSuppressionHandler(), DefaultHandler()])
+
+    def test_sunset_active_carries_sunset_tilt(self):
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(cloud_suppression_enabled=True),
+            is_sunset_active=True,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.CLOUD
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "cloud_suppression"
+        assert winning_step.priority == CloudSuppressionHandler.priority
+        assert result.tilt == 0
+
+    def test_cloudy_position_not_sunset_stays_untilted(self):
+        """A cloudy_position winner did NOT resolve from the default position.
+
+        The position here (25) came from the configured cloudy_position, so
+        the branch states ``tilt=None``. Pairing it with default_tilt would
+        snap a venetian's slats to default_tilt during a cloudy in-FOV
+        daytime hold instead of letting them hold -- exactly what #1153
+        removed for non-default winners. See
+        ``test_cloudy_position_equal_to_default_stays_untilted`` for the same
+        rule when the override's *value* coincides with the default.
+        """
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(
+                cloud_suppression_enabled=True, cloudy_position=25
+            ),
+            is_sunset_active=False,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.CLOUD
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "cloud_suppression"
+        assert winning_step.priority == CloudSuppressionHandler.priority
+        assert result.position == 25
+        assert result.tilt is None
+
+    def test_cloudy_position_equal_to_default_stays_untilted(self):
+        """Round-2 finding 2: a coincidental value match is not provenance.
+
+        ``cloudy_position=0`` alongside a venetian's ``default_percentage=0``
+        (the #1214 reporter's own value) makes the cloudy answer numerically
+        equal to the effective default. It is still a configured override, so
+        the slats must hold — 2026.8.0's behaviour and what #1153 established
+        for hold-type winners.
+        """
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(
+                cloud_suppression_enabled=True, cloudy_position=0
+            ),
+            is_sunset_active=False,
+            default_position=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.CLOUD
+        # The coincidence this test is about: same number, different provenance.
+        assert result.position == compute_default_position(snap) == 0
+        assert result.tilt is None
+
+    def test_no_cloudy_position_carries_default_tilt(self):
+        """With no ``cloudy_position`` configured the branch IS the default."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            in_time_window=True,
+            climate_readings=_low_light_climate_readings(),
+            climate_options=_climate_options(cloud_suppression_enabled=True),
+            is_sunset_active=False,
+            default_position=0,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.CLOUD
+        assert result.tilt == 50
+
+
+class TestDefaultTiltReachesMotionTimeoutWinner:
+    """MotionTimeoutHandler's return_to_default branch must carry the tilt too."""
+
+    def _registry(self) -> PipelineRegistry:
+        return PipelineRegistry([MotionTimeoutHandler(), DefaultHandler()])
+
+    def test_return_to_default_carries_default_tilt(self):
+        snap = make_snapshot(
+            motion_control_enabled=True,
+            motion_timeout_active=True,
+            motion_timeout_mode="return_to_default",
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.MOTION
+        winning_step = next(s for s in result.decision_trace if s.matched)
+        assert winning_step.handler == "motion_timeout"
+        assert winning_step.priority == MotionTimeoutHandler.priority
+        assert result.tilt == 50
+
+    def test_hold_position_mode_stays_untilted(self):
+        """Regression lock: the hold branch must NOT gain a tilt (skip_command=True).
+
+        Must pass both before and after the fix -- it locks the hold
+        carve-out that must never be given a tilt.
+        """
+        snap = make_snapshot(
+            motion_control_enabled=True,
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=42,
+            default_tilt=50,
+        )
+        result = self._registry().evaluate(snap)
+
+        assert result.control_method is ControlMethod.MOTION
+        assert result.skip_command is True
+        assert result.tilt is None

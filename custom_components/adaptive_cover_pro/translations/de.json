@@ -1033,7 +1033,7 @@
       },
       "custom_position_tilt_defaults": {
         "title": "Standard- & Sonnenuntergangs-Neigung",
-        "description": "Standard-Lamellenneigung, die nur gilt, wenn kein anderer Handler die Kontrolle übernimmt – derselbe Fallback wie die Standardposition. Gewinnt ein Custom-Position-Slot, übernimmt dessen eigene Neigung; gewinnt die Sonnenverfolgung, übernimmt die automatische Sonnenberechnung; jeder andere Handler lässt die Lamellen ihren aktuellen Winkel beibehalten.",
+        "description": "Standard-Lamellenneigung, die angewendet wird, wenn die Beschattung auf ihre Standardposition zurückfällt – nicht nur wenn kein anderer Handler die Kontrolle übernimmt, sondern auch wenn Klimamodus (wenig Licht/Nebensaison), Wolkenunterdrückung oder Motion-Timeout dort die Position halten. Wenn ein Custom-Position-Slot gewinnt, übernimmt dessen eigene Neigung; wenn die Sonnenverfolgung gewinnt, übernimmt die automatische Sonnenberechnung; jeder andere Handler lässt die Lamellen ihren aktuellen Winkel beibehalten.",
         "data": {
           "default_tilt": "Standard-Neigung",
           "sunset_tilt": "Sonnenuntergangs-Neigung"

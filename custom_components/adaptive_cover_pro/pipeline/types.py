@@ -393,17 +393,17 @@ class PipelineSnapshot:
     sunset_use_my: bool = False
 
     # Explicit tilt for venetian covers. None = use solar-computed tilt.
-    default_tilt: int | None = None  # tilt when no active handler fires
+    default_tilt: int | None = None  # tilt when the position falls back to default
     sunset_tilt: int | None = (
         None  # tilt during sunset window; falls back to default_tilt
     )
 
-    # Global tilt clamps (issue #503). The DefaultHandler clamps its non-sunset
-    # default_tilt to [min_tilt, max_tilt]; sunset_tilt and custom-position tilt
-    # are deliberate carve-outs and are never clamped. The *_sun_only toggles
-    # mirror enable_min/max_position: False (default) = always enforce, True =
-    # only during sun tracking. Defaults are no-ops (0 / 100 / False) so
-    # snapshots that don't set them behave exactly as before.
+    # Global tilt clamps (issue #503). compute_default_tilt (pipeline/helpers.py)
+    # clamps the non-sunset default_tilt to [min_tilt, max_tilt]; sunset_tilt and
+    # custom-position tilt are deliberate carve-outs and are never clamped. The
+    # *_sun_only toggles mirror enable_min/max_position: False (default) = always
+    # enforce, True = only during sun tracking. Defaults are no-ops (0 / 100 /
+    # False) so snapshots that don't set them behave exactly as before.
     min_tilt: int = 0
     max_tilt: int = 100
     min_tilt_sun_only: bool = False

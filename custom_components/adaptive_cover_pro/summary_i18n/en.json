@@ -195,8 +195,8 @@
     "elevation_above": "above {elev}° elevation"
   },
   "default": {
-    "tilt": "  ↳ Default tilt: {tilt}% (used when no handler wins control)",
-    "sunset_tilt": "  ↳ Sunset tilt: {tilt}% (used when no handler wins control, during sunset)"
+    "tilt": "  ↳ Default tilt: {tilt}% (used whenever the position falls back to default)",
+    "sunset_tilt": "  ↳ Sunset tilt: {tilt}% (used whenever the position falls back to default, during sunset)"
   },
   "limits": {
     "range": "Range: {lo}–{hi}{qualifier}",

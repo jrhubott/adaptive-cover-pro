@@ -316,6 +316,74 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert "venetian_mode" not in handler_names
 
 
+class TestIssue1214DefaultTiltEndpointHandoff:
+    """Issue #1214: a DEFAULT winner now carrying the effective default/sunset
+    tilt (climate LOW_LIGHT, cloud suppression, or motion return-to-default)
+    must flow through the same handler-tilt honor path as any other explicit
+    tilt -- staying exempt from the tilt-only carriage pin (#1153 round-2
+    finding 2) -- and, when that pairs position=0 with tilt=0, correctly trip
+    the #755 full-mechanical-endpoint flag rather than being silently
+    absorbed. This is the reporter's own SomfyIO/#985 hardware family, so the
+    endpoint decision here matters: it must be the intended #755 "force
+    close_cover" behaviour, not a spurious re-fire.
+    """
+
+    def test_default_winner_with_tilt_takes_handler_tilt_branch(self):
+        """DEFAULT + tilt=0 honors the handler tilt and stays exempt from the
+        tilt-only carriage pin -- the DEFAULT exemption (#1153 round-2 finding
+        2) must still hold now that DEFAULT winners routinely carry a tilt.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=0,
+            tilt=0,
+            control_method=ControlMethod.DEFAULT,
+            reason="climate low-light — sunset tilt",
+        )
+        resolved = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+
+        handler_names = [s.handler for s in resolved.decision_trace]
+        assert "venetian_handler_tilt" in handler_names
+        assert "venetian_mode" not in handler_names
+        assert resolved.tilt == 0
+        assert resolved.position == 0
+
+    def test_default_winner_at_0_0_sets_full_endpoint_target(self):
+        """The 0/0 pairing this fix now lets a DEFAULT winner reach is exactly
+        the state issue #755 designed the endpoint flag for.
+        """
+        policy = _make_policy()
+        result = PipelineResult(
+            position=0, tilt=0, control_method=ControlMethod.DEFAULT, reason="test"
+        )
+        resolved = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+
+        overrides = policy.position_context_overrides(resolved)
+        assert overrides["tilt"] == 0
+        assert overrides["full_endpoint_target"] is True
+
+    @pytest.mark.parametrize("method", [ControlMethod.CLOUD, ControlMethod.MOTION])
+    def test_cloud_and_motion_winners_at_position_0_nonzero_tilt_do_not_force_endpoint(
+        self, method
+    ):
+        """A CLOUD/MOTION winner at position=0 with a non-zero default_tilt
+        (e.g. default_tilt=50, not sunset) is NOT a mechanical stop -- the
+        endpoint flag must stay clear, exactly as #755 intends.
+        """
+        policy = _make_policy()
+        result = PipelineResult(
+            position=0, tilt=50, control_method=method, reason="test"
+        )
+        resolved = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+
+        overrides = policy.position_context_overrides(resolved)
+        assert overrides["tilt"] == 50
+        assert overrides.get("full_endpoint_target", False) is False
+
+
 class TestPostPipelineResolveCoverageSteps:
     """Movement minimization quantizes the slat tilt toward full coverage."""
 
