@@ -113,8 +113,8 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
           projection decays smoothly to 0 as ``|γ| → 90°`` and stays 0 for
           ``|γ| ≥ 90°`` (sun behind the window plane), so there is no
           discontinuity — the issue #1025 defect. It intentionally ignores
-          ``sill_height`` / ``window_depth`` / the safety margin (they belonged
-          to the old, incorrect vertical-blind coupling) but keeps ``distance``.
+          ``sill_height`` / ``window_depth`` (they belonged to the old,
+          incorrect vertical-blind coupling) but keeps ``distance``.
         * **area**: keep the awning fully extended across the whole field of
           view (patio / area shading). ``calculate_position`` is only ever
           invoked when the sun is in-FOV, so returning full extension means
