@@ -3,8 +3,9 @@
 ``test_linear_position.py`` and ``test_sensor_linear_actual_positions.py`` had
 each grown their own near-identical version of this builder, wiring the same
 handful of coordinator members that ``_cover_position_attrs`` touches on its way
-to the one branch that module cared about. Per CODING_GUIDELINES § cross-file
-test helpers, they share this one instead.
+to the one branch that module cared about. Per CODING_GUIDELINES § "No Magic
+Numbers" ("fixtures and constants used in more than one test file go in
+``tests/_helpers/``"), they share this one instead.
 
 Every knob defaults to the inert value — no diagnostics, no snapshot positions,
 no transit or travel state, no lift travel (which short-circuits

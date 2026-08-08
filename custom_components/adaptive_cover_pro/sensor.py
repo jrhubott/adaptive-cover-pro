@@ -379,9 +379,12 @@ def _target_position(states: Mapping[str, Any], result: Any) -> Any:
     reached the motor. ``_dispatch_for_cycle`` returns at the clock-window gate
     before it ever consults ``position_constraint_applied``, so a non-safety
     clamp resolved outside the user's start/end window updates this sensor and
-    sends nothing. That is deliberate and not special to holds — a computed
-    solar winner outside the window is reported here the same way. This surface
-    is the pipeline's resolved target, not a dispatch log.
+    sends nothing. That is deliberate and not special to holds: the pipeline
+    runs every cycle regardless, and outside the clock window ``DefaultHandler``
+    wins and is surfaced here the same way, undispatched. (Not ``solar`` — it
+    declines on ``in_time_window``, which is the clock window ANDed with the
+    daytime gate, so it can never be the winner while that gate suppresses.)
+    This surface is the pipeline's resolved target, not a dispatch log.
 
     ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``, and the
     two are not interchangeable. The tilt axis also clears ``skip_command``
@@ -389,7 +392,8 @@ def _target_position(states: Mapping[str, Any], result: Any) -> Any:
     stayed inert and the winner's ``position`` is rewritten FROM the held read,
     so the cover is being commanded to where it already is and the physical read
     remains the honest answer. Keying on the position-axis flag confines the
-    change to bounds that actually moved the cover, which is #1175's scope.
+    change to bounds that actually re-targeted the winner, which is #1175's
+    scope.
 
     That leaves the tilt-clamp path on the held read even in the two cases where
     the dispatched number is not literally it — under ``CONF_INTERP``, where
