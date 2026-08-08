@@ -425,22 +425,26 @@ async def test_same_position_skip_tracks_this_cycles_is_safety_verdict(svc, mock
     """Issues #1158 / #1165: a same_position skip records THIS cycle's safety
     verdict, and the verdict comes back down when the condition ends.
 
-    ``PerEntityState.is_safety`` is a property of the protection currently in
-    force, not of the booked number — so the skip writes it unconditionally,
-    outside the ``(target, dispatch_token)`` value-change guard the booking
-    uses. Governing it with that guard is what #1165 reports as the bug: a
-    since-cleared condition could never come back down, because the guard
-    suppresses the write on exactly the cycles that re-confirm an unchanged
-    target. A frozen ``True`` then survives ``clear_non_safety_targets()`` and
-    makes ``run_reconciliation_pass`` resend with auto_control off or outside
-    the time window — what steps 3/4 exist to prevent, and what the tail of
-    this test guards.
+    ``PerEntityState.is_safety`` describes the BOOKED number — "is what ACP
+    currently has this cover down for a safety-protected number?" Cycle 1
+    books 50 and grants the flag in the same breath, so the grant is about the
+    number this cycle routed to. Cycle 2 revokes it, and revoking is
+    unconditional: it only removes a licence.
+
+    What neither polarity may do is ride inside the ``(target,
+    dispatch_token)`` value-change guard the booking uses. That is what #1165
+    reports as the bug: the guard suppresses the write on exactly the cycles
+    that re-confirm an unchanged target, so a since-cleared condition could
+    never come back down. A frozen ``True`` then survives
+    ``clear_non_safety_targets()`` and makes ``run_reconciliation_pass``
+    resend with auto_control off or outside the time window — what steps 3/4
+    exist to prevent, and what the tail of this test guards.
     """
     # Cycle 1: a weather-safety cycle skips because the cover is already at
     # the safety position (50) — nothing is dispatched, so
     # ``_prepare_service_call`` (the REAL-dispatch writer) never runs. The skip
-    # is still a decision about this entity, and this cycle's verdict is
-    # "safety-protected".
+    # books the 50 itself, and the grant that follows is about that booked
+    # number.
     _patch_position(svc, 50)
     with _patch_caps():
         outcome, reason = await svc.apply_position(
@@ -487,13 +491,20 @@ async def test_same_position_skip_clears_is_safety_after_condition_ends(svc, moc
     verdict, so a flag left ``True`` by an earlier REAL dispatch comes back
     down once the safety condition ends.
 
-    ``PerEntityState.is_safety`` describes the protection currently in force
-    for the entity, not the booked number. The skip branch used to leave it
-    untouched, so a weather dispatch's ``True`` rode forward onto every later
-    cycle that re-confirmed the same target — and the #1115 value-change guard
-    made that permanent, because an unchanged target suppresses ``set_target``
-    entirely. A frozen ``True`` then defeats ``clear_non_safety_targets()`` and
-    lets ``run_reconciliation_pass`` steps 3/4 resend the target with automatic
+    ``PerEntityState.is_safety`` describes the booked number, and revoking it
+    is unconditional — a revoke only removes a licence to act outside
+    ``clear_non_safety_targets()`` and reconciliation steps 3/4. Here the
+    booked 50 also happens to be this cycle's routed target, so the revoke is
+    about the booked number either way;
+    ``..._revokes_is_safety_on_a_foreign_stale_target`` covers the case where
+    it is not, and the revoke has to fire anyway.
+
+    The skip branch used to leave the flag untouched, so a weather dispatch's
+    ``True`` rode forward onto every later cycle that re-confirmed the same
+    target — and the #1115 value-change guard made that permanent, because an
+    unchanged target suppresses ``set_target`` entirely. A frozen ``True``
+    then defeats ``clear_non_safety_targets()`` and lets
+    ``run_reconciliation_pass`` steps 3/4 resend the target with automatic
     control off and outside the time window.
     """
     # Cycle 1: weather safety drives the cover from 90 to 50 — a REAL dispatch,
@@ -540,17 +551,25 @@ async def test_same_position_skip_clears_is_safety_after_condition_ends(svc, moc
 
 
 @pytest.mark.asyncio
-async def test_same_position_skip_endpoint_tolerance_still_refreshes_is_safety(
+async def test_same_position_skip_endpoint_tolerance_still_revokes_is_safety(
     svc, mock_hass
 ):
-    """Issue #1165: the safety verdict is refreshed on EVERY same_position
-    skip — including the one sub-arm that deliberately books nothing.
+    """Issue #1165: the safety verdict is revoked even on the one same_position
+    sub-arm that deliberately books nothing.
 
-    ``is_safety`` is a property of the protection, not of the booking, so it
-    cannot ride inside the booking guard. Arm 1's endpoint-tolerance sub-arm
-    proves the point: a cover resting at 98 against a 100 target skips, and
-    #1158's narrowed fix withholds the booking there because the routed target
-    (100) does not match the actual (98). The verdict still has to be written.
+    Revoking is unconditional — it only removes a licence — so it cannot ride
+    inside the booking guard. Arm 1's endpoint-tolerance sub-arm proves the
+    point: a cover resting at 98 against a 100 target skips, and #1158's
+    narrowed fix withholds the booking there because the routed target (100)
+    does not match the actual (98). The revoke still has to be written.
+
+    The entity's booked 100 does happen to equal this cycle's routed target
+    here, so a grant would also have been permitted — but that is incidental.
+    ``..._does_not_protect_a_foreign_stale_target`` is the grant-side case on
+    this same sub-arm, where the booked number differs and the grant is
+    correctly refused, and
+    ``..._revokes_is_safety_on_a_foreign_stale_target`` is the revoke under
+    the same mismatch.
     """
     # Cycle 1: a weather-safety dispatch to the 100 endpoint. Real dispatch →
     # is_safety=True, target booked at the routed endpoint.
@@ -585,17 +604,21 @@ async def test_same_position_skip_endpoint_tolerance_still_refreshes_is_safety(
 async def test_same_position_skip_does_not_protect_a_foreign_stale_target(
     svc, mock_hass
 ):
-    """Issue #1165 (round-2 audit): the verdict describes the BOOKED target,
-    so a skip that withholds its booking must not stamp ``is_safety`` onto a
-    stale number some earlier, non-safety decision left behind.
+    """Issue #1165 (round-2 audit): GRANTING the verdict describes the BOOKED
+    target, so a skip that withholds its booking must not stamp ``is_safety``
+    onto a stale number some earlier, non-safety decision left behind.
 
     The withheld-booking sub-arm (#1158) is the one place where the entity can
     still be holding a target that has nothing to do with the value this cycle
-    routed to. Writing the verdict there anyway inverts #1165's own defect: a
-    ``True`` that protects and re-drives a number the safety handler never
-    asked for. ``clear_non_safety_targets()`` then leaves the stale target in
-    place, and steps 3/4 resend it with automatic control off and outside the
-    time window.
+    routed to. Granting there anyway inverts #1165's own defect: a ``True``
+    that protects and re-drives a number the safety handler never asked for.
+    ``clear_non_safety_targets()`` then leaves the stale target in place, and
+    steps 3/4 resend it with automatic control off and outside the time window.
+
+    Only the grant is gated this way. The mirror-image test
+    ``..._revokes_is_safety_on_a_foreign_stale_target`` pins the other
+    polarity: a revoke on the same foreign-target shape fires unconditionally,
+    because it only takes a licence away.
     """
     # Cycle 1: an ordinary solar dispatch books 60. No safety involved.
     _patch_position(svc, 90)
@@ -640,6 +663,162 @@ async def test_same_position_skip_does_not_protect_a_foreign_stale_target(
         await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
 
     mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_same_position_skip_revokes_is_safety_on_a_foreign_stale_target(
+    svc, mock_hass
+):
+    """Issue #1165 (round-2 audit): REVOKING the safety verdict is never
+    gated on the booked target — only granting it is.
+
+    The two polarities are not symmetrical. Granting ``True`` hands out a
+    licence to act outside ``clear_non_safety_targets()`` and reconciliation
+    steps 3/4, so it has to be about the number actually booked. Revoking only
+    takes that licence away, which is safe on any number.
+
+    Gating both directions leaves #1165 reachable and, in this configuration,
+    permanent: a safety cycle books 60, the cover never arrives (position
+    matching is off by default, so nothing resends it) and comes to rest at 2,
+    and from then on every cycle computes the 0 endpoint. Each of those cycles
+    lands in arm 1's endpoint-tolerance sub-arm, where #1158 withholds the
+    booking because 2 != 0 — so the entity keeps holding the foreign 60 and a
+    symmetric gate withholds the revoke forever. Nothing in the loop can
+    correct it, which is why this test runs the cycle twice.
+    """
+    # Cycle 1: weather safety books 60 with a REAL dispatch, so
+    # ``_prepare_service_call`` genuinely stamps is_safety=True.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 60, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 60
+    assert svc.state("cover.test").is_safety is True
+
+    # The cover never reaches 60. It comes to rest at 2 and stays there —
+    # enable_position_matching is off on a real install, so no resend chases it.
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 2)
+
+    # Weather clears. Every later cycle computes 0 (sunset, climate-close, a
+    # north window). Run it twice: the state is a fixed point, so a single
+    # pass would not distinguish "revoked" from "about to self-correct".
+    for cycle in (1, 2):
+        with _patch_caps():
+            outcome, reason = await svc.apply_position(
+                "cover.test", 0, "solar", context=_ctx(is_safety=False)
+            )
+        assert (outcome, reason) == ("skipped", "same_position"), cycle
+        # #1158 still withholds the booking: 2 is not the routed 0.
+        assert svc.get_target("cover.test") == 60, cycle
+        # ...but the licence is gone. This is the assertion #1165 is about.
+        assert svc.state("cover.test").is_safety is False, cycle
+
+    # Window closes: 60 is an ordinary abandoned target, so the sweep takes it.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+    # And with automatic control off AND outside the time window, nothing is
+    # driven to the abandoned 60 — what steps 3/4 exist to guarantee.
+    svc._auto_control_enabled = False
+    svc._in_time_window = False
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_same_position_skip_does_not_protect_an_unbooked_entity(svc, mock_hass):
+    """Issue #1165 (round-2 audit): a skip that books nothing on an entity
+    with nothing booked must not leave ``is_safety`` True.
+
+    The verdict describes the booked target, so with no booked target there is
+    no subject for it and ``False`` is the honest answer. Granting ``True``
+    would be inert against both readers today — each no-ops on ``target is
+    None`` — but five ``set_target`` sites book without touching the verdict
+    (``restore_target``, ``send_my_position``, the two coordinator external-
+    stop paths, and the venetian carriage rebase), so the next booking through
+    any of them would silently inherit the licence. The rebase is reachable in
+    this very cycle: ``_service_secondary_axis`` runs after the verdict write.
+    """
+    # A fresh entity: nothing booked, verdict at its default.
+    assert svc.get_target("cover.test") is None
+    assert svc.state("cover.test").is_safety is False
+
+    # A weather-safety cycle wants the 0 endpoint and the cover already sits
+    # at 2 — inside position_tolerance=3. Arm 1's endpoint-tolerance sub-arm
+    # skips, and #1158 withholds the booking because 2 != 0.
+    _patch_position(svc, 2)
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 0, "weather", context=_ctx(is_safety=True)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") is None
+
+    # No booked number, so no licence to hand out.
+    assert svc.state("cover.test").is_safety is False
+
+    # A later booking through one of the verdict-blind ``set_target`` sites
+    # must therefore start unprotected, not inherit a licence.
+    svc.restore_target("cover.test", 60)
+    assert svc.state("cover.test").is_safety is False
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+
+@pytest.mark.asyncio
+async def test_same_position_skip_regrants_is_safety_when_the_condition_returns(
+    svc, mock_hass
+):
+    """Issue #1165: the GRANT polarity does not ride inside the booking guard
+    either — a returning safety condition re-protects an unchanged target.
+
+    The revoke tests all leave the flag ``False``, so on their own they would
+    stay green under a rule that simply never granted from a skip. This pins
+    the other direction on the one shape where the ``(target,
+    dispatch_token)`` value-change guard suppresses ``set_target`` entirely:
+    the booked 50 never changes across all three cycles, so every grant and
+    revoke here has to come from outside that guard.
+    """
+    # Cycle 1: weather safety drives 90 -> 50. Real dispatch, flag True.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 50
+    assert svc.state("cover.test").is_safety is True
+
+    _patch_position(svc, 50)
+    svc.set_waiting("cover.test", False)
+
+    # Cycle 2: weather clears, solar re-confirms the same 50 -> revoked.
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "solar", context=_ctx(is_safety=False)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.state("cover.test").is_safety is False
+
+    # Cycle 3: the weather condition returns on the SAME 50. Nothing is
+    # dispatched and nothing is re-booked — the grant has to happen anyway.
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(is_safety=True)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 50
+    assert svc.state("cover.test").is_safety is True
+
+    # The licence is real: the window-close sweep leaves the target alone.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") == 50
 
 
 @pytest.mark.asyncio

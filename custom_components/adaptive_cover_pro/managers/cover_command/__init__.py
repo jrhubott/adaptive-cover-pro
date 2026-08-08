@@ -1927,57 +1927,68 @@ class CoverCommandService:
 
             # THIS CYCLE'S safety verdict (issues #1165 / #1134).
             #
-            # `PerEntityState.is_safety` describes THE ENTITY'S BOOKED TARGET:
-            # "is the number ACP currently has this cover down for a
-            # safety-protected one?" That is what its two readers ask —
-            # `clear_non_safety_targets()` decides whether to sweep the booked
-            # target, and `run_reconciliation_pass` steps 3/4 decide whether to
-            # resend it with automatic control off or outside the time window.
+            # `PerEntityState.is_safety` answers "is the number ACP currently
+            # has this cover down for a safety-protected one?" — the question
+            # its two readers ask. `clear_non_safety_targets()` uses it to
+            # decide whether to sweep the booked target; `run_reconciliation_pass`
+            # steps 3/4 use it to decide whether to resend that target with
+            # automatic control off or outside the time window. Both no-op when
+            # nothing is booked.
             #
-            # So the verdict is written whenever it is ABOUT the booked number:
+            # The two polarities are NOT symmetrical, so the write is not
+            # either:
             #
-            # - every real dispatch (`_prepare_service_call`), which books and
-            #   stamps in the same breath, so the two can never disagree;
-            # - every same_position skip whose booked target is the one this
-            #   cycle routed to — including the cycles where the booking guard
-            #   above suppressed `set_target` because the value did not change,
-            #   which is exactly issue #1165's requirement. The verdict must NOT
-            #   ride inside that guard: `dispatch_token` is a property of the
-            #   booking so the guard governs it correctly, but a verdict under
-            #   the same guard freezes, because the guard suppresses the write
-            #   on precisely the cycles that re-confirm an unchanged target. A
-            #   frozen True survives `clear_non_safety_targets()` and gets
-            #   resent by steps 3/4 — what they exist to prevent;
-            # - every same_position skip on an entity with nothing booked, where
-            #   there is no target for the verdict to contradict (and both
-            #   readers are no-ops on a target-less entity anyway).
+            # - REVOKING is unconditional. It only takes away a licence to act
+            #   outside those two gates, which is safe on any number — booked,
+            #   foreign, or absent. Withholding it IS issue #1165: a safety
+            #   dispatch books 60, the cover comes to rest short of it (nothing
+            #   chases it — position matching is off by default), and every
+            #   later cycle skips inside endpoint tolerance of 0 with the
+            #   booking withheld (#1158). A gated revoke would then never fire
+            #   again: 60 stays protected forever, survives every sweep, and is
+            #   re-driven at night with automatic control off the moment the
+            #   user enables position matching.
+            # - GRANTING requires the booked target to be the one this cycle
+            #   routed to, because a licence must attach to the number the
+            #   safety decision was actually about. The same withheld-booking
+            #   sub-arm is where that can go wrong in the other direction: a
+            #   solar-booked 60 the cover missed, plus a weather cycle that
+            #   skips because the cover happens to sit within tolerance of the
+            #   0 endpoint, would mark 60 safety-protected — #1165's own defect
+            #   with the polarity reversed, protecting and re-driving a number
+            #   no safety handler asked for.
             #
-            # And it is withheld in exactly one case: the skip books nothing
-            # (arm 1's endpoint-tolerance sub-arm, #1158) AND the entity is
-            # still holding a FOREIGN target — some earlier decision's number,
-            # not the one this cycle routed to. This cycle's verdict is not
-            # about that number, so the flag keeps describing the decision that
-            # did produce it. Stamping it there is #1165's own defect with the
-            # polarity reversed: a solar-booked 60 that the cover missed, plus a
-            # weather cycle that skips because the cover happens to sit within
-            # tolerance of the 0 endpoint, would mark 60 safety-protected —
-            # surviving the sweep and driving the cover to 60 at night with
-            # automatic control off, for a number the safety handler never
-            # asked for. Note the gate is read AFTER the booking block, so the
-            # three arms that do book have already made the booked target this
-            # cycle's routed target and write normally.
+            #   `_plan.routed_target` is a plain `int`, never None, so that one
+            #   equality also declines to grant on an entity with NOTHING
+            #   booked. That is deliberate, not incidental: no booked number
+            #   means no subject for the verdict, and while both readers ignore
+            #   a target-less row today, five `set_target` sites book without
+            #   touching the verdict (listed on `PerEntityState.is_safety`) —
+            #   any of them would inherit the licence for free. The venetian
+            #   carriage rebase is reachable from this very cycle, since
+            #   `_service_secondary_axis` runs just below.
+            #
+            # Neither polarity may ride inside the booking's value-change guard
+            # above. That guard governs `dispatch_token` correctly — the stamp
+            # describes the booking — but it suppresses the write on exactly
+            # the cycles that re-confirm an unchanged target, which is where a
+            # verdict would freeze. Reading `get_target` AFTER the guard is
+            # deliberate for the opposite reason: the arms that DO book have
+            # already made the booked target this cycle's routed target, so
+            # they grant normally.
             #
             # A reconciliation resend RESTATES this flag rather than re-deciding
             # it (`_execute_command` passes the recorded value through, #1134),
-            # because a resend makes no new verdict. The only other writer is
-            # the blanket reset `clear_safety_targets()`.
+            # because a resend makes no new verdict.
             #
             # `self.state()` inserts a row, which is correct for a write on an
             # entity ACP is actively commanding; the non-inserting `_get`
             # discipline is scoped to read-only predicates (`is_target_unreached`).
             _booked_target = self.get_target(entity_id)
-            if _booked_target is None or _booked_target == _plan.routed_target:
-                self.state(entity_id).is_safety = context.is_safety
+            if not context.is_safety:
+                self.state(entity_id).is_safety = False
+            elif _booked_target == _plan.routed_target:
+                self.state(entity_id).is_safety = True
 
             # Secondary axis LAST: on a venetian this may rebase the target
             # via set_commanded_position (== set_target) after a tilt-only

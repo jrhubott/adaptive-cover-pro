@@ -242,38 +242,50 @@ class PerEntityState:
     last_progress_at: dt.datetime | None = None
     retry_count: int = 0
     gave_up: bool = False
-    # Whether ``target`` above is a safety-protected number: the answer both
-    # readers actually want, since ``clear_non_safety_targets()`` decides
-    # whether to sweep ``target`` and ``run_reconciliation_pass`` steps 3/4
-    # decide whether to resend it with automatic control off or outside the
-    # time window. It is a verdict ABOUT the booked number, which is what makes
-    # its lifetime different from ``dispatch_token``'s just above: the token
-    # describes how one dispatch expressed the value, the verdict describes
-    # what is protecting it now.
+    # Whether ``target`` above is a safety-protected number — the question both
+    # readers ask: ``clear_non_safety_targets()`` decides whether to sweep
+    # ``target``, and ``run_reconciliation_pass`` steps 3/4 decide whether to
+    # resend it with automatic control off or outside the time window. Both
+    # ignore a row whose ``target`` is None. It is a verdict ABOUT the booked
+    # number, which is what makes its lifetime differ from ``dispatch_token``'s
+    # just above: the token describes how one dispatch expressed the value, the
+    # verdict describes what is protecting it.
     #
-    # Written wherever ``apply_position`` reaches a decision about the booked
-    # number: every real dispatch (``_prepare_service_call``, which books and
-    # stamps together so the two can never disagree), and every
-    # ``same_position`` skip whose booked target is the one that cycle routed
-    # to — or that has nothing booked at all, leaving no target to contradict.
-    # A reconciliation resend RESTATES it rather than re-deciding it (#1134),
-    # because a resend makes no new verdict. The only other writer is the
-    # blanket reset ``clear_safety_targets()``.
+    # "About the booked number" is the INTENT, not an invariant this dataclass
+    # enforces. Only two writers keep the pair in step by construction:
+    # ``_prepare_service_call``, which books and stamps in the same breath on
+    # every real dispatch, and ``apply_position``'s ``same_position`` skip,
+    # whose asymmetric rule is spelled out at that call site — revoke
+    # unconditionally, grant only when the booked target is the one that cycle
+    # routed to, and never under the booking's own value-change guard (#1165;
+    # that guard is right for ``dispatch_token`` but suppresses the write on
+    # exactly the cycles that re-confirm an unchanged target, which is where a
+    # verdict freezes). ``clear_safety_targets()`` is a third writer: a blanket
+    # reset that clears the verdict on every row without touching any target.
     #
-    # Two corollaries, one on each side (both issue #1165):
+    # FIVE other sites write ``target`` and leave the verdict exactly as they
+    # found it, so a row can pair a fresh target with an older decision's
+    # verdict:
     #
-    # * It must NEVER be governed by the booking's value-change guard.
-    #   ``dispatch_token`` is correctly governed by it — the stamp describes the
-    #   booking — but a verdict under that guard freezes, because the guard
-    #   suppresses the write on exactly the cycles that re-confirm an unchanged
-    #   target. A frozen True survives ``clear_non_safety_targets()`` and makes
-    #   steps 3/4 resend with automatic control off or outside the time window.
-    # * It must NEVER be written from a cycle whose verdict is about some OTHER
-    #   number. The one place that can happen is the ``same_position`` sub-arm
-    #   where #1158 withholds the booking while the entity still holds a foreign
-    #   target: writing there marks a stale, unrelated target safety-protected —
-    #   the same defect with the polarity reversed, and it re-drives a number no
-    #   safety decision produced.
+    # * ``CoverCommandService.restore_target`` — rehydration after a reload.
+    # * ``CoverCommandService.send_my_position`` — books the configured My
+    #   percent (no production caller today).
+    # * ``coordinator.py``'s two external-stop -> My paths — a user stop that
+    #   engages the #875 override is dropped by ``run_reconciliation_pass``
+    #   step 2 before it ever reads this field, which covers the common case;
+    #   neither site conditions its ``set_target`` on the override actually
+    #   having engaged, so that is a mitigation, not a guarantee.
+    # * ``cover_types/venetian/sequencer.py``'s carriage rebase — pushes the
+    #   observed carriage position back through ``set_commanded_position``
+    #   (== ``set_target``) after a tilt-only send back-drives it.
+    #
+    # Those parentheticals keep today's blast radius small, but the inheritance
+    # is real, and it is why the ``same_position`` skip declines to GRANT on a
+    # row with nothing booked: an unbooked True is inert against both readers,
+    # yet any of the five would hand it straight to the next target.
+    #
+    # A reconciliation resend RESTATES the recorded value rather than
+    # re-deciding it (#1134), because a resend makes no new verdict.
     is_safety: bool = False
     last_reconcile_at: dt.datetime | None = None
     # Display-only assumed position (issue #888). Set on covers with no native
