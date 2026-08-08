@@ -91,6 +91,26 @@ def _patch_caps(position_supported=True):
     )
 
 
+def _patch_explicit_caps(caps):
+    """Patch check_cover_features with a caller-supplied capability dict."""
+    return patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value=caps,
+    )
+
+
+def _patch_no_prior_command():
+    """Patch get_last_updated to None so the time-delta gate always passes.
+
+    The ``mock_hass`` fixture is a bare MagicMock, so an unpatched
+    ``get_last_updated`` hands the gate a MagicMock it cannot subtract.
+    """
+    return patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    )
+
+
 # ------------------------------------------------------------------ #
 # apply_position — gate checks
 # ------------------------------------------------------------------ #
@@ -401,27 +421,26 @@ async def test_reconcile_resends_booked_target_after_skip_then_drift(svc, mock_h
 
 
 @pytest.mark.asyncio
-async def test_same_position_skip_does_not_stamp_stale_is_safety(svc, mock_hass):
-    """Issue #1158 MUST-FIX 2 (round-2 audit): a same_position skip must
-    never write ``is_safety`` from ``context.is_safety``.
+async def test_same_position_skip_tracks_this_cycles_is_safety_verdict(svc, mock_hass):
+    """Issues #1158 / #1165: a same_position skip records THIS cycle's safety
+    verdict, and the verdict comes back down when the condition ends.
 
-    The two writers of ``PerEntityState.target`` are NOT symmetrical:
-    ``_prepare_service_call`` stamps ``is_safety`` unconditionally on every
-    REAL dispatch, but the same_position skip's booking only writes when the
-    value CHANGES (the #1115 value-change guard). Mirroring the ``is_safety``
-    write under that narrower guard would let a since-cleared safety
-    condition freeze ``is_safety=True`` forever: a later skip that
-    re-confirms the same unchanged value has the guard suppress the write
-    entirely, so a stale True can never clear. A frozen True then survives
-    ``clear_non_safety_targets()`` and makes ``run_reconciliation_pass``
-    resend it with auto_control off or outside the time window — precisely
-    what steps 3/4 exist to prevent. Reproduces the auditor's
-    ``repro_is_safety_stale.py``.
+    ``PerEntityState.is_safety`` is a property of the protection currently in
+    force, not of the booked number — so the skip writes it unconditionally,
+    outside the ``(target, dispatch_token)`` value-change guard the booking
+    uses. Governing it with that guard is what #1165 reports as the bug: a
+    since-cleared condition could never come back down, because the guard
+    suppresses the write on exactly the cycles that re-confirm an unchanged
+    target. A frozen ``True`` then survives ``clear_non_safety_targets()`` and
+    makes ``run_reconciliation_pass`` resend with auto_control off or outside
+    the time window — what steps 3/4 exist to prevent, and what the tail of
+    this test guards.
     """
     # Cycle 1: a weather-safety cycle skips because the cover is already at
     # the safety position (50) — nothing is dispatched, so
-    # ``_prepare_service_call`` (the one REAL is_safety writer) never runs.
-    # The skip must NOT record is_safety=True on its own.
+    # ``_prepare_service_call`` (the REAL-dispatch writer) never runs. The skip
+    # is still a decision about this entity, and this cycle's verdict is
+    # "safety-protected".
     _patch_position(svc, 50)
     with _patch_caps():
         outcome, reason = await svc.apply_position(
@@ -429,11 +448,12 @@ async def test_same_position_skip_does_not_stamp_stale_is_safety(svc, mock_hass)
         )
     assert (outcome, reason) == ("skipped", "same_position")
     assert svc.get_target("cover.test") == 50
-    assert svc.state("cover.test").is_safety is False
+    assert svc.state("cover.test").is_safety is True
 
-    # Cycle 2: weather clears; an ordinary cycle re-confirms the same 50.
-    # The value-change guard suppresses the write entirely (booked value
-    # unchanged) — is_safety stays exactly what it already was (False).
+    # Cycle 2: weather clears; an ordinary cycle re-confirms the same 50. The
+    # value-change guard suppresses the BOOKING (unchanged value) — the verdict
+    # is written anyway, so the flag comes back down. This is the #1165
+    # assertion: it was vacuous while cycle 1 left the flag at its default.
     with _patch_caps():
         outcome, reason = await svc.apply_position(
             "cover.test", 50, "solar", context=_ctx(is_safety=False)
@@ -459,6 +479,207 @@ async def test_same_position_skip_does_not_stamp_stale_is_safety(svc, mock_hass)
         await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
 
     mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_same_position_skip_clears_is_safety_after_condition_ends(svc, mock_hass):
+    """Issue #1165: a same_position skip must record THIS cycle's safety
+    verdict, so a flag left ``True`` by an earlier REAL dispatch comes back
+    down once the safety condition ends.
+
+    ``PerEntityState.is_safety`` describes the protection currently in force
+    for the entity, not the booked number. The skip branch used to leave it
+    untouched, so a weather dispatch's ``True`` rode forward onto every later
+    cycle that re-confirmed the same target — and the #1115 value-change guard
+    made that permanent, because an unchanged target suppresses ``set_target``
+    entirely. A frozen ``True`` then defeats ``clear_non_safety_targets()`` and
+    lets ``run_reconciliation_pass`` steps 3/4 resend the target with automatic
+    control off and outside the time window.
+    """
+    # Cycle 1: weather safety drives the cover from 90 to 50 — a REAL dispatch,
+    # so ``_prepare_service_call`` genuinely stamps is_safety=True.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.state("cover.test").is_safety is True
+    assert svc.get_target("cover.test") == 50
+
+    # The cover arrives and settles on the safety position.
+    _patch_position(svc, 50)
+    svc.set_waiting("cover.test", False)
+
+    # Cycle 2: weather clears. An ordinary solar cycle re-confirms the SAME 50
+    # through the same_position skip. The booked value does not change, so the
+    # value-change guard suppresses set_target — but the safety verdict for
+    # this cycle is False and must be recorded regardless.
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "solar", context=_ctx(is_safety=False)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.state("cover.test").is_safety is False
+
+    # Window closes: the target is no longer safety-protected, so the sweep
+    # must take it.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+    # And with automatic control off AND outside the time window, nothing is
+    # resent for this entity — what steps 3/4 exist to guarantee.
+    svc._auto_control_enabled = False
+    svc._in_time_window = False
+    _patch_position(svc, 90)  # cover drifted / was moved since
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_same_position_skip_endpoint_tolerance_still_refreshes_is_safety(
+    svc, mock_hass
+):
+    """Issue #1165: the safety verdict is refreshed on EVERY same_position
+    skip — including the one sub-arm that deliberately books nothing.
+
+    ``is_safety`` is a property of the protection, not of the booking, so it
+    cannot ride inside the booking guard. Arm 1's endpoint-tolerance sub-arm
+    proves the point: a cover resting at 98 against a 100 target skips, and
+    #1158's narrowed fix withholds the booking there because the routed target
+    (100) does not match the actual (98). The verdict still has to be written.
+    """
+    # Cycle 1: a weather-safety dispatch to the 100 endpoint. Real dispatch →
+    # is_safety=True, target booked at the routed endpoint.
+    _patch_position(svc, 50)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 100, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.state("cover.test").is_safety is True
+    assert svc.get_target("cover.test") == 100
+
+    # The motor settles two percent short — inside position_tolerance=3, but
+    # not on the endpoint.
+    _patch_position(svc, 98)
+    svc.set_waiting("cover.test", False)
+
+    # Cycle 2: weather clears. The endpoint-tolerance sub-arm skips and does
+    # NOT book (target/actual would mismatch, #1158) — but the verdict for
+    # this cycle is False.
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "solar", context=_ctx(is_safety=False)
+        )
+
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 100  # unbooked-guard still holds
+    assert svc.state("cover.test").is_safety is False
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resend_preserves_is_safety_flag(svc, mock_hass):
+    """Issue #1134 defect 2: a reconciliation resend RESTATES the safety
+    verdict; it must not clear the very flag that authorised it.
+
+    ``_execute_command`` funnels into ``_prepare_service_call``, which writes
+    ``is_safety`` unconditionally. Omitting the keyword let it default to
+    ``False``, so a safety target un-protected itself on its own first resend
+    — the second pass then hit steps 3/4 and skipped, with automatic control
+    off and outside the time window, exactly where a safety target is supposed
+    to keep being resent.
+    """
+    # A weather-safety dispatch to 50, from 90.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.state("cover.test").is_safety is True
+
+    # The cover never got there. Automatic control is off and we are outside
+    # the time window — only the safety flag keeps this target eligible.
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 90)
+    svc._auto_control_enabled = False
+    svc._in_time_window = False
+
+    now = dt.datetime.now(dt.UTC)
+
+    # Pass 1: resent because is_safety is True.
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(now)
+
+    mock_hass.services.async_call.assert_called_once()
+    assert mock_hass.services.async_call.call_args[0][1] == "set_cover_position"
+    assert mock_hass.services.async_call.call_args[0][2]["position"] == 50
+    assert svc.state("cover.test").is_safety is True
+
+    # Pass 2: still a safety target, so it is resent again (max_retries=3).
+    svc.set_waiting("cover.test", False)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(now)
+
+    mock_hass.services.async_call.assert_called_once()
+    assert mock_hass.services.async_call.call_args[0][1] == "set_cover_position"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resend_of_my_target_reroutes_through_stop_cover(
+    svc, mock_hass
+):
+    """Issue #1134 defect 1: a resend of a My-preset target must go back out
+    as ``stop_cover``, and must not silently rebook the user's My value as 0.
+
+    ``_execute_command`` let ``use_my_position`` default to ``False``, so
+    ``route_service_call`` fell past the My branch to the open/close threshold:
+    a My of 10 is below the 50 threshold, so the resend sent ``close_cover``
+    and slammed the cover shut — and ``_prepare_service_call`` then booked the
+    branch's ``routed_target`` of 0 over the user's 10.
+
+    The RTS/ZVIDAR shape makes this reachable: the cover reports HA state
+    "open" forever, so ``get_open_close_state`` maps it to 100 and the pass
+    always judges the 10 target missed.
+    """
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    mock_hass.states.get.return_value = MagicMock(state="open", attributes={})
+    _patch_position(svc, None)
+
+    with _patch_explicit_caps(caps), _patch_no_prior_command():
+        outcome, reason = await svc.apply_position(
+            "cover.rts",
+            10,
+            "solar",
+            context=_ctx(use_my_position=True, special_positions=[0, 100, 10]),
+        )
+    assert (outcome, reason) == ("sent", "stop_cover")
+    assert svc.get_target("cover.rts") == 10
+
+    # The cover parks at its My preset but keeps reporting "open" → 100, so
+    # reconciliation always sees the target as missed.
+    svc.set_waiting("cover.rts", False)
+    _patch_position(svc, 100)
+    mock_hass.services.async_call.reset_mock()
+
+    with _patch_explicit_caps(caps):
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_called_once()
+    assert mock_hass.services.async_call.call_args[0][1] == "stop_cover"
+    assert svc.get_target("cover.rts") == 10
 
 
 # ------------------------------------------------------------------ #

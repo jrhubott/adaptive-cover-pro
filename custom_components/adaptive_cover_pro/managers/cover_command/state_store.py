@@ -242,6 +242,23 @@ class PerEntityState:
     last_progress_at: dt.datetime | None = None
     retry_count: int = 0
     gave_up: bool = False
+    # This cycle's safety verdict for the entity ACP is currently tracking — a
+    # property of the PROTECTION, not of the booked number, which is what makes
+    # its lifetime different from ``dispatch_token``'s just above. It is written
+    # on every path where ``apply_position`` reaches a decision about the
+    # entity: every real dispatch (``_prepare_service_call``) and every
+    # ``same_position`` skip, unconditionally, whether or not a target is booked
+    # that cycle. A reconciliation resend RESTATES it rather than re-deciding
+    # it, because a resend makes no new verdict. The only other writer is the
+    # blanket reset ``clear_safety_targets()``.
+    #
+    # Corollary (issue #1165): it must never be governed by the booking's
+    # value-change guard. ``dispatch_token`` is correctly governed by it — the
+    # stamp describes the booking — but a verdict under that guard freezes,
+    # because the guard suppresses the write on exactly the cycles that
+    # re-confirm an unchanged target. A frozen True survives
+    # ``clear_non_safety_targets()`` and makes ``run_reconciliation_pass``
+    # steps 3/4 resend with automatic control off or outside the time window.
     is_safety: bool = False
     last_reconcile_at: dt.datetime | None = None
     # Display-only assumed position (issue #888). Set on covers with no native

@@ -42,7 +42,12 @@ from . import gates
 from .diagnostics import DiagnosticsRecorder
 from .position_context import PositionContextTracker
 from .queue import CommandQueue, QueueGrant
-from .routing import ServiceCallPlan, build_special_positions, route_service_call
+from .routing import (
+    ServiceCallPlan,
+    build_special_positions,
+    is_my_preset_target,
+    route_service_call,
+)
 from .state_classifier import StateClassifier
 from .state_store import (
     PerEntityState,
@@ -1857,6 +1862,36 @@ class CoverCommandService:
                 )
             )
         ):
+            # THIS CYCLE'S safety verdict, recorded first and unconditionally —
+            # ahead of the booking block below and outside its value-change
+            # guard (issue #1165).
+            #
+            # `PerEntityState.is_safety` records the safety verdict for the
+            # entity ACP is currently tracking: it is a property of the
+            # protection, not of the booked number. So it is written on every
+            # path where `apply_position` reaches a decision about the entity —
+            # every real dispatch (`_prepare_service_call`) and every
+            # same_position skip — whether or not a target is booked this cycle.
+            # A reconciliation resend RESTATES it rather than re-deciding it,
+            # because a resend makes no new verdict; the only other writer is the
+            # blanket reset `clear_safety_targets()`.
+            #
+            # That lifetime is exactly why the verdict cannot ride inside the
+            # `(target, dispatch_token)` value-change guard below.
+            # `dispatch_token` IS a property of the booking, so that guard
+            # governs it correctly. A verdict governed by the same guard
+            # freezes instead: a since-cleared safety condition can never come
+            # back down, because the guard suppresses the write on precisely the
+            # cycles that re-confirm an unchanged target. A frozen True then
+            # survives `clear_non_safety_targets()` and makes
+            # `run_reconciliation_pass` steps 3/4 resend the target with
+            # auto_control off or outside the time window — what those steps
+            # exist to prevent.
+            #
+            # `self.state()` inserts a row, which is correct for a write on an
+            # entity ACP is actively commanding; the non-inserting `_get`
+            # discipline is scoped to read-only predicates (`is_target_unreached`).
+            self.state(entity_id).is_safety = context.is_safety
             # Book the target even though nothing is dispatched (issue #1158),
             # so get_diagnostics()["at_target"] and the Lovelace rails see a
             # value instead of a permanent None — for every sub-arm except
@@ -1908,21 +1943,9 @@ class CoverCommandService:
             # dispatch_token a prior real dispatch stamped it with (#1115) —
             # set_target(dispatch_token=None) would erase that provenance.
             #
-            # Deliberately do NOT write `is_safety` here. The two writers of
-            # `target` are NOT symmetrical: `_prepare_service_call` stamps
-            # `is_safety` unconditionally on every REAL dispatch, but this
-            # branch only writes when booking is allowed at all (above) AND
-            # the value changes. Mirroring that write under this narrower
-            # guard would let a since-cleared safety condition
-            # (context.is_safety flips back to False) freeze `is_safety=True`
-            # forever the moment a later skip re-confirms the same unchanged
-            # value (the guard suppresses the write entirely, so the stale
-            # True can never clear). A frozen True then survives
-            # `clear_non_safety_targets()` and makes `run_reconciliation_pass`
-            # resend it with auto_control off or outside the time window —
-            # precisely what its steps 3/4 exist to prevent. Leaving
-            # `is_safety` at its default (False) matches merge-base behaviour
-            # (no booking at all) for the one axis that matters here.
+            # This guard governs the `(target, dispatch_token)` pair and nothing
+            # else. The safety verdict is written at the top of this branch,
+            # deliberately outside it — see the lifetime rule there (#1165).
             _target_would_mismatch_actual = (
                 _current_is_genuine and _current != _plan.routed_target
             )
@@ -2637,11 +2660,14 @@ class CoverCommandService:
         # fallback) — so "can this cover verify a granular target?" is answered
         # consistently with how it is read and commanded. A cover that cannot
         # report the axis it was commanded on can only surface an endpoint.
+        #
+        # That question and "must a resend of this target re-route through
+        # stop_cover?" (``_execute_command``, issue #1134) are the SAME
+        # predicate — both ask whether the booked number is a My preset — so
+        # both delegate to ``is_my_preset_target`` rather than restating the
+        # formula.
         axis = self._policy.select_default_axis(caps)
-        if not caps_get(caps, axis.capability_key, default=True) and s.target not in (
-            POSITION_CLOSED,
-            POSITION_OPEN,
-        ):
+        if is_my_preset_target(caps, axis, s.target):
             return False
         return not self._at_target(actual, s.target)
 
@@ -2664,12 +2690,13 @@ class CoverCommandService:
            reconciliation does not fight the user's intentional move.
            Safety handlers (force override, weather) overwrite ``target_call``
            via ``apply_position(is_safety=True)`` so they are always protected.
-        4. If ``_auto_control_enabled`` is False and the entity is not in
-           ``_safety_targets`` → skip.  Safety targets (set via
+        4. If ``_auto_control_enabled`` is False and ``PerEntityState.is_safety``
+           is False → skip.  Safety targets (set via
            ``apply_position(is_safety=True)``) are still resent so covers reach
            a safe position regardless of the automatic control toggle.
-        5. If ``_in_time_window`` is False and entity is not in ``_safety_targets``
-           → skip.  Prevents stale daytime targets from being resent overnight.
+        5. If ``_in_time_window`` is False and ``PerEntityState.is_safety`` is
+           False → skip.  Prevents stale daytime targets from being resent
+           overnight.
         6. Compare actual position to ``target_call`` within tolerance.
         7. If match → reset retry count, done.
         8. If mismatch → ask the cover-type policy whether the entity is
@@ -2904,6 +2931,14 @@ class CoverCommandService:
             # value going back on the wire moves.
             resend_target = s.target
             resend_token = s.dispatch_token
+            # The safety verdict travels with the pair for the same reason the
+            # stamp does: a resend RESTATES the record rather than making a new
+            # decision, and ``_prepare_service_call`` rewrites ``is_safety``
+            # unconditionally on every booking. Left to its default, the first
+            # resend of a safety target would clear the very flag that steps 3/4
+            # just used to authorise it, and the next pass would skip it with
+            # auto_control off or outside the window (issue #1134).
+            resend_is_safety = s.is_safety
             if resend_target is None:
                 # Cleared out from under the pass (time-window close, reload).
                 # There is no longer a target to restate.
@@ -2975,6 +3010,7 @@ class CoverCommandService:
                 entity_id,
                 resend_target,
                 dispatch_token=resend_token,
+                is_safety=resend_is_safety,
                 queue_budget=wait_allowance,
             ):
                 self._logger.debug(
@@ -3184,11 +3220,15 @@ class CoverCommandService:
                 for this entity when a new target is recorded. Pass False from
                 ``_execute_command`` so reconciliation retries do not reset the
                 counter they themselves manage.
-            is_safety: If True, this target was set via a safety override
-                (force override, weather handler).  Adds the entity to
-                ``_safety_targets`` so reconciliation will resend it even when
-                automatic control is off or outside the time window.
-                Non-safety targets remove the entity from ``_safety_targets``.
+            is_safety: Whether the target being booked is protected by a safety
+                override (force override, weather handler). Written straight
+                onto ``PerEntityState.is_safety``, which
+                ``run_reconciliation_pass`` steps 3/4 read to decide whether to
+                resend with automatic control off or outside the time window.
+                ``apply_position`` passes THIS cycle's verdict;
+                ``_execute_command`` passes the flag its caller read alongside
+                the target it is restating, because a resend re-states the
+                record rather than making a new verdict (issue #1134).
             use_my_position: If True and the cover lacks set_cover_position,
                 send cover.stop_cover to trigger the hardware My preset instead
                 of falling back to open/close threshold routing.
@@ -3331,6 +3371,7 @@ class CoverCommandService:
         target: int,
         *,
         dispatch_token: Any = None,
+        is_safety: bool = False,
         queue_budget: float = COMMAND_QUEUE_MAX_WAIT_SECONDS,
     ) -> bool:
         """Send command directly, bypassing gate checks (reconciliation use only).
@@ -3356,6 +3397,28 @@ class CoverCommandService:
         read — re-reading the record would let a re-booking that landed during
         the caller's clearance await pair this target with another number's
         frame. A caller with no dispatch behind ``target`` leaves it ``None``.
+
+        ``is_safety`` is handled the same way, and for the same reason: a resend
+        RESTATES the record rather than reaching a new verdict, so the flag comes
+        from the caller's single read alongside ``target`` rather than being
+        re-read here. ``_prepare_service_call`` rewrites
+        ``PerEntityState.is_safety`` unconditionally on every booking, so leaving
+        this at its default cleared the very flag ``run_reconciliation_pass``
+        steps 3/4 had just used to authorise the resend — a safety target
+        un-protected itself on its own first retry (issue #1134). It stays a
+        caller-passed keyword rather than an internal ``self.state()`` read so
+        the second caller, ``TravelCalibrationManager``, is byte-identical: a
+        calibration sweep must never invent or preserve a safety target.
+
+        ``use_my_position`` is NOT passed by callers — it is DERIVED here from
+        the booked number via :func:`is_my_preset_target`, against capabilities
+        read on the far side of the queue wait. There is no recorded My flag to
+        restate (``send_my_position`` books its percent without ever entering
+        ``_prepare_service_call``), and defaulting it to ``False`` dropped the
+        resend past the My branch onto the open/close threshold: a My of 10
+        went back out as ``close_cover``, slamming the cover shut, and rebooked
+        the user's target as 0 (issue #1134). Calibration is unaffected — it
+        only ever drives the 0/100 endpoints, where the predicate is False.
 
         NB: callers are responsible for entity-loaded-ness. Reconciliation only
         runs for entities that already passed the cover_unavailable gate in
@@ -3384,12 +3447,23 @@ class CoverCommandService:
             # Nothing was booked, so nothing has to be unwound — and the caller
             # counts no attempt against this entity.
             return False
+        # Capabilities are read on the FAR side of the acquisition, for the same
+        # reason ``apply_position`` re-derives ``_caps_for_plan`` after its own
+        # wait: the queue can hold a resend for tens of seconds while unrelated
+        # covers transmit, which is ample time for this entity to reload with
+        # different capabilities. Passing ``caps=`` on to
+        # ``_prepare_service_call`` also removes a duplicate fetch.
+        caps = self.get_cover_capabilities(entity_id)
+        axis = self._policy.select_default_axis(caps)
         transmitted = False
         try:
             service, service_data, _ = self._prepare_service_call(
                 entity_id,
                 target,
+                caps=caps,
                 reset_retries=False,
+                is_safety=is_safety,
+                use_my_position=is_my_preset_target(caps, axis, target),
                 dispatch_token=dispatch_token,
             )
             if service is None:

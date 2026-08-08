@@ -549,6 +549,50 @@ def test_route_endpoint_falls_back_when_no_close_capability():
     assert plan.supports_position is True
 
 
+def test_route_service_call_non_position_axis_books_endpoint_unless_my():
+    """Premise lock for ``is_my_preset_target`` (issue #1134 defect 1).
+
+    Green from the start — this is not a bug reproduction. It pins the routing
+    algebra the resend-time derivation inverts: on an axis with no position
+    capability, an ordinary route can only ever book an endpoint (0 or 100),
+    while a My route books the raw value and sends ``stop_cover``. That is what
+    makes "a booked non-endpoint target on a non-position-capable axis came
+    from a My dispatch" a sound inference. If a future routing change breaks
+    the premise, this goes red at the source rather than as a mysterious
+    mis-route in reconciliation.
+    """
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    axis = get_policy("cover_blind").select_default_axis(caps)
+
+    for state in range(101):
+        plan = route_service_call(
+            "cover.rts",
+            state,
+            caps,
+            axis=axis,
+            use_my_position=False,
+            open_close_threshold=50,
+        )
+        assert plan.routed_target in (0, 100), state
+
+        my_plan = route_service_call(
+            "cover.rts",
+            state,
+            caps,
+            axis=axis,
+            use_my_position=True,
+            open_close_threshold=50,
+        )
+        assert my_plan.service == "stop_cover", state
+        assert my_plan.routed_target == state
+
+
 def test_route_service_call_missing_open_close_caps():
     """Returns no service when no capable HA service is available."""
     caps = {

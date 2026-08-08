@@ -184,6 +184,58 @@ def route_service_call(
     )
 
 
+def is_my_preset_target(
+    caps: dict[str, bool], axis: CoverAxis, target: int | None
+) -> bool:
+    """Whether a booked ``target`` can only have come from a My-preset dispatch.
+
+    :func:`route_service_call` is invertible on the axis that matters. Where
+    ``caps_get(caps, axis.capability_key)`` is False, exactly three branches are
+    reachable: the My branch (``routed_target = state``, requires
+    ``use_my_position``), the open/close threshold branch (``routed_target`` is
+    0 or 100), and the no-capable-service branch — which never books at all,
+    because ``_prepare_service_call`` returns before its state-mutation block.
+    The endpoint-substitution branch requires ``supports_position`` and is
+    unreachable there. So a booked NON-endpoint target on a
+    non-position-capable axis can only have been put there by a My dispatch.
+
+    Two consequences hang off that, which is why the predicate is shared rather
+    than spelled out twice:
+
+    * A reconciliation resend of such a target must re-route through
+      ``stop_cover`` (issue #1134). Left to ``use_my_position=False`` the resend
+      falls to the threshold branch and sends ``close_cover``/``open_cover``,
+      physically slamming the cover to an endpoint AND rebooking the user's My
+      percent as 0 or 100.
+    * Such a target can never be verified against a reported position (issue
+      #990). A cover that cannot report the axis it was commanded on surfaces
+      only endpoints, so a My percent never registers as reached and
+      ``is_target_unreached`` must stay quiet rather than nag forever.
+
+    Derived from CURRENT capabilities at the moment it is asked, so it needs no
+    stored flag and cannot go stale — unlike a remembered ``use_my_position``,
+    whose forget-value would silently mis-route.
+
+    At the two ambiguous values (a My preset configured to exactly 0 or 100)
+    this answers "not My", and the resulting ``close_cover``/``open_cover``
+    reaches the identical routed target — physically equivalent, no drift.
+
+    Args:
+        caps: Capabilities for the entity, read now (not at booking time).
+        axis: The policy-selected default axis for this cover.
+        target: The booked target, or ``None`` when nothing is booked.
+
+    Returns:
+        True when ``target`` is a My preset on this cover.
+
+    """
+    if target is None:
+        return False
+    if caps_get(caps, axis.capability_key, default=True):
+        return False
+    return target not in (POSITION_CLOSED, POSITION_OPEN)
+
+
 def build_special_positions(options: dict) -> list[int]:
     """Build list of special positions from options.
 
