@@ -288,6 +288,55 @@ def test_an_inverted_calibration_closes_toward_the_far_end():
     assert quantize(87, 3, full_coverage_at_zero=True, pivot=-50.0) == 100
 
 
+def test_a_hinged_calibration_quantises_each_side_of_the_configured_midpoint():
+    """Per-side ladders follow the three-point hinge (#1222).
+
+    A hinged ``specify_angles`` scale is affine on each side of horizontal and
+    not across it, which is invisible to this quantiser — it already spans each
+    side independently — but only because the pivot it anchors on moves with the
+    calibration. So the pivot is taken from a real engine rather than written as
+    a literal: that is the wiring under test.
+
+    An 80 % hinge leaves only 20 points of reported travel above horizontal
+    against 80 below, so the same step count is a far finer ladder on the upper
+    side. Read against a plain 0°/130° pair (horizontal at 69.23 %) the levels
+    land somewhere else entirely.
+    """
+    from unittest.mock import MagicMock
+
+    from custom_components.adaptive_cover_pro.engine.covers import AdaptiveTiltCover
+    from tests.cover_helpers import make_cover_config, make_tilt_config
+
+    cover = AdaptiveTiltCover(
+        logger=MagicMock(),
+        sol_azi=180.0,
+        sol_elev=45.0,
+        sun_data=MagicMock(),
+        config=make_cover_config(win_azi=180, fov_left=90, fov_right=90),
+        tilt_config=make_tilt_config(
+            slat_distance=0.02,
+            depth=0.03,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+            horizontal_percent=80.0,
+        ),
+    )
+    pivot = cover.coverage_pivot_percentage()
+    bounds = cover.coverage_travel_bounds()
+    assert pivot == 80.0
+
+    kw = {"full_coverage_at_zero": True, "pivot": pivot, "bounds": bounds}
+    # Above the hinge only 20 points remain, so one step swallows them all.
+    assert quantize(85, 1, **kw) == 100
+    assert quantize(85, 2, **kw) == 90
+    # Below it there are 80, so the same step count is a much coarser ladder.
+    assert quantize(70, 1, **kw) == 0
+    assert quantize(70, 2, **kw) == 40
+    # A demand sitting exactly on the hinge asks for no coverage — leave it.
+    assert quantize(80, 3, **kw) == 80
+
+
 # ---------------------------------------------------------------------------
 # Reachable travel (issue #1104 audit) — the ladder spans the band, not the scale
 # ---------------------------------------------------------------------------

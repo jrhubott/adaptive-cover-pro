@@ -103,6 +103,57 @@ def test_symmetric_straddle_tie_breaks_to_axis_rule() -> None:
 
 
 @pytest.mark.unit
+def test_symmetric_straddle_really_reaches_the_axis_rule() -> None:
+    """Non-vacuity companion to the guard above (#1222 audit).
+
+    That guard names the axis rule but cannot see whether it ran. 30 % and 70 %
+    are both 36° off horizontal, so the distance metric is supposed to abstain —
+    but it is computed as ``|30/100·180 − 90|`` against ``|70/100·180 − 90|``,
+    and the second overshoots 36° by a few ulps. Under an exact ``!=`` the
+    metric therefore answers first, and answers 30 for no better reason than
+    which way the rounding fell.
+
+    Swapping the axis direction on the SAME engine separates the two branches:
+    the tilt and awning policies share this comparator and differ only in the
+    axis rule, so a distance metric that decided would hand both the same
+    percentage.
+    """
+    cover = _mode2_tilt_cover()
+    assert cover.coverage_distance(30) == pytest.approx(cover.coverage_distance(70))
+    assert get_policy("cover_tilt").more_protective_position(30, 70, cover=cover) == 30
+    assert (
+        get_policy("cover_awning").more_protective_position(30, 70, cover=cover) == 70
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("low", range(50))
+def test_symmetric_mode2_pairs_all_fall_through_to_the_axis_rule(low: int) -> None:
+    """Every ``pct`` / ``100 − pct`` pair on MODE2 is a tie (#1222 audit).
+
+    The shipped-default scale is symmetric about horizontal, so the two members
+    of each of these 50 pairs are the same number of degrees off it and neither
+    blocks more sun. Angle-space distance computes them through different
+    arithmetic, though — ``44/100·180`` lands 1.4e-14 below 10.8° while
+    ``56/100·180`` lands 1.4e-14 above — so an exact inequality test reads
+    floating-point noise as a real difference. 13 of these pairs used to flip
+    that way, all of them from the axis rule's answer to its opposite, the worst
+    an 82-point swing between two equally protective slats (9 ↔ 91).
+
+    Both axis directions are asserted for the same reason as the case above:
+    only the axis rule can distinguish them, so agreement here is proof the tie
+    fell through instead of being decided.
+    """
+    high = 100 - low
+    cover = _mode2_tilt_cover()
+    tilt, awning = get_policy("cover_tilt"), get_policy("cover_awning")
+    assert tilt.more_protective_position(low, high, cover=cover) == low
+    assert tilt.more_protective_position(high, low, cover=cover) == low
+    assert awning.more_protective_position(low, high, cover=cover) == high
+    assert awning.more_protective_position(high, low, cover=cover) == high
+
+
+@pytest.mark.unit
 def test_no_cover_falls_back_to_monotonic_rule() -> None:
     """Callers with no engine in scope (the glare-zone handler) are unchanged."""
     assert get_policy("cover_tilt").more_protective_position(55, 60) == 55
@@ -120,6 +171,45 @@ def test_pivotless_engine_falls_back() -> None:
         get_policy("cover_awning").more_protective_position(55, 60, cover=pivotless)
         == 60
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "tilt_overrides",
+    [
+        {},
+        {"mode": "mode1"},
+        {"mode": "specify_angles", "angle_0": 0.0, "angle_100": 130.0},
+        {
+            "mode": "specify_angles",
+            "angle_0": 0.0,
+            "angle_100": 130.0,
+            "horizontal_percent": 50.0,
+        },
+        {"mode": "specify_angles", "angle_0": 120.0, "angle_100": 180.0},
+        # Zero-width scale: no pivot, and therefore no distance either.
+        {"mode": "specify_angles", "angle_0": 90.0, "angle_100": 90.0},
+    ],
+)
+def test_a_distance_exists_wherever_a_pivot_does(tilt_overrides) -> None:
+    """The comparator's unstated precondition, made a test (#1222 audit).
+
+    ``more_protective_position`` reads the pivot, and on the strength of that
+    read alone subtracts two ``coverage_distance`` answers. It never checks them
+    for ``None``, so an engine that could report a pivot and then decline a
+    distance would raise ``TypeError`` inside the comparator rather than fall
+    back to the axis rule. Both implementations satisfy the coupling by deriving
+    the two answers from the same degenerate-scale test — the base one by
+    construction, the slat one because its inverse declines on exactly the
+    scales its forward map does — and this pins it so an override cannot quietly
+    break it. The pivot-first read in the comparator is what the coupling buys,
+    and ``test_pivotless_engine_falls_back`` above is why it cannot be collapsed
+    into a distance-only check.
+    """
+    cover = _mode2_tilt_cover(**tilt_overrides)
+    has_pivot = cover.coverage_pivot_percentage() is not None
+    for pct in (0, 37, 100):
+        assert (cover.coverage_distance(pct) is not None) is has_pivot
 
 
 @pytest.mark.unit
@@ -176,3 +266,31 @@ def test_off_travel_pivot_still_orders_the_comparator(
     assert cover.coverage_pivot_percentage() == pytest.approx(pivot)
     assert policy.more_protective_position(a, b, cover=cover) == expected
     assert policy.more_protective_position(b, a, cover=cover) == expected
+
+
+@pytest.mark.unit
+def test_cross_pivot_ranking_under_asymmetric_midpoint() -> None:
+    """A three-point calibration breaks percentage-distance ranking (#1222).
+
+    The reporting KNX venetian runs 0°→0 %, 90°→50 %, 130°→100 %: 1.8 °/% below
+    horizontal against 0.8 °/% above it. Percentage distance from the pivot is
+    proportional to distance from maximum openness only while the two sides
+    share a scale, and here they do not.
+
+    40 % is 72° — 18° of closure — while 65 % is 102°, a mere 12°. The
+    percentage metric reads that backwards (15 points from the pivot beats 10)
+    and would command the slat that lets MORE direct sun through, on exactly the
+    cross-pivot pair the anticipation helper produces when the solve crosses
+    horizontal inside a throttle interval.
+    """
+    policy = get_policy("cover_tilt")
+    cover = _mode2_tilt_cover(
+        mode="specify_angles", angle_0=0.0, angle_100=130.0, horizontal_percent=50.0
+    )
+    assert cover.coverage_pivot_percentage() == pytest.approx(50.0)
+    # The physics the ranking has to respect.
+    assert cover._angle_from_percentage(40) == pytest.approx(72.0)
+    assert cover._angle_from_percentage(65) == pytest.approx(102.0)
+
+    assert policy.more_protective_position(40, 65, cover=cover) == 40
+    assert policy.more_protective_position(65, 40, cover=cover) == 40

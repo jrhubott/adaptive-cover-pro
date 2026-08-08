@@ -170,6 +170,7 @@ from .const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TRANSIT_TIMEOUT,
     CONF_TRANSPARENT_BLIND,
@@ -1226,8 +1227,11 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
                 make_selector=_bool(),
             )
         )
-        # Tilt bounds (issue #943). Absent = off. `tilt_only` (a FIXED tilt
-        # claim) wins over these — normalized once in the snapshot builder.
+        # Tilt bounds (issue #943). Absent = off. A REAL fixed tilt
+        # (`tilt_only` *with* a configured slat angle) wins over these —
+        # normalized once in the snapshot builder via `has_fixed_tilt`. A
+        # `tilt_only` slot with no slat angle makes no FIXED claim, so its
+        # bounds are NOT discarded (issue #1215).
         for sub in ("tilt_min", "tilt_max"):
             specs.append(
                 FieldSpec(
@@ -2009,6 +2013,12 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_TILT_ANGLE_100,
+    ),
+    FieldSpec(
+        CONF_TILT_HORIZONTAL_PERCENT,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_HORIZONTAL_PERCENT,
     ),
     FieldSpec(
         CONF_MAX_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MAX_TILT

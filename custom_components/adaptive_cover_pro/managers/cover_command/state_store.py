@@ -242,6 +242,53 @@ class PerEntityState:
     last_progress_at: dt.datetime | None = None
     retry_count: int = 0
     gave_up: bool = False
+    # Whether ``target`` above is a safety-protected number — the question both
+    # readers ask: ``clear_non_safety_targets()`` decides whether to sweep
+    # ``target``, and ``run_reconciliation_pass`` steps 3/4 decide whether to
+    # resend it with automatic control off or outside the time window. Both
+    # ignore a row whose ``target`` is None. It is a verdict ABOUT the booked
+    # number, which is what makes its lifetime differ from ``dispatch_token``'s
+    # just above: the token describes how one dispatch expressed the value, the
+    # verdict describes what is protecting it.
+    #
+    # "About the booked number" is the INTENT, not an invariant this dataclass
+    # enforces. Two writers keep the pair in step by construction:
+    # ``_prepare_service_call``, which books and stamps in the same breath on
+    # every real dispatch, and ``_record_safety_verdict``, which the three
+    # ``apply_position`` gates that skip WITHOUT dispatching all call — revoke
+    # unconditionally, grant only when the booked target is the number that
+    # cycle routed to, never inside a booking's value-change guard. That rule
+    # and the failure behind each half are argued on the helper (#1165).
+    # ``clear_safety_targets()`` is a third writer: a blanket reset that clears
+    # the verdict on every row without touching any target.
+    #
+    # FIVE other sites write ``target`` and leave the verdict exactly as they
+    # found it, so a row can pair a fresh target with an older decision's
+    # verdict:
+    #
+    # * ``CoverCommandService.restore_target`` — rehydration after a reload.
+    # * ``CoverCommandService.send_my_position`` — books the configured My
+    #   percent (no production caller today).
+    # * ``coordinator.py``'s two external-stop -> My paths. Step 2 of
+    #   ``run_reconciliation_pass`` drops an entity under manual override
+    #   before it ever reads this field, but only one site gets that for free:
+    #   ``async_apply_user_stop`` (``coordinator.py:4608``) books below an
+    #   unconditional ``mark_user_command``. ``async_check_cover_service_call``
+    #   (``coordinator.py:1288``) books whether or not
+    #   ``handle_stop_service_call`` engaged the override — it RETURNS that
+    #   answer and the booking ignores it — so an untracked cover, or one the
+    #   #875 wait-for-target gate declined, books with no override behind it.
+    # * ``cover_types/venetian/sequencer.py``'s carriage rebase — pushes the
+    #   observed carriage position back through ``set_commanded_position``
+    #   (== ``set_target``) after a tilt-only send back-drives it.
+    #
+    # Today's blast radius is small, but the inheritance is real, and it is why
+    # ``_record_safety_verdict`` declines to GRANT on a row with nothing
+    # booked: an unbooked True is inert against both readers, yet any of the
+    # five would hand it straight to the next target.
+    #
+    # A reconciliation resend RESTATES the recorded value rather than
+    # re-deciding it (#1134), because a resend makes no new verdict.
     is_safety: bool = False
     last_reconcile_at: dt.datetime | None = None
     # Display-only assumed position (issue #888). Set on covers with no native

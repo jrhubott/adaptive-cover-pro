@@ -67,6 +67,17 @@ class TestVerticalTrace:
         assert details[TRACE_KEY_GAMMA_DEG] == pytest.approx(0.0)
         # position_pct is the raw vertical percentage (height / h_win * 100).
         assert details[TRACE_KEY_POSITION_PCT] == 25  # 0.5m / 2.0m
+        # No safety margin on the vertical axis (#1173): the normal
+        # fall-through path must report safety_margin=1.0 and
+        # adjusted_height_m == base_height_m * safety_margin, matching the
+        # invariant already pinned on the edge-case and lintel-gate branches.
+        # Asserting the identity alone would be vacuously satisfiable by a
+        # reintroduced margin applied to both sides, so pin the margin value
+        # too (#1169-style audit precedent).
+        assert details["safety_margin"] == 1.0
+        assert details["adjusted_height_m"] == pytest.approx(
+            details["base_height_m"] * details["safety_margin"]
+        )
 
     def test_normal_branch_native_types(self, vertical_cover_instance):
         vertical_cover_instance.calculate_position()

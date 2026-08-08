@@ -124,6 +124,24 @@ def derive_axis_mode(
     return AxisConstraintMode.NONE
 
 
+def has_fixed_tilt(*, tilt_only: bool, tilt: int | None) -> bool:
+    """Whether a slot's ``tilt_only`` flag names an actual FIXED tilt claim.
+
+    ``tilt_only`` conflates two different claims: it *always* disclaims the
+    position axis (issue #514 — see :attr:`CustomPositionSensorState.position_mode`,
+    which keys on the bare flag and is unaffected by this predicate), but it
+    only outranks ``tilt_min``/``tilt_max`` bounds on the tilt axis when it
+    also names a slat angle. ``tilt_only=True`` with ``tilt=None`` is a
+    *vacuous* FIXED claim — before issue #1215 that vacuous claim still won
+    the precedence, silently discarding a configured ``tilt_min``/``tilt_max``
+    and leaving the slot completely inert. Callers that need the FIXED-vs-
+    bounds precedence (:attr:`CustomPositionSensorState.tilt_mode`, the
+    snapshot-builder tilt-bound wipe, and the config-summary rendering
+    branch) must test this predicate, not the bare ``tilt_only`` flag.
+    """
+    return tilt_only and tilt is not None
+
+
 @dataclass(frozen=True, slots=True)
 class CustomPositionSensorState:
     """Per-slot trigger reading carried in the pipeline snapshot.
@@ -198,8 +216,11 @@ class CustomPositionSensorState:
     # same pre-inversion canonical space as ``position`` / ``tilt``.
     #
     # ``position_max`` is normalized off on the ``use_my`` path (hardware-pinned)
-    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off by
-    # ``tilt_only`` (a FIXED tilt claim wins over bounds on the same axis).
+    # and by ``tilt_only``; ``tilt_min`` / ``tilt_max`` are normalized off only
+    # when the slot names an actual fixed slat angle (``has_fixed_tilt``) — a
+    # real FIXED tilt claim wins over bounds on the same axis. A bare
+    # ``tilt_only`` flag with no configured slat angle is a vacuous claim and
+    # leaves ``tilt_min`` / ``tilt_max`` intact (issue #1215).
     position_max: int | None = None
     tilt_min: int | None = None
     tilt_max: int | None = None
@@ -230,6 +251,10 @@ class CustomPositionSensorState:
 
         ``tilt_only`` wins the whole slot: it fixes the slat angle and lets the
         position pipeline drive the carriage, so it claims nothing here.
+        Deliberately keyed on the bare flag, unlike :attr:`tilt_mode` (issue
+        #1215) — a tilt-only slot disclaims the position axis whether or not
+        it also names a slat angle, so this must NOT route through
+        :func:`has_fixed_tilt`.
         """
         if self.tilt_only:
             return AxisConstraintMode.NONE
@@ -243,17 +268,16 @@ class CustomPositionSensorState:
     def tilt_mode(self) -> AxisConstraintMode:
         """This slot's derived claim on the tilt axis (issue #943).
 
-        ``tilt_only`` is an exact (``FIXED``) tilt claim and wins over the
-        bounds — mirroring the precedence it already has over ``min_mode`` /
-        ``use_my``. A tilt-only slot with no configured slat angle claims
-        nothing (pre-#943 behavior, preserved).
+        A real FIXED tilt claim (``tilt_only`` *with* a configured slat
+        angle) wins over the bounds — mirroring the precedence it already has
+        over ``min_mode`` / ``use_my``. A tilt-only slot with no configured
+        slat angle makes no FIXED claim (issue #1215): it falls through to
+        the same bound derivation as any other slot, so a constraint-only
+        "tilt_only + tilt_min" slot still emits its floor instead of going
+        silently inert.
         """
-        if self.tilt_only:
-            return (
-                AxisConstraintMode.FIXED
-                if self.tilt is not None
-                else AxisConstraintMode.NONE
-            )
+        if has_fixed_tilt(tilt_only=self.tilt_only, tilt=self.tilt):
+            return AxisConstraintMode.FIXED
         return derive_axis_mode(fixed=None, low=self.tilt_min, high=self.tilt_max)
 
     @property
@@ -393,17 +417,17 @@ class PipelineSnapshot:
     sunset_use_my: bool = False
 
     # Explicit tilt for venetian covers. None = use solar-computed tilt.
-    default_tilt: int | None = None  # tilt when no active handler fires
+    default_tilt: int | None = None  # tilt when the position falls back to default
     sunset_tilt: int | None = (
         None  # tilt during sunset window; falls back to default_tilt
     )
 
-    # Global tilt clamps (issue #503). The DefaultHandler clamps its non-sunset
-    # default_tilt to [min_tilt, max_tilt]; sunset_tilt and custom-position tilt
-    # are deliberate carve-outs and are never clamped. The *_sun_only toggles
-    # mirror enable_min/max_position: False (default) = always enforce, True =
-    # only during sun tracking. Defaults are no-ops (0 / 100 / False) so
-    # snapshots that don't set them behave exactly as before.
+    # Global tilt clamps (issue #503). compute_default_tilt (pipeline/helpers.py)
+    # clamps the non-sunset default_tilt to [min_tilt, max_tilt]; sunset_tilt and
+    # custom-position tilt are deliberate carve-outs and are never clamped. The
+    # *_sun_only toggles mirror enable_min/max_position: False (default) = always
+    # enforce, True = only during sun tracking. Defaults are no-ops (0 / 100 /
+    # False) so snapshots that don't set them behave exactly as before.
     min_tilt: int = 0
     max_tilt: int = 100
     min_tilt_sun_only: bool = False
@@ -561,7 +585,12 @@ class HoldClampVerdict:
     (``CoverTypePolicy.entities_move_independently``). That is what makes
     ``target`` safe to hand straight to ``coordinator._entity_target``: a policy
     that would remap it per entity, or rewrite it after the pipeline, produces
-    no verdicts at all and keeps its shared-target path.
+    no verdicts at all and keeps its shared-target path — including when it
+    names its own position through ``CoverTypePolicy.hold_reference_position``
+    (#1179). A coupled type's clamped value is ONE abstract position, and it has
+    to ride ``PipelineResult.position`` so ``post_pipeline_resolve`` and
+    ``resolve_entity_target`` expand it exactly once; a verdict would bypass the
+    first and double-apply the second.
     """
 
     #: This cover's own position, a RAW cover-frame read (matching the frame
@@ -598,6 +627,9 @@ class PositionAxisJudgment:
     #: winner's own ``position``; for a hold, the *violating* cover's position
     #: (lowest when a floor raised, highest when a ceiling lowered) so the
     #: clamp trace step reads as a real cover rather than a mean nobody sits at.
+    #: For a coupled hold that judged nothing, the policy's own reference (#1179)
+    #: — the value ``_release_hold_for_tilt_clamp`` carries when the other axis
+    #: forces a dispatch.
     effective_winner_pos: int
     #: ``effective_winner_pos`` after the composed bounds, i.e. the shared
     #: clamp target the trace and ``PipelineResult.position`` carry.
@@ -617,8 +649,9 @@ class PositionAxisJudgment:
     lower_from: int | None
     #: Per-cover dispatch verdicts, or ``None`` for a computed winner, for a
     #: snapshot carrying no per-entity positions, and for a cover type whose
-    #: entities do not move independently — all of which keep the cycle on the
-    #: singular pre-#1174 path.
+    #: entities do not move independently — whether that type named its own
+    #: reference position (#1179) or fell back to the summary mean. All of those
+    #: keep the cycle on the singular pre-#1174 path.
     verdicts: Mapping[str, HoldClampVerdict] | None
 
 

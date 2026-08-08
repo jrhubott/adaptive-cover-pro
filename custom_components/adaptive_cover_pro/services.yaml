@@ -1312,6 +1312,20 @@ set_geometry:
           step: 1
           mode: box
           unit_of_measurement: "°"
+    tilt_horizontal_percent:
+      name: Tilt percentage at horizontal
+      description: >-
+        Optional third calibration point: the tilt percentage reported when the
+        slats are exactly horizontal (90°). 0 disables it and the scale runs
+        straight from tilt_angle_0 to tilt_angle_100. Requires tilt_angle_0 and
+        tilt_angle_100 to sit on opposite sides of 90°.
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: box
+          unit_of_measurement: "%"
 
 set_venetian:
   name: Set venetian options

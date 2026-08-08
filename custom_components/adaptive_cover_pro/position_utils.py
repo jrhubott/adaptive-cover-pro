@@ -184,12 +184,20 @@ class PositionConverter:
         Only this consumer needs the pivot to be reachable, which is why the
         clamp lives here rather than on the engine hook.
         ``round_toward_coverage`` and ``CoverTypePolicy.more_protective_position``
-        use the pivot purely as an ordering reference, and since the
-        percentage↔angle map is affine, ``|pct − pivot|`` stays proportional to
-        ``|angle − 90°|`` wherever the pivot sits — clamping it would corrupt
-        that ranking. The two consumers still agree on which end covers,
-        because a clamped anchor is on the same side of every reachable
-        percentage as the pivot it came from.
+        use the pivot purely as an ordering reference — one tests which SIDE of
+        it a percentage falls on, the other ranks by distance from it — and
+        clamping it would corrupt both. The two consumers still agree with this
+        one about which end covers, because a clamped anchor is on the same side
+        of every reachable percentage as the pivot it came from.
+
+        Note the ordering consumers no longer rest on a globally affine map. A
+        three-point tilt calibration (#1222) is affine on each SIDE of
+        horizontal and not across it, which is invisible to the side test and to
+        this function — each side is already spanned independently here — but
+        not to a distance comparison, so ``more_protective_position`` asks the
+        engine for the distance (``coverage_distance``, measured in degrees off
+        horizontal on a slat) instead of taking ``|pct − pivot|`` itself. The
+        per-side affinity is what all three still rely on.
 
         Args:
             percentage: Engine-orientation position (0–100) from

@@ -47,6 +47,7 @@ from ..const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
     DEFAULT_BLIND_SPOT_ELEVATION_MODE,
@@ -138,6 +139,7 @@ async def async_handle_export(call: ServiceCall) -> dict:
             CONF_TILT_MODE: options.get(CONF_TILT_MODE),
             CONF_TILT_ANGLE_0: options.get(CONF_TILT_ANGLE_0),
             CONF_TILT_ANGLE_100: options.get(CONF_TILT_ANGLE_100),
+            CONF_TILT_HORIZONTAL_PERCENT: options.get(CONF_TILT_HORIZONTAL_PERCENT),
         },
     }
 

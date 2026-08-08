@@ -393,6 +393,45 @@ def test_geometry_tilt_shows_tilt_fields():
     assert "mode1" in summary
 
 
+def test_geometry_tilt_shows_the_three_point_midpoint():
+    """The mid-point renders on specify_angles, and only when set (#1222).
+
+    Both tilt-only and venetian, because the geometry fragment is shared but the
+    two summary renderers are not.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_ANGLE_0,
+        CONF_TILT_ANGLE_100,
+        CONF_TILT_HORIZONTAL_PERCENT,
+    )
+
+    base = {
+        CONF_TILT_DEPTH: 8.5,
+        CONF_TILT_DISTANCE: 8.0,
+        CONF_TILT_MODE: "specify_angles",
+        CONF_TILT_ANGLE_0: 0,
+        CONF_TILT_ANGLE_100: 130,
+    }
+    for cover_type in (CoverType.TILT, CoverType.VENETIAN):
+        enabled = _build_config_summary(
+            {**base, CONF_TILT_HORIZONTAL_PERCENT: 50}, cover_type
+        )
+        assert "horizontal at 50%" in enabled
+
+        # The 0 sentinel is the disabled state — nothing to report.
+        disabled = _build_config_summary(
+            {**base, CONF_TILT_HORIZONTAL_PERCENT: 0}, cover_type
+        )
+        assert "horizontal at" not in disabled
+
+        # On a preset mode the whole calibration block is inert, mid-point too.
+        preset = _build_config_summary(
+            {**base, CONF_TILT_MODE: "mode2", CONF_TILT_HORIZONTAL_PERCENT: 50},
+            cover_type,
+        )
+        assert "horizontal at" not in preset
+
+
 def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
     """Louvered roof renders the shared slat block plus the roof-plane pitch."""
     from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH
@@ -2851,6 +2890,164 @@ def test_custom_position_tilt_only_no_warning_when_alone():
         ln for ln in summary.splitlines() if "⚠️" in ln and "tilt only" in ln.lower()
     ]
     assert warning_lines == []
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_renders_bound():
+    """Issue #1215: tilt_only + tilt_min with NO fixed slat angle must render
+    the actual configured bound, not the phantom 'slat fixed at 0%' claim —
+    nothing is fixed at 0% and the slot is not inert.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "at least 50%" in custom_line
+    assert "slat fixed at 0%" not in custom_line
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_minimum():
+    """Issue #1215 residual risk: routing a tilt_only-without-fixed-tilt slot
+    into the bound-rendering branch must not expose it to a phantom
+    '(as minimum)' fragment, nor a phantom position target. The runtime
+    normalizes min_mode off for ANY tilt_only slot regardless of whether a
+    slat angle is configured (snapshot_builder.py's tilt_only mutual-
+    exclusion normalization, keyed on the bare flag), and
+    ``position_mode`` is NONE for every tilt_only slot too (types.py's
+    ``position_mode`` keys on the bare flag) — so a stored
+    ``custom_position_N`` must not render as a target the handler never
+    claims. The mutual-exclusion ⚠️ warning still fires, since reporting the
+    conflict is its job.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 80,
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_min_mode_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(as minimum)" not in custom_line
+    assert "→ 80%" not in custom_line
+    assert "the calculated position" in custom_line
+    assert "⚠️" in summary
+
+
+def test_custom_position_tilt_only_without_fixed_tilt_no_phantom_ceiling():
+    """Issue #1215 finding 2: a tilt_only slot with no fixed slat angle must
+    not render a phantom position ceiling either. snapshot_builder.py wipes
+    ``position_max`` for EVERY tilt_only slot (bare flag, regardless of a
+    fixed tilt), so a stored ``custom_position_position_max_N`` must not
+    surface as '(at most N%)' — the handler makes no position claim to cap.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(at most 60%)" not in custom_line
+    assert "at least 50%" in custom_line
+
+
+def test_custom_position_use_my_no_phantom_ceiling():
+    """Issue #1215 round-2 audit finding 1: a ``use_my`` slot (no
+    ``tilt_only``) with no stored position must not render a phantom
+    position ceiling either. ``snapshot_builder.py`` wipes ``position_max``
+    on the ``use_my`` path the same way it does for ``tilt_only`` (``if
+    tilt_only or use_my: position_max = None``), so a stored
+    ``custom_position_position_max_N`` must not surface as '(at most N%)'
+    when only ``use_my`` is set.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_use_my_1": True,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(at most 60%)" not in custom_line
+
+
+def test_custom_position_tilt_only_with_fixed_tilt_warns_bounds_discarded():
+    """Issue #1215 round-2 audit finding 2: a REAL fixed tilt (``tilt_only``
+    + a configured slat angle) still deliberately outranks ``tilt_min`` /
+    ``tilt_max`` on the same slot — the #514 precedence this fix preserves —
+    but nothing told the user their configured bounds are being discarded.
+    Warn.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.glare",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(ln for ln in summary.splitlines() if "⚠️" in ln and "30%" in ln)
+    assert "ignored" in warn_line.lower()
+
+
+def test_custom_position_tilt_only_no_bounds_no_discard_warning():
+    """No ``tilt_min``/``tilt_max`` configured alongside a real fixed tilt ->
+    no 'bounds discarded' warning — there is nothing to discard.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.glare",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_1": 30,
+        "custom_position_tilt_only_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "ignored for this slot" not in summary.lower()
+
+
+def test_custom_position_tilt_only_fully_inert_warns_no_effect():
+    """Issue #1215 round-2 audit finding 6: a tilt_only slot with no slat
+    angle AND no tilt bounds has ``position_mode == NONE`` and
+    ``tilt_mode == NONE`` — it does nothing at all. Warn so the user isn't
+    left wondering why nothing moves.
+
+    ``custom_position_position_max_1`` is set purely so the slot passes
+    ``custom_position_slot_configured`` (a trigger alone needs at least one
+    claim key to participate at all) — ``tilt_only`` nulls it right back out
+    regardless, per its own unconditional position-axis disclaim, which is
+    exactly the inert combination this warning exists to catch.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_position_max_1": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "no effect" in ln.lower()
+    )
+    assert "Custom #1" in warn_line or "#1" in warn_line
+
+
+def test_custom_position_tilt_only_with_bound_no_no_effect_warning():
+    """A tilt_only slot WITH a configured tilt bound is not inert — no
+    'no effect' warning fires for it.
+    """
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "no effect" not in summary.lower()
 
 
 def test_weather_state_list_in_cloud_line():

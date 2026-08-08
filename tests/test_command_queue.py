@@ -1093,6 +1093,45 @@ class TestOtherWireSites:
         assert queue.busy_for_seconds() == 0.0
 
     @pytest.mark.asyncio
+    async def test_a_resend_erroring_before_the_send_hands_the_slot_back(self):
+        """``apply_position``'s release invariant, on the resend seam.
+
+        Sibling of ``test_an_error_before_the_send_hands_the_slot_back``:
+        nothing between the grant and the send may sit outside the ``finally``.
+        The capability read is a live raise site — ``check_cover_features``
+        calls ``bin(supported_features)`` and masks the value against
+        ``CoverEntityFeature`` without guarding its type, so a cover
+        publishing a non-int raises ``TypeError`` synchronously.
+
+        A slot stranded here never comes back on its own: every other member
+        of the queue then enqueues, burns its whole budget and transmits
+        ``budget_expired`` — unspaced and simultaneous, the exact collision
+        issue #1189 exists to prevent, across every cover on the queue.
+        """
+        hass = _svc_hass()
+        queue = _queue(gap=0.0)
+        svc = _svc(hass, command_queue=queue)
+
+        with (
+            patch.object(svc, "get_cover_capabilities", side_effect=TypeError("boom")),
+            pytest.raises(TypeError),
+        ):
+            await svc._execute_command("cover.a", 50)
+
+        assert queue._owner is None
+        # Nothing went out, so nobody owes the air anything.
+        assert queue.busy_for_seconds() == 0.0
+        # And the next member is actually grantable, not blocked behind a
+        # phantom holder.
+        assert (
+            await asyncio.wait_for(
+                queue.acquire("cover.b", head_of_line=False, budget=_BUDGET),
+                timeout=1.0,
+            )
+            is not None
+        )
+
+    @pytest.mark.asyncio
     async def test_a_resend_waits_out_spacing_it_can_afford(self):
         """Spacing owed is not contention — it is the queue doing its job.
 

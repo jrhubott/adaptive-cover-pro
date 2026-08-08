@@ -28,11 +28,13 @@ from custom_components.adaptive_cover_pro.const import (
     DAY_NIGHT_MODEL_DUAL_ENTITY,
     DAY_NIGHT_MODEL_POSITION_TILT,
     DAY_NIGHT_MODEL_SPLIT_RANGE,
+    DAY_NIGHT_SPLIT_MIDPOINT,
     DEFAULT_DAY_NIGHT_BLACKOUT_THRESHOLD,
     DEFAULT_DAY_NIGHT_CONCURRENT_RAIL_TRAVEL,
     DEFAULT_DAY_NIGHT_OPACITY_BLACKOUT,
     DEFAULT_DAY_NIGHT_OPACITY_SHEER,
     OPTION_RANGES,
+    POSITION_OPEN,
     ControlMethod,
     CoverType,
 )
@@ -325,6 +327,25 @@ class TestPostPipelineResolve:
         kw = _resolve_kwargs()
         result = PipelineResult(
             position=60, control_method=ControlMethod.MANUAL, reason="manual"
+        )
+        out = policy.post_pipeline_resolve(result, cover=None, **kw)
+        assert out.tilt is None
+        assert policy._last_blend is None
+
+    def test_default_climate_fallthrough_clears_blend(self) -> None:
+        """Issue #1196: DEFAULT falls to the else branch even with is_summer data
+        attached — the method, not the thermometer, picks the fabric.
+        """
+        policy = DayNightShadePolicy()
+        policy._last_blend = 40
+        kw = _resolve_kwargs()
+        climate = MagicMock()
+        climate.is_summer = True
+        result = PipelineResult(
+            position=60,
+            control_method=ControlMethod.DEFAULT,
+            reason="default",
+            climate_data=climate,
         )
         out = policy.post_pipeline_resolve(result, cover=None, **kw)
         assert out.tilt is None
@@ -718,6 +739,58 @@ def test_control_model_option_registered() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "model", [DAY_NIGHT_MODEL_POSITION_TILT, DAY_NIGHT_MODEL_SPLIT_RANGE]
+)
+@pytest.mark.parametrize("named_frame", [False, True])
+def test_model_a_and_b_dispatch_order_is_the_config_order(
+    model: str, named_frame: bool
+) -> None:
+    """Only Model C mandates a rail order; A and B leave the user's pick alone.
+
+    ``dispatch_order_key`` early-returns its constant for every model that is
+    not ``dual_entity`` and ``order_for_dispatch`` is a stable sort, so Model A
+    reporting independent entities (#1179) cannot move a single dispatch — the
+    #1115 / #1118 sequencing is Model C's alone, whether or not a seam names the
+    direction of travel.
+    """
+    policy = DayNightShadePolicy()
+    policy.sync_runtime_options({CONF_DAY_NIGHT_CONTROL_MODEL: model})
+
+    entities = ["cover.z", "cover.a"]
+    frame = {"position": 30, "inverted": True} if named_frame else {}
+    assert policy.order_for_dispatch(entities, **frame) == entities
+
+
+def test_the_split_midpoint_must_be_half_the_wire_range() -> None:
+    """50 is load-bearing for the codec, not a tunable constant.
+
+    ``_SPLIT_RANGE_SCALE`` is *derived* from ``DAY_NIGHT_SPLIT_MIDPOINT``, which
+    reads like the boundary is a knob with a divisibility caveat. It is not.
+    Each fabric half has to map the whole 0–100 coverage domain onto its own
+    share of the wire range, so the split can only sit at ``POSITION_OPEN / 2``.
+
+    A midpoint of 25 divides 100 cleanly and yields an exact integer scale of 4,
+    and still breaks ``_split_range_wire`` / ``_split_range_decode`` in both
+    directions: the scaled branch would top out at wire 50, leaving 51–99
+    unreachable — 100 still comes out of the fully-open short-circuit, which
+    returns before any scaling — and decoding wire 90 would return a coverage of
+    260. Every property ``TestSplitRangeDecode`` pins — surjectivity onto the
+    wire range, the round trip, the single ambiguous wire — holds at 50 and at no
+    other midpoint.
+
+    The second half asserts the codomain that fact protects: the decode feeds
+    ``clamp_to_bounds`` as the instance's held coverage, so it must never hand
+    back a number outside the domain those bounds are expressed in.
+    """
+    assert DAY_NIGHT_SPLIT_MIDPOINT * 2 == POSITION_OPEN
+
+    policy = DayNightShadePolicy()
+    coverages = [policy._split_range_decode(w)[0] for w in range(POSITION_OPEN + 1)]
+    assert min(coverages) == 0
+    assert max(coverages) == POSITION_OPEN
+
+
 class TestSplitRangeWire:
     """``_split_range_wire`` folds (position, blend) into one physical position."""
 
@@ -740,6 +813,161 @@ class TestSplitRangeWire:
     def test_wire_matrix(self, position: int, blend: int, expected: int) -> None:
         policy = DayNightShadePolicy()
         assert policy._split_range_wire(position, blend) == expected
+
+
+class TestHoldReferenceHasNoSingleAnswer:
+    """``None`` means "keep the legacy mean" — never a guessed anchor (#1179)."""
+
+    def test_model_b_with_no_readable_carriage(self) -> None:
+        policy = DayNightShadePolicy()
+        policy.sync_runtime_options(
+            {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+        )
+        assert policy.hold_reference_position({"cover.x": None}, inverted=False) is None
+        # Nothing decoded, so nothing was stashed for the re-encode either.
+        assert policy._split_range_hold_fabric is None
+
+    def test_model_c_with_no_middle_rail_configured(self) -> None:
+        policy = DayNightShadePolicy()
+        policy.sync_runtime_options(
+            {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY}
+        )
+        assert policy.hold_reference_position({"cover.x": 40}, inverted=False) is None
+
+    def test_model_c_with_no_readable_bottom_rail(self) -> None:
+        policy = DayNightShadePolicy()
+        policy.sync_runtime_options(
+            {
+                CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_DUAL_ENTITY,
+                CONF_DAY_NIGHT_MIDDLE_RAIL_ENTITY: "cover.middle",
+            }
+        )
+        assert (
+            policy.hold_reference_position(
+                {"cover.middle": 70, "cover.bottom": None}, inverted=False
+            )
+            is None
+        )
+
+
+class TestSplitRangeHoldFabricLifecycle:
+    """The Model B fabric stash is per-cycle, and the clearing edge is the seam (#1179).
+
+    ``post_pipeline_resolve`` replays a stashed fabric only when the winner's own
+    blend was cleared, so a fabric left over from an earlier evaluate would
+    re-fold a later winner behind stale opacity.
+
+    The clear does not rule that out on its own.
+    ``coordinator.async_apply_user_position`` evaluates the pipeline off-cycle
+    with no ``sync_runtime_options`` ahead of it, that evaluate can reach
+    ``hold_reference_position`` and set the stash, and ``_async_update_data``
+    suspends twice — ``prime_cache`` and ``manager.reset_if_needed`` — between the
+    clear and the consume with nothing serialising the two. A write really can
+    land in that window.
+
+    What keeps it out of the fold is the consume side. ``post_pipeline_resolve``
+    reads the stash only for a winner carrying ``held_position``, and a Model B
+    hold always wrote it during its own evaluate (the argument is spelled out on
+    ``hold_reference_position``); ``coordinator._calculate_cover_state`` is
+    synchronous from ``registry.evaluate`` to the consume, so no later write can
+    slip in either. The stale-fold this excludes is pinned by
+    ``test_pipeline/test_hold_clamp_per_cover.py::
+    test_an_off_cycle_reference_cannot_fold_a_computed_winner``.
+    """
+
+    def test_a_re_synced_policy_starts_the_cycle_with_no_stashed_fabric(self) -> None:
+        """Set by the reduction hook, gone again on the next cycle's sync.
+
+        The second assertion pins WHERE the clear lives: moving it into
+        ``_cache_runtime_options`` would still satisfy the first (``sync``
+        delegates there) while wiping the stash from under
+        ``post_pipeline_resolve``, which calls the same helper on its way to
+        consuming it.
+        """
+        policy = DayNightShadePolicy()
+        options = {CONF_DAY_NIGHT_CONTROL_MODEL: DAY_NIGHT_MODEL_SPLIT_RANGE}
+        policy.sync_runtime_options(options)
+
+        # Wire 20 is in the blackout half: coverage 40, fabric blackout.
+        assert policy.hold_reference_position({"cover.x": 20}, inverted=False) == 40
+        assert policy._split_range_hold_fabric == DAY_NIGHT_BLACKOUT
+
+        # The consume path's own re-read must NOT clear it.
+        policy._cache_runtime_options(options)
+        assert policy._split_range_hold_fabric == DAY_NIGHT_BLACKOUT
+
+        # The next cycle's coordinator hook does.
+        policy.sync_runtime_options(options)
+        assert policy._split_range_hold_fabric is None
+
+
+class TestSplitRangeDecode:
+    """``_split_range_decode`` is the algebraic inverse of ``_split_range_wire``.
+
+    A held Model B carriage reports ONE wire value that encodes both coverage and
+    fabric, so a coverage floor can only be compared against it after the two are
+    pulled apart (#1179). The fix depends on that being possible, which is what
+    these pin.
+    """
+
+    #: The single wire whose preimage spans both fabric halves. See the test.
+    AMBIGUOUS_WIRE = 50
+
+    def test_split_range_wire_round_trips_through_its_decode(self) -> None:
+        """Every encodable pair comes back as the same fabric and ~the same coverage.
+
+        Coverage tolerance is 1, not 0: the encoder halves the range, so two
+        adjacent coverages share a wire. That is a hardware property of the 2:1
+        compression, not a decode error.
+        """
+        policy = DayNightShadePolicy()
+        for position in range(POSITION_OPEN + 1):
+            for fabric in (DAY_NIGHT_BLACKOUT, DAY_NIGHT_SHEER):
+                wire = policy._split_range_wire(position, fabric)
+                if wire == self.AMBIGUOUS_WIRE:
+                    continue  # pinned by the collision test below
+                coverage, decoded = policy._split_range_decode(wire)
+                assert abs(coverage - position) <= 1, (position, fabric, wire)
+                if position == POSITION_OPEN:
+                    # The encoder's documented endpoint collapse: a fully-open
+                    # carriage covers nothing, so it has no fabric to be behind
+                    # and both halves map onto the one physical endpoint.
+                    assert decoded == DAY_NIGHT_SHEER, (position, fabric)
+                else:
+                    assert decoded == fabric, (position, fabric, wire)
+
+    @pytest.mark.parametrize("wire", list(range(POSITION_OPEN + 1)))
+    def test_re_encoding_a_decoded_wire_is_idempotent(self, wire: int) -> None:
+        """``encode(decode(w)) == w`` for every physical position, no exceptions.
+
+        The property the clamp path actually needs: a held carriage that nothing
+        moves must be re-dispatched to the wire it is already sitting at, or the
+        fold itself would nudge the shade every cycle.
+        """
+        policy = DayNightShadePolicy()
+        assert policy._split_range_wire(*policy._split_range_decode(wire)) == wire
+
+    def test_split_range_wire_50_is_the_one_ambiguous_carriage_position(self) -> None:
+        """Wire 50 is the only cross-fabric collision, and it resolves to sheer.
+
+        It is reached by ``(0, sheer)``, ``(1, sheer)`` AND ``(99, blackout)``,
+        because the encoder is discontinuous at the top of the blackout half:
+        98 → 49, 99 → 50, 100 → 100. The decode resolves it as sheer/0 — the
+        conservative direction, since reading a nearly-closed blackout carriage
+        as fully open can only ever make a floor fire, never suppress one.
+
+        The discontinuity itself is the encoder's, and out of scope here.
+        """
+        policy = DayNightShadePolicy()
+
+        assert policy._split_range_wire(99, DAY_NIGHT_BLACKOUT) == 50
+        assert policy._split_range_wire(0, DAY_NIGHT_SHEER) == 50
+        assert policy._split_range_wire(1, DAY_NIGHT_SHEER) == 50
+        assert policy._split_range_decode(50) == (0, DAY_NIGHT_SHEER)
+
+        # The encoder discontinuity that produces it, documented in place.
+        assert policy._split_range_wire(98, DAY_NIGHT_BLACKOUT) == 49
+        assert policy._split_range_wire(100, DAY_NIGHT_BLACKOUT) == POSITION_OPEN
 
 
 # ---------------------------------------------------------------------------

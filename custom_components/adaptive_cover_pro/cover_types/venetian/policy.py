@@ -349,28 +349,13 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
         """Render window dimensions plus the slat-config block."""
-        from ...const import (
-            CONF_TILT_ANGLE_0,
-            CONF_TILT_ANGLE_100,
-            CONF_TILT_DEPTH,
-            CONF_TILT_DISTANCE,
-            CONF_TILT_MODE,
-            TiltMode,
-        )
+        from .._helpers import slat_geometry_parts
 
         L = {**GEOMETRY_LABELS_EN, **(labels or {})}
-        tilt_parts: list[str] = []
-        if (v := config.get(CONF_TILT_DEPTH)) is not None:
-            tilt_parts.append(L["geometry.slat.depth"].format(v=v))
-        if (v := config.get(CONF_TILT_DISTANCE)) is not None:
-            tilt_parts.append(L["geometry.slat.spacing"].format(v=v))
-        if (v := config.get(CONF_TILT_MODE)) is not None:
-            tilt_parts.append(L["geometry.slat.mode"].format(v=v))
-        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
-            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
-                tilt_parts.append(L["geometry.slat.angle_0"].format(v=v))
-            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
-                tilt_parts.append(L["geometry.slat.angle_100"].format(v=v))
+        # Same fragment the tilt-only policy renders, and deliberately the same
+        # call: venetian's geometry schema composes the tilt one, so a field
+        # added there has to surface here too, without a second edit.
+        tilt_parts = slat_geometry_parts(config, labels)
         slat_line = [", ".join(tilt_parts)] if tilt_parts else []
         skip_above = config.get(
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE

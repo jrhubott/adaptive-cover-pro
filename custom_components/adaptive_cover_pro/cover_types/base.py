@@ -33,6 +33,7 @@ from ..const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    COVERAGE_DISTANCE_TIE_EPS,
     POSITION_CLOSED,
     POSITION_OPEN,
     GroupScene,
@@ -94,7 +95,6 @@ AXIS_NAME_TILT = "tilt"
 AXIS_VALUE_MIN = 0
 AXIS_VALUE_MAX = 100
 AXIS_VALUE_UNIT = "%"
-
 
 # ---------------------------------------------------------------------------
 # Config-flow entity-selector filters
@@ -777,6 +777,10 @@ class CoverTypePolicy(ABC):
         before #1174. A policy that overrides one of them harmlessly may say so
         by overriding this predicate — and owes the argument for why, in its own
         docstring, because nothing else here can check it.
+
+        Answering ``False`` no longer means "judge the group's mean": it means
+        "ask :meth:`hold_reference_position` where this ONE geometry is". See
+        there for what a coupled type owes in return (#1179).
         """
         cls = type(self)
         return (
@@ -784,6 +788,67 @@ class CoverTypePolicy(ABC):
             and cls.post_pipeline_resolve is CoverTypePolicy.post_pipeline_resolve
             and cls.dispatch_order_key is CoverTypePolicy.dispatch_order_key
         )
+
+    def hold_reference_position(
+        self,
+        cover_positions: Mapping[str, int | None],  # noqa: ARG002
+        *,
+        inverted: bool,  # noqa: ARG002
+    ) -> int | None:
+        """Reduce these raw reads to ``PipelineResult.position``'s frame (#1179).
+
+        The algebraic INVERSE of the dispatch chain. Dispatch expands one
+        abstract position into per-entity wire values —
+        :meth:`post_pipeline_resolve` → ``coordinator._to_cover_frame`` →
+        :meth:`resolve_entity_target` — and this reduces the per-entity reads
+        back to that one abstract position. Only the policy knows the mapping,
+        which is why the registry could previously do nothing better than
+        average the reads.
+
+        Consulted ONLY when :meth:`entities_move_independently` is ``False``. A
+        coupled type's entities express one geometry, so a composed floor or
+        ceiling is a statement about that geometry, and the number it has to be
+        compared against is the geometry's own position — not the arithmetic
+        mean of values from different coordinate systems (a Model C middle rail
+        derived from the bottom rail's coverage, a dual-panel back panel's
+        binary privacy state, a Model B wire that folds coverage and fabric
+        together).
+
+        ``cover_positions`` are **RAW** cover-frame reads, exactly as
+        ``PipelineSnapshot.cover_positions`` carries them, and ``inverted``
+        names their frame — the same kwarg :meth:`resolve_entity_target` takes,
+        so the frame is stated and never guessed (#993). The return value is
+        **LOGICAL**: an override that reads a wire encoding must undo the
+        inversion and decode in wire space *before* returning
+        (CODING_GUIDELINES § "Inverse State").
+
+        ``None`` means "no single answer" — an unconfigured entity role, an
+        unreadable anchor, or a cover type with genuinely independent entities
+        — and keeps that cycle on the legacy summary mean. That is the base
+        answer, so a policy which never touches the dispatch hooks is never
+        asked and never has to care.
+
+        ⚠️ **The inverse is partial: interpolation is not unwound.** The forward
+        chain ends at ``coordinator._to_cover_frame``, which applies the
+        calibration curve *and* the inversion to every dispatched value, but an
+        implementation here is only asked to undo the inversion — the reads it
+        receives from an interpolated install sit on the motor's own scale and
+        are treated as if they were linear. Pre-existing and deliberate: the
+        summary mean this hook replaced ignored interpolation identically, so no
+        install's frame changed, and ``day_night_shade.resolve_entity_target``
+        already declines to unwind it in the forward direction for the same
+        reason. It only bites where a read's linear meaning feeds a DECODE
+        rather than a bare comparison, and there it bites twice. A Model B wire
+        near the fabric boundary can stash the wrong fabric half, so the clamped
+        hold re-folds behind a fabric the shade is not physically behind — and,
+        boundary or not, the decode AMPLIFIES whatever error the curve left in
+        the read by the split-range scale. An install whose curve puts logical
+        wire 80 at a motor read of 85 decodes to coverage 70 against a true 60:
+        a 5-point wire error reaches the composed floor/ceiling as a 10-point
+        coverage error. Mapping a motor reading back onto the linear scale is
+        #925's territory, not this hook's.
+        """
+        return None
 
     def order_for_dispatch(
         self,
@@ -1374,34 +1439,69 @@ class CoverTypePolicy(ABC):
         the engine where coverage bottoms out and rank by DISTANCE from it
         instead (issue #1104).
 
-        Percentage distance is the right metric because the percentage↔angle map
-        is globally linear on every scale this hook sees (MODE1, MODE2, the
-        louvered roof's ``max_slat_angle``, and the affine ``specify_angles``
-        calibration), so ``|pct − pivot_pct|`` is proportional to
-        ``|angle − 90°|`` on both sides at once — no per-side scaling needed.
-        Linearity is also why this comparator needs no range check on the pivot:
-        proportionality does not care whether the pivot is reachable, so a scale
-        calibrated entirely to one side of horizontal (``max_slat_angle`` under
-        90°, a one-sided ``specify_angles`` pair) is still ranked correctly — and
-        an INVERTED such calibration, where ``axes[0]``'s static flag has the
-        covering end backwards, is ranked correctly only this way. The
-        coverage-step quantiser reaches the same conclusion from the same pivot
-        by a different route (it clamps the pivot onto the reachable travel,
-        because it anchors arithmetic on it rather than ordering by it), and the
-        two must not disagree about which end of one engine covers.
+        HOW FAR from the pivot is the engine's question, not this policy's.
+        ``AdaptiveGeneralCover.coverage_distance`` answers it, and its base
+        answer is the ``|pct − pivot_pct|`` this method used to compute inline —
+        correct while the percentage↔angle map is globally affine (MODE1, MODE2,
+        the louvered roof's ``max_slat_angle``, a two-point ``specify_angles``
+        pair), because percentage distance is then proportional to
+        ``|angle − 90°|`` on both sides at once and the constant cancels out of
+        the comparison. A three-point tilt calibration (#1222) hinges the map at
+        the pivot, giving the two sides different degrees-per-percent, so the
+        constant stops cancelling and a cross-pivot pair can rank backwards.
+        The tilt engine therefore overrides the metric to measure degrees off
+        horizontal directly — proportional to the base answer on every affine
+        scale, and the only correct one under a hinge. Asking the engine is what
+        keeps this policy out of the business of knowing either.
+
+        The pivot is still read here, and read FIRST, because it answers a
+        different question: whether this axis is bi-directional at all. ``None``
+        means coverage is monotonic in the percentage, and then the axis rule
+        below is the whole story — there is no pivot to measure from and the
+        distance metric is not consulted.
+
+        That read is also what makes the two distances below plain floats. Both
+        are typed ``float | None``, and neither is checked, because
+        ``coverage_distance`` answers ``None`` on exactly the engines whose pivot
+        is ``None`` — a coupling stated in its own docstring and pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_a_distance_exists_wherever_a_pivot_does``. Adding a ``None`` check
+        here instead would be the wrong repair: it would let an engine answer
+        "no distance" while claiming a pivot, which is not a state the metric
+        has any meaning in.
+
+        No range check on the pivot is needed, on either metric: neither
+        proportionality nor an angle measurement cares whether the pivot is
+        reachable, so a scale calibrated entirely to one side of horizontal
+        (``max_slat_angle`` under 90°, a one-sided ``specify_angles`` pair) is
+        still ranked correctly — and an INVERTED such calibration, where
+        ``axes[0]``'s static flag has the covering end backwards, is ranked
+        correctly only this way. The coverage-step quantiser reaches the same
+        conclusion from the same pivot by a different route (it clamps the pivot
+        onto the reachable travel, because it anchors arithmetic on it rather
+        than ordering by it), and the two must not disagree about which end of
+        one engine covers.
 
         *cover* is keyword-only and defaults to ``None`` so callers with no
         engine in scope, and every monotonic axis, keep the exact behaviour they
         had. Equal distances fall through to the axis rule rather than being
         decided here, which keeps the symmetric straddle (``30``/``70`` on MODE2,
         both 36° off horizontal) answering ``30`` as it always has.
+
+        "Equal" is measured to ``COVERAGE_DISTANCE_TIE_EPS`` and NOT exactly.
+        The percentage metric these ties used to be scored on was exact
+        arithmetic on integers; measuring in degrees is not, and an exact ``!=``
+        turned the ulp between ``44 → 79.2°`` and ``56 → 100.8°`` into a real
+        difference — 13 symmetric MODE2 pairs flipped to the far side of the
+        axis rule, up to an 82-point command swing (#1222 audit). Pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_symmetric_mode2_pairs_all_fall_through_to_the_axis_rule``.
         """
-        if cover is not None:
-            pivot = cover.coverage_pivot_percentage()
-            if pivot is not None:
-                distance_a, distance_b = abs(a - pivot), abs(b - pivot)
-                if distance_a != distance_b:
-                    return a if distance_a > distance_b else b
+        if cover is not None and cover.coverage_pivot_percentage() is not None:
+            distance_a = cover.coverage_distance(a)
+            distance_b = cover.coverage_distance(b)
+            if abs(distance_a - distance_b) > COVERAGE_DISTANCE_TIE_EPS:
+                return a if distance_a > distance_b else b
         if self.axes[0].open_blocks_sun:
             return max(a, b)
         return min(a, b)

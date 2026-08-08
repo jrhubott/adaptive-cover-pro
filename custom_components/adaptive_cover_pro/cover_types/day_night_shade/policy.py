@@ -109,6 +109,27 @@ _CLIMATE_METHODS = frozenset(
     {ControlMethod.SUMMER, ControlMethod.WINTER, ControlMethod.EXTREME_HEAT}
 )
 
+# Model B compresses the full 0–100 coverage domain into ONE fabric half of the
+# physical travel, so a coverage point costs half a wire point. Derived rather
+# than written as 2 to keep the scale tied to the split it comes from — but the
+# split is NOT a knob. The codec requires
+# ``DAY_NIGHT_SPLIT_MIDPOINT == POSITION_OPEN / 2``, and 50 is the only value
+# that satisfies it: each fabric half has to map the whole coverage domain onto
+# its own share of the wire range, which fits only when the two halves are equal.
+#
+# Dividing ``POSITION_OPEN`` exactly is necessary and nowhere near sufficient. A
+# midpoint of 25 divides 100 cleanly and yields an exact integer scale of 4, and
+# still breaks the codec in both directions: ``_split_range_wire(80, sheer)`` is
+# 45, and the scaled branch tops out at 50, so the only wire above it the encoder
+# can still emit is the 100 the fully-open short-circuit returns before any
+# scaling — 51–99, 49 of the 101 wires, become unreachable. In the other
+# direction ``_split_range_decode(90)`` returns a coverage of 260, which flows
+# straight into ``clamp_to_bounds`` as the instance's held coverage. Moving the
+# boundary means redesigning the ``_split_range_wire`` / ``_split_range_decode``
+# pair so each half still spans the whole domain — not editing a constant.
+# File-private — those two are this constant's only readers.
+_SPLIT_RANGE_SCALE = POSITION_OPEN // DAY_NIGHT_SPLIT_MIDPOINT
+
 
 def _pct_slider() -> selector.NumberSelector:
     """Return a 0–100 % slider selector for the fabric opacity/threshold fields."""
@@ -253,6 +274,14 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         # the position axis won't fire this cycle. Cleared on every suppressed
         # branch of ``post_pipeline_resolve`` (mirrors venetian's ``_last_tilt``).
         self._last_blend: int | None = None
+        # Model B: the fabric half read off the carriage by
+        # ``hold_reference_position``, replayed by ``post_pipeline_resolve`` when
+        # a HOLD's own blend has been cleared — and only then, because an
+        # off-cycle evaluate writes here too. ``None`` = nothing has asked for a
+        # reference since the last clear. See ``sync_runtime_options`` for why it
+        # is cleared there and ``hold_reference_position`` for why the hold gate,
+        # not the clear, is what keeps a stale fabric out.
+        self._split_range_hold_fabric: int | None = None
         self._schedule_refresh_after: Any | None = None
         # Per-instance control model (Model A vs B vs C). Read from options and
         # cached once per cycle in ``sync_runtime_options`` — the generic hook the
@@ -670,8 +699,20 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         at a single-carriage Model B/C on the coordinator's very first cycle,
         rather than reporting a position-only cover as a contradiction against
         the ``__init__`` Model A default.
+
+        The Model B hold-fabric stash is cleared here and NOT inside
+        :meth:`_cache_runtime_options`, because ``post_pipeline_resolve`` calls
+        that one too and would wipe the stash on its way to consuming it. The
+        per-cycle ordering is: this hook clears → ``registry.evaluate`` may set
+        it via :meth:`hold_reference_position` → ``post_pipeline_resolve``
+        consumes it.
+
+        The clear is hygiene, not the safety argument — an off-cycle evaluate can
+        land after it. What makes the consume safe is the hold gate in
+        ``post_pipeline_resolve``; see :meth:`hold_reference_position`.
         """
         self._cache_runtime_options(options)
+        self._split_range_hold_fabric = None
 
     def build_calc_engine(
         self,
@@ -793,10 +834,40 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         """
         if position == POSITION_OPEN:
             return POSITION_OPEN
-        half = round(position / 2)
+        half = round(position / _SPLIT_RANGE_SCALE)
         if blend >= DAY_NIGHT_SPLIT_MIDPOINT:
             return DAY_NIGHT_SPLIT_MIDPOINT + half
         return half
+
+    def _split_range_decode(self, wire: int) -> tuple[int, int]:
+        """Un-fold one physical split-range position into ``(coverage, fabric)``.
+
+        The algebraic inverse of :meth:`_split_range_wire`, kept beside it so the
+        pair cannot drift (CODING_GUIDELINES.md "Single-Source-of-Truth Helpers").
+        A held Model B carriage reports one number that means both things at
+        once, and a composed coverage floor can only be compared against the
+        coverage half (#1179).
+
+        Lossy in one direction only: the 2:1 compression means two adjacent
+        coverages share a wire, so a decoded coverage can differ from the encoded
+        one by 1. Re-encoding a decoded wire is exactly idempotent, which is what
+        the clamp path needs — a carriage nothing moved is re-dispatched to the
+        wire it is already sitting at.
+
+        ONE wire is genuinely ambiguous: 50 is reached by ``(0, sheer)``,
+        ``(1, sheer)`` and ``(99, blackout)``, because the encoder is
+        discontinuous at the top of the blackout half (98 → 49, 99 → 50,
+        100 → 100). It resolves here as sheer/0, the conservative direction —
+        reading a nearly-closed blackout carriage as fully open can make a floor
+        fire but never suppress one. Wire 100 collapses both fabrics onto the one
+        fully-open endpoint, which is the encoder's documented intent rather than
+        an ambiguity: a carriage covering nothing is behind no fabric.
+        """
+        if wire >= DAY_NIGHT_SPLIT_MIDPOINT:
+            return (wire - DAY_NIGHT_SPLIT_MIDPOINT) * _SPLIT_RANGE_SCALE, (
+                DAY_NIGHT_SHEER
+            )
+        return wire * _SPLIT_RANGE_SCALE, DAY_NIGHT_BLACKOUT
 
     def forecast_secondary_axes(
         self,
@@ -886,11 +957,28 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             options=options,
             cover=cover,
         )
-        if (
-            self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE
-            and resolved.tilt is not None
-        ):
-            return self._apply_split_range(resolved)
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            # ``_resolve_blend`` clears the blend for every hold winner, so a
+            # clamped hold used to skip the fold entirely and put its abstract
+            # coverage straight onto the wire — half the travel, in whichever
+            # fabric half that number happened to land in. The carriage's own
+            # decoded fabric is the honest replacement: same fabric, new
+            # coverage (#1179).
+            #
+            # ``held_position`` is what licenses that replay. The stash is a side
+            # channel on the live policy, and an off-cycle
+            # ``async_apply_user_position`` evaluate can write it while this cycle
+            # is suspended on one of ``_async_update_data``'s awaits — so a
+            # leftover fabric may well be sitting here. A cycle whose own winner
+            # is COMPUTED never asked the reduction hook anything and has no
+            # claim on it; reading it would fold behind a fabric this cycle never
+            # chose. A hold winner always wrote it itself — see
+            # :meth:`hold_reference_position`.
+            blend = resolved.tilt
+            if blend is None and resolved.held_position is not None:
+                blend = self._split_range_hold_fabric
+            if blend is not None:
+                return self._apply_split_range(resolved, blend=blend)
         if self._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY:
             self._cache_dual_entity(resolved, options)
         return resolved
@@ -1199,6 +1287,133 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             return None
         return self._dispatch_frame(self._dual_entity_dispatch_inverse)
 
+    # ---- Held-position reduction (the dispatch chain, inverted) -------- #
+
+    def entities_move_independently(self) -> bool:
+        """Only Model A's entities are unrelated covers (#1179).
+
+        The base predicate is derived from three overridden hooks, and this
+        policy overrides all three — but for Model A every one of them is
+        **inert**, so the derived answer is a false negative that excluded a
+        plain multi-shade instance from #1174's per-cover hold judging:
+
+        * :meth:`resolve_entity_target` returns ``position`` unchanged at its
+          very first statement for every model that is not ``dual_entity``;
+        * :meth:`dispatch_order_key` returns its constant for the same set, so
+          ``order_for_dispatch`` is a stable-sort no-op;
+        * :meth:`post_pipeline_resolve` only fills ``result.tilt`` — Model A
+          reaches neither ``_apply_split_range`` nor ``_cache_dual_entity`` and
+          never rewrites ``result.position``.
+
+        Model B genuinely folds coverage and fabric into one wire and Model C
+        genuinely derives its middle rail from the bottom rail, so both stay
+        coupled and answer :meth:`hold_reference_position` instead.
+
+        ``_control_model`` is primed by :meth:`sync_runtime_options`, which the
+        coordinator drives from ``_update_options`` before the pipeline runs —
+        including on the very first cycle — so this is never answered against
+        the ``__init__`` default in production.
+        """
+        return self._control_model == DAY_NIGHT_MODEL_POSITION_TILT
+
+    def hold_reference_position(
+        self,
+        cover_positions: Mapping[str, int | None],
+        *,
+        inverted: bool,
+    ) -> int | None:
+        """Reduce this instance's raw reads to its one abstract coverage (#1179).
+
+        **Model B (``split_range``)** — the carriage's single read, DECODED. One
+        physical axis encodes coverage and fabric together, so comparing a
+        coverage floor against the raw wire is a category error even on a
+        single-entity instance, where no mean is involved at all: wire 20 looks
+        like a violation of a 30 % floor while actually sitting at 40 % coverage.
+        The decode happens in WIRE space — un-flip first, then split — and the
+        fabric half is stashed on ``_split_range_hold_fabric`` so
+        :meth:`post_pipeline_resolve` can re-fold the clamped coverage back onto
+        the wire behind the fabric the user is physically already behind. A floor
+        moves coverage; it does not change fabric.
+
+        **Why the stash cannot be replayed against the wrong cycle.** It is
+        mutable state on the live policy and ``async_apply_user_position``
+        evaluates the pipeline off-cycle on that same policy, with no
+        ``sync_runtime_options`` ahead of it and no lock holding it off while
+        ``_async_update_data`` sits on one of its two awaits — so a leftover write
+        genuinely can outlive the per-cycle clear. Two facts make it unreadable
+        anyway:
+
+        * ``coordinator._calculate_cover_state`` is **synchronous** from
+          ``registry.evaluate`` through ``post_pipeline_resolve``, so this cycle's
+          own evaluate is the last thing that can touch the stash before the
+          consume — a later off-cycle write cannot exist;
+        * the consume fires only when ``PipelineResult.held_position`` is set, and
+          a Model B hold ALWAYS wrote the stash itself. ``held_position`` is
+          ``snapshot.current_cover_position``, which the coordinator computes as
+          the mean of the very ``cover_positions`` the same snapshot carries, so a
+          non-``None`` hold implies a numeric read; ``entities_move_independently``
+          is ``False`` for Model B, so the registry always takes the coupled
+          branch and asks this hook; and with a numeric read this branch always
+          stashes.
+
+        So the fabric a hold replays is its own evaluate's. A cycle that ends on a
+        computed winner asked nothing and reads nothing.
+
+        ⚠️ The decode un-flips but does NOT un-interpolate, per the base
+        contract's caveat. On an interpolated install the wire read arrives on
+        the motor's scale, so a carriage sitting near the fabric boundary can be
+        decoded into the wrong half — and this branch, unlike the others, then
+        WRITES that half to the stash, so the re-fold can dispatch a fabric
+        change the hold never asked for. Model B under interpolation is already
+        approximate for the same reason in the forward direction; see the
+        ``interpolated`` paragraph in :meth:`resolve_entity_target`.
+
+        **Model C (``dual_entity``)** — the BOTTOM rail. It *is* the coverage
+        ``P``; the middle rail is ``M = 100 - blend * (100 - P) / 100``, a pure
+        function of ``P`` and the blend (:meth:`resolve_entity_target`), so it
+        carries no independent opinion and averaging it into the summary mixes a
+        coverage with a value derived from that coverage. Judged on the bottom
+        rail, a floor that binds the shade lifts the middle rail with it —
+        through the same remap that produced it — and the sheer band survives
+        the clamp instead of being silently compressed.
+
+        The bottom rail is "the entity that is not the middle rail", which is the
+        same rule :meth:`_dual_entity_bottom_rail` states for the travel gate.
+        ``None`` for an unconfigured middle rail or an unreadable bottom rail:
+        with no role map there is no anchor to name, and the cycle keeps the
+        legacy summary mean rather than guessing. ``_dual_entity_middle_rail`` is
+        primed by :meth:`sync_runtime_options` → :meth:`_cache_runtime_options`,
+        so it is current before the pipeline runs.
+
+        Frames per the base contract: ``cover_positions`` are RAW reads in the
+        frame ``inverted`` names, and the return is LOGICAL — the remap consumes
+        wire values and this is its inverse, so the flip happens here and the
+        registry must not repeat it.
+        """
+        if self._control_model == DAY_NIGHT_MODEL_SPLIT_RANGE:
+            raw = next((p for p in cover_positions.values() if p is not None), None)
+            if raw is None:
+                return None
+            coverage, fabric = self._split_range_decode(flip_if(raw, inverted=inverted))
+            self._split_range_hold_fabric = fabric
+            return coverage
+        if self._control_model == DAY_NIGHT_MODEL_DUAL_ENTITY:
+            middle = self._dual_entity_middle_rail
+            if middle is None:
+                return None
+            bottom = next(
+                (
+                    pos
+                    for eid, pos in cover_positions.items()
+                    if eid != middle and pos is not None
+                ),
+                None,
+            )
+            if bottom is None:
+                return None
+            return flip_if(bottom, inverted=inverted)
+        return None
+
     def resolve_entity_target(
         self,
         entity_id: str,
@@ -1263,15 +1478,20 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
         m_open = max(m_open, p_open)
         return flip_if(m_open, inverted=inverse)
 
-    def _apply_split_range(self, resolved: PipelineResult) -> PipelineResult:
+    def _apply_split_range(
+        self, resolved: PipelineResult, *, blend: int
+    ) -> PipelineResult:
         """Fold the abstract ``(position, blend)`` pair into the split-range wire.
 
-        Keeps the abstract blend on ``result.tilt`` (the diagnostic/forecast Target
-        Tilt value) and rewrites ``result.position`` to the single physical
-        position that encodes both. Records the fold as a terminal
-        ``day_night_split_range`` trace step.
+        Rewrites ``result.position`` to the single physical position that encodes
+        both, and records the fold as a terminal ``day_night_split_range`` trace
+        step. It deliberately does NOT write ``result.tilt``: on a computed
+        winner the caller has already put the resolved blend there for the Target
+        Tilt sensor / forecast / diagnostics, and on a HOLD there is no blend to
+        report — only the fabric the carriage is physically behind, which the
+        trace names and the sensor must not present as a decision (#1179).
         """
-        wire = self._split_range_wire(resolved.position, resolved.tilt)
+        wire = self._split_range_wire(resolved.position, blend)
         trace = list(resolved.decision_trace)
         trace.append(
             DecisionStep(
@@ -1279,10 +1499,10 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
                 matched=True,
                 reason=(
                     f"split-range wire {wire}% "
-                    f"(coverage {resolved.position}%, blend {resolved.tilt}%)"
+                    f"(coverage {resolved.position}%, blend {blend}%)"
                 ),
                 position=wire,
-                tilt=resolved.tilt,
+                tilt=blend,
             )
         )
         return replace(resolved, position=wire, decision_trace=trace)

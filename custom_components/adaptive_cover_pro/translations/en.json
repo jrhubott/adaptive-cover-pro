@@ -90,6 +90,7 @@
           "tilt_mode": "Tilt Mode",
           "tilt_angle_0": "Tilt Angle at 0%",
           "tilt_angle_100": "Tilt Angle at 100%",
+          "tilt_horizontal_percent": "Tilt Percentage at Horizontal",
           "venetian_tilt_skip_above": "Skip Tilt Above Position (%)",
           "venetian_tilt_skip_mode": "Skip-Tilt Mode",
           "venetian_tilt_transform": "Tilt Output Transform",
@@ -148,6 +149,7 @@
           "tilt_mode": "How the tilt percentage maps to slat angle. **Single direction** (0% = closed / 100% = open): the slats rotate one way only. **Bi-directional** (0% = closed / 50% = open / 100% = closed): the slats open at 50% and close in either direction. **Specify angles**: set the exact raw slat angle at 0% and 100% tilt below, for hardware whose travel matches neither preset.",
           "tilt_angle_0": "Raw slat angle when the cover reports 0% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
           "tilt_angle_100": "Raw slat angle when the cover reports 100% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
+          "tilt_horizontal_percent": "Optional third calibration point for Specify Angles: the tilt percentage your cover reports when the slats are exactly horizontal (90°). 0 = disabled, so the scale runs straight from the 0% angle to the 100% angle. Set it when your slats reach horizontal somewhere other than the midpoint of their reported travel — the scale then uses two straight segments meeting at this point, for example 0° at 0%, horizontal at 50%, and 130° at 100%. Requires the 0% and 100% angles to sit on opposite sides of 90°. Only used when Tilt Mode is set to Specify angles.",
           "venetian_tilt_skip_above": "When the cover is commanded above this position (0–100%), the tilt command is skipped. At high positions the slats retract into the housing and tilting is physically meaningless. Default 95%. Increase if your blind tilts correctly near the top; decrease if it tries to tilt when fully raised.",
           "venetian_tilt_skip_mode": "What happens to the tilt command once the cover is commanded above the skip threshold. **Neutral** (default): send a neutral fully-open tilt to overwrite the actuator's cached tilt — needed for KNX/Shelly motors that otherwise re-assert the previous slat angle on a raised blind. **Suppress**: send no tilt command at all. Choose Suppress for mechanically-coupled exterior venetians (e.g. Somfy on a Shelly) where any tilt command at the fully-open endpoint drags the carriage off its resting position.",
           "venetian_tilt_transform": "How the sun-tracking slat tilt demand is fitted into the Minimum–Maximum Slat Tilt band. **Clamp** (default): flat-cap the value at Maximum Slat Tilt, so any calculated tilt above the cap flat-lines at the cap. **Proportional**: linearly scale the full 0–100% solar demand into the Min–Max band, preserving the proportional relationship between sun angle and slat angle instead of flat-lining. Example with Min 0% / Max 40%: a calculated 50% becomes 20% under Proportional, where Clamp would give 40%. For Proportional, set Maximum Slat Tilt greater than Minimum Slat Tilt.",
@@ -443,6 +445,7 @@
           "tilt_mode": "Tilt Mode",
           "tilt_angle_0": "Tilt Angle at 0%",
           "tilt_angle_100": "Tilt Angle at 100%",
+          "tilt_horizontal_percent": "Tilt Percentage at Horizontal",
           "venetian_tilt_skip_above": "Skip Tilt Above Position (%)",
           "venetian_tilt_skip_mode": "Skip-Tilt Mode",
           "venetian_tilt_transform": "Tilt Output Transform",
@@ -501,6 +504,7 @@
           "tilt_mode": "How the tilt percentage maps to slat angle. **Single direction** (0% = closed / 100% = open): the slats rotate one way only. **Bi-directional** (0% = closed / 50% = open / 100% = closed): the slats open at 50% and close in either direction. **Specify angles**: set the exact raw slat angle at 0% and 100% tilt below, for hardware whose travel matches neither preset.",
           "tilt_angle_0": "Raw slat angle when the cover reports 0% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
           "tilt_angle_100": "Raw slat angle when the cover reports 100% tilt: 0° = closed downward, 90° = horizontal, 180° = closed upward. Only used when Tilt Mode is set to Specify angles.",
+          "tilt_horizontal_percent": "Optional third calibration point for Specify Angles: the tilt percentage your cover reports when the slats are exactly horizontal (90°). 0 = disabled, so the scale runs straight from the 0% angle to the 100% angle. Set it when your slats reach horizontal somewhere other than the midpoint of their reported travel — the scale then uses two straight segments meeting at this point, for example 0° at 0%, horizontal at 50%, and 130° at 100%. Requires the 0% and 100% angles to sit on opposite sides of 90°. Only used when Tilt Mode is set to Specify angles.",
           "venetian_tilt_skip_above": "When the cover is commanded above this position (0–100%), the tilt command is skipped. At high positions the slats retract into the housing and tilting is physically meaningless. Default 95%. Increase if your blind tilts correctly near the top; decrease if it tries to tilt when fully raised.",
           "venetian_tilt_skip_mode": "What happens to the tilt command once the cover is commanded above the skip threshold. **Neutral** (default): send a neutral fully-open tilt to overwrite the actuator's cached tilt — needed for KNX/Shelly motors that otherwise re-assert the previous slat angle on a raised blind. **Suppress**: send no tilt command at all. Choose Suppress for mechanically-coupled exterior venetians (e.g. Somfy on a Shelly) where any tilt command at the fully-open endpoint drags the carriage off its resting position.",
           "venetian_tilt_transform": "How the sun-tracking slat tilt demand is fitted into the Minimum–Maximum Slat Tilt band. **Clamp** (default): flat-cap the value at Maximum Slat Tilt, so any calculated tilt above the cap flat-lines at the cap. **Proportional**: linearly scale the full 0–100% solar demand into the Min–Max band, preserving the proportional relationship between sun angle and slat angle instead of flat-lining. Example with Min 0% / Max 40%: a calculated 50% becomes 20% under Proportional, where Clamp would give 40%. For Proportional, set Maximum Slat Tilt greater than Minimum Slat Tilt.",
@@ -1103,7 +1107,7 @@
       },
       "custom_position_tilt_defaults": {
         "title": "Default & Sunset Tilt",
-        "description": "Slat-tilt defaults applied only when no other handler wins control — the same fallback as Default Position. When a custom-position slot wins, its own Tilt takes over; when solar tracking wins, the automatic solar calculation takes over; any other handler leaves the slats holding their current angle.",
+        "description": "Slat-tilt defaults applied whenever the cover falls back to its default position — not just when no handler wins, but also when climate (low-light/off-season), cloud suppression, or motion timeout hold there. When a custom-position slot wins, its own Tilt takes over; when solar tracking wins, the automatic solar calculation takes over; any other handler leaves the slats holding their current angle.",
         "data": {
           "default_tilt": "Default Tilt",
           "sunset_tilt": "Sunset Tilt"
@@ -2102,6 +2106,10 @@
         "tilt_angle_100": {
           "name": "Tilt angle at 100%",
           "description": "Raw slat angle when the cover reports 100% tilt: 0° closed downward, 90° horizontal, 180° closed upward."
+        },
+        "tilt_horizontal_percent": {
+          "name": "Tilt percentage at horizontal",
+          "description": "Optional third calibration point: the tilt percentage reported when the slats are exactly horizontal (90°). 0 disables it. Requires tilt angle at 0% and tilt angle at 100% to sit on opposite sides of 90°."
         },
         "venetian_tilt_skip_above": {
           "name": "Skip tilt above position (%)",

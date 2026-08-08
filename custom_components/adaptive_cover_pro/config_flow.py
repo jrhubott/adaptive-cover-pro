@@ -193,6 +193,7 @@ from .const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_TRANSFORM,
@@ -348,7 +349,10 @@ from .cover_types import (  # noqa: E402
 )
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
-from .cover_types.tilt import GEOMETRY_TILT_SCHEMA  # noqa: E402, F401
+from .cover_types.tilt import (  # noqa: E402
+    GEOMETRY_TILT_SCHEMA,  # noqa: F401
+    tilt_horizontal_percent_error,
+)
 from .cover_types.venetian import GEOMETRY_VENETIAN_SCHEMA  # noqa: E402, F401
 from .unit_system import (  # noqa: E402
     options_to_display,
@@ -377,6 +381,7 @@ from .pipeline.handlers import (  # noqa: E402
     HANDLER_PRIORITY_CONF,
     resolve_handler_priority,
 )
+from .pipeline.types import has_fixed_tilt  # noqa: E402
 from .priority_chain import build_priority_chain  # noqa: E402
 from .managers.cover_command.queue import normalize_queue_name  # noqa: E402
 from .profile_link import (  # noqa: E402
@@ -501,12 +506,23 @@ def _blind_spot_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
 
 
 def _tilt_angle_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
-    """Return errors for explicit tilt endpoint ordering."""
+    """Return errors for the explicit tilt endpoint calibration.
+
+    Endpoint ordering, plus the optional three-point mid-point (#1222). The
+    mid-point rule is not restated here — it is
+    ``cover_types.tilt.tilt_horizontal_percent_error``, the same wrapper the
+    ``set_geometry`` service calls, over the same
+    ``engine.covers.tilt.hinge_is_usable`` predicate the engine's map is gated
+    on. One rule, three consumers.
+    """
     angle_0 = user_input.get(CONF_TILT_ANGLE_0)
     angle_100 = user_input.get(CONF_TILT_ANGLE_100)
-    if angle_0 is None or angle_100 is None or angle_0 < angle_100:
-        return {}
-    return {CONF_TILT_ANGLE_100: "Must be greater than tilt_angle_0"}
+    if angle_0 is not None and angle_100 is not None and angle_0 >= angle_100:
+        return {CONF_TILT_ANGLE_100: "Must be greater than tilt_angle_0"}
+    message = tilt_horizontal_percent_error(user_input)
+    if message is not None:
+        return {CONF_TILT_HORIZONTAL_PERCENT: message}
+    return {}
 
 
 def _forecast_temp_source_notice(source: str | None, weather_entity: str | None) -> str:
@@ -1692,6 +1708,14 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ {label}: tilt only is on — "
         "Use as minimum / Use My position are ignored for this slot."
     ),
+    "warnings.custom_tilt_only_bounds_discarded": (
+        "⚠️ {label}: slat fixed at {slat}% — the configured tilt bounds are "
+        "ignored for this slot."
+    ),
+    "warnings.custom_tilt_only_no_effect": (
+        "⚠️ {label}: tilt only is on with no slat angle and no tilt bounds "
+        "configured — this slot has no effect."
+    ),
     "warnings.custom_and_no_sensors": (
         "⚠️ {label}: combine mode AND is set but no trigger sensors are "
         "configured — the template alone activates the slot."
@@ -1869,9 +1893,12 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "blind_spot.elevation_above": "above {elev}° elevation",
     # --- Default fallback (0) ---
     "rules.default": "🌙 Default (no rule matches) → {default_pos}%",
-    "default.tilt": ("  ↳ Default tilt: {tilt}% (used when no handler wins control)"),
+    "default.tilt": (
+        "  ↳ Default tilt: {tilt}% (used whenever the position falls back to default)"
+    ),
     "default.sunset_tilt": (
-        "  ↳ Sunset tilt: {tilt}% (used when no handler wins control, during sunset)"
+        "  ↳ Sunset tilt: {tilt}% (used whenever the position falls back to default, "
+        "during sunset)"
     ),
     # --- Position limits ---
     "headers.position_limits": "**Position Limits**",
@@ -2560,25 +2587,66 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 L["fragments.safety"] if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY else ""
             )
             _order = _HID_CUSTOM_ORDER_BASE + _slot
-            if _tilt_only:
-                # Tilt-only fixes the slat angle and lets the position pipeline
-                # (solar etc.) drive the carriage — min_mode/use_my are ignored.
-                slat = _slot_tilt if _slot_tilt is not None else 0
+            _keys = CUSTOM_POSITION_SLOTS[_slot]
+            # Read once, used by both branches below (issue #1215 finding 2 —
+            # a real fixed tilt still needs these to know whether it is
+            # discarding a configured bound; the constraint-rendering branch
+            # needs them to render the bound itself).
+            _t_min = config.get(_keys["tilt_min"])
+            _t_max = config.get(_keys["tilt_max"])
+            if has_fixed_tilt(tilt_only=_tilt_only, tilt=_slot_tilt):
+                # A REAL fixed tilt (tilt_only + a configured slat angle)
+                # fixes the slat angle and lets the position pipeline (solar
+                # etc.) drive the carriage — min_mode/use_my are ignored.
                 _open(
                     _pri,
                     _order,
                     L["rules.custom_tilt_only"].format(
-                        label=_slot_label, trigger=_trigger, slat=slat
+                        label=_slot_label, trigger=_trigger, slat=_slot_tilt
                     ),
                 )
+                # Footgun (issue #1215 finding 2): the #514 precedence above
+                # is deliberate and preserved, but it silently drops any
+                # tilt_min/tilt_max also configured on this slot. Say so.
+                if _t_min is not None or _t_max is not None:
+                    _sub(
+                        L["warnings.custom_tilt_only_bounds_discarded"].format(
+                            label=_slot_label, slat=_slot_tilt
+                        )
+                    )
             else:
-                _keys = CUSTOM_POSITION_SLOTS[_slot]
                 _pos_max = config.get(_keys["position_max"])
-                _is_min = bool(config.get(_keys["min_mode"]))
+                # tilt_only normalizes min_mode / use_my off unconditionally
+                # (snapshot_builder.py's tilt_only mutual-exclusion pass,
+                # keyed on the bare flag) — a slot only reaches this branch
+                # under tilt_only when it has no fixed slat angle (a real
+                # fixed tilt takes the branch above), so both flags must
+                # render as off here too, or the summary would claim a floor
+                # / My-path the runtime never applies (issue #1215 residual
+                # risk). The mutual-exclusion ⚠️ warning below reads the raw
+                # values — reporting the conflict is its job.
+                _is_min = bool(config.get(_keys["min_mode"])) and not _tilt_only
+                _use_my_effective = _use_my and not _tilt_only
+                # ``position_mode`` is NONE for every tilt_only slot regardless
+                # of a fixed tilt (types.py's ``position_mode`` keys on the
+                # bare flag, unlike ``tilt_mode``), and snapshot_builder.py
+                # wipes ``position_max`` the same way — on the bare tilt_only
+                # flag, and independently on ``use_my`` too (issue #1215
+                # finding 1, mirroring snapshot_builder.py's own ``if
+                # tilt_only or use_my: position_max = None``). Normalize both
+                # the stored position claim and its ceiling here too, or a
+                # tilt_only / use_my slot that also stores a
+                # ``custom_position_N`` / ``position_max`` would render a
+                # phantom "→ N%" / "(at most N%)" the handler never applies
+                # (issue #1215 audit findings 1-2).
+                if _tilt_only:
+                    _pos = None
+                if _tilt_only or _use_my:
+                    _pos_max = None
                 # A constraint-only slot names no position — the pipeline's own
                 # result is what gets clamped (issue #943).
                 target = (
-                    _pos_label(_pos, _use_my)
+                    _pos_label(_pos, _use_my_effective)
                     if _pos is not None
                     else L["custom.no_position_claim"]
                 )
@@ -2598,8 +2666,6 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                     cp_min += L["fragments.as_maximum"].format(max=_pos_max)
                 # Tilt bounds (issue #943). Mutually exclusive with the fixed
                 # tilt note above — tilt_only is handled in the other branch.
-                _t_min = config.get(_keys["tilt_min"])
-                _t_max = config.get(_keys["tilt_max"])
                 if _t_min is not None and _t_max is not None:
                     tilt_note += L["custom.tilt_bound_range"].format(
                         min=_t_min, max=_t_max
@@ -2641,6 +2707,15 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 config.get(f"custom_position_min_mode_{_slot}") or _use_my
             ):
                 _sub(L["warnings.custom_tilt_only_conflict"].format(label=_slot_label))
+            # Footgun (issue #1215 finding 6): tilt_only with no slat angle
+            # AND no tilt bounds leaves the slot with position_mode == NONE
+            # and tilt_mode == NONE — it does nothing at all. ``_slot_tilt is
+            # None`` is implied whenever ``_tilt_only`` reaches here without
+            # having taken the ``has_fixed_tilt`` branch above, but spelling
+            # it out keeps this check correct even if the branch above ever
+            # changes shape.
+            if _tilt_only and _slot_tilt is None and _t_min is None and _t_max is None:
+                _sub(L["warnings.custom_tilt_only_no_effect"].format(label=_slot_label))
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
@@ -3498,6 +3573,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TILT_MODE,
             CONF_TILT_ANGLE_0,
             CONF_TILT_ANGLE_100,
+            CONF_TILT_HORIZONTAL_PERCENT,
             # Shared tilt-axis limit/shape controls (#964): now part of the
             # tilt geometry fragment reached by tilt-only, louvered-roof, and
             # venetian covers, so they sync with the tilt geometry above.
