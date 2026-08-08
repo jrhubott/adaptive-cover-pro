@@ -582,6 +582,67 @@ async def test_same_position_skip_endpoint_tolerance_still_refreshes_is_safety(
 
 
 @pytest.mark.asyncio
+async def test_same_position_skip_does_not_protect_a_foreign_stale_target(
+    svc, mock_hass
+):
+    """Issue #1165 (round-2 audit): the verdict describes the BOOKED target,
+    so a skip that withholds its booking must not stamp ``is_safety`` onto a
+    stale number some earlier, non-safety decision left behind.
+
+    The withheld-booking sub-arm (#1158) is the one place where the entity can
+    still be holding a target that has nothing to do with the value this cycle
+    routed to. Writing the verdict there anyway inverts #1165's own defect: a
+    ``True`` that protects and re-drives a number the safety handler never
+    asked for. ``clear_non_safety_targets()`` then leaves the stale target in
+    place, and steps 3/4 resend it with automatic control off and outside the
+    time window.
+    """
+    # Cycle 1: an ordinary solar dispatch books 60. No safety involved.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 60, "solar", context=_ctx(is_safety=False)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 60
+    assert svc.state("cover.test").is_safety is False
+
+    # The cover never lands on 60 — it comes to rest at 2 (landing error, or
+    # someone moved it), and the booking is still 60.
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 2)
+
+    # Cycle 2: weather safety wants the 0 endpoint. ``_current=2`` is inside
+    # position_tolerance of 0, so the endpoint-tolerance sub-arm skips — and
+    # #1158 withholds the booking because 2 != the routed target 0. The entity
+    # therefore still holds 60, a target no safety decision produced.
+    with _patch_caps():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 0, "weather", context=_ctx(is_safety=True)
+        )
+    assert (outcome, reason) == ("skipped", "same_position")
+    assert svc.get_target("cover.test") == 60  # unbooked-guard still holds
+
+    # The safety verdict was about 0, not about 60. The booked 60 must stay
+    # unprotected.
+    assert svc.state("cover.test").is_safety is False
+
+    # Window closes: 60 is an ordinary stale target, so the sweep takes it.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+    # And with automatic control off AND outside the time window, nothing is
+    # driven to 60 — the resend steps 3/4 exist to prevent.
+    svc._auto_control_enabled = False
+    svc._in_time_window = False
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_reconcile_resend_preserves_is_safety_flag(svc, mock_hass):
     """Issue #1134 defect 2: a reconciliation resend RESTATES the safety
     verdict; it must not clear the very flag that authorised it.

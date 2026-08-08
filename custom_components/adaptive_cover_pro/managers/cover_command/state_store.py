@@ -242,23 +242,38 @@ class PerEntityState:
     last_progress_at: dt.datetime | None = None
     retry_count: int = 0
     gave_up: bool = False
-    # This cycle's safety verdict for the entity ACP is currently tracking — a
-    # property of the PROTECTION, not of the booked number, which is what makes
-    # its lifetime different from ``dispatch_token``'s just above. It is written
-    # on every path where ``apply_position`` reaches a decision about the
-    # entity: every real dispatch (``_prepare_service_call``) and every
-    # ``same_position`` skip, unconditionally, whether or not a target is booked
-    # that cycle. A reconciliation resend RESTATES it rather than re-deciding
-    # it, because a resend makes no new verdict. The only other writer is the
+    # Whether ``target`` above is a safety-protected number: the answer both
+    # readers actually want, since ``clear_non_safety_targets()`` decides
+    # whether to sweep ``target`` and ``run_reconciliation_pass`` steps 3/4
+    # decide whether to resend it with automatic control off or outside the
+    # time window. It is a verdict ABOUT the booked number, which is what makes
+    # its lifetime different from ``dispatch_token``'s just above: the token
+    # describes how one dispatch expressed the value, the verdict describes
+    # what is protecting it now.
+    #
+    # Written wherever ``apply_position`` reaches a decision about the booked
+    # number: every real dispatch (``_prepare_service_call``, which books and
+    # stamps together so the two can never disagree), and every
+    # ``same_position`` skip whose booked target is the one that cycle routed
+    # to — or that has nothing booked at all, leaving no target to contradict.
+    # A reconciliation resend RESTATES it rather than re-deciding it (#1134),
+    # because a resend makes no new verdict. The only other writer is the
     # blanket reset ``clear_safety_targets()``.
     #
-    # Corollary (issue #1165): it must never be governed by the booking's
-    # value-change guard. ``dispatch_token`` is correctly governed by it — the
-    # stamp describes the booking — but a verdict under that guard freezes,
-    # because the guard suppresses the write on exactly the cycles that
-    # re-confirm an unchanged target. A frozen True survives
-    # ``clear_non_safety_targets()`` and makes ``run_reconciliation_pass``
-    # steps 3/4 resend with automatic control off or outside the time window.
+    # Two corollaries, one on each side (both issue #1165):
+    #
+    # * It must NEVER be governed by the booking's value-change guard.
+    #   ``dispatch_token`` is correctly governed by it — the stamp describes the
+    #   booking — but a verdict under that guard freezes, because the guard
+    #   suppresses the write on exactly the cycles that re-confirm an unchanged
+    #   target. A frozen True survives ``clear_non_safety_targets()`` and makes
+    #   steps 3/4 resend with automatic control off or outside the time window.
+    # * It must NEVER be written from a cycle whose verdict is about some OTHER
+    #   number. The one place that can happen is the ``same_position`` sub-arm
+    #   where #1158 withholds the booking while the entity still holds a foreign
+    #   target: writing there marks a stale, unrelated target safety-protected —
+    #   the same defect with the polarity reversed, and it re-drives a number no
+    #   safety decision produced.
     is_safety: bool = False
     last_reconcile_at: dt.datetime | None = None
     # Display-only assumed position (issue #888). Set on covers with no native

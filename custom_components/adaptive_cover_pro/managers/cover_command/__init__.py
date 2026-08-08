@@ -1862,36 +1862,6 @@ class CoverCommandService:
                 )
             )
         ):
-            # THIS CYCLE'S safety verdict, recorded first and unconditionally —
-            # ahead of the booking block below and outside its value-change
-            # guard (issue #1165).
-            #
-            # `PerEntityState.is_safety` records the safety verdict for the
-            # entity ACP is currently tracking: it is a property of the
-            # protection, not of the booked number. So it is written on every
-            # path where `apply_position` reaches a decision about the entity —
-            # every real dispatch (`_prepare_service_call`) and every
-            # same_position skip — whether or not a target is booked this cycle.
-            # A reconciliation resend RESTATES it rather than re-deciding it,
-            # because a resend makes no new verdict; the only other writer is the
-            # blanket reset `clear_safety_targets()`.
-            #
-            # That lifetime is exactly why the verdict cannot ride inside the
-            # `(target, dispatch_token)` value-change guard below.
-            # `dispatch_token` IS a property of the booking, so that guard
-            # governs it correctly. A verdict governed by the same guard
-            # freezes instead: a since-cleared safety condition can never come
-            # back down, because the guard suppresses the write on precisely the
-            # cycles that re-confirm an unchanged target. A frozen True then
-            # survives `clear_non_safety_targets()` and makes
-            # `run_reconciliation_pass` steps 3/4 resend the target with
-            # auto_control off or outside the time window — what those steps
-            # exist to prevent.
-            #
-            # `self.state()` inserts a row, which is correct for a write on an
-            # entity ACP is actively commanding; the non-inserting `_get`
-            # discipline is scoped to read-only predicates (`is_target_unreached`).
-            self.state(entity_id).is_safety = context.is_safety
             # Book the target even though nothing is dispatched (issue #1158),
             # so get_diagnostics()["at_target"] and the Lovelace rails see a
             # value instead of a permanent None — for every sub-arm except
@@ -1944,8 +1914,8 @@ class CoverCommandService:
             # set_target(dispatch_token=None) would erase that provenance.
             #
             # This guard governs the `(target, dispatch_token)` pair and nothing
-            # else. The safety verdict is written at the top of this branch,
-            # deliberately outside it — see the lifetime rule there (#1165).
+            # else. The safety verdict is written just below, deliberately
+            # outside it — see the lifetime rule there (#1165).
             _target_would_mismatch_actual = (
                 _current_is_genuine and _current != _plan.routed_target
             )
@@ -1954,6 +1924,61 @@ class CoverCommandService:
                 and self.get_target(entity_id) != _plan.routed_target
             ):
                 self.set_target(entity_id, _plan.routed_target, dispatch_token=None)
+
+            # THIS CYCLE'S safety verdict (issues #1165 / #1134).
+            #
+            # `PerEntityState.is_safety` describes THE ENTITY'S BOOKED TARGET:
+            # "is the number ACP currently has this cover down for a
+            # safety-protected one?" That is what its two readers ask —
+            # `clear_non_safety_targets()` decides whether to sweep the booked
+            # target, and `run_reconciliation_pass` steps 3/4 decide whether to
+            # resend it with automatic control off or outside the time window.
+            #
+            # So the verdict is written whenever it is ABOUT the booked number:
+            #
+            # - every real dispatch (`_prepare_service_call`), which books and
+            #   stamps in the same breath, so the two can never disagree;
+            # - every same_position skip whose booked target is the one this
+            #   cycle routed to — including the cycles where the booking guard
+            #   above suppressed `set_target` because the value did not change,
+            #   which is exactly issue #1165's requirement. The verdict must NOT
+            #   ride inside that guard: `dispatch_token` is a property of the
+            #   booking so the guard governs it correctly, but a verdict under
+            #   the same guard freezes, because the guard suppresses the write
+            #   on precisely the cycles that re-confirm an unchanged target. A
+            #   frozen True survives `clear_non_safety_targets()` and gets
+            #   resent by steps 3/4 — what they exist to prevent;
+            # - every same_position skip on an entity with nothing booked, where
+            #   there is no target for the verdict to contradict (and both
+            #   readers are no-ops on a target-less entity anyway).
+            #
+            # And it is withheld in exactly one case: the skip books nothing
+            # (arm 1's endpoint-tolerance sub-arm, #1158) AND the entity is
+            # still holding a FOREIGN target — some earlier decision's number,
+            # not the one this cycle routed to. This cycle's verdict is not
+            # about that number, so the flag keeps describing the decision that
+            # did produce it. Stamping it there is #1165's own defect with the
+            # polarity reversed: a solar-booked 60 that the cover missed, plus a
+            # weather cycle that skips because the cover happens to sit within
+            # tolerance of the 0 endpoint, would mark 60 safety-protected —
+            # surviving the sweep and driving the cover to 60 at night with
+            # automatic control off, for a number the safety handler never
+            # asked for. Note the gate is read AFTER the booking block, so the
+            # three arms that do book have already made the booked target this
+            # cycle's routed target and write normally.
+            #
+            # A reconciliation resend RESTATES this flag rather than re-deciding
+            # it (`_execute_command` passes the recorded value through, #1134),
+            # because a resend makes no new verdict. The only other writer is
+            # the blanket reset `clear_safety_targets()`.
+            #
+            # `self.state()` inserts a row, which is correct for a write on an
+            # entity ACP is actively commanding; the non-inserting `_get`
+            # discipline is scoped to read-only predicates (`is_target_unreached`).
+            _booked_target = self.get_target(entity_id)
+            if _booked_target is None or _booked_target == _plan.routed_target:
+                self.state(entity_id).is_safety = context.is_safety
+
             # Secondary axis LAST: on a venetian this may rebase the target
             # via set_commanded_position (== set_target) after a tilt-only
             # send back-drives the carriage (#33/#187), and that rebase must
