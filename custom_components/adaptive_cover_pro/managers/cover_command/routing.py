@@ -199,8 +199,38 @@ def is_my_preset_target(
     unreachable there. So a booked NON-endpoint target on a
     non-position-capable axis can only have been put there by a My dispatch.
 
-    Two consequences hang off that, which is why the predicate is shared rather
-    than spelled out twice:
+    That covers ``_prepare_service_call``. A SECOND site books
+    ``plan.routed_target`` — ``apply_position``'s ``same_position`` skip (issue
+    #1158) — and it has no ``service is None`` check of its own, so the
+    inference has to survive it too. It does, because of the gate's arms rather
+    than any explicit guard:
+
+    * Arms 1 and 2 both require a GENUINE ``_current``, and on a
+      non-position-capable axis ``read_axis_value`` falls through to
+      ``get_open_close_state``, which returns only 0, 100 or ``None``. Arm 1
+      books ``routed_target == position == _current`` and arm 2's own gate is
+      ``_current == routed_target``, so either way the booked number is one of
+      those endpoints. Arm 1's endpoint-tolerance sub-arm is the single case
+      where ``routed_target`` may diverge from ``_current``, and it books
+      nothing at all.
+    * Arm 3 fires only when ``_current`` is ``None`` or a synthetic open/close
+      mapping, and its gate IS ``last_target == plan.routed_target``
+      (``_same_position_via_target_fallback``). By the time it books, the
+      booking's own value-change guard is already False, so the ``set_target``
+      is a no-op — it can never introduce a number that was not already there.
+
+    A future change that let the skip branch book a ``routed_target`` the gate
+    did not compare against — a new arm, or dropping ``_current_is_genuine`` —
+    would break that half; the ``same_position``-booking tests in
+    ``tests/test_managers/test_cover_command.py`` are what catch it. The
+    routing-algebra half is pinned in the same file by
+    ``test_route_service_call_blind_axis_obeys_the_my_preset_trichotomy``
+    (every blind-axis capability shape) and, for the unbookability of the
+    no-capable-service branch specifically,
+    ``test_prepare_service_call_books_nothing_when_no_capable_service``.
+
+    Two consequences hang off all of that, which is why the predicate is shared
+    rather than spelled out twice:
 
     * A reconciliation resend of such a target must re-route through
       ``stop_cover`` (issue #1134). Left to ``use_my_position=False`` the resend

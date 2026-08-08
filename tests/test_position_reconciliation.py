@@ -826,6 +826,158 @@ async def test_same_position_skip_regrants_is_safety_when_the_condition_returns(
 
 
 @pytest.mark.asyncio
+async def test_delta_skip_revokes_is_safety_after_condition_ends(svc, mock_hass):
+    """Issue #1165, same rule at the ``delta_too_small`` skip.
+
+    ``same_position`` is not the only gate that can hold a booked safety target
+    in place indefinitely. Once weather clears, a cover parked within
+    ``min_change`` of every subsequent calculated position skips on delta
+    forever — no dispatch, so ``_prepare_service_call`` never runs, so nothing
+    revokes the verdict a genuine earlier safety dispatch stamped. The booked
+    50 stays licensed to survive ``clear_non_safety_targets()`` and to be
+    re-driven by reconciliation steps 3/4 with automatic control off.
+
+    Unlike the ``same_position`` case this one self-corrects the moment the
+    calculated value moves outside ``min_change`` — it is not a fixed point —
+    but "eventually, if the sun cooperates" is not a lifetime.
+    """
+    # Cycle 1: weather safety drives 90 -> 50. A REAL dispatch, so
+    # ``_prepare_service_call`` genuinely stamps is_safety=True.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(force=True, is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 50
+    assert svc.state("cover.test").is_safety is True
+
+    # The cover arrives and settles.
+    _patch_position(svc, 50)
+    svc.set_waiting("cover.test", False)
+
+    # Cycle 2: weather clears. Solar wants 51 — one percent away, under
+    # min_change, so the delta gate skips. Nothing is dispatched and nothing is
+    # booked, but the verdict for THIS cycle is False.
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 51, "solar", context=_ctx(min_change=5, is_safety=False)
+        )
+    assert (outcome, reason) == ("skipped", "delta_too_small")
+    assert svc.state("cover.test").is_safety is False
+    # The skip books nothing — the 50 the safety dispatch put there is still
+    # the booked number, and it is now unprotected.
+    assert svc.get_target("cover.test") == 50
+
+    # Window closes: the sweep must take it.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+    # And with automatic control off AND outside the time window, nothing is
+    # resent for this entity.
+    svc._auto_control_enabled = False
+    svc._in_time_window = False
+    _patch_position(svc, 90)
+    mock_hass.services.async_call.reset_mock()
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_time_delta_skip_revokes_is_safety_after_condition_ends(svc, mock_hass):
+    """Issue #1165, same rule at the ``time_delta_too_small`` skip.
+
+    The sibling of the ``delta_too_small`` case: here the position delta is
+    large enough to act on but the rate limiter holds the command back, so
+    again nothing dispatches and again the stale verdict would ride forward.
+    Both gates are hysteresis on the carriage, neither is a safety decision,
+    and neither may leave the previous decision's licence standing.
+    """
+    # Cycle 1: weather safety drives 90 -> 50 with the delta/time gates
+    # bypassed, exactly as a safety context does in production.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "weather", context=_ctx(force=True, is_safety=True)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 50
+    assert svc.state("cover.test").is_safety is True
+
+    _patch_position(svc, 50)
+    svc.set_waiting("cover.test", False)
+
+    # Cycle 2: weather clears. Solar wants 90 — a big move, so the position
+    # delta passes — but the last command was ten seconds ago and the
+    # rate limiter is five minutes.
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10)
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 90, "solar", context=_ctx(time_threshold=5, is_safety=False)
+        )
+    assert (outcome, reason) == ("skipped", "time_delta_too_small")
+    assert svc.state("cover.test").is_safety is False
+    assert svc.get_target("cover.test") == 50
+
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+
+@pytest.mark.asyncio
+async def test_delta_skip_does_not_protect_a_target_it_did_not_route_to(svc, mock_hass):
+    """Issue #1165: the GRANT half stays attached to the booked number here too.
+
+    The delta gates book nothing, so ``get_target`` is whatever an earlier
+    decision left. A safety cycle that skips on delta must not therefore
+    license that older number: the licence has to attach to the number the
+    safety decision actually routed to.
+
+    In production this shape is currently unreachable — every
+    ``PositionContext`` producer that sets ``is_safety=True`` also sets
+    ``force=True``, and the delta gates run only under ``not force`` — which is
+    exactly why it is pinned here. The rule lives in one helper shared with the
+    ``same_position`` site rather than being re-decided per gate, so if that
+    coupling is ever relaxed the grant does not silently start protecting
+    stale numbers.
+    """
+    # Solar books 50 through a real dispatch — no safety flag.
+    _patch_position(svc, 90)
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, _ = await svc.apply_position(
+            "cover.test", 50, "solar", context=_ctx(is_safety=False)
+        )
+    assert outcome == "sent"
+    assert svc.get_target("cover.test") == 50
+    assert svc.state("cover.test").is_safety is False
+
+    # The cover misses and comes to rest at 47; nothing chases it.
+    _patch_position(svc, 47)
+    svc.set_waiting("cover.test", False)
+
+    # A weather-safety cycle wants 49 and skips on delta. 49 is not the booked
+    # 50, and nothing was sent, so the booked 50 must NOT become protected.
+    with _patch_caps(), _patch_no_prior_command():
+        outcome, reason = await svc.apply_position(
+            "cover.test", 49, "weather", context=_ctx(min_change=5, is_safety=True)
+        )
+    assert (outcome, reason) == ("skipped", "delta_too_small")
+    assert svc.state("cover.test").is_safety is False
+    assert svc.get_target("cover.test") == 50
+
+    # So the window-close sweep still takes it.
+    svc.clear_non_safety_targets()
+    assert svc.get_target("cover.test") is None
+
+
+@pytest.mark.asyncio
 async def test_reconcile_resend_preserves_is_safety_flag(svc, mock_hass):
     """Issue #1134 defect 2: a reconciliation resend RESTATES the safety
     verdict; it must not clear the very flag that authorised it.

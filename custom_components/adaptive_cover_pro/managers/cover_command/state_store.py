@@ -252,16 +252,15 @@ class PerEntityState:
     # verdict describes what is protecting it.
     #
     # "About the booked number" is the INTENT, not an invariant this dataclass
-    # enforces. Only two writers keep the pair in step by construction:
+    # enforces. Two writers keep the pair in step by construction:
     # ``_prepare_service_call``, which books and stamps in the same breath on
-    # every real dispatch, and ``apply_position``'s ``same_position`` skip,
-    # whose asymmetric rule is spelled out at that call site — revoke
-    # unconditionally, grant only when the booked target is the one that cycle
-    # routed to, and never under the booking's own value-change guard (#1165;
-    # that guard is right for ``dispatch_token`` but suppresses the write on
-    # exactly the cycles that re-confirm an unchanged target, which is where a
-    # verdict freezes). ``clear_safety_targets()`` is a third writer: a blanket
-    # reset that clears the verdict on every row without touching any target.
+    # every real dispatch, and ``_record_safety_verdict``, which the three
+    # ``apply_position`` gates that skip WITHOUT dispatching all call — revoke
+    # unconditionally, grant only when the booked target is the number that
+    # cycle routed to, never inside a booking's value-change guard. That rule
+    # and the failure behind each half are argued on the helper (#1165).
+    # ``clear_safety_targets()`` is a third writer: a blanket reset that clears
+    # the verdict on every row without touching any target.
     #
     # FIVE other sites write ``target`` and leave the verdict exactly as they
     # found it, so a row can pair a fresh target with an older decision's
@@ -270,19 +269,23 @@ class PerEntityState:
     # * ``CoverCommandService.restore_target`` — rehydration after a reload.
     # * ``CoverCommandService.send_my_position`` — books the configured My
     #   percent (no production caller today).
-    # * ``coordinator.py``'s two external-stop -> My paths — a user stop that
-    #   engages the #875 override is dropped by ``run_reconciliation_pass``
-    #   step 2 before it ever reads this field, which covers the common case;
-    #   neither site conditions its ``set_target`` on the override actually
-    #   having engaged, so that is a mitigation, not a guarantee.
+    # * ``coordinator.py``'s two external-stop -> My paths. Step 2 of
+    #   ``run_reconciliation_pass`` drops an entity under manual override
+    #   before it ever reads this field, but only one site gets that for free:
+    #   ``async_apply_user_stop`` (``coordinator.py:4608``) books below an
+    #   unconditional ``mark_user_command``. ``async_check_cover_service_call``
+    #   (``coordinator.py:1288``) books whether or not
+    #   ``handle_stop_service_call`` engaged the override — it RETURNS that
+    #   answer and the booking ignores it — so an untracked cover, or one the
+    #   #875 wait-for-target gate declined, books with no override behind it.
     # * ``cover_types/venetian/sequencer.py``'s carriage rebase — pushes the
     #   observed carriage position back through ``set_commanded_position``
     #   (== ``set_target``) after a tilt-only send back-drives it.
     #
-    # Those parentheticals keep today's blast radius small, but the inheritance
-    # is real, and it is why the ``same_position`` skip declines to GRANT on a
-    # row with nothing booked: an unbooked True is inert against both readers,
-    # yet any of the five would hand it straight to the next target.
+    # Today's blast radius is small, but the inheritance is real, and it is why
+    # ``_record_safety_verdict`` declines to GRANT on a row with nothing
+    # booked: an unbooked True is inert against both readers, yet any of the
+    # five would hand it straight to the next target.
     #
     # A reconciliation resend RESTATES the recorded value rather than
     # re-deciding it (#1134), because a resend makes no new verdict.
