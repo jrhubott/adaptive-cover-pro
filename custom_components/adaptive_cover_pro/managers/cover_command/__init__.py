@@ -42,7 +42,12 @@ from . import gates
 from .diagnostics import DiagnosticsRecorder
 from .position_context import PositionContextTracker
 from .queue import CommandQueue, QueueGrant
-from .routing import ServiceCallPlan, build_special_positions, route_service_call
+from .routing import (
+    ServiceCallPlan,
+    build_special_positions,
+    is_my_preset_target,
+    route_service_call,
+)
 from .state_classifier import StateClassifier
 from .state_store import (
     PerEntityState,
@@ -62,6 +67,7 @@ __all__ = [
     "TravelPlan",
     "build_special_positions",
     "build_travel_plan",
+    "is_my_preset_target",
     "route_service_call",
 ]
 
@@ -1908,21 +1914,9 @@ class CoverCommandService:
             # dispatch_token a prior real dispatch stamped it with (#1115) —
             # set_target(dispatch_token=None) would erase that provenance.
             #
-            # Deliberately do NOT write `is_safety` here. The two writers of
-            # `target` are NOT symmetrical: `_prepare_service_call` stamps
-            # `is_safety` unconditionally on every REAL dispatch, but this
-            # branch only writes when booking is allowed at all (above) AND
-            # the value changes. Mirroring that write under this narrower
-            # guard would let a since-cleared safety condition
-            # (context.is_safety flips back to False) freeze `is_safety=True`
-            # forever the moment a later skip re-confirms the same unchanged
-            # value (the guard suppresses the write entirely, so the stale
-            # True can never clear). A frozen True then survives
-            # `clear_non_safety_targets()` and makes `run_reconciliation_pass`
-            # resend it with auto_control off or outside the time window —
-            # precisely what its steps 3/4 exist to prevent. Leaving
-            # `is_safety` at its default (False) matches merge-base behaviour
-            # (no booking at all) for the one axis that matters here.
+            # This guard governs the `(target, dispatch_token)` pair and nothing
+            # else. The safety verdict is written just below, deliberately
+            # outside it — see `_record_safety_verdict` (#1165).
             _target_would_mismatch_actual = (
                 _current_is_genuine and _current != _plan.routed_target
             )
@@ -1931,6 +1925,25 @@ class CoverCommandService:
                 and self.get_target(entity_id) != _plan.routed_target
             ):
                 self.set_target(entity_id, _plan.routed_target, dispatch_token=None)
+
+            # THIS CYCLE'S safety verdict (issue #1165). The asymmetric rule and
+            # the failure behind each half live on `_record_safety_verdict`;
+            # what belongs HERE is the placement.
+            #
+            # BELOW the booking and OUTSIDE its value-change guard. Outside,
+            # because that guard suppresses the write on exactly the cycles
+            # that re-confirm an unchanged target — where a verdict freezes.
+            # Below, because by then every arm that books has made the booked
+            # target this cycle's routed target (including when the guard
+            # suppressed the write for already being equal), so those arms
+            # grant normally. Only the withheld-booking sub-arm can leave a
+            # DIFFERENT number booked, and there the grant declines.
+            #
+            # And ABOVE `_service_secondary_axis`, which on a venetian may
+            # rebase the target — one of the verdict-blind `set_target` sites
+            # listed on the field, and the one reachable from this very cycle.
+            self._record_safety_verdict(entity_id, context, _plan.routed_target)
+
             # Secondary axis LAST: on a venetian this may rebase the target
             # via set_commanded_position (== set_target) after a tilt-only
             # send back-drives the carriage (#33/#187), and that rebase must
@@ -1967,6 +1980,15 @@ class CoverCommandService:
                 # and min-delta check) — give it the same chance the
                 # same_position branch above already gives it, before this
                 # skip drops the carriage command.
+                #
+                # Same verdict rule as that branch, for the same reason and in
+                # the same position (before the secondary axis can rebase the
+                # target): a carriage-hysteresis hold is not a safety decision,
+                # and leaving the previous cycle's verdict standing is what
+                # #1165 reports. This gate books nothing, so the booked number
+                # is whatever an earlier decision left — which is exactly why
+                # the grant half tests it rather than assuming it.
+                self._record_safety_verdict(entity_id, context, _plan.routed_target)
                 await self._service_secondary_axis(
                     entity_id,
                     current_position=_current,
@@ -1989,7 +2011,10 @@ class CoverCommandService:
             if not self._check_time_delta(entity_id, context.time_threshold):
                 _elapsed = self._elapsed_minutes(entity_id)
                 # Issue #954: delta_time is a carriage rate-limiter, not a
-                # tilt gate — same reasoning as delta_too_small above.
+                # tilt gate — same reasoning as delta_too_small above. A rate
+                # limiter is not a safety decision either, so the verdict is
+                # recorded here too (#1165).
+                self._record_safety_verdict(entity_id, context, _plan.routed_target)
                 await self._service_secondary_axis(
                     entity_id,
                     current_position=_current,
@@ -2637,11 +2662,14 @@ class CoverCommandService:
         # fallback) — so "can this cover verify a granular target?" is answered
         # consistently with how it is read and commanded. A cover that cannot
         # report the axis it was commanded on can only surface an endpoint.
+        #
+        # That question and "must a resend of this target re-route through
+        # stop_cover?" (``_execute_command``, issue #1134) are the SAME
+        # predicate — both ask whether the booked number is a My preset — so
+        # both delegate to ``is_my_preset_target`` rather than restating the
+        # formula.
         axis = self._policy.select_default_axis(caps)
-        if not caps_get(caps, axis.capability_key, default=True) and s.target not in (
-            POSITION_CLOSED,
-            POSITION_OPEN,
-        ):
+        if is_my_preset_target(caps, axis, s.target):
             return False
         return not self._at_target(actual, s.target)
 
@@ -2664,12 +2692,13 @@ class CoverCommandService:
            reconciliation does not fight the user's intentional move.
            Safety handlers (force override, weather) overwrite ``target_call``
            via ``apply_position(is_safety=True)`` so they are always protected.
-        4. If ``_auto_control_enabled`` is False and the entity is not in
-           ``_safety_targets`` → skip.  Safety targets (set via
+        4. If ``_auto_control_enabled`` is False and ``PerEntityState.is_safety``
+           is False → skip.  Safety targets (set via
            ``apply_position(is_safety=True)``) are still resent so covers reach
            a safe position regardless of the automatic control toggle.
-        5. If ``_in_time_window`` is False and entity is not in ``_safety_targets``
-           → skip.  Prevents stale daytime targets from being resent overnight.
+        5. If ``_in_time_window`` is False and ``PerEntityState.is_safety`` is
+           False → skip.  Prevents stale daytime targets from being resent
+           overnight.
         6. Compare actual position to ``target_call`` within tolerance.
         7. If match → reset retry count, done.
         8. If mismatch → ask the cover-type policy whether the entity is
@@ -2761,8 +2790,12 @@ class CoverCommandService:
 
             # 4. Skip non-safety targets outside the operational time window.
             # Prevents stale daytime targets from being resent overnight.
-            # Safety targets (force override, weather, end_time_default) are
-            # always resent regardless of the time window.
+            # Safety targets (force override, weather) are always resent
+            # regardless of the time window. The end-of-window return-to-default
+            # is NOT one of them: ``_on_window_closed`` builds its context with
+            # is_safety=False on purpose, because safety-tagging that send lets
+            # reconciliation resurrect it hours later once a manual override
+            # expires (issues #215/#216).
             if not self._in_time_window and not s.is_safety:
                 self._logger.debug(
                     "Reconcile: %s skipped — outside time window", entity_id
@@ -2904,6 +2937,14 @@ class CoverCommandService:
             # value going back on the wire moves.
             resend_target = s.target
             resend_token = s.dispatch_token
+            # The safety verdict travels with the pair for the same reason the
+            # stamp does: a resend RESTATES the record rather than making a new
+            # decision, and ``_prepare_service_call`` rewrites ``is_safety``
+            # unconditionally on every booking. Left to its default, the first
+            # resend of a safety target would clear the very flag that steps 3/4
+            # just used to authorise it, and the next pass would skip it with
+            # auto_control off or outside the window (issue #1134).
+            resend_is_safety = s.is_safety
             if resend_target is None:
                 # Cleared out from under the pass (time-window close, reload).
                 # There is no longer a target to restate.
@@ -2975,6 +3016,7 @@ class CoverCommandService:
                 entity_id,
                 resend_target,
                 dispatch_token=resend_token,
+                is_safety=resend_is_safety,
                 queue_budget=wait_allowance,
             ):
                 self._logger.debug(
@@ -3112,6 +3154,70 @@ class CoverCommandService:
         """Return minutes elapsed since last command to entity_id, or None."""
         return gates.elapsed_minutes(get_last_updated(entity_id, self._hass))
 
+    def _record_safety_verdict(
+        self, entity_id: str, context: PositionContext, routed_target: int
+    ) -> None:
+        """Record THIS cycle's safety verdict on a skip that dispatches nothing.
+
+        ``PerEntityState.is_safety`` is a verdict ABOUT the booked number — see
+        the field for what it means and who reads it. ``_prepare_service_call``
+        writes it on every real dispatch. The three hysteresis gates in
+        ``apply_position`` that return without dispatching (``same_position``,
+        ``delta_too_small``, ``time_delta_too_small``) write it through here
+        instead, because a skipped cycle still reached a verdict, and a verdict
+        nobody records is the previous cycle's, indefinitely.
+
+        The two directions are NOT symmetrical, so this write is not either:
+
+        * REVOKING is unconditional. It only takes away a licence to act
+          outside ``clear_non_safety_targets()`` and reconciliation steps 3/4,
+          which is safe on any number — booked, foreign, or absent. Withholding
+          it IS issue #1165: a safety dispatch books 60, the cover comes to
+          rest short of it (nothing chases it — position matching is off by
+          default), and every later cycle skips with the booking withheld
+          (#1158). A gated revoke then never fires again — 60 stays protected
+          forever, survives every sweep, and is re-driven at night with
+          automatic control off the moment the user enables position matching.
+        * GRANTING requires the booked target to BE ``routed_target``, because
+          a licence must attach to the number the safety decision was actually
+          about. Without that equality a solar-booked 60 the cover missed, plus
+          a safety cycle that skips on some other number, would mark 60
+          safety-protected — #1165's own defect with the polarity reversed,
+          protecting and re-driving a number no safety handler asked for.
+          ``routed_target`` is a plain ``int``, never None, so the same
+          equality also declines to grant on a row with NOTHING booked; that is
+          deliberate, for the inheritance reason listed on the field.
+
+        Neither direction may ride inside a booking's value-change guard. Such
+        a guard is correct for ``dispatch_token`` — the stamp describes the
+        booking — but it suppresses the write on exactly the cycles that
+        re-confirm an unchanged target, which is where a verdict freezes.
+
+        At the two delta gates the GRANT half is currently unreachable: every
+        ``PositionContext`` producer that sets ``is_safety`` also sets
+        ``force``, and those gates run only under ``not force``. They are still
+        routed through this one rule rather than a revoke-only variant, so the
+        three sites cannot drift and the grant does not have to be re-argued if
+        that coupling is ever relaxed.
+
+        ``self.state()`` inserts a row, which is correct for a write on an
+        entity ACP is actively commanding; the non-inserting ``_get``
+        discipline is scoped to read-only predicates (``is_target_unreached``).
+
+        Args:
+            entity_id: The cover this cycle is commanding.
+            context: This cycle's position context; ``is_safety`` is the
+                verdict being recorded.
+            routed_target: The number this cycle's routing settled on
+                (``ServiceCallPlan.routed_target``). A grant only lands when
+                that is also what is booked.
+
+        """
+        if not context.is_safety:
+            self.state(entity_id).is_safety = False
+        elif self.get_target(entity_id) == routed_target:
+            self.state(entity_id).is_safety = True
+
     def _skip(
         self,
         entity_id: str,
@@ -3184,11 +3290,15 @@ class CoverCommandService:
                 for this entity when a new target is recorded. Pass False from
                 ``_execute_command`` so reconciliation retries do not reset the
                 counter they themselves manage.
-            is_safety: If True, this target was set via a safety override
-                (force override, weather handler).  Adds the entity to
-                ``_safety_targets`` so reconciliation will resend it even when
-                automatic control is off or outside the time window.
-                Non-safety targets remove the entity from ``_safety_targets``.
+            is_safety: Whether the target being booked is protected by a safety
+                override (force override, weather handler). Written straight
+                onto ``PerEntityState.is_safety``, which
+                ``run_reconciliation_pass`` steps 3/4 read to decide whether to
+                resend with automatic control off or outside the time window.
+                ``apply_position`` passes THIS cycle's verdict;
+                ``_execute_command`` passes the flag its caller read alongside
+                the target it is restating, because a resend re-states the
+                record rather than making a new verdict (issue #1134).
             use_my_position: If True and the cover lacks set_cover_position,
                 send cover.stop_cover to trigger the hardware My preset instead
                 of falling back to open/close threshold routing.
@@ -3331,6 +3441,7 @@ class CoverCommandService:
         target: int,
         *,
         dispatch_token: Any = None,
+        is_safety: bool = False,
         queue_budget: float = COMMAND_QUEUE_MAX_WAIT_SECONDS,
     ) -> bool:
         """Send command directly, bypassing gate checks (reconciliation use only).
@@ -3356,6 +3467,28 @@ class CoverCommandService:
         read — re-reading the record would let a re-booking that landed during
         the caller's clearance await pair this target with another number's
         frame. A caller with no dispatch behind ``target`` leaves it ``None``.
+
+        ``is_safety`` is handled the same way, and for the same reason: a resend
+        RESTATES the record rather than reaching a new verdict, so the flag comes
+        from the caller's single read alongside ``target`` rather than being
+        re-read here. ``_prepare_service_call`` rewrites
+        ``PerEntityState.is_safety`` unconditionally on every booking, so leaving
+        this at its default cleared the very flag ``run_reconciliation_pass``
+        steps 3/4 had just used to authorise the resend — a safety target
+        un-protected itself on its own first retry (issue #1134). It stays a
+        caller-passed keyword rather than an internal ``self.state()`` read so
+        the second caller, ``TravelCalibrationManager``, is byte-identical: a
+        calibration sweep must never invent or preserve a safety target.
+
+        ``use_my_position`` is NOT passed by callers — it is DERIVED here from
+        the booked number via :func:`is_my_preset_target`, against capabilities
+        read on the far side of the queue wait. There is no recorded My flag to
+        restate (``send_my_position`` books its percent without ever entering
+        ``_prepare_service_call``), and defaulting it to ``False`` dropped the
+        resend past the My branch onto the open/close threshold: a My of 10
+        went back out as ``close_cover``, slamming the cover shut, and rebooked
+        the user's target as 0 (issue #1134). Calibration is unaffected — it
+        only ever drives the 0/100 endpoints, where the predicate is False.
 
         NB: callers are responsible for entity-loaded-ness. Reconciliation only
         runs for entities that already passed the cover_unavailable gate in
@@ -3384,12 +3517,49 @@ class CoverCommandService:
             # Nothing was booked, so nothing has to be unwound — and the caller
             # counts no attempt against this entity.
             return False
+        # Everything from the grant to the service call runs INSIDE the queue
+        # slot, and the single ``finally`` below hands it back on EVERY path out
+        # — the early returns, an exception, and a task cancellation alike. The
+        # same invariant ``apply_position`` states at its own acquisition: a
+        # missed release strands the slot until this entity happens to dispatch
+        # again, at which point every other member burns its whole budget before
+        # transmitting — unspaced and simultaneous, the exact collision #1189
+        # prevents. Nothing may be hoisted above the ``try``.
         transmitted = False
         try:
+            # Capabilities are read on the FAR side of the acquisition, for the
+            # same reason ``apply_position`` re-derives ``_caps_for_plan`` after
+            # its own wait: the queue can hold a resend for tens of seconds
+            # while unrelated covers transmit, which is ample time for this
+            # entity to reload with different capabilities. Passing ``caps=`` on
+            # to ``_prepare_service_call`` also removes a duplicate fetch.
+            #
+            # This read is a live raise site, which is why it sits under the
+            # ``try`` rather than beside the acquisition: ``check_cover_features``
+            # masks ``supported_features`` without guarding its type, so a cover
+            # publishing a non-int raises here.
+            #
+            # ``_prepare_service_call`` derives the same axis again from the
+            # same ``caps`` object when it routes. Left duplicated on purpose:
+            # ``select_default_axis`` is a pure function of ``(policy, caps)``
+            # and both calls are synchronous with no await between them, so the
+            # second is provably the first — harmless by construction rather
+            # than by contract. Threading an ``axis=`` keyword down instead
+            # would trade that for a tenth parameter carrying a NEW silent
+            # invariant ("must be ``select_default_axis`` of the ``caps`` you
+            # also passed"), on the one function whose ``plan=`` contract this
+            # call site already had to be designed around. A mismatched pair
+            # would route on one axis and derive ``use_my_position`` from
+            # another, and nothing would say so.
+            caps = self.get_cover_capabilities(entity_id)
+            axis = self._policy.select_default_axis(caps)
             service, service_data, _ = self._prepare_service_call(
                 entity_id,
                 target,
+                caps=caps,
                 reset_retries=False,
+                is_safety=is_safety,
+                use_my_position=is_my_preset_target(caps, axis, target),
                 dispatch_token=dispatch_token,
             )
             if service is None:

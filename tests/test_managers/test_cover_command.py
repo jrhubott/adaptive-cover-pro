@@ -8,10 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.cover_types.base import caps_get
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
     build_special_positions,
+    is_my_preset_target,
     route_service_call,
 )
 from custom_components.adaptive_cover_pro.managers.cover_command.gates import (
@@ -547,6 +549,290 @@ def test_route_endpoint_falls_back_when_no_close_capability():
     assert plan.service == "set_cover_position"
     assert plan.service_data["position"] == 0
     assert plan.supports_position is True
+
+
+def test_route_service_call_non_position_axis_books_endpoint_unless_my():
+    """Premise lock for ``is_my_preset_target`` (issue #1134 defect 1).
+
+    Green from the start — this is not a bug reproduction. It pins the routing
+    algebra the resend-time derivation inverts: on an axis with no position
+    capability, an ordinary route can only ever book an endpoint (0 or 100),
+    while a My route books the raw value and sends ``stop_cover``. That is what
+    makes "a booked non-endpoint target on a non-position-capable axis came
+    from a My dispatch" a sound inference. If a future routing change breaks
+    the premise, this goes red at the source rather than as a mysterious
+    mis-route in reconciliation.
+    """
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    axis = get_policy("cover_blind").select_default_axis(caps)
+
+    for state in range(101):
+        plan = route_service_call(
+            "cover.rts",
+            state,
+            caps,
+            axis=axis,
+            use_my_position=False,
+            open_close_threshold=50,
+        )
+        assert plan.routed_target in (0, 100), state
+
+        my_plan = route_service_call(
+            "cover.rts",
+            state,
+            caps,
+            axis=axis,
+            use_my_position=True,
+            open_close_threshold=50,
+        )
+        assert my_plan.service == "stop_cover", state
+        assert my_plan.routed_target == state
+
+
+# Every capability shape that lands on a NON-position-capable axis, which is
+# the only place ``is_my_preset_target``'s inference has to hold. The shape
+# above covers one of them; these are the rest, including the two the
+# inference's proof leans on hardest — a cover with no ``stop_cover`` to reach
+# the My branch with, and a cover missing an open/close service so routing
+# bottoms out with no capable service at all.
+_BLIND_AXIS_CAPS_SHAPES = [
+    (
+        "rts_open_close_stop",
+        "cover_blind",
+        {
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+            "has_stop": True,
+        },
+    ),
+    (
+        "no_stop_service",
+        "cover_blind",
+        {
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+            "has_stop": False,
+        },
+    ),
+    (
+        "open_but_no_close",
+        "cover_blind",
+        {
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": False,
+            "has_stop": True,
+        },
+    ),
+    (
+        "close_but_no_open",
+        "cover_blind",
+        {
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": False,
+            "has_close": True,
+            "has_stop": True,
+        },
+    ),
+    (
+        "no_capable_service_at_all",
+        "cover_blind",
+        {
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": False,
+            "has_close": False,
+            "has_stop": False,
+        },
+    ),
+    # A tilt-primary policy bound to an entity with no tilt service (#991's
+    # contradiction shape). The axis's OWN capability key is what makes it
+    # blind here — ``has_set_position`` is True and must not rescue it.
+    (
+        "tilt_axis_without_tilt_service",
+        "cover_tilt",
+        {
+            "has_set_position": True,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+            "has_stop": True,
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("shape", "cover_type", "caps"),
+    _BLIND_AXIS_CAPS_SHAPES,
+    ids=[s[0] for s in _BLIND_AXIS_CAPS_SHAPES],
+)
+def test_route_service_call_blind_axis_obeys_the_my_preset_trichotomy(
+    shape, cover_type, caps
+):
+    """Premise lock, widened (issues #1134 / #1165 optional-polish round).
+
+    ``test_route_service_call_non_position_axis_books_endpoint_unless_my``
+    above pins one capability shape. The inference
+    ``is_my_preset_target`` performs is stated over ALL of them, so state it
+    over all of them: on a non-position-capable axis, every route is one of
+    exactly three things, and nothing else is reachable.
+
+    1. ``service is None`` — no capable service. ``routed_target`` here is the
+       raw ``state`` and CAN be a non-endpoint, which is exactly why the
+       inference depends on this branch never booking. That half is a
+       ``_prepare_service_call`` property, locked separately by
+       ``test_prepare_service_call_books_nothing_when_no_capable_service``.
+    2. ``stop_cover`` — the My branch, which needs ``use_my_position`` AND
+       ``has_stop``. Books the raw value.
+    3. ``open_cover`` / ``close_cover`` — the threshold branch, which can only
+       ever book 0 or 100.
+
+    On every BOOKABLE plan the predicate must then agree exactly: True for a
+    My route to a non-endpoint, False for everything else. Break the algebra —
+    let the threshold branch book the raw state, let the My branch fire without
+    ``use_my_position``, let ``is_my_preset_target`` drop its endpoint
+    carve-out — and this goes red here rather than as a cover slamming shut on
+    a reconciliation resend.
+    """
+    axis = get_policy(cover_type).select_default_axis(caps)
+    # Precondition: every shape above really does land on a blind axis. If a
+    # policy change made one of them position-capable the sweep would pass
+    # vacuously.
+    assert caps_get(caps, axis.capability_key, default=True) is False, shape
+
+    for state in range(101):
+        for use_my in (False, True):
+            plan = route_service_call(
+                "cover.rts",
+                state,
+                caps,
+                axis=axis,
+                use_my_position=use_my,
+                open_close_threshold=50,
+            )
+            if plan.service is None:
+                # Unbookable. Assert the shape that makes it so, since the
+                # whole inference rests on it.
+                assert plan.service_data is None, (shape, state, use_my)
+                assert plan.supports_position is False, (shape, state, use_my)
+                continue
+
+            assert plan.supports_position is False, (shape, state, use_my)
+            if plan.service == "stop_cover":
+                assert use_my, (shape, state)
+                assert caps_get(caps, "has_stop") is True, shape
+                assert plan.routed_target == state, (shape, state)
+            else:
+                assert plan.service in ("open_cover", "close_cover"), (shape, state)
+                assert plan.routed_target in (0, 100), (shape, state, use_my)
+
+            # The predicate inverts exactly this, on the number that got
+            # booked — not on the raw state.
+            assert is_my_preset_target(caps, axis, plan.routed_target) is (
+                plan.service == "stop_cover" and plan.routed_target not in (0, 100)
+            ), (shape, state, use_my)
+
+
+@pytest.mark.parametrize(
+    ("shape", "cover_type", "caps"),
+    [
+        s
+        for s in _BLIND_AXIS_CAPS_SHAPES
+        if not (s[2]["has_open"] and s[2]["has_close"])
+    ],
+    ids=[
+        s[0]
+        for s in _BLIND_AXIS_CAPS_SHAPES
+        if not (s[2]["has_open"] and s[2]["has_close"])
+    ],
+)
+def test_prepare_service_call_books_nothing_when_no_capable_service(
+    mock_hass, logger, grace_mgr, shape, cover_type, caps
+):
+    """The other half of the premise: the no-capable-service branch never books.
+
+    ``route_service_call`` hands that branch back with ``routed_target =
+    state`` — a non-endpoint for most values — so if it ever reached a
+    ``set_target`` the booked number would look exactly like a My preset to
+    ``is_my_preset_target``, and the next reconciliation resend would answer
+    ``stop_cover`` for a cover that has no My and possibly no stop at all.
+    ``_prepare_service_call`` returning before its state-mutation block is the
+    only thing standing between those two facts, and it is asserted nowhere
+    else.
+
+    ``use_my_position=False`` throughout: the My branch is what these shapes
+    are chosen to fall past, and where ``has_stop`` is present it would
+    otherwise intercept them.
+    """
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type=cover_type,
+        grace_mgr=grace_mgr,
+        open_close_threshold=50,
+    )
+    for state in (0, 10, 37, 50, 63, 100):
+        service, data, supports_position = svc._prepare_service_call(
+            "cover.rts", state, caps=caps
+        )
+        assert service is None, (shape, state)
+        assert data is None, (shape, state)
+        assert supports_position is False, (shape, state)
+        assert svc.get_target("cover.rts") is None, (shape, state)
+        assert svc.is_waiting_for_target("cover.rts") is False, (shape, state)
+    grace_mgr.start_command_grace_period.assert_not_called()
+
+
+def test_is_my_preset_target_only_claims_non_endpoints_on_a_blind_axis():
+    """The predicate itself, clause by clause (issues #1134 / #990).
+
+    Its two readers both act on the answer physically — ``_execute_command``
+    sends ``stop_cover`` instead of ``open_cover``/``close_cover``, and
+    ``is_target_unreached`` goes quiet — so each clause needs its own case.
+
+    The endpoint carve-out is the one the calibration-safety argument rests on:
+    ``TravelCalibrationManager`` drives only ``axis.value_min`` /
+    ``axis.value_max`` on covers that cannot report position, and a sweep that
+    answered True there would ``stop_cover`` a cover it meant to run to its
+    stop. It is also what keeps every threshold-routed resend honest, since
+    ordinary routing on this axis books nothing BUT 0 and 100 (pinned by
+    ``test_route_service_call_non_position_axis_books_endpoint_unless_my``).
+    """
+    rts_caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    axis = get_policy("cover_blind").select_default_axis(rts_caps)
+
+    # The endpoints are reachable by ordinary threshold routing, so they prove
+    # nothing about intent — and calibration only ever drives these two.
+    assert is_my_preset_target(rts_caps, axis, 0) is False
+    assert is_my_preset_target(rts_caps, axis, 100) is False
+    # A non-endpoint on this axis could only have been booked by a My dispatch.
+    assert is_my_preset_target(rts_caps, axis, 10) is True
+    # Nothing booked is nothing to infer from.
+    assert is_my_preset_target(rts_caps, axis, None) is False
+
+    # A cover that CAN take a position never routes through My: the same
+    # number is an ordinary set_cover_position target.
+    position_caps = dict(rts_caps, has_set_position=True)
+    assert is_my_preset_target(position_caps, axis, 10) is False
 
 
 def test_route_service_call_missing_open_close_caps():
