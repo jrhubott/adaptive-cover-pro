@@ -354,8 +354,13 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
 # ---------------------------------------------------------------------------
 
 
-def _cover_position_value(s: _ACPSensor) -> Any:
-    """Return where ACP is putting this cover — the Target Position value.
+def _target_position(states: Mapping[str, Any], result: Any) -> Any:
+    """Resolve where ACP is putting this cover — the Target Position value.
+
+    The single definition every Target Position surface reads: the sensor's own
+    state, its ``target_distance``, and its ``all_at_target`` verdict. They
+    described the same thing through three separate derivations before #1175,
+    which is how the state and the distance came to disagree.
 
     A hold winner keeps the cover's *physical* position rather than proposing a
     computed one, so ``held_position`` is the honest answer while the hold is
@@ -369,22 +374,34 @@ def _cover_position_value(s: _ACPSensor) -> Any:
     the cover is actively leaving (#1175).
 
     ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``, and the
-    two are not interchangeable here. The tilt axis also clears ``skip_command``
-    (``registry._release_hold_for_tilt_clamp``) — but that path rewrites
-    ``position`` to the held read itself, so ``state`` and ``held`` already agree
-    and routing it through ``state`` would only push a raw motor read back
-    through ``coordinator._to_cover_frame``, which re-interpolates it under
-    ``CONF_INTERP``. Keying on the position-axis flag flips exactly the cases
-    where the dispatched value genuinely differs, and leaves the tilt-clamp path
-    alone.
+    two are not interchangeable. The tilt axis also clears ``skip_command``
+    (``registry._release_hold_for_tilt_clamp``) — but there the position axis
+    stayed inert and the winner's ``position`` is rewritten FROM the held read,
+    so the cover is being commanded to where it already is and the physical read
+    remains the honest answer. Keying on the position-axis flag confines the
+    change to bounds that actually moved the cover, which is #1175's scope.
+
+    That leaves the tilt-clamp path on the held read even in the two cases where
+    the dispatched number is not literally it — under ``CONF_INTERP``, where
+    ``coordinator._to_cover_frame`` interpolates the rewritten position on its
+    way to the wire, and on a coupled type, where
+    ``CoverTypePolicy.hold_reference_position`` decodes one abstract coverage
+    (#1179) while ``held_position`` stays the raw entry mean. Both predate this
+    gate and are unchanged by it; the interpolated-hold divergence is the known
+    limitation ``pipeline/handlers/motion_timeout.py`` and #1175 both flag, and
+    it is a separate fix — not something to launder through this predicate.
     """
-    held = s.data.states.get("held_position")
-    result = s.coordinator._pipeline_result  # noqa: SLF001
-    if held is not None and not (
-        result is not None and result.position_constraint_applied
-    ):
+    held = states.get("held_position")
+    clamped = result is not None and result.position_constraint_applied
+    if held is not None and not clamped:
         return held
-    return s.data.states["state"]
+    return states["state"]
+
+
+def _cover_position_value(s: _ACPSensor) -> Any:
+    """Return the Target Position sensor's own value."""
+    result = s.coordinator._pipeline_result  # noqa: SLF001
+    return _target_position(s.data.states, result)
 
 
 def _compute_distance_attrs(
@@ -441,6 +458,9 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         attrs["reason"] = _localized_reason(
             s.coordinator, pipeline_result.reason_payload, pipeline_result.reason
         )
+    # Resolved once and shared by both surfaces below, from the result already
+    # in hand — the sensor's value goes through the same helper (#1175).
+    target_position = _target_position(s.data.states, pipeline_result)
     diagnostics = s.coordinator.data.diagnostics if s.coordinator.data else None
     if diagnostics:
         position_explanation = diagnostics.get("position_explanation")
@@ -503,12 +523,13 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         }
 
         # all_at_target: True when every cover with a known position is within
-        # tolerance of the coordinator's current target position.
-        target = s.data.states.get("state")
+        # tolerance of the target this sensor reports. Measured against that
+        # target and not the raw ``state``, or a hold reads as "not at target"
+        # while every cover sits exactly where the hold is holding it (#1175).
         tolerance = s.coordinator._cmd_svc._position_tolerance  # noqa: SLF001
-        if target is not None:
+        if target_position is not None:
             try:
-                target_int = int(target)
+                target_int = int(target_position)
                 attrs["all_at_target"] = all(
                     pos is not None and abs(pos - target_int) <= tolerance
                     for pos in actual_positions.values()
@@ -518,11 +539,7 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         else:
             attrs["all_at_target"] = None
 
-    # Same value the sensor itself reports — one helper, so the distance can
-    # never describe a position the state does not (#1175).
-    distance_attrs = _compute_distance_attrs(
-        s.coordinator, snapshot, _cover_position_value(s)
-    )
+    distance_attrs = _compute_distance_attrs(s.coordinator, snapshot, target_position)
     if distance_attrs is not None:
         attrs.update(distance_attrs)
 

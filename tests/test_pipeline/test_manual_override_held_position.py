@@ -21,12 +21,12 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
-from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.sensor import (
     _cover_position_attrs,
     _cover_position_value,
 )
 
+from tests._helpers.cover_position_sensor import make_cover_position_sensor
 from tests.test_pipeline.conftest import make_snapshot
 
 # ---------------------------------------------------------------------------
@@ -212,31 +212,27 @@ def test_sensor_cover_position_value_without_pipeline_result_keeps_held() -> Non
     assert _cover_position_value(s) == 50
 
 
-def _make_distance_sensor(states: dict, *, position_constraint_applied: bool):
-    """Sensor stub that drives ``_cover_position_attrs`` down the distance branch.
+def _make_attrs_sensor(
+    states: dict,
+    *,
+    position_constraint_applied: bool,
+    positions: dict[str, int | None] | None = None,
+):
+    """Shared stub, wired for the attribute surfaces that read the target.
 
-    Mirrors ``_make_sensor`` in tests/test_sensor_linear_actual_positions.py,
-    but gives ``lift_travel_metres`` a real value so ``_compute_distance_attrs``
+    ``lift_travel_metres`` gets a real 2 m so ``_compute_distance_attrs``
     actually runs instead of short-circuiting to None.
     """
-    s = _make_sensor_stub(
-        states, position_constraint_applied=position_constraint_applied
+    return make_cover_position_sensor(
+        states=states,
+        positions=positions,
+        pipeline_result=SimpleNamespace(
+            position_constraint_applied=position_constraint_applied,
+            reason_payload=None,
+            reason="x",
+        ),
+        lift_travel_metres=2.0,
     )
-    s.data.attributes = {}
-    s.coordinator._pipeline_result.reason_payload = None
-    s.coordinator._pipeline_result.reason = "x"
-    s.coordinator.data.diagnostics = None
-    s.coordinator._cmd_svc.transit_states.return_value = {}
-    s.coordinator._cmd_svc.travel_plans.return_value = {}
-    s.coordinator._cmd_svc._position_tolerance = 2
-    s.coordinator.config_entry.options = {}
-    s.coordinator._snapshot = SimpleNamespace(cover_positions=None)
-    s.coordinator._policy = get_policy("cover_blind")
-    s.coordinator._config_service.get_vertical_data.return_value = SimpleNamespace(
-        h_win=2.0
-    )
-    s.coordinator.position_axis_inverted = False
-    return s
 
 
 def test_distance_attrs_follow_the_dispatched_target_when_clamped() -> None:
@@ -245,7 +241,7 @@ def test_distance_attrs_follow_the_dispatched_target_when_clamped() -> None:
     Both Target Position surfaces read one helper, so a clamped hold cannot
     report 80 % while its distance still describes the pre-clamp 50 % (#1175).
     """
-    s = _make_distance_sensor(
+    s = _make_attrs_sensor(
         {"control": "manual", "state": 80, "held_position": 50},
         position_constraint_applied=True,
     )
@@ -256,12 +252,36 @@ def test_distance_attrs_follow_the_dispatched_target_when_clamped() -> None:
 
 def test_distance_attrs_follow_the_held_position_when_holding() -> None:
     """An unclamped hold keeps deriving the distance from the held read."""
-    s = _make_distance_sensor(
+    s = _make_attrs_sensor(
         {"control": "manual", "state": 80, "held_position": 50},
         position_constraint_applied=False,
     )
     attrs = _cover_position_attrs(s)
     assert attrs["target_distance"] == 1.0
+
+
+def test_all_at_target_measures_against_the_held_position_when_holding() -> None:
+    """Covers parked where the hold holds them ARE at target.
+
+    Measuring against the raw ``state`` compares them to the solar value the
+    hold merely shadows, so a perfectly-held group read as "not at target".
+    """
+    s = _make_attrs_sensor(
+        {"control": "manual", "state": 20, "held_position": 50},
+        position_constraint_applied=False,
+        positions={"cover.a": 50, "cover.b": 51},
+    )
+    assert _cover_position_attrs(s)["all_at_target"] is True
+
+
+def test_all_at_target_measures_against_the_dispatched_target_when_clamped() -> None:
+    """Once a bound clamps, the covers are judged against where it sent them."""
+    s = _make_attrs_sensor(
+        {"control": "manual", "state": 80, "held_position": 50},
+        position_constraint_applied=True,
+        positions={"cover.a": 50, "cover.b": 51},
+    )
+    assert _cover_position_attrs(s)["all_at_target"] is False
 
 
 # ---------------------------------------------------------------------------
