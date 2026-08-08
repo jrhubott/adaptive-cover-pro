@@ -8,6 +8,7 @@ from .handler import OverrideHandler
 from .helpers import (
     apply_snapshot_limits,
     compute_default_position,
+    compute_default_tilt,
     compute_raw_calculated_position,
     compute_solar_position,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "PipelineResult",
     "apply_snapshot_limits",
     "compute_default_position",
+    "compute_default_tilt",
     "compute_raw_calculated_position",
     "compute_solar_position",
 ]

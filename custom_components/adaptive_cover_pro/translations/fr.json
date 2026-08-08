@@ -1051,7 +1051,7 @@
       },
       "custom_position_tilt_defaults": {
         "title": "Inclinaison par Défaut et Coucher du Soleil",
-        "description": "Inclinaison des lamelles par défaut appliquée uniquement lorsqu'aucun autre gestionnaire ne prend le contrôle — le même repli que la Position par défaut. Quand un emplacement de position personnalisée gagne, sa propre inclinaison prend le relais ; quand le suivi solaire gagne, le calcul solaire automatique prend le relais ; tout autre gestionnaire laisse les lamelles conserver leur angle actuel.",
+        "description": "Inclinaison des lamelles par défaut appliquée chaque fois que la protection revient à sa position par défaut — non seulement quand aucun gestionnaire ne prend le contrôle, mais aussi quand le mode climatique (faible luminosité/hors saison), la suppression des nuages, ou le délai d'inactivité s'y maintiennent. Quand un emplacement de position personnalisée gagne, sa propre Inclinaison prend le relais ; quand le suivi solaire gagne, le calcul solaire automatique prend le relais ; tout autre gestionnaire laisse les lamelles conserver leur angle actuel.",
         "data": {
           "default_tilt": "Inclinaison par Défaut",
           "sunset_tilt": "Inclinaison Coucher du Soleil"
