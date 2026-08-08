@@ -17,6 +17,7 @@ is False.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -237,7 +238,33 @@ def test_resolved_target_signature_tuple_content():
         True,  # bypass_auto_control
         False,  # skip_command
         False,  # position_constraint_applied
+        False,  # outside_window_constraint_active
     )
+
+
+def test_resolved_target_signature_tracks_outside_window_admission():
+    """Flipping the outside-window admission changes the signature (#943 B).
+
+    Admission is what decides whether a target may reach the hardware at all
+    outside the clock window, so a cycle that gains or loses it has a different
+    resolved target even when every other field is identical.
+    """
+    coordinator = MagicMock()
+    coordinator.state = 0
+    base = PipelineResult(
+        position=0,
+        control_method=ControlMethod.DEFAULT,
+        tilt=50,
+    )
+    coordinator._pipeline_result = base
+    without = AdaptiveDataUpdateCoordinator._resolved_target_signature(coordinator)
+
+    coordinator._pipeline_result = replace(base, outside_window_constraint_active=True)
+    with_admission = AdaptiveDataUpdateCoordinator._resolved_target_signature(
+        coordinator
+    )
+
+    assert without != with_admission
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +280,12 @@ def _make_state_change_coordinator(*, pipeline_result: PipelineResult):
     coordinator._pipeline_result = pipeline_result
     coordinator._pipeline_bypasses_auto_control = pipeline_result.bypass_auto_control
     coordinator._pipeline_is_safety_handler = pipeline_result.is_safety
+    # Derived from the same result the coordinator would read, so the mock keeps
+    # the production relationship ``is_safety OR constraint_admitted`` (#943 B)
+    # instead of leaving a truthy MagicMock attribute behind.
+    coordinator._pipeline_acts_outside_clock_window = (
+        pipeline_result.acts_outside_clock_window
+    )
     coordinator.clock_window_open = True
     coordinator._last_state_change_entity = None
     coordinator._custom_position_template_trigger = False

@@ -448,6 +448,12 @@ async def test_end_time_default_seam_inverse_uses_seam_space() -> None:
     coord.async_refresh = AsyncMock()
     coord.config_entry.options = {}
     coord._compute_current_effective_default = MagicMock(return_value=(0, True))
+    # No axis constraints in this scenario, so the end-time clamp (#943 item B)
+    # is the identity. Stubbed rather than left as a bare MagicMock, which would
+    # feed the dispatch loop a mock instead of a position.
+    coord._clamp_to_outside_window_bounds = MagicMock(
+        side_effect=lambda position, _options: position
+    )
     coord._check_sunset_window_transition = AsyncMock()
 
     targets: dict[str, int] = {}

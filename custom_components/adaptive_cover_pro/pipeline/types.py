@@ -225,6 +225,19 @@ class CustomPositionSensorState:
     tilt_min: int | None = None
     tilt_max: int | None = None
 
+    # Opt-in: keep this slot's BOUNDED claims binding once the user's start/end
+    # clock window has closed (issue #943 item B). Read straight off
+    # ``custom_position_outside_window_N``; absent = False = today's behaviour.
+    #
+    # Orthogonal to every normalization above. It grants no new claim — it only
+    # says an existing bound survives the clock — so it is deliberately NOT
+    # wiped by ``has_fixed_tilt`` / ``tilt_only`` / ``use_my``: those decide
+    # WHICH claims exist, this decides WHEN the surviving ones still bind.
+    # ``pipeline.axis_constraints._window_eligible`` is the single place that
+    # reads it, and it admits only non-FIXED kinds: a slot that DRIVES a
+    # position outside the window is the #215/#216/#223 defect class.
+    outside_window: bool = False
+
     # Whether this cycle's read was usable (issue #1005). True when at least one
     # bound sensor reported a non-invalid state (not unavailable/unknown/missing)
     # OR a condition template rendered an opinion. False = NEITHER input spoke
@@ -391,6 +404,16 @@ class PipelineSnapshot:
     # existing tests that construct PipelineSnapshot without this field continue
     # to pass.
     in_time_window: bool = True
+
+    # True when the user's start/end CLOCK window is open, IGNORING the daytime
+    # gate — ``TimeWindowManager.clock_window_open``, not ``is_active``. The two
+    # deliberately disagree at night on a gate-configured install (#656), and
+    # every guard that decides whether a cover may be *moved* speaks this one:
+    # "outside the user's clock" means ACP stays hands-off (#215/#216), while
+    # "the gate reads dark" merely means the default position is the night one.
+    # ``gather_axis_constraints`` filters on this field, so a snapshot that
+    # leaves it True composes byte-identically to pre-#943-item-B behaviour.
+    clock_window_open: bool = True
 
     # True when the Motion Control switch is enabled.  MotionTimeoutHandler
     # checks this field and passes through (returns None) when it is False,
@@ -718,6 +741,24 @@ class PipelineResult:
     # other (issue #1036 removed the #469 carve-out that skipped both).
     position_constraint_applied: bool = False
 
+    # When True, this cycle's clock window was CLOSED and an outside-window-
+    # eligible constraint actually bound something (issue #943 item B) — a
+    # position clamp fired, a tilt clamp fired, or the registry resolved an
+    # unresolved tilt to a bound edge. It licenses exactly one thing: this
+    # result may reach the hardware outside the user's start/end clock window.
+    #
+    # Explicitly NOT ``is_safety``. That flag additionally bypasses the
+    # automatic-control switch, bypasses the delta gates on its own account,
+    # survives ``clear_non_safety_targets()``, and never yields on an
+    # ``outranking`` tie — none of which a min/max clamp has any business
+    # inheriting. Keeping them separate is also what preserves ``is_safety``'s
+    # one-writer lifetime (#1226/#1165).
+    #
+    # Only ever True while the window is closed, which is what leaves the
+    # end-of-window sweep semantics (#215/#216) untouched: an in-window booking
+    # never carries it, so nothing new survives the sweep.
+    outside_window_constraint_active: bool = False
+
     # Composed tilt bounds that could not be applied during evaluation because
     # the winner had no tilt to clamp yet (issue #943). Tilt can resolve *after*
     # the pipeline — the venetian engine fills it in ``post_pipeline_resolve`` —
@@ -809,6 +850,25 @@ class PipelineResult:
     # Lovelace card can localize it. None on legacy results that still carry only
     # an English ``reason`` string (handlers migrate in later dispatches).
     reason_payload: Reason | None = None
+
+    @property
+    def acts_outside_clock_window(self) -> bool:
+        """Whether this result may reach a cover outside the user's clock window.
+
+        The live-result half of the shared admission rule, consumed by the three
+        coordinator dispatch guards. The OR itself lives once, in
+        :func:`pipeline.axis_constraints.may_act_outside_clock_window`, which
+        the per-entity booked record reaches through its own identically-named
+        property (CODING_GUIDELINES § No Duplication).
+        """
+        # Local import: ``axis_constraints`` imports this module, so a
+        # module-level import here would close the cycle.
+        from .axis_constraints import may_act_outside_clock_window  # noqa: PLC0415
+
+        return may_act_outside_clock_window(
+            is_safety=self.is_safety,
+            constraint_admitted=self.outside_window_constraint_active,
+        )
 
     def __post_init__(self) -> None:
         """Derive the English ``reason`` from ``reason_payload`` when unset."""

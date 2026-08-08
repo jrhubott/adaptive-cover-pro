@@ -1042,3 +1042,156 @@ class TestPerCoverHoldDispatchPremise:
 
     def test_venetian_opts_into_per_cover_hold_dispatch(self):
         assert _make_policy().entities_move_independently() is True
+
+
+class TestReporterNightWindowContact:
+    """Issue #943 item B, end-to-end on the reporter's own configuration.
+
+    "OG-Küche": ``cover_venetian`` in ``position_and_tilt`` mode,
+    ``default_percentage`` 100, ``default_tilt`` None, start time 07:00 with no
+    end time. At 03:00 the clock window is CLOSED, so every windowed handler
+    declines and ``DefaultHandler`` wins at 100% — fully open. Slot 1
+    ("Lüften") is a window-contact slot: ``tilt_only`` with no slat angle,
+    ``tilt_min`` 50, priority 77, and now the outside-window opt-in.
+
+    What must come out: the slats reach 50 and the carriage stays at 40, where
+    the cover actually is. The DEFAULT winner's own 100 must never leave the
+    registry, because sending it is precisely issues #215/#216/#223.
+    """
+
+    @staticmethod
+    def _evaluate():
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+        from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (  # noqa: E501
+            CustomPositionHandler,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+            DefaultHandler,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.handlers.solar import (
+            SolarHandler,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.registry import (
+            PipelineRegistry,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.types import (
+            CustomPositionSensorState,
+        )
+        from tests.test_pipeline.conftest import make_snapshot
+
+        state = CustomPositionSensorState(
+            entity_ids=("binary_sensor.myggbett_door_window_sensor_tur_2",),
+            is_on=True,
+            position=None,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            tilt=None,
+            tilt_only=True,
+            slot=1,
+            active_entity_ids=("binary_sensor.myggbett_door_window_sensor_tur_2",),
+            tilt_min=50,
+            outside_window=True,
+        )
+        registry = PipelineRegistry(
+            [
+                SolarHandler(),
+                DefaultHandler(),
+                CustomPositionHandler(
+                    slot=1,
+                    position=None,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                    tilt=None,
+                ),
+            ]
+        )
+        snap = make_snapshot(
+            custom_position_sensors=[state],
+            cover_type="cover_venetian",
+            policy=get_policy("cover_venetian"),
+            default_position=100,
+            default_tilt=None,
+            in_time_window=False,
+            clock_window_open=False,
+            current_cover_position=40,
+            cover_positions={"cover.og_kuche": 40},
+        )
+        return registry.evaluate(snap)
+
+    def test_reporter_night_window_contact_clamps_slats_without_moving_carriage(
+        self,
+    ) -> None:
+        result = self._evaluate()
+
+        assert result.control_method is ControlMethod.DEFAULT
+        assert result.tilt == 50
+        # The carriage stays where the cover is — NOT at the default's 100.
+        assert result.position == 40
+        assert result.hold_clamp_verdicts["cover.og_kuche"].released is True
+        assert result.hold_clamp_verdicts["cover.og_kuche"].target == 40
+        # Admitted, and admitted WITHOUT inheriting safety semantics.
+        assert result.outside_window_constraint_active is True
+        assert result.acts_outside_clock_window is True
+        assert result.is_safety is False
+        assert result.skip_command is False
+        # ``held_position`` is stripped: the result must not start claiming to
+        # hold anything (the Target Position sensor and the Model B stash
+        # replay both key on it).
+        assert result.held_position is None
+
+    def test_reporter_night_result_survives_post_pipeline_resolve(self) -> None:
+        """The policy's "handler tilt honored" path carries the resolved edge.
+
+        The registry resolves the edge itself precisely because the alternative
+        — carrying ``tilt_low`` — lands on the engine-suppressed branch, which
+        returns ``tilt=None`` and drops the bounds. This pins that the value
+        survives the policy for a DEFAULT winner with no engine tilt.
+        """
+        policy = _make_policy()
+        resolved = policy.post_pipeline_resolve(self._evaluate(), **_solar_kwargs())
+
+        assert resolved.tilt == 50
+        assert resolved.position == 40
+
+    def test_reporter_night_slot_without_the_opt_in_stays_hands_off(self) -> None:
+        """Positive control: drop the opt-in and nothing is admitted at 03:00."""
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+        from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+            DefaultHandler,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.registry import (
+            PipelineRegistry,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.types import (
+            CustomPositionSensorState,
+        )
+        from tests.test_pipeline.conftest import make_snapshot
+
+        state = CustomPositionSensorState(
+            entity_ids=("binary_sensor.myggbett_door_window_sensor_tur_2",),
+            is_on=True,
+            position=None,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            min_mode=False,
+            use_my=False,
+            tilt=None,
+            tilt_only=True,
+            slot=1,
+            tilt_min=50,
+        )
+        result = PipelineRegistry([DefaultHandler()]).evaluate(
+            make_snapshot(
+                custom_position_sensors=[state],
+                cover_type="cover_venetian",
+                policy=get_policy("cover_venetian"),
+                default_position=100,
+                default_tilt=None,
+                in_time_window=False,
+                clock_window_open=False,
+                current_cover_position=40,
+                cover_positions={"cover.og_kuche": 40},
+            )
+        )
+        assert result.outside_window_constraint_active is False
+        assert result.hold_clamp_verdicts is None
+        assert result.tilt is None

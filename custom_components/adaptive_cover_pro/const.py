@@ -1168,6 +1168,17 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         "position_max": f"custom_position_position_max_{n}",
         "tilt_min": f"custom_position_tilt_min_{n}",
         "tilt_max": f"custom_position_tilt_max_{n}",
+        # Keep this slot's CONSTRAINT claims binding once the user's start/end
+        # clock window has closed (issue #943 item B). Opt-in, absent = off.
+        # Scoped to the bounded claims (`min_mode` floor, `position_max`,
+        # `tilt_min`, `tilt_max`): a FIXED claim — an exact position, a real
+        # fixed slat angle, `use_my` — is never admitted, because a slot that
+        # DRIVES a position outside the window is the #215/#216/#223 defect
+        # class re-armed by a checkbox. A clamp only ever moves the axis it
+        # bounds; every other axis is commanded to the cover's current read.
+        # Deliberately NOT tilt-gated: it also governs `min_mode` and
+        # `position_max`, which every cover type has.
+        "outside_window": f"custom_position_outside_window_{n}",
         # `enabled` is opt-out: existing entries lack the key and behave as
         # enabled. Set to False to silence a slot without clearing its
         # configuration — used by the companion card's slot toggle UI.
@@ -1204,6 +1215,7 @@ CUSTOM_POSITION_FORM_KEYS: dict[str, str] = {
     "position_max": "custom_position_position_max",
     "tilt_min": "custom_position_tilt_min",
     "tilt_max": "custom_position_tilt_max",
+    "outside_window": "custom_position_outside_window",
 }
 
 
@@ -2124,6 +2136,17 @@ class ReasonCode(StrEnum):
     # from the trace (audit findings A / B).
     REGISTRY_TILT_BOUND_INACTIVE = "registry.tilt_bound_inactive"
     REGISTRY_TILT_CLAMPED = "registry.tilt_clamped"
+    # An active claim the CLOSED clock window dropped (issue #943 item B). Its
+    # own code rather than floor_inactive / tilt_bound_inactive, which both
+    # assert the winner was already on the satisfied side — untrue here. The
+    # bound would have bound; the clock and the slot's own opt-in are the only
+    # reasons it did not.
+    REGISTRY_CONSTRAINT_OUTSIDE_WINDOW = "registry.constraint_outside_window"
+    # A tilt bound resolved to its own edge because nothing set a tilt this
+    # cycle and the closed window rules out carrying the bounds forward (the
+    # venetian engine-suppressed branch drops them). Distinct from
+    # tilt_clamped, which always names the value it clamped FROM.
+    REGISTRY_TILT_BOUND_ENFORCED = "registry.tilt_bound_enforced"
 
     # -- diagnostics builder (control-state reason + position explanation)
     BUILDER_UNKNOWN = "builder.unknown"

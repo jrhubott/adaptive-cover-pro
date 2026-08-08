@@ -1170,3 +1170,97 @@ def test_compute_current_effective_default_forwards_window_explicitly_started():
 
     m.assert_called_once()
     assert m.call_args.kwargs["window_explicitly_started"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_end_time_default_clamped_by_outside_window_bound():
+    """The end-time default must not punch through a live outside-window ceiling.
+
+    Issue #943 item B, #895's sharp edge: ``_on_window_closed`` bypasses the
+    pipeline entirely and sends a POSITION-ONLY default. A constraint-only slot
+    defers, so it never becomes the winner and never trips
+    ``_pipeline_has_active_override`` — which means an opted-in ``position_max``
+    of 30 would be overwritten by ``default_percentage`` 100 the moment the
+    window closed. The fast path composes the same bounds the registry would,
+    through the SAME gather, and clamps before dispatch.
+    """
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
+    from tests.test_pipeline.conftest import make_snapshot
+    from tests.test_pipeline.test_outside_window_constraints import _slot
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = ["cover.test"]
+    coord.hass = MagicMock()
+    coord._policy = get_policy("cover_blind")
+    coord._pipeline_result = None
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+    coord.async_refresh = AsyncMock()
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=False))
+    coord.manager = MagicMock()
+
+    options = {CONF_DEFAULT_HEIGHT: 100}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+    # return_sunset default is the full-open 100 — exactly the value the live
+    # ceiling has to clamp.
+    coord._compute_current_effective_default = MagicMock(return_value=(100, False))
+
+    # An opted-in ceiling of 30, active, on a snapshot whose clock window has
+    # just closed. ``_build_user_command_snapshot`` is the seam the fast path
+    # reuses; stubbing it keeps this test on the clamp and off snapshot
+    # assembly, which its own tests already cover.
+    coord._cover_data = MagicMock()
+    coord._build_user_command_snapshot = MagicMock(
+        return_value=make_snapshot(
+            custom_position_sensors=[_slot(position_max=30, outside_window=True)],
+            clock_window_open=False,
+        )
+    )
+
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        effective_default_fn=lambda _opts: (100, False),
+    )
+    tracker._prev_sunset_active = True
+    coord._window_tracker = tracker
+
+    time_mgr = MagicMock()
+
+    async def _invoke_close(track_end_time, refresh_callback, on_window_open=None):
+        await refresh_callback()
+
+    time_mgr.check_transition = _invoke_close
+    coord._time_mgr = time_mgr
+
+    await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    cmd_svc.apply_position.assert_called_once()
+    # 30, not 100 — and exactly one command, so no clamp-then-correct double move.
+    assert cmd_svc.apply_position.call_args[0][1] == 30

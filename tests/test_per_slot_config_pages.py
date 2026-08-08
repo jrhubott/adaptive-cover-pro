@@ -299,6 +299,7 @@ _CUSTOM_POSITION_SAMPLE: dict[str, object] = {
     "position_max": 80,
     "tilt_min": 10,
     "tilt_max": 90,
+    "outside_window": True,
     "enabled": False,
 }
 

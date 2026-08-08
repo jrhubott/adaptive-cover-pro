@@ -609,6 +609,11 @@ class PipelineSnapshotBuilder:
             tilt_only = bool(
                 options.get(slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY)
             )
+            # Issue #943 item B. Read beside ``tilt_only`` because both are
+            # plain per-slot booleans off the same wire format, but NOT
+            # normalized with it: the flag says WHEN a surviving claim binds,
+            # never WHICH claims exist, so no mutual-exclusion pass touches it.
+            outside_window = bool(options.get(slot_keys["outside_window"], False))
             # Mutual exclusion: tilt_only wins over min_mode / use_my
             # (decision Q3). A slot can fix only the slat angle OR claim
             # position as a floor / via My — not both. Normalize here, the
@@ -664,6 +669,7 @@ class PipelineSnapshotBuilder:
                 position_max=position_max,
                 tilt_min=tilt_min,
                 tilt_max=tilt_max,
+                outside_window=outside_window,
                 is_valid=is_valid,
             )
             # Remember the last valid read so a later fully-invalid read can
@@ -732,6 +738,7 @@ class PipelineSnapshotBuilder:
         in_time_window: bool,
         current_cover_position: int | None,
         is_glare_zone_enabled: Callable[[int], bool],
+        clock_window_open: bool = True,
         cover_positions: Mapping[str, int | None] | None = None,
         cloud_suppression_active: bool = False,
         climate_temp_flags: ClimateTempFlags | None = None,
@@ -771,6 +778,14 @@ class PipelineSnapshotBuilder:
         per-entity source ``current_cover_position`` is the mean of. The
         registry judges each held cover's clamp verdict against its own entry
         (issue #1174); omitting it leaves the pre-#1174 judgment on the scalar.
+
+        ``clock_window_open`` is the user's start/end CLOCK alone —
+        ``TimeWindowManager.clock_window_open``, never the gate-folded
+        ``in_time_window`` this method also takes. The two disagree at night on
+        a gate-configured install (#656), and the axis-constraint gather filters
+        on the clock one: a slot's bounds may outlive the daytime gate freely,
+        but outliving the user's clock is an explicit per-slot opt-in. Defaults
+        True so any snapshot built without it composes exactly as before.
 
         ``cover_capabilities`` maps each bound entity_id to its
         ``CoverCapabilities``.  It drives the sun-tracking floor rollup
@@ -841,6 +856,7 @@ class PipelineSnapshotBuilder:
             glare_zones=glare_zones_cfg,
             active_zone_names=frozenset(active_zone_names),
             in_time_window=in_time_window,
+            clock_window_open=clock_window_open,
             motion_control_enabled=self._toggles.motion_control,
             custom_position_sensors=self.read_custom_position_sensors(options),
             my_position_value=options.get(CONF_MY_POSITION_VALUE),

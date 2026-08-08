@@ -332,6 +332,28 @@ LEGACY_CASES: list[tuple[str, dict, str]] = [
         {"from_tilt": 30, "to_tilt": 50, "label": "Door sensor"},
         "tilt clamped from 30% to 50% by Door sensor",
     ),
+    (
+        ReasonCode.REGISTRY_CONSTRAINT_OUTSIDE_WINDOW,
+        {
+            "low_label": "50%",
+            "high_label": "—",
+            "axis": Reason(ReasonCode.FRAGMENT_AXIS_TILT),
+            "label": "Door sensor",
+        },
+        "bound 50%–— (tilt) from Door sensor not applied — outside the time "
+        "window and this slot is not set to stay active",
+    ),
+    (
+        ReasonCode.REGISTRY_TILT_BOUND_ENFORCED,
+        {
+            "low_label": "50%",
+            "high_label": "—",
+            "label": "Door sensor",
+            "tilt": 50,
+        },
+        "tilt bound 50%–— enforced at 50% by Door sensor (nothing resolved a "
+        "tilt this cycle)",
+    ),
     # --- builder ---
     (ReasonCode.BUILDER_UNKNOWN, {}, "Unknown"),
     (ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT, {}, "Occupancy Timeout"),

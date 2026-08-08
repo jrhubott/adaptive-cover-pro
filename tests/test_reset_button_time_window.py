@@ -36,6 +36,9 @@ def _make_coordinator(
     coordinator.clock_window_open = (
         check_adaptive_time if clock_window_open is None else clock_window_open
     )
+    # No outside-window constraint admission in these scenarios (#943 item B);
+    # pinned because a bare MagicMock attribute is truthy.
+    coordinator._pipeline_acts_outside_clock_window = False
     coordinator.automatic_control = automatic_control
     coordinator.entities = ["cover.test"]
     coordinator.logger = MagicMock()

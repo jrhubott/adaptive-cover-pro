@@ -37,6 +37,7 @@ def _make_coordinator(
     check_adaptive_time: bool,
     automatic_control: bool = True,
     clock_window_open: bool | None = None,
+    acts_outside_clock_window: bool = False,
 ):
     """Build a minimal mock coordinator for testing _async_force_send_pipeline_position.
 
@@ -44,12 +45,18 @@ def _make_coordinator(
     scenario in this file models "outside the window" as a genuinely closed clock
     (after end_time / before start_time). The gate-dark case (clock open, gate
     dark) is exercised explicitly by passing ``clock_window_open=True`` (#656).
+
+    ``acts_outside_clock_window`` is the #943-item-B admission — "may this
+    result reach the hardware outside the clock?". It must be pinned explicitly
+    because a bare ``MagicMock`` attribute is truthy, which would silently open
+    every window guard in this file.
     """
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
     coordinator.clock_window_open = (
         check_adaptive_time if clock_window_open is None else clock_window_open
     )
+    coordinator._pipeline_acts_outside_clock_window = acts_outside_clock_window
     coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
@@ -387,17 +394,31 @@ def _make_state_change_coordinator(
     check_adaptive_time: bool,
     bypass_auto_control: bool = False,
     clock_window_open: bool | None = None,
+    acts_outside_clock_window: bool | None = None,
 ):
     """Build a minimal mock coordinator for testing async_handle_state_change.
 
     ``clock_window_open`` defaults to mirror ``check_adaptive_time`` (genuinely
     closed clock). Pass ``clock_window_open=True`` to model the gate-dark case
     where the clock is open but the daytime gate reads dark (#656).
+
+    ``acts_outside_clock_window`` is the #943-item-B admission. It defaults to
+    ``bypass_auto_control`` because that is what this fixture already uses as
+    its ``is_safety`` stand-in, and on the real coordinator the predicate is
+    ``is_safety OR constraint_admitted`` — a safety result always acts outside
+    the clock. It is pinned explicitly (never left as a bare ``MagicMock``
+    attribute, which is truthy) so it cannot silently open the window guard
+    these tests exist to hold shut.
     """
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
     coordinator.clock_window_open = (
         check_adaptive_time if clock_window_open is None else clock_window_open
+    )
+    coordinator._pipeline_acts_outside_clock_window = (
+        bypass_auto_control
+        if acts_outside_clock_window is None
+        else acts_outside_clock_window
     )
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
@@ -541,6 +562,124 @@ async def test_state_change_clears_state_change_flag_outside_window():
     )
 
     assert coordinator.state_change is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #943 item B — an opted-in constraint acts outside the CLOCK window
+#
+# The gap these pin is narrow on purpose: the admission is granted by the
+# registry only when an eligible bound actually clamped something, and the
+# value the guard then lets through is the pseudo-hold's — the cover's own
+# read on every axis the bound did not constrain. A plain DEFAULT winner is
+# still blocked (``test_state_change_skips_send_outside_time_window``).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_state_change_sends_admitted_constraint_outside_clock_window():
+    """The primary gap: an admitted constraint dispatches before start time."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_constraint_release_outside_window_stays_hands_off():
+    """When the trigger releases overnight ACP goes quiet — no return-to-default.
+
+    Returning the cover to a default at 03:00 is the #173 defect; the cover
+    stays where the clamp left it and the licence is revoked so reconciliation
+    cannot resurrect the target either.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=100, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_not_called()
+    coordinator._cmd_svc.clear_outside_window_targets.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_force_send_admits_constraint_outside_clock_window():
+    """The force-send / Apply-Calculated path honours the same admission."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+
+    await AdaptiveDataUpdateCoordinator._async_force_send_pipeline_position(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_first_refresh_sends_admitted_constraint_outside_window():
+    """A restart at 03:00 re-establishes an admitted clamp instead of idling."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=True,
+    )
+    coordinator.manager.is_cover_manual = MagicMock(return_value=False)
+    coordinator._is_reload = False
+    coordinator.first_refresh = True
+
+    await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_first_refresh_still_blocked_without_admission():
+    """Positive control: no admission at 03:00 still means no startup move."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,
+        acts_outside_clock_window=False,
+    )
+    coordinator.manager.is_cover_manual = MagicMock(return_value=False)
+    coordinator._is_reload = False
+    coordinator.first_refresh = True
+
+    await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+        coordinator, state=100, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

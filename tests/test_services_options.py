@@ -1204,6 +1204,27 @@ class TestSetCustomPosition:
         assert new_opts["custom_position_tilt_min_1"] == 50
         assert new_opts["custom_position_tilt_max_1"] == 90
 
+    async def test_outside_window_flag_routing(self, hass: HomeAssistant):
+        """The per-slot outside-window opt-in routes to its wire key (#943 B)."""
+        await _setup(hass, entry_id="cp_outside_window")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_custom_position",
+                {
+                    "slot": 2,
+                    "sensor": "binary_sensor.door",
+                    "tilt_min": 50,
+                    "outside_window": True,
+                },
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts["custom_position_outside_window_2"] is True
+
     async def test_constraint_only_slot_is_complete(self, hass: HomeAssistant):
         """A trigger + tilt_min slot needs no position (issue #943)."""
         await _setup(hass, entry_id="cp_conly")

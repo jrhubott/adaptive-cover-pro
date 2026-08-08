@@ -36,6 +36,7 @@ _REQUIRED_KEYS = frozenset(
         "position_max",
         "tilt_min",
         "tilt_max",
+        "outside_window",
         "enabled",
     }
 )
@@ -208,6 +209,25 @@ class TestAxisConstraintSlotKeys:
         )
         assert const.CUSTOM_POSITION_FORM_KEYS["tilt_min"] == "custom_position_tilt_min"
         assert const.CUSTOM_POSITION_FORM_KEYS["tilt_max"] == "custom_position_tilt_max"
+
+    def test_every_slot_carries_the_outside_window_wire_key(self) -> None:
+        """Each slot exposes the suffixed outside-window opt-in (#943 item B)."""
+        for n in const.CUSTOM_POSITION_SLOT_NUMBERS:
+            assert (
+                const._custom_position_slot_keys(n)["outside_window"]
+                == f"custom_position_outside_window_{n}"
+            )
+            assert (
+                const.CUSTOM_POSITION_SLOTS[n]["outside_window"]
+                == f"custom_position_outside_window_{n}"
+            )
+
+    def test_form_keys_carry_the_generic_outside_window_key(self) -> None:
+        """The single-slot options page renders the un-suffixed opt-in."""
+        assert (
+            const.CUSTOM_POSITION_FORM_KEYS["outside_window"]
+            == "custom_position_outside_window"
+        )
 
 
 class TestAxisConstraintOptionRanges:

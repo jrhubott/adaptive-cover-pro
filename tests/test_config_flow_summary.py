@@ -4529,3 +4529,82 @@ def test_custom_warning_and_no_sensors_uses_configured_name():
     )
     assert "Terrace access" in warn_line
     assert "Custom #4" not in warn_line
+
+
+# ---------------------------------------------------------------------------
+# Outside-window constraints (issue #943 item B)
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_outside_window_renders_a_line():
+    """An opted-in slot says its constraints outlive the time window."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "constraints stay active outside the time window" in summary
+
+
+def test_custom_position_outside_window_absent_renders_nothing():
+    """The default (off) adds no line at all — no churn for existing entries."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_priority_1": 77,
+        "custom_position_tilt_only_1": True,
+        "custom_position_tilt_min_1": 50,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "outside the time window" not in summary
+
+
+def test_custom_position_outside_window_without_bounds_warns():
+    """The flag governs min/max claims only — with none, it does nothing."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 40,
+        "custom_position_priority_1": 77,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln
+        for ln in summary.splitlines()
+        if "⚠️" in ln and "outside the time window" in ln
+    )
+    assert "no minimum or maximum" in warn_line
+
+
+def test_custom_position_outside_window_at_safety_priority_warns_redundant():
+    """A priority-100 slot already acts outside the window — say so."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.storm",
+        "custom_position_1": 0,
+        "custom_position_min_mode_1": True,
+        "custom_position_priority_1": 100,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    warn_line = next(
+        ln for ln in summary.splitlines() if "⚠️" in ln and "priority 100" in ln
+    )
+    assert "already" in warn_line.lower()
+
+
+def test_custom_position_outside_window_with_bounds_no_warning():
+    """A correctly-configured opt-in warns about nothing."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.door",
+        "custom_position_1": 40,
+        "custom_position_min_mode_1": True,
+        "custom_position_priority_1": 77,
+        "custom_position_outside_window_1": True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert not any(
+        "⚠️" in ln and "outside the time window" in ln for ln in summary.splitlines()
+    )
+    assert "constraints stay active outside the time window" in summary

@@ -174,6 +174,14 @@ _REASON_TEMPLATES_EN: dict[str, str] = {
     ReasonCode.REGISTRY_TILT_CLAMPED: (
         "tilt clamped from {from_tilt}% to {to_tilt}% by {label}"
     ),
+    ReasonCode.REGISTRY_CONSTRAINT_OUTSIDE_WINDOW: (
+        "bound {low_label}–{high_label} ({axis}) from {label} not applied — "
+        "outside the time window and this slot is not set to stay active"
+    ),
+    ReasonCode.REGISTRY_TILT_BOUND_ENFORCED: (
+        "tilt bound {low_label}–{high_label} enforced at {tilt}% by {label} "
+        "(nothing resolved a tilt this cycle)"
+    ),
     # -- diagnostics builder
     ReasonCode.BUILDER_UNKNOWN: "Unknown",
     ReasonCode.BUILDER_CONTROL_OCCUPANCY_TIMEOUT: "Occupancy Timeout",

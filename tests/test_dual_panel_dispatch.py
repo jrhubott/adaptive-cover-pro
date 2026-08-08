@@ -136,6 +136,9 @@ def _make_coordinator(
     )
     coordinator._pipeline_is_safety_handler = False
     coordinator._pipeline_bypasses_auto_control = False
+    # No constraint admission here (#943 item B): a plain SOLAR result never
+    # earns one, and a truthy MagicMock would open the clock-window guard.
+    coordinator._pipeline_acts_outside_clock_window = False
     coordinator.clock_window_open = clock_window_open
     coordinator.state_change = True
     coordinator._last_state_change_entity = None

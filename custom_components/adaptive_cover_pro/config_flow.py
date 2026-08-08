@@ -1681,6 +1681,10 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "custom.tilt_bound_max": ", tilt at most {max}%",
     "custom.tilt_bound_range": ", tilt {min}–{max}%",
     "custom.no_position_claim": "the calculated position",
+    "custom.outside_window": (
+        "🕗 {label}: min/max constraints stay active outside the time window "
+        "(the slot still never drives a position out there)."
+    ),
     # Fallback slot label when no custom_position_name_N is configured
     # (issue #1190) — the exact "Custom #{slot}" fragment extracted verbatim
     # from the five templates below, so the no-name path stays byte-identical.
@@ -1700,6 +1704,17 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "warnings.custom_tilt_only_no_effect": (
         "⚠️ {label}: tilt only is on with no slat angle and no tilt bounds "
         "configured — this slot has no effect."
+    ),
+    "warnings.custom_outside_window_no_bounds": (
+        "⚠️ {label}: keep constraints active outside the time window is on, "
+        "but this slot configures no minimum or maximum — the setting has no "
+        "effect. Only min/max claims stay active out there; an exact position "
+        "never does."
+    ),
+    "warnings.custom_outside_window_redundant": (
+        "⚠️ {label}: keep constraints active outside the time window is on, "
+        "but priority 100 already acts outside the window (and past automatic "
+        "control and the delta gates) — the setting changes nothing here."
     ),
     "warnings.custom_and_no_sensors": (
         "⚠️ {label}: combine mode AND is set but no trigger sensors are "
@@ -2701,6 +2716,52 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             # changes shape.
             if _tilt_only and _slot_tilt is None and _t_min is None and _t_max is None:
                 _sub(L["warnings.custom_tilt_only_no_effect"].format(label=_slot_label))
+            # Outside-window constraints (issue #943 item B). Rendered as its own
+            # sub-line rather than folded into the rule template so the flag can
+            # be surfaced on BOTH branches above without either template gaining
+            # a placeholder. The effective claims are what decide whether it
+            # does anything, so read them post-normalization: a real fixed tilt
+            # wiped the tilt bounds, and tilt_only / use_my wiped the ceiling
+            # (issue #1215), which is exactly when the flag is inert.
+            if config.get(_keys["outside_window"]):
+                # A real fixed tilt wipes the tilt bounds; tilt_only / use_my
+                # wipe the ceiling; a floor needs min_mode AND a stored
+                # position. Mirror all three so the "no effect" warning fires on
+                # exactly the configurations where nothing survives to clamp.
+                _fixed_tilt = has_fixed_tilt(tilt_only=_tilt_only, tilt=_slot_tilt)
+                _raw_pos = config.get(_keys["position"])
+                _floor_live = (
+                    not _tilt_only
+                    and bool(config.get(_keys["min_mode"]))
+                    and _raw_pos is not None
+                )
+                _ceiling_live = (
+                    not _tilt_only
+                    and not _use_my
+                    and config.get(_keys["position_max"]) is not None
+                    and (_floor_live or _raw_pos is None)
+                )
+                _has_bounds = (
+                    _floor_live
+                    or _ceiling_live
+                    or (not _fixed_tilt and (_t_min is not None or _t_max is not None))
+                )
+                if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY:
+                    # Priority 100 already commands outside the window (#563),
+                    # so the checkbox buys nothing and reads as if it did.
+                    _sub(
+                        L["warnings.custom_outside_window_redundant"].format(
+                            label=_slot_label
+                        )
+                    )
+                elif not _has_bounds:
+                    _sub(
+                        L["warnings.custom_outside_window_no_bounds"].format(
+                            label=_slot_label
+                        )
+                    )
+                else:
+                    _sub(L["custom.outside_window"].format(label=_slot_label))
             # Footgun (issue #711): a safety-priority slot with a live trigger
             # bypasses the auto-control toggle, manual override, and the time
             # window — it can move the cover at any hour with automation off.
@@ -4591,7 +4652,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # 3.15 (issue #1138): the same shape again for the additive
     # day_night_external_command_interlock option — absent reads as "on", so the
     # v3.14→v3.15 block is a no-op bump and nothing else.
-    MINOR_VERSION = 17
+    # 3.18 (issue #943 item B): the same shape once more for the additive
+    # per-slot custom_position_outside_window_N flag — absent reads as "off".
+    MINOR_VERSION = 18
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

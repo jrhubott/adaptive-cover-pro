@@ -162,6 +162,11 @@ from .pipeline.handlers import (
     build_handlers,
     resolve_handler_priority,
 )
+from .pipeline.axis_constraints import (
+    clamp_to_bounds,
+    compose_bounds,
+    gather_axis_constraints,
+)
 from .pipeline.floors import effective_floor, gather_active_floors, outranking
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
@@ -2382,6 +2387,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
+            # The user's clock alone, kept separate from the gate-folded
+            # predicate above (#656) because only the clock decides whether a
+            # non-safety result may reach the hardware (#215/#216).
+            clock_window_open=self.clock_window_open,
             current_cover_position=self._compute_mean_cover_position(),
             # Same read the mean summarises — the registry needs the per-entity
             # dict to judge each held cover's clamp verdict on its own position
@@ -2769,6 +2778,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             inverse_state=self._inverse_state,
             force=force,
             is_safety=is_safety,
+            # Read straight off this cycle's result rather than taken as a
+            # parameter (issue #943 item B): the admission is a property of the
+            # evaluated pipeline, not of the caller's intent, and every dispatch
+            # seam that can fire outside the clock window already went through
+            # ``_pipeline_acts_outside_clock_window`` to get here. Never ORed
+            # into ``is_safety`` — the two licences stay separate all the way
+            # down to ``PerEntityState``.
+            outside_window_constraint=bool(
+                self._pipeline_result
+                and self._pipeline_result.outside_window_constraint_active
+            ),
             bypass_auto_control=bypass_auto_control,
             user_command=user_command,
             use_my_position=(
@@ -2830,6 +2850,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         goes through ``_entity_target`` once, which is what makes a clamped hold
         dispatch the same per-entity wire values as a computed winner at the
         same position.
+
+        Since #943 item B the verdicts can also come from the registry's
+        outside-window PSEUDO-hold, where the winning control method is usually
+        ``DEFAULT``. A cover the bound did not move then gets the generic
+        ``"hold"`` skip label, which is the honest answer: nothing is being sent
+        to it, and ``hold_control_method`` in the record says which winner the
+        cycle was carrying.
         """
         result = self._pipeline_result
         verdict = (result.hold_clamp_verdicts or {}).get(cover) if result else None
@@ -3212,7 +3239,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 kept.append(cover)
             target_covers = kept
 
-        if not ignore_clock_window and not self.clock_window_open:
+        if (
+            not ignore_clock_window
+            and not self.clock_window_open
+            # Same admission as the main dispatch path: a safety result, or an
+            # opted-in constraint that actually clamped this cycle (#943 B).
+            and not self._pipeline_acts_outside_clock_window
+        ):
             self.logger.debug(
                 "Force-send requested for %s but outside the clock window — "
                 "skipping reposition (pipeline position was %s; will apply when "
@@ -3278,7 +3311,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Captures everything that decides what command would be sent —
         winning handler, final position (post interpolation / inverse-state),
-        tilt, and the safety / bypass / skip / floor-clamp flags. Comparing it
+        tilt, and the safety / bypass / skip / floor-clamp / outside-window
+        admission flags. Comparing it
         against ``_last_dispatched_target_sig`` lets the dispatch path fire when
         the resolved target changes between cycles even if the transient
         ``state_change`` edge was lost. ``None`` when no pipeline result exists.
@@ -3294,6 +3328,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             result.bypass_auto_control,
             result.skip_command,
             result.position_constraint_applied,
+            result.outside_window_constraint_active,
         )
 
     async def _dispatch_for_cycle(
@@ -3385,6 +3420,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         also lifts the outside-time-window gate so the cover returns to the
         calculated position immediately, exactly as the old force-override
         release did.
+
+        **The outside-the-clock-window invariant**, stated once, here, because
+        this is the guard that enforces it:
+
+            Outside the user's start/end clock window, a cover moves only for
+            (a) a safety result (``is_safety`` — weather, or a priority-100
+            slot), or (b) an opted-in slot's active min/max constraint, and then
+            only to satisfy that constraint: the constrained axis receives the
+            composed bound edge, every other axis receives the cover's current
+            read. A non-safety winner's own values (default, sunset, solar,
+            climate — position or tilt) never reach hardware outside the clock
+            window.
+
+        Clause (b) is issue #943 item B. The second half of it is not enforced
+        here but in ``PipelineRegistry.evaluate``, which converts a computed
+        winner into a pseudo-hold before this method ever sees the result — so
+        by the time dispatch is admitted, the winner's own position has already
+        been replaced by where the cover actually is.
         """
         sun_just_appeared = self._check_sun_validity_transition()
         is_safety = self._pipeline_is_safety_handler
@@ -3417,17 +3470,37 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 and trigger_entity in custom_position_released_entities
             )
 
-        # Outside the configured time window, only safety results (weather,
-        # safety-priority custom positions) are allowed to move covers.  All
-        # other handlers (solar, climate, cloud, default) must not reposition
-        # covers before the user's start time or after the end time.  The
-        # pipeline still evaluates so diagnostics/sensor state remain correct.
+        # Outside the user's start/end CLOCK window a cover moves only for
+        #   (a) a safety result (``is_safety`` — weather, or a priority-100
+        #       slot), or
+        #   (b) an opted-in slot's active min/max constraint (#943 item B),
+        # and in case (b) only to satisfy that constraint: the registry has
+        # already rewritten the result so the constrained axis carries the
+        # composed bound edge and every other axis carries the cover's current
+        # read (the outside-window pseudo-hold). A non-safety winner's OWN
+        # values — default, sunset, solar, climate, position or tilt — never
+        # reach hardware out here, which is what issues #215/#216/#223 are
+        # about and what ``test_state_change_skips_send_outside_time_window``
+        # pins. The pipeline still evaluates either way so diagnostics and
+        # sensor state stay correct.
         custom_position_sensor_triggered = self._is_custom_position_sensor_trigger()
+        acts_outside_window = self._pipeline_acts_outside_clock_window
 
-        if not self.clock_window_open and not is_safety and not safety_release:
+        if (
+            not self.clock_window_open
+            and not acts_outside_window
+            and not safety_release
+        ):
             self.state_change = False
             self._last_state_change_entity = None
             self._custom_position_template_trigger = False
+            # Nothing is admitted this cycle, so no booked target may keep the
+            # outside-window licence it was granted on an earlier one: the
+            # constraint has released or is already satisfied, and either way
+            # reconciliation must stop resending overnight. Safety targets are
+            # untouched — they answer to ``clear_non_safety_targets`` and their
+            # own lifetime (#1226).
+            self._cmd_svc.clear_outside_window_targets()
             self.logger.debug("Outside the clock window — skipping position update")
             return
 
@@ -3455,6 +3528,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             or custom_position_sensor_triggered
             or custom_position_released
             or floor_clamp
+            # An admitted outside-window constraint is the same kind of driver
+            # as ``floor_clamp``: a user-configured bound that must actually
+            # reach the cover, so the delta gates cannot swallow it. It is
+            # already implied by ``floor_clamp`` whenever the POSITION axis
+            # bound; naming it separately is what covers the tilt-only case.
+            or acts_outside_window
             or target_changed_override
         )
         if custom_position_released or safety_release:
@@ -3665,11 +3744,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Set target positions and send initial positioning commands after startup."""
         is_safety = self._pipeline_is_safety_handler
 
-        # Outside the time window, only safety handlers (force override, weather)
-        # are allowed to move covers on startup.  This prevents covers from
+        # Outside the time window, only safety handlers (force override,
+        # weather) and an admitted outside-window constraint (#943 item B) are
+        # allowed to move covers on startup.  This prevents covers from
         # repositioning when HA restarts at midnight or another time outside the
-        # configured operational window.
-        if not self.check_adaptive_time and not is_safety:
+        # configured operational window.  The per-entity outside-window licence
+        # is not persisted across restarts on purpose: this first-refresh
+        # admission is what re-establishes it, from a freshly evaluated result.
+        if (
+            not self.check_adaptive_time
+            and not self._pipeline_acts_outside_clock_window
+        ):
             self.first_refresh = False
             self.logger.debug(
                 "First refresh outside time window — skipping position update"
@@ -4122,6 +4207,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cloud_suppression_active=self._cloud_mgr.is_suppression_active,
             climate_temp_flags=self._climate_smoothing_mgr.resolved_flags,
             in_time_window=self.check_adaptive_time,
+            # Same clock/gate split as the update-cycle build. The user-move
+            # clamp reads its floors off this snapshot, so a non-opted-in floor
+            # stops clamping a service-call position once the clock closes —
+            # deliberate, and the same direction as the #215/#216 invariant.
+            clock_window_open=self.clock_window_open,
             current_cover_position=self._compute_mean_cover_position(),
             # Same read the mean summarises — see the update-cycle build (#1174).
             cover_positions=self._live_cover_positions,
@@ -5022,6 +5112,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return bool(self._pipeline_result and self._pipeline_result.is_safety)
 
+    @property
+    def _pipeline_acts_outside_clock_window(self) -> bool:
+        """True when this cycle's result may reach a cover outside the clock window.
+
+        The single question all four outside-window dispatch guards ask —
+        ``async_handle_state_change``, ``_async_force_send_pipeline_position``,
+        ``async_handle_first_refresh``, and (through
+        ``PerEntityState.acts_outside_clock_window``) reconciliation step 5. The
+        OR itself lives once, in
+        ``pipeline.axis_constraints.may_act_outside_clock_window``; this is just
+        the coordinator's None-safe access to it.
+
+        Strictly wider than :pyattr:`_pipeline_is_safety_handler`: it also
+        admits a cycle where an opted-in slot's min/max constraint actually
+        clamped something (#943 item B). Those two licences stay separate —
+        ``is_safety`` keeps its own lifetime (#1226/#1165) and the constraint
+        admission buys nothing beyond crossing the clock boundary.
+        """
+        result = self._pipeline_result
+        return bool(result and result.acts_outside_clock_window)
+
     def _pipeline_has_active_override(self) -> bool:
         """Return True when a non-DEFAULT handler currently owns the pipeline result.
 
@@ -5126,6 +5237,40 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Set integration enabled toggle."""
         self._toggles.enabled_toggle = value
 
+    def _clamp_to_outside_window_bounds(self, position: int, options) -> int:
+        """Clamp a pipeline-bypassing send through the live position bounds.
+
+        Used by the end-of-window default, which is the one dispatch that can
+        reach a cover with the clock window already closed and without the
+        registry having composed anything. It asks the same
+        ``gather_axis_constraints`` every other consumer asks — so outside-window
+        eligibility is decided in one place — and clamps through the same
+        ``clamp_to_bounds``.
+
+        ``_cover_data`` is absent until the first update cycle has run (and on
+        the minimal test doubles built with ``object.__new__``), and a snapshot
+        cannot be assembled without it. No snapshot means no known constraints,
+        which is the same answer as "no constraints": return the position
+        untouched rather than fail a send over a cosmetic clamp.
+        """
+        if getattr(self, "_cover_data", None) is None:
+            return position
+        snapshot = self._build_user_command_snapshot(options)
+        low, high = compose_bounds(
+            gather_axis_constraints(snapshot), AXIS_NAME_POSITION
+        )
+        clamped = clamp_to_bounds(position, low, high)
+        if clamped != position:
+            self.logger.debug(
+                "End-of-window default %s%% clamped to %s%% by an active "
+                "outside-window bound (low=%s, high=%s)",
+                position,
+                clamped,
+                low,
+                high,
+            )
+        return clamped
+
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
         """Check time window transitions — delegates to TimeWindowManager.
 
@@ -5170,6 +5315,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 return
             options = self.config_entry.options
             effective_pos, is_sunset = self._compute_current_effective_default(options)
+            # #895's sharp edge (issue #943 item B). This path bypasses the
+            # pipeline and sends a POSITION-ONLY default, and a constraint-only
+            # slot never becomes the winner, so ``_pipeline_has_active_override``
+            # above does not see it — an opted-in ceiling of 30 would be
+            # overwritten by ``default_percentage`` 100 the instant the window
+            # closed. Compose the same bounds the registry would, through the
+            # SAME gather (the clock window is closed by now, so it contains
+            # only the eligible claims) and the SAME ``clamp_to_bounds``. No
+            # mirrored arithmetic, and one command rather than a
+            # send-then-correct double move. Slats, if any, are handled by the
+            # ``async_refresh()`` this handler already triggers below.
+            effective_pos = self._clamp_to_outside_window_bounds(effective_pos, options)
             # Deliberately NOT ``_to_cover_frame``: this seam inverts whenever
             # inverse-state is configured — unconditional of bypass, floor
             # clamp, and interpolation — and never interpolates. #993's

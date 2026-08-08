@@ -1121,6 +1121,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # know, reverting to unserialized dispatch.
     new_minor = _advance_noop_minor(new_version, new_minor, 17)
 
+    # v3.17 → v3.18: added the additive per-slot outside-window constraint flag
+    # custom_position_outside_window_N (issue #943 item B). An absent key already
+    # reads as "this slot's constraints stop at the clock window", which is
+    # exactly what every existing install does today, so nothing needs seeding;
+    # this is a no-op minor bump kept only to advance entries sitting at minor 17
+    # to 18 so they stop re-triggering migration every restart (the v3.16 → v3.17
+    # precedent). Rollback-safe: an older build finds every key exactly as it
+    # left it and ignores the ten it does not know, so those slots simply stop
+    # clamping at night again.
+    new_minor = _advance_noop_minor(new_version, new_minor, 18)
+
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
     )

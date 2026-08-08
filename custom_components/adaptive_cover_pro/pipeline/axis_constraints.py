@@ -93,6 +93,12 @@ class AxisConstraint:
         slot:  1-based custom-position slot number, or 0 for non-slot sources
                (the weather floor). Surfaced in the Control Status string
                (#667).
+        outside_window: Whether this claim keeps binding after the user's
+               start/end clock window closes (issue #943 item B). For a
+               custom-position slot it is the per-slot opt-in; the weather
+               floor sets it unconditionally, because it has always acted out
+               there. Read ONLY by :func:`_window_eligible`, and only for a
+               non-``FIXED`` kind.
 
     """
 
@@ -104,6 +110,7 @@ class AxisConstraint:
     label: str
     priority: int
     slot: int
+    outside_window: bool = False
 
     @property
     def value(self) -> int | None:
@@ -268,6 +275,7 @@ def _bounded(
     label: str,
     priority: int,
     slot: int,
+    outside_window: bool = False,
 ) -> AxisConstraint | None:
     """Build a bounded constraint, or None when the axis makes no claim."""
     if mode in (AxisConstraintMode.NONE, AxisConstraintMode.FIXED):
@@ -281,10 +289,102 @@ def _bounded(
         label=label,
         priority=priority,
         slot=slot,
+        outside_window=outside_window,
     )
 
 
+def _window_eligible(constraint: AxisConstraint) -> bool:
+    """Whether this claim still binds once the user's start/end clock closes.
+
+    **The one statement of outside-window eligibility** (issue #943 item B).
+    Two ways in, and only two:
+
+    * a claim at ``CUSTOM_POSITION_SAFETY_PRIORITY`` — a safety slot, the
+      migrated force override, documented since #563 to command outside the
+      window;
+    * a claim whose ``outside_window`` flag is set AND whose kind is bounded.
+      That covers an opted-in custom-position slot and the weather floor, which
+      sets the flag by construction because it has always acted out here
+      (``WeatherOverrideHandler`` sets ``is_safety``). Keying on the field
+      rather than on the source string keeps the handler's own ``name`` the
+      single definition of "weather" — nothing here compares identifiers.
+
+    ``FIXED`` is excluded on purpose: a slot that DRIVES a value outside the
+    window — an exact position, a real fixed slat angle — is the
+    #215/#216/#223 defect class re-armed by a checkbox. A bound only ever
+    clamps something the pipeline already resolved, which is what keeps the
+    blast radius to "satisfy the constraint".
+
+    Nothing here consults the *result*: eligibility is a property of the claim.
+    Whether an eligible claim actually earns a dispatch is a separate question,
+    answered once per cycle by the registry and carried on
+    ``PipelineResult.outside_window_constraint_active``.
+    """
+    if constraint.priority >= CUSTOM_POSITION_SAFETY_PRIORITY:
+        return True
+    return constraint.outside_window and constraint.kind is not AxisConstraintMode.FIXED
+
+
+def may_act_outside_clock_window(*, is_safety: bool, constraint_admitted: bool) -> bool:
+    """Whether a target may reach the hardware outside the user's clock window.
+
+    **The one place the outside-window admission rule is stated** — the OR
+    itself, so the four dispatch guards cannot drift apart
+    (CODING_GUIDELINES § No Duplication). It is deliberately a free function
+    over two bools rather than a method, because the two callers hold the
+    answer in different shapes and neither can be reached from the other:
+
+    * :attr:`PipelineResult.acts_outside_clock_window` — this cycle's live
+      result, read by the three coordinator guards;
+    * :attr:`~managers.cover_command.state_store.PerEntityState.acts_outside_clock_window`
+      — a per-entity BOOKED verdict, read by reconciliation long after the
+      result that produced it is gone.
+
+    ``is_safety`` keeps its own lifetime (#1226/#1165) and is never co-written
+    with the constraint admission; this predicate only reads them together.
+    """
+    return is_safety or constraint_admitted
+
+
+def partition_axis_constraints(
+    snapshot: PipelineSnapshot,
+) -> tuple[list[AxisConstraint], list[AxisConstraint]]:
+    """Split the snapshot's active constraints into (binding, window-dropped).
+
+    With the clock window open the second list is always empty and the first is
+    byte-identical to the pre-#943-item-B gather. With it closed, the split is
+    :func:`_window_eligible` applied once — the dropped half exists so the
+    decision trace can say a bound was active and deliberately not applied,
+    rather than leaving the slot's unhelpful ``describe_skip`` entry standing.
+    """
+    constraints = _gather_all(snapshot)
+    if snapshot.clock_window_open:
+        return constraints, []
+    kept: list[AxisConstraint] = []
+    dropped: list[AxisConstraint] = []
+    for constraint in constraints:
+        (kept if _window_eligible(constraint) else dropped).append(constraint)
+    return kept, dropped
+
+
+def window_ineligible_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
+    """Return the active constraints a closed clock window drops this cycle."""
+    return partition_axis_constraints(snapshot)[1]
+
+
 def gather_axis_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
+    """Collect every active axis constraint that binds this cycle.
+
+    The binding half of :func:`partition_axis_constraints` — so the registry's
+    composition, ``floors.gather_active_floors`` (and through it the
+    coordinator's user-move clamp, #472), and the end-of-window clamp all see
+    the same set, and outside-window eligibility is decided in exactly one
+    place rather than once per consumer.
+    """
+    return partition_axis_constraints(snapshot)[0]
+
+
+def _gather_all(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
     """Collect every active axis constraint the snapshot contributes.
 
     One pass over the snapshot emits, in this order (which the trace relies on):
@@ -317,6 +417,7 @@ def gather_axis_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
             "label": state.display_label,
             "priority": state.priority,
             "slot": state.slot,
+            "outside_window": state.outside_window,
         }
 
         # --- Position axis ---
@@ -366,7 +467,10 @@ def gather_axis_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
                 kind=AxisConstraintMode.MIN,
                 low=snapshot.weather_override_position,
                 high=None,
-                source="weather",
+                # The handler's own ``name`` is the single definition of this
+                # identifier; the eligibility predicate keys on the flag below,
+                # never on this string.
+                source=WeatherOverrideHandler.name,
                 label="weather override",
                 # The EFFECTIVE priority, resolved at snapshot build from
                 # ``weather_priority``. The class default is only the fallback:
@@ -380,6 +484,11 @@ def gather_axis_constraints(snapshot: PipelineSnapshot) -> list[AxisConstraint]:
                     else WeatherOverrideHandler.priority
                 ),
                 slot=0,
+                # The weather floor is a SAFETY claim — the handler that owns it
+                # sets ``is_safety``, which has commanded outside the clock
+                # window since long before #943 item B. Set unconditionally so
+                # :func:`_window_eligible` never has to recognise it by source.
+                outside_window=True,
             )
         )
     return constraints
