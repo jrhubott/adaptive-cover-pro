@@ -162,6 +162,7 @@ from ..const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
@@ -470,6 +471,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_TILT_MODE: _select_v("mode1", "mode2", "specify_angles"),
     CONF_TILT_ANGLE_0: _range(CONF_TILT_ANGLE_0),
     CONF_TILT_ANGLE_100: _range(CONF_TILT_ANGLE_100),
+    CONF_TILT_HORIZONTAL_PERCENT: _range(CONF_TILT_HORIZONTAL_PERCENT),
     CONF_MAX_TILT: _range(CONF_MAX_TILT),
     CONF_MAX_TILT_SUN_ONLY: _bool_v(),
     CONF_MIN_TILT: _range(CONF_MIN_TILT),
@@ -906,6 +908,7 @@ _SECTION_GEOMETRY_TILT = frozenset(
         CONF_TILT_MODE,
         CONF_TILT_ANGLE_0,
         CONF_TILT_ANGLE_100,
+        CONF_TILT_HORIZONTAL_PERCENT,
     }
 )
 _SECTION_GEOMETRY_OSCILLATING = frozenset(
@@ -1120,6 +1123,22 @@ def _cross_field_validate(
             raise ServiceValidationError(
                 f"tilt_angle_0 ({angle_0}) must be less than tilt_angle_100 ({angle_100})."
             )
+
+    # Three-point calibration mid-point (#1222). Triggered by a change to ANY of
+    # the three keys, since moving an endpoint can invalidate an already-stored
+    # mid-point just as easily as the mid-point itself can. The rule is the
+    # engine's own ``hinge_is_usable``, reached through the tilt policy's
+    # message wrapper, so "accepted here" and "honoured by the map" cannot part.
+    if (
+        CONF_TILT_HORIZONTAL_PERCENT in patch
+        or CONF_TILT_ANGLE_0 in patch
+        or CONF_TILT_ANGLE_100 in patch
+    ):
+        from ..cover_types.tilt import tilt_horizontal_percent_error
+
+        message = tilt_horizontal_percent_error(merged_active)
+        if message is not None:
+            raise ServiceValidationError(message)
 
     # Custom position slot completeness: a slot needs a trigger (sensors,
     # legacy sensor, or template) AND a claim on an axis — or neither. The

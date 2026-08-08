@@ -491,6 +491,14 @@ CONF_TILT_ANGLE_0 = "tilt_angle_0"  # raw slat angle at 0% tilt, degrees
 CONF_TILT_ANGLE_100 = "tilt_angle_100"  # raw slat angle at 100% tilt, degrees
 DEFAULT_TILT_ANGLE_0 = 0  # degrees — downward closed endpoint at 0% tilt
 DEFAULT_TILT_ANGLE_100 = 180  # degrees — upward closed endpoint at 100% tilt
+# Optional third calibration point for specify-angles (issue #1222): the tilt
+# percentage at which the slats are exactly horizontal. 0 = DISABLED (the scale
+# stays the two-point affine one, byte-identical to pre-#1222 behaviour) — the
+# same "0 means use the default shape" sentinel CONF_MAX_SLAT_ANGLE uses, which
+# is what makes a BOX selector safe here (clearing it saves 0, which is the
+# off state rather than a meaningless boundary value).
+CONF_TILT_HORIZONTAL_PERCENT = "tilt_horizontal_percent"
+DEFAULT_TILT_HORIZONTAL_PERCENT = 0  # percent — 0 = two-point calibration
 CONF_MAX_TILT = "max_tilt"  # cap on sun-derived tilt %, 0-100
 DEFAULT_MAX_TILT = 100  # default: no upper cap
 CONF_MIN_TILT = "min_tilt"  # floor on sun-derived tilt %, 0-100
@@ -2350,6 +2358,12 @@ _RANGE_LENGTH_AWNING = (0.3, 6.0)  # CONF_LENGTH_AWNING, metres
 _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
 _RANGE_TILT_ANGLE_0 = (-180, 180)  # CONF_TILT_ANGLE_0, degrees
 _RANGE_TILT_ANGLE_100 = (0, 360)  # CONF_TILT_ANGLE_100, degrees
+# CONF_TILT_HORIZONTAL_PERCENT, percent (0 = disabled, two-point calibration).
+# The coarse bound only; a stored value must additionally be STRICTLY interior
+# and straddled by the endpoint angles to take effect — that cross-field rule
+# lives in options_service/config_flow, which is the only layer that can see
+# the other two keys.
+_RANGE_TILT_HORIZONTAL_PERCENT = (0, 100)
 
 # Geometry — oscillating (drop-arm) awning.
 _RANGE_ARM_LENGTH = (0.1, 6.0)  # CONF_ARM_LENGTH, metres

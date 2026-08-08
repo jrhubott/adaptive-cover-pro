@@ -24,6 +24,57 @@ from ..sun_geometry import foreshortened_slope
 from .base import AdaptiveGeneralCover
 
 
+def _interpolate(x: float, x0: float, x1: float, y0: float, y1: float) -> float:
+    """Map *x* from the ``[x0, x1]`` scale onto ``[y0, y1]``, linearly.
+
+    Single source of the straight-line arithmetic every tilt calibration
+    segment is made of: the legacy/custom-max map and the two-point
+    ``specify_angles`` map in :meth:`AdaptiveTiltCover._percentage_from_angle`,
+    both of their inverses in
+    :meth:`AdaptiveTiltCover._angle_from_percentage`, and both halves of the
+    hinged three-point calibration (issue #1222). Forward and inverse are the
+    same formula with the pairs swapped, which is exactly why neither may carry
+    its own copy — a rearrangement on one side and not the other is how an
+    inverse silently stops inverting.
+
+    Deliberately written as ``y0 + (x − x0)/(x1 − x0) · (y1 − y0)`` rather than
+    any algebraically equal rearrangement: at ``y0 = 0`` / ``y1 = 100`` that
+    reduces bit-for-bit to the ``(angle − angle_0) / travel × 100`` expressions
+    it replaced, so an existing calibration's percentages do not shift in the
+    last ulp.
+
+    The caller owns the ``x1 != x0`` guard. Every segment here has one already —
+    a zero-width scale is reported as ``None`` rather than divided by.
+    """
+    return y0 + (x - x0) / (x1 - x0) * (y1 - y0)
+
+
+def hinge_is_usable(
+    angle_0: float, angle_100: float, horizontal_percent: float
+) -> bool:
+    """Whether a three-point tilt calibration can be honoured (issue #1222).
+
+    Sole owner of the rule, and pure so that all three layers that need it can
+    share this one copy: the engine gates its hinged map on it
+    (:meth:`AdaptiveTiltCover._hinge_percent`), and the config flow and the
+    ``set_geometry`` service both refuse to STORE a combination it rejects, via
+    the message wrapper in ``cover_types.tilt``. A validator that only happens
+    to agree with the engine is a validator that will one day disagree.
+
+    Two conditions, and both are about the segments having width:
+
+    * the mid-point is strictly interior — ``0`` is the disabled sentinel and
+      ``100`` would collapse the upper segment to nothing;
+    * the endpoint angles straddle ``TILT_HORIZONTAL_DEG`` in that order, so
+      there is an interior horizontal slat for the hinge to sit at. This also
+      declines an INVERTED calibration (``angle_0`` the upward-closed slat):
+      the hinge is defined on the ordered travel only.
+    """
+    strictly_interior = 0.0 < float(horizontal_percent) < 100.0
+    straddles_horizontal = float(angle_0) < TILT_HORIZONTAL_DEG < float(angle_100)
+    return strictly_interior and straddles_horizontal
+
+
 def slat_cutoff_angle(
     beta: float, slat_distance: float, depth: float
 ) -> tuple[float, float, bool]:
@@ -117,11 +168,50 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """Raw slat angle represented by 100% tilt."""
         return float(self.tilt_config.angle_100)
 
+    @property
+    def horizontal_percent(self) -> float:
+        """Configured tilt percentage of the horizontal slat (0 = disabled)."""
+        return float(self.tilt_config.horizontal_percent)
+
     def _is_specify_angles(self) -> bool:
         """Return True when endpoint-angle mapping is configured."""
         return self.mode == TiltMode.SPECIFY_ANGLES or self.mode == (
             TiltMode.SPECIFY_ANGLES.value
         )
+
+    def _hinge_percent(self) -> float | None:
+        """Active three-point hinge, or ``None`` when the scale stays two-point.
+
+        The optional third calibration point (issue #1222): hardware whose slats
+        reach horizontal somewhere other than the affine midpoint of its
+        reported travel — the reporting KNX venetian runs 0°→0 %, 90°→50 %,
+        130°→100 %, i.e. 1.8 °/% below horizontal against 0.8 °/% above it. No
+        affine map has a knee, so no combination of the endpoint angles can hold
+        all three points at once.
+
+        ``None`` means "behave exactly as before", and it covers three
+        distinguishable situations on purpose, because they all want the same
+        answer and none of them is an error:
+
+        * the mode is not ``specify_angles`` — the presets carry their own
+          scale and the hinge has nothing to hinge;
+        * the option is at its ``0`` disabled sentinel (or absent from a config
+          entry written before this existed);
+        * :func:`hinge_is_usable` declines the combination — see there for the
+          two width conditions and why the config layers share that predicate
+          rather than restating it.
+
+        Config flow and ``set_geometry`` reject an unusable combination before
+        it can be stored, so reaching one means a hand-edited or
+        partially-restored entry. Answering ``None`` there keeps this map total:
+        it never raises and never divides by a zero-width segment.
+        """
+        if not self._is_specify_angles():
+            return None
+        hinge = self.horizontal_percent
+        if not hinge_is_usable(self.angle_0, self.angle_100, hinge):
+            return None
+        return hinge
 
     def _specified_target_angle(self, raw_angle: float) -> float:
         """Return the useful raw target angle for explicit endpoint calibration."""
@@ -130,26 +220,48 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
     def _percentage_from_angle(self, angle: float) -> float | None:
         """Map a raw slat angle onto this engine's tilt percentage scale.
 
-        Sole owner of the angle→percentage map. Three callers need it and they
+        Sole owner of the angle→percentage map. Four callers need it and they
         MUST agree: the solved position (:meth:`calculate_raw_percentage`), the
-        calibrated endpoint mapping (:meth:`calculate_percentage`), and the
-        horizontal pivot (:meth:`_horizontal_percentage`). The pivot is what
-        makes sharing load-bearing rather than merely tidy — it points at
-        maximum openness only while it is divided by the SAME denominator the
-        position is, and :meth:`_effective_max_degrees` lets the louvered roof
-        move that denominator to a configurable ``max_slat_angle``. Re-deriving
-        either map at a second site is exactly how the pivot drifts off the
-        scale it is supposed to sit on.
+        calibrated endpoint mapping (:meth:`calculate_percentage`), the
+        horizontal pivot (:meth:`_horizontal_percentage`), and the climate
+        handler's target-angle translation (:meth:`climate_tilt_percentage`).
+        The pivot is what makes sharing load-bearing rather than merely tidy —
+        it points at maximum openness only while it is divided by the SAME
+        denominator the position is, and :meth:`_effective_max_degrees` lets the
+        louvered roof move that denominator to a configurable
+        ``max_slat_angle``. Re-deriving either map at a second site is exactly
+        how the pivot drifts off the scale it is supposed to sit on — and how
+        the climate path spent several releases mapping ``specify_angles``
+        covers on a MODE1 denominator that ignored their calibration outright.
+
+        :meth:`_angle_from_percentage` is the inverse and shares this map's
+        segments; the two are one seam, not two.
 
         The solver and the configured endpoints both use ACP's raw/card angle
-        convention: 0° closed downward, 90° horizontal, 180° closed upward. Two
-        affine maps, selected by the configured mode:
+        convention: 0° closed downward, 90° horizontal, 180° closed upward.
+        Three shapes, selected by the configured mode and calibration:
 
         * legacy / custom-max — ``pct = angle / max_degrees × 100``.
-        * ``specify_angles`` — ``pct = (angle − angle_0) / travel × 100``, which
-          may run BACKWARDS (``travel < 0``, an inverted calibration where 0 %
-          is the upward-closed slat). Affine either way, so the pivot's image
-          moves with the map and the sign never has to be tested.
+        * ``specify_angles``, two-point — ``pct = (angle − angle_0) / travel ×
+          100``, which may run BACKWARDS (``travel < 0``, an inverted
+          calibration where 0 % is the upward-closed slat). Affine either way,
+          so the pivot's image moves with the map and the sign never has to be
+          tested.
+        * ``specify_angles`` with a hinge (issue #1222) — two straight segments
+          meeting at ``(TILT_HORIZONTAL_DEG, horizontal_percent)``. Affine on
+          each SIDE of horizontal but not across it, which is the whole point:
+          the reporting hardware runs at 1.8 °/% below horizontal and 0.8 °/%
+          above. :meth:`_hinge_percent` decides when this shape applies; when it
+          declines, the two-point map above is used unchanged, so an install
+          that never set the option is byte-identical to before.
+
+        The hinge is deliberately anchored at ``TILT_HORIZONTAL_DEG`` and
+        nowhere else. That angle is not an arbitrary interior point — it is the
+        maximum-openness slat this whole module already pivots on (the
+        safety-margin fixed point, the rounding reference, and
+        :meth:`coverage_pivot_percentage`), so hinging there is what makes the
+        pivot land exactly on the configured percentage with no second
+        derivation anywhere downstream.
 
         ``None`` means the scale is degenerate — zero width — so no percentage
         exists at all. Each caller decides what to do about that.
@@ -159,11 +271,67 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             if travel == 0:
                 return None
             target_angle = self._specified_target_angle(angle)
-            return ((target_angle - self.angle_0) / travel) * 100.0
+            hinge = self._hinge_percent()
+            if hinge is None:
+                return _interpolate(
+                    target_angle, self.angle_0, self.angle_100, 0.0, 100.0
+                )
+            if target_angle < TILT_HORIZONTAL_DEG:
+                return _interpolate(
+                    target_angle, self.angle_0, TILT_HORIZONTAL_DEG, 0.0, hinge
+                )
+            return _interpolate(
+                target_angle, TILT_HORIZONTAL_DEG, self.angle_100, hinge, 100.0
+            )
         max_degrees = float(self._effective_max_degrees())
         if max_degrees <= 0:
             return None
-        return (float(angle) / max_degrees) * 100.0
+        return _interpolate(float(angle), 0.0, max_degrees, 0.0, 100.0)
+
+    def _angle_from_percentage(self, pct: float) -> float | None:
+        """Map a tilt percentage back onto the raw slat angle it commands.
+
+        The exact inverse of :meth:`_percentage_from_angle`, segment for
+        segment, and the codebase's only percentage→angle map (issue #1222).
+        Before it existed the inverse was implicit — the protective comparator
+        assumed the forward map was globally affine and ranked candidates by
+        ``|pct − pivot|``, which is proportional to ``|angle − 90°|`` only while
+        that assumption holds. A hinged scale breaks it across the pivot, so
+        :meth:`coverage_distance` measures in ANGLE space through this map
+        instead.
+
+        Both directions delegate to the same :func:`_interpolate` with the pairs
+        swapped, so a change to one segment cannot leave the other behind.
+
+        Deliberately NOT clamped: unlike the forward direction, which pins the
+        solved angle into the physical 0–180° range via
+        :meth:`_specified_target_angle` before mapping, this answers what the
+        scale SAYS a percentage means, including outside the calibrated travel
+        where an off-travel pivot lives. Clamping would flatten exactly the
+        ordering its callers need.
+
+        ``None`` on the same degenerate scales the forward map reports ``None``
+        for — a scale that cannot produce a percentage cannot consume one.
+        """
+        if self._is_specify_angles():
+            if self.angle_100 - self.angle_0 == 0:
+                return None
+            hinge = self._hinge_percent()
+            if hinge is None:
+                return _interpolate(
+                    float(pct), 0.0, 100.0, self.angle_0, self.angle_100
+                )
+            if pct <= hinge:
+                return _interpolate(
+                    float(pct), 0.0, hinge, self.angle_0, TILT_HORIZONTAL_DEG
+                )
+            return _interpolate(
+                float(pct), hinge, 100.0, TILT_HORIZONTAL_DEG, self.angle_100
+            )
+        max_degrees = float(self._effective_max_degrees())
+        if max_degrees <= 0:
+            return None
+        return _interpolate(float(pct), 0.0, 100.0, 0.0, max_degrees)
 
     def _effective_max_degrees(self) -> float:
         """Ceiling + percentage denominator for the slat angle.
@@ -328,6 +496,23 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         if self.tilt_config.safety_margin != 0.0:
             result = TILT_HORIZONTAL_DEG - (TILT_HORIZONTAL_DEG - result) * eff_margin
 
+        # Clamp to the drive's physical travel. On MODE1 (90°) this fires
+        # whenever the cut-off runs past horizontal, and reads at first glance
+        # like it commands maximum openness at the worst moment of the day —
+        # the sun low, the solve asking for 106°, the answer 90°. The geometry
+        # says otherwise, as an identity rather than a coincidence:
+        #
+        #     raw solve > 90°  ⟺  depth · tan β > slat_distance
+        #
+        # and the right-hand side is exactly the condition for a HORIZONTAL slat
+        # to intercept the beam (over its own depth the ray drops
+        # ``depth · tan β``, landing on the slat below once that exceeds the
+        # spacing). So wherever this clamp engages, 90° is already a BLOCKING
+        # position — a 90°-travel drive has no more-closed position on that side
+        # of horizontal, and the only alternative, the 0° end, is a full sweep
+        # away. Pinned by
+        # ``tests/test_adaptive_tilt_cover.py::TestMode1ClampCrossover`` so the
+        # identity is checked rather than asserted here (#1222 audit).
         result = max(0.0, min(float(max_degrees), float(result)))
 
         self.logger.debug(
@@ -367,10 +552,11 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         position = self.calculate_position()
 
         # The specify-angles mode maps the solved raw slat angle into a
-        # user-calibrated endpoint range via an affine transform — an offset
-        # (angle_0) plus a scale — which the pure ``max_degrees`` denominator
-        # below cannot express. Handle it here, before the polymorphic base
-        # path, and correct the trace's position percentage in place.
+        # user-calibrated endpoint range — an offset (angle_0) plus a scale,
+        # optionally hinged at horizontal (#1222) — which the pure
+        # ``max_degrees`` denominator below cannot express. Handle it here,
+        # before the polymorphic base path, and correct the trace's position
+        # percentage in place.
         if self._is_specify_angles():
             percentage = self._percentage_from_angle(position)
             if percentage is None:
@@ -385,6 +571,14 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 )
                 self._last_calc_details["tilt_angle_0_deg"] = self.angle_0
                 self._last_calc_details["tilt_angle_100_deg"] = self.angle_100
+                # The companion Lovelace card rebuilds this scale from the
+                # trace to draw the slat, so the hinge has to travel with the
+                # endpoints or it would draw a straight map over a bent one
+                # (#1222). Published even at the 0 sentinel — a stable key set
+                # is what lets the card read it without probing.
+                self._last_calc_details["tilt_horizontal_percent"] = (
+                    self.horizontal_percent
+                )
             pct = max(0.0, min(100.0, percentage))
         else:
             # Same effective ceiling the position solve clamps to (the mode max
@@ -487,6 +681,75 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         banded command.
         """
         return self._horizontal_percentage()
+
+    def coverage_distance(self, pct: float) -> float | None:
+        """Measure coverage in DEGREES off horizontal, not in percent (#1222).
+
+        The base metric — ``|pct − pivot|`` — is proportional to this on every
+        affine scale, so this override changes no answer on MODE1, MODE2, the
+        louvered roof's ``max_slat_angle``, or a two-point ``specify_angles``
+        pair; the proportionality constant cancels out of the only thing the
+        caller does with two distances, which is compare them.
+
+        It stops cancelling the moment the scale hinges. On the reporting
+        blind's 0°/90°/130° calibration, 40 % is 72° — 18° of closure — and 65 %
+        is 102°, only 12°; ranked by percentage the second wins by 15 points to
+        10 and the comparator commands the slat that lets more sun through.
+        Degrees off horizontal is what "how much sun does this block" actually
+        means on a slat, so measuring there is right on the hinge and merely
+        redundant everywhere else.
+
+        Routes through :meth:`_angle_from_percentage`, the exact inverse of the
+        map the pivot itself comes from, so the two can never disagree about
+        which side of maximum openness a percentage sits on.
+        """
+        angle = self._angle_from_percentage(pct)
+        if angle is None:
+            return None
+        return abs(angle - TILT_HORIZONTAL_DEG)
+
+    def climate_tilt_percentage(
+        self, angle_deg: float, *, sun_through: bool = False
+    ) -> int | None:
+        """Translate a climate TARGET slat angle into this engine's percentage.
+
+        The climate handler asks for an angle — ``CLIMATE_SUMMER_TILT_ANGLE``,
+        ``CLIMATE_DEFAULT_TILT_ANGLE``, or the live profile angle for winter
+        heating — and needs the percentage that commands it. That is the same
+        question :meth:`_percentage_from_angle` answers for the solar path, and
+        answering it here rather than in the policy is what finally makes the
+        two agree: ``TiltPolicy.climate_tilt_percentage``'s static formula tests
+        only "is this MODE2?" and falls back to a hardcoded 90° denominator, so
+        a ``specify_angles`` cover — which is not MODE2 — had its climate tilt
+        computed on MODE1's scale with its calibration ignored outright
+        (issue #1222). Any future scale inherits the fix for free.
+
+        *sun_through* is winter heating: mirror the angle across horizontal so
+        the slat sits parallel to the beam, the maximum-transmission
+        orientation. Gated on the pivot being STRICTLY interior, which is the
+        scale-independent way to ask "does this axis have two hemispheres?".
+        MODE1's pivot is 100 % — horizontal is its fully-open rail and there is
+        nothing on the far side — so it declines, exactly as the static
+        formula's MODE1 early return did. MODE2's is 50 % and takes it, also
+        exactly as before.
+
+        The mirror is applied to the ANGLE, before the map, because that is
+        where it means anything: on a hinged scale, reflecting the percentage
+        about the pivot lands somewhere else entirely.
+
+        ``None`` on a degenerate scale, leaving the caller free to fall back —
+        which the policy does, to the formula it has always used.
+        """
+        pivot = self._horizontal_percentage()
+        if pivot is None:
+            return None
+        effective_angle = float(angle_deg)
+        if sun_through and 0.0 < pivot < 100.0:
+            effective_angle = TILT_HORIZONTAL_DEG + effective_angle
+        percentage = self._percentage_from_angle(effective_angle)
+        if percentage is None:
+            return None
+        return round(percentage)
 
     def coverage_travel_bounds(self) -> tuple[float, float]:
         """Report ``[min_tilt, max_tilt]`` as the reachable travel (#1104).

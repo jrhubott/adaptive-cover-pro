@@ -16,6 +16,7 @@ from ..const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_TRANSFORM,
@@ -25,6 +26,7 @@ from ..const import (
     DEFAULT_MIN_TILT_SUN_ONLY,
     DEFAULT_TILT_ANGLE_0,
     DEFAULT_TILT_ANGLE_100,
+    DEFAULT_TILT_HORIZONTAL_PERCENT,
     DEFAULT_TILT_SAFETY_MARGIN,
     DEFAULT_VENETIAN_TILT_TRANSFORM,
     MAX_TILT_SAFETY_MARGIN,
@@ -34,9 +36,11 @@ from ..const import (
     VENETIAN_TILT_TRANSFORMS,
 )
 from ..engine.covers import AdaptiveTiltCover
+from ..engine.covers.tilt import hinge_is_usable
 from ..const import TiltMode
 from ..unit_system import slat_default, slat_selector
-from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
+from ._helpers import slat_geometry_parts
+from ._summary_labels import COVER_TYPE_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
     TILT_AXIS_PRIMARY,
@@ -62,6 +66,56 @@ TILT_SLAT_KEYS: tuple[str, ...] = (CONF_TILT_DEPTH, CONF_TILT_DISTANCE)
 # Default slat dimensions (canonical centimetres).
 _DEFAULT_TILT_DEPTH_CM = 3.0
 _DEFAULT_TILT_DISTANCE_CM = 2.0
+
+
+def _as_float(value: Any, default: float) -> float | None:
+    """Coerce to float, substituting *default* for ``None``; ``None`` if unusable."""
+    if value is None:
+        return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def tilt_horizontal_percent_error(config: dict[str, Any]) -> str | None:
+    """Reject a mid-point the endpoint calibration cannot carry (issue #1222).
+
+    The single user-facing statement of the three-point rule, shared by both
+    surfaces that can store it: ``config_flow._tilt_angle_step_errors`` and
+    ``services.options_service``'s cross-field pass. The rule ITSELF is
+    :func:`engine.covers.tilt.hinge_is_usable` — the very predicate the engine
+    gates its hinged map on — so a combination this accepts is exactly a
+    combination that takes effect, and nothing can drift between "stored" and
+    "honoured".
+
+    Checked unconditionally rather than only on ``specify_angles``, matching how
+    the endpoint-ordering rule already behaves: the endpoints and the mid-point
+    are stored on every tilt cover and merely lie dormant on the presets, so the
+    stored values are validated whenever they are written. The ``0`` sentinel
+    short-circuits, which is what keeps this silent for the covers that never
+    opt in.
+
+    Missing endpoints fall back to their defaults (the full 0–180° raw range),
+    because that is what the engine reads for them. A non-numeric value is not
+    this check's business — the range validator and the selector own type.
+    """
+    raw_percent = config.get(CONF_TILT_HORIZONTAL_PERCENT)
+    percent = _as_float(raw_percent, DEFAULT_TILT_HORIZONTAL_PERCENT)
+    if percent is None or percent == 0:
+        return None
+    angle_0 = _as_float(config.get(CONF_TILT_ANGLE_0), DEFAULT_TILT_ANGLE_0)
+    angle_100 = _as_float(config.get(CONF_TILT_ANGLE_100), DEFAULT_TILT_ANGLE_100)
+    if angle_0 is None or angle_100 is None:
+        return None
+    if hinge_is_usable(angle_0, angle_100, percent):
+        return None
+    return (
+        f"tilt_horizontal_percent ({raw_percent}) must be between 1 and 99, and "
+        f"tilt_angle_0 ({angle_0:g}) / tilt_angle_100 ({angle_100:g}) must "
+        f"straddle {TILT_HORIZONTAL_DEG}° so the slats pass through horizontal. "
+        "Use 0 to disable the third calibration point."
+    )
 
 
 def tilt_limits_schema() -> dict:
@@ -108,6 +162,7 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
     """Tilt-only geometry schema. ``hass=None`` → metric labels."""
     depth_lo, depth_hi = OPTION_RANGES[CONF_TILT_DEPTH]
     distance_lo, distance_hi = OPTION_RANGES[CONF_TILT_DISTANCE]
+    horizontal_lo, horizontal_hi = OPTION_RANGES[CONF_TILT_HORIZONTAL_PERCENT]
     return vol.Schema(
         {
             vol.Required(
@@ -135,6 +190,22 @@ def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0, max=360, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            # Optional third calibration point (#1222). BOX is safe here despite
+            # the optional-numeric guideline's SLIDER rule: that rule exists
+            # because BOX cannot express "cleared" and saves 0 instead — and 0
+            # is precisely this field's disabled state, so the failure mode the
+            # rule guards against is the intended one.
+            vol.Required(
+                CONF_TILT_HORIZONTAL_PERCENT,
+                default=DEFAULT_TILT_HORIZONTAL_PERCENT,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=horizontal_lo,
+                    max=horizontal_hi,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             **tilt_limits_schema(),
@@ -200,19 +271,7 @@ class TiltPolicy(CoverTypePolicy, register=True):
         self, config: dict[str, Any], labels: dict[str, str] | None = None
     ) -> list[str]:
         """Render the slat-depth / spacing / mode block."""
-        L = {**GEOMETRY_LABELS_EN, **(labels or {})}
-        parts: list[str] = []
-        if (v := config.get(CONF_TILT_DEPTH)) is not None:
-            parts.append(L["geometry.slat.depth"].format(v=v))
-        if (v := config.get(CONF_TILT_DISTANCE)) is not None:
-            parts.append(L["geometry.slat.spacing"].format(v=v))
-        if (v := config.get(CONF_TILT_MODE)) is not None:
-            parts.append(L["geometry.slat.mode"].format(v=v))
-        if config.get(CONF_TILT_MODE) == TiltMode.SPECIFY_ANGLES.value:
-            if (v := config.get(CONF_TILT_ANGLE_0)) is not None:
-                parts.append(L["geometry.slat.angle_0"].format(v=v))
-            if (v := config.get(CONF_TILT_ANGLE_100)) is not None:
-                parts.append(L["geometry.slat.angle_100"].format(v=v))
+        parts = slat_geometry_parts(config, labels)
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
@@ -237,11 +296,24 @@ class TiltPolicy(CoverTypePolicy, register=True):
         angle_deg: float,
         mode: TiltMode | str,
         sun_through: bool = False,
+        cover: AdaptiveTiltCover | None = None,
     ) -> int:
         """Convert a target slat angle to a tilt percentage that blocks the sun.
 
         Single source of truth for the climate handler's angle → percent
-        translation across MODE1/MODE2.
+        translation.
+
+        Pass *cover* and the answer comes from the engine's own angle→percentage
+        map — the very map the solar path uses — which is the only way the two
+        paths can agree about a calibrated scale. The mode-based arithmetic
+        below is the fallback for callers with no engine in scope (and for a
+        degenerate scale the engine cannot map), and it is a fallback with a
+        known hole: it tests only ``is_mode2`` and otherwise divides by MODE1's
+        90°, so it answers a ``specify_angles`` cover as though its calibration
+        did not exist (issue #1222). That hole is why the engine seam exists;
+        the arithmetic stays because a partial answer beats none where there is
+        no engine, and because MODE1/MODE2 — everything it can actually see —
+        it gets right.
 
         Takes no sun-azimuth argument on purpose. Slat tilt is even in gamma —
         the sun's left/right offset enters the slat geometry only through the
@@ -254,11 +326,21 @@ class TiltPolicy(CoverTypePolicy, register=True):
             sun_through: When True, return the OPEN hemisphere instead of closed
                 (winter heating: let sun reach the window).  Mirrors the
                 ``sun_through`` flag on ``position_for_intent``.
+            cover: The tilt engine, when the caller has one. Its scale — mode,
+                calibrated endpoints, an optional three-point mid-point, a
+                louvered roof's ``max_slat_angle`` — is the authority.
 
         Returns:
             Tilt percentage (0–100) for the cover entity.
 
         """
+        if cover is not None:
+            engine_answer = cover.climate_tilt_percentage(
+                angle_deg, sun_through=sun_through
+            )
+            if engine_answer is not None:
+                return engine_answer
+
         # Normalise mode (accept enum or string for backward compatibility with
         # call sites that historically compared against both forms).
         if not TiltPolicy.is_mode2(mode):

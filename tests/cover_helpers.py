@@ -177,6 +177,7 @@ _TILT_CONFIG_FIELDS = {
     "safety_margin",
     "angle_0",
     "angle_100",
+    "horizontal_percent",
     "max_tilt",
     "min_tilt",
     "min_tilt_sun_only",

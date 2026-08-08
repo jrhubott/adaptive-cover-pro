@@ -80,7 +80,14 @@ def _ctx(
         is_extreme_heat=False,
         policy=policy,
     )
-    cover = SimpleNamespace(valid=valid, mode=mode)
+    # ``climate_tilt_percentage`` returning None is this stub declining the
+    # engine's angle→percentage seam (#1222): it models a mode, not a tilt
+    # scale, so the policy's mode-based formula answers as it always has.
+    cover = SimpleNamespace(
+        valid=valid,
+        mode=mode,
+        climate_tilt_percentage=lambda *args, **kwargs: None,
+    )
     return ClimateContext(
         data=data,
         cover=cover,

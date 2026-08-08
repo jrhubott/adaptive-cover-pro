@@ -176,3 +176,31 @@ def test_off_travel_pivot_still_orders_the_comparator(
     assert cover.coverage_pivot_percentage() == pytest.approx(pivot)
     assert policy.more_protective_position(a, b, cover=cover) == expected
     assert policy.more_protective_position(b, a, cover=cover) == expected
+
+
+@pytest.mark.unit
+def test_cross_pivot_ranking_under_asymmetric_midpoint() -> None:
+    """A three-point calibration breaks percentage-distance ranking (#1222).
+
+    The reporting KNX venetian runs 0°→0 %, 90°→50 %, 130°→100 %: 1.8 °/% below
+    horizontal against 0.8 °/% above it. Percentage distance from the pivot is
+    proportional to distance from maximum openness only while the two sides
+    share a scale, and here they do not.
+
+    40 % is 72° — 18° of closure — while 65 % is 102°, a mere 12°. The
+    percentage metric reads that backwards (15 points from the pivot beats 10)
+    and would command the slat that lets MORE direct sun through, on exactly the
+    cross-pivot pair the anticipation helper produces when the solve crosses
+    horizontal inside a throttle interval.
+    """
+    policy = get_policy("cover_tilt")
+    cover = _mode2_tilt_cover(
+        mode="specify_angles", angle_0=0.0, angle_100=130.0, horizontal_percent=50.0
+    )
+    assert cover.coverage_pivot_percentage() == pytest.approx(50.0)
+    # The physics the ranking has to respect.
+    assert cover._angle_from_percentage(40) == pytest.approx(72.0)
+    assert cover._angle_from_percentage(65) == pytest.approx(102.0)
+
+    assert policy.more_protective_position(40, 65, cover=cover) == 40
+    assert policy.more_protective_position(65, 40, cover=cover) == 40

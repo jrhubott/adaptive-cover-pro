@@ -2029,3 +2029,184 @@ class TestExtremeHeatRule:
         result = sh.normal_with_presence()
         assert result == 0
         assert sh.climate_strategy == ClimateStrategy.EXTREME_HEAT
+
+
+# ---------------------------------------------------------------------------
+# Climate tilt honours the calibrated scale (issue #1222, defect 2)
+# ---------------------------------------------------------------------------
+# ``TiltPolicy.climate_tilt_percentage`` used to test only "is this MODE2?" and
+# fall back to a hardcoded 90° denominator otherwise. ``specify_angles`` is not
+# MODE2, so a calibrated cover's climate tilt was computed on MODE1's scale and
+# ignored ``tilt_angle_0``/``tilt_angle_100`` outright — the solar path honoured
+# the calibration and the climate path silently did not. Passing the engine lets
+# it answer from the same map both paths already share.
+
+
+def _climate_tilt_engine(mock_logger, mock_sun_data, **tilt_overrides):
+    """Tilt engine at a fixed geometry; only the tilt scale varies per case."""
+    return build_tilt_cover(
+        logger=mock_logger,
+        sol_azi=180.0,
+        sol_elev=45.0,
+        sunset_pos=0,
+        sunset_off=0,
+        sunrise_off=0,
+        sun_data=mock_sun_data,
+        fov_left=90,
+        fov_right=90,
+        win_azi=180,
+        h_def=50,
+        max_pos=100,
+        min_pos=0,
+        max_pos_bool=False,
+        min_pos_bool=False,
+        blind_spot_left=None,
+        blind_spot_right=None,
+        blind_spot_elevation=None,
+        blind_spot_on=False,
+        min_elevation=None,
+        max_elevation=None,
+        slat_distance=0.02,
+        depth=0.03,
+        **tilt_overrides,
+    )
+
+
+class TestClimateTiltHonoursTheCalibratedScale:
+    """The climate angle→percent translation reads the engine's map (#1222)."""
+
+    @pytest.mark.unit
+    def test_climate_tilt_honours_specify_angles_calibration(
+        self, mock_logger, mock_sun_data
+    ):
+        """A 0°/130° cover reaches 45° at 35 %, not at the MODE1 scale's 50 %."""
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+        )
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
+                mode=cover.mode,
+                cover=cover,
+            )
+            == 35
+        )
+
+    @pytest.mark.unit
+    def test_climate_tilt_honours_the_midpoint(self, mock_logger, mock_sun_data):
+        """With horizontal calibrated to 50 %, a 45° slat is a quarter of travel."""
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+            horizontal_percent=50.0,
+        )
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
+                mode=cover.mode,
+                cover=cover,
+            )
+            == 25
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("mode", ["mode1", "mode2"])
+    @pytest.mark.parametrize("sun_through", [False, True])
+    def test_preset_modes_answer_identically_with_and_without_the_engine(
+        self, mock_logger, mock_sun_data, mode, sun_through
+    ):
+        """Passing the engine must be a no-op wherever the scale is a preset.
+
+        The hemisphere mirror is gated on the pivot being strictly interior, so
+        MODE1 (pivot 100 %) declines it exactly as the static formula's early
+        return did, and MODE2 (pivot 50 %) takes it exactly as before.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(mock_logger, mock_sun_data, mode=mode)
+        for angle_deg in (CLIMATE_SUMMER_TILT_ANGLE, CLIMATE_DEFAULT_TILT_ANGLE):
+            without = TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg, mode=mode, sun_through=sun_through
+            )
+            with_engine = TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg,
+                mode=mode,
+                sun_through=sun_through,
+                cover=cover,
+            )
+            assert with_engine == without
+
+    @pytest.mark.unit
+    def test_winter_mirror_lands_on_the_calibrated_open_hemisphere(
+        self, mock_logger, mock_sun_data
+    ):
+        """``sun_through`` mirrors across horizontal on the calibrated scale too.
+
+        The mirror is an ANGLE operation (90° + beta), so it has to happen
+        before the map, not on the percentage — on a hinged scale the two are
+        not the same thing.
+        """
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=0.0,
+            angle_100=130.0,
+            horizontal_percent=50.0,
+        )
+        # 90° + 20° = 110°, which the upper segment puts halfway to 100 %.
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=20.0, mode=cover.mode, sun_through=True, cover=cover
+            )
+            == 75
+        )
+
+    @pytest.mark.unit
+    def test_degenerate_calibration_falls_back_to_the_static_formula(
+        self, mock_logger, mock_sun_data
+    ):
+        """A zero-width scale has no map, so the engine declines and the
+        mode-based formula answers as it always did.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = _climate_tilt_engine(
+            mock_logger,
+            mock_sun_data,
+            mode="specify_angles",
+            angle_0=90.0,
+            angle_100=90.0,
+        )
+        assert cover.coverage_pivot_percentage() is None
+        assert TiltPolicy.climate_tilt_percentage(
+            angle_deg=CLIMATE_SUMMER_TILT_ANGLE, mode=cover.mode, cover=cover
+        ) == TiltPolicy.climate_tilt_percentage(
+            angle_deg=CLIMATE_SUMMER_TILT_ANGLE, mode=cover.mode
+        )

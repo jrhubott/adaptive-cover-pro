@@ -466,11 +466,16 @@ class TestTiltMode2DirectionalRounding:
         The solve is the most-open blocking angle, so the commanded integer
         percentage must sit at least as far from horizontal as the solve does.
         Any quantisation toward 90° violates this and lets direct sun through.
+
+        The commanded percentage is turned back into an angle through the
+        engine's own inverse rather than a hand-rolled ``pct/100 · 180``. The
+        two agree exactly on MODE2, but the literal quietly stops testing any
+        calibrated scale — and since #1222 there is a scale it would be flatly
+        wrong about.
         """
         cover = _tilt_cover(sol_elev=sol_elev)
         exact_angle = cover.calculate_position()
-        max_degrees = float(TiltMode.MODE2.max_degrees)
-        commanded_angle = _tilt_solar_position(cover) / 100.0 * max_degrees
+        commanded_angle = cover._angle_from_percentage(_tilt_solar_position(cover))
 
         assert abs(commanded_angle - TILT_HORIZONTAL_DEG) >= abs(
             exact_angle - TILT_HORIZONTAL_DEG
@@ -603,9 +608,8 @@ class TestTiltMode2MinimizeMovements:
         """
         cover = _tilt_cover(sol_elev=sol_elev)
         exact_angle = cover.calculate_position()
-        max_degrees = float(TiltMode.MODE2.max_degrees)
-        commanded_angle = (
-            _tilt_solar_position_minimized(cover, n_steps) / 100.0 * max_degrees
+        commanded_angle = cover._angle_from_percentage(
+            _tilt_solar_position_minimized(cover, n_steps)
         )
 
         assert abs(commanded_angle - TILT_HORIZONTAL_DEG) >= abs(
