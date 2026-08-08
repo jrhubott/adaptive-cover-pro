@@ -97,11 +97,19 @@ class SafetyMarginCalculator:
 
     @staticmethod
     def calculate(gamma: float, sol_elev: float) -> float:
-        """Calculate safety margin multiplier (≥1.0).
+        """Calculate the angle-dependent safety-margin multiplier (>= 1.0).
 
-        Increases blind extension at extreme angles to ensure effective sun blocking:
         - Gamma margin: increases at extreme horizontal angles
         - Elevation margin: increases at very low or high angles
+
+        The tilt axis is the only consumer (`tilt.py`, #783/#1089): a
+        multiplier > 1.0 there closes the slats further, the direction that
+        actually adds slack.
+
+        ⚠️ Do not apply this to the vertical axis's output position — it
+        already sits exactly on the `distance_shaded_area` contract boundary
+        with zero headroom, so multiplying by anything > 1.0 pushes it PAST
+        the boundary and lets more sun in, not less (#1173).
 
         Delegates to the module-level cached :func:`_safety_margin` so the result
         is shared across all instances at the same sun angles.

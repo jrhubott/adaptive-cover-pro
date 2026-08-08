@@ -101,13 +101,13 @@ class TestSafetyMarginCalculatorValues:
         margin = SafetyMarginCalculator.calculate(cover.gamma, cover.sol_elev)
         assert margin == 1.0
 
-    def test_safety_margin_moderate_gamma_returns_baseline(self, base_cover_params):
+    def test_safety_margin_moderate_gamma_returns_baseline(self):
         """Safety margin should be 1.0 for gamma <= 45°."""
         for gamma in [0, 15, 30, 45]:
             margin = SafetyMarginCalculator.calculate(gamma, 45.0)
             assert margin == 1.0, f"Expected 1.0 at gamma={gamma}, got {margin}"
 
-    def test_safety_margin_extreme_gamma_increases(self, base_cover_params):
+    def test_safety_margin_extreme_gamma_increases(self):
         """Safety margin should increase at extreme gamma angles."""
         # Test progressive increase
         margin_60 = SafetyMarginCalculator.calculate(60.0, 45.0)
@@ -117,7 +117,7 @@ class TestSafetyMarginCalculatorValues:
         assert 1.0 < margin_60 < margin_75 < margin_90
         assert margin_90 <= 1.2  # Max 20% increase
 
-    def test_safety_margin_low_elevation_increases(self, base_cover_params):
+    def test_safety_margin_low_elevation_increases(self):
         """Safety margin should increase at low elevations."""
         # Test progressive increase as elevation decreases
         margin_10 = SafetyMarginCalculator.calculate(0.0, 10.0)
@@ -128,7 +128,7 @@ class TestSafetyMarginCalculatorValues:
         assert 1.0 < margin_5 < margin_2
         assert margin_2 <= 1.15  # Max 15% increase
 
-    def test_safety_margin_high_elevation_increases(self, base_cover_params):
+    def test_safety_margin_high_elevation_increases(self):
         """Safety margin should increase at high elevations."""
         # Test progressive increase as elevation increases
         margin_75 = SafetyMarginCalculator.calculate(0.0, 75.0)
@@ -139,7 +139,7 @@ class TestSafetyMarginCalculatorValues:
         assert 1.0 < margin_82 < margin_90
         assert margin_90 <= 1.1  # Max 10% increase
 
-    def test_safety_margin_combined_extremes(self, base_cover_params):
+    def test_safety_margin_combined_extremes(self):
         """Safety margin should combine gamma and elevation effects."""
         # Extreme gamma + low elevation
         margin = SafetyMarginCalculator.calculate(85.0, 5.0)
@@ -149,14 +149,14 @@ class TestSafetyMarginCalculatorValues:
         margin = SafetyMarginCalculator.calculate(85.0, 85.0)
         assert 1.2 < margin <= 1.30  # ~20% + ~6.7% combined
 
-    def test_safety_margin_symmetric_gamma(self, base_cover_params):
+    def test_safety_margin_symmetric_gamma(self):
         """Safety margin should be symmetric for positive/negative gamma."""
         margin_pos = SafetyMarginCalculator.calculate(70.0, 45.0)
         margin_neg = SafetyMarginCalculator.calculate(-70.0, 45.0)
 
         assert margin_pos == margin_neg
 
-    def test_safety_margin_smoothstep_interpolation(self, base_cover_params):
+    def test_safety_margin_smoothstep_interpolation(self):
         """Safety margin should use smooth interpolation (no sharp transitions)."""
         # Test smooth transition in gamma range
         margins = [

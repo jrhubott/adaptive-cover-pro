@@ -193,8 +193,8 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         Factored out of ``calculate_position`` so pitched-glass cover types
         (roof / skylight windows) can re-project the *same* effective distance
         onto a tilted plane without duplicating the surrounding edge-case /
-        window-depth / sill / safety-margin pipeline (CODING_GUIDELINES.md
-        "Code duplication is not okay").
+        window-depth / sill pipeline (CODING_GUIDELINES.md "Code duplication
+        is not okay").
 
         The divisor comes from the shared one-sided ``clamped_cos_gamma`` guard
         (#1030); the raw ``cos_gamma`` is still returned for the #682 trace.
@@ -349,16 +349,16 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                     cos_gamma_clamped=float(cos_gamma_clamped),
                     path_length=float(path_length),
                     base_height=float(base_height),
-                    # No safety margin is applied on the gate path (it returns
-                    # before that step), so report it consistent with every
-                    # other branch: adjusted_height_m == base_height_m *
-                    # safety_margin (#1169 audit). The gated height that
-                    # actually drove the full-open decision is still fully
-                    # recoverable as base_height_m + window_depth_contribution_m
-                    # (the lintel shadow), so nothing is lost. The trade is
-                    # that clamped_to_window is now True here while
-                    # adjusted_height_m sits below h_win — on this path the
-                    # flag reports the gated height, not the adjusted one.
+                    # The vertical axis has no safety-margin step at all now
+                    # (#1173), so report the gate path consistent with every
+                    # other branch: adjusted_height_m == base_height_m. The
+                    # gated height that actually drove the full-open decision
+                    # is still fully recoverable as base_height_m +
+                    # window_depth_contribution_m (the lintel shadow), so
+                    # nothing is lost. The trade is that clamped_to_window is
+                    # now True here while adjusted_height_m sits below h_win —
+                    # on this path the flag reports the gated height, not the
+                    # adjusted one.
                     adjusted_height=float(base_height),
                     result=result,
                     clamped_to_window=clamped_to_window,

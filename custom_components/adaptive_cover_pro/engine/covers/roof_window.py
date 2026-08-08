@@ -9,7 +9,7 @@ vertical wall.
 
 The engine subclasses :class:`AdaptiveVerticalCover` and reuses its edge-case
 handling, window-depth/sill effective-distance pipeline, ``cos(gamma)`` clamp,
-safety margin, and final clamp to the travel length. Only the projection and the
+and final clamp to the travel length. Only the projection and the
 illumination / ridge gates change.
 
 Geometry (vectors in a frame whose ``d̂_h`` is the down-slope *horizontal*
