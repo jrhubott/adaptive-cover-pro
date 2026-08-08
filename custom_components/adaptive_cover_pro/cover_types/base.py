@@ -33,6 +33,7 @@ from ..const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    COVERAGE_DISTANCE_TIE_EPS,
     POSITION_CLOSED,
     POSITION_OPEN,
     GroupScene,
@@ -94,7 +95,6 @@ AXIS_NAME_TILT = "tilt"
 AXIS_VALUE_MIN = 0
 AXIS_VALUE_MAX = 100
 AXIS_VALUE_UNIT = "%"
-
 
 # ---------------------------------------------------------------------------
 # Config-flow entity-selector filters
@@ -1439,34 +1439,69 @@ class CoverTypePolicy(ABC):
         the engine where coverage bottoms out and rank by DISTANCE from it
         instead (issue #1104).
 
-        Percentage distance is the right metric because the percentage↔angle map
-        is globally linear on every scale this hook sees (MODE1, MODE2, the
-        louvered roof's ``max_slat_angle``, and the affine ``specify_angles``
-        calibration), so ``|pct − pivot_pct|`` is proportional to
-        ``|angle − 90°|`` on both sides at once — no per-side scaling needed.
-        Linearity is also why this comparator needs no range check on the pivot:
-        proportionality does not care whether the pivot is reachable, so a scale
-        calibrated entirely to one side of horizontal (``max_slat_angle`` under
-        90°, a one-sided ``specify_angles`` pair) is still ranked correctly — and
-        an INVERTED such calibration, where ``axes[0]``'s static flag has the
-        covering end backwards, is ranked correctly only this way. The
-        coverage-step quantiser reaches the same conclusion from the same pivot
-        by a different route (it clamps the pivot onto the reachable travel,
-        because it anchors arithmetic on it rather than ordering by it), and the
-        two must not disagree about which end of one engine covers.
+        HOW FAR from the pivot is the engine's question, not this policy's.
+        ``AdaptiveGeneralCover.coverage_distance`` answers it, and its base
+        answer is the ``|pct − pivot_pct|`` this method used to compute inline —
+        correct while the percentage↔angle map is globally affine (MODE1, MODE2,
+        the louvered roof's ``max_slat_angle``, a two-point ``specify_angles``
+        pair), because percentage distance is then proportional to
+        ``|angle − 90°|`` on both sides at once and the constant cancels out of
+        the comparison. A three-point tilt calibration (#1222) hinges the map at
+        the pivot, giving the two sides different degrees-per-percent, so the
+        constant stops cancelling and a cross-pivot pair can rank backwards.
+        The tilt engine therefore overrides the metric to measure degrees off
+        horizontal directly — proportional to the base answer on every affine
+        scale, and the only correct one under a hinge. Asking the engine is what
+        keeps this policy out of the business of knowing either.
+
+        The pivot is still read here, and read FIRST, because it answers a
+        different question: whether this axis is bi-directional at all. ``None``
+        means coverage is monotonic in the percentage, and then the axis rule
+        below is the whole story — there is no pivot to measure from and the
+        distance metric is not consulted.
+
+        That read is also what makes the two distances below plain floats. Both
+        are typed ``float | None``, and neither is checked, because
+        ``coverage_distance`` answers ``None`` on exactly the engines whose pivot
+        is ``None`` — a coupling stated in its own docstring and pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_a_distance_exists_wherever_a_pivot_does``. Adding a ``None`` check
+        here instead would be the wrong repair: it would let an engine answer
+        "no distance" while claiming a pivot, which is not a state the metric
+        has any meaning in.
+
+        No range check on the pivot is needed, on either metric: neither
+        proportionality nor an angle measurement cares whether the pivot is
+        reachable, so a scale calibrated entirely to one side of horizontal
+        (``max_slat_angle`` under 90°, a one-sided ``specify_angles`` pair) is
+        still ranked correctly — and an INVERTED such calibration, where
+        ``axes[0]``'s static flag has the covering end backwards, is ranked
+        correctly only this way. The coverage-step quantiser reaches the same
+        conclusion from the same pivot by a different route (it clamps the pivot
+        onto the reachable travel, because it anchors arithmetic on it rather
+        than ordering by it), and the two must not disagree about which end of
+        one engine covers.
 
         *cover* is keyword-only and defaults to ``None`` so callers with no
         engine in scope, and every monotonic axis, keep the exact behaviour they
         had. Equal distances fall through to the axis rule rather than being
         decided here, which keeps the symmetric straddle (``30``/``70`` on MODE2,
         both 36° off horizontal) answering ``30`` as it always has.
+
+        "Equal" is measured to ``COVERAGE_DISTANCE_TIE_EPS`` and NOT exactly.
+        The percentage metric these ties used to be scored on was exact
+        arithmetic on integers; measuring in degrees is not, and an exact ``!=``
+        turned the ulp between ``44 → 79.2°`` and ``56 → 100.8°`` into a real
+        difference — 13 symmetric MODE2 pairs flipped to the far side of the
+        axis rule, up to an 82-point command swing (#1222 audit). Pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_symmetric_mode2_pairs_all_fall_through_to_the_axis_rule``.
         """
-        if cover is not None:
-            pivot = cover.coverage_pivot_percentage()
-            if pivot is not None:
-                distance_a, distance_b = abs(a - pivot), abs(b - pivot)
-                if distance_a != distance_b:
-                    return a if distance_a > distance_b else b
+        if cover is not None and cover.coverage_pivot_percentage() is not None:
+            distance_a = cover.coverage_distance(a)
+            distance_b = cover.coverage_distance(b)
+            if abs(distance_a - distance_b) > COVERAGE_DISTANCE_TIE_EPS:
+                return a if distance_a > distance_b else b
         if self.axes[0].open_blocks_sun:
             return max(a, b)
         return min(a, b)

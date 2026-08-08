@@ -170,6 +170,7 @@ from .const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TRANSIT_TIMEOUT,
     CONF_TRANSPARENT_BLIND,
@@ -2012,6 +2013,12 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_TILT_ANGLE_100,
+    ),
+    FieldSpec(
+        CONF_TILT_HORIZONTAL_PERCENT,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_TILT_HORIZONTAL_PERCENT,
     ),
     FieldSpec(
         CONF_MAX_TILT, SECTION_GEOMETRY, ValidatorKind.RANGE, rng=const._RANGE_MAX_TILT

@@ -556,6 +556,14 @@ class TiltConfig:
     # TiltConfig built without explicit endpoints matches the config path.
     angle_0: float = 0.0
     angle_100: float = 180.0
+    # Optional third calibration point for the specify-angles mode (issue
+    # #1222): the reported tilt percentage at which the slats sit exactly
+    # horizontal. ``0.0`` (the default, mirroring
+    # const.DEFAULT_TILT_HORIZONTAL_PERCENT) is the DISABLED sentinel — the
+    # scale is then the plain two-point affine one. A strictly interior value
+    # hinges it into two straight segments meeting at TILT_HORIZONTAL_DEG; see
+    # ``AdaptiveTiltCover._hinge_percent`` for the full validity rule.
+    horizontal_percent: float = 0.0
     max_tilt: int = 100
     min_tilt: int = 0
     # When True, the corresponding tilt limit is only enforced during active sun

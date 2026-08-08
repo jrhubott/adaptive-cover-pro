@@ -164,10 +164,17 @@ def _intent_block_sun(ctx: ClimateContext) -> int:
     return ctx.data.policy.position_for_intent(sun_through=False)
 
 
+# Every tilt rule hands the engine over as well as the mode. The engine owns
+# the angle→percentage map the solar path already uses, so passing it is what
+# stops the climate answer being computed on a different scale than the solar
+# one for any cover whose travel is calibrated rather than preset (#1222).
+
+
 def _tilt_summer(ctx: ClimateContext) -> int:
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=CLIMATE_SUMMER_TILT_ANGLE,
         mode=ctx.cover.mode,
+        cover=ctx.cover,
     )
 
 
@@ -175,6 +182,7 @@ def _tilt_default(ctx: ClimateContext) -> int:
     return TiltPolicy.climate_tilt_percentage(
         angle_deg=CLIMATE_DEFAULT_TILT_ANGLE,
         mode=ctx.cover.mode,
+        cover=ctx.cover,
     )
 
 
@@ -185,6 +193,7 @@ def _tilt_winter_mode2(ctx: ClimateContext) -> int:
         angle_deg=ctx.beta_deg,
         mode=ctx.cover.mode,
         sun_through=True,
+        cover=ctx.cover,
     )
 
 

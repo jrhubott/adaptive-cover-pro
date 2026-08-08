@@ -261,7 +261,8 @@
       "spacing": "espacement {v}cm",
       "mode": "mode : {v}",
       "angle_0": "angle 0 % {v}°",
-      "angle_100": "angle 100 % {v}°"
+      "angle_100": "angle 100 % {v}°",
+      "horizontal_percent": "horizontale à {v}%"
     },
     "oscillating": {
       "arm": "bras {v}m",

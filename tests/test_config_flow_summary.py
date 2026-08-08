@@ -393,6 +393,45 @@ def test_geometry_tilt_shows_tilt_fields():
     assert "mode1" in summary
 
 
+def test_geometry_tilt_shows_the_three_point_midpoint():
+    """The mid-point renders on specify_angles, and only when set (#1222).
+
+    Both tilt-only and venetian, because the geometry fragment is shared but the
+    two summary renderers are not.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_TILT_ANGLE_0,
+        CONF_TILT_ANGLE_100,
+        CONF_TILT_HORIZONTAL_PERCENT,
+    )
+
+    base = {
+        CONF_TILT_DEPTH: 8.5,
+        CONF_TILT_DISTANCE: 8.0,
+        CONF_TILT_MODE: "specify_angles",
+        CONF_TILT_ANGLE_0: 0,
+        CONF_TILT_ANGLE_100: 130,
+    }
+    for cover_type in (CoverType.TILT, CoverType.VENETIAN):
+        enabled = _build_config_summary(
+            {**base, CONF_TILT_HORIZONTAL_PERCENT: 50}, cover_type
+        )
+        assert "horizontal at 50%" in enabled
+
+        # The 0 sentinel is the disabled state — nothing to report.
+        disabled = _build_config_summary(
+            {**base, CONF_TILT_HORIZONTAL_PERCENT: 0}, cover_type
+        )
+        assert "horizontal at" not in disabled
+
+        # On a preset mode the whole calibration block is inert, mid-point too.
+        preset = _build_config_summary(
+            {**base, CONF_TILT_MODE: "mode2", CONF_TILT_HORIZONTAL_PERCENT: 50},
+            cover_type,
+        )
+        assert "horizontal at" not in preset
+
+
 def test_geometry_louvered_roof_shows_slat_and_pitch_fields():
     """Louvered roof renders the shared slat block plus the roof-plane pitch."""
     from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH

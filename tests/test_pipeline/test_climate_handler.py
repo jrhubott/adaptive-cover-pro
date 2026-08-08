@@ -1098,6 +1098,10 @@ def _make_tilt_cover(
     cover.calculate_percentage = MagicMock(return_value=50.0)
     cover.calculate_raw_percentage = MagicMock(return_value=50.0)
     cover.calculate_position = MagicMock(return_value=90.0)
+    # This double models a MODE/geometry pair, not a tilt SCALE, so it declines
+    # the engine's angle→percentage seam (#1222) and the policy's mode-based
+    # formula answers — the path these tests have always exercised.
+    cover.climate_tilt_percentage = MagicMock(return_value=None)
     cover.gamma = gamma_deg  # SunGeometry.gamma is in degrees
     cover.beta = 0.0
     cover.mode = mode

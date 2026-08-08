@@ -193,6 +193,7 @@ from .const import (
     CONF_TILT_ANGLE_100,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
+    CONF_TILT_HORIZONTAL_PERCENT,
     CONF_TILT_MODE,
     CONF_TILT_SAFETY_MARGIN,
     CONF_VENETIAN_TILT_TRANSFORM,
@@ -348,7 +349,10 @@ from .cover_types import (  # noqa: E402
 )
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
-from .cover_types.tilt import GEOMETRY_TILT_SCHEMA  # noqa: E402, F401
+from .cover_types.tilt import (  # noqa: E402
+    GEOMETRY_TILT_SCHEMA,  # noqa: F401
+    tilt_horizontal_percent_error,
+)
 from .cover_types.venetian import GEOMETRY_VENETIAN_SCHEMA  # noqa: E402, F401
 from .unit_system import (  # noqa: E402
     options_to_display,
@@ -502,12 +506,23 @@ def _blind_spot_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
 
 
 def _tilt_angle_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
-    """Return errors for explicit tilt endpoint ordering."""
+    """Return errors for the explicit tilt endpoint calibration.
+
+    Endpoint ordering, plus the optional three-point mid-point (#1222). The
+    mid-point rule is not restated here — it is
+    ``cover_types.tilt.tilt_horizontal_percent_error``, the same wrapper the
+    ``set_geometry`` service calls, over the same
+    ``engine.covers.tilt.hinge_is_usable`` predicate the engine's map is gated
+    on. One rule, three consumers.
+    """
     angle_0 = user_input.get(CONF_TILT_ANGLE_0)
     angle_100 = user_input.get(CONF_TILT_ANGLE_100)
-    if angle_0 is None or angle_100 is None or angle_0 < angle_100:
-        return {}
-    return {CONF_TILT_ANGLE_100: "Must be greater than tilt_angle_0"}
+    if angle_0 is not None and angle_100 is not None and angle_0 >= angle_100:
+        return {CONF_TILT_ANGLE_100: "Must be greater than tilt_angle_0"}
+    message = tilt_horizontal_percent_error(user_input)
+    if message is not None:
+        return {CONF_TILT_HORIZONTAL_PERCENT: message}
+    return {}
 
 
 def _forecast_temp_source_notice(source: str | None, weather_entity: str | None) -> str:
@@ -3558,6 +3573,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TILT_MODE,
             CONF_TILT_ANGLE_0,
             CONF_TILT_ANGLE_100,
+            CONF_TILT_HORIZONTAL_PERCENT,
             # Shared tilt-axis limit/shape controls (#964): now part of the
             # tilt geometry fragment reached by tilt-only, louvered-roof, and
             # venetian covers, so they sync with the tilt geometry above.

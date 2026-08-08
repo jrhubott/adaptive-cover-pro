@@ -421,6 +421,130 @@ class TestFieldValidators:
                 {},
             )
 
+    def test_tilt_horizontal_percent_validates_range(self):
+        """Coarse bound, plus the ``0`` disabled sentinel (#1222)."""
+        FIELD_VALIDATORS["tilt_horizontal_percent"](0)
+        FIELD_VALIDATORS["tilt_horizontal_percent"](50)
+        FIELD_VALIDATORS["tilt_horizontal_percent"](100)
+        FIELD_VALIDATORS["tilt_horizontal_percent"](None)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_horizontal_percent"](-1)
+
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS["tilt_horizontal_percent"](101)
+
+    def test_tilt_horizontal_percent_accepted_on_a_straddling_calibration(self):
+        """The reporter's blind: 0° → 0 %, horizontal → 50 %, 130° → 100 %."""
+        validate_options_patch(
+            {"tilt_angle_0": 0, "tilt_angle_100": 130, "tilt_horizontal_percent": 50},
+            {},
+        )
+        # And the sentinel is always fine, whatever the endpoints are.
+        validate_options_patch(
+            {"tilt_horizontal_percent": 0},
+            {"tilt_angle_0": 100, "tilt_angle_100": 170},
+        )
+
+    def test_tilt_horizontal_percent_must_be_strictly_interior(self):
+        """0 is the OFF switch and 100 would collapse the upper segment."""
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch(
+                {
+                    "tilt_angle_0": 0,
+                    "tilt_angle_100": 130,
+                    "tilt_horizontal_percent": 100,
+                },
+                {},
+            )
+
+    def test_tilt_horizontal_percent_requires_endpoints_to_straddle_horizontal(self):
+        """A hinge needs a horizontal slat inside the travel to sit on."""
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch(
+                {
+                    "tilt_angle_0": 100,
+                    "tilt_angle_100": 170,
+                    "tilt_horizontal_percent": 50,
+                },
+                {},
+            )
+        # The stored side of the pair counts too — a patch that moves only the
+        # endpoint must not sneak past an already-stored mid-point.
+        with pytest.raises(ServiceValidationError):
+            validate_options_patch(
+                {"tilt_angle_0": 100},
+                {"tilt_angle_100": 170, "tilt_horizontal_percent": 50},
+            )
+
+    def test_tilt_horizontal_percent_is_settable_through_set_geometry(self):
+        """The key has to be in the geometry section or the service drops it."""
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            _SECTION_GEOMETRY_ALL,
+        )
+
+        assert "tilt_horizontal_percent" in _SECTION_GEOMETRY_ALL
+
+
+class TestTiltHorizontalPercentConfigFlowStep:
+    """The config-flow half of the same cross-field rule (#1222)."""
+
+    def test_flow_accepts_a_straddling_calibration(self):
+        from custom_components.adaptive_cover_pro.config_flow import (
+            _tilt_angle_step_errors,
+        )
+
+        assert (
+            _tilt_angle_step_errors(
+                {
+                    "tilt_angle_0": 0,
+                    "tilt_angle_100": 130,
+                    "tilt_horizontal_percent": 50,
+                }
+            )
+            == {}
+        )
+
+    def test_flow_accepts_the_disabled_sentinel_on_any_calibration(self):
+        from custom_components.adaptive_cover_pro.config_flow import (
+            _tilt_angle_step_errors,
+        )
+
+        assert (
+            _tilt_angle_step_errors(
+                {
+                    "tilt_angle_0": 100,
+                    "tilt_angle_100": 170,
+                    "tilt_horizontal_percent": 0,
+                }
+            )
+            == {}
+        )
+
+    @pytest.mark.parametrize(
+        ("angle_0", "angle_100", "hp"),
+        [
+            (0, 130, 100),  # not strictly interior
+            (100, 170, 50),  # horizontal below the travel
+            (0, 80, 50),  # horizontal above the travel
+        ],
+    )
+    def test_flow_rejects_a_midpoint_the_calibration_cannot_carry(
+        self, angle_0, angle_100, hp
+    ):
+        from custom_components.adaptive_cover_pro.config_flow import (
+            _tilt_angle_step_errors,
+        )
+
+        errors = _tilt_angle_step_errors(
+            {
+                "tilt_angle_0": angle_0,
+                "tilt_angle_100": angle_100,
+                "tilt_horizontal_percent": hp,
+            }
+        )
+        assert "tilt_horizontal_percent" in errors
+
     def test_blind_spot_elevation_mode_select(self):
         """Every slot's elevation-mode validator accepts below/above/None (#702)."""
         from custom_components.adaptive_cover_pro.const import BLIND_SPOT_SLOTS
