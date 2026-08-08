@@ -412,8 +412,19 @@ class AdaptiveGeneralCover(ABC):
         space, which is proportional to this on every affine map and the only
         correct answer under a hinge.
 
-        ``None`` mirrors :meth:`coverage_pivot_percentage`: no pivot, no
-        distance-from-it, and the caller falls back to its axis rule.
+        ``None`` mirrors :meth:`coverage_pivot_percentage` — and mirrors it
+        EXACTLY, which is a contract on every override rather than a
+        convenience. ``CoverTypePolicy.more_protective_position`` is the sole
+        caller, and it reads the pivot FIRST and then subtracts two distances
+        without checking either for ``None``; an override that could decline a
+        distance while still reporting a pivot would raise ``TypeError`` inside
+        the comparator, not fall back to the axis rule. The two implementations
+        satisfy the coupling by deriving both answers from the same
+        degenerate-scale test: this one reads the pivot directly, and the slat
+        override declines on exactly the scales whose forward map declines.
+        Pinned by ``tests/test_cover_types/test_protective.py`` ::
+        ``test_a_distance_exists_wherever_a_pivot_does`` — an override that
+        needs to say "no ordering here" must say it through the pivot.
         """
         pivot = self.coverage_pivot_percentage()
         if pivot is None:

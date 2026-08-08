@@ -133,7 +133,7 @@
           "awning_shade_mode": "Markisen-Beschattungsmodus",
           "day_night_concurrent_rail_travel": "Schienen gemeinsam bewegen (Dual-Entity-Modell)",
           "day_night_external_command_interlock": "Nicht erreichbare Schienenbefehle korrigieren (Dual-Entity-Modell)",
-          "tilt_horizontal_percent": "Neigungsprozentsatz bei Horizontal"
+          "tilt_horizontal_percent": "Neigungsprozentsatz bei horizontal"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -442,7 +442,7 @@
           "awning_shade_mode": "Markisen-Beschattungsmodus",
           "day_night_concurrent_rail_travel": "Schienen gemeinsam bewegen (Dual-Entity-Modell)",
           "day_night_external_command_interlock": "Nicht erreichbare Schienenbefehle korrigieren (Dual-Entity-Modell)",
-          "tilt_horizontal_percent": "Neigungsprozentsatz bei Horizontal"
+          "tilt_horizontal_percent": "Neigungsprozentsatz bei horizontal"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",

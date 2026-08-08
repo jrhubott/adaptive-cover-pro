@@ -363,10 +363,15 @@ class TiltPolicy(CoverTypePolicy, register=True):
 
         Returns:
             Tilt percentage (0–100) for the cover entity. Every path pins the
-            answer onto that scale via ``clamp_to_percentage_scale`` — the
-            engine's map is deliberately unclamped so an off-travel pivot keeps
-            ordering correctly, which means the last step before a COMMAND is
-            where the range promise has to be kept (#1222 audit).
+            answer onto that scale before returning it — the engine's map is
+            deliberately unclamped so an off-travel pivot keeps ordering
+            correctly, which means the last step before a COMMAND is where the
+            range promise has to be kept (#1222 audit). The two paths pin
+            DIFFERENTLY, and only because one of them can do better: the engine
+            knows where coverage bottoms out on its own scale, so it answers an
+            unreachable target with the end that serves the request's intent
+            (``AdaptiveTiltCover._pin_climate_target``), while the fallback
+            below has only a mode and takes the nearest end.
 
         """
         if cover is not None:

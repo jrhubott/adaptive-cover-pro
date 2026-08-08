@@ -1482,6 +1482,16 @@ class CoverTypePolicy(ABC):
         below is the whole story — there is no pivot to measure from and the
         distance metric is not consulted.
 
+        That read is also what makes the two distances below plain floats. Both
+        are typed ``float | None``, and neither is checked, because
+        ``coverage_distance`` answers ``None`` on exactly the engines whose pivot
+        is ``None`` — a coupling stated in its own docstring and pinned by
+        ``tests/test_cover_types/test_protective.py`` ::
+        ``test_a_distance_exists_wherever_a_pivot_does``. Adding a ``None`` check
+        here instead would be the wrong repair: it would let an engine answer
+        "no distance" while claiming a pivot, which is not a state the metric
+        has any meaning in.
+
         No range check on the pivot is needed, on either metric: neither
         proportionality nor an angle measurement cares whether the pivot is
         reachable, so a scale calibrated entirely to one side of horizontal

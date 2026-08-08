@@ -174,6 +174,45 @@ def test_pivotless_engine_falls_back() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "tilt_overrides",
+    [
+        {},
+        {"mode": "mode1"},
+        {"mode": "specify_angles", "angle_0": 0.0, "angle_100": 130.0},
+        {
+            "mode": "specify_angles",
+            "angle_0": 0.0,
+            "angle_100": 130.0,
+            "horizontal_percent": 50.0,
+        },
+        {"mode": "specify_angles", "angle_0": 120.0, "angle_100": 180.0},
+        # Zero-width scale: no pivot, and therefore no distance either.
+        {"mode": "specify_angles", "angle_0": 90.0, "angle_100": 90.0},
+    ],
+)
+def test_a_distance_exists_wherever_a_pivot_does(tilt_overrides) -> None:
+    """The comparator's unstated precondition, made a test (#1222 audit).
+
+    ``more_protective_position`` reads the pivot, and on the strength of that
+    read alone subtracts two ``coverage_distance`` answers. It never checks them
+    for ``None``, so an engine that could report a pivot and then decline a
+    distance would raise ``TypeError`` inside the comparator rather than fall
+    back to the axis rule. Both implementations satisfy the coupling by deriving
+    the two answers from the same degenerate-scale test — the base one by
+    construction, the slat one because its inverse declines on exactly the
+    scales its forward map does — and this pins it so an override cannot quietly
+    break it. The pivot-first read in the comparator is what the coupling buys,
+    and ``test_pivotless_engine_falls_back`` above is why it cannot be collapsed
+    into a distance-only check.
+    """
+    cover = _mode2_tilt_cover(**tilt_overrides)
+    has_pivot = cover.coverage_pivot_percentage() is not None
+    for pct in (0, 37, 100):
+        assert (cover.coverage_distance(pct) is not None) is has_pivot
+
+
+@pytest.mark.unit
 def test_proportional_band_is_ranked_in_command_space() -> None:
     """The #957 band transform does not move the pivot (#1104 audit).
 
