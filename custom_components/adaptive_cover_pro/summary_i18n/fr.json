@@ -229,8 +229,8 @@
   "cover_types": {
     "blind": "Store vertical",
     "awning": "Store banne horizontal",
-    "tilt": "Store vénitien / inclinaison",
-    "oscillating_awning": "Store oscillant",
+    "tilt": "Store vénitien (inclinaison seule)",
+    "oscillating_awning": "Store à projection",
     "venetian": "Store vénitien (deux axes)",
     "roof_window": "Fenêtre de toit",
     "sliding_curtain": "Rideau coulissant",

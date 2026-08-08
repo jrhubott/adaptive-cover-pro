@@ -150,7 +150,7 @@
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
           "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s.",
-          "arm_length": "Länge des Schwenkarmes einer Gelenkarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
+          "arm_length": "Länge des Schwenkarmes einer Fallarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
           "awning_min_angle": "Armwinkel, wenn die Markise vollständig geschlossen/eingezogen ist (0–180°). Normalerweise 0° = Arm vertikal an der Wand. Definiert den Anfang des Schwenkbereichs.",
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
@@ -440,7 +440,7 @@
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
           "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
           "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s.",
-          "arm_length": "Länge des Schwenkarmes einer Gelenkarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
+          "arm_length": "Länge des Schwenkarmes einer Fallarmmarkise, vom Wandpivot bis zur Stoffkante. In der für Home Assistant konfigurierten Einheit dargestellt. Wird zusammen mit dem Schwenkwinkel verwendet, um zu berechnen, wie weit der Stoff bei jeder Öffnungsposition reicht. Beispiel: 0,8 m / 31 in.",
           "awning_min_angle": "Armwinkel, wenn die Markise vollständig geschlossen/eingezogen ist (0–180°). Normalerweise 0° = Arm vertikal an der Wand. Definiert den Anfang des Schwenkbereichs.",
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
@@ -1079,12 +1079,12 @@
       },
       "change_cover_type": {
         "data": {
-          "sensor_type": "Neuer Beschattungstyp"
+          "sensor_type": "Beschattungstyp"
         },
         "data_description": {
-          "sensor_type": "Der Beschattungstyp, zu dem diese Instanz wechselt. Sie bestätigen im nächsten Bildschirm und geben dann die Geometrie des neuen Typs ein."
+          "sensor_type": "Startet mit dem Typ, den diese Instanz derzeit hat. Wählen Sie einen anderen, um zu wechseln – Sie bestätigen im nächsten Bildschirm und geben dann die Geometrie des neuen Typs ein. Wenn Sie ihn unverändert lassen, ändert sich nichts."
         },
-        "description": "Diese Instanz ist derzeit vom Typ **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nEs werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
+        "description": "Diese Instanz ist derzeit vom Typ **{current_type}**. Wählen Sie den Beschattungstyp aus, zu dem sie werden soll – jede Entität behält ihre aktuelle Entitäts-ID, damit Ihre Dashboards und Automatisierungen weiterhin funktionieren.\n\nAbgesehen vom aktuellen Typ werden nur Typen aufgelistet, die Ihre gebundenen Beschattungen tatsächlich steuern können. Hier nicht angeboten:\n\n{blocked_types}\n\n[Mehr erfahren]({learn_more})",
         "title": "Beschattungstyp ändern"
       },
       "change_cover_type_confirm": {
@@ -1093,6 +1093,13 @@
         },
         "description": "Wechsel von **{from_type}** zu **{to_type}**.\n\nEinstellungen, die nur der alte Typ verwendet, bleiben gespeichert und werden nicht gelöscht, sodass ein Zurückwechsel sie intakt vorfindet. Nach dem Wechsel derzeit inaktiv:\n\n{stranded_options}\n\nFunktionseigenschaften für den neuen Typ:\n\n{capability_notes}\n\nPositionspolarität:\n\n{position_polarity}\n\nJede Entität behält ihre Entitäts-ID. Typspezifische Entitäten, die der neue Typ nicht bereitstellt, bleiben in der Entitätsregistrierung als nicht verfügbar und werden wiederhergestellt, wenn Sie zurückwechseln. Füllen Sie nach der Bestätigung die Geometrie des neuen Typs aus und beenden Sie mit Speichern und schließen, um die Änderung anzuwenden.",
         "title": "Beschattungstyp ändern – Bestätigung"
+      },
+      "change_cover_type_revert_confirm": {
+        "title": "Beschattungstyp ändern – Ausstehenden Wechsel abbrechen",
+        "description": "In diesem Dialog wartet ein ungespeicherter Wechsel zu **{pending_type}** darauf, angewendet zu werden. Wenn Sie dies bestätigen, wird er verworfen: Diese Instanz bleibt **{from_type}**, und die Einstellungen, die der ausstehende Wechsel geändert hat, werden auf ihren Zustand beim Öffnen des Dialogs zurückgesetzt.\n\nSo oder so wurde bisher nichts geschrieben, daher ist keine Entität betroffen und es wird nichts neu geladen. Überprüfen Sie nach der Bestätigung die Geometrie und beenden Sie mit Speichern und schließen.",
+        "data": {
+          "confirm": "Ausstehende Beschattungstypänderung abbrechen"
+        }
       },
       "calibration": {
         "description": "Messen Sie, wie diese Beschattung tatsächlich funktioniert, und speichern Sie die Messergebnisse.\n\n**Positionskalibrierung** ordnet die von Adaptive Cover Pro berechnete Position der Zahl zu, die Ihre Beschattung erreichen muss. **Laufzeit** speichert, wie lange ein vollständiges Öffnen oder Schließen dauert, sodass Dashboards die Bewegung der Beschattung anzeigen können, statt sie zu springen.",
@@ -1329,14 +1336,14 @@
       "options": {
         "cover_blind": "Vertikale Jalousie",
         "cover_awning": "Horizontale Markise",
-        "cover_tilt": "Dreh-Jalousie",
-        "cover_venetian": "Jalousette (zweiachsig)",
-        "cover_oscillating_awning": "Gelenkarmmarkise (drop-arm)",
+        "cover_tilt": "Jalousie (nur Neigung)",
+        "cover_venetian": "Jalousie (zweiachsig)",
+        "cover_oscillating_awning": "Fallarmmarkise",
         "cover_roof_window": "Dachfenster",
         "cover_sliding_curtain": "Schiebevorhang (horizontal)",
         "cover_louvered_roof": "Lamellendach",
         "cover_day_night_shade": "Tag/Nacht-Rollo (Doppelstoff)",
-        "cover_dual_panel": "Doppelpaneel (transparent + Verdunkelung)"
+        "cover_dual_panel": "Doppelpaneel-Beschattung (transparent + Verdunkelung)"
       }
     },
     "tilt_mode": {
