@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.helpers import compute_default_tilt
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
     PipelineResult,
@@ -934,6 +935,87 @@ class TestDefaultHandler:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.tilt == 80
+
+    # -- "Use My at sunset" keeps the sunset tilt (issue #1214) -------------
+
+    def test_sunset_use_my_branch_still_carries_sunset_tilt(self) -> None:
+        """The My-preset branch substitutes the POSITION only — the tilt stays.
+
+        ``DefaultHandler`` is the one handler that is at its default by
+        construction on every branch: "Use My at sunset" routes the position
+        through the cover's hardware My preset, but the slats still owe the
+        configured ``sunset_tilt``. Nothing locked this before (#1214 round-2
+        finding 3) — ``test_my_position.py`` and ``test_default_handler.py``
+        only assert ``position``/``use_my_position`` — so a later "make every
+        handler consistent" edit could have gated this branch and silently
+        dropped the sunset tilt with the whole suite still green.
+        """
+        snap = make_snapshot(
+            is_sunset_active=True,
+            sunset_use_my=True,
+            my_position_value=88,
+            sunset_tilt=0,
+            default_tilt=50,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.position == 88
+        assert result.tilt == 0
+
+    def test_sunset_use_my_branch_falls_back_to_default_tilt(self) -> None:
+        """Same branch, no sunset_tilt configured: the default_tilt fallback rides along."""
+        snap = make_snapshot(
+            is_sunset_active=True,
+            sunset_use_my=True,
+            my_position_value=88,
+            default_tilt=50,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.tilt == 50
+
+
+# ---------------------------------------------------------------------------
+# compute_default_tilt — the shared helper DefaultHandler delegates to
+# (issue #1214: extracted so higher-priority handlers that answer with the
+# effective default position can also carry the effective default tilt).
+# ---------------------------------------------------------------------------
+
+
+class TestComputeDefaultTilt:
+    """Direct tests of pipeline.helpers.compute_default_tilt(snapshot)."""
+
+    def test_returns_none_when_neither_tilt_configured(self) -> None:
+        """No sunset_tilt, no default_tilt → None."""
+        snap = make_snapshot()
+        assert compute_default_tilt(snap) is None
+
+    def test_sunset_tilt_wins_when_sunset_active(self) -> None:
+        """sunset_tilt takes precedence during the sunset window."""
+        snap = make_snapshot(is_sunset_active=True, sunset_tilt=0, default_tilt=50)
+        assert compute_default_tilt(snap) == 0
+
+    def test_falls_back_to_default_tilt_when_sunset_tilt_is_none(self) -> None:
+        """sunset_tilt=None during sunset falls back to default_tilt."""
+        snap = make_snapshot(is_sunset_active=True, sunset_tilt=None, default_tilt=40)
+        assert compute_default_tilt(snap) == 40
+
+    def test_returns_default_tilt_when_not_sunset(self) -> None:
+        """Outside the sunset window, default_tilt applies (sunset_tilt ignored)."""
+        snap = make_snapshot(is_sunset_active=False, sunset_tilt=80, default_tilt=20)
+        assert compute_default_tilt(snap) == 20
+
+    def test_non_sunset_value_is_clamped_to_max_tilt(self) -> None:
+        """The non-sunset default_tilt honors the #503 min/max_tilt clamp."""
+        snap = make_snapshot(is_sunset_active=False, default_tilt=90, max_tilt=60)
+        assert compute_default_tilt(snap) == 60
+
+    def test_sunset_value_is_not_clamped(self) -> None:
+        """The sunset value is a deliberate #128 carve-out — never clamped."""
+        snap = make_snapshot(is_sunset_active=True, sunset_tilt=80, max_tilt=60)
+        assert compute_default_tilt(snap) == 80
 
 
 # ---------------------------------------------------------------------------

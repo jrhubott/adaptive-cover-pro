@@ -1759,9 +1759,12 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "blind_spot.elevation_above": "above {elev}° elevation",
     # --- Default fallback (0) ---
     "rules.default": "🌙 Default (no rule matches) → {default_pos}%",
-    "default.tilt": ("  ↳ Default tilt: {tilt}% (used when no handler wins control)"),
+    "default.tilt": (
+        "  ↳ Default tilt: {tilt}% (used whenever the position falls back to default)"
+    ),
     "default.sunset_tilt": (
-        "  ↳ Sunset tilt: {tilt}% (used when no handler wins control, during sunset)"
+        "  ↳ Sunset tilt: {tilt}% (used whenever the position falls back to default, "
+        "during sunset)"
     ),
     # --- Position limits ---
     "headers.position_limits": "**Position Limits**",

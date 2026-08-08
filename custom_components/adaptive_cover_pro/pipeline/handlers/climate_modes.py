@@ -5,7 +5,7 @@ same season-condition expressions (low-light, winter-insulation, winter-heating,
 summer) in slightly different orders. This module factors the shared predicate
 vocabulary into one place (`ClimateContext` properties) and expresses each router
 as an ordered list of `ClimateRule`s evaluated first-match-wins. `ClimateCoverState`
-builds a context and delegates to `evaluate_rules`, preserving the exact branch
+builds a context and delegates to `match_rule`, preserving the exact branch
 order, `ClimateStrategy` labels, and position outputs of the original code.
 """
 
@@ -201,18 +201,63 @@ class ClimateRule:
     strategy: ClimateStrategy
     position: Callable[[ClimateContext], int | None]
 
+    @property
+    def resolves_default_position(self) -> bool:
+        """Whether this branch answers with the cover's configured DEFAULT position.
+
+        Provenance, not value (issue #1214). The flag keys on the *identity* of
+        the rule's position function, which makes it right in both directions
+        that a value comparison gets wrong:
+
+        * It stays True after ``ClimateCoverState.get_state`` runs the answer
+          through ``apply_snapshot_limits`` — a ``min_position`` floor moving
+          0 % to 20 % does not turn the default position into something else,
+          and the sunset carve-out (#128) means the clamped answer routinely
+          differs from ``compute_default_position``.
+        * It stays False for a branch that merely *lands on* the same number:
+          ``_solar`` on a cover whose tracked position happens to equal the
+          default is still solar tracking.
+
+        ``ClimateHandler`` reads this to decide whether a
+        ``ControlMethod.DEFAULT`` winner has earned the effective
+        default/sunset tilt. ``_default`` is the position function whose
+        answer is *always* ``ctx.default_position``. ``_solar`` can
+        return that same value too — it falls back to
+        ``ctx.default_position`` whenever ``direct_sun_valid`` is False —
+        but that fallback is still solar tracking, not a default-position
+        resolution, so identity (not the resulting number) is what keeps it
+        out.
+        """
+        return self.position is _default
+
+
+def match_rule(rules: tuple[ClimateRule, ...], ctx: ClimateContext) -> ClimateRule:
+    """Return the first rule whose predicate holds — the evaluator's primitive.
+
+    Every table ends with an always-true catch-all, so a match is guaranteed.
+    Callers that need the matched rule ITSELF (for its ``strategy`` *and* its
+    ``resolves_default_position`` provenance) use this;
+    :func:`evaluate_rules` is the adapter that also applies the position
+    function.
+    """
+    for rule in rules:
+        if rule.predicate(ctx):
+            return rule
+    raise RuntimeError("climate rule table exhausted without a catch-all")
+
 
 def evaluate_rules(
     rules: tuple[ClimateRule, ...], ctx: ClimateContext
 ) -> tuple[ClimateStrategy, int | None]:
     """Return (strategy, position) for the first matching rule.
 
-    Every table ends with an always-true catch-all, so a match is guaranteed.
+    The value-level view of :func:`match_rule`, for callers that need nothing
+    but the outcome. ``ClimateCoverState._run`` goes through ``match_rule``
+    instead because it also has to record the branch's
+    ``resolves_default_position`` provenance (issue #1214).
     """
-    for rule in rules:
-        if rule.predicate(ctx):
-            return rule.strategy, rule.position(ctx)
-    raise RuntimeError("climate rule table exhausted without a catch-all")
+    rule = match_rule(rules, ctx)
+    return rule.strategy, rule.position(ctx)
 
 
 _ALWAYS: Callable[[ClimateContext], bool] = lambda _ctx: True  # noqa: E731

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -16,7 +17,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate_modes import
     _TOP_OVERRIDES,
     ClimateContext,
     ClimateRule,
+    _default,
     evaluate_rules,
+    match_rule,
 )
 
 ALL_TABLES = [
@@ -103,6 +106,126 @@ def test_evaluate_rules_raises_without_catch_all():
 @pytest.mark.parametrize("table", ALL_TABLES)
 def test_every_table_ends_with_catch_all(table):
     assert table[-1].predicate(_ctx()) is True
+
+
+# --- position provenance: which branch resolved FROM the default (#1214) --
+
+
+def test_match_rule_returns_the_first_matching_rule():
+    """``match_rule`` is the primitive ``evaluate_rules`` adapts."""
+    rules = (
+        ClimateRule(lambda c: False, ClimateStrategy.WINTER_HEATING, _default),
+        ClimateRule(lambda c: True, ClimateStrategy.LOW_LIGHT, lambda c: 2),
+    )
+    assert match_rule(rules, _ctx()).strategy is ClimateStrategy.LOW_LIGHT
+
+
+def test_match_rule_raises_without_catch_all():
+    rules = (ClimateRule(lambda c: False, ClimateStrategy.LOW_LIGHT, _default),)
+    with pytest.raises(RuntimeError):
+        match_rule(rules, _ctx())
+
+
+def test_resolves_default_position_keys_on_the_position_fn_not_its_value():
+    """Provenance, not value equality.
+
+    A rule that merely *returns* the default position's number is not
+    resolving from the default. Issue #1214 round 1 compared values and got
+    it wrong in both directions — false negatives once a limit clamp moved
+    the answer, false positives when a configured override happened to
+    coincide with the default.
+    """
+    coincidence = ClimateRule(
+        lambda c: True, ClimateStrategy.LOW_LIGHT, lambda c: c.default_position
+    )
+    assert coincidence.position(_ctx(default_position=42)) == 42
+    assert coincidence.resolves_default_position is False
+
+    assert (
+        ClimateRule(
+            lambda c: True, ClimateStrategy.LOW_LIGHT, _default
+        ).resolves_default_position
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    ("table", "ctx", "strategy", "from_default"),
+    [
+        # NORMAL tables answer LOW_LIGHT with _default — these earn the tilt.
+        (NORMAL_WITH_PRESENCE, _ctx(lux=True), ClimateStrategy.LOW_LIGHT, True),
+        (
+            NORMAL_WITHOUT_PRESENCE,
+            _ctx(valid=True, lux=True),
+            ClimateStrategy.LOW_LIGHT,
+            True,
+        ),
+        (
+            NORMAL_WITHOUT_PRESENCE,
+            _ctx(valid=False),
+            ClimateStrategy.LOW_LIGHT,
+            True,
+        ),
+        # The season-scope gate answers with _default in every table that has one.
+        (
+            NORMAL_WITH_PRESENCE,
+            replace(_ctx(), tracking_seasons=frozenset()),
+            ClimateStrategy.TRACKING_SEASON_GATE,
+            True,
+        ),
+        (
+            TILT_WITH_PRESENCE,
+            replace(_ctx(), tracking_seasons=frozenset()),
+            ClimateStrategy.TRACKING_SEASON_GATE,
+            True,
+        ),
+        (
+            TILT_WITHOUT_PRESENCE,
+            replace(_ctx(valid=True), tracking_seasons=frozenset()),
+            ClimateStrategy.TRACKING_SEASON_GATE,
+            True,
+        ),
+        # TILT tables answer LOW_LIGHT with _solar — same DEFAULT label, a
+        # solar-tracked position, so no default tilt.
+        (TILT_WITH_PRESENCE, _ctx(lux=True), ClimateStrategy.LOW_LIGHT, False),
+        (
+            TILT_WITHOUT_PRESENCE,
+            _ctx(valid=True, lux=True),
+            ClimateStrategy.LOW_LIGHT,
+            False,
+        ),
+        # Every non-default branch stays False.
+        (
+            NORMAL_WITH_PRESENCE,
+            _ctx(is_winter=True, valid=True),
+            ClimateStrategy.WINTER_HEATING,
+            False,
+        ),
+        (
+            NORMAL_WITH_PRESENCE,
+            _ctx(is_winter=True, valid=False, winter_close_insulation=True),
+            ClimateStrategy.WINTER_INSULATION,
+            False,
+        ),
+        (NORMAL_WITH_PRESENCE, _ctx(), ClimateStrategy.GLARE_CONTROL, False),
+        (
+            NORMAL_WITH_PRESENCE,
+            _ctx(is_extreme_heat=True),
+            ClimateStrategy.EXTREME_HEAT,
+            False,
+        ),
+    ],
+)
+def test_table_branch_position_provenance(table, ctx, strategy, from_default):
+    """Pin which branch of each table resolves from the configured default.
+
+    ``ClimateHandler`` reads exactly this to decide whether a
+    ``ControlMethod.DEFAULT`` winner has earned the effective default/sunset
+    tilt (issue #1214).
+    """
+    rule = match_rule(table, ctx)
+    assert rule.strategy is strategy
+    assert rule.resolves_default_position is from_default
 
 
 # --- shared top-override band (issue #766 seam) ---------------------------

@@ -634,7 +634,7 @@ CONF_DAYTIME_GATE_TEMPLATE_MODE = "daytime_gate_template_mode"  # TemplateCombin
 # genuinely needs its own window takes it as a constructor argument.
 DEFAULT_CONDITION_GATE_GRACE_SECONDS = 120.0
 # Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
-CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
+CONF_DEFAULT_TILT = "default_tilt"  # tilt when the position falls back to default
 CONF_SUNSET_TILT = (
     "sunset_tilt"  # tilt during sunset window (falls back to default_tilt)
 )

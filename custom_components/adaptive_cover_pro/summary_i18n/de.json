@@ -195,8 +195,8 @@
     "elevation_above": "ab {elev}° Höhe"
   },
   "default": {
-    "tilt": "  ↳ Standard-Neigung: {tilt}% (gilt, wenn kein Handler die Kontrolle übernimmt)",
-    "sunset_tilt": "  ↳ Sonnenuntergangsneigung: {tilt}% (gilt bei Sonnenuntergang, wenn kein Handler die Kontrolle übernimmt)"
+    "tilt": "  ↳ Standard-Neigung: {tilt}% (angewendet, wenn die Beschattung auf ihre Standardposition zurückfällt)",
+    "sunset_tilt": "  ↳ Sonnenuntergangs-Neigung: {tilt}% (angewendet, wenn die Beschattung auf ihre Standardposition zurückfällt, beim Sonnenuntergang)"
   },
   "limits": {
     "range": "Bereich: {lo}–{hi}{qualifier}",
