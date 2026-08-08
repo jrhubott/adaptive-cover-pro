@@ -764,8 +764,12 @@ async def test_same_position_skip_does_not_protect_an_unbooked_entity(svc, mock_
     assert svc.state("cover.test").is_safety is False
 
     # A later booking through one of the verdict-blind ``set_target`` sites
-    # must therefore start unprotected, not inherit a licence.
-    svc.restore_target("cover.test", 60)
+    # must therefore start unprotected, not inherit a licence. ``restore_target``
+    # only seeds a target the cover is already resting on, so the cover has to
+    # move to 60 first — otherwise it returns False, books nothing, and the
+    # three assertions below have no subject to be about.
+    _patch_position(svc, 60)
+    assert svc.restore_target("cover.test", 60) is True
     assert svc.state("cover.test").is_safety is False
     svc.clear_non_safety_targets()
     assert svc.get_target("cover.test") is None
