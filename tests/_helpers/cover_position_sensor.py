@@ -1,14 +1,19 @@
 """A stub sensor for driving ``sensor._cover_position_attrs`` in unit tests.
 
-Three test modules had grown their own near-identical version of this builder,
-each wiring the same handful of coordinator members that ``_cover_position_attrs``
-touches on its way to the one branch that module cared about. Per
-CODING_GUIDELINES § cross-file test helpers, they share this one instead.
+``test_linear_position.py`` and ``test_sensor_linear_actual_positions.py`` had
+each grown their own near-identical version of this builder, wiring the same
+handful of coordinator members that ``_cover_position_attrs`` touches on its way
+to the one branch that module cared about. Per CODING_GUIDELINES § cross-file
+test helpers, they share this one instead.
 
 Every knob defaults to the inert value — no diagnostics, no snapshot positions,
 no transit or travel state, no lift travel (which short-circuits
 ``_compute_distance_attrs`` to ``None``) — so a caller sets only what its branch
 needs and the rest stays out of the way.
+
+⚠️ ``cover_type`` steers ``inverted_for`` only. ``coordinator._policy`` stays a
+``MagicMock`` with ``lift_travel_metres`` stubbed, so a caller that needs real
+per-type policy behaviour has to set ``_policy`` itself.
 """
 
 from __future__ import annotations

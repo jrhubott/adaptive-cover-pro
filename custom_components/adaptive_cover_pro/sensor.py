@@ -357,10 +357,12 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
 def _target_position(states: Mapping[str, Any], result: Any) -> Any:
     """Resolve where ACP is putting this cover — the Target Position value.
 
-    The single definition every Target Position surface reads: the sensor's own
-    state, its ``target_distance``, and its ``all_at_target`` verdict. They
-    described the same thing through three separate derivations before #1175,
-    which is how the state and the distance came to disagree.
+    The single definition behind all three of this sensor's target surfaces —
+    its own state, its ``target_distance``, and its ``all_at_target`` verdict.
+    Before #1175 each derived the target itself: the first two identically (and
+    identically wrong once a bound clamped), the third from the raw ``state``
+    with no ``held_position`` term at all, which is how a perfectly-held group
+    read as "not at target".
 
     A hold winner keeps the cover's *physical* position rather than proposing a
     computed one, so ``held_position`` is the honest answer while the hold is
@@ -369,9 +371,17 @@ def _target_position(states: Mapping[str, Any], result: Any) -> Any:
     It stops being the answer once a user-configured bound outranks the holder
     and CLAMPS it. The registry writes the clamped value into ``position``, sets
     ``position_constraint_applied``, and clears ``skip_command`` in one
-    ``dataclasses.replace`` — a command *is* dispatched, while ``held_position``
-    still carries the pre-clamp read. Reporting that read then names a position
-    the cover is actively leaving (#1175).
+    ``dataclasses.replace`` — the hold no longer decides where this cover goes,
+    while ``held_position`` still carries the pre-clamp read. Reporting that read
+    then names a position the cover is being moved off (#1175).
+
+    The flag says a bound re-targeted the winner; it does not promise the frame
+    reached the motor. ``_dispatch_for_cycle`` returns at the clock-window gate
+    before it ever consults ``position_constraint_applied``, so a non-safety
+    clamp resolved outside the user's start/end window updates this sensor and
+    sends nothing. That is deliberate and not special to holds — a computed
+    solar winner outside the window is reported here the same way. This surface
+    is the pipeline's resolved target, not a dispatch log.
 
     ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``, and the
     two are not interchangeable. The tilt axis also clears ``skip_command``
