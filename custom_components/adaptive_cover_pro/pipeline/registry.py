@@ -1311,16 +1311,51 @@ class PipelineRegistry:
         # Gating on the CLOSED window is what keeps the end-of-window sweep
         # semantics intact (#215/#216): an in-window booking never carries the
         # flag, so nothing new survives ``clear_non_safety_targets()``.
-        #
-        # Nothing bound ⇒ nothing to dispatch ⇒ the pseudo-hold is discarded
-        # whole, verdicts included: a DEFAULT winner must not leave the registry
-        # carrying per-cover "held, not released" verdicts nobody asked for.
         outside_window_admitted = outside_window_active and (
             position_clamped or tilt_clamped
         )
         if outside_window_active:
+            # The pseudo-hold was scaffolding for the position axis; strip it
+            # before the result leaves. ``held_position`` is user-facing (the
+            # Target Position sensor, the Model B stash replay in
+            # ``DayNightShadePolicy``) and a DEFAULT result must not start
+            # claiming to hold anything.
             winner = dataclasses.replace(winner, held_position=None)
-            if not outside_window_admitted:
+            if outside_window_admitted:
+                # ── Axis scoping ─────────────────────────────────────────────
+                # An admitted cycle dispatches, so every field it carries
+                # reaches hardware — and the invariant allows only two kinds of
+                # value out here: what an eligible constraint composed, and
+                # where the cover already is. The position axis gets the second
+                # from the pseudo-hold. These two fields have no such fallback,
+                # so they are emptied instead:
+                #
+                # * ``tilt`` — ``PipelineSnapshot`` carries ``cover_positions``
+                #   but no tilt reads, so "where the slats already are" is not
+                #   knowable. ``merged`` holds a tilt only when the composition
+                #   above wrote one (the bound clamp, the resolved bound edge,
+                #   or the #514 FIXED overlay — every one of them an eligible
+                #   constraint's value), so its ABSENCE is exactly the case
+                #   where the result would otherwise fall through to the
+                #   winner's own ``default_tilt`` / ``sunset_tilt``. None sends
+                #   nothing on that axis: ``position_context_overrides`` omits
+                #   the key, ``PositionContext.tilt`` stays None, and
+                #   ``maybe_update_tilt_only``'s guard never opens — the slats
+                #   stay where the user left them.
+                # * ``use_my_position`` — the winner's own routing. It would
+                #   land a cover without ``set_cover_position`` on its hardware
+                #   My preset instead of the bound edge just resolved.
+                #
+                # A safety winner never reaches here — it is clause (a), and its
+                # own values are precisely what must go out.
+                merged.setdefault("tilt", None)
+                winner = dataclasses.replace(winner, use_my_position=False)
+            else:
+                # Nothing bound ⇒ nothing to dispatch ⇒ the pseudo-hold is
+                # discarded whole, verdicts included: a DEFAULT winner must not
+                # leave the registry carrying per-cover "held, not released"
+                # verdicts nobody asked for. The result is then byte-identical
+                # to its pre-item-B self, diagnostics included.
                 hold_clamp_verdicts = None
         result = dataclasses.replace(
             winner,

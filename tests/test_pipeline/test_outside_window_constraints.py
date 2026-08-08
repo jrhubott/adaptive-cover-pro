@@ -387,15 +387,22 @@ def test_registry_resolves_tilt_edge_when_winner_has_no_tilt():
 
 @pytest.mark.unit
 def test_flagged_position_max_clamps_only_violating_covers():
-    """A ceiling moves the cover that violates it and nobody else."""
+    """A ceiling moves the cover that violates it and nobody else.
+
+    ``default_tilt`` is set deliberately: the position axis is the only bound
+    one here, so the DEFAULT winner's own slat angle must not ride along on the
+    dispatch the ceiling forced (the tilt half of the same invariant).
+    """
     result = _evaluate(
         sensors=[_slot(position_max=30, outside_window=True)],
         clock_open=False,
         default_position=100,
+        default_tilt=0,
         current_cover_position=45,
         cover_positions={"cover.high": 80, "cover.low": 10},
     )
     assert result.outside_window_constraint_active is True
+    assert result.tilt is None
     verdicts = result.hold_clamp_verdicts
     assert verdicts["cover.high"].released is True
     assert verdicts["cover.high"].target == 30
@@ -485,6 +492,116 @@ def test_dropped_constraint_leaves_an_explicit_trace_step():
     assert len(steps) == 1
     assert steps[0].matched is False
     assert steps[0].handler == "custom_position_1"
+
+
+# ---------------------------------------------------------------------------
+# Axis scoping: an unbound axis carries nothing of the winner's
+# ---------------------------------------------------------------------------
+#
+# The pseudo-hold pins the POSITION axis to the cover's own read. Tilt has no
+# equivalent read to pin to — ``PipelineSnapshot`` carries ``cover_positions``
+# only — so the tilt axis of an admitted cycle carries a value the constraint
+# composition produced, or nothing at all. ``use_my_position`` is the same
+# question asked about the routing: an admitted cycle sends the composed edge,
+# never the hardware My preset the winner would have used.
+
+
+@pytest.mark.unit
+def test_position_bound_never_carries_the_winners_own_tilt():
+    """A position ceiling admits the cycle; the DEFAULT's slats stay put.
+
+    The reporter's own ``sunset_tilt`` is 0. Without this rule a window contact
+    configured with nothing but a *position* ceiling drives the carriage to the
+    bound edge (correct) and the slats to 0 (never asked for) at 03:00 — the
+    #215/#216/#223 defect class on the tilt axis.
+    """
+    result = _evaluate(
+        sensors=[_slot(position_max=30, outside_window=True)],
+        clock_open=False,
+        default_position=100,
+        default_tilt=0,
+        current_cover_position=80,
+        cover_positions={"cover.a": 80},
+        cover_type="cover_venetian",
+    )
+    assert result.outside_window_constraint_active is True
+    assert result.position == 30
+    assert result.skip_command is False
+    assert result.tilt is None
+    # The seam that decides whether a tilt command is issued at all:
+    # ``PositionContext.tilt`` stays unset, so ``maybe_update_tilt_only``'s
+    # ``context.tilt is not None`` guard never opens.
+    assert "tilt" not in get_policy("cover_venetian").position_context_overrides(result)
+
+
+@pytest.mark.unit
+def test_flagged_tilt_min_still_reaches_the_slats_outside_window():
+    """The reporter's actual case, end to end — ``tilt_min`` must still bind.
+
+    Suppressing the *unbound* axis must not suppress the bound one: a slot that
+    asks for slats at 50 gets slats at 50, and the carriage stays where the
+    cover already is.
+    """
+    result = _evaluate(
+        sensors=[_slot(tilt_min=50, outside_window=True)],
+        clock_open=False,
+        default_position=100,
+        is_sunset_active=True,
+        sunset_tilt=0,
+        current_cover_position=80,
+        cover_positions={"cover.a": 80},
+        cover_type="cover_venetian",
+    )
+    assert result.outside_window_constraint_active is True
+    assert result.tilt == 50
+    assert result.position == 80
+    overrides = get_policy("cover_venetian").position_context_overrides(result)
+    assert overrides["tilt"] == 50
+
+
+@pytest.mark.unit
+def test_use_my_winner_does_not_route_to_the_my_preset_outside_window():
+    """An admitted cycle sends the composed edge, not the hardware My preset.
+
+    "Use My at sunset" makes the DEFAULT winner's *position* the cover's stored
+    My value and flips ``use_my_position``, which routes a cover without
+    ``set_cover_position`` through ``stop_cover``. Outside the window that flag
+    is the winner's own value by another name, and it would land the cover on
+    its preset instead of the bound edge the ceiling just resolved.
+    """
+    result = _evaluate(
+        sensors=[_slot(position_max=30, outside_window=True)],
+        clock_open=False,
+        default_position=100,
+        is_sunset_active=True,
+        sunset_use_my=True,
+        my_position_value=65,
+        current_cover_position=80,
+        cover_positions={"cover.a": 80},
+    )
+    assert result.outside_window_constraint_active is True
+    assert result.position == 30
+    assert result.use_my_position is False
+
+
+@pytest.mark.unit
+def test_axis_scoping_is_inert_with_the_clock_open():
+    """In-window results keep the winner's tilt and My routing untouched."""
+    result = _evaluate(
+        sensors=[_slot(position_max=30, outside_window=True)],
+        clock_open=True,
+        default_position=100,
+        default_tilt=0,
+        is_sunset_active=True,
+        sunset_use_my=True,
+        my_position_value=65,
+        current_cover_position=80,
+        cover_positions={"cover.a": 80},
+        cover_type="cover_venetian",
+    )
+    assert result.outside_window_constraint_active is False
+    assert result.tilt == 0
+    assert result.use_my_position is True
 
 
 # ---------------------------------------------------------------------------
@@ -595,6 +712,41 @@ def test_eligible_bound_still_clamps_a_safety_winner_outside_window():
     assert closed.position == opened.position == 70
     assert closed.position_constraint_applied is True
     assert closed.is_safety is True
+
+
+@pytest.mark.unit
+def test_safety_winner_keeps_its_own_tilt_and_my_routing_outside_window():
+    """Axis scoping is for clause (b) only — clause (a) is window-invariant.
+
+    A priority-100 slot on the hardware My preset, carrying its own slat angle,
+    under a second slot's opted-in ceiling. The ceiling still bounds it, and
+    everything else it sends at 02:00 is byte-identical to noon.
+    """
+    kwargs = {
+        "sensors": [
+            _slot(use_my=True, priority=CUSTOM_POSITION_SAFETY_PRIORITY),
+            _slot(2, position_max=30, outside_window=True),
+        ],
+        "policy": get_policy("cover_venetian"),
+        "default_position": 100,
+        "default_tilt": 0,
+        "my_position_value": 65,
+        "current_cover_position": 80,
+        "cover_positions": {"cover.a": 80},
+    }
+    handlers = [
+        CustomPositionHandler(1, None, CUSTOM_POSITION_SAFETY_PRIORITY, 20),
+        DefaultHandler(),
+    ]
+    closed = PipelineRegistry(handlers).evaluate(_snapshot(clock_open=False, **kwargs))
+    opened = PipelineRegistry(handlers).evaluate(_snapshot(clock_open=True, **kwargs))
+
+    assert closed.is_safety is True
+    assert closed.outside_window_constraint_active is False
+    assert closed.tilt == opened.tilt == 20
+    assert closed.use_my_position == opened.use_my_position is True
+    # The ceiling binds the safety winner in both, exactly as before item B.
+    assert closed.position == opened.position == 30
 
 
 @pytest.mark.unit
