@@ -368,10 +368,13 @@ class TiltPolicy(CoverTypePolicy, register=True):
             correctly, which means the last step before a COMMAND is where the
             range promise has to be kept (#1222 audit). The two paths pin
             DIFFERENTLY, and only because one of them can do better: the engine
-            knows where coverage bottoms out on its own scale, so it answers an
-            unreachable target with the end that serves the request's intent
-            (``AdaptiveTiltCover._pin_climate_target``), while the fallback
-            below has only a mode and takes the nearest end.
+            knows where maximum openness sits on its own scale, so it can tell a
+            drive that merely runs SHORT of the target — which keeps its nearest
+            end — from one whose whole travel lies across maximum openness from
+            the target, where the nearest end is the least protective slat and a
+            blocking request goes to the far one instead
+            (``AdaptiveTiltCover._pin_climate_target``). The fallback below has
+            only a mode, so it always takes the nearest end.
 
         """
         if cover is not None:

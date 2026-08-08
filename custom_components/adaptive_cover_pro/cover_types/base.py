@@ -33,6 +33,7 @@ from ..const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    COVERAGE_DISTANCE_TIE_EPS,
     POSITION_CLOSED,
     POSITION_OPEN,
     GroupScene,
@@ -94,29 +95,6 @@ AXIS_NAME_TILT = "tilt"
 AXIS_VALUE_MIN = 0
 AXIS_VALUE_MAX = 100
 AXIS_VALUE_UNIT = "%"
-
-# Tolerance for treating two coverage distances as EQUAL in
-# ``more_protective_position``, so a tie falls through to the axis rule instead
-# of being decided by rounding noise. Unit-free on purpose: the metric is
-# percentage points on the base engine and degrees off horizontal on the slat
-# engine, and both live on the same 0–180 scale, which is what lets one absolute
-# band serve both.
-#
-# It sits in a nine-order-of-magnitude gap, and both walls of that gap are
-# structural rather than estimated. ABOVE it, the smallest difference two
-# distances can GENUINELY have: the comparator is handed integer percentages,
-# and every scale it can meet is built from integer-degree endpoints, an
-# integer ``max_slat_angle`` and an integer hinge percentage, so each distance
-# is a rational whose denominator is bounded by the hinge split ``h × (100 − h)
-# ≤ 2500``. A real difference is therefore at least 4e-4. BELOW it, the ulp
-# spread of the interpolation itself — ~1e-13 at these magnitudes, which is what
-# made ``44`` and ``56`` — both exactly 10.8° off horizontal — compare unequal
-# and hand 13 symmetric MODE2 pairs to the wrong side (#1222 audit).
-#
-# Same shape and rationale as ``engine.covers.oscillating._COVERAGE_PLATEAU_EPS``,
-# which treats two coverage-floor heights as equal for the same reason.
-_COVERAGE_DISTANCE_TIE_EPS = 1e-6
-
 
 # ---------------------------------------------------------------------------
 # Config-flow entity-selector filters
@@ -1510,7 +1488,7 @@ class CoverTypePolicy(ABC):
         decided here, which keeps the symmetric straddle (``30``/``70`` on MODE2,
         both 36° off horizontal) answering ``30`` as it always has.
 
-        "Equal" is measured to ``_COVERAGE_DISTANCE_TIE_EPS`` and NOT exactly.
+        "Equal" is measured to ``COVERAGE_DISTANCE_TIE_EPS`` and NOT exactly.
         The percentage metric these ties used to be scored on was exact
         arithmetic on integers; measuring in degrees is not, and an exact ``!=``
         turned the ulp between ``44 → 79.2°`` and ``56 → 100.8°`` into a real
@@ -1522,7 +1500,7 @@ class CoverTypePolicy(ABC):
         if cover is not None and cover.coverage_pivot_percentage() is not None:
             distance_a = cover.coverage_distance(a)
             distance_b = cover.coverage_distance(b)
-            if abs(distance_a - distance_b) > _COVERAGE_DISTANCE_TIE_EPS:
+            if abs(distance_a - distance_b) > COVERAGE_DISTANCE_TIE_EPS:
                 return a if distance_a > distance_b else b
         if self.axes[0].open_blocks_sun:
             return max(a, b)

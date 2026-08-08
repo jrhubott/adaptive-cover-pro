@@ -26,19 +26,30 @@ _COVERAGE_HOOKS = (
     "round_toward_coverage",
     "coverage_pivot_percentage",
     "coverage_travel_bounds",
+    "coverage_distance",
 )
 
 
 def attach_coverage_rounding(cover):
-    """Give a cover *double* the real base coverage hooks (#1090, #1104).
+    """Give a cover *double* the real base coverage hooks (#1090, #1104, #1222).
 
     The solar branch asks the cover which way to quantise its raw percentage,
-    where its coverage bottoms out, and how far it can be driven, because only
-    the engine knows whether coverage is monotonic in the percentage (it is not
-    on a bi-directional slat axis) and whether the axis carries a band of its
-    own. Doubles standing in for an ``AdaptiveGeneralCover`` therefore have to
-    answer all three calls — a ``MagicMock`` would otherwise hand back a mock
-    where a ``float | None`` or a ``(low, high)`` pair is expected.
+    where its coverage bottoms out, how far it can be driven, and how much
+    coverage a candidate percentage carries, because only the engine knows
+    whether coverage is monotonic in the percentage (it is not on a
+    bi-directional slat axis), whether the axis carries a band of its own, and
+    what the metric even measures — percentage points on the base engine,
+    degrees off horizontal on the slat engine. Doubles standing in for an
+    ``AdaptiveGeneralCover`` therefore have to answer all four calls — a
+    ``MagicMock`` would otherwise hand back a mock where a ``float | None`` or a
+    ``(low, high)`` pair is expected.
+
+    ``coverage_distance`` is bound even though ``more_protective_position``
+    reads the pivot first and short-circuits on the base ``None``, so today it
+    is never reached on these doubles. Leaving it off would make that
+    short-circuit load-bearing for the double rather than for the production
+    rule it mirrors, and the first engine-backed double with a real pivot would
+    hand the comparator a ``MagicMock`` to subtract.
 
     Binds the production implementations to the double rather than
     reimplementing floor/ceil in test-land, so a double can never quietly

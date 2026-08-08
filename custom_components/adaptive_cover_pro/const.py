@@ -2287,6 +2287,34 @@ SAFETY_MARGIN_USER_SLACK_MAX = SAFETY_MARGIN_GAMMA_MAX + max(
     SAFETY_MARGIN_LOW_ELEV_MAX, SAFETY_MARGIN_HIGH_ELEV_MAX
 )  # 0.35
 
+# Tolerance for treating two coverage distances as EQUAL, so a tie falls through
+# to whatever fallback the caller has instead of being decided by rounding
+# noise. Unit-free on purpose: the metric is percentage points on the base
+# engine and degrees off horizontal on the slat engine, and both live on the
+# same 0–180 scale, which is what lets one absolute band serve both.
+#
+# It sits in a nine-order-of-magnitude gap, and both walls of that gap are
+# structural rather than estimated. ABOVE it, the smallest difference two
+# distances can GENUINELY have: the comparator is handed integer percentages,
+# and every scale it can meet is built from integer-degree endpoints, an
+# integer ``max_slat_angle`` and an integer hinge percentage, so each distance
+# is a rational whose denominator is bounded by the hinge split ``h × (100 − h)
+# ≤ 2500``. A real difference is therefore at least 4e-4. BELOW it, the ulp
+# spread of the interpolation itself — ~1e-13 at these magnitudes, which is what
+# made ``44`` and ``56`` — both exactly 10.8° off horizontal — compare unequal
+# and hand 13 symmetric MODE2 pairs to the wrong side (#1222 audit).
+#
+# It lives here rather than beside either consumer because both need it and they
+# are on opposite sides of the HA boundary: ``CoverTypePolicy.
+# more_protective_position`` ranks two candidate percentages by it, and
+# ``AdaptiveTiltCover._pin_climate_target`` ranks the two ends of a scale by it,
+# and ``engine/`` cannot import ``cover_types/``. Two epsilons that only happened
+# to agree would be two epsilons that one day did not.
+#
+# Same shape and rationale as ``engine.covers.oscillating._COVERAGE_PLATEAU_EPS``,
+# which treats two coverage-floor heights as equal for the same reason.
+COVERAGE_DISTANCE_TIE_EPS = 1e-6
+
 
 # =============================================================================
 # Solar-calculation trace keys (issue #682)

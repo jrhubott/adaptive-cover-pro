@@ -1542,11 +1542,17 @@ class TestClimateTiltPercentageStaysInRange:
 # ``specify_angles`` accepts any ordered pair, including one that lies wholly at
 # or above horizontal, and the climate rules ask for fixed angles that lie
 # BELOW it (``CLIMATE_SUMMER_TILT_ANGLE`` 45°, ``CLIMATE_DEFAULT_TILT_ANGLE``
-# 80°). Such a target images off the bottom of the scale, and a nearest-value
-# clamp then answers 0 % — which on those calibrations is the least-blocking
-# slat the drive has. Every one of these is a block-the-sun request, so a clamp
-# is the wrong pin: the reachable answer that serves the intent is the end
+# 80°). On those pairs maximum openness sits between the target and the WHOLE
+# reachable travel: no reachable slat closes the way the rule asked, and the
+# nearest end is the one nearest horizontal — the least-blocking slat the drive
+# has. Every one of these is a block-the-sun request, and occlusion is symmetric
+# about horizontal, so the intent still has a reachable expression: the end
 # FARTHER from horizontal.
+#
+# This is the ONLY situation that leaves the clamp. A drive on the same side of
+# horizontal as the target closes the way the rule asked and merely runs short,
+# and keeps its nearest end — see
+# ``TestADriveShortOfTheTargetKeepsItsOwnEnd`` below.
 #
 # ``angle_0``, ``angle_100``, the climate rule's target angle, and the
 # percentage the engine's map images it at. Both rules are live in production —
@@ -1610,10 +1616,18 @@ class TestAnUnreachableClimateTargetServesTheIntent:
     ):
         """The reporter's own 0°/130° pair reaches both angles, so nothing pins.
 
-        The intent rule only ever fires on a target the scale cannot express.
-        A calibration that straddles horizontal expresses both climate angles
-        directly, hinge or no hinge, and must keep answering exactly what it
-        answered before the rule existed.
+        The pinning rule only ever fires on a target the scale cannot express,
+        and this pair expresses both climate angles directly, hinge or no hinge
+        — the ``0.0 <= raw <= 100.0`` assertion is what says so, and it is the
+        precondition the expected values depend on.
+
+        Deliberately narrower than "any calibration that straddles horizontal".
+        Straddling is not sufficient: ``70/130`` straddles and still images
+        ``CLIMATE_SUMMER_TILT_ANGLE`` at −41.7 %, because its lower endpoint
+        stops twenty degrees short of the requested slat. What makes THIS pair
+        immune is that its travel contains both requested angles, which is a
+        property of the endpoints and the two constants together, not of the
+        pivot's position.
         """
         from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
 
@@ -1631,22 +1645,40 @@ class TestAnUnreachableClimateTargetServesTheIntent:
         )
 
     @pytest.mark.unit
-    def test_letting_the_sun_through_pins_to_the_opposite_end(self):
-        """``sun_through`` inverts which end an unreachable target falls to.
+    def test_letting_the_sun_through_keeps_the_nearest_reachable_slat(self):
+        """``sun_through`` never leaves the clamp, and here neither does blocking.
 
-        A 20°/70° pair sits wholly BELOW horizontal, so 0 % (20°, seventy
-        degrees off) is its closing end and 100 % (70°, twenty degrees off) its
-        open one — the mirror image of the calibrations above. A 10° target is
-        off the bottom of that scale either way, and the two intents want
-        opposite ends of it.
+        A 20°/70° pair sits wholly BELOW horizontal, the same side as a 10°
+        target, so both ends close the way a blocking rule asks and the drive
+        merely runs short: 0 % is 20°, seventy degrees off horizontal, and the
+        nearest reachable slat to the request. Blocking keeps it.
 
-        Nearest-value would answer 0 % for both. It is right for the blocking
-        half by luck and wrong for the other, which is why the two halves are
-        asserted on one cover: only a rule that reads the intent can split them.
+        ``sun_through`` keeps it too, and for a reason that does not depend on
+        this scale. Winter heating wants the slat PARALLEL to the beam — the
+        zero-occlusion orientation — and that angle has no mirror: reflecting it
+        across horizontal does not transmit equally, it points somewhere else
+        entirely. So there is no second reachable expression of the intent to
+        fall back on, and the slat that transmits most is the one closest to the
+        one asked for. Blocking has a mirror precisely because occlusion IS
+        symmetric about horizontal, which is what ``coverage_distance``
+        measures; that asymmetry between the two intents is the physics.
 
-        The winter mirror is not in play here — it is gated on the pivot being
-        strictly interior and this scale images horizontal at 140 % — so the
-        flag changes nothing but the end chosen.
+        Both halves are production-unreachable on THIS scale, and the docstring
+        says so rather than leaving it to be rediscovered.
+        ``_tilt_winter_mode2`` is the only rule that passes ``sun_through=True``
+        and it is gated on ``is_tilt_mode2``, so a ``specify_angles`` cover
+        never reaches the flag at all. (A MODE2 louvered roof does, and its
+        mirrored target really can overshoot — see
+        ``test_a_rescaled_mirror_cannot_overshoot_the_top_of_the_scale``, which
+        clamps.) The blocking half is unreachable for a different reason: the
+        climate rules only ever ask for 45° and 80°, both of which this pair
+        images ON its scale. 10° is chosen so a single cover can carry both
+        halves; the angles production does ask of a 20°/70° pair are pinned in
+        ``TestADriveShortOfTheTargetKeepsItsOwnEnd``.
+
+        The winter mirror is not in play here either — it is gated on the pivot
+        being strictly interior and this scale images horizontal at 140 % — so
+        the flag reaches ``_pin_climate_target`` with the raw angle.
         """
         cover = _calibrated_tilt(angle_0=20.0, angle_100=70.0)
         assert cover.coverage_pivot_percentage() == pytest.approx(140.0)
@@ -1655,7 +1687,7 @@ class TestAnUnreachableClimateTargetServesTheIntent:
         assert cover.coverage_distance(100.0) == pytest.approx(20.0)
 
         assert cover.climate_tilt_percentage(10.0) == 0
-        assert cover.climate_tilt_percentage(10.0, sun_through=True) == 100
+        assert cover.climate_tilt_percentage(10.0, sun_through=True) == 0
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
@@ -1667,11 +1699,18 @@ class TestAnUnreachableClimateTargetServesTheIntent:
     ):
         """MODE2's two ends are equally protective, so proximity still decides.
 
-        Both rails of the shipped default are ninety degrees off horizontal.
-        Neither serves a blocking request better than the other, and an
-        implementation that broke the tie by position rather than abstaining
-        would swing an overshoot 100 points across the scale. The tie falls back
-        to the plain clamp, which is what MODE2 has always done.
+        Both rails of the shipped default are ninety degrees off horizontal, so
+        neither serves a blocking request better than the other and there is no
+        end for an intent to prefer. The clamp is what MODE2 has always done and
+        keeps doing.
+
+        Two independent things hold it there, and the test asserts the first so
+        the second cannot be the only thing standing: the rails tie on
+        ``coverage_distance``, AND horizontal sits at an interior 50 % with the
+        whole overshoot outside the travel on one side of it, so the target
+        never lies across maximum openness from the drive at all. An
+        implementation that reached past the near end here would swing an
+        overshoot 100 points across the scale.
         """
         cover = _calibrated_tilt(mode="mode2")
         assert cover.coverage_distance(0.0) == cover.coverage_distance(100.0) == 90.0
@@ -1707,15 +1746,248 @@ class TestAnUnreachableClimateTargetServesTheIntent:
 
     @pytest.mark.unit
     def test_an_inverted_calibration_needs_no_sign_test(self):
-        """A 140°/20° pair puts the closing end at 100 %, and the rule finds it.
+        """Reversing a calibration reverses the percentage, never the slat.
 
         The engine supports an inverted calibration even though both config
-        surfaces reject one today (#749). Measuring both ends in degrees off
-        horizontal reads the reversal for free: 20° is seventy degrees off and
-        140° only fifty, so a blocking target off the scale goes to 100 %.
+        surfaces reject one today (#749), and nothing in the pinning rule looks
+        at which way the endpoints run: both the "is the target across maximum
+        openness from the travel?" question and the coverage ranking are asked
+        of the scale's own images, so the reversal is read for free.
+
+        The check is a physical identity rather than a number. ``170/100`` is
+        ``100/170`` written backwards — the same drive, the same two reachable
+        slats, the percentages swapped — so the two calibrations must command
+        the SAME ANGLE for the same request, at opposite percentages. The
+        upright pair is one of the sanctioned rows above (100 % → 170°); this
+        one has to answer 0 %, and 0 % has to be 170°.
+        """
+        upright = _calibrated_tilt(angle_0=100.0, angle_100=170.0)
+        inverted = _calibrated_tilt(angle_0=170.0, angle_100=100.0)
+
+        assert upright.climate_tilt_percentage(80.0) == 100
+        assert inverted.climate_tilt_percentage(80.0) == 0
+        assert upright._angle_from_percentage(100.0) == pytest.approx(
+            inverted._angle_from_percentage(0.0)
+        )
+
+    @pytest.mark.unit
+    def test_an_inverted_calibration_that_merely_runs_short_keeps_its_near_end(self):
+        """A 140°/20° pair straddles horizontal, so it is not the crossing case.
+
+        Its travel reaches 50° above horizontal and 70° below, and a 170° target
+        asks for 80° above. The drive closes the way the rule asked and simply
+        runs out of travel, so its nearest end — 0 %, at 140° — is the answer,
+        the same way ``TestMode1ClampCrossover`` argues a solve past the rail
+        stays at the rail rather than sweeping to the far endpoint.
+
+        Asserted next to the reversal test because the two together are what
+        say the rule reads the SCALE and not the sign: 100 % here is the more
+        covering end (70° off horizontal against 50°) and still does not win.
         """
         cover = _calibrated_tilt(angle_0=140.0, angle_100=20.0)
         assert cover.coverage_distance(0.0) == pytest.approx(50.0)
         assert cover.coverage_distance(100.0) == pytest.approx(70.0)
         assert cover._percentage_from_angle(170.0) == pytest.approx(-25.0)
-        assert cover.climate_tilt_percentage(170.0) == 100
+        assert cover.coverage_pivot_percentage() == pytest.approx(125 / 3)
+        assert cover.climate_tilt_percentage(170.0) == 0
+
+
+# ---------------------------------------------------------------------------
+# A drive that runs SHORT of a climate target keeps its own end (#1222 audit)
+# ---------------------------------------------------------------------------
+# The mirror image of the calibrations above, and the case the intent rule got
+# backwards. Both climate blocking angles sit BELOW horizontal
+# (``CLIMATE_SUMMER_TILT_ANGLE`` 45°, ``CLIMATE_DEFAULT_TILT_ANGLE`` 80°), so a
+# drive whose whole travel is also below horizontal closes exactly the way the
+# rule asked — it simply runs out of travel before it gets there, and its top
+# end is both the nearest reachable slat and the one closest to the requested
+# angle. Ranking the two ends purely by coverage answers that with 0 %: the
+# BOTTOM of the travel, a full sweep away and eighty degrees more closed than
+# anything asked for.
+#
+# This is not confined to the opt-in three-point calibration. A louvered roof
+# is one of only two cover types whose ``axes[0]`` is TILT, so a preset
+# ``mode1``/``mode2`` pergola routes through these same tilt climate tables, and
+# ``max_slat_angle`` — a polymorphic ``_effective_max_degrees`` override — puts
+# the fixed 80° target off the top of its scale for every drive under 80°.
+
+# ``max_slat_angle``, and the raw percentage ``CLIMATE_DEFAULT_TILT_ANGLE``
+# images at on that drive. 80 is the crossover: exactly 100 %, the last value
+# still on the scale.
+_SHORT_LOUVERED_DRIVES = [
+    (45, 8000 / 45),
+    (60, 8000 / 60),
+    (70, 8000 / 70),
+    (79, 8000 / 79),
+]
+
+# ``angle_0``/``angle_100`` pairs calibrated wholly below horizontal, the climate
+# angle asked of them, and the raw percentage it images at. Every one of them
+# overshoots the TOP of its scale, so every one of them wants 100 %.
+_SHORT_CALIBRATIONS = [
+    (0.0, 45.0, 80.0, 8000 / 45),
+    (0.0, 60.0, 80.0, 8000 / 60),
+    (20.0, 70.0, 80.0, 120.0),
+    (0.0, 30.0, 80.0, 8000 / 30),
+    (0.0, 30.0, 45.0, 150.0),
+]
+
+
+class TestADriveShortOfTheTargetKeepsItsOwnEnd:
+    """An off-scale target on the SAME side of horizontal clamps (#1222 audit)."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("mode", ["mode1", "mode2"])
+    @pytest.mark.parametrize(("max_slat_angle", "raw_pct"), _SHORT_LOUVERED_DRIVES)
+    def test_a_louvered_roof_under_eighty_degrees_opens_to_its_top_end(
+        self, mode, max_slat_angle, raw_pct
+    ):
+        """A pergola that cannot reach 80° answers with the closest slat it has.
+
+        The drive's whole travel is 0° (closed) to ``max_slat_angle``, all of it
+        below horizontal, so ``CLIMATE_DEFAULT_TILT_ANGLE`` images past 100 %.
+        Its top end is ``max_slat_angle`` — the nearest reachable slat to the
+        request, and already MORE closed than the request. Its bottom end is 0°,
+        fully closed, which is what ranking the ends by coverage alone picks.
+
+        Both preset modes are asserted because ``max_slat_angle`` overrides the
+        percentage denominator for either one, so the flip was never a MODE2
+        speciality.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        cover = build_louvered_roof_cover(
+            sol_azi=180.0,
+            sol_elev=45.0,
+            roof_pitch=0.0,
+            mode=mode,
+            max_slat_angle=max_slat_angle,
+        )
+        assert cover._percentage_from_angle(
+            CLIMATE_DEFAULT_TILT_ANGLE
+        ) == pytest.approx(raw_pct)
+        # The far end really is the more covering one — this is not a case where
+        # coverage happens to agree; it is the case where it must not decide.
+        assert cover.coverage_distance(0.0) > cover.coverage_distance(100.0)
+
+        assert cover.climate_tilt_percentage(CLIMATE_DEFAULT_TILT_ANGLE) == 100
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=CLIMATE_DEFAULT_TILT_ANGLE, mode=mode, cover=cover
+            )
+            == 100
+        )
+
+    @pytest.mark.unit
+    def test_one_degree_of_travel_cannot_swing_the_command_across_the_scale(self):
+        """79° and 80° of travel must not answer 0 % and 100 %.
+
+        ``max_slat_angle = 80`` puts ``CLIMATE_DEFAULT_TILT_ANGLE`` exactly on
+        the top rail, so it is the last value still on the scale and 79 is the
+        first one off it. A rule that changes which END it answers at that
+        boundary turns one degree of configured travel into a hundred points of
+        commanded tilt.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+        )
+
+        answers = {}
+        for max_slat_angle in (78, 79, 80, 81):
+            cover = build_louvered_roof_cover(
+                sol_azi=180.0,
+                sol_elev=45.0,
+                roof_pitch=0.0,
+                mode="mode1",
+                max_slat_angle=max_slat_angle,
+            )
+            answers[max_slat_angle] = cover.climate_tilt_percentage(
+                CLIMATE_DEFAULT_TILT_ANGLE
+            )
+        assert answers == {78: 100, 79: 100, 80: 100, 81: 99}
+
+    @pytest.mark.unit
+    def test_the_commanded_tilt_is_continuous_across_every_reachable_travel(self):
+        """No adjacent pair of ``max_slat_angle`` values may jump the scale.
+
+        Sweeps the whole configurable range a degree at a time and asserts the
+        commanded tilt never moves more than a couple of points between
+        neighbours. The band this protects is 30–90°, where the fixed 80° target
+        crosses the top rail; the sweep runs past it on both sides so a future
+        rule cannot move the discontinuity somewhere else instead of removing
+        it.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+        )
+
+        answers = [
+            build_louvered_roof_cover(
+                sol_azi=180.0,
+                sol_elev=45.0,
+                roof_pitch=0.0,
+                mode="mode1",
+                max_slat_angle=max_slat_angle,
+            ).climate_tilt_percentage(CLIMATE_DEFAULT_TILT_ANGLE)
+            for max_slat_angle in range(20, 181)
+        ]
+        steps = [abs(b - a) for a, b in zip(answers, answers[1:])]
+        assert max(steps) <= 2, f"largest jump {max(steps)} in {answers}"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("angle_0", "angle_100", "angle_deg", "raw_pct"), _SHORT_CALIBRATIONS
+    )
+    def test_a_calibration_below_horizontal_closes_to_its_top_end(
+        self, angle_0, angle_100, angle_deg, raw_pct
+    ):
+        """The ``specify_angles`` mirror of the pergola case, at both angles.
+
+        A pair calibrated wholly below horizontal reaches neither climate angle
+        that lies above its top endpoint, and the request always overshoots the
+        TOP of the scale. ``0/45`` and ``0/60`` are ordinary short-travel
+        venetians; ``20/70`` is the very pair
+        ``test_letting_the_sun_through_keeps_the_nearest_reachable_slat`` uses,
+        exercised here at the angles production actually asks for.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CLIMATE_DEFAULT_TILT_ANGLE,
+            CLIMATE_SUMMER_TILT_ANGLE,
+        )
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        assert angle_deg in (CLIMATE_SUMMER_TILT_ANGLE, CLIMATE_DEFAULT_TILT_ANGLE)
+
+        cover = _calibrated_tilt(angle_0=angle_0, angle_100=angle_100)
+        assert cover._percentage_from_angle(angle_deg) == pytest.approx(raw_pct)
+        assert cover.coverage_distance(0.0) > cover.coverage_distance(100.0)
+
+        assert cover.climate_tilt_percentage(angle_deg) == 100
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg, mode="specify_angles", cover=cover
+            )
+            == 100
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("angle_0", "angle_100", "angle_deg", "expected"),
+        [(0.0, 45.0, 45.0, 100), (0.0, 60.0, 45.0, 75), (20.0, 70.0, 45.0, 50)],
+    )
+    def test_the_summer_angle_still_lands_on_the_scale_where_it_fits(
+        self, angle_0, angle_100, angle_deg, expected
+    ):
+        """The same pairs at 45°, where the target is still reachable.
+
+        Asserted alongside the overshoot rows so the pair either side of each
+        top rail is visible: ``0/45`` sits exactly ON it at 100 %, and one
+        degree of extra travel moves the answer a point or two, not a hundred.
+        """
+        cover = _calibrated_tilt(angle_0=angle_0, angle_100=angle_100)
+        raw = cover._percentage_from_angle(angle_deg)
+        assert 0.0 <= raw <= 100.0
+        assert cover.climate_tilt_percentage(angle_deg) == expected

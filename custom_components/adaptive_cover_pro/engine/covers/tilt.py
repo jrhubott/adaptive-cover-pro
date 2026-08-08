@@ -10,6 +10,7 @@ from numpy import tan
 
 from ...config_types import TiltConfig
 from ...const import (
+    COVERAGE_DISTANCE_TIE_EPS,
     SAFETY_MARGIN_USER_SLACK_MAX,
     TILT_HORIZONTAL_DEG,
     TRACE_KEY_GAMMA_DEG,
@@ -76,15 +77,20 @@ def clamp_to_percentage_scale(value: float) -> float:
     between here and there returning values its own docstring forbids
     (#1222 audit).
 
-    Nearest-end is the right pin for a SOLVED percentage and only for one. The
-    solar path's input is a position the geometry actually asked for on this
-    scale, so the closest reachable percentage is the closest reachable slat.
+    Nearest-end is the right pin almost everywhere, and for a reason worth
+    keeping straight: the map is monotone in the angle, so the closest
+    reachable PERCENTAGE is also the closest reachable SLAT. On the solar path
+    that is the whole story, because the input is a position the geometry
+    actually asked for on this scale.
+
     A climate target is not a solve — it is a fixed angle from a rule that has
-    no idea what this drive's travel is — and when it images off the scale the
-    nearest end can be the least protective one. That case belongs to
-    :meth:`AdaptiveTiltCover._pin_climate_target`, which asks the intent first
-    and falls back here; do not teach this function about intent, or the solar
-    path starts paying for the climate path's problem (#1222 audit).
+    no idea what this drive's travel is — and there is exactly one shape of
+    scale where the nearest slat cannot express it: when maximum openness lies
+    between the target and the whole reachable travel, the nearest end is the
+    one nearest horizontal, the LEAST protective slat the drive has. That case
+    belongs to :meth:`AdaptiveTiltCover._pin_climate_target`, which falls back
+    here for everything else; do not teach this function about intent, or the
+    solar path starts paying for the climate path's problem (#1222 audit).
     """
     return max(COMMAND_PERCENT_MIN, min(COMMAND_PERCENT_MAX, float(value)))
 
@@ -781,7 +787,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         to degrees does not, and ``44`` and ``56`` — both exactly 10.8° off
         horizontal — come out 1.4e-14 apart. Comparing them has to tolerate
         that, which is why ``CoverTypePolicy.more_protective_position`` calls a
-        tie inside ``_COVERAGE_DISTANCE_TIE_EPS`` rather than testing equality
+        tie inside ``COVERAGE_DISTANCE_TIE_EPS`` rather than testing equality
         (#1222 audit).
 
         It stops cancelling the moment the scale hinges. On the reporting
@@ -869,65 +875,99 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         return round(self._pin_climate_target(percentage, sun_through=sun_through))
 
     def _pin_climate_target(self, percentage: float, *, sun_through: bool) -> float:
-        """Pin an off-scale climate target onto the end that serves its INTENT.
+        """Pin an off-scale climate target onto the end that can still serve it.
 
         A climate rule states an intent — block the sun
         (``CLIMATE_SUMMER_TILT_ANGLE``, ``CLIMATE_DEFAULT_TILT_ANGLE``) or let it
         through (winter heating) — and expresses it as a fixed slat angle. The
         angle is the rule's shorthand for the intent, not a measurement of this
-        drive, so a calibration that cannot reach it has not been handed an
-        out-of-range number to round back in: it has been handed a request it
-        must answer some other way.
+        drive, so a calibration that cannot reach it has been handed a request
+        it must answer some other way.
 
-        :func:`clamp_to_percentage_scale` answers "the nearest reachable
-        percentage", which is right for a solved position and wrong here. On a
-        ``specify_angles`` pair lying at or above horizontal — ``90/180``,
-        ``100/170``, ``120/180``, all accepted by both config surfaces, whose
-        only ordering rule is ``angle_0 < angle_100`` — both climate blocking
-        angles image NEGATIVE, and the nearest end is ``angle_0``: the slat
-        closest to horizontal, which is maximum openness. A block-the-sun
-        request answered with the most sun-permissive position the drive has
-        (#1222 audit).
+        The default answer is still :func:`clamp_to_percentage_scale`, and for a
+        specific reason rather than for want of a better one. The map is
+        monotone in the angle on every scale this engine can wear, so the
+        nearest reachable PERCENTAGE is also the nearest reachable SLAT — the
+        one that misses the requested angle by the least, in the direction the
+        rule asked for. A drive that simply runs short of the target keeps its
+        own end: a pergola with ``max_slat_angle = 79`` asked for an 80° slat
+        answers 79°, one degree away, and the 80° drive next to it answers the
+        target exactly. Nothing about that case wants a different end, and
+        moving it would turn one degree of configured travel into a hundred
+        points of commanded tilt (#1222 audit).
 
-        So the intent picks the end instead, measured with
-        :meth:`coverage_distance` — the same metric
-        ``CoverTypePolicy.more_protective_position`` ranks by, and the reason
-        this needs no sign test, no mode test, and no notion of which way the
-        calibration runs. Farther from horizontal is more protective on every
-        scale this engine can wear, including an inverted calibration where
-        100 % is the downward-closed slat.
+        The clamp stops meaning that in exactly one situation: when maximum
+        openness lies between the target and the WHOLE reachable travel. Then no
+        reachable slat closes the way the rule asked — the nearest end is the
+        one nearest horizontal, which is the least protective slat the drive
+        has. That is the ``specify_angles`` pair lying at or above horizontal:
+        ``90/180``, ``100/170``, ``120/180``, all accepted by both config
+        surfaces, whose only ordering rule is ``angle_0 < angle_100``. Both
+        climate blocking angles image NEGATIVE on them and the nearest end is
+        ``angle_0``, so a block-the-sun request was answered with the most
+        sun-permissive position the drive has.
 
-        Two things deliberately do NOT happen here:
+        A BLOCKING request still has a reachable expression there, because
+        occlusion is symmetric about horizontal — that symmetry is precisely
+        what :meth:`coverage_distance` measures — so the intent takes the end
+        FARTHER from horizontal, ranked by the same metric
+        ``CoverTypePolicy.more_protective_position`` uses. No sign test, no mode
+        test, no notion of which way the calibration runs.
+
+        ``sun_through`` has no such expression and therefore never leaves the
+        clamp. Winter heating wants the slat parallel to the beam, the
+        zero-occlusion orientation, and that angle has no mirror: reflecting it
+        across horizontal does not transmit equally, it just points somewhere
+        else. The reachable slat that transmits most is the one closest to the
+        one asked for, which is the clamp. The asymmetry between the two intents
+        is the physics, not an oversight.
+
+        Which side of maximum openness the travel sits on is asked in percentage
+        space, via :meth:`_horizontal_percentage` — the pivot's own image under
+        the forward map, the same call :meth:`coverage_pivot_percentage`
+        publishes. Monotonicity is what makes that equivalent to asking in
+        angles, and it costs no second derivation of either map.
+
+        Three things deliberately do NOT happen here:
 
         * an in-range percentage is returned untouched, so a calibration that
           straddles horizontal — the reporting blind's own 0°/130° — reaches
           both climate angles directly and answers exactly what it always did;
-        * a scale whose two ends are EQUALLY protective abstains and falls back
-          to the clamp. MODE2's rails are both ninety degrees off horizontal:
-          neither serves a blocking request better, and breaking that tie by
-          position rather than by coverage would swing an overshoot the full
-          width of the scale.
-
-        The unmeasurable case abstains the same way. It cannot arise from
-        :meth:`climate_tilt_percentage`, which has already had a percentage out
-        of the map before it calls here, so the scale is known non-degenerate —
-        but :meth:`coverage_distance` is an overridable hook typed
-        ``float | None``, and unlike ``CoverTypePolicy.more_protective_position``
-        this method has a correct answer to fall back on, so it asks instead of
-        assuming.
+        * a degenerate scale, with no pivot to sit either side of, keeps the
+          clamp;
+        * a scale whose two ends are EQUALLY protective keeps the clamp too.
+          MODE2's rails are both ninety degrees off horizontal, and neither
+          serves a blocking request better than the other. That tie is not
+          reachable from this branch — a pivot outside the travel puts the two
+          ends at different distances by construction — but the metric is an
+          overridable hook, and "equal" is measured to
+          ``COVERAGE_DISTANCE_TIE_EPS`` rather than exactly, for the same reason
+          the comparator measures it that way: degrees are computed, not
+          counted, and an ulp is not a preference.
         """
         if COMMAND_PERCENT_MIN <= percentage <= COMMAND_PERCENT_MAX:
             return float(percentage)
-        distance_min = self.coverage_distance(COMMAND_PERCENT_MIN)
-        distance_max = self.coverage_distance(COMMAND_PERCENT_MAX)
-        if distance_min is None or distance_max is None or distance_min == distance_max:
-            return clamp_to_percentage_scale(percentage)
-        blocking, opening = (
-            (COMMAND_PERCENT_MAX, COMMAND_PERCENT_MIN)
-            if distance_max > distance_min
-            else (COMMAND_PERCENT_MIN, COMMAND_PERCENT_MAX)
+        near_end = clamp_to_percentage_scale(percentage)
+        if sun_through:
+            return near_end
+        pivot = self._horizontal_percentage()
+        if pivot is None:
+            return near_end
+        low, high = sorted((float(percentage), near_end))
+        if not low <= pivot <= high:
+            return near_end
+        far_end = (
+            COMMAND_PERCENT_MAX
+            if near_end == COMMAND_PERCENT_MIN
+            else COMMAND_PERCENT_MIN
         )
-        return opening if sun_through else blocking
+        near_distance = self.coverage_distance(near_end)
+        far_distance = self.coverage_distance(far_end)
+        if near_distance is None or far_distance is None:
+            return near_end
+        if far_distance - near_distance <= COVERAGE_DISTANCE_TIE_EPS:
+            return near_end
+        return far_end
 
     def coverage_travel_bounds(self) -> tuple[float, float]:
         """Report ``[min_tilt, max_tilt]`` as the reachable travel (#1104).
