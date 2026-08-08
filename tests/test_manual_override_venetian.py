@@ -1524,3 +1524,85 @@ async def test_near_target_tilt_publish_position_axis_still_evaluated() -> None:
         "a near-target tilt publish must fall through so a genuine position "
         "move still trips (finding #2)"
     )
+
+
+def _make_inverse_policy() -> VenetianPolicy:
+    """Build a VenetianPolicy over an ``inverse_tilt=True`` sequencer, grace expired.
+
+    Models a KNX/HomeKit venetian: ACP dispatches the LOGICAL tilt but the
+    actuator publishes the WIRE value (``100 - logical``). No suppression window
+    or excursion is armed, so ``evaluate`` takes the delta path — which must
+    normalise the wire publish back to logical before comparing.
+    """
+    seq = DualAxisSequencer(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        invert_tilt=lambda: True,
+    )
+    grace_mgr = MagicMock()
+    grace_mgr.is_in_command_grace_period = lambda _eid: False
+    policy = VenetianPolicy()
+    policy._sequencer = seq
+    policy._grace_mgr = grace_mgr
+    return policy
+
+
+def test_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override() -> None:
+    """An inverse_tilt actuator publishing the WIRE tilt of the verified
+    target must NOT trip. ACP dispatched logical 96 (wire 4); the actuator
+    publishes ``current_tilt_position=4``. Pre-fix ``evaluate`` compared logical
+    96 against raw 4 → delta 92 → false ``manual_override_set``. Post-fix the
+    reported wire value is normalised back to logical (96) → delta 0.
+    """
+    entity_id = "cover.raffstore_kuche_rechts"
+    policy = _make_inverse_policy()
+    check = _secondary_check(policy, 96)  # expected = logical 96
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "wire publish of the verified logical target must NOT trip manual override"
+
+
+def test_inverse_tilt_genuine_off_target_move_still_trips() -> None:
+    """The inversion fix must not mask a real move: ACP dispatched logical 96
+    (wire 4); the user twists the slats to logical 30 → the actuator publishes
+    wire 70. Normalised back to logical 30, delta |96-30|=66 ≥ threshold → trips.
+    """
+    entity_id = "cover.raffstore_kuche_rechts_user"
+    policy = _make_inverse_policy()
+    check = _secondary_check(policy, 96)
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(
+            entity_id, position=2, tilt=70
+        ),  # wire 70 -> logical 30
+        our_state=2,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "a genuine off-target tilt move must still trip even with inversion normalised"

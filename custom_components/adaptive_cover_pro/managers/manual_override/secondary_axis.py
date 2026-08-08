@@ -143,6 +143,16 @@ class SecondaryAxisCheck:
     # one-shot-popped): endpoint publish marks, target-return consumes
     # (issue #927/#930).
     excursion_match: Callable[[str, float], bool] | None = None
+    # Normalises the raw published value into the same space as ``expected``
+    # before the delta comparison. ``expected`` is the LOGICAL
+    # dispatched value (``last_tilt_target``), but the actuator publishes the
+    # WIRE value — with ``inverse_tilt`` these differ by ``100 - x``, so a raw
+    # ``abs(expected - new_value)`` reads a fully-verified tilt as a ~``|2·x-100|``
+    # manual move. Symmetric (logical↔wire), so it maps the reported wire value
+    # back to logical. Defaults to identity for axes/covers without inversion.
+    # The excursion/suppression callbacks keep receiving the RAW value — they
+    # normalise internally (venetian's ``_publish_matches`` applies ``_to_wire``).
+    to_wire: Callable[[int], int] | None = None
 
     def consume_excursion(self, entity_id: str, new_state) -> None:
         """Advance the excursion trajectory state under another gate.
@@ -214,7 +224,12 @@ class SecondaryAxisCheck:
         if self.expected is None:
             return SecondaryAxisResult()
 
-        delta = abs(self.expected - new_value)
+        # Normalise the reported WIRE value back into ``expected``'s LOGICAL
+        # space before the delta (see the ``to_wire`` field for why). Identity
+        # when unset; the excursion/suppression callbacks keep the RAW value.
+        reported = self.to_wire(new_value) if self.to_wire is not None else new_value
+
+        delta = abs(self.expected - reported)
 
         # Check suppression BEFORE the on-target short-circuit. When the motor
         # back-drives the position axis during tilt settling, tilt may arrive
@@ -227,7 +242,7 @@ class SecondaryAxisCheck:
                 event_name="manual_override_rejected_tilt_suppression",
                 event_kwargs={
                     "our_state": self.expected,
-                    "new_position": new_value,
+                    "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
                         f"{self.label} delta {delta:.1f}% within venetian "
@@ -236,7 +251,7 @@ class SecondaryAxisCheck:
                 },
             )
 
-        if new_value == self.expected:
+        if reported == self.expected:
             return SecondaryAxisResult()
 
         if delta >= effective_threshold:
@@ -246,7 +261,7 @@ class SecondaryAxisCheck:
                 event_name="manual_override_set",
                 event_kwargs={
                     "our_state": self.expected,
-                    "new_position": new_value,
+                    "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
                         f"{self.label} delta {delta:.1f}% >= threshold {effective_threshold}%"
