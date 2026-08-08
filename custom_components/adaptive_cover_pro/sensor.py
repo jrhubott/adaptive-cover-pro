@@ -354,11 +354,43 @@ class _PositionVerificationSensor(_ACPRestorableDiagnosticSensor):
 # ---------------------------------------------------------------------------
 
 
-def _cover_position_value(s: _ACPSensor) -> Any:
-    held = s.data.states.get("held_position")
-    if held is not None:
+def _target_position(states: Mapping[str, Any], result: Any) -> Any:
+    """Resolve where ACP is putting this cover — the Target Position value.
+
+    The one definition behind all three of this sensor's target surfaces — its
+    own state, its ``target_distance``, and its ``all_at_target`` verdict. Each
+    derived the target separately before #1175, and they disagreed.
+
+    A hold winner keeps the cover's *physical* position rather than proposing a
+    computed one, so ``held_position`` is the honest answer while the hold is
+    holding: it beats the value the hold merely shadows (#534 / #809). It stops
+    being the answer once a user-configured bound outranks the holder and clamps
+    it — the hold no longer decides where this cover goes, while
+    ``held_position`` still carries the pre-clamp read (#1175).
+
+    ⚠️ The gate is ``position_constraint_applied``, NOT ``skip_command``. The
+    tilt axis clears ``skip_command`` too, but there the position axis stayed
+    inert and the winner's ``position`` was rewritten from the held read — the
+    cover is being commanded to where it already is, so the physical read is
+    still right. Only the position-axis flag means a bound re-targeted this
+    winner.
+
+    ``position_constraint_applied`` says a bound re-targeted the winner; it does
+    NOT say a frame reached the motor, and this surface does not claim one did.
+    It reports the pipeline's resolved target — as it already does for every
+    winner the dispatch gates go on to suppress — not a dispatch log.
+    """
+    held = states.get("held_position")
+    clamped = result is not None and result.position_constraint_applied
+    if held is not None and not clamped:
         return held
-    return s.data.states["state"]
+    return states["state"]
+
+
+def _cover_position_value(s: _ACPSensor) -> Any:
+    """Return the Target Position sensor's own value."""
+    result = s.coordinator._pipeline_result  # noqa: SLF001
+    return _target_position(s.data.states, result)
 
 
 def _compute_distance_attrs(
@@ -415,6 +447,9 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         attrs["reason"] = _localized_reason(
             s.coordinator, pipeline_result.reason_payload, pipeline_result.reason
         )
+    # Resolved once and shared by both surfaces below, from the result already
+    # in hand — the sensor's value goes through the same helper (#1175).
+    target_position = _target_position(s.data.states, pipeline_result)
     diagnostics = s.coordinator.data.diagnostics if s.coordinator.data else None
     if diagnostics:
         position_explanation = diagnostics.get("position_explanation")
@@ -477,12 +512,13 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         }
 
         # all_at_target: True when every cover with a known position is within
-        # tolerance of the coordinator's current target position.
-        target = s.data.states.get("state")
+        # tolerance of the target this sensor reports. Measured against that
+        # target and not the raw ``state``, or a hold reads as "not at target"
+        # while every cover sits exactly where the hold is holding it (#1175).
         tolerance = s.coordinator._cmd_svc._position_tolerance  # noqa: SLF001
-        if target is not None:
+        if target_position is not None:
             try:
-                target_int = int(target)
+                target_int = int(target_position)
                 attrs["all_at_target"] = all(
                     pos is not None and abs(pos - target_int) <= tolerance
                     for pos in actual_positions.values()
@@ -492,10 +528,7 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         else:
             attrs["all_at_target"] = None
 
-    target_pos = s.data.states.get("held_position")
-    if target_pos is None:
-        target_pos = s.data.states.get("state")
-    distance_attrs = _compute_distance_attrs(s.coordinator, snapshot, target_pos)
+    distance_attrs = _compute_distance_attrs(s.coordinator, snapshot, target_position)
     if distance_attrs is not None:
         attrs.update(distance_attrs)
 

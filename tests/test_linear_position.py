@@ -9,19 +9,15 @@ from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.sensor import _cover_position_attrs
 
+from tests._helpers.cover_position_sensor import make_cover_position_sensor
+
 
 def _make_sensor(diagnostics: dict) -> MagicMock:
-    """Minimal MagicMock sensor exercising only the diagnostics branch."""
-    s = MagicMock()
-    s.data.attributes = {}
-    s.data.states = {"control": "solar", "state": 31, "held_position": None}
-    s.coordinator._pipeline_result = None
-    s.coordinator.data.diagnostics = diagnostics
-    s.coordinator._cmd_svc.transit_states.return_value = {}
-    s.coordinator._snapshot = None
-    # lift_travel_metres None -> _compute_distance_attrs returns None (skip).
-    s.coordinator._policy.lift_travel_metres.return_value = None
-    return s
+    """Shared stub, pinned to this module's diagnostics branch."""
+    return make_cover_position_sensor(
+        states={"control": "solar", "state": 31, "held_position": None},
+        diagnostics=diagnostics,
+    )
 
 
 def test_linear_position_mirrored_from_diagnostics():
