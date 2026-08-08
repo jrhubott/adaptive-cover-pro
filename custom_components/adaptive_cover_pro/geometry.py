@@ -99,12 +99,15 @@ class SafetyMarginCalculator:
     def calculate(gamma: float, sol_elev: float) -> float:
         """Calculate the angle-dependent safety-margin multiplier (>= 1.0).
 
+        Composed of two additive terms atop the 1.0 baseline:
+
         - Gamma margin: increases at extreme horizontal angles
         - Elevation margin: increases at very low or high angles
 
         The tilt axis is the only consumer (`tilt.py`, #783/#1089): a
         multiplier > 1.0 there closes the slats further, the direction that
-        actually adds slack.
+        actually adds slack — but only when the user opts in via
+        `tilt_safety_margin` (it defaults to 0.0, an exact no-op).
 
         ⚠️ Do not apply this to the vertical axis's output position — it
         already sits exactly on the `distance_shaded_area` contract boundary
@@ -119,7 +122,8 @@ class SafetyMarginCalculator:
             sol_elev: Sun elevation angle in degrees (0-90)
 
         Returns:
-            Safety margin multiplier (1.0 to 1.45)
+            Safety margin multiplier (1.0 to `1.0 + SAFETY_MARGIN_USER_SLACK_MAX`,
+            currently 1.35 — the two elevation branches above never both fire).
 
         """
         return _safety_margin(gamma, sol_elev)
