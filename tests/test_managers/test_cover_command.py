@@ -17,6 +17,9 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
 from custom_components.adaptive_cover_pro.managers.cover_command.gates import (
     check_position_delta,
 )
+from custom_components.adaptive_cover_pro.managers.cover_command.routing import (
+    is_my_preset_target,
+)
 
 
 @pytest.fixture
@@ -591,6 +594,45 @@ def test_route_service_call_non_position_axis_books_endpoint_unless_my():
         )
         assert my_plan.service == "stop_cover", state
         assert my_plan.routed_target == state
+
+
+def test_is_my_preset_target_only_claims_non_endpoints_on_a_blind_axis():
+    """The predicate itself, clause by clause (issues #1134 / #990).
+
+    Its two readers both act on the answer physically — ``_execute_command``
+    sends ``stop_cover`` instead of ``open_cover``/``close_cover``, and
+    ``is_target_unreached`` goes quiet — so each clause needs its own case.
+
+    The endpoint carve-out is the one the calibration-safety argument rests on:
+    ``TravelCalibrationManager`` drives only ``axis.value_min`` /
+    ``axis.value_max`` on covers that cannot report position, and a sweep that
+    answered True there would ``stop_cover`` a cover it meant to run to its
+    stop. It is also what keeps every threshold-routed resend honest, since
+    ordinary routing on this axis books nothing BUT 0 and 100 (pinned by
+    ``test_route_service_call_non_position_axis_books_endpoint_unless_my``).
+    """
+    rts_caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+        "has_stop": True,
+    }
+    axis = get_policy("cover_blind").select_default_axis(rts_caps)
+
+    # The endpoints are reachable by ordinary threshold routing, so they prove
+    # nothing about intent — and calibration only ever drives these two.
+    assert is_my_preset_target(rts_caps, axis, 0) is False
+    assert is_my_preset_target(rts_caps, axis, 100) is False
+    # A non-endpoint on this axis could only have been booked by a My dispatch.
+    assert is_my_preset_target(rts_caps, axis, 10) is True
+    # Nothing booked is nothing to infer from.
+    assert is_my_preset_target(rts_caps, axis, None) is False
+
+    # A cover that CAN take a position never routes through My: the same
+    # number is an ordinary set_cover_position target.
+    position_caps = dict(rts_caps, has_set_position=True)
+    assert is_my_preset_target(position_caps, axis, 10) is False
 
 
 def test_route_service_call_missing_open_close_caps():

@@ -3483,16 +3483,29 @@ class CoverCommandService:
             # Nothing was booked, so nothing has to be unwound — and the caller
             # counts no attempt against this entity.
             return False
-        # Capabilities are read on the FAR side of the acquisition, for the same
-        # reason ``apply_position`` re-derives ``_caps_for_plan`` after its own
-        # wait: the queue can hold a resend for tens of seconds while unrelated
-        # covers transmit, which is ample time for this entity to reload with
-        # different capabilities. Passing ``caps=`` on to
-        # ``_prepare_service_call`` also removes a duplicate fetch.
-        caps = self.get_cover_capabilities(entity_id)
-        axis = self._policy.select_default_axis(caps)
+        # Everything from the grant to the service call runs INSIDE the queue
+        # slot, and the single ``finally`` below hands it back on EVERY path out
+        # — the early returns, an exception, and a task cancellation alike. The
+        # same invariant ``apply_position`` states at its own acquisition: a
+        # missed release strands the slot until this entity happens to dispatch
+        # again, at which point every other member burns its whole budget before
+        # transmitting — unspaced and simultaneous, the exact collision #1189
+        # prevents. Nothing may be hoisted above the ``try``.
         transmitted = False
         try:
+            # Capabilities are read on the FAR side of the acquisition, for the
+            # same reason ``apply_position`` re-derives ``_caps_for_plan`` after
+            # its own wait: the queue can hold a resend for tens of seconds
+            # while unrelated covers transmit, which is ample time for this
+            # entity to reload with different capabilities. Passing ``caps=`` on
+            # to ``_prepare_service_call`` also removes a duplicate fetch.
+            #
+            # This read is a live raise site, which is why it sits under the
+            # ``try`` rather than beside the acquisition: ``check_cover_features``
+            # masks ``supported_features`` without guarding its type, so a cover
+            # publishing a non-int raises here.
+            caps = self.get_cover_capabilities(entity_id)
+            axis = self._policy.select_default_axis(caps)
             service, service_data, _ = self._prepare_service_call(
                 entity_id,
                 target,
