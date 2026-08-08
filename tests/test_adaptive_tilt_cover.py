@@ -1092,7 +1092,17 @@ class TestThreePointCalibration:
     def test_angle_from_percentage_round_trips_every_mode(
         self, mode, angle_0, angle_100, hp, pct
     ):
-        """``pct → angle → pct`` is the identity on every scale the engine drives."""
+        """``pct → angle → pct`` is the identity on every PHYSICAL scale.
+
+        "Physical" is the scope, and it is narrower than the option ranges:
+        every calibration parametrised here keeps both endpoints inside the
+        0–180° slat range, which is where the forward map's
+        ``_specified_target_angle`` clamp is inert and the two directions are
+        genuine inverses. ``_RANGE_TILT_ANGLE_0``/``_RANGE_TILT_ANGLE_100``
+        admit endpoints outside that range, and there the identity stops
+        holding — deliberately, and pinned next door by
+        ``test_the_inverse_stops_inverting_outside_the_physical_angle_range``.
+        """
         cover = _calibrated_tilt(
             mode=mode, angle_0=angle_0, angle_100=angle_100, horizontal_percent=hp
         )
@@ -1123,6 +1133,45 @@ class TestThreePointCalibration:
         legacy._effective_max_degrees = MagicMock(return_value=0.0)
         assert legacy._percentage_from_angle(45.0) is None
         assert legacy._angle_from_percentage(40.0) is None
+
+    @pytest.mark.unit
+    def test_the_inverse_stops_inverting_outside_the_physical_angle_range(self):
+        """The two directions are inverses only inside 0–180° (#1222 audit).
+
+        ``_RANGE_TILT_ANGLE_100`` runs to 360° and ``_RANGE_TILT_ANGLE_0`` down
+        to −180°, while ``hinge_is_usable`` asks only that the pair straddle
+        horizontal. A ``0/200`` calibration therefore stores and hinges fine —
+        and is the one place the round trip breaks, because only the FORWARD
+        direction clamps: ``_specified_target_angle`` pins its input into the
+        physical 0–180° slat range before mapping, so the upper segment tops out
+        at 90.9 %, while the inverse answers what the scale literally says and
+        hands back the configured 200°.
+
+        Characterization, not a defect report. The asymmetry is unreachable in
+        production — every percentage the comparator ranks came out of the
+        forward map, so nothing above 90.9 % is ever produced on this scale —
+        and CLAMPING the inverse is the wrong repair twice over: it would not
+        restore the identity (``forward(180)`` is still 90.9 %, not 100 %), and
+        it would flatten ``coverage_distance`` to a constant 90° across every
+        percentage that images outside the range, which is exactly the ordering
+        signal ``test_off_travel_pivot_still_orders_the_comparator`` exists to
+        protect. The honest statement is that a calibration outside 0–180° is
+        outside the map's domain, so it is pinned rather than papered over.
+        """
+        from custom_components.adaptive_cover_pro.const import TILT_HORIZONTAL_DEG
+
+        cover = _calibrated_tilt(angle_0=0.0, angle_100=200.0, horizontal_percent=50.0)
+        assert cover._hinge_percent() == 50.0
+
+        # The inverse reports the configured endpoint verbatim.
+        assert cover._angle_from_percentage(100.0) == pytest.approx(200.0)
+        # The forward map cannot get back — nor even reach 100 % at all.
+        assert cover._percentage_from_angle(200.0) == pytest.approx(1000 / 11)
+        assert cover._percentage_from_angle(180.0) == pytest.approx(1000 / 11)
+        # So the ordering metric reads 110° off horizontal for a slat the
+        # forward map caps at 90° off.
+        assert cover.coverage_distance(100) == pytest.approx(110.0)
+        assert cover._specified_target_angle(200.0) == TILT_HORIZONTAL_DEG + 90.0
 
     # -- the pivot everything downstream rounds away from -------------------
 
@@ -1165,6 +1214,13 @@ class TestThreePointCalibration:
         slat; without the mid-point it would draw a straight scale over a hinged
         one. Published unconditionally, including at the ``0`` sentinel, so the
         key set stays stable for consumers.
+
+        The key carries the ``_pct`` suffix ``const.py`` reserves for "percent
+        (0-100)" — the same suffix rule that turns the two endpoint angles into
+        ``*_deg`` — because ``DiagnosticsBuilder._round_trace_value`` reads that
+        suffix to decide the presentation rounding. Without it the mid-point
+        would be filed as a unit-less ratio and surface as ``50.0`` where every
+        other percentage in the trace surfaces as ``50``.
         """
         cover = _calibrated_tilt(
             angle_0=0.0, angle_100=130.0, horizontal_percent=hp, sol_elev=30.0
@@ -1174,7 +1230,7 @@ class TestThreePointCalibration:
         trace = cover._last_calc_details
         assert trace["tilt_angle_0_deg"] == 0.0
         assert trace["tilt_angle_100_deg"] == 130.0
-        assert trace["tilt_horizontal_percent"] == hp
+        assert trace["tilt_horizontal_pct"] == hp
 
 
 class TestMode1ClampCrossover:
@@ -1377,4 +1433,47 @@ class TestClimateTiltPercentageStaysInRange:
                 angle_deg=80.0, mode="specify_angles", cover=cover
             )
             == 0
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("angle_deg", "mode", "sun_through", "unclamped", "expected"),
+        [
+            # MODE1 divides by 90°, so anything past horizontal overshoots.
+            (200.0, "mode1", False, 222, 100),
+            (-45.0, "mode1", False, -50, 0),
+            # MODE2 divides by 180° and its winter mirror adds 90° first, so a
+            # profile angle past 90° overshoots the same way.
+            (120.0, "mode2", True, 117, 100),
+            (200.0, "mode2", False, 111, 100),
+            (-30.0, "mode2", False, -17, 0),
+        ],
+    )
+    def test_the_engine_less_fallback_keeps_the_contract_too(
+        self, angle_deg, mode, sun_through, unclamped, expected
+    ):
+        """The degraded path owes the same 0–100 promise as the engine path.
+
+        The two branches above cover the engine; these cover the mode-based
+        fallback, whose own ``clamp_to_percentage_scale`` calls were otherwise
+        unpinned — mutating both to the identity failed nothing in the suite.
+        They are defensive rather than live: the production callers feed it
+        ``CLIMATE_SUMMER_TILT_ANGLE`` (45° → 50 %) and
+        ``CLIMATE_DEFAULT_TILT_ANGLE`` (80° → 89 %), and the only variable
+        input, the MODE2 winter mirror's profile angle, stays inside
+        ``(−90°, 90°)`` and so maps inside the scale. The public static method
+        takes any float, though, and ``unclamped`` is what each case would
+        answer without the clamp — a percentage no cover entity accepts.
+        """
+        from custom_components.adaptive_cover_pro.cover_types.tilt import TiltPolicy
+
+        max_degrees = 180.0 if mode == "mode2" else 90.0
+        mirrored = angle_deg + (90.0 if (sun_through and mode == "mode2") else 0.0)
+        assert round(mirrored / max_degrees * 100) == unclamped
+
+        assert (
+            TiltPolicy.climate_tilt_percentage(
+                angle_deg=angle_deg, mode=mode, sun_through=sun_through
+            )
+            == expected
         )

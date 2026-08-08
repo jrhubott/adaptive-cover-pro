@@ -85,9 +85,12 @@ def tilt_horizontal_percent_error(config: dict[str, Any]) -> str | None:
     surfaces that can store it: ``config_flow._tilt_angle_step_errors`` and
     ``services.options_service``'s cross-field pass. The rule ITSELF is
     :func:`engine.covers.tilt.hinge_is_usable` — the very predicate the engine
-    gates its hinged map on — so a combination this accepts is exactly a
-    combination that takes effect, and nothing can drift between "stored" and
-    "honoured".
+    gates its hinged map on — so no combination this accepts can be rejected by
+    the map, and the calibration rule cannot drift between "stored" and
+    "honoured". Accepted is not the same as ACTIVE, though: ``_hinge_percent``
+    also requires ``specify_angles``, so a mid-point stored on a preset mode is
+    kept and stays inert until the mode is switched — exactly how the endpoint
+    angles beside it already behave.
 
     Checked unconditionally rather than only on ``specify_angles``, matching how
     the endpoint-ordering rule already behaves: the endpoints and the mid-point
@@ -99,6 +102,12 @@ def tilt_horizontal_percent_error(config: dict[str, Any]) -> str | None:
     Missing endpoints fall back to their defaults (the full 0–180° raw range),
     because that is what the engine reads for them. A non-numeric value is not
     this check's business — the range validator and the selector own type.
+
+    The message states the mid-point rule as the OPEN INTERVAL it actually is,
+    not as "1 to 99": the selector steps by 1 but ``set_geometry`` accepts a
+    float, and :func:`hinge_is_usable` admits ``0.5`` and ``99.5``. That also
+    matches how the endpoint-ordering rule next door already words itself
+    ("must be less than tilt_angle_100") rather than naming integer bounds.
     """
     raw_percent = config.get(CONF_TILT_HORIZONTAL_PERCENT)
     percent = _as_float(raw_percent, DEFAULT_TILT_HORIZONTAL_PERCENT)
@@ -111,8 +120,9 @@ def tilt_horizontal_percent_error(config: dict[str, Any]) -> str | None:
     if hinge_is_usable(angle_0, angle_100, percent):
         return None
     return (
-        f"tilt_horizontal_percent ({raw_percent}) must be between 1 and 99, and "
-        f"tilt_angle_0 ({angle_0:g}) / tilt_angle_100 ({angle_100:g}) must "
+        f"tilt_horizontal_percent ({raw_percent}) must be greater than 0 and "
+        f"less than 100, and tilt_angle_0 ({angle_0:g}) / "
+        f"tilt_angle_100 ({angle_100:g}) must "
         f"straddle {TILT_HORIZONTAL_DEG}° so the slats pass through horizontal. "
         "Use 0 to disable the third calibration point."
     )
@@ -305,15 +315,36 @@ class TiltPolicy(CoverTypePolicy, register=True):
 
         Pass *cover* and the answer comes from the engine's own angle→percentage
         map — the very map the solar path uses — which is the only way the two
-        paths can agree about a calibrated scale. The mode-based arithmetic
-        below is the fallback for callers with no engine in scope (and for a
-        degenerate scale the engine cannot map), and it is a fallback with a
-        known hole: it tests only ``is_mode2`` and otherwise divides by MODE1's
-        90°, so it answers a ``specify_angles`` cover as though its calibration
-        did not exist (issue #1222). That hole is why the engine seam exists;
-        the arithmetic stays because a partial answer beats none where there is
-        no engine, and because MODE1/MODE2 — everything it can actually see —
-        it gets right.
+        paths can agree about a calibrated scale. **Every production caller does
+        pass it** (the three tilt rules in ``pipeline.handlers.climate_modes``),
+        so the engine branch is the live path and the mode-based arithmetic
+        below is a DEGRADED fallback, not an equal alternative.
+
+        It is degraded in a specific, known way: it tests only ``is_mode2`` and
+        otherwise divides by MODE1's 90°, so it answers a ``specify_angles``
+        cover as though its calibration did not exist, and a louvered roof as
+        though its ``max_slat_angle`` were not configured. That is issue #1222's
+        defect 2 verbatim — it is the code the engine seam was added to stop
+        using. Do not extend it, and do not reach for it in new code.
+
+        It stays because exactly two routes still land on it, and neither has a
+        better answer available:
+
+        * no engine in scope — the static method is part of the policy's public
+          surface and several callers (tests, and any future consumer holding a
+          mode but no cover) have only the mode;
+        * a real engine that DECLINES, which it does on a zero-width scale
+          (``angle_0 == angle_100``, reachable only on a hand-edited or
+          partially-restored entry, since both config surfaces reject it). A
+          mode-shaped answer beats no answer where the return type is ``int``.
+
+        Both routes are pinned, so the split cannot rot unnoticed:
+        ``tests/test_climate_cover_state.py`` ::
+        ``test_preset_modes_answer_identically_with_and_without_the_engine`` and
+        ``test_degenerate_calibration_falls_back_to_the_static_formula``; that
+        the LIVE path never reaches here is pinned by
+        ``test_climate_tilt_honours_specify_angles_calibration``, where the
+        fallback would answer 50 and the engine answers 35.
 
         Takes no sun-azimuth argument on purpose. Slat tilt is even in gamma —
         the sun's left/right offset enters the slat geometry only through the

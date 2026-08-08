@@ -349,8 +349,10 @@ from .cover_types import (  # noqa: E402
 )
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
-from .cover_types.tilt import GEOMETRY_TILT_SCHEMA  # noqa: E402, F401
-from .cover_types.tilt import tilt_horizontal_percent_error  # noqa: E402
+from .cover_types.tilt import (  # noqa: E402
+    GEOMETRY_TILT_SCHEMA,  # noqa: F401
+    tilt_horizontal_percent_error,
+)
 from .cover_types.venetian import GEOMETRY_VENETIAN_SCHEMA  # noqa: E402, F401
 from .unit_system import (  # noqa: E402
     options_to_display,

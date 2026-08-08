@@ -83,6 +83,13 @@ def hinge_is_usable(
     the message wrapper in ``cover_types.tilt``. A validator that only happens
     to agree with the engine is a validator that will one day disagree.
 
+    This is the whole rule about the CALIBRATION, but not the whole gate:
+    ``_hinge_percent`` additionally requires the mode to be ``specify_angles``,
+    so a mid-point stored on ``mode1``/``mode2`` is accepted here and then lies
+    dormant. That is the same shape ``tilt_angle_0``/``tilt_angle_100`` already
+    have — validated whenever written, honoured only by the mode that reads
+    them — and it is what keeps the values intact across a mode switch.
+
     Two conditions, and both are about the segments having width:
 
     * the mid-point is strictly interior — ``0`` is the disabled sentinel and
@@ -331,6 +338,19 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         scale SAYS a percentage means, including outside the calibrated travel
         where an off-travel pivot lives. Clamping would flatten exactly the
         ordering its callers need.
+
+        That one-sided clamp is also the exact edge of "exact inverse", and the
+        boundary is worth naming: the endpoint ranges (``-180…180`` /
+        ``0…360``) are wider than the 0–180° slat range the forward clamp
+        enforces, so a calibration reaching outside it — ``0/200``, say — has
+        no round trip. ``_angle_from_percentage(100)`` is 200° while the forward
+        map, capped at 180°, tops out at 90.9 %. Unreachable in production
+        (every ranked percentage came out of the forward map, so the missing
+        band is never produced) and left that way on purpose: clamping here
+        would not restore the identity either, and would collapse
+        :meth:`coverage_distance` to a constant 90° across the whole
+        out-of-range band. Pinned by ``tests/test_adaptive_tilt_cover.py`` ::
+        ``test_the_inverse_stops_inverting_outside_the_physical_angle_range``.
 
         ``None`` on the same degenerate scales the forward map reports ``None``
         for — a scale that cannot produce a percentage cannot consume one.
@@ -598,9 +618,16 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 # endpoints or it would draw a straight map over a bent one
                 # (#1222). Published even at the 0 sentinel — a stable key set
                 # is what lets the card read it without probing.
-                self._last_calc_details["tilt_horizontal_percent"] = (
-                    self.horizontal_percent
-                )
+                #
+                # ``_pct``, not ``_percent``, even though the OPTION is
+                # ``tilt_horizontal_percent``: trace keys carry the suffix
+                # vocabulary declared next to TRACE_KEY_POSITION_PCT in
+                # const.py, which ``DiagnosticsBuilder._round_trace_value``
+                # dispatches on to pick the display rounding. The two endpoint
+                # angles are renamed the same way (option ``tilt_angle_0`` →
+                # trace ``tilt_angle_0_deg``); an unsuffixed key here would be
+                # rounded as a unit-less ratio instead of an integer percent.
+                self._last_calc_details["tilt_horizontal_pct"] = self.horizontal_percent
             pct = clamp_to_percentage_scale(percentage)
         else:
             # Same effective ceiling the position solve clamps to (the mode max
