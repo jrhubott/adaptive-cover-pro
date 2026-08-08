@@ -337,7 +337,16 @@ def _slot_configured(options: Mapping, keys: Mapping[str, str]) -> bool:
     """Return True when a slot has a trigger AND an axis claim (mirrors helpers.py)."""
     if not _slot_has_trigger(options, keys):
         return False
-    return any(options.get(keys[sub]) is not None for sub in _CLAIM_KEYS)
+    if any(options.get(keys[sub]) is not None for sub in _CLAIM_KEYS):
+        return True
+    # A tilt-only slot claims the tilt axis through its fixed ``tilt`` value
+    # alone (mirrors helpers.custom_position_slot_claims_tilt_only). The
+    # tilt_only default (False) is duplicated for the same HA-free reason as
+    # _CLAIM_KEYS above.
+    return (
+        bool(options.get(keys["tilt_only"], False))
+        and options.get(keys["tilt"]) is not None
+    )
 
 
 def _weather_has_trigger_source(options: Mapping) -> bool:

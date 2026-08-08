@@ -223,7 +223,11 @@ from ..const import (
     OPTION_RANGES,
     TIME_STRING_RE,
 )
-from ..helpers import CUSTOM_POSITION_CLAIM_KEYS, custom_position_slot_sensors
+from ..helpers import (
+    CUSTOM_POSITION_CLAIM_KEYS,
+    custom_position_slot_claims_tilt_only,
+    custom_position_slot_sensors,
+)
 from ..templates import is_template_string as _is_template_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -1150,19 +1154,25 @@ def _cross_field_validate(
     # legacy sensor, or template) AND a claim on an axis — or neither. The
     # claim vocabulary is CUSTOM_POSITION_CLAIM_KEYS: a position, or one of the
     # axis constraints (issue #943), so a trigger → "minimum tilt 50%" slot is
-    # complete without a position.
+    # complete without a position. A tilt-only slot also claims the tilt axis
+    # through its fixed ``tilt`` value alone.
     for i in CUSTOM_POSITION_SLOT_NUMBERS if check_slot_completeness else ():
         slot = _CUSTOM_SLOT_KEYS[i]
         trigger_keys = (slot["sensor"], slot["sensors"], slot["template"])
         claim_keys = tuple(slot[sub] for sub in CUSTOM_POSITION_CLAIM_KEYS)
-        if any(k in patch for k in trigger_keys + claim_keys):
+        # A tilt-only tilt claim also completes a slot; touching either the tilt
+        # value or the tilt_only flag must re-run this check.
+        tilt_only_keys = (slot["tilt"], slot["tilt_only"])
+        if any(k in patch for k in trigger_keys + claim_keys + tilt_only_keys):
             has_trigger = bool(
                 custom_position_slot_sensors(merged_active, slot)
             ) or _is_template_str(merged_active.get(slot["template"]))
-            has_claim = any(merged_active.get(k) is not None for k in claim_keys)
+            has_claim = any(
+                merged_active.get(k) is not None for k in claim_keys
+            ) or custom_position_slot_claims_tilt_only(merged_active, slot)
             if has_trigger != has_claim:
                 missing = (
-                    f"{slot['position']} (or an axis constraint)"
+                    f"{slot['position']} (or an axis constraint / tilt-only angle)"
                     if has_trigger
                     else f"{slot['sensors']} or {slot['template']}"
                 )
