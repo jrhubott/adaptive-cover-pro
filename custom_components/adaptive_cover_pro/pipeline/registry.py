@@ -486,11 +486,28 @@ def _as_outside_window_pseudo_hold(
     Withheld when no cover reports a position: there is then no safe value to
     pin the unconstrained axes to, and the only number left to send would be the
     winner's own — which is the whole hazard.
+
+    **Withheld for a safety winner**, which is clause (a) of the same invariant
+    the rest of this function serves. Suppressing the winner's own position is
+    only ever right for a result that has no licence to move a cover out here;
+    a weather retraction and a priority-100 slot both do (#563), and their own
+    values are exactly what must reach the hardware. Applied to one, the
+    pseudo-hold would post the cover's current read in place of the storm
+    position — and, because the bounds would then be judged against that read
+    rather than the winner, a ceiling that really binds the retraction would
+    stop binding it too. Declining leaves such a winner on the pre-item-B path,
+    where :func:`_judge_position_axis` clamps ``winner.position`` itself and
+    :func:`_release_hold_for_tilt_clamp` returns early on the absent
+    ``held_position`` — i.e. byte-identical to the clock-open cycle, which is
+    what "acts outside the window" has always meant. It also keeps
+    ``is_safety`` and ``outside_window_constraint_active`` from ever being
+    co-written, preserving the separation #1226/#1165 established.
     """
     if (
         snapshot.clock_window_open
         or not constraints
         or winner.held_position is not None
+        or winner.is_safety
     ):
         return winner, False
     if snapshot.current_cover_position is None:

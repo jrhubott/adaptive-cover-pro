@@ -37,7 +37,11 @@ from custom_components.adaptive_cover_pro.pipeline.axis_constraints import (
     may_act_outside_clock_window,
     window_ineligible_constraints,
 )
-from custom_components.adaptive_cover_pro.pipeline.handlers import DefaultHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers import (
+    CustomPositionHandler,
+    DefaultHandler,
+    WeatherOverrideHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
@@ -481,3 +485,172 @@ def test_dropped_constraint_leaves_an_explicit_trace_step():
     assert len(steps) == 1
     assert steps[0].matched is False
     assert steps[0].handler == "custom_position_1"
+
+
+# ---------------------------------------------------------------------------
+# Clause (a): a safety winner already owns the night
+# ---------------------------------------------------------------------------
+#
+# The pseudo-hold exists to suppress a NON-safety winner's own position, which
+# has no licence to reach hardware outside the window. A safety result does
+# have that licence — weather, or a priority-100 slot (#563) — and its own
+# values are precisely what must be dispatched. Applying the pseudo-hold to one
+# replaces the storm position with the cover's current read.
+
+
+def _safety_slot_registry() -> PipelineRegistry:
+    """Build a priority-100 slot naming an exact position, plus DEFAULT."""
+    return PipelineRegistry(
+        [
+            CustomPositionHandler(1, 0, CUSTOM_POSITION_SAFETY_PRIORITY),
+            DefaultHandler(),
+        ]
+    )
+
+
+@pytest.mark.unit
+def test_weather_safety_winner_keeps_its_own_position_outside_window():
+    """A storm retraction goes where WEATHER says, not to a bound's edge."""
+    kwargs = {
+        "sensors": [
+            _slot(
+                position=40,
+                min_mode=True,
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+            )
+        ],
+        "policy": get_policy("cover_blind"),
+        "weather_override_active": True,
+        "weather_override_position": 90,
+        "default_position": 100,
+        "current_cover_position": 10,
+        "cover_positions": {"cover.a": 10},
+    }
+    registry = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()])
+    closed = registry.evaluate(_snapshot(clock_open=False, **kwargs))
+    opened = registry.evaluate(_snapshot(clock_open=True, **kwargs))
+
+    assert closed.control_method is ControlMethod.WEATHER
+    assert closed.is_safety is True
+    # The floor at 40 does not bind a retraction to 90, in or out of the window.
+    assert closed.position == opened.position == 90
+    assert closed.acts_outside_clock_window is True
+    assert closed.hold_clamp_verdicts is None
+
+
+@pytest.mark.unit
+def test_safety_slot_fixed_position_still_dispatched_outside_window():
+    """A priority-100 storm-close still closes — #563's promise, unchanged.
+
+    The slot names position 0 *and* carries a ``tilt_min``. The tilt bound must
+    not turn the close into "stay where you are with the slats at 50".
+    """
+    kwargs = {
+        "sensors": [
+            _slot(
+                position=0,
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                tilt_min=50,
+            )
+        ],
+        "policy": get_policy("cover_blind"),
+        "default_position": 100,
+        "current_cover_position": 80,
+        "cover_positions": {"cover.a": 80},
+    }
+    closed = _safety_slot_registry().evaluate(_snapshot(clock_open=False, **kwargs))
+    opened = _safety_slot_registry().evaluate(_snapshot(clock_open=True, **kwargs))
+
+    assert closed.control_method is ControlMethod.CUSTOM_POSITION
+    assert closed.is_safety is True
+    # A safety winner is window-invariant: what it sends at 02:00 is exactly
+    # what it sends at noon, tilt bound included.
+    assert closed.position == opened.position == 0
+    assert closed.tilt == opened.tilt
+    assert closed.tilt_low == opened.tilt_low == 50
+    assert closed.hold_clamp_verdicts is None
+
+
+@pytest.mark.unit
+def test_eligible_bound_still_clamps_a_safety_winner_outside_window():
+    """Declining the pseudo-hold must not stop a bound from BOUNDING.
+
+    The defect is that a safety winner's position gets *replaced* by the
+    current read, not that it gets clamped. A ceiling that really binds the
+    retraction still binds it, exactly as it does with the clock open.
+    """
+    kwargs = {
+        "sensors": [_slot(position_max=70, priority=CUSTOM_POSITION_SAFETY_PRIORITY)],
+        "policy": get_policy("cover_blind"),
+        "weather_override_active": True,
+        "weather_override_position": 90,
+        "default_position": 100,
+        "current_cover_position": 10,
+        "cover_positions": {"cover.a": 10},
+    }
+    registry = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()])
+    closed = registry.evaluate(_snapshot(clock_open=False, **kwargs))
+    opened = registry.evaluate(_snapshot(clock_open=True, **kwargs))
+
+    assert closed.position == opened.position == 70
+    assert closed.position_constraint_applied is True
+    assert closed.is_safety is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("sensors", "weather"),
+    [
+        pytest.param(
+            [
+                _slot(
+                    position=40, min_mode=True, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+                )
+            ],
+            True,
+            id="safety-floor-under-weather-winner",
+        ),
+        pytest.param(
+            [_slot(tilt_min=50, outside_window=True)],
+            True,
+            id="flagged-slot-bound-under-weather-winner",
+        ),
+        pytest.param(
+            [_slot(position=0, priority=CUSTOM_POSITION_SAFETY_PRIORITY, tilt_min=50)],
+            False,
+            id="safety-slot-winner-with-own-tilt-bound",
+        ),
+    ],
+)
+def test_safety_result_never_also_claims_a_constraint_admission(sensors, weather):
+    """``is_safety`` and the item-B admission are never co-written.
+
+    #1226/#1165 gave ``is_safety`` one writer per entry point and a defined
+    end; the constraint admission is a deliberately separate licence. A result
+    carrying both means the registry converted a safety winner into a
+    pseudo-hold — which is exactly how its own position gets lost.
+    """
+    handlers = (
+        [WeatherOverrideHandler(), DefaultHandler()]
+        if weather
+        else [
+            CustomPositionHandler(1, 0, CUSTOM_POSITION_SAFETY_PRIORITY),
+            DefaultHandler(),
+        ]
+    )
+    result = PipelineRegistry(handlers).evaluate(
+        _snapshot(
+            sensors=sensors,
+            clock_open=False,
+            policy=get_policy("cover_blind"),
+            weather_override_active=weather,
+            weather_override_position=90,
+            default_position=100,
+            current_cover_position=10,
+            cover_positions={"cover.a": 10},
+        )
+    )
+    assert result.is_safety is True
+    assert result.outside_window_constraint_active is False
+    # The licence it does hold is its own, and it is enough.
+    assert result.acts_outside_clock_window is True
