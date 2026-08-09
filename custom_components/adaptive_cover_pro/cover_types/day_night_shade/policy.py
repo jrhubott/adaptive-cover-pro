@@ -1726,6 +1726,12 @@ class DayNightShadePolicy(CoverTypePolicy, register=True):
             attribute="current_tilt_position",
             label="tilt",
             suppression=self.primary_axis_suppression,
+            # Inverse-tilt normalisation (issue #1227) — see
+            # ``SecondaryAxisCheck.inverted`` for the wire/logical rationale.
+            # Model A drives the SAME sequencer venetian does, so it owes the
+            # same flip (``VenetianPolicy.secondary_axis_check`` wires it
+            # identically).
+            inverted=(self._sequencer is not None and self._sequencer.tilt_inverted),
         )
 
     async def maybe_update_tilt_only(

@@ -1175,6 +1175,9 @@ class VenetianPolicy(CoverTypePolicy, register=True):
                 if self._sequencer is not None
                 else None
             ),
+            # Inverse-tilt normalisation (issue #1227) — see
+            # ``SecondaryAxisCheck.inverted`` for the wire/logical rationale.
+            inverted=(self._sequencer is not None and self._sequencer.tilt_inverted),
         )
 
     def _drift_reset_eligible(self, context: Any) -> bool:
