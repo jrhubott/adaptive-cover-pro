@@ -2840,8 +2840,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         read precisely when no bound moved it — the same ``fin != eff`` the
         registry evaluated to set ``released``, before
         ``_command_every_held_cover`` overwrote that field so a tilt clamp could
-        command the whole group. On the tie where a bound edge lands exactly on
-        the cover's read the two answers are the same command anyway.
+        command the whole group. Where a bound edge lands exactly on the cover's
+        own read the test cannot tell the two cases apart — and does not need
+        to: the equality itself proves the clamp moved this cover nowhere, so
+        the read IS the right answer and taking the first branch is correct.
+        The two branches do NOT agree there under interpolation (``own_read``
+        versus ``interpolate(own_read)``), which is precisely why the tie must
+        fall this way rather than the other.
 
         Uncalibrated installs are unaffected: ``_to_cover_frame`` reduces to the
         same ``flip_if``, so both branches return the same number.
@@ -3337,14 +3342,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         #
         # Widening that frozenset is NOT the fix and it was evaluated: it is
         # keyed on ``ControlMethod``, and the pseudo-hold's winner is whichever
-        # non-safety handler computed this cycle.  DEFAULT most nights — but
-        # also CUSTOM_POSITION (a FIXED slot below 100, which wins at 77 and is
-        # not safety) and GROUP_SCENE, the two other methods that neither gate
-        # on ``in_time_window`` nor set ``held_position``.  SOLAR and CLIMATE
-        # are NOT among them: every windowed handler returns None once
-        # ``in_time_window`` is False, and ``not clock_window_open`` implies
-        # that.  So no membership set can express "this cycle was admitted by a
-        # constraint".  Adding DEFAULT would also change the in-window
+        # non-safety handler computed this cycle.  Exactly FOUR can be:
+        # DEFAULT most nights, plus CUSTOM_POSITION (a FIXED slot below 100,
+        # which wins at 77 and is not safety), MOTION and GROUP_SCENE — the
+        # four that neither gate on ``in_time_window`` nor set
+        # ``held_position``.  MOTION belongs because only its hold_position
+        # branch reads ``in_time_window``; the return-to-default branch it falls
+        # through to out here is ungated and sets no ``held_position``
+        # (``pipeline/handlers/motion_timeout.py``).  SOLAR, CLIMATE, CLOUD and
+        # GLARE_ZONE are NOT among them: every windowed handler returns None
+        # once ``in_time_window`` is False, and ``not clock_window_open``
+        # implies that.  WEATHER is excluded by ``is_safety``, MANUAL and
+        # GROUP_LOCK by ``held_position`` — and on the one snapshot where those
+        # two leave it None (no readable cover position) the pseudo-hold
+        # declines for that same reason.  So no membership set can express
+        # "this cycle was admitted by a constraint": MOTION is already a member
+        # here for its own in-window mean hazard while most admitted cycles are
+        # DEFAULT, and adding DEFAULT would change the in-window
         # ``honor_holds=True`` press (#1045) for every ordinary default cycle,
         # which has nothing to do with #943.
         #
@@ -5205,7 +5219,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         The single question all four outside-window dispatch guards ask —
         ``async_handle_state_change``, ``_async_force_send_pipeline_position``,
         ``async_handle_first_refresh``, and (through
-        ``PerEntityState.acts_outside_clock_window``) reconciliation step 5. The
+        ``PerEntityState.acts_outside_clock_window``) reconciliation step 4. The
         OR itself lives once, in
         ``pipeline.axis_constraints.may_act_outside_clock_window``; this is just
         the coordinator's None-safe access to it.

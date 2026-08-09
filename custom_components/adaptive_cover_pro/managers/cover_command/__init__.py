@@ -2725,29 +2725,37 @@ class CoverCommandService:
         Runs every ``check_interval_minutes``. Calls the optional ``on_tick``
         callback first (used by coordinator for time window transition checks).
 
-        For each tracked entity:
+        For each tracked entity — the numbering below is the ONE the inline
+        ``# N.`` comments in the loop body use, so every "step N" cross-reference
+        in this file, ``state_store.py`` and ``coordinator.py`` names the same
+        gate:
 
         1. If ``wait_for_target`` has been True for >30 s → force-clear it
-           (timeout fallback for covers that never report final position).
-        2. If ``wait_for_target`` is still True → cover is moving, skip.
-        3. If entity is in ``_manual_override_entities`` → skip resend so
+           (timeout fallback for covers that never report final position); if it
+           is still True and inside that window → the cover is moving, skip.
+        2. If entity is in ``_manual_override_entities`` → skip resend so
            reconciliation does not fight the user's intentional move.
            Safety handlers (force override, weather) overwrite ``target_call``
            via ``apply_position(is_safety=True)`` so they are always protected.
-        4. If ``_auto_control_enabled`` is False and ``PerEntityState.is_safety``
+        3. If ``_auto_control_enabled`` is False and ``PerEntityState.is_safety``
            is False → skip.  Safety targets (set via
            ``apply_position(is_safety=True)``) are still resent so covers reach
            a safe position regardless of the automatic control toggle.
-        5. If ``_in_time_window`` is False and the entity carries no licence to
+        4. If ``_in_time_window`` is False and the entity carries no licence to
            act out there (``PerEntityState.acts_outside_clock_window`` — a
            safety target, or one booked under an admitted outside-window
            constraint, issue #943 item B) → skip.  Prevents stale daytime
            targets from being resent overnight.
-        6. Compare actual position to ``target_call`` within tolerance.
-        7. If match → reset retry count, done.
-        8. If mismatch → ask the cover-type policy whether the entity is
-           physically clear to move; withhold if not.
-        9. Resend the same target (up to ``max_retries``).
+        5. If the cover is in transit → skip; HA's reported position lags a
+           physical move, and the state change when it stops runs this path
+           again.
+        6. Read the actual position; skip when it is unreadable.
+        7. Compare it to ``target_call`` within tolerance; on a match reset the
+           retry count and stop.
+        8. On a mismatch, resend only when position matching is enabled
+           (issue #591), and only while ``retry_count`` is under ``max_retries``.
+        9. Ask the cover-type policy whether the entity is physically clear to
+           move; withhold if not, otherwise resend the same target.
 
         Note: reconciliation does *not* go through the ``apply_position`` gate
         checks — the target was already validated when ``apply_position`` was

@@ -293,7 +293,7 @@ class PerEntityState:
     # Whether ``target`` above was booked under an ADMITTED outside-the-clock-
     # window constraint (issue #943 item B) — an opted-in Custom Position slot
     # whose min/max bound actually clamped that cycle. One reader:
-    # ``run_reconciliation_pass`` step 5, which resends a licensed target while
+    # ``run_reconciliation_pass`` step 4, which resends a licensed target while
     # the user's clock window is closed.
     #
     # A SEPARATE field from ``is_safety`` above, deliberately. Reusing that one

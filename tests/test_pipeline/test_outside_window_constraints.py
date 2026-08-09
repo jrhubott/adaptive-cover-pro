@@ -679,6 +679,76 @@ def test_ow_constraint_defers_to_manual_hold_outside_window():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("clock_open", [True, False])
+@pytest.mark.parametrize("priority", [77, 85, CUSTOM_POSITION_SAFETY_PRIORITY])
+def test_standing_hold_withholds_the_outside_window_licence_at_every_priority(
+    priority, clock_open
+):
+    """A live manual hold defeats the opt-in out there, whatever the priority.
+
+    The test above shows a 77 bound losing the ``outranking`` gate to an 80
+    hold. That is not the whole rule, and the part it misses is the surprising
+    one: raising the priority does NOT buy the bound a night shift.
+    ``_as_outside_window_pseudo_hold`` declines the moment ``held_position`` is
+    already set, so no admission flag is ever written and
+    ``acts_outside_clock_window`` stays False — at 85, and at
+    ``CUSTOM_POSITION_SAFETY_PRIORITY`` too, because a constraint-only slot
+    defers rather than winning and so never stamps ``is_safety`` on the composed
+    result.
+
+    What the priority DOES still buy is the clamp itself: at 85 and 100 the
+    bound outranks the hold and the registry rewrites the position to the bound
+    edge, identically with the clock open and closed (#1170). So the only thing
+    the closed clock changes is the dispatch licence — which is exactly the
+    behaviour the help text has to describe, and the reason this is pinned
+    rather than left to be re-derived. Not a regression: before #943 item B
+    nothing at all acted out there.
+    """
+    from custom_components.adaptive_cover_pro.pipeline.handlers import (
+        ManualOverrideHandler,
+    )
+
+    outranks_the_hold = priority > ManualOverrideHandler.priority
+    snap = _snapshot(
+        sensors=[_slot(position_max=30, priority=priority, outside_window=True)],
+        clock_open=clock_open,
+        in_time_window=clock_open,
+        policy=get_policy("cover_blind"),
+        manual_override_active=True,
+        default_position=100,
+        current_cover_position=40,
+        cover_positions={"cover.a": 40},
+    )
+    result = PipelineRegistry(
+        [
+            ManualOverrideHandler(),
+            CustomPositionHandler(slot=1, position=None, priority=priority),
+            DefaultHandler(),
+        ]
+    ).evaluate(snap)
+
+    assert result.control_method is ControlMethod.MANUAL
+    # The licence is never granted while a real hold owns the cycle. Both
+    # halves: nothing set the admission flag, and nothing set ``is_safety``
+    # either — a priority-100 CONSTRAINT is not a safety result.
+    assert result.outside_window_constraint_active is False
+    assert result.is_safety is False
+    assert result.acts_outside_clock_window is False
+
+    # The clamp itself is unaffected by the clock — only the licence is.
+    verdict = result.hold_clamp_verdicts["cover.a"]
+    if outranks_the_hold:
+        assert result.position == 30
+        assert result.position_constraint_applied is True
+        assert result.skip_command is False
+        assert (verdict.released, verdict.target) == (True, 30)
+    else:
+        assert result.position_constraint_applied is False
+        assert result.skip_command is True
+        assert (verdict.released, verdict.target) == (False, 40)
+
+
+@pytest.mark.unit
 def test_edge_resolution_never_uses_an_outprioritized_handlers_tilt():
     """The resolved edge is the bound's, not some losing handler's tilt (#1153)."""
     result = _evaluate(

@@ -299,15 +299,22 @@ class TestPostPipelineResolveTiltOnlyMode:
         arriving here even looks like a hold.
 
         Each method below already has its own test above; none of them tied the
-        set to the premise, so a sixth per-cover-judgable winner could be added
-        with the pin still firing on it and nothing would fail. This is that tie.
-        ``SUMMER`` is the negative control: it is NOT per-cover judgable (a
-        windowed handler cannot win outside the clock window, and it sets no
-        ``held_position`` inside one), and the pin does fire on it.
+        set to the premise, so a seventh per-cover-judgable winner could be
+        added with the pin still firing on it and nothing would fail. This is
+        that tie. ``SUMMER`` is the negative control: it is NOT per-cover
+        judgable (a windowed handler cannot win outside the clock window, and it
+        sets no ``held_position`` inside one), and the pin does fire on it.
+
+        The convertible half is derived from the handlers, not counted: a
+        handler qualifies when it neither gates on ``snapshot.in_time_window``
+        nor sets ``held_position``, and is not ``is_safety``. ``MOTION`` passes
+        because only its hold_position branch reads ``in_time_window`` — the
+        return-to-default branch it falls through to outside the window is
+        ungated and sets nothing.
         """
         from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
 
-        # Real holds set ``held_position`` themselves; the other three are the
+        # Real holds set ``held_position`` themselves; the other four are the
         # non-safety, non-windowed winners the outside-window pseudo-hold can
         # convert (#943 item B).
         per_cover_judged = (
@@ -315,6 +322,7 @@ class TestPostPipelineResolveTiltOnlyMode:
             ControlMethod.GROUP_LOCK,
             ControlMethod.DEFAULT,
             ControlMethod.CUSTOM_POSITION,
+            ControlMethod.MOTION,
             ControlMethod.GROUP_SCENE,
         )
         for method in per_cover_judged:

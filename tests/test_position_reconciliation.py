@@ -2437,7 +2437,7 @@ async def test_stop_all_dry_run_no_send(svc, mock_hass):
 # A SEPARATE per-entity flag from ``is_safety`` — sharing that one would
 # reopen #1165 (a stale safety verdict surviving clear_non_safety_targets and
 # being re-driven with automatic control off). This one buys exactly one
-# thing: reconciliation step 5 may resend the target it licensed while the
+# thing: reconciliation step 4 may resend the target it licensed while the
 # user's clock window is closed.
 # ------------------------------------------------------------------ #
 
@@ -2471,7 +2471,7 @@ async def test_flagged_target_resent_outside_window(svc, mock_hass):
 
 @pytest.mark.asyncio
 async def test_unflagged_target_still_skipped_outside_window(svc, mock_hass):
-    """Positive control: without the licence step 5 still blocks the resend."""
+    """Positive control: without the licence step 4 still blocks the resend."""
     _patch_position(svc, 90)
     with _patch_caps(), _patch_no_prior_command():
         outcome, _ = await svc.apply_position(
