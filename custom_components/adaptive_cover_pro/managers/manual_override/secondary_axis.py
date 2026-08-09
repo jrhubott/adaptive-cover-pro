@@ -233,9 +233,16 @@ class SecondaryAxisCheck:
                     "new_position": reported,
                     "effective_threshold": effective_threshold,
                     "reason": (
-                        f"{self.label} value {new_value:.0f}% lies on an ACP "
-                        "drift-reset excursion trajectory; suppressing both tilt "
-                        "and position checks"
+                        # Two numbers for one publish (issue #1227): ``reported``
+                        # is the LOGICAL value ``new_position`` above also
+                        # carries; ``new_value`` is the RAW wire reading that
+                        # actually matched the excursion trajectory (excursion
+                        # matching is wire-space by design — see the class
+                        # docstring). Naming both avoids an unlabelled pair that
+                        # reads as two different publishes on an inverse install.
+                        f"{self.label} value {reported:.0f}% (wire {new_value:.0f}%) "
+                        "lies on an ACP drift-reset excursion trajectory; "
+                        "suppressing both tilt and position checks"
                     ),
                 },
             )

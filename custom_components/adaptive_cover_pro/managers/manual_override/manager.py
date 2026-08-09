@@ -470,12 +470,26 @@ class AdaptiveCoverManager:
         if secondary_axis_check is not None:
             res = secondary_axis_check.evaluate(entity_id, new_state, manual_threshold)
             if res.is_manual:
+                # Issue #1227: ``secondary_axis_check.expected`` is LOGICAL and
+                # the raw attribute read is WIRE — on an inverse install those
+                # differ by ``100 - x``, so pairing them unlabelled reads as a
+                # huge false delta. ``res.event_kwargs["new_position"]`` is the
+                # SAME normalised value ``evaluate`` already computed for the
+                # ``manual_override_set`` event (guaranteed present whenever
+                # ``is_manual`` is True), so this reuses it rather than
+                # re-deriving the flip. Name both frames explicitly, matching
+                # the excursion reason string's ``value X% (wire Y%)`` shape.
+                reported = (
+                    res.event_kwargs.get("new_position") if res.event_kwargs else None
+                )
+                raw_value = new_state.attributes.get(secondary_axis_check.attribute)
                 self.logger.debug(
-                    "Manual %s change for %s: ours=%s, new=%s",
+                    "Manual %s change for %s: ours=%s, new=%s (wire %s)",
                     secondary_axis_check.label,
                     entity_id,
                     secondary_axis_check.expected,
-                    new_state.attributes.get(secondary_axis_check.attribute),
+                    reported,
+                    raw_value,
                 )
             self._apply_decision(
                 entity_id,

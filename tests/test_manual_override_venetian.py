@@ -1584,6 +1584,14 @@ def test_inverse_tilt_genuine_off_target_move_still_trips() -> None:
     """The inversion fix must not mask a real move: ACP dispatched logical 96
     (wire 4); the user twists the slats to logical 30 → the actuator publishes
     wire 70. Normalised back to logical 30, delta |96-30|=66 ≥ threshold → trips.
+
+    This is an over-suppression guard, not a repro of the #1227 bug: the delta
+    here is large enough that it trips whether or not the wire→logical
+    normalisation runs at all (with the fix removed, delta |96-70|=26 also
+    clears the threshold). It proves the fix doesn't introduce a false
+    negative on a genuine move — it does NOT by itself prove the normalisation
+    is correct; see ``test_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override``
+    for that.
     """
     entity_id = "cover.raffstore_kuche_rechts_user"
     policy = _make_inverse_policy()
@@ -1664,11 +1672,20 @@ def _make_identity_policy() -> VenetianPolicy:
 
 
 def test_non_inverting_tilt_delta_is_unchanged() -> None:
-    """A non-inverting install's delta must be byte-unchanged by the fix.
+    """A non-inverting install's delta must stay the identity, never forced.
 
-    ACP dispatched logical 70; the actuator publishes 40 directly (no wire
-    inversion configured) — a genuine 30-point move that must trip exactly as
-    it did before the ``inverted``/normalisation seam existed.
+    ACP dispatched logical 70; the actuator publishes 65 directly (no wire
+    inversion configured — ``invert_tilt=False``). This is a genuine
+    discrimination, not the coincidence the previous ``tilt=40`` fixture gave:
+    the identity path (correct — ``self.inverted`` is False) gives
+    delta |70-65|=5, under the effective threshold of 10, so it must NOT trip.
+    A ``flip_if`` regression that ignored ``self.inverted`` and always flipped
+    would instead report 35 (``100-65``), giving delta |70-35|=35 — well past
+    the threshold — and WOULD trip. Only one of those two outcomes matches
+    this assertion, so this test actually catches that regression class; the
+    old ``tilt=40`` fixture gave delta 30 under identity and delta 10 under
+    forced-flip, both ``>=`` threshold, so it passed either way and proved
+    nothing (issue #1227 review finding #2).
     """
     entity_id = "cover.raffstore_identity"
     policy = _make_identity_policy()
@@ -1677,7 +1694,7 @@ def test_non_inverting_tilt_delta_is_unchanged() -> None:
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     mgr.handle_state_change(
-        states_data=_make_event(entity_id, position=2, tilt=40),
+        states_data=_make_event(entity_id, position=2, tilt=65),
         our_state=2,
         policy=get_policy("cover_venetian"),
         allow_reset=True,
@@ -1686,9 +1703,10 @@ def test_non_inverting_tilt_delta_is_unchanged() -> None:
         secondary_axis_check=check,
     )
 
-    assert mgr.is_cover_manual(
-        entity_id
-    ), "a genuine move on a non-inverting install must trip exactly as before"
+    assert not mgr.is_cover_manual(entity_id), (
+        "a small tilt delta on a non-inverting install must NOT trip — it "
+        "would only trip if the identity path were incorrectly force-flipped"
+    )
 
 
 def test_inverse_tilt_normalises_the_dispatched_anchor() -> None:

@@ -139,6 +139,15 @@ def test_dns_inverse_tilt_genuine_off_target_move_still_trips() -> None:
     (wire 4); the user twists the shade to logical 30 -> the actuator publishes
     wire 70. Normalised back to logical 30, delta |96-30|=66 >= threshold ->
     trips. Mirrors ``test_inverse_tilt_genuine_off_target_move_still_trips``.
+
+    This is an over-suppression guard, not a repro of the #1227 bug: the delta
+    here is large enough that it trips whether or not the wire->logical
+    normalisation runs at all (with the fix removed, delta |96-70|=26 also
+    clears the threshold). It proves the fix doesn't introduce a false
+    negative on a genuine move -- it does NOT by itself prove the
+    normalisation is correct; see
+    ``test_dns_inverse_tilt_wire_publish_of_verified_target_is_not_manual_override``
+    for that.
     """
     entity_id = "cover.day_night_shade_kueche_user"
     policy = _make_inverse_dns_policy()
@@ -161,3 +170,51 @@ def test_dns_inverse_tilt_genuine_off_target_move_still_trips() -> None:
     assert mgr.is_cover_manual(
         entity_id
     ), "a genuine off-target blend move must still trip even with inversion normalised"
+
+
+def test_dns_inverse_tilt_normalises_the_dispatched_anchor() -> None:
+    """The PRODUCTION anchor path (real ``entity_id``, ``last_tilt_target``
+    populated) must normalise identically to the ``entity_id=None`` fallback
+    the other DNS inverse-tilt tests exercise. Mirrors
+    ``test_inverse_tilt_normalises_the_dispatched_anchor`` in
+    ``test_manual_override_venetian.py`` — Model A drives its blend axis
+    through the SAME ``DualAxisSequencer`` (and the same ``_tilt_targets``
+    store) venetian uses, so it owes the identical anchor-path normalisation
+    (issue #1227 review finding #6: this file only exercised the
+    ``entity_id=None`` fallback, never the ``last_tilt_target`` anchor Model A
+    installs actually take).
+
+    Seeds ``_tilt_targets`` directly so ``resolve_dispatched_secondary_expected``
+    takes the ``sequencer.last_tilt_target(entity_id)`` branch real installs
+    use, rather than the ``result.tilt`` fallback. ACP dispatched logical 96
+    (wire 4); the actuator publishes the verified wire value, which must NOT
+    trip.
+    """
+    entity_id = "cover.day_night_shade_anchor"
+    policy = _make_inverse_dns_policy()
+    policy.sequencer._tilt_targets[entity_id] = 96  # seed the dispatched anchor
+    # A stale/different reevaluated result.tilt proves the anchor — not the
+    # fallback — is what the check actually uses.
+    check = policy.secondary_axis_check(SimpleNamespace(tilt=20), None, entity_id)
+    assert check is not None
+    assert check.expected == 96, (
+        "expected must come from the dispatched anchor (96), not the "
+        f"reevaluated result.tilt fallback (20); got {check.expected}"
+    )
+
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=2, tilt=4),  # wire 4 == to_wire(96)
+        our_state=2,
+        policy=get_policy("cover_day_night_shade"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=10,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(entity_id), (
+        "wire publish of the verified logical blend target via the production "
+        "anchor path must NOT trip manual override"
+    )

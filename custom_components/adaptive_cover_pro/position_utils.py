@@ -17,12 +17,19 @@ def inverse_state(state: int) -> int:
     return 100 - state
 
 
-def flip_if(value: int, *, inverted: bool) -> int:
+def flip_if(value: float, *, inverted: bool) -> float:
     """Map a position between the cover frame and the logical frame.
 
     Single source of truth for the ``inverse_state(v) if inverted else v``
     conditional (issues #1036 / #1042). The involution ``100 - x`` is its own
     inverse, so ONE primitive serves both directions:
+
+    Accepts (and, when ``inverted``, returns) ``float`` — issue #1227's
+    ``SecondaryAxisCheck.evaluate`` feeds this the raw ``current_tilt_position``
+    attribute HA can publish as a float (e.g. ``4.0``), and ``100 - 4.0 ==
+    96.0`` is already the correct answer; the previous ``int`` annotation just
+    didn't say so. ``int`` remains valid input (Python treats it as a ``float``
+    subtype for typing purposes), so no existing caller needs to change.
 
     * **cover → logical** — a producer that reads a physical position off an
       entity and hands it to a logical-frame field.
